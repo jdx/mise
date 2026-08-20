@@ -70,6 +70,19 @@ If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, that will be used instead of all of 
 You can also use paths like `mise/config.{MISE_ENV}.toml` or `.config/mise.{MISE_ENV}.toml` Those rules
 follow the order in [Configuration](/configuration).
 
+Files in `.mise/conf.d` and `.config/mise/conf.d` use the same environment suffixes. This allows a
+configuration to stay split into named fragments:
+
+```text
+.mise/conf.d/tools.toml                   # always loaded
+.mise/conf.d/tools.local.toml             # always loaded, usually gitignored
+.mise/conf.d/tools.development.toml       # MISE_ENV=development
+.mise/conf.d/tools.development.local.toml # MISE_ENV=development, usually gitignored
+```
+
+An extra filename component before `.toml` is reserved for the environment, so use hyphens rather
+than dots inside an unconditional fragment name: `node-tools.toml`, not `node.tools.toml`.
+
 Use `mise config` to see which files are being used.
 
 The rules around which file is written are different because we ultimately need to choose one. See

@@ -1,4 +1,4 @@
-backends = ["aqua:pvolok/mprocs"]
+backends = ["aqua:pvolok/dekit"]
 bins = ["mprocs"]
 description = "Run multiple commands in parallel"
 test = { cmd = "mprocs --version", expected = "mprocs {{version}}" }

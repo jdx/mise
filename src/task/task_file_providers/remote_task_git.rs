@@ -256,6 +256,9 @@ mod tests {
             "git::ssh://git@dev.azure/org/project/_git/example//terraform/myfile",
             "git::ssh://user@dev.azure/org/project/_git/example//myfile?ref=master",
             "git::ssh://dev.azure/org/project/_git/example//myfile?ref=master",
+            "git::git@ssh.dev.azure.com:v3/org/project/example//myfile?ref=v1.0.0",
+            "git::git@ssh.dev.azure.com:v3/org/project/example//terraform/myfile?ref=master",
+            "git::git@ssh.dev.azure.com:v3/org/project/example//terraform/myfile",
         ];
 
         for url in test_cases {
@@ -275,6 +278,8 @@ mod tests {
             "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0",
             "git::ssh://user@dev.azure/org/project/_git/example?ref=master",
             "git::ssh://user@dev.azure/org/project/_git/example",
+            "git::git@ssh.dev.azure.com:v3/org/project/example?ref=master",
+            "git::git@ssh.dev.azure.com:v3/org/project/example",
             "git::https://dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
         ];
 
@@ -322,6 +327,7 @@ mod tests {
             "git::https://dev.azure/org/project/_git/example?ref=master",
             "git::https://user@dev.azure/org/project/_git/example",
             "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+            "git::git@ssh.dev.azure.com:v3/org/project/example//myfile?ref=v1.0.0",
         ];
 
         for url in test_cases {
@@ -351,6 +357,42 @@ mod tests {
             (
                 "git::ssh://git@myserver.com/example.git//terraform/myfile",
                 "ssh://git@myserver.com/example.git",
+                "terraform/myfile",
+                None,
+            ),
+            (
+                "git::ssh://git@dev.azure/org/project/_git/example//myfile?ref=v1.0.0",
+                "ssh://git@dev.azure/org/project/_git/example",
+                "myfile",
+                Some("v1.0.0".to_string()),
+            ),
+            (
+                "git::ssh://git@dev.azure/org/project/_git/example//terraform/myfile?ref=master",
+                "ssh://git@dev.azure/org/project/_git/example",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+            (
+                "git::ssh://git@dev.azure/org/project/_git/example//terraform/myfile",
+                "ssh://git@dev.azure/org/project/_git/example",
+                "terraform/myfile",
+                None,
+            ),
+            (
+                "git::git@ssh.dev.azure.com:v3/org/project/example//myfile?ref=v1.0.0",
+                "git@ssh.dev.azure.com:v3/org/project/example",
+                "myfile",
+                Some("v1.0.0".to_string()),
+            ),
+            (
+                "git::git@ssh.dev.azure.com:v3/org/project/example//terraform/myfile?ref=master",
+                "git@ssh.dev.azure.com:v3/org/project/example",
+                "terraform/myfile",
+                Some("master".to_string()),
+            ),
+            (
+                "git::git@ssh.dev.azure.com:v3/org/project/example//terraform/myfile",
+                "git@ssh.dev.azure.com:v3/org/project/example",
                 "terraform/myfile",
                 None,
             ),

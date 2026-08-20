@@ -4,7 +4,9 @@ use crate::config::Settings;
 use crate::env::PATH_KEY;
 use crate::file::{canonicalize_cached, canonicalize_or_self, touch_dir};
 use crate::path_env::PathEnv;
-use crate::shell::{ActivateOptions, ActivatePrelude, Shell, ShellType, get_shell};
+use crate::shell::{
+    ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, Shell, ShellType, require_shell,
+};
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
@@ -67,8 +69,10 @@ pub struct Activate {
 
 impl Activate {
     pub fn run(self) -> Result<()> {
-        let shell = get_shell(self.shell_type.or(self.shell))
-            .expect("no shell provided. Run `mise activate zsh` or similar");
+        let shell = require_shell(
+            self.shell_type.or(self.shell),
+            &format!("Name the shell: `mise activate {EXAMPLE_SHELL}`."),
+        )?;
 
         // touch ROOT to allow hook-env to run
         let _ = touch_dir(&dirs::DATA);
@@ -109,10 +113,13 @@ impl Activate {
         // thereby reordering) a system dir such as /usr/bin that is already in PATH
         // for deb/rpm installs, which would otherwise move it ahead of
         // /usr/local/bin (#10264).
-        if let Some(p) = self.prepend_path(exe_dir) {
+        let prepended_exe_dir = if let Some(p) = self.prepend_path(exe_dir) {
             prelude.push(p);
-        }
-        if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS) {
+            true
+        } else {
+            false
+        };
+        if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS, prepended_exe_dir) {
             prelude.push(p);
         }
         miseprint!("{}", shell.format_activate_prelude(&prelude))?;
@@ -170,11 +177,17 @@ impl Activate {
         }
     }
 
-    /// Used by activate_shims for the shims directory. Always prepends the path to
-    /// the front, even if already present (accepting a duplicate entry), so the
-    /// shims dir wins on re-source. For shells with native path dedup (fish), uses
-    /// MovePrepend to reorder without duplicating.
-    fn shims_prepend_path(&self, shell: &dyn Shell, p: &Path) -> Option<ActivatePrelude> {
+    /// Used by activate_shims for the shims directory. Shells with native path
+    /// deduplication move the existing entry to the front. Other shells prepend
+    /// only when the shims are not already first, which preserves precedence
+    /// without growing PATH on every re-source. If an earlier prelude changes
+    /// PATH, prepend again so the shims remain first after that change.
+    fn shims_prepend_path(
+        &self,
+        shell: &dyn Shell,
+        p: &Path,
+        path_changed_before: bool,
+    ) -> Option<ActivatePrelude> {
         if !is_dir_not_in_nix(p) || p.is_relative() {
             return None;
         }
@@ -183,11 +196,13 @@ impl Activate {
                 PATH_KEY.to_string(),
                 p.to_string_lossy().to_string(),
             ))
-        } else {
+        } else if should_prepend_shims(&env::PATH, p, path_changed_before) {
             Some(ActivatePrelude::Prepend(
                 PATH_KEY.to_string(),
                 p.to_string_lossy().to_string(),
             ))
+        } else {
+            None
         }
     }
 }
@@ -255,6 +270,17 @@ fn is_dir_in_path(dir: &Path) -> bool {
         .any(|p| canonicalize_or_self(&p) == dir)
 }
 
+fn should_prepend_shims(paths: &[PathBuf], dir: &Path, path_changed_before: bool) -> bool {
+    path_changed_before || !is_dir_first_in_paths(paths, dir)
+}
+
+fn is_dir_first_in_paths(paths: &[PathBuf], dir: &Path) -> bool {
+    let dir = canonicalize_or_self(dir);
+    paths
+        .first()
+        .is_some_and(|p| canonicalize_or_self(p) == dir)
+}
+
 fn is_dir_not_in_nix(dir: &Path) -> bool {
     !canonicalize_or_self(dir).starts_with("/nix/")
 }
@@ -272,7 +298,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::forwarded_logging_flags;
+    use super::{forwarded_logging_flags, is_dir_first_in_paths, should_prepend_shims};
+    use std::path::PathBuf;
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|value| value.to_string()).collect()
@@ -340,5 +367,28 @@ mod tests {
     #[test]
     fn nothing_is_forwarded_without_a_logging_flag() {
         assert!(forwarded_logging_flags(&args(&["mise", "activate", "bash"])).is_empty());
+    }
+
+    #[test]
+    fn detects_only_a_matching_first_path_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().to_path_buf();
+        let equivalent = target.join(".");
+        let other = PathBuf::from("/other");
+
+        assert!(!is_dir_first_in_paths(&[], &target));
+        assert!(is_dir_first_in_paths(&[equivalent, other.clone()], &target));
+        assert!(!is_dir_first_in_paths(&[other, target.clone()], &target));
+
+        assert!(!should_prepend_shims(
+            std::slice::from_ref(&target),
+            &target,
+            false
+        ));
+        assert!(should_prepend_shims(
+            std::slice::from_ref(&target),
+            &target,
+            true
+        ));
     }
 }

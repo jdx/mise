@@ -20,6 +20,7 @@ use filetime::{FileTime, set_file_times};
 use flate2::read::GzDecoder;
 use itertools::Itertools;
 use jdx_tar::{Archive, EntryType, UnpackOptions};
+use path_absolutize::Absolutize;
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock as Lazy;
 use walkdir::WalkDir;
@@ -61,6 +62,85 @@ pub fn append<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()
         .wrap_err_with(|| format!("failed append: {}", display_path(path)))
 }
 
+/// Windows' `MAX_PATH`. Not a limit mise imposes — the point below is that some paths hit it long
+/// before others do. It counts UTF-16 code units and includes the terminating NUL, so a path of
+/// exactly `MAX_PATH` is already one too many.
+///
+/// Shared with [`crate::cli::self_update`], which needs the same number for the opposite reason:
+/// the file APIs can be escaped past this with a `\\?\` prefix, which is why `std::fs` copes with
+/// long paths, but `CreateProcess` has no such escape hatch and simply will not start an
+/// executable whose path reaches it.
+#[cfg(windows)]
+pub(crate) const MAX_PATH: usize = 260;
+
+/// Why a Windows file operation on `path` probably failed, when the error says something a reader
+/// cannot act on.
+///
+/// `None` on unix, always: deleting a running binary succeeds there, and `MAX_PATH` does not
+/// exist. Splitting the remedy by platform rather than the wording follows
+/// [`make_executable_hint`], where `chmod +x` was not merely unavailable on Windows but the wrong
+/// instruction.
+///
+/// The error codes are the ones already spoken elsewhere in this file — see [`do_rename`] and
+/// `should_retry_atomic_persist`, which retry on the same pair. This answers a different question
+/// about them: not whether to try again, but what to tell the user when trying again will not help.
+#[cfg(windows)]
+fn windows_io_hint(path: &Path, err: &std::io::Error) -> Option<String> {
+    use std::os::windows::ffi::OsStrExt;
+
+    // ERROR_ACCESS_DENIED (5) / ERROR_SHARING_VIOLATION (32). Unlike the transient locks that
+    // `do_rename` retries through, a file held open by a running process stays held, so this is a
+    // message rather than a retry.
+    let in_use = err.kind() == std::io::ErrorKind::PermissionDenied
+        || matches!(err.raw_os_error(), Some(5) | Some(32));
+    if in_use {
+        return Some(
+            "A file under it is in use. A program started from this directory — the tool itself, \
+             an editor, or a shell sitting in it — is probably still running."
+                .to_string(),
+        );
+    }
+    // Only the errors Windows actually reports for an over-long path. Without this the branch
+    // fires on anything that happens to occur deep in a tree -- a genuinely missing directory
+    // would be answered with advice about path length.
+    //
+    // ERROR_PATH_NOT_FOUND (3) is what was measured; ERROR_INVALID_NAME (123) and
+    // ERROR_FILENAME_EXCED_RANGE (206) are the other two Windows uses for the same cause. `3` is
+    // ambiguous by nature -- a path can be both long and absent -- so the wording below suggests
+    // rather than asserts.
+    if !matches!(err.raw_os_error(), Some(3) | Some(123) | Some(206)) {
+        return None;
+    }
+    // UTF-16 code units, which is what the limit counts. `OsStr::len()` is WTF-8 bytes on Windows,
+    // so a path with any non-ASCII in it would measure long before Windows thought so.
+    let units = path.as_os_str().encode_wide().count();
+    if units < MAX_PATH - 16 {
+        return None;
+    }
+    // Measured: `std::fs` itself copes well past `MAX_PATH` -- create_dir_all, write and rename all
+    // succeeded at 490 units with long paths disabled -- so a "path not found" this close to the
+    // limit is more likely the length than the missing directory it appears to be.
+    Some(format!(
+        "The path is {units} characters, at or near Windows' {MAX_PATH}-character limit, which \
+         may be the real cause rather than a missing directory. mise writes through a temporary \
+         file whose name is longer than the final one, so it crosses the limit first. Try a \
+         shorter directory."
+    ))
+}
+
+#[cfg(not(windows))]
+fn windows_io_hint(_path: &Path, _err: &std::io::Error) -> Option<String> {
+    None
+}
+
+/// Attach [`windows_io_hint`] to `err`, if it has anything to say about this path.
+fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
+    match windows_io_hint(path, err) {
+        Some(hint) => format!("{msg}\n{hint}"),
+        None => msg,
+    }
+}
+
 pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     match path.metadata().map(|m| m.file_type()) {
@@ -69,8 +149,18 @@ pub fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
         }
         Ok(x) if x.is_dir() => {
             trace!("rm -rf {}", display_path(path));
-            fs::remove_dir_all(path)
-                .wrap_err_with(|| format!("failed rm -rf: {}", display_path(path)))?;
+            // `map_err` rather than `wrap_err_with`: the hint depends on the error, and
+            // `wrap_err_with`'s closure is not given it.
+            fs::remove_dir_all(path).map_err(|e| {
+                let msg = with_io_hint(
+                    // Not "rm -rf": mise calls `remove_dir_all`, and on Windows it is naming a
+                    // command the reader does not have.
+                    format!("failed to remove: {}", display_path(path)),
+                    path,
+                    &e,
+                );
+                eyre::eyre!(e).wrap_err(msg)
+            })?;
         }
         _ => {}
     };
@@ -388,13 +478,25 @@ pub fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Res
     temporary.write_all(contents.as_ref())?;
 
     temporary.as_file_mut().sync_all()?;
-    persist_atomic(temporary, path)
-        .wrap_err_with(|| format!("failed atomic write: {}", display_path(path)))?;
+    // The hint matters most here. `tempfile`'s persist does not get the extended-length path
+    // handling `std::fs` applies, so this is the operation that fails first as a path approaches
+    // `MAX_PATH` -- measured breaking at a 253-character target while `fs::rename` on the same
+    // tree succeeded at 415.
+    persist_atomic(temporary, path).map_err(|e| {
+        let msg = format!("failed atomic write: {}", display_path(path));
+        // Resolve the hint before `wrap_err` takes `e` by value: `downcast_ref` borrows it, and
+        // doing both in one expression leaves the borrow alive across the move.
+        let msg = match e.downcast_ref::<std::io::Error>() {
+            Some(io) => with_io_hint(msg, path, io),
+            None => msg,
+        };
+        e.wrap_err(msg)
+    })?;
     sync_dir(parent)?;
     Ok(())
 }
 
-fn atomic_write_target(path: &Path) -> Result<PathBuf> {
+pub(crate) fn atomic_write_target(path: &Path) -> Result<PathBuf> {
     const MAX_SYMLINKS: usize = 40;
 
     let mut target = path.to_path_buf();
@@ -821,7 +923,7 @@ pub fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-fn is_unc_path(path: &Path) -> bool {
+pub(crate) fn is_unc_path(path: &Path) -> bool {
     matches!(
         path.components().next(),
         Some(std::path::Component::Prefix(prefix))
@@ -861,8 +963,7 @@ fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
 pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     if let Err(err) = create_windows_dir_link(target, link) {
         if err.kind() == std::io::ErrorKind::AlreadyExists {
-            let _ = fs::remove_file(link);
-            let _ = fs::remove_dir(link);
+            remove_symlink_or_junction(link)?;
             create_windows_dir_link(target, link)
         } else {
             Err(err)
@@ -917,26 +1018,268 @@ pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn remove_symlinks_with_target_prefix(
-    symlink_dir: &Path,
-    target_prefix: &Path,
-) -> Result<Vec<PathBuf>> {
-    if !symlink_dir.exists() {
-        return Ok(vec![]);
+pub fn is_symlink_target_within(link: &Path, root: &Path) -> Result<bool> {
+    let Some(target) = dir_link_target(link)? else {
+        return Ok(false);
+    };
+    let target = target.absolutize()?;
+    let root = root.absolutize()?;
+    Ok(path_starts_with(&target, &root))
+}
+
+#[cfg(unix)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    path.starts_with(root)
+}
+
+#[cfg(windows)]
+fn path_starts_with(path: &Path, root: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+
+    if path.starts_with(root) {
+        return true;
     }
-    let mut removed = vec![];
-    for entry in symlink_dir.read_dir()? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_symlink() {
-            let target = path.read_link()?;
-            if target.starts_with(target_prefix) {
-                fs::remove_file(&path)?;
-                removed.push(path);
+
+    let root_component_count = root.components().count();
+    let root = root.components().collect::<PathBuf>();
+    let candidate = path
+        .components()
+        .take(root_component_count)
+        .collect::<PathBuf>();
+    if candidate.components().count() != root_component_count {
+        return false;
+    }
+
+    let candidate_wide = candidate.as_os_str().encode_wide().collect::<Vec<_>>();
+    let root_wide = root.as_os_str().encode_wide().collect::<Vec<_>>();
+    let Ok(candidate_len) = i32::try_from(candidate_wide.len()) else {
+        return false;
+    };
+    let Ok(root_len) = i32::try_from(root_wide.len()) else {
+        return false;
+    };
+    let equal_ignoring_case = unsafe {
+        CompareStringOrdinal(
+            candidate_wide.as_ptr(),
+            candidate_len,
+            root_wide.as_ptr(),
+            root_len,
+            1,
+        ) == CSTR_EQUAL
+    };
+
+    if !equal_ignoring_case {
+        return false;
+    }
+
+    match same_file::is_same_file(&candidate, &root) {
+        Ok(same) => same,
+        Err(_) => dangling_paths_share_case_insensitive_parent(&candidate, &root),
+    }
+}
+
+#[cfg(windows)]
+fn dangling_paths_share_case_insensitive_parent(path: &Path, root: &Path) -> bool {
+    let Some((path_parent, path_missing_components)) = nearest_existing_directory(path) else {
+        return false;
+    };
+    let Some((root_parent, root_missing_components)) = nearest_existing_directory(root) else {
+        return false;
+    };
+
+    path_missing_components == root_missing_components
+        && same_file::is_same_file(&path_parent, &root_parent).unwrap_or(false)
+        && directory_is_case_sensitive(&path_parent) == Some(false)
+}
+
+#[cfg(windows)]
+fn nearest_existing_directory(path: &Path) -> Option<(PathBuf, usize)> {
+    let mut path = path;
+    let mut missing_components = 0;
+    loop {
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.is_dir() => {
+                return Some((path.to_path_buf(), missing_components));
             }
+            Ok(_) => return None,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                path = path.parent()?;
+                missing_components += 1;
+            }
+            Err(_) => return None,
         }
     }
-    Ok(removed)
+}
+
+#[cfg(windows)]
+fn directory_is_case_sensitive(path: &Path) -> Option<bool> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FileCaseSensitiveInfo,
+        GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+    let directory = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)
+        .ok()?;
+    let mut case_info = FILE_CASE_SENSITIVE_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            directory.as_raw_handle(),
+            FileCaseSensitiveInfo,
+            std::ptr::from_mut(&mut case_info).cast(),
+            std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+        )
+    };
+    (inspected != 0).then_some(case_info.Flags & FILE_CS_FLAG_CASE_SENSITIVE_DIR != 0)
+}
+
+#[cfg(unix)]
+fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
+    let metadata = match fs::symlink_metadata(link) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+        }
+    };
+    if !metadata.file_type().is_symlink() {
+        return Ok(None);
+    }
+    let target = fs::read_link(link)
+        .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?;
+    Ok(Some(resolve_relative_link_target(link, target)))
+}
+
+#[cfg(windows)]
+fn dir_link_target(link: &Path) -> Result<Option<PathBuf>> {
+    const ERROR_NOT_A_REPARSE_POINT: i32 = 4390;
+
+    let metadata = match fs::symlink_metadata(link) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(err)
+                .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+        }
+    };
+    let target = if metadata.file_type().is_symlink() {
+        fs::read_link(link)
+            .wrap_err_with(|| format!("failed to read link: {}", display_path(link)))?
+    } else {
+        match junction::get_target(link) {
+            Ok(target) => target,
+            Err(err)
+                if err.kind() == std::io::ErrorKind::NotFound
+                    || err.raw_os_error() == Some(ERROR_NOT_A_REPARSE_POINT)
+                    || (err.kind() == std::io::ErrorKind::Other
+                        && err.raw_os_error().is_none()) =>
+            {
+                return Ok(None);
+            }
+            Err(err) => {
+                return Err(err).wrap_err_with(|| {
+                    format!("failed to inspect junction: {}", display_path(link))
+                });
+            }
+        }
+    };
+    Ok(Some(resolve_relative_link_target(link, target)))
+}
+
+fn resolve_relative_link_target(link: &Path, target: PathBuf) -> PathBuf {
+    if target.is_absolute() {
+        target
+    } else {
+        link.parent().unwrap_or(link).join(target)
+    }
+}
+
+#[cfg(unix)]
+pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    // POSIX has no standard unlink-by-handle operation, so a concurrent replacement can still
+    // occur between this check and remove_file. The latter cannot remove directories; callers
+    // must keep the parent directory protected from untrusted writers.
+    if dir_link_target(link)?.is_none() {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
+    fs::remove_file(link)
+        .wrap_err_with(|| format!("failed to remove symlink: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+    let link_handle = open_link_for_removal(link)?;
+    remove_open_link(link_handle)
+        .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
+}
+
+#[cfg(windows)]
+fn open_link_for_removal(link: &Path) -> Result<File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        DELETE, FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FileAttributeTagInfo, GetFileInformationByHandleEx,
+    };
+    use windows_sys::Win32::System::SystemServices::{
+        IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+    };
+
+    let file = fs::OpenOptions::new()
+        .access_mode(DELETE)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+        .open(link)
+        .wrap_err_with(|| format!("failed to open link: {}", display_path(link)))?;
+    let mut tag_info = FILE_ATTRIBUTE_TAG_INFO::default();
+    let inspected = unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileAttributeTagInfo,
+            std::ptr::from_mut(&mut tag_info).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    };
+    if inspected == 0 {
+        return Err(std::io::Error::last_os_error())
+            .wrap_err_with(|| format!("failed to inspect link: {}", display_path(link)));
+    }
+    if !matches!(
+        tag_info.ReparseTag,
+        IO_REPARSE_TAG_SYMLINK | IO_REPARSE_TAG_MOUNT_POINT
+    ) {
+        bail!("refusing to remove non-link: {}", display_path(link));
+    }
+    Ok(file)
+}
+
+#[cfg(windows)]
+fn remove_open_link(file: File) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+    };
+
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    let removed = unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            std::ptr::from_ref(&disposition).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    };
+    if removed == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    drop(file);
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -1023,20 +1366,39 @@ pub fn has_shebang(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Extensions that `windows_executable_extensions` lists but `CreateProcess` cannot
-/// launch: they need an interpreter (`pwsh -File`, `wscript`/`cscript`). `.bat` and
-/// `.cmd` are not here — std routes those through cmd.exe with escaped arguments.
+/// Extensions `std::process::Command` can start from a path alone on Windows: `exe` and `com`
+/// natively, `bat` and `cmd` because std routes those through cmd.exe with escaped arguments.
+/// Anything else needs an interpreter named for it — `pwsh -File` for a `.ps1`,
+/// `cscript` for a `.vbs`, whatever a shebang asks for.
 ///
-/// `pub(crate)` so `task::task_executor` can assert that its `shell_from_extension` names
-/// an interpreter for every entry. That function is not `cfg(windows)`-gated, so it cannot
-/// match against this list directly; the correspondence is enforced by a test instead.
+/// A fixed list on purpose. It describes what the OS can start, which
+/// `windows_executable_extensions` has no say over: that setting decides what mise *treats* as
+/// executable. Deriving it the other way round — subtracting known interpreter-only extensions
+/// from the setting — happened to be right for the default list and wrong for any other, since a
+/// user who added `sh` or `py` was then answered "yes, `CreateProcess` can start this" and the
+/// task died with "not a valid Win32 application" instead of using its shebang.
+///
+/// `pub(crate)` so `task::task_executor` can assert that `shell_from_extension` names an
+/// interpreter for every default extension this list excludes.
 #[cfg(windows)]
-pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
+pub(crate) const OS_LAUNCHABLE_EXTENSIONS: [&str; 4] = ["exe", "com", "bat", "cmd"];
+
+/// Whether the OS can start a file with this extension without an interpreter.
+///
+/// Compared case-insensitively, the way [`has_known_executable_extension`] does: Windows
+/// extensions are not case-sensitive, so `PIPX.PS1` is the same file as `pipx.ps1`.
+#[cfg(windows)]
+pub(crate) fn os_can_launch_extension(ext: &str) -> bool {
+    OS_LAUNCHABLE_EXTENSIONS
+        .iter()
+        .any(|known| ext.eq_ignore_ascii_case(known))
+}
 
 /// Check if a file can be executed directly by the OS without a shell wrapper.
 /// On Unix, this checks the executable permission bit.
-/// On Windows, this checks for a known executable extension (.bat, .cmd, .exe, ...)
-/// minus the ones that only an interpreter can run.
+/// On Windows, it takes both questions in turn: does mise treat this extension as executable
+/// (`windows_executable_extensions`, which a user may narrow), and can the OS actually start it
+/// ([`OS_LAUNCHABLE_EXTENSIONS`], which a user may not widen)?
 ///
 /// Distinct from [`is_executable`], which on Windows deliberately also accepts a
 /// shebang-only file. Callers that hand the path to `Command::new` need this one:
@@ -1046,29 +1408,28 @@ pub(crate) const INTERPRETER_ONLY_EXTENSIONS: [&str; 2] = ["ps1", "vbs"];
 /// Note that on Windows this never touches the filesystem — it is pure extension
 /// inspection, so it answers true for a `foo.exe` that does not exist. `is_executable`
 /// checks `is_file()` inline; this one does not. A lookup that walks candidate paths must
-/// compose the two, which is what `backend::is_spawnable` does.
+/// compose the two, which is what [`is_spawnable`] does.
 pub fn can_execute_directly(path: &Path) -> bool {
     #[cfg(windows)]
     {
-        // Compared case-insensitively, the way has_known_executable_extension does:
-        // Windows extensions are not case-sensitive, so PIPX.PS1 is the same file.
-        if path
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .is_some_and(|ext| {
-                INTERPRETER_ONLY_EXTENSIONS
-                    .iter()
-                    .any(|only| ext.eq_ignore_ascii_case(only))
-            })
-        {
-            return false;
-        }
         has_known_executable_extension(path)
+            && path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(os_can_launch_extension)
     }
     #[cfg(not(windows))]
     {
         is_executable(path)
     }
+}
+
+/// True when the OS will accept `path` as the program argument of a spawn.
+pub(crate) fn is_spawnable(path: &Path) -> bool {
+    if cfg!(windows) && !path.is_file() {
+        return false;
+    }
+    can_execute_directly(path)
 }
 
 #[cfg(unix)]
@@ -1221,6 +1582,18 @@ pub fn which<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     path
 }
 
+/// Returns the first directly spawnable executable in PATH, expanding configured
+/// executable extensions on Windows when `name` has no extension.
+pub(crate) fn which_spawnable(name: &str) -> Option<PathBuf> {
+    let names = executable_names(name);
+    env::PATH.iter().find_map(|dir| {
+        names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate| is_spawnable(candidate))
+    })
+}
+
 /// returns the first executable in PATH
 /// will include mise bin paths or other paths added by mise
 pub fn which_non_pristine<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
@@ -1337,6 +1710,29 @@ fn _which<P: AsRef<Path>>(name: P, paths: &[PathBuf]) -> Option<PathBuf> {
         let bin = path.join(name);
         if is_executable(&bin) { Some(bin) } else { None }
     })
+}
+
+#[cfg(not(windows))]
+pub(crate) fn executable_names(bin: &str) -> Vec<String> {
+    vec![bin.to_string()]
+}
+
+#[cfg(windows)]
+pub(crate) fn executable_names(bin: &str) -> Vec<String> {
+    let mut names = vec![bin.to_string()];
+    if Path::new(bin).extension().is_none() {
+        for ext in &Settings::get().windows_executable_extensions {
+            let name = if ext.is_empty() {
+                bin.to_string()
+            } else {
+                format!("{bin}.{ext}")
+            };
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+    }
+    names
 }
 
 pub fn un_gz(input: &Path, dest: &Path) -> Result<()> {
@@ -2647,6 +3043,181 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn test_symlink_prefix_detection_uses_filesystem_casing() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "Windows path containment should honor filesystem casing semantics"
+        );
+
+        fs::remove_dir_all(&prefix).unwrap();
+        assert!(
+            is_symlink_target_within(&link, &dir.path().join("PROVIDER")).unwrap(),
+            "dangling Windows targets should retain case-insensitive containment"
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_dangling_symlink_prefix_detection_honors_case_sensitive_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let case_sensitive_parent = dir.path().join("case-sensitive");
+        fs::create_dir(&case_sensitive_parent).unwrap();
+        if enable_directory_case_sensitivity(&case_sensitive_parent).is_err() {
+            return;
+        }
+        assert_eq!(
+            directory_is_case_sensitive(&case_sensitive_parent),
+            Some(true)
+        );
+
+        let prefix = case_sensitive_parent.join("Provider");
+        let target = prefix.join("version");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+        fs::remove_dir_all(&prefix).unwrap();
+
+        assert!(
+            !is_symlink_target_within(&link, &case_sensitive_parent.join("PROVIDER")).unwrap(),
+            "case-sensitive directories must not equate differently-cased dangling paths"
+        );
+    }
+
+    #[cfg(windows)]
+    fn enable_directory_case_sensitivity(path: &Path) -> std::io::Result<()> {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_CASE_SENSITIVE_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+            FileCaseSensitiveInfo, SetFileInformationByHandle,
+        };
+        use windows_sys::Win32::System::SystemServices::FILE_CS_FLAG_CASE_SENSITIVE_DIR;
+
+        let directory = fs::OpenOptions::new()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        let case_info = FILE_CASE_SENSITIVE_INFO {
+            Flags: FILE_CS_FLAG_CASE_SENSITIVE_DIR,
+        };
+        let updated = unsafe {
+            SetFileInformationByHandle(
+                directory.as_raw_handle(),
+                FileCaseSensitiveInfo,
+                std::ptr::from_ref(&case_info).cast(),
+                std::mem::size_of::<FILE_CASE_SENSITIVE_INFO>() as u32,
+            )
+        };
+        if updated == 0 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_prefix_detection_uses_the_immediate_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let cellar = dir.path().join("Cellar");
+        let target = cellar.join("node@22").join("22.0.0");
+        let opt = dir.path().join("opt");
+        let opt_entry = opt.join("node@22");
+        let link = dir.path().join("link");
+        fs::create_dir_all(&target).unwrap();
+        fs::create_dir_all(&opt).unwrap();
+        std::os::unix::fs::symlink(&target, &opt_entry).unwrap();
+        std::os::unix::fs::symlink(&opt_entry, &link).unwrap();
+
+        assert!(!is_symlink_target_within(&link, &cellar).unwrap());
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
+
+        fs::remove_file(&opt_entry).unwrap();
+        assert!(is_symlink_target_within(&link, &opt).unwrap());
+    }
+
+    #[test]
+    fn test_remove_symlink_or_junction_rejects_non_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        let directory = dir.path().join("directory");
+        fs::write(&file, "contents").unwrap();
+        fs::create_dir(&directory).unwrap();
+
+        assert!(remove_symlink_or_junction(&file).is_err());
+        assert!(remove_symlink_or_junction(&directory).is_err());
+        assert!(file.is_file());
+        assert!(directory.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_symlink_or_junction_removes_a_directory_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        fs::create_dir(&target).unwrap();
+        match std::os::windows::fs::symlink_dir(&target, &link) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => return,
+            Err(err) => panic!("failed to create directory symlink: {err}"),
+        }
+
+        remove_symlink_or_junction(&link).unwrap();
+        assert!(fs::symlink_metadata(&link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_remove_open_link_preserves_path_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        let moved_link = dir.path().join("moved-link");
+        fs::create_dir(&target).unwrap();
+        junction::create(&target, &link).unwrap();
+
+        let link_handle = open_link_for_removal(&link).unwrap();
+        fs::rename(&link, &moved_link).unwrap();
+        fs::create_dir(&link).unwrap();
+        remove_open_link(link_handle).unwrap();
+
+        assert!(link.is_dir());
+        assert!(fs::symlink_metadata(&moved_link).is_err());
+        assert!(target.is_dir());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_symlink_prefix_detection_rejects_escapes() {
+        let dir = tempfile::tempdir().unwrap();
+        let prefix = dir.path().join("source");
+        let foreign = dir.path().join("foreign");
+        let escaped = dir.path().join("escaped");
+        fs::create_dir_all(&prefix).unwrap();
+        fs::create_dir_all(&foreign).unwrap();
+
+        std::os::unix::fs::symlink(prefix.join("..").join("foreign"), &escaped).unwrap();
+        assert!(!is_symlink_target_within(&escaped, &prefix).unwrap());
+
+        let relative_inside = dir.path().join("relative-inside");
+        std::os::unix::fs::symlink("source/version", &relative_inside).unwrap();
+        assert!(is_symlink_target_within(&relative_inside, &prefix).unwrap());
+
+        let relative_escape = dir.path().join("relative-escape");
+        std::os::unix::fs::symlink("source/../foreign", &relative_escape).unwrap();
+        assert!(!is_symlink_target_within(&relative_escape, &prefix).unwrap());
+    }
+
+    #[test]
     #[cfg(unix)]
     fn test_copy_dir_all_preserve_symlinks_does_not_follow_loops() {
         let dir = tempfile::tempdir().unwrap();
@@ -3888,5 +4459,104 @@ mod tests {
         // A path outside the cwd falls through to `display_path`, which settles separators too.
         let outside = display_rel_path(Path::new("relative-to-nothing"));
         assert!(!outside.starts_with('.'), "{outside}");
+    }
+
+    /// The list answers only "can the OS start this", so it is fixed and does not consult
+    /// settings. Case-insensitive, since Windows extensions are.
+    #[cfg(windows)]
+    #[test]
+    fn os_can_launch_extension_names_only_what_the_os_starts() {
+        for ext in ["exe", "com", "bat", "cmd", "EXE", "Cmd"] {
+            assert!(os_can_launch_extension(ext), "{ext}");
+        }
+        // ps1 and vbs need an interpreter; the rest are extensions a user might add to
+        // `windows_executable_extensions`, which does not make CreateProcess able to start them.
+        for ext in ["ps1", "PS1", "vbs", "sh", "py", "js", ""] {
+            assert!(!os_can_launch_extension(ext), "{ext}");
+        }
+    }
+
+    /// Under the shipped default `windows_executable_extensions` the answers are exactly what
+    /// they were before the whitelist replaced the interpreter-only blacklist -- the two agree on
+    /// that list, which is why the old shape looked correct.
+    #[cfg(windows)]
+    #[test]
+    fn can_execute_directly_is_unchanged_for_the_default_extensions() {
+        for name in [r"C:\x\tool.exe", r"C:\x\tool.com", "tool.bat", "tool.CMD"] {
+            assert!(can_execute_directly(Path::new(name)), "{name}");
+        }
+        for name in ["tool.ps1", "tool.PS1", "tool.vbs", "tool", r"C:\x\tool"] {
+            assert!(!can_execute_directly(Path::new(name)), "{name}");
+        }
+    }
+
+    fn io(raw: i32) -> std::io::Error {
+        std::io::Error::from_raw_os_error(raw)
+    }
+
+    /// `mise uninstall` of a tool whose binary is still running reported only "Access is denied",
+    /// which on Windows is nearly always that and nothing else.
+    #[cfg(windows)]
+    #[test]
+    fn an_in_use_file_says_so() {
+        for raw in [5, 32] {
+            let hint = windows_io_hint(Path::new(r"C:\x\installs\jq\1.8.2"), &io(raw))
+                .unwrap_or_else(|| panic!("raw {raw} should be explained"));
+            assert!(hint.contains("in use"), "raw {raw}: {hint}");
+        }
+    }
+
+    /// Measured: the atomic write breaks at a 253-character target while `fs::rename` on the same
+    /// tree succeeds at 415, so "path not found" here is the length rather than a missing parent.
+    #[cfg(windows)]
+    #[test]
+    fn a_path_near_the_limit_says_so() {
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(300)));
+        let hint = windows_io_hint(&long, &io(3)).expect("a long path should be explained");
+        assert!(hint.contains("260"), "{hint}");
+    }
+
+    /// The controls, and the point of the whole thing: do not attach an explanation to an error
+    /// that already means what it says.
+    #[cfg(windows)]
+    #[test]
+    fn an_ordinary_error_is_left_alone() {
+        // A short path that is genuinely absent is not the `MAX_PATH` case.
+        assert!(windows_io_hint(Path::new(r"C:\x\gone"), &io(2)).is_none());
+        assert!(windows_io_hint(Path::new(r"C:\x\gone"), &io(3)).is_none());
+
+        // And neither is an unrelated failure that happens to occur deep in a tree. Length alone
+        // used to be enough to trigger the advice, which answered "disk full" with "shorten it".
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(300)));
+        for raw in [2, 39, 112] {
+            assert!(windows_io_hint(&long, &io(raw)).is_none(), "raw {raw}");
+        }
+    }
+
+    /// The limit counts UTF-16 code units; `OsStr::len()` is WTF-8 bytes on Windows. A path of
+    /// non-ASCII characters is under the limit while measuring well over it in bytes.
+    #[cfg(windows)]
+    #[test]
+    fn the_limit_is_measured_the_way_windows_measures_it() {
+        use std::os::windows::ffi::OsStrExt;
+
+        // 200 three-byte characters: 600 bytes, 200 UTF-16 units.
+        let path = PathBuf::from(format!(r"C:\{}", "あ".repeat(200)));
+        assert!(path.as_os_str().len() > MAX_PATH, "premise");
+        assert!(
+            path.as_os_str().encode_wide().count() < MAX_PATH - 16,
+            "premise"
+        );
+        assert!(windows_io_hint(&path, &io(3)).is_none());
+    }
+
+    /// unix has neither failure mode: a running binary can be unlinked, and there is no `MAX_PATH`.
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_is_never_annotated() {
+        let long = PathBuf::from(format!("/{}", "d".repeat(300)));
+        for (path, raw) in [(Path::new("/x/installs/jq/1.8.2"), 13), (long.as_path(), 2)] {
+            assert!(windows_io_hint(path, &io(raw)).is_none(), "{path:?}");
+        }
     }
 }

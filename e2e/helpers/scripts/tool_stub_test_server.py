@@ -41,6 +41,11 @@ class ToolStubTestHandler(http.server.SimpleHTTPRequestHandler):
                 }
             })
             self.wfile.write(content.encode('utf-8'))
+        elif self.path == '/tool':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.end_headers()
+            self.wfile.write(b'#!/bin/sh\necho tool-stub-checksum\n')
         else:
             super().do_GET()
 

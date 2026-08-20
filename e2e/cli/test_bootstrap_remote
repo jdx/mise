@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mkdir -p fakebin source bin "bin with space" "$HOME/.config/mise" "$HOME/.local/bin"
+mkdir -p fakebin source bin "bin with space" shared-target/nested "$HOME/.config/mise" "$HOME/.local/bin"
 ssh_log="$PWD/ssh.log"
 remote_stage="/tmp/mise-bootstrap.e2e-$$"
 bad_remote_stage="$remote_stage invalid"
@@ -22,6 +22,10 @@ cp bin/mise "bin with space/mise"
 
 cat >"$HOME/.local/bin/mise" <<'EOF'
 #!/bin/sh
+if test "${1:-}" = "--cd" && test "${MISE_ENV:-}" = "unexpected"; then
+  echo "inherited remote MISE_ENV was not cleared" >&2
+  exit 43
+fi
 if test "${1:-}" = "--cd" && test -e "$2/layered-secret"; then
   echo "layered remote exclude was not applied" >&2
   exit 42
@@ -30,6 +34,9 @@ exec "$MISE_SOURCE" "$@"
 EOF
 chmod 700 "$HOME/.local/bin/mise"
 touch layered-secret
+echo shared >shared-target/value
+ln -s ../value shared-target/nested/value-link
+ln -s ../shared-target source/shared
 
 cat >fakebin/ssh <<'EOF'
 #!/bin/sh
@@ -95,12 +102,14 @@ cat >source/mise.toml <<EOF
 [bootstrap.remote]
 source = "."
 exclude = ["generated", "layered-secret"]
+mise_env = ["default", "linux"]
 
 [bootstrap.remote.hosts.cache]
 host = "example.test"
 user = "ubuntu"
 tags = ["cache", "production"]
 remote_mise = "mise"
+mise_env = ["server", "linux"]
 
 [bootstrap.remote.hosts.relative]
 host = "relative.test"
@@ -109,6 +118,12 @@ remote_mise = "./bin/mise"
 [bootstrap.remote.hosts.installer]
 host = "installer.test"
 bootstrap_command = ". $installer"
+
+[bootstrap.remote.hosts.copy-links]
+host = "copy-links.test"
+source = "source"
+copy_link = ["shared"]
+remote_mise = "$mise_bin"
 EOF
 
 cat >"$HOME/.config/mise/config.toml" <<'EOF'
@@ -123,24 +138,50 @@ assert_fail "test -d '$bad_remote_stage'"
 
 assert_succeed "mise bootstrap remote cache --dry-run --yes --skip tools"
 assert_contains "cat $ssh_log" "ubuntu@example.test"
+assert_contains "cat $ssh_log" "MISE_ENV=server,linux"
 assert_contains "cat $ssh_log" "bootstrap --dry-run --yes --skip tools"
 assert_fail "test -d $remote_stage"
+
+copy_link_stage="$remote_stage-copy-link"
+assert_succeed "REMOTE_STAGE=$copy_link_stage mise bootstrap remote copy-links --dry-run --yes --keep-staging"
+assert_succeed "test -d $copy_link_stage/project/shared"
+assert_fail "test -L $copy_link_stage/project/shared"
+assert "cat $copy_link_stage/project/shared/value" "shared"
+assert_succeed "test -L $copy_link_stage/project/shared/nested/value-link"
+
+copy_links_stage="$remote_stage-copy-links"
+assert_succeed "REMOTE_STAGE=$copy_links_stage mise bootstrap remote copy-links --copy-links --dry-run --yes --keep-staging"
+assert_succeed "test -d $copy_links_stage/project/shared"
+assert_fail "test -L $copy_links_stage/project/shared"
+assert_succeed "test -f $copy_links_stage/project/shared/nested/value-link"
+assert_fail "test -L $copy_links_stage/project/shared/nested/value-link"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote relative --dry-run --yes"
 assert_contains "cat $ssh_log" "$remote_stage/project/bin/mise version"
+assert_contains "cat $ssh_log" "MISE_ENV=default,linux"
 assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote cache --remote-env ci,dotfiles --dry-run --yes"
+assert_contains "cat $ssh_log" "MISE_ENV=ci,dotfiles"
+assert_not_contains "cat $ssh_log" "MISE_ENV=server,linux"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote relative --all --dry-run --yes"
 assert \
   "grep \"sh -c 'set -eu\" $ssh_log | awk '{ for (i = 1; i <= NF; i++) if (\$i ~ /\\.test$/) print \$i }'" \
-  $'relative.test\nubuntu@example.test\ninstaller.test\nlayered.test'
+  $'relative.test\nubuntu@example.test\ninstaller.test\ncopy-links.test\nlayered.test'
 assert_fail "test -d $remote_stage"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote layered --dry-run --yes"
 assert_contains "cat $ssh_log" "$HOME/.local/bin/mise version"
+
+: >"$ssh_log"
+assert_succeed "MISE_ENV=unexpected mise bootstrap remote layered --dry-run --yes"
+assert_contains "cat $ssh_log" "'MISE_ENV=' $HOME/.local/bin/mise --cd"
+assert_not_contains "cat $ssh_log" "MISE_ENV=unexpected"
 
 : >"$ssh_log"
 assert_succeed "mise bootstrap remote --host root@ad-hoc.test --source . --remote-mise $HOME/.local/bin/mise --dry-run --yes"

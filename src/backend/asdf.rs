@@ -228,8 +228,6 @@ impl AsdfBackend {
     ) -> Result<ScriptManager> {
         let mut sm = self.plugin.script_man.clone();
         for (key, value) in tv.request.options().opts_as_strings() {
-            let k = format!("RTX_TOOL_OPTS__{}", key.to_uppercase());
-            sm = sm.with_env(k, value.clone());
             let k = format!("MISE_TOOL_OPTS__{}", key.to_uppercase());
             sm = sm.with_env(k, value);
         }
@@ -241,7 +239,6 @@ impl AsdfBackend {
         }
         if let Some(project_root) = &config.project_root {
             let project_root = project_root.to_string_lossy().to_string();
-            sm = sm.with_env("RTX_PROJECT_ROOT", project_root.clone());
             sm = sm.with_env("MISE_PROJECT_ROOT", project_root);
         }
         let install_type = match &tv.request {
@@ -268,10 +265,6 @@ impl AsdfBackend {
             .with_env("ASDF_INSTALL_PATH", &install)
             .with_env("ASDF_INSTALL_TYPE", install_type)
             .with_env("ASDF_INSTALL_VERSION", install_version)
-            .with_env("RTX_DOWNLOAD_PATH", &download)
-            .with_env("RTX_INSTALL_PATH", &install)
-            .with_env("RTX_INSTALL_TYPE", install_type)
-            .with_env("RTX_INSTALL_VERSION", install_version)
             .with_env("MISE_DOWNLOAD_PATH", download)
             .with_env("MISE_INSTALL_PATH", install)
             .with_env("MISE_INSTALL_TYPE", install_type)

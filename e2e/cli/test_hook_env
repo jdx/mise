@@ -26,3 +26,26 @@ assert_contains "mise current hyphen-tool" "1.0.0"
 
 mise shell --unset hyphen-tool
 assert "echo ${MISE_HYPHEN_TOOL_VERSION+set}" ""
+
+# With nothing to detect from, mise has to say so rather than abort. `SHELL=""` is the only way
+# to reach that on unix -- unset it and mise falls back to "sh" -- but it is the *default* path on
+# Windows, where the value read is COMSPEC. Unsetting MISE_SHELL too: an activated session sets it,
+# and it would satisfy detection on its own.
+assert_fail "env -u MISE_SHELL SHELL= mise hook-env" "could not tell which shell"
+# The control: the same invocation with a shell named still works, so the assertion above is about
+# detection and not about hook-env being broken.
+assert_succeed "env -u MISE_SHELL SHELL= mise hook-env --shell bash"
+
+# `mise shell` and `mise deactivate` take no shell argument, so detection is all they have. Both
+# check `__MISE_DIFF` first and report "not activated" without it, so reaching the detection error
+# needs a session that looks activated with nothing to detect from. The value does not have to be a
+# real diff -- mise warns that it could not deserialize it and carries on -- which is exactly how
+# these two used to abort rather than report anything.
+assert_fail "env -u MISE_SHELL __MISE_DIFF=x SHELL= mise deactivate" "could not tell which shell"
+assert_fail "env -u MISE_SHELL __MISE_DIFF=x SHELL= mise shell tiny@1" "could not tell which shell"
+# The control for the guard itself: without `__MISE_DIFF` neither reaches detection at all, so the
+# two assertions above would pass for the wrong reason if the guard stopped working. It has to be
+# unset explicitly -- this script activates mise at the top, so the shell running these assertions
+# has one. Asserted on the exit status rather than the message, which goes to stderr and is not
+# what `assert_contains` reads.
+assert_succeed "env -u MISE_SHELL -u __MISE_DIFF SHELL= mise deactivate"

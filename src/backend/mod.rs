@@ -219,6 +219,25 @@ fn has_local_version_listing_option_override(
     resolved_opts
         .has_any_key_from_sources(version_listing_opt_keys, VERSIONS_HOST_LOCAL_OPT_SOURCES)
 }
+
+/// Digest of the listing-relevant tool options, used to partition the remote-version cache.
+///
+/// The cached list is *shaped* by these options — `version_prefix` decides which tags survive
+/// and how they are spelled, `api_url` decides which host answered — so two different sets of
+/// values must not share a cache entry. Collected into a `BTreeMap` so the digest depends on
+/// the values rather than on the order the options were inserted, the same way asdf's
+/// `version_listing_cache_context` does.
+///
+/// `get_string` rather than `get`: the latter yields `None` for any non-string TOML scalar,
+/// which would quietly collapse two distinct values into one key.
+fn listing_option_digest(opts: &ToolVersionOptions, version_listing_opt_keys: &[&str]) -> String {
+    let values: BTreeMap<&str, String> = version_listing_opt_keys
+        .iter()
+        .filter_map(|key| opts.get_string(key).map(|value| (*key, value)))
+        .collect();
+    hash::hash_to_str(&values)
+}
+
 /// Remaps a backend-discovered path from the concrete install dir to the
 /// runtime path users put on PATH.
 ///
@@ -616,45 +635,10 @@ fn parse_matching_registry_idiomatic_file(
     }
 }
 
-fn executable_names(bin: &str) -> Vec<String> {
-    let mut names = vec![bin.to_string()];
-    if cfg!(target_os = "windows") && Path::new(bin).extension().is_none() {
-        for ext in &Settings::get().windows_executable_extensions {
-            let name = if ext.is_empty() {
-                bin.to_string()
-            } else {
-                format!("{bin}.{ext}")
-            };
-            if !names.contains(&name) {
-                names.push(name);
-            }
-        }
-    }
-    names
-}
-
 fn which_non_pristine_executable(bin: &str) -> Option<PathBuf> {
-    executable_names(bin)
+    file::executable_names(bin)
         .into_iter()
         .find_map(file::which_non_pristine)
-}
-
-/// True when the OS will accept `path` as the program argument of a spawn.
-///
-/// [`file::can_execute_directly`] is *pure extension inspection* on Windows — it never
-/// touches the filesystem, so it answers true for a `foo.exe` that is not there. The
-/// `is_file()` guard supplies the existence check that [`file::is_executable`] performs
-/// inline; without it a lookup built on this would hand back paths to missing files.
-///
-/// The guard is `cfg!(windows)`-gated deliberately. On unix `can_execute_directly`
-/// delegates to `is_executable`, which stats already — and which answers true for a
-/// mode-0755 *directory*. Adding `is_file()` unconditionally would silently narrow every
-/// unix lookup below it, so unix keeps today's answer exactly.
-fn is_spawnable(path: &Path) -> bool {
-    if cfg!(windows) && !path.is_file() {
-        return false;
-    }
-    file::can_execute_directly(path)
 }
 
 /// Resolve `bin` inside `dirs`, in the order the OS itself resolves: directory-major,
@@ -670,7 +654,7 @@ fn is_spawnable(path: &Path) -> bool {
 ///   searching **past** a candidate it rejects, so `None` means "nothing spawnable
 ///   exists" rather than "the first thing I looked at was not spawnable".
 ///
-/// Directory-major only matters on Windows, where [`executable_names`] yields several
+/// Directory-major only matters on Windows, where [`file::executable_names`] yields several
 /// candidates per directory. It is the order `CreateProcess`+`PATHEXT`, `cmd.exe` and the
 /// `which` crate all use, and the order [`Backend::which`] has always used. It diverges
 /// from [`which_non_pristine_executable`], which is *name-major* — the bare name is tried
@@ -678,17 +662,17 @@ fn is_spawnable(path: &Path) -> bool {
 /// directory-major resolves the case this exists for: mise's own node install ships a
 /// shebang `npm` and an `npm.cmd` side by side in one directory, with no `npm.exe`.
 ///
-/// On unix `executable_names` returns exactly one name, so both orders are the same
+/// On unix `file::executable_names` returns exactly one name, so both orders are the same
 /// traversal and this degenerates to `file::_which` with a different predicate.
 fn which_in_dirs<I>(dirs: I, bin: &str, spawnable: bool) -> Option<PathBuf>
 where
     I: IntoIterator<Item = PathBuf>,
 {
-    let names = executable_names(bin);
+    let names = file::executable_names(bin);
     dirs.into_iter().find_map(|dir| {
         names.iter().map(|name| dir.join(name)).find(|candidate| {
             if spawnable {
-                is_spawnable(candidate)
+                file::is_spawnable(candidate)
             } else {
                 candidate.exists() && file::is_executable(candidate)
             }
@@ -723,6 +707,14 @@ fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
     let dirs = env::PATH_NON_PRISTINE
         .iter()
         .filter(|p| !skip_shims || !file::is_mise_shims_dir(p))
+        .cloned();
+    which_in_dirs(dirs, bin, true)
+}
+
+pub(crate) fn which_no_shims_spawnable(bin: &str) -> Option<PathBuf> {
+    let dirs = env::PATH_NON_PRISTINE
+        .iter()
+        .filter(|p| !file::is_mise_shims_dir(p))
         .cloned();
     which_in_dirs(dirs, bin, true)
 }
@@ -908,7 +900,7 @@ mod tests {
         for name in ["a.ps1", "b.PS1", "c.vbs", "d.VBS"] {
             let path = dir.path().join(name);
             fs::write(&path, "exit 0\n").unwrap();
-            assert!(!is_spawnable(&path), "{name} must not be spawnable");
+            assert!(!file::is_spawnable(&path), "{name} must not be spawnable");
             assert!(
                 file::is_executable(&path),
                 "{name} should still satisfy the permissive predicate"
@@ -954,10 +946,10 @@ mod tests {
         let subdir = dir.path().join("subdir");
         fs::create_dir(&subdir).unwrap();
 
-        assert!(is_spawnable(&tool));
-        assert!(!is_spawnable(&plain));
+        assert!(file::is_spawnable(&tool));
+        assert!(!file::is_spawnable(&plain));
         assert_eq!(
-            is_spawnable(&subdir),
+            file::is_spawnable(&subdir),
             file::is_executable(&subdir),
             "a mode-0755 directory must be answered the same either way"
         );
@@ -1186,6 +1178,76 @@ mod tests {
             &resolved,
             &["api_url", "version_prefix"],
         ));
+    }
+
+    /// The digest keys a cache, so it has to depend on the values and not on the order the
+    /// options happened to be inserted in — `opts` is insertion-ordered.
+    #[test]
+    fn test_listing_option_digest_is_stable_and_order_independent() {
+        use crate::toolset::ToolVersionOptions;
+
+        let keys = &["api_url", "version_prefix"];
+        let api_url = || toml::Value::String("https://github.example.com/api/v3".into());
+        let prefix = || toml::Value::String("release-".into());
+
+        let mut forward = ToolVersionOptions::default();
+        forward.opts.insert("api_url".to_string(), api_url());
+        forward.opts.insert("version_prefix".to_string(), prefix());
+
+        let mut reverse = ToolVersionOptions::default();
+        reverse.opts.insert("version_prefix".to_string(), prefix());
+        reverse.opts.insert("api_url".to_string(), api_url());
+
+        assert_eq!(
+            listing_option_digest(&forward, keys),
+            listing_option_digest(&reverse, keys),
+        );
+        assert_eq!(
+            listing_option_digest(&forward, keys),
+            listing_option_digest(&forward, keys),
+        );
+    }
+
+    /// Every distinction the version listing depends on has to reach the digest, and nothing
+    /// else may: an install-time option that cannot change the list must not split the cache.
+    #[test]
+    fn test_listing_option_digest_tracks_declared_keys_only() {
+        use crate::toolset::ToolVersionOptions;
+
+        let keys = &["api_url", "version_prefix"];
+        let empty = ToolVersionOptions::default();
+
+        let mut prefix_a = ToolVersionOptions::default();
+        prefix_a.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("a-".into()),
+        );
+
+        let mut prefix_b = ToolVersionOptions::default();
+        prefix_b.opts.insert(
+            "version_prefix".to_string(),
+            toml::Value::String("b-".into()),
+        );
+
+        // The defect this guards: two prefixes that produce different listings sharing an entry.
+        assert_ne!(
+            listing_option_digest(&prefix_a, keys),
+            listing_option_digest(&prefix_b, keys),
+        );
+        assert_ne!(
+            listing_option_digest(&empty, keys),
+            listing_option_digest(&prefix_a, keys),
+        );
+
+        let mut with_install_opt = prefix_a.clone();
+        with_install_opt.opts.insert(
+            "asset_pattern".to_string(),
+            toml::Value::String("tool-{{version}}.tar.gz".into()),
+        );
+        assert_eq!(
+            listing_option_digest(&prefix_a, keys),
+            listing_option_digest(&with_install_opt, keys),
+        );
     }
 
     #[test]
@@ -1472,6 +1534,36 @@ mod tests {
         assert_eq!(
             fuzzy_match_versions(versions, "10", true),
             ["v10.34.5".to_string(), "v10.99.0".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_flavour_query_does_not_cross_a_plus() {
+        // "truffleruby" and "truffleruby+graalvm" are distinct flavours, so a
+        // bare flavour name must not select the other one.
+        let versions = ["truffleruby-34.0.1", "truffleruby+graalvm-34.0.1"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            fuzzy_match_versions(versions.clone(), "truffleruby", true),
+            ["truffleruby-34.0.1".to_string()]
+        );
+        assert_eq!(
+            fuzzy_match_versions(versions, "truffleruby+graalvm", true),
+            ["truffleruby+graalvm-34.0.1".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_match_versions_numeric_query_still_matches_build_metadata() {
+        // `+` remains a separator for numeric queries, where it introduces
+        // semver build metadata rather than a different flavour.
+        let versions = ["1.9.1", "v1.9.1+hotfix.2", "1.9.10"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            fuzzy_match_versions(versions, "1.9.1", true),
+            ["1.9.1".to_string(), "v1.9.1+hotfix.2".to_string()]
         );
     }
 
@@ -1934,6 +2026,8 @@ pub trait Backend: Debug + Send + Sync {
     ///
     /// In offline mode, this reads the existing remote-versions cache without
     /// fetching or writing. If no cache exists, it returns an empty list.
+    /// The returned list applies the backend's configured `version_order`; the
+    /// cached value remains in source order.
     async fn list_remote_versions_with_info(
         &self,
         config: &Arc<Config>,
@@ -1953,14 +2047,19 @@ pub trait Backend: Debug + Send + Sync {
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
-        self.list_remote_versions_with_info_and_options(
-            config,
-            resolved_opts.options(),
-            resolved_opts.options(),
-            refresh,
-            has_local_version_listing_override,
-        )
-        .await
+        let opts = resolved_opts.options();
+        let versions = self
+            .list_remote_versions_with_info_and_options(
+                config,
+                opts,
+                opts,
+                refresh,
+                has_local_version_listing_override,
+            )
+            .await?;
+        Ok(self
+            .version_order(opts)?
+            .order_by(versions, |version| version.version.as_str()))
     }
 
     /// List remote versions while selecting candidates with the active request's options.
@@ -1978,14 +2077,18 @@ pub trait Backend: Debug + Send + Sync {
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
-        self.list_remote_versions_with_info_and_options(
-            config,
-            resolved_opts.options(),
-            opts,
-            refresh,
-            has_local_version_listing_override,
-        )
-        .await
+        let versions = self
+            .list_remote_versions_with_info_and_options(
+                config,
+                resolved_opts.options(),
+                opts,
+                refresh,
+                has_local_version_listing_override,
+            )
+            .await?;
+        Ok(self
+            .version_order(opts)?
+            .order_by(versions, |version| version.version.as_str()))
     }
 
     /// Common remote-version listing hook for both config- and request-aware callers.
@@ -1998,7 +2101,23 @@ pub trait Backend: Debug + Send + Sync {
         refresh: bool,
         has_local_version_listing_override: bool,
     ) -> eyre::Result<Vec<VersionInfo>> {
-        let cache_context = self.remote_version_cache_context(config).await?;
+        // The listing-relevant options shape the cached list, so they belong in its key.
+        // Only local overrides count: a registry-supplied value is identical for everyone, so
+        // one entry is correct for it, and leaving it out keeps the shared versions host
+        // available for the default case.
+        let opt_context = has_local_version_listing_override.then(|| {
+            listing_option_digest(listing_opts, self.remote_version_listing_tool_option_keys())
+        });
+        let cache_context = match (
+            self.remote_version_cache_context(config).await?,
+            opt_context,
+        ) {
+            (Some(backend_context), Some(opt_context)) => {
+                Some(hash::hash_to_str(&(backend_context, opt_context)))
+            }
+            (Some(context), None) | (None, Some(context)) => Some(context),
+            (None, None) => None,
+        };
         let remote_versions = match cache_context.as_deref() {
             Some(context) => self.get_remote_version_cache_with_context(Some(context)),
             None => self.get_remote_version_cache(),
@@ -2042,15 +2161,17 @@ pub trait Backend: Debug + Send + Sync {
                 ba.short, backend_type
             );
             false
-        } else if cache_context.is_some() {
+        } else if has_local_version_listing_override {
+            // Checked before the context: an option override now also produces a cache
+            // context, and this is the message that names the actual cause.
             trace!(
-                "Skipping versions host for {} because local context affects remote version listing",
+                "Skipping versions host for {} because local backend opts affect remote version listing",
                 ba.short,
             );
             false
-        } else if has_local_version_listing_override {
+        } else if cache_context.is_some() {
             trace!(
-                "Skipping versions host for {} because local backend opts affect remote version listing",
+                "Skipping versions host for {} because local context affects remote version listing",
                 ba.short,
             );
             false
@@ -2435,22 +2556,6 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
         None
-    }
-    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
-        let _state_lock = install_state::lock_tool_version(&self.ba().short, version)?;
-        let link = self.ba().installs_path.join(version);
-        if link.exists() {
-            if target.exists() && file::is_symlink_to(&link, target) {
-                install_state::clear_incomplete_marker(&self.ba().short, version)?;
-            }
-            return Ok(None);
-        }
-        file::create_dir_all(link.parent().unwrap())?;
-        let link = file::make_symlink(target, &link)?;
-        if target.exists() {
-            install_state::clear_incomplete_marker(&self.ba().short, version)?;
-        }
-        Ok(Some(link))
     }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
@@ -2949,6 +3054,10 @@ pub trait Backend: Debug + Send + Sync {
         ctx: InstallContext,
         mut tv: ToolVersion,
     ) -> eyre::Result<ToolVersion> {
+        // Toolset installs preflight these options before doing any work, but
+        // direct callers such as `install-into` must be protected here too.
+        tv.request.ensure_safe_install_options()?;
+
         // Check for --locked mode: if enabled and no lockfile URL exists, fail early
         // Exempt tool stubs from lockfile requirements since they are ephemeral
         // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
@@ -3733,8 +3842,9 @@ pub trait Backend: Debug + Send + Sync {
 
     /// Select the ordering policy supported by this backend.
     ///
-    /// Backends must opt in explicitly before `version_order` can affect
-    /// resolution. This keeps opaque version schemes source-ordered by default.
+    /// Backends must opt in explicitly before `version_order` can affect remote
+    /// version listing or resolution. This keeps opaque version schemes
+    /// source-ordered by default.
     fn version_order(&self, opts: &ToolVersionOptions) -> eyre::Result<VersionOrder> {
         if opts.opts.contains_key("version_order") {
             bail!("{} backend does not support version_order", self.get_type())
@@ -4071,6 +4181,7 @@ mod latest_version_tests {
         stable_result: Option<String>,
         stable_info: Option<VersionInfo>,
         remote_versions: Vec<VersionInfo>,
+        listing_keys: &'static [&'static str],
         stable_calls: AtomicUsize,
         stable_info_calls: AtomicUsize,
         list_calls: AtomicUsize,
@@ -4094,6 +4205,7 @@ mod latest_version_tests {
                         ..Default::default()
                     },
                 ],
+                listing_keys: &[],
                 stable_calls: AtomicUsize::new(0),
                 stable_info_calls: AtomicUsize::new(0),
                 list_calls: AtomicUsize::new(0),
@@ -4112,6 +4224,13 @@ mod latest_version_tests {
 
         fn with_remote_versions(mut self, remote_versions: Vec<VersionInfo>) -> Self {
             self.remote_versions = remote_versions;
+            self
+        }
+
+        /// Declare tool options that shape this backend's version listing, the way the real
+        /// github/spm/ubi/http/s3 backends do.
+        fn with_listing_keys(mut self, listing_keys: &'static [&'static str]) -> Self {
+            self.listing_keys = listing_keys;
             self
         }
 
@@ -4136,6 +4255,10 @@ mod latest_version_tests {
 
         fn ba(&self) -> &Arc<BackendArg> {
             &self.ba
+        }
+
+        fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
+            self.listing_keys
         }
 
         async fn _list_remote_versions(
@@ -4590,6 +4713,86 @@ mod latest_version_tests {
         );
     }
 
+    /// The regression this fixes: two option values that produce different listings shared one
+    /// cache entry, so whichever ran first answered for both. `short` is the same for the two
+    /// (inline opts are stripped from it), so they do share a cache *directory* — only the key
+    /// keeps them apart.
+    #[tokio::test]
+    async fn test_remote_versions_cache_is_partitioned_by_listing_options() {
+        let config = Config::get().await.unwrap();
+        let version = |v: &str| VersionInfo {
+            version: v.to_string(),
+            ..Default::default()
+        };
+
+        let alpha = LatestBackend::new("test-listing-opts-partition[version_prefix=a-]")
+            .with_listing_keys(&["version_prefix"])
+            .with_remote_versions(vec![version("1.0.0")]);
+        let beta = LatestBackend::new("test-listing-opts-partition[version_prefix=b-]")
+            .with_listing_keys(&["version_prefix"])
+            .with_remote_versions(vec![version("2.0.0")]);
+        // Same value as `alpha`, different canned list: it must never be asked for it.
+        let alpha_again = LatestBackend::new("test-listing-opts-partition[version_prefix=a-]")
+            .with_listing_keys(&["version_prefix"])
+            .with_remote_versions(vec![version("3.0.0")]);
+        assert_eq!(alpha.ba().cache_path, beta.ba().cache_path);
+        let _ = fs::remove_dir_all(&alpha.ba().cache_path);
+
+        assert_eq!(
+            alpha.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+        // The defect: this read back the list `alpha` had cached under the shared key.
+        assert_eq!(
+            beta.list_remote_versions(&config).await.unwrap(),
+            vec!["2.0.0".to_string()]
+        );
+        // Same option value, same entry — which is what shows the key follows the value rather
+        // than the instance, and that the fix did not trade staleness for a refetch every time.
+        assert_eq!(
+            alpha_again.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+        assert_eq!(alpha_again.list_calls(), 0);
+    }
+
+    /// The other half of it: declaring listing options must not partition anything on its own.
+    /// With no local override there is no context, so the list has to land on the contextless
+    /// entry — that is the state in which the shared versions host stays available, and a
+    /// context here would take it away from every default installation of the tool.
+    #[tokio::test]
+    async fn test_declared_listing_keys_without_override_use_the_default_cache_entry() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-listing-opts-shared")
+            .with_listing_keys(&["api_url", "version_prefix"])
+            .with_remote_versions(vec![VersionInfo {
+                version: "1.0.0".to_string(),
+                ..Default::default()
+            }]);
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+
+        assert_eq!(
+            backend.list_remote_versions(&config).await.unwrap(),
+            vec!["1.0.0".to_string()]
+        );
+
+        // `get_remote_version_cache()` is the `context: None` handle. Had a context been
+        // produced, the list would have been written somewhere else and this would be empty.
+        let cached = backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .get_cached()
+            .unwrap();
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].version, "1.0.0");
+    }
+
     #[tokio::test]
     async fn test_offline_latest_uses_fast_path_when_available() {
         let config = Config::get().await.unwrap();
@@ -4687,6 +4890,7 @@ mod latest_version_tests {
             stable_result: Some("9.9.9".to_string()),
             stable_info: None,
             remote_versions: vec![],
+            listing_keys: &[],
             stable_calls: AtomicUsize::new(0),
             stable_info_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
@@ -4853,10 +5057,23 @@ pub(crate) fn fuzzy_match_versions(
     // but NOT "1.20". The old pattern achieved this by requiring a separator after the query.
     // However, vendor-prefixed queries like "temurin-" need to match digits immediately after
     // the prefix (e.g. "temurin-25.0.1").
+    // `+` separates semver build metadata ("1.9.1" -> "1.9.1+hotfix.2"), but it
+    // also separates flavour names ("truffleruby" -> "truffleruby+graalvm"). Only
+    // treat it as a separator for numeric queries, so a bare flavour name cannot
+    // select a different flavour.
+    let numeric_query = query
+        .strip_prefix(['v', 'V'])
+        .unwrap_or(query)
+        .starts_with(|c: char| c.is_ascii_digit());
+    let sep = if query == "latest" || numeric_query {
+        "[+\\-.]"
+    } else {
+        "[\\-.]"
+    };
     let query_regex = if query != "latest" && query.ends_with('-') {
         Regex::new(&format!("^{query_pattern}.*$")).unwrap()
     } else {
-        Regex::new(&format!("^{query_pattern}([+\\-.].+)?$")).unwrap()
+        Regex::new(&format!("^{query_pattern}({sep}.+)?$")).unwrap()
     };
 
     // Also create a regex without the 'v' prefix if query starts with 'v'
@@ -4866,7 +5083,7 @@ pub(crate) fn fuzzy_match_versions(
         let re = if query.ends_with('-') {
             Regex::new(&format!("^{without_v}.*$")).unwrap()
         } else {
-            Regex::new(&format!("^{without_v}([+\\-.].+)?$")).unwrap()
+            Regex::new(&format!("^{without_v}({sep}.+)?$")).unwrap()
         };
         Some(re)
     } else {

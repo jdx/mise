@@ -29,6 +29,14 @@ SSH connection timeout in seconds
 
 **Default:** `10`
 
+### `--copy-link… <PATH>`
+
+Dereference one source-relative symbolic link; repeat for multiple links
+
+### `--copy-links`
+
+Dereference every symbolic link in the source archive
+
 ### `--exclude… <PATTERN>`
 
 Additional archive pattern to exclude; repeat for multiple patterns
@@ -96,6 +104,10 @@ SSH port override
 ### `--prompt-secrets`
 
 Prompt securely for missing secret inputs on the remote host
+
+### `--remote-env… <ENV>`
+
+Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
 
 ### `--remote-mise <COMMAND>`
 

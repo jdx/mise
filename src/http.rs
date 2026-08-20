@@ -1627,20 +1627,10 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
         return crate::github::get_headers(url.as_str());
     }
 
-    let Some(host) = url.host_str() else {
-        return Ok(HeaderMap::new());
-    };
-
-    let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
-    if is_gitlab {
-        return Ok(crate::gitlab::get_headers(url.as_str()));
-    }
-
-    let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
-    if is_forgejo {
-        return Ok(crate::forgejo::get_headers(url.as_str()));
-    }
-
+    // A generic URL does not carry the configured GitLab or Forgejo API origin,
+    // so it cannot establish a safe trust boundary for those tokens. Their
+    // backend-specific callers must pass the request and API URLs directly to
+    // the corresponding `get_headers` function.
     Ok(HeaderMap::new())
 }
 
@@ -1687,7 +1677,7 @@ fn apply_netrc_credentials(
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
-fn netrc_headers(url: &Url) -> HeaderMap {
+pub(crate) fn netrc_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
@@ -1981,8 +1971,13 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        // Lock to prevent parallel tests from interfering with global settings
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        // `SettingsGuard` holds the lock and calls `Settings::reset(None)` in `Drop`, which runs
+        // while unwinding. Resetting after `test_fn` instead would leave the replacements behind
+        // for the next test whenever this one panics -- previously the lock's poison flag hid
+        // that by failing every later test outright.
+        let _guard = SettingsGuard {
+            _lock: crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK),
+        };
 
         // Create settings with custom URL replacements
         let mut settings = crate::config::settings::SettingsPartial::empty();
@@ -1991,13 +1986,7 @@ mod tests {
         // Set settings for this test
         crate::config::Settings::reset(Some(settings));
 
-        // Run test
-        let result = test_fn();
-
-        // Clean up after test
-        crate::config::Settings::reset(None);
-
-        result
+        test_fn()
     }
 
     #[test]
@@ -2157,14 +2146,14 @@ mod tests {
         }
     }
     fn set_test_http_retries(retries: i64) -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.http_retries = Some(retries);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
     }
     fn set_test_prefer_offline(http_retries: i64) -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.prefer_offline = Some(true);
         settings.http_retries = Some(http_retries);
@@ -2172,7 +2161,7 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
     fn set_test_offline() -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
@@ -2240,8 +2229,8 @@ mod tests {
     }
 
     fn set_test_github_oauth(server_url: &str, cache_path: PathBuf) -> GithubOauthSettingsGuard {
-        let settings_lock = TEST_SETTINGS_LOCK.lock().unwrap();
-        let github_env_lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let settings_lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let github_env_lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let vars = vec![
             ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
             (
@@ -3913,7 +3902,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     #[test]
     fn test_no_settings_configured() {
         // Test the real apply_url_replacements function with no settings override
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         crate::config::Settings::reset(None);
 
         let mut url = Url::parse("https://github.com/owner/repo").unwrap();

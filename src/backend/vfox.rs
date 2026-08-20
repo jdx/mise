@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock, mpsc};
 use std::thread;
 use tokio::sync::RwLock;
+use walkdir::WalkDir;
 
 use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
@@ -18,6 +19,7 @@ use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env_diff::EnvMap;
+use crate::hash::hash_to_str;
 use crate::install_context::InstallContext;
 use crate::lockfile::{PlatformInfo, ProvenanceType};
 use crate::plugins::Plugin;
@@ -35,6 +37,52 @@ pub struct VfoxBackend {
     tool_name: Option<String>,
     metadata_deps: OnceLock<Vec<String>>,
     system_deps: OnceLock<Vec<crate::system::deps::SystemDep>>,
+    metadata_snapshot_cache: OnceLock<CacheManager<VfoxMetadataSnapshot>>,
+}
+
+/// Disk-cached subset of a filesystem vfox plugin's metadata. Loading metadata
+/// boots a Lua VM and executes the plugin's top-level metadata.lua, which can
+/// do arbitrary work (e.g. probe system packages), so it must not re-run on
+/// every mise invocation.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct VfoxMetadataSnapshot {
+    legacy_filenames: Vec<String>,
+    depends: Vec<String>,
+    system_dependencies: Vec<vfox::SystemDependency>,
+}
+
+/// Fingerprint of every Lua source under a plugin, used as the metadata cache
+/// key.
+///
+/// metadata.lua may `require` sibling modules and derive its table from them,
+/// so keying on its own mtime alone would serve stale metadata when only a
+/// module changed — editing a file in place leaves the directory's mtime
+/// untouched, so the directory is no help either. Hashing the sources is exact
+/// and costs a few KB of reads, against the Lua VM boot it avoids. Computed
+/// lazily: plugins whose metadata is never requested read nothing.
+fn lua_sources_fingerprint(plugin_path: &Path) -> String {
+    let mut sources: Vec<(String, Vec<u8>)> = WalkDir::new(plugin_path)
+        // Lua resolves symlinks, so the fingerprint has to as well: a plugin
+        // linked into place (`mise plugins link`) or carrying a symlinked
+        // module would otherwise contribute nothing and never invalidate.
+        // Symlink cycles surface as errors here and are skipped below.
+        .follow_links(true)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "lua"))
+        .filter_map(|e| {
+            let rel = e
+                .path()
+                .strip_prefix(plugin_path)
+                .unwrap_or(e.path())
+                .to_string_lossy()
+                .to_string();
+            std::fs::read(e.path()).ok().map(|bytes| (rel, bytes))
+        })
+        .collect();
+    sources.sort_by(|a, b| a.0.cmp(&b.0));
+    hash_to_str(&sources)
 }
 
 fn remove_env_var(env: &mut indexmap::IndexMap<String, String>, key: &str) {
@@ -65,14 +113,12 @@ fn set_env_var(
 fn add_tool_option_env(env: &mut indexmap::IndexMap<String, String>, options: &ToolOptions) {
     for (key, value) in options.opts_as_strings() {
         let key = key.to_uppercase();
-        set_env_var(env, format!("RTX_TOOL_OPTS__{key}"), value.clone());
         set_env_var(env, format!("MISE_TOOL_OPTS__{key}"), value);
     }
 }
 
 fn is_tool_option_env_key(key: &str) -> bool {
-    let matches =
-        |key: &str| key.starts_with("MISE_TOOL_OPTS__") || key.starts_with("RTX_TOOL_OPTS__");
+    let matches = |key: &str| key.starts_with("MISE_TOOL_OPTS__");
     if cfg!(windows) {
         matches(&key.to_uppercase())
     } else {
@@ -318,11 +364,12 @@ impl Backend for VfoxBackend {
 
         // Use default vfox behavior for traditional plugins
         let result = vfox
-            .install_with_download_dir(
+            .install_with_download_dir_and_options(
                 &self.pathname,
                 &tv.version,
                 tv.install_path(),
                 tv.download_path(),
+                tool_options.into_backend_options().into_map(),
             )
             .await?;
 
@@ -430,6 +477,9 @@ impl Backend for VfoxBackend {
     }
 
     async fn _idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+        if let Some(snapshot) = self.plugin_metadata_snapshot()? {
+            return Ok(snapshot.legacy_filenames);
+        }
         let (vfox, _log_rx) = self.plugin.vfox()?;
 
         let metadata = vfox.metadata(&self.pathname).await?;
@@ -457,8 +507,13 @@ impl Backend for VfoxBackend {
 
         let (mut vfox, _log_rx) = self.plugin.vfox()?;
         vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
+        let options = self
+            .tool_options_for_tv(&config, tv)
+            .await
+            .into_backend_options()
+            .into_map();
         let pre_install = vfox
-            .pre_install_for_platform(&self.pathname, &tv.version, os, arch)
+            .pre_install_for_platform_with_options(&self.pathname, &tv.version, os, arch, options)
             .await?;
 
         Ok(pre_install.url)
@@ -482,8 +537,19 @@ impl Backend for VfoxBackend {
 
         let (mut vfox, _log_rx) = self.plugin.vfox()?;
         vfox.cmd_env = Some(self.cmd_env_for_tv(&config, tv).await);
+        let options = self
+            .tool_options_for_tv(&config, tv)
+            .await
+            .into_backend_options()
+            .into_map();
         let (url, att) = vfox
-            .pre_install_provenance_for_platform(&self.pathname, &tv.version, os, arch)
+            .pre_install_provenance_for_platform_with_options(
+                &self.pathname,
+                &tv.version,
+                os,
+                arch,
+                options,
+            )
             .await?;
 
         let provenance = att.map(verified_attestation_to_provenance);
@@ -572,6 +638,7 @@ impl VfoxBackend {
         let tool_name = backend_plugin_name.as_ref().map(|_| ba.tool_name());
 
         Self {
+            metadata_snapshot_cache: OnceLock::new(),
             exec_env_cache: Default::default(),
             plugin: plugin.clone(),
             plugin_enum: match backend_plugin_name {
@@ -586,25 +653,56 @@ impl VfoxBackend {
         }
     }
 
-    fn load_metadata_deps(&self) -> eyre::Result<Vec<String>> {
+    /// This plugin's metadata: idiomatic filenames, tool dependencies and
+    /// system dependencies.
+    ///
+    /// An installed plugin directory wins so a user override still applies, and
+    /// it is read through the disk cache — loading it boots a Lua VM and runs
+    /// the plugin's top-level code. An embedded plugin is used otherwise;
+    /// reading only the directory would silently drop the declarations of every
+    /// embedded plugin, since those ship compiled into the binary and have no
+    /// directory. `None` when there is no plugin at all.
+    fn plugin_metadata_snapshot(&self) -> eyre::Result<Option<VfoxMetadataSnapshot>> {
         let plugin_path = dirs::PLUGINS.join(&self.pathname);
-        if !plugin_path.exists() {
-            return Ok(vec![]);
+        let installed = plugin_path.exists();
+        if !installed && vfox::embedded_plugins::get_embedded_plugin(&self.pathname).is_none() {
+            return Ok(None);
         }
-        let plugin = vfox::Plugin::from_dir(&plugin_path)?;
-        let metadata = plugin.get_metadata()?;
-        Ok(metadata.depends)
+        let load = || {
+            let plugin = vfox::Plugin::from_name_or_dir(&self.pathname, &plugin_path)?;
+            let metadata = plugin.get_metadata()?;
+            Ok(VfoxMetadataSnapshot {
+                legacy_filenames: metadata.legacy_filenames,
+                depends: metadata.depends,
+                system_dependencies: metadata.system_dependencies,
+            })
+        };
+        if !installed {
+            // Embedded: the Lua is compiled in, so loading costs no I/O and
+            // there are no source files to key a cache on.
+            return Ok(Some(load()?));
+        }
+        let cache = self.metadata_snapshot_cache.get_or_init(|| {
+            CacheManagerBuilder::new(self.ba.cache_path.join("metadata.msgpack.z"))
+                .with_cache_key(lua_sources_fingerprint(&plugin_path))
+                .build()
+        });
+        Ok(Some(cache.get_or_try_init(load)?.clone()))
+    }
+
+    fn load_metadata_deps(&self) -> eyre::Result<Vec<String>> {
+        Ok(self
+            .plugin_metadata_snapshot()?
+            .map(|m| m.depends)
+            .unwrap_or_default())
     }
 
     fn load_system_deps(&self) -> eyre::Result<Vec<crate::system::deps::SystemDep>> {
-        let plugin_path = dirs::PLUGINS.join(&self.pathname);
-        if !plugin_path.exists() {
+        let Some(snapshot) = self.plugin_metadata_snapshot()? else {
             return Ok(vec![]);
-        }
-        let plugin = vfox::Plugin::from_dir(&plugin_path)?;
-        let metadata = plugin.get_metadata()?;
+        };
         let mut deps = vec![];
-        for raw in metadata.system_dependencies {
+        for raw in snapshot.system_dependencies {
             match crate::system::deps::SystemDep::try_from(raw) {
                 Ok(dep) => deps.push(dep),
                 Err(e) => warn!(
@@ -740,7 +838,6 @@ mod test {
 
         let mut env = indexmap::indexmap! {
             "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "ambient".to_string(),
-            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "ambient".to_string(),
         };
         add_tool_option_env(&mut env, &options);
 
@@ -748,12 +845,7 @@ mod test {
             env.get("MISE_TOOL_OPTS__EXTENSIONS").unwrap(),
             "opentelemetry\nswoole"
         );
-        assert_eq!(
-            env.get("RTX_TOOL_OPTS__EXTENSIONS").unwrap(),
-            "opentelemetry\nswoole"
-        );
         assert_eq!(env.get("MISE_TOOL_OPTS__RETRIES").unwrap(), "2");
-        assert_eq!(env.get("RTX_TOOL_OPTS__RETRIES").unwrap(), "2");
         assert!(!env.contains_key("MISE_TOOL_OPTS__DEPENDS"));
         assert!(!env.contains_key("MISE_TOOL_OPTS__INSTALL_ENV"));
     }
@@ -762,18 +854,15 @@ mod test {
     fn test_restore_config_tool_option_env() {
         let mut env = indexmap::indexmap! {
             "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "generated".to_string(),
-            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "generated".to_string(),
         };
         let config_env = indexmap::indexmap! {
             "MISE_TOOL_OPTS__EXTENSIONS".to_string() => "configured".to_string(),
-            "RTX_TOOL_OPTS__EXTENSIONS".to_string() => "configured".to_string(),
             "UNRELATED".to_string() => "ignored".to_string(),
         };
 
         restore_config_tool_option_env(&mut env, &config_env);
 
         assert_eq!(env["MISE_TOOL_OPTS__EXTENSIONS"], "configured");
-        assert_eq!(env["RTX_TOOL_OPTS__EXTENSIONS"], "configured");
         assert!(!env.contains_key("UNRELATED"));
     }
 
@@ -793,9 +882,8 @@ mod test {
 
         add_tool_option_env(&mut env, &options);
 
-        assert_eq!(env.len(), 2);
+        assert_eq!(env.len(), 1);
         assert_eq!(env["MISE_TOOL_OPTS__EXTENSIONS"], "configured");
-        assert_eq!(env["RTX_TOOL_OPTS__EXTENSIONS"], "configured");
     }
 
     #[tokio::test]

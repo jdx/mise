@@ -12,6 +12,8 @@ machine needs local `ssh` and `tar` commands.
 [bootstrap.remote]
 source = "."
 exclude = [".env.local", "artifacts"]
+copy_link = ["modules/common", "playbooks/shared"]
+mise_env = ["linux", "server"]
 
 [bootstrap.remote.hosts.cache]
 host = "cache.example.com"
@@ -20,11 +22,15 @@ port = 22
 identity_file = "~/.ssh/mise-cache"
 tags = ["cache", "production"]
 ssh_options = ["ServerAliveInterval=30"]
+mise_env = ["linux", "cache"]
 ```
 
 `source` is the local project directory sent to the host. Relative `source`,
 `identity_file`, and `mise_bin` paths are resolved from the config file that
 declares them. A host-level `source` overrides `[bootstrap.remote].source`.
+A host-level `mise_env` overrides `[bootstrap.remote].mise_env`; the ordered
+values are passed as `MISE_ENV` to the staged `mise bootstrap` process. Use
+`--remote-env <ENV>` to override the configured list for every selected host.
 Higher-precedence config files win when the same inventory name is declared in
 more than one layer. Top-level `exclude` patterns are unioned across every
 loaded config layer and applied to every host, so a nearer project can add
@@ -93,6 +99,20 @@ OpenSSH's existing host-key verification is never weakened automatically.
 default. Add repeatable `exclude` config entries or `--exclude` flags for
 generated files and local secrets. Use `--keep-staging` only for debugging; it
 prints the retained path instead of deleting it.
+
+Symbolic links are archived as links by default. Use repeatable, source-relative
+`copy_link` entries or `--copy-link <PATH>` flags to replace only named links
+with their targets in the staged project. A selected directory link is copied
+as a real directory while links nested inside its target remain links. This is
+the safer choice for sharing selected modules or playbooks without changing
+unrelated links in deep dependency trees. Host-level `copy_link` entries add to
+the top-level list, and command-line entries add to both.
+
+Set `copy_links = true` or pass `--copy-links` to dereference every symbolic
+link encountered recursively. This matches tools such as `rsync --copy-links`,
+but can unexpectedly expand small links deep in vendored, generated, or
+dependency trees and can copy content outside the source directory. Explicit
+`copy_link` selections are ignored when this global mode is enabled.
 
 ## Provisioning mise itself
 
@@ -182,9 +202,11 @@ mise bootstrap remote cache --yes --update
 mise bootstrap remote cache --only packages,files,services,compose
 mise bootstrap remote cache --skip tools,task
 mise bootstrap remote cache --prompt-secrets
+mise bootstrap remote cache --remote-env linux,server
 ```
 
-Local environment variables are deliberately not copied to SSH hosts. Use
-`--prompt-secrets` for an attended run. Provider-backed secret environment
-transport can be layered on separately without putting values in config,
-archives, process arguments, plans, or logs.
+Local environment variables are deliberately not copied to SSH hosts. An
+explicitly configured `mise_env` is remote orchestration metadata rather than
+an inherited local environment. Use `--prompt-secrets` for an attended run.
+Provider-backed secret environment transport can be layered on separately
+without putting values in config, archives, process arguments, plans, or logs.

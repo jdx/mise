@@ -6,7 +6,7 @@ use crate::backend::static_helpers::{
 use crate::toolset::ToolVersionOptions;
 use eyre::{Result, bail};
 
-/// The ordering policy a backend applies to eligible version candidates.
+/// The ordering policy a backend applies to remote versions.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum VersionOrder {
     #[default]
@@ -33,27 +33,35 @@ impl VersionOrder {
     }
 
     pub(crate) fn order(self, versions: Vec<String>) -> Vec<String> {
+        self.order_by(versions, String::as_str)
+    }
+
+    pub(crate) fn order_by<T, F>(self, versions: Vec<T>, version: F) -> Vec<T>
+    where
+        F: for<'a> Fn(&'a T) -> &'a str,
+    {
         if self == Self::Source {
             return versions;
         }
 
         let mut opaque = Vec::new();
         let mut semantic = Vec::new();
-        for (source_index, version) in versions.into_iter().enumerate() {
+        for (source_index, value) in versions.into_iter().enumerate() {
+            let version = version(&value);
             let normalized = version
                 .strip_prefix('v')
                 .or_else(|| version.strip_prefix('V'))
-                .unwrap_or(&version);
+                .unwrap_or(version);
             match semver::Version::parse(normalized) {
-                Ok(parsed) => semantic.push((source_index, version, parsed)),
-                Err(_) => opaque.push(version),
+                Ok(parsed) => semantic.push((source_index, value, parsed)),
+                Err(_) => opaque.push(value),
             }
         }
         semantic.sort_by(|(left_index, _, left), (right_index, _, right)| {
             left.cmp_precedence(right)
                 .then_with(|| left_index.cmp(right_index))
         });
-        opaque.extend(semantic.into_iter().map(|(_, version, _)| version));
+        opaque.extend(semantic.into_iter().map(|(_, value, _)| value));
         opaque
     }
 }
@@ -393,6 +401,39 @@ mod tests {
         assert_eq!(
             VersionOrder::Semver.order(versions),
             ["nightly", "v10.34.5", "v10.99.0", "v11.11.0"]
+        );
+    }
+
+    #[test]
+    fn test_semver_order_by_preserves_associated_metadata() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct Item {
+            version: String,
+            metadata: usize,
+        }
+
+        let items = vec![
+            Item {
+                version: "2.0.0".into(),
+                metadata: 2,
+            },
+            Item {
+                version: "1.0.0".into(),
+                metadata: 1,
+            },
+        ];
+        assert_eq!(
+            VersionOrder::Semver.order_by(items, |item| item.version.as_str()),
+            vec![
+                Item {
+                    version: "1.0.0".into(),
+                    metadata: 1,
+                },
+                Item {
+                    version: "2.0.0".into(),
+                    metadata: 2,
+                },
+            ]
         );
     }
 }

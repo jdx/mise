@@ -59,6 +59,14 @@ that declares the entry, so a global `~/.config/mise/config.toml` can manage
 dotfiles kept next to it, and a project config can ship machine setup from
 the repo.
 
+`mise bootstrap dotfiles status --json` includes an `origin` object for every
+entry. It reports the declaring config, its `config_root`, any configuration
+environment encoded by that config filename, and the resolved source path.
+Paths are ordinary strings when they are valid UTF-8. On Unix, a path containing
+non-UTF-8 bytes uses `mise:path-bytes:<base64url>` so provenance remains lossless.
+This makes layered dotfile declarations inspectable without reconstructing
+their precedence by hand.
+
 Use `content` to declare a literal whole file inline instead of keeping a
 separate source file. Inline content is written as a private regular file
 (`0600` on Unix) and cannot be combined with `source`, `mode`, or `exclude`:

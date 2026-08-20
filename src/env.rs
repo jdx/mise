@@ -30,12 +30,38 @@ pub const NON_TOOL_VERSION_ENV_VARS: &[&str] =
 pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
 pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
-pub static MISE_SHELL: Lazy<Option<ShellType>> = Lazy::new(|| {
-    var("MISE_SHELL")
-        .unwrap_or_else(|_| SHELL.clone())
-        .parse()
-        .ok()
-});
+pub static MISE_SHELL: Lazy<Option<ShellType>> =
+    Lazy::new(|| detect_shell(var("MISE_SHELL").ok(), var("SHELL").ok(), &SHELL));
+
+/// Which shell mise should speak, from the environment.
+///
+/// `SHELL` is consulted here but deliberately *not* through [`SHELL`], which on Windows reads
+/// `COMSPEC`. Git Bash, MSYS2 and Cygwin all set `SHELL` to a real shell there, and
+/// [`ShellType::from_str`] already understands the form they use, but nothing ever looked. Reading
+/// it through [`SHELL`] instead would be wrong: [`SHELL_COMMAND_FLAG`] is `/c` on Windows and
+/// `mise exec -c` and `mise en` pair the two, so `bash.exe /c …` is what that would run.
+///
+/// Split out from the `Lazy` because that is process-wide and reads the real environment, so the
+/// precedence below cannot be exercised from a test any other way.
+fn detect_shell(
+    mise_shell: Option<String>,
+    shell_var: Option<String>,
+    fallback: &str,
+) -> Option<ShellType> {
+    // What `mise activate` exports, so it decides on its own. Set but unparseable is an answer,
+    // not a reason to start guessing.
+    if let Some(s) = mise_shell {
+        return s.parse().ok();
+    }
+    // On unix `SHELL` *is* the fallback, so consulting it separately would be the same lookup
+    // twice. On Windows it is the one the fallback cannot reach.
+    if cfg!(windows)
+        && let Some(st) = shell_var.and_then(|s| s.parse().ok())
+    {
+        return Some(st);
+    }
+    fallback.parse().ok()
+}
 #[cfg(unix)]
 pub static SHELL_COMMAND_FLAG: &str = "-c";
 #[cfg(windows)]
@@ -347,17 +373,18 @@ pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
 pub static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
 pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+    let invocation_cwd = miserc::invocation_cwd()
+        .map(Path::to_path_buf)
+        .or_else(|| current_dir().ok())
+        .unwrap_or_default();
     var_os("MISE_IGNORED_CONFIG_PATHS")
         .map(|v| {
             split_paths(&v)
                 .filter(|p| !p.as_os_str().is_empty())
-                .map(replace_path)
+                .map(|p| miserc::resolve_ignored_config_path(p, &invocation_cwd))
                 .collect()
         })
-        .or_else(|| {
-            miserc::get_ignored_config_paths()
-                .map(|paths| paths.iter().cloned().map(replace_path).collect())
-        })
+        .or_else(|| miserc::get_ignored_config_paths().map(|paths| paths.iter().cloned().collect()))
         .unwrap_or_default()
 });
 pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
@@ -490,6 +517,96 @@ pub fn is_mise_binary(bin_name: &str) -> bool {
         || bin_name
             .split_once(['.', '-'])
             .is_some_and(|(stem, _)| is_mise(stem))
+}
+
+/// The suffixes `self-replace` gives the copies it makes of the running executable on Windows.
+/// `get_temp_executable_name` builds `.{exe stem}.{32 random}{suffix}`.
+///
+/// This and the predicates below are compiled off Windows too, like
+/// [`crate::path::windows_path_list_to_unix`], so they stay unit-tested everywhere rather than only
+/// on the platform that runs them. Their callers are all `#[cfg(windows)]`, hence the allow.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const SELF_REPLACE_SUFFIXES: [&str; 2] = [".__selfdelete__.exe", ".__relocated__.exe"];
+
+/// Whether `bin_name` is a copy of *this* executable that `self-replace` made while updating.
+///
+/// It is mise under a generated name, not a shim — but [`is_mise_binary`] cannot tell, because the
+/// name **begins with a `.`**, so `split_once(['.', '-'])` hands back an empty stem and `is_mise("")`
+/// is false. mise then walks into `handle_shim` and reports the name as a broken shim, advising the
+/// user to reinstall a tool that was never uninstalled.
+///
+/// Takes the stem rather than reading `current_exe` so it stays pure, and requires it so that a
+/// *different* application's orphan — `.othertool.….__selfdelete__.exe` — is not claimed as ours.
+///
+/// The random segment is checked too, because the caller that acts on this **deletes** the file:
+/// anything short of the generated shape is somebody else's and stays where it is.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn is_self_replace_helper(bin_name: &str, exe_stem: &str) -> bool {
+    let prefix = format!(".{exe_stem}.");
+    // Case-insensitively on Windows, and only for the stem. Measured: `current_exe()` hands back
+    // whatever casing the caller used to start the process — `CASEPROBE.EXE` gives a stem of
+    // `CASEPROBE` — so an update launched as `MISE.EXE` writes `.MISE.….__selfdelete__.exe`, and
+    // the next one launched as `mise.exe` would fail to recognise its own orphan and leave it
+    // there for good. The suffix and the random segment are generated by the crate and are always
+    // lowercase, so only the stem can vary. Same rule, same reason, as [`is_mise_binary`].
+    let matches = bin_name.get(..prefix.len()).is_some_and(|head| {
+        if cfg!(windows) {
+            head.eq_ignore_ascii_case(&prefix)
+        } else {
+            head == prefix
+        }
+    });
+    if !matches {
+        return false;
+    }
+    let rest = &bin_name[prefix.len()..];
+    SELF_REPLACE_SUFFIXES.iter().any(|suffix| {
+        rest.strip_suffix(suffix)
+            .is_some_and(is_self_replace_random_segment)
+    })
+}
+
+/// `self-replace` fills this many characters from `fastrand`'s `lowercase()`:
+/// `for _ in 0..32 { file_name.push(rng.lowercase()) }` in `get_temp_executable_name`.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const SELF_REPLACE_RANDOM_LEN: usize = 32;
+
+/// Exactly the segment that generator produces — nothing shorter, longer, or outside `a-z`.
+///
+/// Compares bytes rather than chars on purpose: ASCII bytes cannot appear inside a multi-byte
+/// character, so this cannot mis-read a name that is not ASCII to begin with.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn is_self_replace_random_segment(s: &str) -> bool {
+    s.len() == SELF_REPLACE_RANDOM_LEN && s.bytes().all(|b| b.is_ascii_lowercase())
+}
+
+/// Whether *this* process is one of those copies, read straight from the OS.
+///
+/// Deliberately does not go through `ARGS`/`MISE_BIN_NAME`: this answers a question `main` asks
+/// before the runtime, logging or config exist, in the same shape as
+/// [`crate::cache::session::is_rustc_shim`].
+///
+/// The stem is not checked, unlike [`is_self_replace_helper`], and it cannot be: the original stem
+/// is *inside* the generated name, so a process running under one has nothing left to compare it
+/// against. That costs nothing here — a running binary named `.x.….__selfdelete__.exe` was copied
+/// from whatever spawned it, and the process asking is mise. Everything around the stem is still
+/// required: a leading `.`, then some stem, then the generated random segment and the suffix.
+#[cfg(windows)]
+pub fn invoked_as_self_replace_helper() -> bool {
+    let Some(invoked) = std::env::args_os().next() else {
+        return false;
+    };
+    let Some(name) = Path::new(&invoked).file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name.starts_with('.')
+        && SELF_REPLACE_SUFFIXES.iter().any(|suffix| {
+            name.strip_suffix(suffix).is_some_and(|head| {
+                head.rsplit_once('.').is_some_and(|(stem, random)| {
+                    !stem.is_empty() && is_self_replace_random_segment(random)
+                })
+            })
+        })
 }
 
 /// Explicit terminal-width override: `MISE_TERM_WIDTH` takes precedence, then the
@@ -1370,5 +1487,175 @@ mod tests {
         assert!(!is_mise_binary("MISE"));
         assert!(!is_mise_binary("Mise"));
         assert!(!is_mise_binary("MISE-DOCTOR"));
+    }
+
+    fn detect(mise_shell: Option<&str>, shell_var: Option<&str>, fallback: &str) -> String {
+        detect_shell(
+            mise_shell.map(str::to_string),
+            shell_var.map(str::to_string),
+            fallback,
+        )
+        .map(|st| st.to_string())
+        .unwrap_or_else(|| "(none)".to_string())
+    }
+
+    /// `mise activate` exports `MISE_SHELL`, so it decides on its own — including deciding that
+    /// the answer is nothing. Falling back after an unparseable value would start guessing at a
+    /// shell the session has already named.
+    #[test]
+    fn mise_shell_wins_and_an_unparseable_one_is_still_the_answer() {
+        assert_eq!(detect(Some("zsh"), Some("/bin/bash"), "/bin/bash"), "zsh");
+        assert_eq!(
+            detect(Some("nonsense"), Some("/bin/bash"), "/bin/bash"),
+            "(none)"
+        );
+    }
+
+    /// The fix: Git Bash, MSYS2 and Cygwin set `SHELL` on Windows, where the fallback reads
+    /// `COMSPEC` and so can never see it.
+    #[cfg(windows)]
+    #[test]
+    fn shell_is_consulted_on_windows() {
+        for shell_var in [
+            r"C:\Program Files\Git\bin\bash.exe",
+            "/bin/bash.exe",
+            r"C:\msys64\usr\bin\zsh.exe",
+        ] {
+            let expected = match shell_var.contains("zsh") {
+                true => "zsh",
+                false => "bash",
+            };
+            assert_eq!(
+                detect(None, Some(shell_var), r"C:\WINDOWS\system32\cmd.exe"),
+                expected,
+                "{shell_var}"
+            );
+        }
+        // Unchanged where there is nothing to find: cmd.exe is not a shell mise generates for.
+        assert_eq!(detect(None, None, r"C:\WINDOWS\system32\cmd.exe"), "(none)");
+    }
+
+    /// The control. On unix `SHELL` *is* the fallback, so the extra lookup must not exist —
+    /// otherwise this test would pass for the wrong reason on every platform.
+    #[cfg(unix)]
+    #[test]
+    fn the_fallback_is_the_only_second_source_on_unix() {
+        // A `SHELL` that disagrees with the fallback is ignored: unix passes the same value as
+        // both, so anything else would mean the Windows branch had leaked.
+        assert_eq!(detect(None, Some("/bin/zsh"), "/bin/bash"), "bash");
+        assert_eq!(detect(None, None, "/bin/zsh"), "zsh");
+        assert_eq!(detect(None, None, "sh"), "bash");
+    }
+
+    /// The names `self-replace` generates, which mise used to report as broken shims. Measured with
+    /// `TEMP` at 199 and 201 characters, where the copy's own init hook stops recognising itself.
+    #[test]
+    fn a_self_replace_copy_of_this_binary_is_recognised() {
+        let rand = "qzcdgqhxhqwhzdwyqchsmdxcqouxxche";
+        assert!(is_self_replace_helper(
+            &format!(".mise.{rand}.__selfdelete__.exe"),
+            "mise"
+        ));
+        assert!(is_self_replace_helper(
+            &format!(".mise.{rand}.__relocated__.exe"),
+            "mise"
+        ));
+        // The stem follows the binary, so a renamed mise is still recognised.
+        assert!(is_self_replace_helper(
+            &format!(".mise-dev.{rand}.__selfdelete__.exe"),
+            "mise-dev"
+        ));
+    }
+
+    /// The controls. Two of them are the reason the stem is a parameter at all.
+    #[test]
+    fn ordinary_names_and_other_applications_are_not() {
+        let rand = "qzcdgqhxhqwhzdwyqchsmdxcqouxxche";
+        // mise itself, and a genuine shim.
+        assert!(!is_self_replace_helper("mise.exe", "mise"));
+        assert!(!is_self_replace_helper("node.exe", "mise"));
+        // Another application's orphan, sitting in the same TEMP. Matching the suffix alone would
+        // claim it — and the sweep would delete it.
+        assert!(!is_self_replace_helper(
+            &format!(".node.{rand}.__selfdelete__.exe"),
+            "mise"
+        ));
+        // Ours by name, but not one of these copies.
+        assert!(!is_self_replace_helper(".mise.something.exe", "mise"));
+    }
+
+    /// The segment between the stem and the suffix has to be the one `self-replace` generates —
+    /// 32 characters from `fastrand`'s `lowercase()`. The caller acting on a `true` here **deletes
+    /// the file**, so a name that merely looks similar must not qualify.
+    #[test]
+    fn a_name_that_only_resembles_a_generated_one_is_left_alone() {
+        let ok = "qzcdgqhxhqwhzdwyqchsmdxcqouxxche";
+        assert_eq!(ok.len(), SELF_REPLACE_RANDOM_LEN, "premise");
+        assert!(is_self_replace_helper(
+            &format!(".mise.{ok}.__selfdelete__.exe"),
+            "mise"
+        ));
+
+        // No segment at all.
+        assert!(!is_self_replace_helper(".mise..__selfdelete__.exe", "mise"));
+        assert!(!is_self_replace_helper(".mise.__selfdelete__.exe", "mise"));
+        // Too short, and too long.
+        assert!(!is_self_replace_helper(
+            ".mise.abc.__selfdelete__.exe",
+            "mise"
+        ));
+        assert!(!is_self_replace_helper(
+            &format!(".mise.{ok}x.__selfdelete__.exe"),
+            "mise"
+        ));
+        // Right length, wrong alphabet — a digit and an uppercase letter.
+        let digits = format!("{}1", &ok[..SELF_REPLACE_RANDOM_LEN - 1]);
+        assert!(!is_self_replace_helper(
+            &format!(".mise.{digits}.__selfdelete__.exe"),
+            "mise"
+        ));
+        let upper = format!("{}A", &ok[..SELF_REPLACE_RANDOM_LEN - 1]);
+        assert!(!is_self_replace_helper(
+            &format!(".mise.{upper}.__selfdelete__.exe"),
+            "mise"
+        ));
+    }
+
+    /// The stem carries whatever casing the caller used to start mise — measured: `current_exe()`
+    /// returns `CASEPROBE` for a `caseprobe.exe` started as `CASEPROBE.EXE`. So an update launched
+    /// one way writes an orphan the next one, launched the other way, has to still recognise.
+    #[cfg(windows)]
+    #[test]
+    fn an_orphan_from_a_differently_cased_launch_is_still_ours() {
+        let rand = "qzcdgqhxhqwhzdwyqchsmdxcqouxxche";
+        for stem in ["mise", "MISE", "Mise"] {
+            for written in ["mise", "MISE", "Mise"] {
+                assert!(
+                    is_self_replace_helper(&format!(".{written}.{rand}.__selfdelete__.exe"), stem),
+                    "stem {stem} should claim an orphan written as {written}"
+                );
+            }
+        }
+        // Still not another application's, however it is cased.
+        assert!(!is_self_replace_helper(
+            &format!(".NODE.{rand}.__selfdelete__.exe"),
+            "mise"
+        ));
+    }
+
+    /// The control for the rule above: unix filesystems are case-sensitive, so `MISE` and `mise`
+    /// are different files and an orphan of one is not an orphan of the other.
+    #[cfg(unix)]
+    #[test]
+    fn casing_still_separates_names_on_unix() {
+        let rand = "qzcdgqhxhqwhzdwyqchsmdxcqouxxche";
+        assert!(is_self_replace_helper(
+            &format!(".mise.{rand}.__selfdelete__.exe"),
+            "mise"
+        ));
+        assert!(!is_self_replace_helper(
+            &format!(".MISE.{rand}.__selfdelete__.exe"),
+            "mise"
+        ));
     }
 }

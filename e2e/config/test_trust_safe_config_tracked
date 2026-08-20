@@ -14,8 +14,8 @@ cat <<'EOF' >proj/mise.toml
 tiny = "3.1.0"
 EOF
 
-# install from the safe config (loads + tracks it, no trust prompt/marker)
-(cd proj && MISE_YES=0 mise install tiny)
+# load the safe config so it is tracked, without creating a trust marker
+(cd proj && MISE_YES=0 mise ls)
 
 # from an unrelated directory, the tracked safe config's pin is still listed
 cd other || exit 1

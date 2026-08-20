@@ -50,6 +50,24 @@ exists_on_crates() {
 	return 1
 }
 
+# Returns 2 when Cargo's index reports that the version already exists even
+# though the registry API checks above have not caught up yet.
+publish_crate() {
+	local crate_name="$1"
+	local publish_log
+	publish_log="$(mktemp)"
+	if cargo publish --allow-dirty --no-verify -p "$crate_name" 2>&1 | tee "$publish_log"; then
+		rm -f "$publish_log"
+		return 0
+	fi
+	if grep -Fq "already exists on crates.io index" "$publish_log"; then
+		rm -f "$publish_log"
+		return 2
+	fi
+	rm -f "$publish_log"
+	return 1
+}
+
 # Git pathspecs used to decide whether a subcrate has meaningfully changed.
 # Some crates embed vendored/generated content that the release process refreshes
 # on every run (e.g. vfox's embedded-plugins are deleted and re-cloned each
@@ -306,19 +324,30 @@ bump_and_publish_subcrate() {
 		advance_package_version "$crate_name" "$crate_dir/Cargo.toml" "$year.$month.0"
 	fi
 
-	local new_version
+	local new_version publish_result
 	new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
 
-	# Keep bumping if the version already exists on crates.io
-	# This handles cases where a version was published but local code has changed since
-	while exists_on_crates "$crate_name" "$new_version"; do
-		echo "$crate_name@$new_version already on crates.io, bumping again"
+	# Keep bumping if the version already exists on crates.io. Cargo's index can
+	# observe a new version before the API used by exists_on_crates does, so also
+	# recover from an authoritative publish-time conflict instead of failing a
+	# retry after an earlier release attempt uploaded only some workspace crates.
+	while true; do
+		if exists_on_crates "$crate_name" "$new_version"; then
+			echo "$crate_name@$new_version already on crates.io, bumping again"
+		else
+			echo "Publishing $crate_name@$new_version"
+			publish_result=0
+			publish_crate "$crate_name" || publish_result=$?
+			if [[ $publish_result -eq 0 ]]; then
+				break
+			elif [[ $publish_result -ne 2 ]]; then
+				return "$publish_result"
+			fi
+			echo "$crate_name@$new_version reached the crates.io index during publication, bumping again"
+		fi
 		bump_package_version "$crate_name" "$crate_dir/Cargo.toml" patch
 		new_version="$(cargo pkgid -p "$crate_name" | cut -d# -f2)"
 	done
-
-	echo "Publishing $crate_name@$new_version"
-	cargo publish --allow-dirty -p "$crate_name"
 
 	# Create tag for this subcrate release
 	local tag_name="${crate_name}-v${new_version}"
@@ -362,7 +391,7 @@ if [[ $cur_version != "$latest_version" ]]; then
 	bump_and_publish_subcrate "aqua-registry" "crates/aqua-registry" "AQUA_REGISTRY_VERSION"
 	use_published_aqua_registry "$AQUA_REGISTRY_VERSION"
 
-	# Copy schema into crate directory so cargo publish verification can find it
+	# Copy the schema into the crate directory so the published package includes it.
 	cp schema/mise.json crates/mise-interactive-config/mise.json
 	bump_and_publish_subcrate "mise-interactive-config" "crates/mise-interactive-config" "INTERACTIVE_CONFIG_VERSION"
 	rm -f crates/mise-interactive-config/mise.json
@@ -371,19 +400,30 @@ if [[ $cur_version != "$latest_version" ]]; then
 	if exists_on_crates mise "$cur_version"; then
 		echo "mise@$cur_version already on crates.io, skipping publish"
 	else
-		cargo publish --allow-dirty -p mise
+		publish_result=0
+		publish_crate mise || publish_result=$?
+		if [[ $publish_result -eq 2 ]]; then
+			echo "mise@$cur_version reached the crates.io index during publication, continuing"
+		elif [[ $publish_result -ne 0 ]]; then
+			exit "$publish_result"
+		fi
 	fi
 
-	changelog="$(git cliff --tag "v$cur_version" --strip all --unreleased)"
+	mise_tag="v$cur_version"
+	changelog="$(git cliff --tag "$mise_tag" --strip all --unreleased)"
 	changelog="$(echo "$changelog" | tail -n +3)"
-	if git rev-parse -q --verify "refs/tags/v$cur_version" >/dev/null ||
-		git ls-remote --exit-code --tags origin "v$cur_version" >/dev/null 2>&1; then
-		echo "Tag v$cur_version already exists, skipping tag creation"
+	if git ls-remote --exit-code --tags origin "$mise_tag" >/dev/null 2>&1; then
+		echo "Tag $mise_tag already exists, skipping tag creation"
 	else
-		git tag "v$cur_version" -s -m "$changelog"
+		if ! git rev-parse -q --verify "refs/tags/$mise_tag" >/dev/null; then
+			git tag "$mise_tag" -s -m "$changelog"
+		fi
+		git push origin "refs/tags/$mise_tag"
 	fi
 
-	# Push all tags (mise + any subcrate tags)
+	# GitHub does not create push events when more than three tags are pushed at
+	# once. Push the mise tag separately so release and Docker workflows always
+	# receive the event, then publish any subcrate tags in bulk.
 	git push --tags
 	exit 0
 fi

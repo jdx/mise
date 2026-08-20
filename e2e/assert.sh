@@ -39,16 +39,16 @@ run_with_timeout() {
     elapsed=$((elapsed + 1))
   done
 
-  local status=0
+  local exit_status=0
   if ((timed_out == 1)); then
-    status=124
+    exit_status=124
   else
-    wait "$cmd_pid" || status=$?
+    wait "$cmd_pid" || exit_status=$?
   fi
 
   cat "$output_file"
   rm -f "$output_file"
-  return "$status"
+  return "$exit_status"
 }
 
 parse_timeout_seconds() {
@@ -117,18 +117,18 @@ wait_for_file() {
 [[ -n ${TEST_NAME:-} ]] || fail "tests should be called using run_test"
 
 quiet_assert_succeed() {
-  local status=0
+  local exit_status=0
   debug "$ $1"
-  bash -c "$1" || status=$?
-  if [[ $status -ne 0 ]]; then
-    fail "[$1] command failed with status $status"
+  bash -c "$1" || exit_status=$?
+  if [[ $exit_status -ne 0 ]]; then
+    fail "[$1] command failed with status $exit_status"
   fi
 }
 quiet_assert_fail() {
-  local status=0
+  local exit_status=0
   debug "$ $1"
-  MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$1 2>&1" || status=$?
-  if [[ $status -eq 0 ]]; then
+  MISE_FRIENDLY_ERROR=1 RUST_BACKTRACE=0 bash -c "$1 2>&1" || exit_status=$?
+  if [[ $exit_status -eq 0 ]]; then
     fail "[$1] command succeeded but was expected to fail"
   fi
 }

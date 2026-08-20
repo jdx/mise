@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.8.6"
+version = "2026.8.10"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -111,7 +111,7 @@ dotenvy = "0.15"
 duct = "1"
 dunce = "1"
 homedir = "0.3"
-expr-lang = "1"
+expr-lang = "2"
 eyre = "0.6"
 filetime = "0.2"
 flate2 = "1"
@@ -264,8 +264,11 @@ self_update = { version = "0.44", optional = true, default-features = false, fea
 zipsign-api = "0.2"
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
 windows-sys = { version = "0.61", features = [
+  "Win32_Globalization",
   "Win32_Security",
   "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_SystemServices",
   "Win32_System_Threading",
 ] }
 

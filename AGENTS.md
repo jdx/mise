@@ -1,21 +1,21 @@
 # Repository Agent Guide
 
-This file provides guidance to AI coding agents when working with code in this repository. It keeps the `CLAUDE.md` filename for compatibility with existing tooling, and `AGENTS.md` symlinks to it for other agents.
+This file is the canonical agent guide. `CLAUDE.md` is a symlink to `AGENTS.md` for compatibility with existing tooling.
 
 ## Registry Submissions: READ THIS FIRST
 
-**Most registry PRs from agents get rejected.** Before adding anything to `registry/`, understand the rules:
+**Most new registry additions from agents get rejected.** Before adding a new tool to `registry/`, understand the rules:
 
 - **mise does not host self-written, personal, niche, or low-popularity tools.** The registry is curated for tools that are *already* widely used. "It works" or "it has tests" is not the bar.
-- **Tools that aren't VERY popular will be rejected without explanation.** Per [contributing.md](docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
+- **There is a high bar for new registry additions: tools generally need thousands of GitHub stars, not hundreds.** jdx will reject projects that do not meet this popularity bar and will not give a reason. Per [contributing.md](docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
 - **Wasted PRs are the default outcome** for tools the agent or user has not vetted against this bar. Do not submit one speculatively.
 
-### Required pre-submission check
+### Required check for new registry additions
 
-Before touching `registry/`, ALWAYS do the following:
+Before adding a new tool or shorthand to `registry/`, ALWAYS do the following. This check does not apply when editing an existing registry entry; do not ask the user about popularity for maintenance or fixes to tools already in the registry.
 
-1. **Ask the user:** "Is this tool already widely used outside your own projects?" — if it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
-2. **Actively check popularity for every registry PR — no exceptions.** Look up real numbers; do not guess. Useful sources:
+1. **Warn the user clearly and ask:** "New registry additions have a high popularity bar: jdx generally rejects projects without thousands of GitHub stars and will not give a reason. Is this tool already widely used outside your own projects and does it meet that bar?" If it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
+2. **Actively check popularity for every new registry addition — no exceptions.** Look up real numbers; do not guess. Useful sources:
    - GitHub stars and fork count (`gh repo view owner/repo --json stargazerCount,forkCount`)
    - Recent release activity / last commit date (`gh repo view owner/repo --json pushedAt,latestRelease`)
    - Download counts on relevant package registries (npm `npmjs.com/package/x`, crates.io, PyPI, Homebrew analytics, etc.)
@@ -25,7 +25,7 @@ Before touching `registry/`, ALWAYS do the following:
    - Active maintenance (recent releases, not abandoned)
    - Real third-party usage (referenced in docs, blog posts, other tools, package registries)
    - Recognizable in its ecosystem
-4. **Include the popularity data in the PR description.** Every registry PR body MUST contain a short section like:
+4. **Include the popularity data in the PR description.** Every PR adding a new registry tool or shorthand MUST contain a short section like:
 
    ```
    ## Popularity
@@ -34,7 +34,7 @@ Before touching `registry/`, ALWAYS do the following:
    - Used by: <project A>, <project B>
    ```
 
-   This is non-negotiable — it lets the maintainer evaluate the submission without re-doing the research. PRs without it look speculative and are more likely to be rejected.
+   This is non-negotiable for new additions — it lets the maintainer evaluate the submission without re-doing the research. New-tool PRs without it look speculative and are more likely to be rejected.
 5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
 6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.jdx.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
 
@@ -106,21 +106,21 @@ Mise is a Rust CLI tool that manages development environments, tools, tasks, and
 - `src/main.rs` - Entry point and CLI initialization
 - `src/cli/` - Command-line interface implementation with subcommands
 - `src/config/` - Configuration file parsing and management
-- `src/backend/` - Tool backend implementations (asdf, vfox, cargo, npm, etc.)
+- `src/backend/` - Tool backend implementations (aqua, github, cargo, npm, asdf, vfox, …)
 - `src/toolset/` - Tool version management and installation logic
 - `src/task/` - Task execution system
 - `src/plugins/` - Plugin system for extending tool support
 
-**Key Backend Systems:**
-- `src/backend/asdf.rs` - ASDF plugin compatibility
-- `src/backend/vfox.rs` - VersionFox plugin system
-- `src/backend/cargo.rs` - Rust Cargo tool backend
-- `src/backend/npm.rs` - Node.js/npm tool backend
-- `src/backend/github.rs` - GitHub releases backend
-- `src/backend/aqua.rs` - Aqua tool registry integration
+**Key Backend Systems** (`src/backend/`):
+- `aqua.rs` — Aqua registry (preferred for new registry entries)
+- `github.rs` — GitHub / GitLab / Forgejo releases
+- `http.rs`, `s3.rs` — HTTP and S3 backends
+- `cargo.rs`, `npm.rs` (plus embedded aube), `pipx.rs`, `gem.rs`, `go.rs`, `dotnet.rs`, `conda.rs`, `pkgx.rs`, `spm.rs`
+- `asdf.rs`, `vfox.rs` — plugin compatibility layers
+- `ubi.rs` — deprecated; do not add new registry entries
 
 **Core Tools (Built-in):**
-- `src/plugins/core/` - Built-in tool implementations (Node, Python, Go, Ruby, etc.)
+- `src/plugins/core/` — Node, Python, Go, Ruby, Java, Bun, Deno, Elixir, Erlang, Dotnet, Swift, Zig, Rust
 
 **Configuration System:**
 - `mise.toml` files for project configuration
@@ -194,10 +194,11 @@ All commit messages and PR titles MUST follow conventional commit format:
 - `registry: add miller`
 
 ### Pre-commit Process
-1. Run `hk install --mise` once to set up pre-commit hooks (runs `hk fix` automatically on commit)
-2. Run `mise run lint-fix` and `git add` any lint fixes before committing
-3. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
-4. Never run e2e tests by executing them directly - always use the mise task
+1. Run `mise run lint-fix` and `git add` any lint fixes before committing
+2. Use `mise run test:e2e [test_filename]...` for running specific e2e tests
+3. Never run e2e tests by executing them directly — always use the mise task
+
+`hk.pkl` currently defines `check` and `fix` steps only (no git `pre-commit` hook). `hk install --mise` may print that nothing is installed; that is expected. Use `mise run lint` / `mise run lint-fix` (which run hk) instead.
 
 ### hk Agent Workflow
 
@@ -303,3 +304,31 @@ When referencing mise documentation URLs, use the correct path structure based o
 - **CLI reference**: `mise.jdx.dev/cli/...`
 
 Do NOT use shortened paths like `mise.jdx.dev/backends/...` - always include the full path matching the `docs/` directory structure.
+
+## Cursor Cloud specific instructions
+
+Cloud Agents bootstrap from `.cursor/environment.json`, which runs `.cursor/install.sh`. Draft environment builds often run as `ubuntu` rather than `root`; the script handles both (passwordless sudo, cargo/rustup permissions, world-writable `/tmp/fslock`).
+
+The install script:
+
+- cds to the repository root derived from the script path before reading `Cargo.toml` or building
+- installs host packages needed to build mise and to run most e2e tests (openssl, pkg-config, zsh, fish, direnv, python3 + venv, jq, git, build-essential, and compile-time libs). It does **not** install a JDK or GUI libraries; those live in `packaging/e2e/Dockerfile`. `apt-get` is invoked as `sudo -n env DEBIAN_FRONTEND=noninteractive apt-get …` so the frontend reaches apt when elevation is required
+- selects the Rust toolchain from the root `Cargo.toml` `rust-version`, including `rustfmt` and `clippy` (do not hardcode the MSRV)
+- builds `target/debug/mise` and symlinks it to `/usr/local/bin/mise`
+- keeps `GITHUB_TOKEN`, `MISE_GITHUB_TOKEN`, and `GH_TOKEN` in sync via one `sync_github_tokens` helper (prefer any already-set token; fall back to `gh auth token` only when all three are empty)
+- runs `MISE_SAFE=1 /usr/local/bin/mise install` with the just-built binary so checkout-controlled hooks/templates/`[env]` and tool-level `postinstall` / `install_env` cannot run with those tokens, then `mise trust` for later agent commands
+- runs `hk install --mise` (`hk.pkl` has no git hook, so this may report that nothing is installed)
+- persists mise shims and token sync in one `/etc/profile.d/mise-dev-env.sh` (shims first, then `sync_github_tokens`) and rewrites the Cloud Agent block in `/etc/bash.bashrc` so non-login interactive bash picks it up after a snapshot. Fish/zsh only get this from login shells (`profile.d`), not from bashrc
+- exposes the mise-installed `node` / `npm` / `npx` / `hk` / `gh` binaries on `/usr/local/bin` (isolated e2e PATH includes that directory, not the agent's shims). Links freeze the version from install time — re-run `.cursor/install.sh` after upgrading those tools
+
+There is no long-running service to start. Do not put `mise run build` or `mise run test:unit` in `terminals`; those are one-shot commands and would rerun a full build/test on every boot.
+
+The debug `mise` binary is already on PATH. Prefer `mise run …` for project tasks.
+
+### E2E on Cloud Agents
+
+- Always `mise run test:e2e [test_filename]...` — never execute e2e scripts directly
+- Slow tests (`*_slow`) are skipped unless `TEST_ALL=1`. Do not run the full suite unless asked; pick tests under the feature area you changed
+- Isolated e2e uses `env -i` and a fake `HOME`, so the agent's mise shims are not on PATH. Tests install their own tools. Host packages (zsh, fish, direnv, python3, jq, git) still need to be on `/usr/bin`
+- If GitHub API calls 429, run `export GITHUB_TOKEN="$(gh auth token)"; export MISE_GITHUB_TOKEN="$GITHUB_TOKEN"`
+- A leftover `/tmp/mise.toml` will fail the harness; remove it if that error appears

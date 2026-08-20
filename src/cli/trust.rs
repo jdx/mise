@@ -15,17 +15,18 @@ use itertools::Itertools;
 /// Marks a config file as trusted
 ///
 /// This means mise is allowed to parse the file when it needs to read config
-/// that may execute code or affect the environment. mise checks trust before
-/// parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
-/// discovery paths, fail with an untrusted-config error when it cannot prompt,
-/// or assume trust in detected CI unless paranoid mode is enabled.
+/// that may execute code or affect the environment. Without trust, mise may
+/// prompt, skip the config in some discovery paths, or fail with an
+/// untrusted-config error when it cannot prompt.
 ///
-/// Safe config files do not require trust: files that only contain
-/// `min_version`, `[tools]` entries with plain version strings (or arrays
-/// of them), and `[tasks]` (no templates and no tool options) are loaded
-/// without prompting, since nothing in them executes code at load time —
-/// tools install and tasks run only on explicit commands like `mise install`
-/// or `mise run`.
+/// In normal mode, commands that execute project-defined behavior (`mise run`,
+/// naked task invocations such as `mise <TASK>`, `mise install`, `mise exec`,
+/// and `mise watch`) automatically trust their active config. Paranoid mode
+/// requires explicit, content-bound trust for every non-global config.
+///
+/// In normal mode, safe config files do not require trust: files that only contain
+/// `min_version`, `[tools]` entries with plain version strings (or arrays of
+/// them), and `[tasks]` without templates or tool options.
 ///
 /// Trust is shared across git worktrees: a config file inside a linked
 /// worktree is trusted when the equivalent path in the repository's main
@@ -34,7 +35,7 @@ use itertools::Itertools;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Trust {
-    /// The config file to trust
+    /// The config file whose trust status to change
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 
@@ -54,7 +55,7 @@ pub struct Trust {
     #[clap(long, verbatim_doc_comment)]
     show: bool,
 
-    /// No longer trust this config, will prompt in the future
+    /// Remove explicit trust for this config
     #[clap(long)]
     untrust: bool,
 }

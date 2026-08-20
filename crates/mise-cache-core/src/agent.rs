@@ -4,7 +4,7 @@ use crate::{
     canonical_json,
 };
 use eyre::{Result, bail};
-use futures_util::{StreamExt, stream};
+use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream};
 use log::warn;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -12,6 +12,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 const MAX_EXECUTABLE_IDENTITIES: usize = 64;
@@ -22,7 +23,10 @@ const MAX_TASK_ACTION_PREDICTIONS: usize = 16 * 1024;
 const MAX_ACTION_PREDICTION_PAYLOAD: usize = 256 * 1024;
 const MAX_REMOTE_TRANSFERS: usize = 64;
 const MAX_PREFETCH_TRANSFERS: usize = 48;
+const MAX_PREFETCH_ACTION_BATCH: usize = 256;
+const PREFETCH_ACTION_BATCH_DELAY: Duration = Duration::from_millis(5);
 const MAX_PREFETCH_DIRECTORY_OBJECTS: usize = 100_000;
+const MAX_PREFETCH_OBJECTS_PER_WAVE: usize = 100_000;
 
 /// Remote action-cache access owned by one task session.
 pub struct AgentRemoteCache {
@@ -46,6 +50,10 @@ pub enum AgentRequest {
     FindBlob {
         digest: CacheDigest,
     },
+    /// Resolve blobs to session-verified local CAS paths.
+    FindBlobs {
+        digests: Vec<CacheDigest>,
+    },
     StoreBlob {
         digest: CacheDigest,
         source: PathBuf,
@@ -55,9 +63,11 @@ pub enum AgentRequest {
     },
     RecordActionHit {
         action: CacheDigest,
+        restore: RestoreStats,
     },
     RecordActionVerification {
         matched: bool,
+        restore: RestoreStats,
     },
     StoreActionResult {
         result: RemoteActionResult,
@@ -81,6 +91,18 @@ pub enum AgentRequest {
     },
 }
 
+/// Local output restoration work performed by one action-cache adapter hit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestoreStats {
+    /// Cumulative time spent materializing and validating output files.
+    pub duration_ns: u64,
+    /// Number of compiler output files restored.
+    pub output_files: u64,
+    /// Declared size of compiler output files restored.
+    pub output_bytes: u64,
+}
+
 /// A response returned by the task-scoped cache agent.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -92,6 +114,10 @@ pub enum AgentResponse {
     /// A local CAS path already verified against the requested digest.
     Blob {
         path: Option<PathBuf>,
+    },
+    /// Local CAS paths already verified against the requested digests.
+    Blobs {
+        paths: Vec<Option<PathBuf>>,
     },
     Stored {
         path: PathBuf,
@@ -119,6 +145,8 @@ pub enum AgentResponse {
 /// Aggregate cache activity for one task session.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AgentStats {
+    /// End-to-end lifetime of the task-scoped cache session.
+    pub session_duration_ns: u64,
     /// Number of action-result lookups.
     pub lookups: u64,
     /// Number of lookups that found a valid local action result.
@@ -137,6 +165,34 @@ pub struct AgentStats {
     pub uploaded_bytes: u64,
     /// Complete actions staged before an adapter requested them.
     pub prefetched_actions: u64,
+    /// Number of task manifest requests made to the remote cache.
+    pub remote_manifest_lookups: u64,
+    /// Cumulative time spent requesting remote task manifests.
+    pub remote_manifest_lookup_duration_ns: u64,
+    /// Number of action-result requests made to the remote cache.
+    pub remote_action_lookups: u64,
+    /// Cumulative time spent requesting remote action results.
+    pub remote_action_lookup_duration_ns: u64,
+    /// Number of blob requests made to the remote cache.
+    pub remote_blob_requests: u64,
+    /// Number of packed blob requests made to the remote cache.
+    pub remote_blob_pack_requests: u64,
+    /// Number of verified blobs received through packed responses.
+    pub remote_blob_pack_blobs: u64,
+    /// Cumulative time spent downloading and verifying remote blobs.
+    pub remote_blob_transfer_duration_ns: u64,
+    /// Cumulative time spent ingesting downloaded blobs into the local CAS.
+    pub local_cas_write_duration_ns: u64,
+    /// Number of speculative prefetch runs started for task manifests.
+    pub prefetch_runs: u64,
+    /// Cumulative wall time of speculative task-manifest prefetch runs.
+    pub prefetch_duration_ns: u64,
+    /// Cumulative time spent staging or materializing and validating cached outputs.
+    pub materialization_duration_ns: u64,
+    /// Number of compiler output files restored from action hits.
+    pub restored_output_files: u64,
+    /// Declared size of compiler output files restored from action hits.
+    pub restored_output_bytes: u64,
 }
 
 /// Adapter-owned data needed to reconstruct an action before fresh dependency
@@ -161,6 +217,77 @@ struct AtomicAgentStats {
     downloaded_bytes: AtomicU64,
     uploaded_bytes: AtomicU64,
     prefetched_actions: AtomicU64,
+    remote_manifest_lookups: AtomicU64,
+    remote_manifest_lookup_duration_ns: AtomicU64,
+    remote_action_lookups: AtomicU64,
+    remote_action_lookup_duration_ns: AtomicU64,
+    remote_blob_requests: AtomicU64,
+    remote_blob_pack_requests: AtomicU64,
+    remote_blob_pack_blobs: AtomicU64,
+    remote_blob_transfer_duration_ns: AtomicU64,
+    local_cas_write_duration_ns: AtomicU64,
+    prefetch_runs: AtomicU64,
+    prefetch_duration_ns: AtomicU64,
+    materialization_duration_ns: AtomicU64,
+    restored_output_files: AtomicU64,
+    restored_output_bytes: AtomicU64,
+}
+
+struct AtomicDurationTimer<'a> {
+    started: Instant,
+    target: &'a AtomicU64,
+}
+
+impl<'a> AtomicDurationTimer<'a> {
+    fn start(target: &'a AtomicU64) -> Self {
+        Self {
+            started: Instant::now(),
+            target,
+        }
+    }
+}
+
+impl Drop for AtomicDurationTimer<'_> {
+    fn drop(&mut self) {
+        atomic_saturating_add(self.target, duration_ns(self.started));
+    }
+}
+
+fn duration_ns(started: Instant) -> u64 {
+    started.elapsed().as_nanos().try_into().unwrap_or(u64::MAX)
+}
+
+fn atomic_saturating_add(target: &AtomicU64, value: u64) {
+    let _ = target.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(current.saturating_add(value))
+    });
+}
+
+fn queue_prefetch_digest(
+    verified: &BTreeMap<CacheDigest, PathBuf>,
+    pending: &mut BTreeMap<CacheDigest, ()>,
+    digest: CacheDigest,
+) {
+    if verified.contains_key(&digest) || pending.contains_key(&digest) {
+        return;
+    }
+    pending.insert(digest, ());
+}
+
+fn queue_prefetch_directory(
+    seen: &BTreeMap<CacheDigest, ()>,
+    pending: &mut BTreeMap<CacheDigest, ()>,
+    digest: CacheDigest,
+    limit: usize,
+) -> bool {
+    if seen.contains_key(&digest) || pending.contains_key(&digest) {
+        return true;
+    }
+    if seen.len().saturating_add(pending.len()) >= limit {
+        return false;
+    }
+    pending.insert(digest, ());
+    true
 }
 
 /// Shared state for an agent hosted by the top-level `mise run` process.
@@ -211,6 +338,11 @@ struct TaskActionState {
     baseline_loaded: bool,
     predictions: BTreeMap<CacheDigest, ActionPrediction>,
     remote_etag: Option<String>,
+}
+
+struct PrefetchedAction {
+    adapter: String,
+    result: RemoteActionResult,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -494,6 +626,10 @@ impl CacheAgent {
         };
         let (_, selector) = Self::task_manifest_selector(task)?;
         let _permit = self.remote_transfers.acquire().await?;
+        self.stats
+            .remote_manifest_lookups
+            .fetch_add(1, Ordering::Relaxed);
+        let _timer = AtomicDurationTimer::start(&self.stats.remote_manifest_lookup_duration_ns);
         let Some(remote_manifest) = remote.get_action_manifest(&selector).await? else {
             return Ok(None);
         };
@@ -538,6 +674,7 @@ impl CacheAgent {
     /// Return a snapshot of this session's cache activity.
     pub fn stats(&self) -> AgentStats {
         AgentStats {
+            session_duration_ns: 0,
             lookups: self.stats.lookups.load(Ordering::Relaxed),
             hits: self.stats.hits.load(Ordering::Relaxed),
             stores: self.stats.stores.load(Ordering::Relaxed),
@@ -547,6 +684,35 @@ impl CacheAgent {
             downloaded_bytes: self.stats.downloaded_bytes.load(Ordering::Relaxed),
             uploaded_bytes: self.stats.uploaded_bytes.load(Ordering::Relaxed),
             prefetched_actions: self.stats.prefetched_actions.load(Ordering::Relaxed),
+            remote_manifest_lookups: self.stats.remote_manifest_lookups.load(Ordering::Relaxed),
+            remote_manifest_lookup_duration_ns: self
+                .stats
+                .remote_manifest_lookup_duration_ns
+                .load(Ordering::Relaxed),
+            remote_action_lookups: self.stats.remote_action_lookups.load(Ordering::Relaxed),
+            remote_action_lookup_duration_ns: self
+                .stats
+                .remote_action_lookup_duration_ns
+                .load(Ordering::Relaxed),
+            remote_blob_requests: self.stats.remote_blob_requests.load(Ordering::Relaxed),
+            remote_blob_pack_requests: self.stats.remote_blob_pack_requests.load(Ordering::Relaxed),
+            remote_blob_pack_blobs: self.stats.remote_blob_pack_blobs.load(Ordering::Relaxed),
+            remote_blob_transfer_duration_ns: self
+                .stats
+                .remote_blob_transfer_duration_ns
+                .load(Ordering::Relaxed),
+            local_cas_write_duration_ns: self
+                .stats
+                .local_cas_write_duration_ns
+                .load(Ordering::Relaxed),
+            prefetch_runs: self.stats.prefetch_runs.load(Ordering::Relaxed),
+            prefetch_duration_ns: self.stats.prefetch_duration_ns.load(Ordering::Relaxed),
+            materialization_duration_ns: self
+                .stats
+                .materialization_duration_ns
+                .load(Ordering::Relaxed),
+            restored_output_files: self.stats.restored_output_files.load(Ordering::Relaxed),
+            restored_output_bytes: self.stats.restored_output_bytes.load(Ordering::Relaxed),
         }
     }
 
@@ -590,6 +756,8 @@ impl CacheAgent {
         if !self.remote_mode.reads() || self.remote.is_none() {
             return;
         }
+        self.stats.prefetch_runs.fetch_add(1, Ordering::Relaxed);
+        let _timer = AtomicDurationTimer::start(&self.stats.prefetch_duration_ns);
         let mut actions = BTreeMap::new();
         for prediction in predictions {
             actions
@@ -603,22 +771,58 @@ impl CacheAgent {
                 break;
             };
             let agent = self.clone();
-            tasks.spawn(async move { agent.prefetch_action(action, adapter).await });
+            tasks.spawn(async move { agent.resolve_prefetch_action(action, adapter).await });
         }
-        while let Some(result) = tasks.join_next().await {
+        let mut resolved = Vec::new();
+        while !tasks.is_empty() {
+            let result = if resolved.is_empty() {
+                tasks.join_next().await
+            } else {
+                match tokio::time::timeout(PREFETCH_ACTION_BATCH_DELAY, tasks.join_next()).await {
+                    Ok(result) => result,
+                    Err(_) => {
+                        self.prefetch_resolved_actions(std::mem::take(&mut resolved))
+                            .await;
+                        continue;
+                    }
+                }
+            };
+            let Some(result) = result else {
+                break;
+            };
             match result {
-                Ok(Ok(())) => {}
+                Ok(Ok(Some(action))) => resolved.push(action),
+                Ok(Ok(None)) => {}
                 Ok(Err(error)) => warn!("remote action prefetch failed: {error}"),
                 Err(error) => warn!("remote action prefetch task failed: {error}"),
             }
             if let Some((action, adapter)) = actions.next() {
                 let agent = self.clone();
-                tasks.spawn(async move { agent.prefetch_action(action, adapter).await });
+                tasks.spawn(async move { agent.resolve_prefetch_action(action, adapter).await });
             }
+            if resolved.len() == MAX_PREFETCH_ACTION_BATCH {
+                self.prefetch_resolved_actions(std::mem::take(&mut resolved))
+                    .await;
+            }
+        }
+        if !resolved.is_empty() {
+            self.prefetch_resolved_actions(resolved).await;
         }
     }
 
+    #[cfg(test)]
     async fn prefetch_action(&self, action: CacheDigest, adapter: String) -> Result<()> {
+        if let Some(action) = self.resolve_prefetch_action(action, adapter).await? {
+            self.prefetch_resolved_actions(vec![action]).await;
+        }
+        Ok(())
+    }
+
+    async fn resolve_prefetch_action(
+        &self,
+        action: CacheDigest,
+        adapter: String,
+    ) -> Result<Option<PrefetchedAction>> {
         let remote = self
             .remote
             .as_ref()
@@ -627,7 +831,7 @@ impl CacheAgent {
             let lock = self.action_lock(&action);
             let _guard = lock.lock().await;
             if self.actions.find(&action)?.is_some() {
-                return Ok(());
+                return Ok(None);
             }
             if let Some(result) = self
                 .pending_remote_actions
@@ -641,9 +845,11 @@ impl CacheAgent {
                 let _prefetch_permit = self.prefetch_transfers.acquire().await?;
                 let result = {
                     let _permit = self.remote_transfers.acquire().await?;
-                    remote.get_action_result(&action).await?
+                    self.get_remote_action_result(remote, &action).await?
                 };
-                let Some(result) = result else { return Ok(()) };
+                let Some(result) = result else {
+                    return Ok(None);
+                };
                 self.pending_remote_actions
                     .lock()
                     .unwrap()
@@ -651,36 +857,420 @@ impl CacheAgent {
                 result
             }
         };
-        self.fetch_remote_blob_prefetch(remote, &result.action)
-            .await?;
-        if let Some(metadata) = &result.metadata {
-            let path = self.fetch_remote_blob_prefetch(remote, metadata).await?;
-            if adapter == "rustc" {
-                let bytes = fs::read(path)?;
-                let metadata: RustcMetadata = serde_json::from_slice(&bytes)?;
-                if metadata.version != 1
-                    || metadata.kind != "rustc"
-                    || canonical_json(&metadata)? != bytes
-                {
-                    bail!("remote rustc action metadata is invalid");
-                }
-                self.fetch_remote_blob_prefetch(remote, &metadata.stdout)
-                    .await?;
-                self.fetch_remote_blob_prefetch(remote, &metadata.stderr)
-                    .await?;
+        Ok(Some(PrefetchedAction { adapter, result }))
+    }
+
+    fn prefetch_resolved_actions(&self, actions: Vec<PrefetchedAction>) -> BoxFuture<'_, ()> {
+        self.prefetch_resolved_actions_inner(actions).boxed()
+    }
+
+    async fn prefetch_resolved_actions_inner(&self, actions: Vec<PrefetchedAction>) {
+        let Some(remote) = self.remote.as_deref() else {
+            return;
+        };
+        if actions.is_empty() {
+            return;
+        }
+
+        let mut top_level = BTreeMap::new();
+        for action in &actions {
+            for digest in [
+                Some(&action.result.action),
+                action.result.metadata.as_ref(),
+                action.result.output_root.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                top_level.insert(digest.clone(), ());
             }
         }
-        if let Some(output_root) = &result.output_root {
-            self.prefetch_output_tree(remote, output_root).await?;
+        let mut verified = self
+            .fetch_remote_blobs(
+                remote,
+                top_level.into_keys().collect(),
+                Some(&self.prefetch_transfers),
+            )
+            .await;
+
+        let mut next = BTreeMap::new();
+        let mut pending_directories = BTreeMap::new();
+        let mut parsed_directories = BTreeMap::new();
+        let mut rustc_metadata = BTreeMap::new();
+        for action in &actions {
+            if action.adapter == "rustc"
+                && let Some(metadata_digest) = &action.result.metadata
+            {
+                match verified
+                    .get(metadata_digest)
+                    .ok_or_else(|| eyre::eyre!("remote rustc action metadata is missing"))
+                    .and_then(|path| Self::parse_rustc_metadata(path))
+                {
+                    Ok(metadata) => {
+                        queue_prefetch_digest(&verified, &mut next, metadata.stdout.clone());
+                        queue_prefetch_digest(&verified, &mut next, metadata.stderr.clone());
+                        rustc_metadata.insert(metadata_digest.clone(), metadata);
+                    }
+                    Err(error) => warn!(
+                        "remote rustc action metadata prefetch failed for {}: {error}",
+                        action.result.action.hash
+                    ),
+                }
+            }
+            if let Some(output_root) = &action.result.output_root {
+                pending_directories.insert(output_root.clone(), ());
+            }
         }
-        self.actions.store(&result)?;
-        self.pending_remote_actions.lock().unwrap().remove(&action);
-        self.stats
-            .prefetched_actions
-            .fetch_add(1, Ordering::Relaxed);
+
+        let mut seen_directories = BTreeMap::new();
+        loop {
+            let mut following = BTreeMap::new();
+            let mut directory_limit_exceeded = false;
+            for digest in pending_directories.into_keys() {
+                following.remove(&digest);
+                if seen_directories.insert(digest.clone(), ()).is_some() {
+                    continue;
+                }
+                if seen_directories.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
+                    warn!("remote action output tree is too large to prefetch");
+                    following.clear();
+                    break;
+                }
+                match verified
+                    .get(&digest)
+                    .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))
+                    .and_then(|path| Self::parse_cache_directory(path))
+                {
+                    Ok(directory) => {
+                        for file in &directory.files {
+                            queue_prefetch_digest(&verified, &mut next, file.digest.clone());
+                            if next.len() >= MAX_PREFETCH_OBJECTS_PER_WAVE {
+                                self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
+                                    .await;
+                            }
+                        }
+                        for child in &directory.directories {
+                            if !queue_prefetch_directory(
+                                &seen_directories,
+                                &mut following,
+                                child.digest.clone(),
+                                MAX_PREFETCH_DIRECTORY_OBJECTS,
+                            ) {
+                                warn!("remote action output tree is too large to prefetch");
+                                directory_limit_exceeded = true;
+                                break;
+                            }
+                            queue_prefetch_digest(&verified, &mut next, child.digest.clone());
+                            if next.len() >= MAX_PREFETCH_OBJECTS_PER_WAVE {
+                                self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
+                                    .await;
+                            }
+                        }
+                        parsed_directories.insert(digest, directory);
+                    }
+                    Err(error) => warn!(
+                        "remote action output directory prefetch failed for {}: {error}",
+                        digest.hash
+                    ),
+                }
+                if directory_limit_exceeded {
+                    following.clear();
+                    break;
+                }
+            }
+            self.flush_prefetch_digest_batch(remote, &mut verified, &mut next)
+                .await;
+            if following.is_empty() {
+                break;
+            }
+            pending_directories = following;
+        }
+
+        for action in actions {
+            match Self::validate_prefetched_action(
+                &action,
+                &verified,
+                &rustc_metadata,
+                &parsed_directories,
+            ) {
+                Ok(()) => {
+                    if let Err(error) = self.actions.store(&action.result) {
+                        warn!(
+                            "remote action prefetch could not publish {}: {error}",
+                            action.result.action.hash
+                        );
+                        continue;
+                    }
+                    self.pending_remote_actions
+                        .lock()
+                        .unwrap()
+                        .remove(&action.result.action);
+                    self.stats
+                        .prefetched_actions
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                Err(error) => warn!(
+                    "remote action prefetch was incomplete for {}: {error}",
+                    action.result.action.hash
+                ),
+            }
+        }
+    }
+
+    async fn flush_prefetch_digest_batch(
+        &self,
+        remote: &RemoteCacheClient,
+        verified: &mut BTreeMap<CacheDigest, PathBuf>,
+        pending: &mut BTreeMap<CacheDigest, ()>,
+    ) {
+        if pending.is_empty() {
+            return;
+        }
+        let digests = std::mem::take(pending).into_keys().collect();
+        verified.extend(
+            self.fetch_remote_blobs(remote, digests, Some(&self.prefetch_transfers))
+                .await,
+        );
+    }
+
+    async fn fetch_remote_blobs(
+        &self,
+        remote: &RemoteCacheClient,
+        digests: Vec<CacheDigest>,
+        prefetch_limit: Option<&tokio::sync::Semaphore>,
+    ) -> BTreeMap<CacheDigest, PathBuf> {
+        let mut verified = BTreeMap::new();
+        let mut missing = BTreeMap::new();
+        for digest in digests {
+            match self.find_verified_blob(&digest) {
+                Ok(Some(path)) => {
+                    verified.insert(digest, path);
+                }
+                Ok(None) => {
+                    missing.insert(digest, ());
+                }
+                Err(error) => warn!(
+                    "local cache blob lookup failed for {}: {error}",
+                    digest.hash
+                ),
+            }
+        }
+        if missing.is_empty() {
+            return verified;
+        }
+
+        let mut pack_candidates = missing.clone();
+        while !pack_candidates.is_empty() {
+            let requested = pack_candidates.keys().cloned().collect::<Vec<_>>();
+            let (pack, transfer_duration_ns) = {
+                let _prefetch_permit = match prefetch_limit {
+                    Some(limit) => match limit.acquire().await {
+                        Ok(permit) => Some(permit),
+                        Err(error) => {
+                            warn!(
+                                "remote cache blob pack could not acquire prefetch limit: {error}"
+                            );
+                            break;
+                        }
+                    },
+                    None => None,
+                };
+                let _transfer_permit = match self.remote_transfers.acquire().await {
+                    Ok(permit) => permit,
+                    Err(error) => {
+                        warn!("remote cache blob pack could not acquire transfer limit: {error}");
+                        break;
+                    }
+                };
+                let transfer_started = Instant::now();
+                let pack = remote
+                    .get_blob_pack(&requested, self.remote_staging_dir.as_path())
+                    .await;
+                (pack, duration_ns(transfer_started))
+            };
+            let pack = match pack {
+                Ok(Some(pack)) => pack,
+                Ok(None) => break,
+                Err(error) => {
+                    atomic_saturating_add(
+                        &self.stats.remote_blob_transfer_duration_ns,
+                        transfer_duration_ns,
+                    );
+                    warn!(
+                        "remote cache blob pack failed; falling back to individual blobs: {error}"
+                    );
+                    break;
+                }
+            };
+            atomic_saturating_add(
+                &self.stats.remote_blob_transfer_duration_ns,
+                transfer_duration_ns,
+            );
+            atomic_saturating_add(&self.stats.remote_blob_pack_requests, pack.requests);
+            atomic_saturating_add(&self.stats.remote_blob_pack_blobs, pack.blob_count);
+            atomic_saturating_add(&self.stats.downloaded_bytes, pack.payload_bytes);
+            if pack.requested.is_empty() {
+                break;
+            }
+            for digest in &pack.requested {
+                pack_candidates.remove(digest);
+            }
+            let mut ingests = stream::iter(pack.blobs.into_iter().map(|(digest, source)| {
+                let digest_for_result = digest.clone();
+                async move {
+                    (
+                        digest_for_result,
+                        self.ingest_packed_blob(digest, source).await,
+                    )
+                }
+            }))
+            .buffer_unordered(MAX_PREFETCH_TRANSFERS);
+            while let Some((digest, result)) = ingests.next().await {
+                match result {
+                    Ok(path) => {
+                        missing.remove(&digest);
+                        verified.insert(digest, path);
+                    }
+                    Err(error) => warn!(
+                        "remote cache packed blob ingest failed for {}: {error}",
+                        digest.hash
+                    ),
+                }
+            }
+        }
+
+        let mut transfers = stream::iter(missing.into_keys().map(|digest| {
+            let digest_for_result = digest.clone();
+            async move {
+                (
+                    digest_for_result,
+                    self.fetch_remote_blob_with_limit(remote, &digest, prefetch_limit)
+                        .await,
+                )
+            }
+        }))
+        .buffer_unordered(MAX_PREFETCH_TRANSFERS);
+        while let Some((digest, result)) = transfers.next().await {
+            match result {
+                Ok(path) => {
+                    verified.insert(digest, path);
+                }
+                Err(error) => warn!(
+                    "remote cache blob prefetch failed for {}: {error}",
+                    digest.hash
+                ),
+            }
+        }
+        verified
+    }
+
+    async fn ingest_packed_blob(&self, digest: CacheDigest, source: PathBuf) -> Result<PathBuf> {
+        let digest_size = digest.size;
+        let lock = self.write_lock(&digest);
+        let _guard = lock.lock().await;
+        let agent = self.clone();
+        let (path, stored, cas_duration_ns) = tokio::task::spawn_blocking(move || {
+            if let Some(path) = agent.find_verified_blob(&digest)? {
+                return Ok::<_, eyre::Report>((path, false, 0));
+            }
+            let cas_started = Instant::now();
+            let path = agent.cas.store_verified_file(&digest, &source)?;
+            let cas_duration_ns = duration_ns(cas_started);
+            agent.remember_verified_blob(&digest, &path);
+            Ok((path, true, cas_duration_ns))
+        })
+        .await??;
+        atomic_saturating_add(&self.stats.local_cas_write_duration_ns, cas_duration_ns);
+        if stored {
+            self.stats.stores.fetch_add(1, Ordering::Relaxed);
+            atomic_saturating_add(&self.stats.stored_bytes, digest_size);
+        }
+        Ok(path)
+    }
+
+    fn parse_rustc_metadata(path: &Path) -> Result<RustcMetadata> {
+        let bytes = fs::read(path)?;
+        let metadata: RustcMetadata = serde_json::from_slice(&bytes)?;
+        if metadata.version != 1 || metadata.kind != "rustc" || canonical_json(&metadata)? != bytes
+        {
+            bail!("remote rustc action metadata is invalid");
+        }
+        Ok(metadata)
+    }
+
+    fn parse_cache_directory(path: &Path) -> Result<CacheDirectory> {
+        let bytes = fs::read(path)?;
+        let directory: CacheDirectory = serde_json::from_slice(&bytes)?;
+        if directory.version != 1 || canonical_json(&directory)? != bytes {
+            bail!("remote action output directory is invalid");
+        }
+        Ok(directory)
+    }
+
+    #[cfg(test)]
+    fn load_cache_directory(&self, digest: &CacheDigest) -> Result<CacheDirectory> {
+        let path = self
+            .find_verified_blob(digest)?
+            .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))?;
+        Self::parse_cache_directory(&path)
+    }
+
+    fn validate_prefetched_action(
+        action: &PrefetchedAction,
+        verified: &BTreeMap<CacheDigest, PathBuf>,
+        rustc_metadata: &BTreeMap<CacheDigest, RustcMetadata>,
+        directories: &BTreeMap<CacheDigest, CacheDirectory>,
+    ) -> Result<()> {
+        if !verified.contains_key(&action.result.action) {
+            bail!("remote action descriptor is missing");
+        }
+        if let Some(metadata) = &action.result.metadata {
+            if action.adapter == "rustc" {
+                let metadata = rustc_metadata
+                    .get(metadata)
+                    .ok_or_else(|| eyre::eyre!("remote rustc action metadata is missing"))?;
+                for digest in [&metadata.stdout, &metadata.stderr] {
+                    if !verified.contains_key(digest) {
+                        bail!("remote rustc action diagnostic blob is missing");
+                    }
+                }
+            } else if !verified.contains_key(metadata) {
+                bail!("remote action metadata is missing");
+            }
+        }
+        let mut pending = action
+            .result
+            .output_root
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut seen = BTreeMap::new();
+        while let Some(digest) = pending.pop() {
+            if seen.insert(digest.clone(), ()).is_some() {
+                continue;
+            }
+            if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
+                bail!("remote action output tree is too large");
+            }
+            let directory = directories
+                .get(&digest)
+                .ok_or_else(|| eyre::eyre!("remote action output directory is missing"))?;
+            for file in &directory.files {
+                if !verified.contains_key(&file.digest) {
+                    bail!("remote action output file is missing");
+                }
+            }
+            pending.extend(
+                directory
+                    .directories
+                    .iter()
+                    .map(|directory| directory.digest.clone()),
+            );
+        }
         Ok(())
     }
 
+    #[cfg(test)]
     async fn prefetch_output_tree(
         &self,
         remote: &RemoteCacheClient,
@@ -695,16 +1285,17 @@ impl CacheAgent {
             if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
                 bail!("remote action output tree is too large");
             }
-            let path = self.fetch_remote_blob_prefetch(remote, &digest).await?;
-            let bytes = fs::read(path)?;
-            let directory: CacheDirectory = serde_json::from_slice(&bytes)?;
-            if directory.version != 1 || canonical_json(&directory)? != bytes {
-                bail!("remote action output directory is invalid");
-            }
+            self.fetch_remote_blob_with_limit(remote, &digest, Some(&self.prefetch_transfers))
+                .await?;
+            let directory = self.load_cache_directory(&digest)?;
             let mut transfers = stream::iter(directory.files.into_iter().map(|file| async move {
-                self.fetch_remote_blob_prefetch(remote, &file.digest)
-                    .await
-                    .map(|_| ())
+                self.fetch_remote_blob_with_limit(
+                    remote,
+                    &file.digest,
+                    Some(&self.prefetch_transfers),
+                )
+                .await
+                .map(|_| ())
             }))
             .buffer_unordered(MAX_PREFETCH_TRANSFERS);
             while let Some(result) = transfers.next().await {
@@ -718,15 +1309,6 @@ impl CacheAgent {
             );
         }
         Ok(())
-    }
-
-    async fn fetch_remote_blob_prefetch(
-        &self,
-        remote: &RemoteCacheClient,
-        digest: &CacheDigest,
-    ) -> Result<PathBuf> {
-        self.fetch_remote_blob_with_limit(remote, digest, Some(&self.prefetch_transfers))
-            .await
     }
 
     async fn fetch_remote_blob(
@@ -754,9 +1336,16 @@ impl CacheAgent {
             None => None,
         };
         let _permit = self.remote_transfers.acquire().await?;
+        self.stats
+            .remote_blob_requests
+            .fetch_add(1, Ordering::Relaxed);
+        let transfer_timer =
+            AtomicDurationTimer::start(&self.stats.remote_blob_transfer_duration_ns);
         let temporary = remote
             .get_blob_file(digest, self.remote_staging_dir.as_path())
             .await?;
+        drop(transfer_timer);
+        let _cas_timer = AtomicDurationTimer::start(&self.stats.local_cas_write_duration_ns);
         let path = self.cas.store_verified_file(digest, temporary.path())?;
         self.remember_verified_blob(digest, &path);
         self.stats.stores.fetch_add(1, Ordering::Relaxed);
@@ -772,13 +1361,17 @@ impl CacheAgent {
     async fn respond(&self, request: AgentRequest) -> AgentResponse {
         let result = match request {
             AgentRequest::FindBlob { digest } => self.find_blob(&digest).await,
+            AgentRequest::FindBlobs { digests } => self.find_blobs(digests).await,
             AgentRequest::StoreBlob { digest, source } => self.store_blob(&digest, &source).await,
             AgentRequest::FindActionResult { action } => {
                 self.stats.lookups.fetch_add(1, Ordering::Relaxed);
                 self.find_action_result(&action).await
             }
-            AgentRequest::RecordActionHit { action } => self.record_action_hit(&action),
-            AgentRequest::RecordActionVerification { matched } => {
+            AgentRequest::RecordActionHit { action, restore } => {
+                self.record_action_hit(&action, restore)
+            }
+            AgentRequest::RecordActionVerification { matched, restore } => {
+                self.record_materialization(restore);
                 self.stats.verifications.fetch_add(1, Ordering::Relaxed);
                 if !matched {
                     self.stats.divergences.fetch_add(1, Ordering::Relaxed);
@@ -830,6 +1423,35 @@ impl CacheAgent {
                 Ok(AgentResponse::Blob { path: None })
             }
         }
+    }
+
+    async fn find_blobs(&self, digests: Vec<CacheDigest>) -> Result<AgentResponse> {
+        let mut paths = BTreeMap::new();
+        let mut missing = Vec::new();
+        for digest in &digests {
+            match self.find_verified_blob(digest)? {
+                Some(path) => {
+                    paths.insert(digest.clone(), path);
+                }
+                None => {
+                    missing.push(digest.clone());
+                }
+            }
+        }
+
+        if !missing.is_empty()
+            && self.remote_mode.reads()
+            && let Some(remote) = &self.remote
+        {
+            paths.extend(self.fetch_remote_blobs(remote, missing, None).await);
+        }
+
+        Ok(AgentResponse::Blobs {
+            paths: digests
+                .into_iter()
+                .map(|digest| paths.get(&digest).cloned())
+                .collect(),
+        })
     }
 
     async fn store_blob(&self, digest: &CacheDigest, source: &Path) -> Result<AgentResponse> {
@@ -928,7 +1550,7 @@ impl CacheAgent {
             });
         }
         let _permit = self.remote_transfers.acquire().await?;
-        match remote.get_action_result(action).await {
+        match self.get_remote_action_result(remote, action).await {
             Ok(Some(result)) => {
                 self.pending_remote_actions
                     .lock()
@@ -965,7 +1587,23 @@ impl CacheAgent {
         Ok(AgentResponse::ActionStored { path })
     }
 
-    fn record_action_hit(&self, action: &CacheDigest) -> Result<AgentResponse> {
+    async fn get_remote_action_result(
+        &self,
+        remote: &RemoteCacheClient,
+        action: &CacheDigest,
+    ) -> Result<Option<RemoteActionResult>> {
+        self.stats
+            .remote_action_lookups
+            .fetch_add(1, Ordering::Relaxed);
+        let _timer = AtomicDurationTimer::start(&self.stats.remote_action_lookup_duration_ns);
+        remote.get_action_result(action).await
+    }
+
+    fn record_action_hit(
+        &self,
+        action: &CacheDigest,
+        restore: RestoreStats,
+    ) -> Result<AgentResponse> {
         if self.actions.find(action)?.is_none() {
             let pending = self.pending_remote_actions.lock().unwrap().remove(action);
             if let Some(result) = pending {
@@ -974,8 +1612,19 @@ impl CacheAgent {
                 bail!("cannot record a hit for a missing action result");
             }
         }
+        self.record_restore(restore);
         self.stats.hits.fetch_add(1, Ordering::Relaxed);
         Ok(AgentResponse::ActionHitRecorded)
+    }
+
+    fn record_restore(&self, restore: RestoreStats) {
+        self.record_materialization(restore);
+        atomic_saturating_add(&self.stats.restored_output_files, restore.output_files);
+        atomic_saturating_add(&self.stats.restored_output_bytes, restore.output_bytes);
+    }
+
+    fn record_materialization(&self, restore: RestoreStats) {
+        atomic_saturating_add(&self.stats.materialization_duration_ns, restore.duration_ns);
     }
 
     fn find_action_prediction(
@@ -1246,6 +1895,29 @@ mod tests {
     use crate::ACTION_RESULT_MEDIA_TYPE;
     use std::time::Duration;
 
+    #[test]
+    fn directory_queue_counts_only_unique_unseen_nodes() {
+        let shared = CacheDigest::blake3(b"shared");
+        let first = CacheDigest::blake3(b"first");
+        let second = CacheDigest::blake3(b"second");
+        let overflow = CacheDigest::blake3(b"overflow");
+        let seen = BTreeMap::from([(shared.clone(), ())]);
+        let mut pending = BTreeMap::new();
+
+        assert!(queue_prefetch_directory(&seen, &mut pending, shared, 3));
+        assert!(pending.is_empty());
+        assert!(queue_prefetch_directory(
+            &seen,
+            &mut pending,
+            first.clone(),
+            3
+        ));
+        assert!(queue_prefetch_directory(&seen, &mut pending, first, 3));
+        assert!(queue_prefetch_directory(&seen, &mut pending, second, 3));
+        assert!(!queue_prefetch_directory(&seen, &mut pending, overflow, 3));
+        assert_eq!(pending.len(), 2);
+    }
+
     async fn handshake(stream: &mut (impl AsyncRead + AsyncWrite + Unpin), version: &str) {
         let request = AgentRequest::Hello {
             protocol: AGENT_PROTOCOL_VERSION,
@@ -1362,7 +2034,12 @@ mod tests {
         assert!(matches!(
             agent
                 .respond(AgentRequest::RecordActionHit {
-                    action: action.clone()
+                    action: action.clone(),
+                    restore: RestoreStats {
+                        duration_ns: 7,
+                        output_files: 2,
+                        output_bytes: 11,
+                    },
                 })
                 .await,
             AgentResponse::ActionHitRecorded
@@ -1372,6 +2049,9 @@ mod tests {
             AgentStats {
                 lookups: 1,
                 hits: 1,
+                materialization_duration_ns: 7,
+                restored_output_files: 2,
+                restored_output_bytes: 11,
                 ..AgentStats::default()
             }
         );
@@ -1394,7 +2074,10 @@ mod tests {
         ));
         assert!(matches!(
             agent
-                .respond(AgentRequest::RecordActionHit { action })
+                .respond(AgentRequest::RecordActionHit {
+                    action,
+                    restore: RestoreStats::default(),
+                })
                 .await,
             AgentResponse::Error { .. }
         ));
@@ -1408,12 +2091,22 @@ mod tests {
 
         assert!(matches!(
             agent
-                .respond(AgentRequest::RecordActionVerification { matched: false })
+                .respond(AgentRequest::RecordActionVerification {
+                    matched: false,
+                    restore: RestoreStats {
+                        duration_ns: 7,
+                        output_files: 2,
+                        output_bytes: 11,
+                    },
+                })
                 .await,
             AgentResponse::ActionVerificationRecorded
         ));
         assert_eq!(agent.stats().verifications, 1);
         assert_eq!(agent.stats().divergences, 1);
+        assert_eq!(agent.stats().materialization_duration_ns, 7);
+        assert_eq!(agent.stats().restored_output_files, 0);
+        assert_eq!(agent.stats().restored_output_bytes, 0);
     }
 
     #[tokio::test]
@@ -1769,13 +2462,27 @@ mod tests {
         }
         assert!(matches!(
             reader
-                .respond(AgentRequest::RecordActionHit { action })
+                .respond(AgentRequest::RecordActionHit {
+                    action,
+                    restore: RestoreStats::default(),
+                })
                 .await,
             AgentResponse::ActionHitRecorded
         ));
         for mock in mocks {
             mock.assert_async().await;
         }
+        let stats = reader.stats();
+        assert_eq!(stats.prefetch_runs, 1);
+        assert_eq!(stats.prefetched_actions, 1);
+        assert!(stats.remote_manifest_lookups > 0);
+        assert!(stats.remote_action_lookups > 0);
+        assert!(stats.remote_blob_requests > 0);
+        assert!(stats.remote_manifest_lookup_duration_ns > 0);
+        assert!(stats.remote_action_lookup_duration_ns > 0);
+        assert!(stats.remote_blob_transfer_duration_ns > 0);
+        assert!(stats.local_cas_write_duration_ns > 0);
+        assert!(stats.prefetch_duration_ns > 0);
     }
 
     #[tokio::test]
@@ -1932,6 +2639,336 @@ mod tests {
         action_result.assert_async().await;
         action_blob.assert_async().await;
         assert!(agent.actions.find(&action).unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn prefetches_complete_actions_in_directory_wave_blob_packs() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let action_bytes = b"packed action descriptor";
+        let stdout_bytes = b"packed stdout";
+        let stderr_bytes = b"packed stderr";
+        let artifact_bytes = b"packed artifact";
+        let action = CacheDigest::blake3(action_bytes);
+        let stdout = CacheDigest::blake3(stdout_bytes);
+        let stderr = CacheDigest::blake3(stderr_bytes);
+        let artifact = CacheDigest::blake3(artifact_bytes);
+        let metadata_bytes = canonical_json(&RustcMetadata {
+            version: 1,
+            kind: "rustc".into(),
+            stdout: stdout.clone(),
+            stderr: stderr.clone(),
+        })
+        .unwrap();
+        let metadata = CacheDigest::blake3(&metadata_bytes);
+        let directory_bytes = canonical_json(&serde_json::json!({
+            "directories": [],
+            "files": [{
+                "digest": artifact,
+                "executable": false,
+                "mode": 420,
+                "name": "artifact",
+            }],
+            "symlinks": [],
+            "version": 1,
+        }))
+        .unwrap();
+        let output_root = CacheDigest::blake3(&directory_bytes);
+        let result = RemoteActionResult {
+            action: action.clone(),
+            metadata: Some(metadata.clone()),
+            output_root: Some(output_root.clone()),
+            version: 1,
+        };
+        let action_result = server
+            .mock("GET", action_path(&action).as_str())
+            .with_status(200)
+            .with_header("content-type", ACTION_RESULT_MEDIA_TYPE)
+            .with_body(serde_json::to_vec(&result).unwrap())
+            .expect(1)
+            .create_async()
+            .await;
+        let capabilities = server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let mut top = vec![
+            (action.clone(), action_bytes.as_slice()),
+            (metadata.clone(), metadata_bytes.as_slice()),
+            (output_root.clone(), directory_bytes.as_slice()),
+        ];
+        top.sort_by(|left, right| left.0.cmp(&right.0));
+        let first_pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": top.iter().map(|(digest, _)| digest).collect::<Vec<_>>()
+            })))
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_body(blob_pack_body(&top))
+            .expect(1)
+            .create_async()
+            .await;
+        let mut leaves = vec![
+            (stdout.clone(), stdout_bytes.as_slice()),
+            (stderr.clone(), stderr_bytes.as_slice()),
+            (artifact.clone(), artifact_bytes.as_slice()),
+        ];
+        leaves.sort_by(|left, right| left.0.cmp(&right.0));
+        let second_pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": leaves.iter().map(|(digest, _)| digest).collect::<Vec<_>>()
+            })))
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_body(blob_pack_body(&leaves))
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+
+        agent
+            .prefetch_action(action.clone(), "rustc".into())
+            .await
+            .unwrap();
+
+        assert_eq!(agent.actions.find(&action).unwrap(), Some(result));
+        let stats = agent.stats();
+        assert_eq!(stats.prefetched_actions, 1);
+        assert_eq!(stats.remote_blob_requests, 0);
+        assert_eq!(stats.remote_blob_pack_requests, 2);
+        assert_eq!(stats.remote_blob_pack_blobs, 6);
+        action_result.assert_async().await;
+        capabilities.assert_async().await;
+        first_pack.assert_async().await;
+        second_pack.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn foreground_blob_batches_use_blob_packs() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut entries = [
+            (CacheDigest::blake3(b"first"), b"first".as_slice()),
+            (CacheDigest::blake3(b"second"), b"second".as_slice()),
+        ];
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        let requested = entries
+            .iter()
+            .map(|(digest, _)| digest.clone())
+            .collect::<Vec<_>>();
+        let response_requested = vec![
+            entries[0].0.clone(),
+            entries[1].0.clone(),
+            entries[0].0.clone(),
+        ];
+        let capabilities = server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": requested.clone()
+            })))
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_body(blob_pack_body(&entries))
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let response = agent
+            .respond(AgentRequest::FindBlobs {
+                digests: response_requested,
+            })
+            .await;
+
+        let AgentResponse::Blobs { paths } = response else {
+            panic!("unexpected blob lookup response");
+        };
+        assert_eq!(paths.len(), 3);
+        for (expected, path) in [entries[0].1, entries[1].1, entries[0].1]
+            .into_iter()
+            .zip(paths)
+        {
+            assert_eq!(fs::read(path.unwrap()).unwrap(), expected);
+        }
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_requests, 0);
+        assert_eq!(stats.remote_blob_pack_requests, 1);
+        assert_eq!(stats.remote_blob_pack_blobs, 2);
+        capabilities.assert_async().await;
+        pack.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn preserves_successful_pack_metrics_when_a_later_chunk_falls_back() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut entries = [
+            (CacheDigest::blake3(b"first"), b"first".as_slice()),
+            (CacheDigest::blake3(b"second"), b"second".as_slice()),
+        ];
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        let (first_digest, first_bytes) = entries[0].clone();
+        let (second_digest, second_bytes) = entries[1].clone();
+        let capabilities = server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":1,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let first_pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": [&first_digest]
+            })))
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_body(blob_pack_body(&[(first_digest.clone(), first_bytes)]))
+            .expect(1)
+            .create_async()
+            .await;
+        let failed_pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": [&second_digest]
+            })))
+            .with_status(500)
+            .expect(1)
+            .create_async()
+            .await;
+        let fallback = server
+            .mock("GET", blob_path(&second_digest).as_str())
+            .with_status(200)
+            .with_body(second_bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let remote = agent.remote.as_deref().unwrap();
+
+        let verified = agent
+            .fetch_remote_blobs(
+                remote,
+                vec![first_digest.clone(), second_digest.clone()],
+                Some(&agent.prefetch_transfers),
+            )
+            .await;
+
+        assert_eq!(verified.len(), 2);
+        assert_eq!(fs::read(&verified[&first_digest]).unwrap(), first_bytes);
+        assert_eq!(fs::read(&verified[&second_digest]).unwrap(), second_bytes);
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_pack_requests, 1);
+        assert_eq!(stats.remote_blob_pack_blobs, 1);
+        assert_eq!(stats.remote_blob_requests, 1);
+        capabilities.assert_async().await;
+        first_pack.assert_async().await;
+        failed_pack.assert_async().await;
+        fallback.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn malformed_blob_pack_metadata_falls_back_to_individual_blobs() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let bytes = b"fallback blob";
+        let digest = CacheDigest::blake3(bytes);
+        server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_header(crate::BLOB_PACK_BYTES_HEADER, "not-a-number")
+            .with_body(blob_pack_body(&[(digest.clone(), bytes.as_slice())]))
+            .expect(1)
+            .create_async()
+            .await;
+        let fallback = server
+            .mock("GET", blob_path(&digest).as_str())
+            .with_status(200)
+            .with_body(bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let remote = agent.remote.as_deref().unwrap();
+
+        let verified = agent
+            .fetch_remote_blobs(remote, vec![digest.clone()], None)
+            .await;
+
+        assert_eq!(fs::read(&verified[&digest]).unwrap(), bytes);
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_pack_requests, 0);
+        assert_eq!(stats.remote_blob_pack_blobs, 0);
+        assert_eq!(stats.remote_blob_requests, 1);
+        pack.assert_async().await;
+        fallback.assert_async().await;
     }
 
     #[tokio::test]
@@ -2151,6 +3188,21 @@ mod tests {
         let output_root = CacheDigest::blake3(&directory);
         responses.insert(blob_path(&output_root), directory);
         (responses, output_root)
+    }
+
+    fn blob_pack_body(entries: &[(CacheDigest, &[u8])]) -> Vec<u8> {
+        let mut pack = crate::BLOB_PACK_MAGIC.to_vec();
+        for (digest, bytes) in entries {
+            pack.push(match digest.algorithm.as_str() {
+                "blake3" => 1,
+                "sha256" => 2,
+                algorithm => panic!("unexpected test digest algorithm {algorithm}"),
+            });
+            pack.extend(hex::decode(&digest.hash).unwrap());
+            pack.extend(digest.size.to_be_bytes());
+            pack.extend_from_slice(bytes);
+        }
+        pack
     }
 
     async fn delayed_blob_server(

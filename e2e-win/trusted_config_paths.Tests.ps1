@@ -38,10 +38,13 @@ PROJECT = "b"
         Remove-Item Env:MISE_TRUSTED_CONFIG_PATHS -ErrorAction Ignore
     }
 
+    # `-s bash` throughout: these assert *whether the config was trusted*, so they should not also
+    # be asserting which shell `mise env` picks when nothing is named. Left bare, they were pinning
+    # the Windows default as bash and broke when it changed.
     It 'trusts a single path set via env var' {
         $env:MISE_TRUSTED_CONFIG_PATHS = $script:DirA
         Set-Location $script:DirA
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export PROJECT=a"
     }
 
@@ -50,10 +53,10 @@ PROJECT = "b"
         # contain : in the drive letter (e.g. C:\foo). Using ; avoids ambiguity.
         $env:MISE_TRUSTED_CONFIG_PATHS = "$($script:DirA);$($script:DirB)"
         Set-Location $script:DirA
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export PROJECT=a"
         Set-Location $script:DirB
-        $output = mise env | Out-String
+        $output = mise env -s bash | Out-String
         $output | Should -Match "export PROJECT=b"
     }
 }

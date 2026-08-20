@@ -59,13 +59,74 @@ Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
 the Homebrew cask API (or from tap API metadata), downloads the artifact,
 verifies its sha256 when the cask provides one, extracts the archive, and
 installs app bundles into `/Applications` while recording the version under
-`<prefix>/Caskroom`.
+`<prefix>/Caskroom`. Like Homebrew, mise moves each app bundle into
+`/Applications` and leaves a symlink at its versioned Caskroom path instead of
+retaining a second copy of the application.
 
 ```toml
 [bootstrap.packages]
 "brew-cask:firefox" = "latest"
 "brew-cask:homebrew/cask/visual-studio-code" = "latest"
 ```
+
+### Overriding the application directory
+
+By default `app` artifacts are installed into `/Applications`, matching
+Homebrew. Set the `MISE_BREW_CASK_OPT_APPDIR` environment variable to install
+them somewhere else — for example a user-writable `~/Applications` that does not
+require elevation:
+
+```sh
+MISE_BREW_CASK_OPT_APPDIR="$HOME/Applications" mise bootstrap packages apply brew-cask:firefox
+```
+
+The value must be an absolute path, must not contain `..`, and must not resolve
+to the filesystem root. It is resolved to a real path (symlinks are followed)
+before use, so it acts as a fixed containment boundary for the app links mise
+creates. An empty value is ignored and falls back to `/Applications`. When the
+override is set, a cask that targets the default `/Applications` (as most do) is
+relocated into the override directory, preserving any subdirectories the cask
+requests; targets that a cask anchors under `$HOMEBREW_PREFIX/Applications` are
+left in the Homebrew prefix and are never relocated. This mirrors Homebrew's own
+`--appdir` install option.
+To adopt an app that is already installed at the cask's destination, use the
+table form with `adopt = true`:
+
+```toml
+[bootstrap.packages]
+"brew-cask:textmate" = { version = "latest", adopt = true }
+```
+
+To enable adoption for all configured casks, set the Homebrew bootstrap
+default. An individual cask can opt out with `adopt = false`:
+
+```toml
+[bootstrap.brew]
+adopt = true
+
+[bootstrap.packages]
+"brew-cask:textmate" = "latest"
+"brew-cask:replace-me" = { adopt = false }
+```
+
+As with Homebrew's `brew install --cask --adopt`, mise downloads and verifies
+the current cask artifact, then adopts the existing app only when its content
+is identical. A different existing app is left untouched and the install
+fails, except for casks declaring `auto_updates: true`: matching Homebrew,
+those adopt the existing app as-is because it may already have updated itself.
+Adopted apps are tracked by the mise receipt without keeping a duplicate app
+bundle in Caskroom.
+
+Casks declaring `auto_updates: true` in their Homebrew metadata are installed
+at the current version and then left to update themselves. mise does not expose
+an `auto_updates` override: the cask definition remains authoritative. These
+self-updating apps are also tracked by receipt without a duplicate Caskroom app
+bundle, and ordinary mise upgrades skip them.
+
+`mise bootstrap status` marks these entries as `installed (auto-updates)`.
+The `Current` column is the version recorded in the cask receipt; the live app
+may have updated itself to a different version. JSON status keeps the stable
+`"state": "installed"` value and adds `"auto_updates": true`.
 
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
@@ -216,7 +277,10 @@ boundary. A cask is removed only when its install-time `.mise-cask.toml`
 receipt explicitly marks it safe to prune and every recorded target still has
 the exact content fingerprint mise recorded after installation. The command
 removes those targets and the cask's Caskroom entry; `--dry-run` previews the
-plan and `--yes` skips confirmation.
+plan and `--yes` skips confirmation. Adopted and self-updating apps are tracked
+without a duplicate Caskroom bundle, so mise cannot prove that a later bundle
+at the same destination is still the one it owns. These metadata-only apps are
+therefore never removed by prune.
 
 Casks installed before their receipt included prune metadata are skipped until
 a later upgrade or reinstall refreshes the receipt. Casks with pkg or command

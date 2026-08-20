@@ -24,6 +24,49 @@ pub fn settle_display_separators(s: String) -> String {
     }
 }
 
+/// `\\?\UNC\server\share\x` shown as `\\server\share\x`.
+///
+/// The half of the extended-length prefix `dunce::simplified` leaves behind: its
+/// `is_safe_to_strip_unc` accepts `Prefix::VerbatimDisk` and nothing else, so a UNC path keeps a
+/// prefix mise itself rejects as input. Verified reachable on `\\wsl.localhost\<distro>\…`, which
+/// resolves perfectly well without it.
+///
+/// Declines in the three cases where the plain form would not name the same file:
+///
+/// - **a `/` in the remainder.** Inside `\\?\` a `/` is an ordinary character, so `a/b` is one
+///   component; `\\server\share\a/b` is two. `display_path`'s tests already pin the same trap for
+///   the disk prefix.
+/// - **past `MAX_PATH`.** There the prefix is load-bearing after all.
+/// - **a component ending in `.` or a space.** Those only resolve through the verbatim form.
+///
+/// Reserved names are *not* checked, though `dunce` declines them. It is handing back paths to open;
+/// this is text to read, and a directory named `con` is addressable by its plain path — measured,
+/// along with a task whose `dir` was `con` running in the right place. The disk-prefix case is
+/// unaffected either way, since `dunce` has already declined it before this sees it.
+#[cfg(windows)]
+fn simplify_verbatim_unc(shown: String) -> String {
+    const VERBATIM_UNC: &str = r"\\?\UNC\";
+
+    let Some(rest) = shown.strip_prefix(VERBATIM_UNC) else {
+        return shown;
+    };
+    let plain_len = 2 + rest.encode_utf16().count();
+    if rest.contains('/')
+        || plain_len >= crate::file::MAX_PATH
+        || rest
+            .split('\\')
+            .any(|c| c.ends_with('.') || c.ends_with(' '))
+    {
+        return shown;
+    }
+    format!(r"\\{rest}")
+}
+
+#[cfg(not(windows))]
+fn simplify_verbatim_unc(shown: String) -> String {
+    shown
+}
+
 pub trait PathExt {
     /// replaces $HOME with "~", and drops a Windows extended-length prefix
     fn display_user(&self) -> String;
@@ -38,9 +81,12 @@ impl PathExt for Path {
     /// which calls extended-length and device paths unsupported — so handing one back in a message
     /// offers a path mise would not accept.
     ///
-    /// `dunce::simplified` only strips the prefix when the result still names the same file:
-    /// verbatim UNC, device paths, reserved names and paths past `MAX_PATH` keep it, because those
-    /// genuinely do not resolve without it.
+    /// `dunce::simplified` only strips the prefix from `\\?\C:\…` — `Prefix::VerbatimDisk` is the
+    /// one kind its `is_safe_to_strip_unc` accepts, and every other verbatim form comes back
+    /// untouched. Device paths, reserved names and paths past `MAX_PATH` should come back untouched,
+    /// because those genuinely do not resolve without the prefix. A verbatim **UNC** path should
+    /// not: `\\?\UNC\server\share\x` and `\\server\share\x` name the same file, and only the second
+    /// is one mise would accept back — so [`simplify_verbatim_unc`] finishes the job.
     ///
     /// Separators are deliberately left as they are here — see [`settle_display_separators`],
     /// which `file::display_path` applies. This function also feeds strings that are matched
@@ -49,10 +95,11 @@ impl PathExt for Path {
         let path = dunce::simplified(self);
         let home = dirs::HOME.to_string_lossy();
         let home_str: &str = home.as_ref();
-        match cfg!(unix) && path.starts_with(home_str) && home != "/" {
+        let shown = match cfg!(unix) && path.starts_with(home_str) && home != "/" {
             true => path.to_string_lossy().replacen(home_str, "~", 1),
             false => path.to_string_lossy().to_string(),
-        }
+        };
+        simplify_verbatim_unc(shown)
     }
 
     fn mount(&self, on: &Path) -> PathBuf {
@@ -715,16 +762,49 @@ mod tests {
             Path::new(r"\\server\share\proj").display_user(),
             r"\\server\share\proj"
         );
-        // Verbatim UNC and device paths have no plain equivalent, so they keep the prefix.
+        // A verbatim UNC path does have a plain equivalent, and it is the only form mise accepts
+        // back as input, so the prefix goes. `dunce` leaves this one alone: `is_safe_to_strip_unc`
+        // takes `Prefix::VerbatimDisk` and nothing else.
         assert_eq!(
             Path::new(r"\\?\UNC\server\share").display_user(),
-            r"\\?\UNC\server\share"
+            r"\\server\share"
         );
+        // The shape this was found on, from a project reached through WSL.
+        assert_eq!(
+            Path::new(r"\\?\UNC\wsl.localhost\Ubuntu\home\me\proj").display_user(),
+            r"\\wsl.localhost\Ubuntu\home\me\proj"
+        );
+        // A device path has no plain equivalent and keeps its prefix.
         assert_eq!(Path::new(r"\\.\COM1").display_user(), r"\\.\COM1");
         // A reserved name only resolves through the verbatim form.
         assert_eq!(
             Path::new(r"\\?\C:\proj\CON").display_user(),
             r"\\?\C:\proj\CON"
+        );
+    }
+
+    /// The three shapes where `\\?\UNC\…` has to keep its prefix, because the plain form would not
+    /// name the same file. Each is a way the shorter answer would be wrong rather than merely ugly.
+    #[cfg(windows)]
+    #[test]
+    fn test_display_user_keeps_the_prefix_when_unc_needs_it() {
+        // `/` is an ordinary character inside `\\?\`, so `a/b` is one component here and two in the
+        // plain form. `display_path`'s tests pin the same trap for the disk prefix.
+        assert_eq!(
+            Path::new(r"\\?\UNC\server\share\a/b").display_user(),
+            r"\\?\UNC\server\share\a/b"
+        );
+        // Past MAX_PATH the prefix is what makes the path work.
+        let long = format!(r"\\?\UNC\server\share\{}", "d".repeat(260));
+        assert_eq!(Path::new(&long).display_user(), long);
+        // A trailing dot or space only survives the verbatim form.
+        assert_eq!(
+            Path::new(r"\\?\UNC\server\share\proj.").display_user(),
+            r"\\?\UNC\server\share\proj."
+        );
+        assert_eq!(
+            Path::new(r"\\?\UNC\server\share\proj ").display_user(),
+            r"\\?\UNC\server\share\proj "
         );
     }
 

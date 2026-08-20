@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+
+root_a="$PWD/roots/a"
+root_b="$PWD/roots/b"
+target_a="$PWD/a.conf"
+target_b="$PWD/b.conf"
+target_env="$PWD/env.conf"
+target_vars="$PWD/vars.conf"
+shared_target="$PWD/shared.conf"
+managed_file="$PWD/managed.conf"
+managed_dir="$PWD/managed-dir"
+leaked_repo="$PWD/not-collected-repo"
+outside_root="$PWD/../outside-root"
+
+mkdir -p "$root_a" "$root_b" "$outside_root" "$PWD/aliases"
+echo a >"$root_a/a.txt"
+echo b >"$root_b/b.txt"
+echo env >"$root_a/env.txt"
+echo '{{ vars.root_value }}|{{ config_root }}' >"$root_a/vars.tmpl"
+
+cat <<EOF >"$outside_root/mise.toml"
+[dotfiles]
+"$PWD/escaped.conf" = { content = "escaped" }
+EOF
+ln -s "$outside_root" "$PWD/roots/escaped"
+ln -s "$root_a" "$PWD/aliases/a"
+
+cat <<EOF >mise.toml
+[bootstrap]
+config_roots = ["roots/*", "aliases/a"]
+EOF
+
+cat <<EOF >"$root_a/mise.toml"
+[vars]
+root_value = "from-root-a"
+
+[dotfiles]
+"$target_a" = { source = "a.txt", mode = "copy" }
+"$target_vars" = { source = "vars.tmpl", mode = "template" }
+"$shared_target" = { content = "shared" }
+
+[bootstrap.files."$managed_file"]
+content = "managed"
+
+[bootstrap.directories."$managed_dir"]
+mode = "0755"
+
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_a"
+state = "stopped"
+
+[bootstrap.repos."$leaked_repo"]
+url = "https://example.com/not-collected.git"
+
+[tasks.leaked-root-task]
+run = "exit 1"
+EOF
+
+cat <<EOF >"$root_a/mise.dev.toml"
+[dotfiles]
+"$target_env" = { source = "env.txt", mode = "copy" }
+EOF
+
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$target_b" = { source = "b.txt", mode = "copy" }
+"$shared_target" = { content = "shared" }
+
+[bootstrap.files."$managed_file"]
+content = "managed"
+
+[bootstrap.directories."$managed_dir"]
+mode = "0755"
+
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_a"
+state = "stopped"
+EOF
+
+assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files | length == 5'"
+assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files[] | select(.target == \"$target_a\") | .origin.config == \"$root_a/mise.toml\" and .origin.config_root == \"$root_a\"'"
+assert_succeed "MISE_ENV=dev mise bootstrap dotfiles status --json | jq -e '.files[] | select(.target == \"$target_env\") | .origin.config == \"$root_a/mise.dev.toml\" and .origin.environment == [\"dev\"]'"
+assert_succeed "MISE_ENV=dev mise bootstrap dotfiles apply --yes"
+assert "cat $target_a" "a"
+assert "cat $target_b" "b"
+assert "cat $target_env" "env"
+assert "cat $target_vars" "from-root-a|$root_a"
+assert "cat $shared_target" "shared"
+assert_fail "test -e $PWD/escaped.conf"
+
+assert_succeed "mise bootstrap files status --json | jq -e 'length == 2'"
+assert_succeed "mise bootstrap files status --json | jq -e '.[] | select(.id.name == \"$managed_file\") | .origin.config == \"$root_a/mise.toml\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '.resources[] | select(.id.name == \"$managed_dir\") | .origin.config == \"$root_a/mise.toml\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"service\" and .id.name == \"shared\")] | length == 1 and .[0].origin.config == \"$root_a/mise.toml\"'"
+assert_succeed "mise bootstrap plan --json | jq -e '[.resources[] | select(.id.kind == \"compose\" and .id.name == \"shared\")] | length == 1 and .[0].origin.config == \"$root_a/mise.toml\"'"
+assert_not_contains "mise bootstrap plan --json" "$leaked_repo"
+assert_not_contains "mise tasks ls" "leaked-root-task"
+
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$target_a" = { source = "b.txt", mode = "copy" }
+EOF
+assert_fail "mise bootstrap dotfiles status" "conflicting dotfile declarations for $target_a"
+assert_fail "mise bootstrap dotfiles status" "$root_a/mise.toml"
+assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
+
+cat <<EOF >"$root_a/mise.toml"
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_a"
+state = "stopped"
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[bootstrap.services.shared]
+state = "running"
+
+[bootstrap.compose.shared]
+project_dir = "$root_b"
+state = "stopped"
+EOF
+assert_fail "mise bootstrap plan" "conflicting bootstrap service declarations for shared"
+assert_fail "mise bootstrap plan" "$root_a/mise.toml"
+assert_fail "mise bootstrap plan" "$root_b/mise.toml"
+
+cat <<EOF >"$root_b/mise.toml"
+[bootstrap.services.shared]
+state = "stopped"
+enabled = false
+
+[bootstrap.compose.shared]
+project_dir = "$root_b"
+state = "stopped"
+EOF
+assert_fail "mise bootstrap plan" "conflicting bootstrap compose declarations for shared"
+assert_fail "mise bootstrap plan" "$root_a/mise.toml"
+assert_fail "mise bootstrap plan" "$root_b/mise.toml"
+
+cat <<EOF >"$root_a/mise.toml"
+[bootstrap.files."$managed_file"]
+content = "managed"
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[bootstrap.files."$managed_file"]
+content = "different"
+EOF
+assert_fail "mise bootstrap files status" "conflicting managed file declarations for $managed_file"
+assert_fail "mise bootstrap files status" "$root_a/mise.toml"
+assert_fail "mise bootstrap files status" "$root_b/mise.toml"
+
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles."$PWD/edit.conf/shared"]
+line = "from a"
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles."$PWD/edit.conf/shared"]
+line = "from b"
+EOF
+assert_fail "mise bootstrap dotfiles status" "conflicting dotfile edit declarations"
+
+# Same-target symlink-each declarations compose by leaf path. Their ownership
+# state remains independent even when only one contributor needs an apply.
+shared_tree="$PWD/shared-tree"
+mkdir -p "$root_a/tree/conf.d" "$root_b/tree/conf.d"
+echo a >"$root_a/tree/conf.d/a.toml"
+echo b >"$root_b/tree/conf.d/b.toml"
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$shared_tree" = { source = "tree", mode = "symlink-each" }
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$shared_tree" = { source = "tree", mode = "symlink-each" }
+EOF
+assert_succeed "mise bootstrap dotfiles status --json | jq -e '[.files[] | select(.target == \"$shared_tree\")] | length == 2'"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "readlink $shared_tree/conf.d/a.toml" "$root_a/tree/conf.d/a.toml"
+assert "readlink $shared_tree/conf.d/b.toml" "$root_b/tree/conf.d/b.toml"
+assert_succeed "mise bootstrap dotfiles status --missing"
+
+rm -rf "$MISE_STATE_DIR/dotfiles"
+rm "$shared_tree/conf.d/b.toml"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "2"
+
+# Unapply uses recorded ownership and does not need to traverse composed
+# source trees that have become unreadable.
+chmod 000 "$root_a/tree/conf.d"
+assert_succeed "mise bootstrap dotfiles unapply --yes"
+chmod 755 "$root_a/tree/conf.d"
+assert_fail "test -e $shared_tree"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+
+# The leaf identity, rather than only the shared directory target, conflicts.
+# Use an equivalent target spelling in one contributor to cover filtered
+# applies: lexical aliases must still be selected and validated together.
+aliased_shared_tree="$PWD/roots/../shared-tree"
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$aliased_shared_tree" = { source = "tree", mode = "symlink-each" }
+EOF
+echo conflict >"$root_b/tree/conf.d/a.toml"
+assert_fail "mise bootstrap dotfiles status" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
+assert_fail "mise bootstrap dotfiles status" "$root_a/mise.toml"
+assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
+assert_fail "mise bootstrap dotfiles apply --yes '$shared_tree'" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
+assert "readlink $shared_tree/conf.d/a.toml" "$root_a/tree/conf.d/a.toml"
+assert "readlink $shared_tree/conf.d/b.toml" "$root_b/tree/conf.d/b.toml"

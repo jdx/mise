@@ -838,6 +838,10 @@ Examples:
         flag --connect-timeout help="SSH connection timeout in seconds" default="10" {
             arg <CONNECT_TIMEOUT>
         }
+        flag --copy-link help="Dereference one source-relative symbolic link; repeat for multiple links" var=#true {
+            arg <PATH>
+        }
+        flag --copy-links help="Dereference every symbolic link in the source archive"
         flag --exclude help="Additional archive pattern to exclude; repeat for multiple patterns" var=#true {
             arg <PATTERN>
         }
@@ -863,6 +867,9 @@ Examples:
             arg <PORT>
         }
         flag --prompt-secrets help="Prompt securely for missing secret inputs on the remote host"
+        flag --remote-env help="Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)" var=#true {
+            arg <ENV>
+        }
         flag --remote-mise help="Existing mise executable name or path; relative paths use the staged project" {
             arg <COMMAND>
         }
@@ -1484,9 +1491,12 @@ This is designed to be used in a project where contributors may not have mise in
         after_long_help #"""
 Examples:
 
-    $ mise generate bootstrap >./bin/mise
-    $ chmod +x ./bin/mise
-    $ ./bin/mise install – automatically downloads mise to .mise if not already installed
+    $ mise generate bootstrap --write ./bin/mise
+    $ ./bin/mise install                                    # downloads mise to .mise if not already installed
+
+    # add a launcher for contributors who clone the project on Windows
+    $ mise generate bootstrap --write ./bin/mise --windows  # also writes bin/mise.cmd
+    $ .\bin\mise.cmd install
 
 """#
         flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
@@ -1504,6 +1514,18 @@ This is necessary if users may use a different version of mise outside the proje
         }
         flag --localized-dir help="Directory to put localized data into" default=.mise {
             arg <LOCALIZED_DIR>
+        }
+        flag --windows help="Also write a Windows launcher, `<WRITE>.cmd`" {
+            long_help #"""
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `--write`, since stdout cannot
+carry two files.
+"""#
         }
     }
     cmd config help="Generate a mise.toml file" effect=write {
@@ -1749,6 +1771,16 @@ By default, uses the latest version from the install script.
 Use this to pin to a specific version (e.g., "2025.1.0").
 """#
             arg <BOOTSTRAP_VERSION>
+        }
+        flag --checksum-algorithm help="Checksum algorithm to use when downloading artifacts" default=blake3 {
+            long_help #"""
+Checksum algorithm to use when downloading artifacts
+
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lock` or `--skip-download` because those modes do not calculate checksums.
+"""#
+            arg <CHECKSUM_ALGORITHM> {
+                choices blake3 sha256
+            }
         }
         flag --fetch help="Fetch checksums and sizes for an existing tool stub file" {
             long_help #"""
@@ -3763,7 +3795,7 @@ Symlinks all tool versions from an external tool into mise
 
 For example, use this to import all Homebrew node installs into mise
 
-This won't overwrite any existing installs but will overwrite any existing symlinks
+This won't overwrite managed installs, runtime aliases, or links from other providers.
 """#
         after_long_help #"""
 Examples:
@@ -3783,7 +3815,7 @@ Symlinks all tool versions from an external tool into mise
 
 For example, use this to import all pyenv installs into mise
 
-This won't overwrite any existing installs but will overwrite any existing symlinks
+This won't overwrite managed installs, runtime aliases, or links from other providers.
 """#
         after_long_help #"""
 Examples:
@@ -4404,17 +4436,18 @@ cmd trust help="Marks a config file as trusted" effect=write {
 Marks a config file as trusted
 
 This means mise is allowed to parse the file when it needs to read config
-that may execute code or affect the environment. mise checks trust before
-parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
-discovery paths, fail with an untrusted-config error when it cannot prompt,
-or assume trust in detected CI unless paranoid mode is enabled.
+that may execute code or affect the environment. Without trust, mise may
+prompt, skip the config in some discovery paths, or fail with an
+untrusted-config error when it cannot prompt.
 
-Safe config files do not require trust: files that only contain
-`min_version`, `[tools]` entries with plain version strings (or arrays
-of them), and `[tasks]` (no templates and no tool options) are loaded
-without prompting, since nothing in them executes code at load time —
-tools install and tasks run only on explicit commands like `mise install`
-or `mise run`.
+In normal mode, commands that execute project-defined behavior (`mise run`,
+naked task invocations such as `mise <TASK>`, `mise install`, `mise exec`,
+and `mise watch`) automatically trust their active config. Paranoid mode
+requires explicit, content-bound trust for every non-global config.
+
+In normal mode, safe config files do not require trust: files that only contain
+`min_version`, `[tools]` entries with plain version strings (or arrays of
+them), and `[tasks]` without templates or tool options.
 
 Trust is shared across git worktrees: a config file inside a linked
 worktree is trusted when the equivalent path in the repository's main
@@ -4444,8 +4477,8 @@ and common build/dependency directories (node_modules, vendor, target, dist, bui
 Show the trusted status of config files from the current directory and its parents.
 Does not trust or untrust any files.
 """#
-    flag --untrust help="No longer trust this config, will prompt in the future"
-    arg "[CONFIG_FILE]" help="The config file to trust" required=#false
+    flag --untrust help="Remove explicit trust for this config"
+    arg "[CONFIG_FILE]" help="The config file whose trust status to change" required=#false
 }
 cmd uninstall help="Removes installed tool versions" effect=destructive {
     long_help #"""
@@ -4509,7 +4542,7 @@ Environment variable(s) to remove
 e.g.: NODE_ENV
 """# required=#false var=#true
 }
-cmd untrust help="No longer trust a config, will prompt in the future" effect=write {
+cmd untrust help="Remove explicit trust for a config" effect=write {
     arg "[CONFIG_FILE]" help="The config file to untrust" required=#false
 }
 cmd unuse help="Removes installed tool versions from mise.toml" effect=destructive {

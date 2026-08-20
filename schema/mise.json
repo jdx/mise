@@ -575,13 +575,6 @@
               "description": "Use cosign to verify aqua tool signatures.",
               "type": "boolean"
             },
-            "cosign_extra_args": {
-              "description": "Extra arguments to pass to cosign when verifying aqua tool signatures.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
             "github_attestations": {
               "default": true,
               "description": "Enable GitHub Artifact Attestations verification for aqua tools.",
@@ -1841,6 +1834,10 @@
                 },
                 "remote_url": {
                   "description": "[experimental] Base URL for the remote build-cache service.",
+                  "type": "string"
+                },
+                "stats_report": {
+                  "description": "[experimental] File to write action-cache session statistics to.",
                   "type": "string"
                 }
               }
@@ -3877,6 +3874,133 @@
       "type": "object",
       "description": "machine-global bootstrapping (system packages, repos, macOS defaults, launchd agents, login shell)",
       "properties": {
+        "config_roots": {
+          "type": "array",
+          "description": "independent config roots whose dotfiles and managed files/directories are composed into bootstrap",
+          "items": {
+            "type": "string"
+          }
+        },
+        "remote": {
+          "type": "object",
+          "description": "OpenSSH targets used by `mise bootstrap remote`",
+          "properties": {
+            "source": {
+              "type": "string",
+              "description": "local project directory sent to inventory hosts"
+            },
+            "mise_env": {
+              "type": "array",
+              "description": "default ordered config environments loaded by remote bootstrap",
+              "items": {
+                "type": "string"
+              }
+            },
+            "copy_links": {
+              "type": "boolean",
+              "description": "dereference every symbolic link in the source archive"
+            },
+            "copy_link": {
+              "type": "array",
+              "description": "source-relative symbolic links to dereference",
+              "items": {
+                "type": "string"
+              }
+            },
+            "exclude": {
+              "type": "array",
+              "description": "additional source archive exclusion patterns",
+              "items": {
+                "type": "string"
+              }
+            },
+            "hosts": {
+              "type": "object",
+              "description": "remote bootstrap inventory keyed by target name",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["host"],
+                "properties": {
+                  "host": {
+                    "type": "string",
+                    "description": "SSH host name or address"
+                  },
+                  "user": {
+                    "type": "string",
+                    "description": "SSH user"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535,
+                    "description": "SSH port"
+                  },
+                  "identity_file": {
+                    "type": "string",
+                    "description": "SSH identity file"
+                  },
+                  "source": {
+                    "type": "string",
+                    "description": "host-specific local project directory to send"
+                  },
+                  "mise_env": {
+                    "type": "array",
+                    "description": "ordered config environments loaded by remote bootstrap",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "copy_links": {
+                    "type": "boolean",
+                    "description": "dereference every symbolic link in this host's source archive"
+                  },
+                  "copy_link": {
+                    "type": "array",
+                    "description": "source-relative symbolic links to dereference for this host",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "description": "additional source archive exclusion patterns for this host",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "ssh_options": {
+                    "type": "array",
+                    "description": "OpenSSH options passed with `-o`",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tags": {
+                    "type": "array",
+                    "description": "inventory selection tags",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "mise_bin": {
+                    "type": "string",
+                    "description": "local mise executable to upload"
+                  },
+                  "remote_mise": {
+                    "type": "string",
+                    "description": "existing mise executable name or path on the host"
+                  },
+                  "bootstrap_command": {
+                    "type": "string",
+                    "description": "remote shell command that installs mise"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
         "plugins": {
           "type": "object",
           "description": "package manager plugins to install with `mise bootstrap plugins apply`, keyed by manager name",
@@ -3919,6 +4043,10 @@
                         "minItems": 1
                       }
                     ]
+                  },
+                  "adopt": {
+                    "type": "boolean",
+                    "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
                   }
                 },
                 "additionalProperties": false
@@ -4560,6 +4688,10 @@
           "type": "object",
           "description": "Homebrew-specific bootstrap package config",
           "properties": {
+            "adopt": {
+              "type": "boolean",
+              "description": "adopt existing app artifacts by default for configured brew-cask packages"
+            },
             "taps": {
               "type": "object",
               "description": "Homebrew tap names mapped to custom git URLs",

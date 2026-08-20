@@ -22,7 +22,7 @@ with asdf `.tool-versions` files as well as [idiomatic version files](/configura
 `.ruby-version`. See [configuration](/configuration) for more details.
 
 When specifying tool versions and tool options, you can also refer to environment variables or
-[`vars`](/tasks/task-configuration.html#vars) defined in your config hierarchy, including values
+[`vars`](/configuration/vars) defined in your config hierarchy, including values
 produced by directives like `_.source`, `_.file`, or env modules. These are resolved before tool
 version and option templates are rendered.
 
@@ -171,14 +171,12 @@ important for repositories containing multiple products: their repository-wide
 Latest release may not contain an asset for every package.
 
 With `version_order = "semver"`, mise orders valid semantic versions by
-precedence when resolving that fallback list or a version prefix. Opaque versions
-retain their source order before semantic versions, so exact requests such as
-`nightly` continue to work. Build metadata does not affect precedence. Registry
-entries may set this option for tools known to follow semantic versioning; users
-can set `version_order = "source"` to restore the backend's default ordering.
-
-The option affects version resolution only. `mise ls-remote` continues to show
-the canonical order returned by the backend.
+precedence in `mise ls-remote` output and when resolving that list or a version
+prefix. Opaque versions retain their source order before semantic versions, so
+exact requests such as `nightly` continue to work. Build metadata does not affect
+precedence. Registry entries may set this option for tools known to follow
+semantic versioning; users can set `version_order = "source"` to restore the
+backend's default ordering.
 
 ### Tool postinstall commands
 

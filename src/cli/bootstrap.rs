@@ -327,7 +327,7 @@ enum Commands {
     Packages(BootstrapPackages),
     Plan(BootstrapPlan),
     Plugins(BootstrapPlugins),
-    Remote(BootstrapRemote),
+    Remote(Box<BootstrapRemote>),
     Repos(BootstrapRepos),
     Secrets(BootstrapSecrets),
     Services(BootstrapServices),
@@ -611,6 +611,14 @@ struct BootstrapRemote {
     #[clap(long, default_value_t = 10)]
     connect_timeout: u16,
 
+    /// Dereference one source-relative symbolic link; repeat for multiple links
+    #[clap(long, value_name = "PATH", value_hint = clap::ValueHint::AnyPath)]
+    copy_link: Vec<std::path::PathBuf>,
+
+    /// Dereference every symbolic link in the source archive
+    #[clap(long)]
+    copy_links: bool,
+
     /// Additional archive pattern to exclude; repeat for multiple patterns
     #[clap(long, value_name = "PATTERN")]
     exclude: Vec<String>,
@@ -658,6 +666,10 @@ struct BootstrapRemote {
     /// Prompt securely for missing secret inputs on the remote host
     #[clap(long)]
     prompt_secrets: bool,
+
+    /// Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
+    #[clap(long, value_name = "ENV", value_delimiter = ',')]
+    remote_env: Option<Vec<String>>,
 
     /// Existing mise executable name or path; relative paths use the staged project
     #[clap(
@@ -1373,7 +1385,7 @@ impl Bootstrap {
         } else {
             self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
-            let files = system::files::files_from_config(&config);
+            let files = system::files::files_from_config(&config)?;
             if files.is_empty() {
                 debug!("bootstrap: no whole-file [dotfiles] entries configured, skipping");
             } else {
@@ -1390,7 +1402,7 @@ impl Bootstrap {
                 }
             }
 
-            let edits = system::edits::edits_from_config(&config);
+            let edits = system::edits::edits_from_config(&config)?;
             if edits.is_empty() {
                 debug!("bootstrap: no edit [dotfiles] entries configured, skipping");
             } else {
@@ -1939,13 +1951,21 @@ impl BootstrapPlan {
         } else if output.resources.is_empty() {
             info!("nothing configured for bootstrap planning");
         } else {
-            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
             for resource in &output.resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
                     resource.current.clone(),
                     resource.desired.clone(),
+                    resource
+                        .origin
+                        .as_ref()
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
                 ]);
             }
             table.print()?;
@@ -2138,13 +2158,20 @@ impl BootstrapFilesStatus {
         } else if resources.is_empty() {
             info!("no system files or directories configured");
         } else {
-            let mut table = MiseTable::new(false, &["Action", "Resource", "Current", "Desired"]);
+            let mut table = MiseTable::new(
+                false,
+                &["Action", "Resource", "Current", "Desired", "Config"],
+            );
             for resource in resources {
                 table.add_row(vec![
                     resource.action.to_string(),
                     resource.id.to_string(),
                     resource.current,
                     resource.desired,
+                    resource
+                        .origin
+                        .map(|origin| origin.config.display_user())
+                        .unwrap_or_default(),
                 ]);
             }
             table.print()?;
@@ -2346,6 +2373,9 @@ impl BootstrapRemote {
 
         let overrides = system::remote::RemoteOverrides {
             source: self.source,
+            mise_env: self.remote_env,
+            copy_links: self.copy_links,
+            copy_link: self.copy_link,
             port: self.port,
             identity_file: self.identity_file,
             exclude: self.exclude,
@@ -2773,8 +2803,13 @@ impl BootstrapStatus {
             let statuses = mp.manager.installed(&mp.requests).await?;
             let mut json_pkgs = vec![];
             for s in statuses {
+                let auto_updates = s.state.auto_updates();
                 let (installed_version, state, reason, missing) = match &s.state {
                     PackageState::Installed { version } => {
+                        (version.clone(), "installed", None::<&str>, false)
+                    }
+                    #[cfg(unix)]
+                    PackageState::InstalledAutoUpdates { version } => {
                         (version.clone(), "installed", None::<&str>, false)
                     }
                     PackageState::Missing => ("".to_string(), "missing", None, true),
@@ -2793,8 +2828,14 @@ impl BootstrapStatus {
                     "packages",
                     format!("{name}:{}", s.request),
                     installed_version.clone(),
-                    reason
-                        .map_or_else(|| state.to_string(), |reason| format!("{state} ({reason})")),
+                    if auto_updates {
+                        format!("{state} (auto-updates)")
+                    } else {
+                        reason.map_or_else(
+                            || state.to_string(),
+                            |reason| format!("{state} ({reason})"),
+                        )
+                    },
                     missing,
                 );
                 let mut package = json!({
@@ -2805,6 +2846,9 @@ impl BootstrapStatus {
                 });
                 if let Some(reason) = reason {
                     package["reason"] = json!(reason);
+                }
+                if auto_updates {
+                    package["auto_updates"] = json!(true);
                 }
                 json_pkgs.push(package);
             }
@@ -2868,7 +2912,9 @@ impl BootstrapStatus {
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let mut json_files = vec![];
-        for req in system::files::files_from_config(config) {
+        let files = system::files::files_from_config(config)?;
+        system::files::validate_composed_symlink_each(&files)?;
+        for req in files {
             let state = match system::files::check(config, &req) {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),
@@ -2904,7 +2950,7 @@ impl BootstrapStatus {
         }
 
         let mut json_edits = vec![];
-        for req in system::edits::edits_from_config(config) {
+        for req in system::edits::edits_from_config(config)? {
             let state = match system::edits::check(config, &req) {
                 Ok(state) => state,
                 Err(err) => system::files::FileState::Differs(format!("{err}")),

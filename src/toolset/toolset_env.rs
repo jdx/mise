@@ -350,15 +350,13 @@ impl Toolset {
         // Collect and process MISE_ADD_PATH values into paths
         let paths_to_add: Vec<PathBuf> = entries
             .iter()
-            .filter(|(k, _)| k == "MISE_ADD_PATH" || k == "RTX_ADD_PATH")
+            .filter(|(k, _)| k == "MISE_ADD_PATH")
             .flat_map(|(_, v)| env::split_paths(v))
             .collect();
 
         let mut env: EnvMap = entries
             .into_iter()
-            .filter(|(k, _)| k != "RTX_ADD_PATH")
             .filter(|(k, _)| k != "MISE_ADD_PATH")
-            .filter(|(k, _)| !k.starts_with("RTX_TOOL_OPTS__"))
             .filter(|(k, _)| !k.starts_with("MISE_TOOL_OPTS__"))
             .rev()
             .collect();

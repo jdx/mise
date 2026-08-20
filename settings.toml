@@ -107,14 +107,6 @@ description = "Use cosign to verify aqua tool signatures."
 env = "MISE_AQUA_COSIGN"
 type = "Bool"
 
-[aqua.cosign_extra_args]
-description = "Extra arguments to pass to cosign when verifying aqua tool signatures."
-env = "MISE_AQUA_COSIGN_EXTRA_ARGS"
-optional = true
-parse_env = "list_by_comma"
-rust_type = "Vec<String>"
-type = "ListString"
-
 [aqua.github_attestations]
 default = true
 description = "Enable GitHub Artifact Attestations verification for aqua tools."
@@ -1335,6 +1327,11 @@ config file discovery has already occurred by the time `mise.toml` is read.
 
 Paths are separated by the OS path separator when using the environment variable,
 `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).
+
+Relative paths in `.miserc.toml` are resolved from the directory containing that
+file. Relative paths from the environment or CLI are resolved from the directory
+where mise was invoked. Glob patterns are supported, including recursive `**`
+patterns. Paths without glob metacharacters retain directory-prefix matching.
 """
 env = "MISE_IGNORED_CONFIG_PATHS"
 parse_env = "list_by_os_path_separator"
@@ -2819,6 +2816,22 @@ Enable the versioned HTTP remote build-cache protocol at this base URL. Remote a
 env = "MISE_TASK_CACHE_REMOTE_URL"
 optional = true
 type = "Url"
+
+[task.cache.stats_report]
+description = "[experimental] File to write action-cache session statistics to."
+docs = """
+Write a versioned JSON report describing Rust action-cache activity, transfer volume, restored
+outputs, and phase timings. Timing values use nanoseconds. Concurrent phase timings are cumulative
+work time and can exceed the end-to-end `session_duration_ns`; `prefetch_duration_ns` is the sum of
+wall-clock durations for each task prefetch run.
+
+This is intended for CI qualification and benchmarking. Relative paths resolve against mise's
+working directory. The report is replaced atomically after each `mise run` invocation that creates
+an action-cache session.
+"""
+env = "MISE_TASK_CACHE_STATS_REPORT"
+optional = true
+type = "Path"
 
 [task.cache_dir]
 description = "[experimental] Directory for task output cache artifacts."

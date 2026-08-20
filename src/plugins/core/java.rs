@@ -874,4 +874,51 @@ mod tests {
                 .is_empty()
         );
     }
+
+    fn match_versions(versions: &[&str], query: &str) -> Vec<String> {
+        JavaPlugin::new().fuzzy_match_filter(
+            versions.iter().map(|v| v.to_string()).collect(),
+            query,
+            true,
+        )
+    }
+
+    /// A numeric query must not bleed into a longer version: "11.0.1" selects
+    /// "11.0.1" and its build numbers, never "11.0.10".
+    #[test]
+    fn numeric_query_does_not_match_a_longer_version() {
+        let versions = ["11.0.1", "11.0.1+13", "11.0.10", "11.0.10+9"];
+        assert_eq!(
+            match_versions(&versions, "11.0.1"),
+            ["11.0.1".to_string(), "11.0.1+13".to_string()]
+        );
+    }
+
+    /// `mise upgrade --bump` queries with just the vendor prefix, which has to
+    /// match versions whose next character is a digit. See discussion #7328.
+    #[test]
+    fn vendor_prefix_query_matches_versions_starting_with_a_digit() {
+        let versions = ["temurin-25.0.1", "corretto-25.0.1.9.1", "zulu-25.0.1"];
+        assert_eq!(
+            match_versions(&versions, "temurin-"),
+            ["temurin-25.0.1".to_string()]
+        );
+        assert_eq!(
+            match_versions(&versions, "corretto-"),
+            ["corretto-25.0.1.9.1".to_string()]
+        );
+    }
+
+    /// A vendor-qualified major version stays within that major version.
+    #[test]
+    fn vendor_query_with_major_version_keeps_the_major_version() {
+        let versions = ["temurin-21.0.9+11", "temurin-21.0.10+7", "temurin-25.0.1+9"];
+        assert_eq!(
+            match_versions(&versions, "temurin-21"),
+            [
+                "temurin-21.0.9+11".to_string(),
+                "temurin-21.0.10+7".to_string()
+            ]
+        );
+    }
 }

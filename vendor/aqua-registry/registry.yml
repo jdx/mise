@@ -427,6 +427,22 @@ packages:
           linux: unknown-linux-gnu
           amd64: x86_64
   - type: github_release
+    repo_owner: Arata1202
+    repo_name: ascdir
+    description: Manage App Store Connect metadata and product-page assets as reviewable files
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: ascdir_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+  - type: github_release
     repo_owner: Arriven
     repo_name: db1000n
     version_constraint: "false"
@@ -3762,6 +3778,94 @@ packages:
           type: github_release
           asset: checksums.txt
           algorithm: sha256
+  - type: github_release
+    repo_owner: Genymobile
+    repo_name: scrcpy
+    description: Display and control your Android device
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.5-fixversion"
+        asset: scrcpy-{{.OS}}-v1.5.{{.Format}}
+        format: zip
+        files:
+          - name: scrcpy
+            src: scrcpy-{{.OS}}/scrcpy
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "v3.0"
+        asset: scrcpy-{{.OS}}-{{.Version}}.zip
+        format: zip
+        files:
+          - name: scrcpy
+            src: "{{.AssetWithoutExt}}/scrcpy"
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 1.1.0")
+        asset: scrcpy-{{.OS}}-with-deps-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: scrcpy
+            src: scrcpy-windows-{{.Version}}/scrcpy
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 2.7.0")
+        asset: scrcpy-{{.OS}}-{{.Version}}.{{.Format}}
+        format: zip
+        files:
+          - name: scrcpy
+            src: "{{.AssetWithoutExt}}/scrcpy"
+        replacements:
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        supported_envs:
+          - windows/amd64
+      - version_constraint: "true"
+        asset: scrcpy-{{.OS}}-{{.Arch}}-{{.Version}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: scrcpy
+            src: "{{.AssetWithoutExt}}/scrcpy"
+        replacements:
+          amd64: x86_64
+          darwin: macos
+          windows: win64
+        checksum:
+          type: github_release
+          asset: SHA256SUMS.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
+            asset: scrcpy-{{.OS}}-{{.Version}}.{{.Format}}
+            files:
+              - name: scrcpy
+                src: "{{.AssetWithoutExt}}/scrcpy"
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows/amd64
   - type: github_release
     repo_owner: Getdeck
     repo_name: getdeck
@@ -19027,6 +19131,126 @@ packages:
     files:
       - name: bats
         src: bats-core-{{trimV .Version}}/bin/bats
+  - name: bazel-contrib/buildtools/buildifier
+    aliases:
+      - name: bazelbuild/buildtools/buildifier
+    type: github_release
+    repo_owner: bazel-contrib
+    repo_name: buildtools
+    description: Format BUILD, BUILD.bazel and BUCK files in a standard way
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.4.3"
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: OSX
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.25.0"
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "4.0.0"
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "4.0.1"
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.22.0")
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 3.5.0")
+        asset: buildifier.{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            asset: buildifier
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: "true"
+        asset: buildifier-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+  - name: bazel-contrib/buildtools/buildozer
+    aliases:
+      - name: bazelbuild/buildtools/buildozer
+    type: github_release
+    repo_owner: bazel-contrib
+    repo_name: buildtools
+    description: Buildozer is a command line tool to rewrite multiple Bazel BUILD files using standard commands
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "0.4.3"
+        asset: buildozer.{{.OS}}
+        format: raw
+        replacements:
+          darwin: OSX
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "0.25.0"
+        asset: buildozer.{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        supported_envs:
+          - darwin
+      - version_constraint: Version == "4.0.0"
+        asset: buildozer-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "4.0.1"
+        asset: buildozer-{{.OS}}-{{.Arch}}
+        format: raw
+        rosetta2: true
+        windows_arm_emulation: true
+      - version_constraint: semver("<= 0.22.0")
+        asset: buildozer.{{.OS}}
+        format: raw
+        replacements:
+          darwin: osx
+        supported_envs:
+          - darwin
+      - version_constraint: semver("<= 3.5.0")
+        asset: buildozer.{{.OS}}
+        format: raw
+        replacements:
+          darwin: mac
+        overrides:
+          - goos: windows
+            asset: buildozer
+        supported_envs:
+          - darwin
+          - windows/amd64
+      - version_constraint: "true"
+        asset: buildozer-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
   - type: github_release
     repo_owner: bazelbuild
     repo_name: bazel
@@ -19249,122 +19473,6 @@ packages:
           - darwin
           - linux
           - amd64
-  - name: bazelbuild/buildtools/buildifier
-    type: github_release
-    repo_owner: bazelbuild
-    repo_name: buildtools
-    description: Format BUILD, BUILD.bazel and BUCK files in a standard way
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "0.4.3"
-        asset: buildifier.{{.OS}}
-        format: raw
-        replacements:
-          darwin: OSX
-        supported_envs:
-          - linux/amd64
-          - darwin
-      - version_constraint: Version == "0.25.0"
-        asset: buildifier.{{.OS}}
-        format: raw
-        replacements:
-          darwin: mac
-        supported_envs:
-          - darwin
-      - version_constraint: Version == "4.0.0"
-        asset: buildifier-{{.OS}}-{{.Arch}}
-        format: raw
-        rosetta2: true
-        windows_arm_emulation: true
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "4.0.1"
-        asset: buildifier-{{.OS}}-{{.Arch}}
-        format: raw
-        rosetta2: true
-        windows_arm_emulation: true
-      - version_constraint: semver("<= 0.22.0")
-        asset: buildifier.{{.OS}}
-        format: raw
-        replacements:
-          darwin: osx
-        supported_envs:
-          - darwin
-      - version_constraint: semver("<= 3.5.0")
-        asset: buildifier.{{.OS}}
-        format: raw
-        replacements:
-          darwin: mac
-        overrides:
-          - goos: windows
-            asset: buildifier
-        supported_envs:
-          - darwin
-          - windows/amd64
-      - version_constraint: "true"
-        asset: buildifier-{{.OS}}-{{.Arch}}
-        format: raw
-        windows_arm_emulation: true
-  - name: bazelbuild/buildtools/buildozer
-    type: github_release
-    repo_owner: bazelbuild
-    repo_name: buildtools
-    description: Buildozer is a command line tool to rewrite multiple Bazel BUILD files using standard commands
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: Version == "0.4.3"
-        asset: buildozer.{{.OS}}
-        format: raw
-        replacements:
-          darwin: OSX
-        supported_envs:
-          - linux/amd64
-          - darwin
-      - version_constraint: Version == "0.25.0"
-        asset: buildozer.{{.OS}}
-        format: raw
-        replacements:
-          darwin: mac
-        supported_envs:
-          - darwin
-      - version_constraint: Version == "4.0.0"
-        asset: buildozer-{{.OS}}-{{.Arch}}
-        format: raw
-        rosetta2: true
-        windows_arm_emulation: true
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "4.0.1"
-        asset: buildozer-{{.OS}}-{{.Arch}}
-        format: raw
-        rosetta2: true
-        windows_arm_emulation: true
-      - version_constraint: semver("<= 0.22.0")
-        asset: buildozer.{{.OS}}
-        format: raw
-        replacements:
-          darwin: osx
-        supported_envs:
-          - darwin
-      - version_constraint: semver("<= 3.5.0")
-        asset: buildozer.{{.OS}}
-        format: raw
-        replacements:
-          darwin: mac
-        overrides:
-          - goos: windows
-            asset: buildozer
-        supported_envs:
-          - darwin
-          - windows/amd64
-      - version_constraint: "true"
-        asset: buildozer-{{.OS}}-{{.Arch}}
-        format: raw
-        windows_arm_emulation: true
   - type: github_release
     repo_owner: bcicen
     repo_name: ctop
@@ -26957,6 +27065,35 @@ packages:
           linux: Linux
           amd64: x86_64
           windows: Windows
+  - type: github_release
+    repo_owner: cloudsmith-io
+    repo_name: cloudsmith-cli
+    description: Cloudsmith Command Line Interface (CLI)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 1.19.0")
+        no_asset: true
+      - version_constraint: "true"
+        asset: cloudsmith-{{trimV .Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: cloudsmith
+            src: cloudsmith/cloudsmith
+        replacements:
+          amd64: x86_64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            asset: cloudsmith-{{trimV .Version}}-{{.OS}}-{{.Arch}}-gnu.{{.Format}}
+            replacements:
+              arm64: aarch64
+          - goos: windows
+            format: zip
   - type: go_install
     repo_owner: cloudspannerecosystem
     repo_name: spanner-cli
@@ -28436,210 +28573,6 @@ packages:
         supported_envs:
           - linux/amd64
           - windows/amd64
-  - type: github_release
-    repo_owner: conceptadev
-    repo_name: fvm
-    aliases:
-      - name: leoafarias/fvm
-    description: "Flutter Version Management: A simple CLI to manage Flutter SDK versions"
-    version_constraint: "false"
-    version_overrides:
-      - version_constraint: semver("<= 0.1.13")
-        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        supported_envs:
-          - linux/amd64
-          - darwin
-      - version_constraint: semver("<= 0.2.8")
-        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        replacements:
-          amd64: x86_64
-          darwin: Darwin
-          linux: Linux
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        supported_envs:
-          - linux
-          - darwin
-      - version_constraint: semver("<= 0.3.0")
-        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        checksum:
-          type: github_release
-          asset: checksums.txt
-          algorithm: sha256
-        supported_envs:
-          - linux
-          - darwin
-      - version_constraint: semver("<= 0.8.3")
-        no_asset: true
-      - version_constraint: Version == "App-1.0.0-alpha"
-        asset: fvm-app-{{.OS}}.{{.Format}}
-        format: zip
-        windows_arm_emulation: true
-        supported_envs:
-          - windows/amd64
-      - version_constraint: Version == "App-1.0.0-alpha.1"
-        asset: fvm_{{.OS}}.{{.Format}}
-        format: zip
-        windows_arm_emulation: true
-        supported_envs:
-          - windows/amd64
-      - version_constraint: semver("<= 1.2.3")
-        no_asset: true
-      - version_constraint: semver("<= 1.3.4")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 1.3.8")
-        no_asset: true
-      - version_constraint: semver("<= 2.2.4")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: Version == "2.2.5-dev"
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        supported_envs:
-          - linux/amd64
-          - darwin
-      - version_constraint: Version == "2.2.5-dev.1"
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-        supported_envs:
-          - linux/amd64
-      - version_constraint: semver("<= 2.3.1")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        rosetta2: true
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-        supported_envs:
-          - darwin
-          - windows
-          - amd64
-      - version_constraint: semver("<= 2.4.1")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-      - version_constraint: semver("<= 3.0.0-alpha.2")
-        no_asset: true
-      - version_constraint: semver("<= 4.0.0")
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm.bat
-      - version_constraint: "true"
-        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
-        format: tar.gz
-        windows_arm_emulation: true
-        files:
-          - name: fvm
-            src: fvm/fvm
-        replacements:
-          amd64: x64
-          darwin: macos
-        overrides:
-          - goos: windows
-            format: zip
-            files:
-              - name: fvm
-                src: fvm/fvm
   - name: concourse/concourse/concourse
     type: github_release
     repo_owner: concourse
@@ -44624,6 +44557,79 @@ packages:
           - goos: darwin
             format: pkg
             asset: hugo_extended_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+            files:
+              - name: hugo
+                src: Payload/hugo
+          - goos: windows
+            format: zip
+  - name: gohugoio/hugo/hugo-extended-withdeploy
+    type: github_release
+    repo_owner: gohugoio
+    repo_name: hugo
+    description: The world’s fastest framework for building websites
+    files:
+      - name: hugo
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v0.139.5"
+        no_asset: true
+      - version_constraint: semver("< 0.137.0")
+        no_asset: true
+      - version_constraint: Version == "v0.137.0"
+        asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+        supported_envs:
+          - darwin
+          - linux/amd64
+      - version_constraint: semver("<= 0.138.0")
+        asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin
+          - linux/amd64
+          - windows
+      - version_constraint: semver("<= 0.152.2")
+        asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: hugo_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            format: pkg
+            asset: hugo_extended_withdeploy_{{trimV .Version}}_{{.OS}}-universal.{{.Format}}
             files:
               - name: hugo
                 src: Payload/hugo
@@ -62004,6 +62010,211 @@ packages:
           asset: checksums.txt
           algorithm: sha256
   - type: github_release
+    repo_owner: leoafarias
+    repo_name: fvm
+    aliases:
+      - name: leoafarias/fvm
+      - name: conceptadev/fvm
+    description: "Flutter Version Management: A simple CLI to manage Flutter SDK versions"
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.1.13")
+        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: semver("<= 0.2.8")
+        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        replacements:
+          amd64: x86_64
+          darwin: Darwin
+          linux: Linux
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.3.0")
+        asset: fvm_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
+      - version_constraint: semver("<= 0.8.3")
+        no_asset: true
+      - version_constraint: Version == "App-1.0.0-alpha"
+        asset: fvm-app-{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        supported_envs:
+          - windows/amd64
+      - version_constraint: Version == "App-1.0.0-alpha.1"
+        asset: fvm_{{.OS}}.{{.Format}}
+        format: zip
+        windows_arm_emulation: true
+        supported_envs:
+          - windows/amd64
+      - version_constraint: semver("<= 1.2.3")
+        no_asset: true
+      - version_constraint: semver("<= 1.3.4")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 1.3.8")
+        no_asset: true
+      - version_constraint: semver("<= 2.2.4")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: Version == "2.2.5-dev"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        supported_envs:
+          - linux/amd64
+          - darwin
+      - version_constraint: Version == "2.2.5-dev.1"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
+      - version_constraint: semver("<= 2.3.1")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        rosetta2: true
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+        supported_envs:
+          - darwin
+          - windows
+          - amd64
+      - version_constraint: semver("<= 2.4.1")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+      - version_constraint: semver("<= 3.0.0-alpha.2")
+        no_asset: true
+      - version_constraint: semver("<= 4.0.0")
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm.bat
+      - version_constraint: "true"
+        asset: fvm-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: fvm
+            src: fvm/fvm
+        replacements:
+          amd64: x64
+          darwin: macos
+        overrides:
+          - goos: windows
+            format: zip
+            files:
+              - name: fvm
+                src: fvm/fvm
+  - type: github_release
     repo_owner: levibostian
     repo_name: decaf
     description: Calm & reliable automated deployments. No more coffee breaks to deploy your code
@@ -64771,6 +64982,19 @@ packages:
     description: "Free & Open Source CLI for Wolt: discover venues, inspect menus and options, manage carts, and preview checkout from the terminal"
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver("<= 2.4.0")
+        asset: wolt_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: wolt
+          - name: wolt-mcp
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        supported_envs:
+          - linux
+          - darwin
       - version_constraint: "true"
         asset: wolt_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -64784,6 +65008,8 @@ packages:
         supported_envs:
           - linux
           - darwin
+        github_artifact_attestations:
+          signer_workflow: mekedron/wolt-cli/\.github/workflows/release\.yml
   - type: github_release
     repo_owner: mercari
     repo_name: hcledit
@@ -97775,6 +98001,43 @@ packages:
         files:
           - name: coreutils
             src: coreutils-{{.Version}}-{{.Arch}}-{{.OS}}/coreutils
+  - type: github_release
+    repo_owner: uutils
+    repo_name: sed
+    description: Rewrite of sed in Rust
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "latest-commit"
+        error_message: The version 'latest-commit' is not supported
+      - version_constraint: Version == "0.1.1"
+        asset: sed-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.xz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          windows: pc-windows-msvc
+        checksum:
+          type: github_release
+          asset: "{{.Asset}}.sha256"
+          algorithm: sha256
+        files:
+          - name: sed
+            src: "{{.AssetWithoutExt}}/sed"
+        overrides:
+          - goos: linux
+            goarch: amd64
+            replacements:
+              linux: unknown-linux-musl
+          - goos: linux
+            goarch: arm64
+            replacements:
+              linux: unknown-linux-gnu
+          - goos: windows
+            format: zip
+            files:
+              - name: sed
   - type: github_release
     repo_owner: uw-labs
     repo_name: strongbox

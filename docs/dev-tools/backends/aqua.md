@@ -194,9 +194,6 @@ mise natively verifies Cosign signatures without requiring the `cosign` CLI tool
 ```bash
 # Enable/disable Cosign verification (default: true)
 export MISE_AQUA_COSIGN=true
-
-# Pass extra arguments to the verification process
-export MISE_AQUA_COSIGN_EXTRA_ARGS="--key /path/to/key.pub"
 ```
 
 ### SLSA Provenance Verification

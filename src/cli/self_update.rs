@@ -1,12 +1,16 @@
 use color_eyre::Result;
 use color_eyre::eyre::bail;
 use console::style;
+#[cfg(windows)]
+use indoc::formatdoc;
 use self_update::backends::github::Update;
 use self_update::{Status, cargo_crate_version};
 
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
 use crate::env;
+#[cfg(windows)]
+use crate::file::MAX_PATH;
 use std::collections::BTreeMap;
 use std::fs;
 #[cfg(target_os = "macos")]
@@ -100,6 +104,123 @@ pub struct SelfUpdate {
     no_plugins: bool,
 }
 
+/// Whether replacing the running binary would destroy the install with `TEMP` set to `tmp`.
+///
+/// `self-replace` renames the running mise.exe out of its install directory *first*, then
+/// launches a copy of it from `TEMP` to finish the swap. When that copy's path exceeds
+/// `MAX_PATH` the launch fails — `CreateProcess` has no `\\?\` escape hatch the way the file
+/// APIs do — and nothing puts mise back: the install directory is left empty and the binary is
+/// stranded in `TEMP` under a generated name. The crate declares executable paths that long out
+/// of scope (self-replace-1.5.0/src/windows.rs, in `self_delete_on_init`), so the only place to
+/// stop this is before it starts.
+#[cfg(windows)]
+fn temp_dir_breaks_self_replace(tmp: &std::path::Path, exe_stem: Option<&str>) -> bool {
+    helper_path_len(tmp, exe_stem) >= MAX_PATH
+}
+
+/// Length in UTF-16 code units of the helper's full path. MAX_PATH counts UTF-16 code units
+/// and includes the terminating NUL, so a total of exactly MAX_PATH is already one too many.
+/// `OsStr::len()` would be the wrong unit: it counts WTF-8 bytes.
+#[cfg(windows)]
+fn helper_path_len(tmp: &std::path::Path, exe_stem: Option<&str>) -> usize {
+    use std::os::windows::ffi::OsStrExt;
+
+    // `Path::join` only inserts a separator when there is not one already, and Windows'
+    // `temp_dir()` always comes back with a trailing backslash.
+    let separator = usize::from(!ends_with_separator(tmp));
+    tmp.as_os_str().encode_wide().count() + separator + helper_name_len(exe_stem)
+}
+
+/// Length in UTF-16 code units of the name `self-replace` generates for the helper:
+/// `.` + the running executable's file stem + `.` + 32 random characters +
+/// `.__selfdelete__.exe`, with the stem included only when it is valid UTF-8. Mirrors
+/// `get_temp_executable_name` in self-replace-1.5.0/src/windows.rs. This is 57 for
+/// `mise.exe` and longer whenever the binary has been renamed, so it cannot be a constant.
+#[cfg(windows)]
+fn helper_name_len(exe_stem: Option<&str>) -> usize {
+    let suffix_len = env::SELF_REPLACE_SUFFIXES[0].len();
+
+    // The stem is followed by a second `.`, and dropped entirely when it is not UTF-8.
+    let stem = exe_stem.map_or(0, |s| s.encode_utf16().count() + 1);
+    1 + stem + env::SELF_REPLACE_RANDOM_LEN + suffix_len
+}
+
+/// Delete the copies of mise that earlier updates left in `TEMP`.
+///
+/// `self-replace` moves the running binary aside and spawns a copy of it to delete the leftovers.
+/// When that copy does not delete itself the deletion never happens and a **full copy of mise.exe**
+/// stays in `TEMP` for good. Nothing else collects them: they are not under the cache, so
+/// `mise cache clear` does not reach them, and their names mean nothing to anyone else.
+///
+/// A long `TEMP` is not the only trigger, though it was the one this was first written for
+/// (measured at 199 and 201 characters, just under the length #12062 refuses outright). Measured
+/// again on a `TEMP` of 31: a successful update leaves **both** copies — the `__relocated__`
+/// original and the `__selfdelete__` helper — and neither is locked afterwards, so any later mise
+/// can remove them. That is what this exists to do.
+///
+/// Best effort by design. A copy another mise is still using cannot be deleted on Windows, which is
+/// the outcome we want, so failures are ignored rather than warned about.
+#[cfg(windows)]
+fn sweep_helper_orphans() {
+    for (path, _) in helper_orphans() {
+        match std::fs::remove_file(&path) {
+            Ok(()) => debug!("removed stale self-update copy: {}", path.display()),
+            Err(e) => trace!("could not remove {}: {e}", path.display()),
+        }
+    }
+}
+
+/// The copies an earlier update left in `TEMP`, with their sizes.
+///
+/// Shared with `mise doctor` so that "what counts as a leftover" has one definition rather than two
+/// that can drift: the predicate stays [`env::is_self_replace_helper`], and this is only the walk.
+/// A file whose size cannot be read is still reported, at 0 — it exists, which is the part that
+/// matters, and the size is decoration.
+#[cfg(windows)]
+pub(crate) fn helper_orphans() -> Vec<(std::path::PathBuf, u64)> {
+    let Some(stem) = current_exe_stem() else {
+        return Vec::new();
+    };
+    helper_orphans_in(&std::env::temp_dir(), &stem)
+}
+
+#[cfg(windows)]
+fn helper_orphans_in(dir: &std::path::Path, stem: &str) -> Vec<(std::path::PathBuf, u64)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| env::is_self_replace_helper(name, stem))
+        })
+        .map(|entry| {
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            (entry.path(), size)
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn ends_with_separator(path: &std::path::Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+
+    path.as_os_str()
+        .encode_wide()
+        .last()
+        .is_some_and(|c| c == u16::from(b'\\') || c == u16::from(b'/'))
+}
+
+/// The file stem `self-replace` would put in the helper's name: the running executable's.
+#[cfg(windows)]
+fn current_exe_stem() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    exe.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
+}
+
 impl SelfUpdate {
     pub async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
@@ -108,6 +229,15 @@ impl SelfUpdate {
             }
             bail!("mise is installed via a package manager, cannot update");
         }
+        // Before the update, not after: this run is about to create a copy of its own, and that one
+        // is in use rather than stale. Before the length check too, and that ordering is the whole
+        // point: a `TEMP` long enough to refuse the update is the case the leftovers come from, so
+        // running the sweep afterwards means the only machines that accumulate them are the only
+        // machines that never reach the code that collects them.
+        #[cfg(windows)]
+        sweep_helper_orphans();
+        #[cfg(windows)]
+        Self::ensure_temp_dir_can_replace_binary()?;
         let status = self.do_update()?;
 
         if status.updated() {
@@ -137,6 +267,38 @@ impl SelfUpdate {
         }
 
         Ok(())
+    }
+
+    /// Stop before anything is downloaded or moved when `TEMP` is long enough that
+    /// replacing the binary would leave no mise installed at all.
+    #[cfg(windows)]
+    fn ensure_temp_dir_can_replace_binary() -> Result<()> {
+        use std::os::windows::ffi::OsStrExt;
+
+        let tmp = std::env::temp_dir();
+        let stem = current_exe_stem();
+        if !temp_dir_breaks_self_replace(&tmp, stem.as_deref()) {
+            return Ok(());
+        }
+        let msg = formatdoc! {r#"
+            TEMP is too long to replace mise.exe safely ({len} UTF-16 code units)
+
+              TEMP = {tmp}
+
+            Updating moves the running mise.exe aside and then launches a helper from TEMP to
+            put the new one in place. That helper's path would be {helper} UTF-16 code units,
+            and Windows cannot launch an executable whose path reaches {max}. The move happens
+            first, so going ahead would leave no mise installed at all.
+
+            Point TEMP and TMP at a shorter directory and run mise self-update again:
+
+              $env:TEMP = 'C:\Temp'; $env:TMP = 'C:\Temp'"#,
+            len = tmp.as_os_str().encode_wide().count(),
+            tmp = tmp.display(),
+            helper = helper_path_len(&tmp, stem.as_deref()),
+            max = MAX_PATH,
+        };
+        bail!("{msg}");
     }
 
     fn do_update(&self) -> Result<Status> {
@@ -334,5 +496,141 @@ impl SelfUpdate {
 
         debug!("macOS binary signature verified successfully");
         Ok(())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    /// What `env::temp_dir()` hands back on Windows: a directory path of exactly `len`
+    /// UTF-16 code units, trailing backslash included.
+    fn temp_dir_of_len(len: usize) -> PathBuf {
+        let mut s = String::from("C:\\");
+        while s.len() < len - 1 {
+            s.push('t');
+        }
+        s.push('\\');
+        assert_eq!(s.len(), len, "test helper built the wrong length");
+        PathBuf::from(s)
+    }
+
+    fn breaks(len: usize) -> bool {
+        temp_dir_breaks_self_replace(&temp_dir_of_len(len), Some("mise"))
+    }
+
+    #[test]
+    fn an_ordinary_temp_dir_is_left_alone() {
+        let tmp = Path::new("C:\\Users\\u\\AppData\\Local\\Temp\\");
+        assert!(!temp_dir_breaks_self_replace(tmp, Some("mise")));
+    }
+
+    #[test]
+    fn the_boundary_matches_what_windows_actually_does() {
+        // Measured on Windows 11 26200 with LongPathsEnabled=0, running self-update against
+        // a copy of mise.exe: with TEMP at 201 it succeeds and the binary survives, at 202 it
+        // fails with `os error 3` and the install directory is left empty. `temp_dir()`
+        // appends a backslash to both, which is why these are 202 and 203 here.
+        assert!(!breaks(202));
+        assert!(breaks(203));
+    }
+
+    #[test]
+    fn temp_dirs_measured_as_destructive_are_rejected() {
+        assert!(breaks(206)); // TEMP=205
+        assert!(breaks(244)); // TEMP=243
+    }
+
+    #[test]
+    fn a_long_temp_dir_that_still_works_is_not_rejected() {
+        // Control: length alone is not the trigger. TEMP=190 was measured as succeeding, so a
+        // guard that fired here would block updates that work.
+        assert!(!breaks(191));
+    }
+
+    #[test]
+    fn a_trailing_separator_is_not_counted_twice() {
+        // `env::temp_dir()` always ends in a separator on Windows and `Path::join` does not
+        // add a second one, so both spellings of the same directory have to agree.
+        assert_eq!(
+            helper_path_len(Path::new("C:\\Temp\\"), Some("mise")),
+            helper_path_len(Path::new("C:\\Temp"), Some("mise"))
+        );
+    }
+
+    #[test]
+    fn the_helper_name_follows_the_running_executable() {
+        // `.` + stem + `.` + 32 random characters + `.__selfdelete__.exe`
+        assert_eq!(helper_name_len(Some("mise")), 57);
+        assert_eq!(helper_name_len(Some("mise-dev")), 61);
+        // self-replace leaves the stem out when it is not valid UTF-8
+        assert_eq!(helper_name_len(None), 52);
+    }
+
+    #[test]
+    fn a_renamed_binary_lowers_the_ceiling() {
+        // A TEMP that is safe for `mise.exe` is not safe once the binary has been renamed to
+        // something longer, so the guard cannot assume the stem.
+        let tmp = temp_dir_of_len(202);
+        assert!(!temp_dir_breaks_self_replace(&tmp, Some("mise")));
+        assert!(temp_dir_breaks_self_replace(&tmp, Some("mise-dev")));
+    }
+
+    /// The walk, not the predicate — `env::is_self_replace_helper` has its own tests. What matters
+    /// here is that `doctor` and the sweep see the same set, and that a directory full of unrelated
+    /// files does not turn into a warning about mise.
+    #[test]
+    fn only_the_generated_copies_are_collected() {
+        let dir = tempfile::tempdir().unwrap();
+        let rand = "a".repeat(env::SELF_REPLACE_RANDOM_LEN);
+        let collected = [
+            format!(".mise.{rand}.__selfdelete__.exe"),
+            format!(".mise.{rand}.__relocated__.exe"),
+        ];
+        let ignored = [
+            "mise.exe".to_string(),
+            // a different binary's leftovers are not ours to delete
+            format!(".other.{rand}.__selfdelete__.exe"),
+            // near-misses on the random segment: too short, and not lowercase
+            format!(".mise.{}.__selfdelete__.exe", "a".repeat(31)),
+            format!(".mise.{}A.__selfdelete__.exe", "a".repeat(31)),
+            "setup-x64.exe".to_string(),
+        ];
+        for name in collected.iter().chain(ignored.iter()) {
+            std::fs::write(dir.path().join(name), b"xyz").unwrap();
+        }
+
+        let found = helper_orphans_in(dir.path(), "mise");
+        let mut names = found
+            .iter()
+            .map(|(p, _)| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        names.sort();
+        let mut want = collected.to_vec();
+        want.sort();
+        assert_eq!(names, want);
+        // the size is what `doctor` adds up, so it has to come from the files rather than a count
+        assert_eq!(found.iter().map(|(_, size)| size).sum::<u64>(), 6);
+    }
+
+    #[test]
+    fn a_missing_directory_is_not_an_error() {
+        // `TEMP` pointing at something unreadable must not take `self-update` or `doctor` down.
+        assert!(helper_orphans_in(Path::new("C:\\nope\\nope\\nope"), "mise").is_empty());
+    }
+
+    #[test]
+    fn the_length_is_counted_in_utf16_code_units() {
+        // Control against the `OsStr::len()` trap: this path is 202 UTF-16 code units, the
+        // longest that works, but 598 WTF-8 bytes. Counting bytes would reject it.
+        let mut s = String::from("C:\\");
+        while s.chars().count() < 201 {
+            s.push('あ');
+        }
+        s.push('\\');
+        let tmp = PathBuf::from(s);
+        assert_eq!(tmp.as_os_str().len(), 598);
+        assert!(!temp_dir_breaks_self_replace(&tmp, Some("mise")));
     }
 }

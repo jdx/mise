@@ -197,7 +197,7 @@ impl TaskScriptParser {
                     }
 
                     let expanded_patterns =
-                        crate::task::task_source_checker::expand_glob_braces(pattern);
+                        crate::task::task_source_checker::expand_enumeration_patterns(pattern);
                     match expanded_patterns {
                         Err(error) => {
                             warn!(
@@ -993,7 +993,7 @@ mod tests {
 
     impl TeraV1Guard {
         fn new() -> Self {
-            let lock = TEST_SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
             Settings::override_with(|settings| settings.tera_v1 = Some(true));
             Self { _lock: lock }
         }

@@ -75,6 +75,13 @@ if [[ $os == "linux" ]] && [[ $arch == "armv7" ]]; then
 	features="$features,aws-lc-rs"
 fi
 
+if [[ $RUST_TRIPLE == "armv7-unknown-linux-gnueabihf" ]]; then
+	# cross 0.2.5 uses Ubuntu 16.04 for this target, whose libclang 3.8 is
+	# too old for aws-lc-sys bindgen. Cross.toml installs libclang 6 here.
+	export LIBCLANG_PATH=/usr/lib/llvm-6.0/lib
+	export BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabihf="--sysroot=/usr/arm-linux-gnueabihf -isystem /usr/lib/llvm-6.0/lib/clang/6.0.1/include"
+fi
+
 if [[ $os == "macos" ]]; then
 	# Targeting macOS 12+ makes ld emit chained fixups (LC_DYLD_CHAINED_FIXUPS),
 	# which dyld applies lazily per page instead of eagerly interpreting ~170k
@@ -96,11 +103,11 @@ if [[ -n "${MISE_PGO:-}" ]]; then
 		build_tool=cross
 	fi
 	MISE_PGO_BUILD_TOOL="$build_tool" MISE_PGO_TARGET="$RUST_TRIPLE" \
-		bash scripts/pgo.bash --no-default-features --features "$features"
+		bash scripts/pgo.bash --ignore-rust-version --no-default-features --features "$features"
 elif [[ $os == "linux" ]]; then
-	cross build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	cross build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
 else
-	cargo build --profile=serious --target "$RUST_TRIPLE" --no-default-features --features "$features"
+	cargo build --profile=serious --target "$RUST_TRIPLE" --ignore-rust-version --no-default-features --features "$features"
 fi
 
 # Use CARGO_TARGET_DIR if set, otherwise default to target

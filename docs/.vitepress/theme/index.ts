@@ -11,9 +11,27 @@ import { data as starsData } from "../stars.data";
 export default {
   extends: DefaultTheme,
   Layout,
-  enhanceApp({ app }) {
+  enhanceApp({ app, router }) {
     enhanceAppWithTabs(app);
     initBanner();
+
+    const onBeforeRouteChange = router.onBeforeRouteChange;
+    router.onBeforeRouteChange = async (to) => {
+      if (typeof window !== "undefined") {
+        const url = new URL(to, window.location.origin);
+        if (
+          url.origin === window.location.origin &&
+          url.pathname.startsWith("/tools/")
+        ) {
+          const toolPath = url.pathname.replace(/\.html$/, "");
+          window.location.assign(
+            `https://mise-versions.jdx.dev${toolPath}${url.search}${url.hash}`,
+          );
+          return false;
+        }
+      }
+      return onBeforeRouteChange?.(to);
+    };
   },
   setup() {
     onMounted(() => {
