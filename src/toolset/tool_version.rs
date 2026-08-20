@@ -118,14 +118,14 @@ impl ToolVersion {
         }
         let tv = match request.clone() {
             ToolRequest::Version { version: v, .. } => {
-                Self::resolve_version(config, request, &v, &opts).await?
+                Self::resolve_version(config, request, &backend, &v, &opts).await?
             }
             ToolRequest::Prefix { prefix, .. } => {
-                Self::resolve_prefix(config, request, &prefix, &opts).await?
+                Self::resolve_prefix(config, request, &backend, &prefix, &opts).await?
             }
             ToolRequest::Sub {
                 sub, orig_version, ..
-            } => Self::resolve_sub(config, request, &sub, &orig_version, &opts).await?,
+            } => Self::resolve_sub(config, request, &backend, &sub, &orig_version, &opts).await?,
             _ => {
                 let version = request.version();
                 Self::new(request, version)
@@ -350,21 +350,11 @@ impl ToolVersion {
     async fn resolve_version(
         config: &Arc<Config>,
         request: ToolRequest,
+        backend: &ABackend,
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<ToolVersion> {
-        let backend = request.backend()?;
-        Self::resolve_version_with_backend(config, request, backend, v, opts).await
-    }
-
-    async fn resolve_version_with_backend(
-        config: &Arc<Config>,
-        request: ToolRequest,
-        backend: ABackend,
-        v: &str,
-        opts: &ResolveOptions,
-    ) -> Result<ToolVersion> {
-        let v = config.resolve_alias(&backend, v).await?;
+        let v = config.resolve_alias(backend, v).await?;
 
         // Re-check the lockfile after alias resolution (e.g., "lts" → "24")
         // The initial lockfile check in resolve() uses the unresolved alias which
@@ -418,11 +408,11 @@ impl ToolVersion {
                 return Self::resolve_path(PathBuf::from(p), &request);
             }
             Some(("prefix", p)) => {
-                return Self::resolve_prefix(config, request, p, opts).await;
+                return Self::resolve_prefix(config, request, backend, p, opts).await;
             }
             Some((part, v)) if part.starts_with("sub-") => {
                 let sub = part.split_once('-').unwrap().1;
-                return Self::resolve_sub(config, request, sub, v, opts).await;
+                return Self::resolve_sub(config, request, backend, sub, v, opts).await;
             }
             _ => (),
         }
@@ -539,7 +529,7 @@ impl ToolVersion {
             if opts.offline {
                 return build(v);
             }
-            return Err(Self::no_versions_found(&backend, opts.before_date));
+            return Err(Self::no_versions_found(backend, opts.before_date));
         }
         let installed_matches =
             (!opts.latest_versions).then(|| backend.list_installed_versions_matching(&v));
@@ -693,11 +683,11 @@ impl ToolVersion {
     async fn resolve_sub(
         config: &Arc<Config>,
         request: ToolRequest,
+        backend: &ABackend,
         sub: &str,
         v: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let backend = request.backend()?;
         let selection_opts = request.options();
         if v == "latest" && opts.offline {
             let pathname = request.version().replace([':', '/'], "-");
@@ -707,7 +697,10 @@ impl ToolVersion {
                 && target.starts_with("./")
                 && let Some(version) = target.file_name().map(|v| v.to_string_lossy().to_string())
             {
-                return Box::pin(Self::resolve_version(config, request, &version, opts)).await;
+                return Box::pin(Self::resolve_version(
+                    config, request, backend, &version, opts,
+                ))
+                .await;
             }
             // Can't resolve sub-N:latest offline (no remote latest, and
             // applying version_sub to latest_installed_version would shift
@@ -719,7 +712,7 @@ impl ToolVersion {
         }
         let v = resolve_sub_base(
             config,
-            &backend,
+            backend,
             &selection_opts,
             sub,
             v,
@@ -727,16 +720,16 @@ impl ToolVersion {
             opts.refresh_remote_versions,
         )
         .await?;
-        Box::pin(Self::resolve_version(config, request, &v, opts)).await
+        Box::pin(Self::resolve_version(config, request, backend, &v, opts)).await
     }
 
     async fn resolve_prefix(
         config: &Arc<Config>,
         request: ToolRequest,
+        backend: &ABackend,
         prefix: &str,
         opts: &ResolveOptions,
     ) -> Result<Self> {
-        let backend = request.backend()?;
         let selection_opts = request.options();
         let settings = Settings::get();
         let is_offline = settings.offline() || opts.offline;
@@ -767,7 +760,7 @@ impl ToolVersion {
             .await?;
         let v = matches
             .last()
-            .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?;
+            .ok_or_else(|| Self::no_versions_found(backend, opts.before_date))?;
         Ok(Self::new(request, v.to_string()))
     }
 
@@ -1112,11 +1105,11 @@ mod tests {
     async fn resolve_version_uses_each_requests_prerelease_option() {
         let config = Config::get().await.unwrap();
         let ba = Arc::new(BackendArg::from(unique_name("request-options")));
-        let backend = Arc::new(RequestOptionsBackend {
+        let backend_impl = Arc::new(RequestOptionsBackend {
             ba: ba.clone(),
             list_calls: AtomicUsize::new(0),
         });
-        backend
+        backend_impl
             .get_remote_version_cache()
             .lock()
             .await
@@ -1146,19 +1139,15 @@ mod tests {
             ..Default::default()
         };
 
-        let stable = ToolVersion::resolve_version_with_backend(
-            &config,
-            stable_request,
-            backend.clone(),
-            "1",
-            &resolve_options,
-        )
-        .await
-        .unwrap();
-        let prerelease = ToolVersion::resolve_version_with_backend(
+        let backend: ABackend = backend_impl.clone();
+        let stable =
+            ToolVersion::resolve_version(&config, stable_request, &backend, "1", &resolve_options)
+                .await
+                .unwrap();
+        let prerelease = ToolVersion::resolve_version(
             &config,
             prerelease_request,
-            backend.clone(),
+            &backend,
             "1",
             &resolve_options,
         )
@@ -1167,7 +1156,7 @@ mod tests {
 
         assert_eq!(stable.version, "1.0.0");
         assert_eq!(prerelease.version, "1.1.0-rc.1");
-        assert_eq!(backend.list_calls.load(AtomicOrdering::SeqCst), 1);
+        assert_eq!(backend_impl.list_calls.load(AtomicOrdering::SeqCst), 1);
     }
 
     #[test]
