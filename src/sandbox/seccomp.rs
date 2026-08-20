@@ -148,16 +148,24 @@ pub fn apply_seccomp_net_filter(
             libc::SYS_removexattr,
             libc::SYS_lremovexattr,
             libc::SYS_fremovexattr,
-            libc::SYS_utimensat,
         ] {
             rules.insert(syscall_number(syscall), vec![]);
         }
         // fchmodat2 is syscall 452 on both supported Linux architectures but
         // older libc headers expose the constant only on x86_64.
         rules.insert(452, vec![]);
-        // utimensat also implements futimens when pathname is null. Reject the
-        // whole syscall so a pre-opened descriptor cannot bypass Landlock's
-        // path-based confinement to mutate timestamps.
+        // Permit pathname timestamp updates inside Landlock-authorized build
+        // roots, but reject futimens' null pathname so a retained descriptor
+        // cannot mutate an object outside the confined hierarchy.
+        rules.insert(
+            syscall_number(libc::SYS_utimensat),
+            vec![SeccompRule::new(vec![SeccompCondition::new(
+                1,
+                SeccompCmpArgLen::Qword,
+                SeccompCmpOp::Eq,
+                0,
+            )?])?],
+        );
         // clone remains available for ordinary processes and threads, but no
         // descendant may create a new namespace.
         let namespace_flags = [
@@ -243,14 +251,21 @@ pub fn apply_seccomp_net_filter(
             libc::SYS_chmod,
             libc::SYS_chown,
             libc::SYS_lchown,
-            libc::SYS_utime,
-            libc::SYS_utimes,
-            libc::SYS_futimesat,
             libc::SYS_iopl,
             libc::SYS_ioperm,
         ] {
             rules.insert(syscall_number(syscall), vec![]);
         }
+        #[cfg(target_arch = "x86_64")]
+        rules.insert(
+            syscall_number(libc::SYS_futimesat),
+            vec![SeccompRule::new(vec![SeccompCondition::new(
+                1,
+                SeccompCmpArgLen::Qword,
+                SeccompCmpOp::Eq,
+                0,
+            )?])?],
+        );
 
         // Make modern libc fall back to clone(2), whose namespace flags can be
         // inspected above, without breaking normal thread/process creation.
@@ -447,6 +462,13 @@ mod tests {
                 assert_eq!(
                     std::io::Error::last_os_error().raw_os_error(),
                     Some(libc::EPERM)
+                );
+                assert_eq!(
+                    unsafe {
+                        libc::utimensat(libc::AT_FDCWD, sentinel_c.as_ptr(), std::ptr::null(), 0)
+                    },
+                    0,
+                    "pathname timestamp updates must remain available to Landlock-confined builds"
                 );
                 assert_eq!(
                     unsafe {
