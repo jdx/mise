@@ -65,11 +65,21 @@ impl Latest {
             plugin.ensure_installed(&config, &mpr, false, false).await?;
             backend = tool.ba.backend()?;
         }
+        let selection_opts = config.get_tool_opts_with_overrides(backend.ba()).await?;
         let prefix = match &tool.tvr {
             Some(ToolRequest::Sub {
                 sub, orig_version, ..
             }) => Some(
-                resolve_sub_base(&config, &backend, sub, orig_version, before_date, false).await?,
+                resolve_sub_base(
+                    &config,
+                    &backend,
+                    &selection_opts,
+                    sub,
+                    orig_version,
+                    before_date,
+                    false,
+                )
+                .await?,
             ),
             _ => match prefix {
                 Some(v) => Some(config.resolve_alias(&backend, &v).await?),

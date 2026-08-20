@@ -1071,7 +1071,10 @@ mod tests {
         );
 
         assert_eq!(
-            backend.list_remote_versions(&config).await.unwrap(),
+            backend
+                .list_remote_versions_with_selection_options(&config, &backend.ba().opts(), false,)
+                .await
+                .unwrap(),
             vec!["1.0.0", "2.0.0"]
         );
         assert_eq!(
@@ -1203,11 +1206,25 @@ mod tests {
         );
 
         assert_eq!(
-            first_backend.list_remote_versions(&config).await.unwrap(),
+            first_backend
+                .list_remote_versions_with_selection_options(
+                    &config,
+                    &first_backend.ba().opts(),
+                    false,
+                )
+                .await
+                .unwrap(),
             vec!["1.0.0"]
         );
         assert_eq!(
-            second_backend.list_remote_versions(&config).await.unwrap(),
+            second_backend
+                .list_remote_versions_with_selection_options(
+                    &config,
+                    &second_backend.ba().opts(),
+                    false,
+                )
+                .await
+                .unwrap(),
             vec!["2.0.0"]
         );
         first_registry.assert_async().await;

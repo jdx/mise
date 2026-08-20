@@ -717,20 +717,16 @@ impl ToolVersion {
             let version = request.version();
             return Ok(Self::new(request, version));
         }
-        let v = match v {
-            "latest" => backend
-                .latest_version_with_selection_options(
-                    config,
-                    None,
-                    &selection_opts,
-                    opts.before_date,
-                    opts.refresh_remote_versions,
-                )
-                .await?
-                .ok_or_else(|| Self::no_versions_found(&backend, opts.before_date))?,
-            _ => config.resolve_alias(&backend, v).await?,
-        };
-        let v = tool_request::version_sub(&v, sub);
+        let v = resolve_sub_base(
+            config,
+            &backend,
+            &selection_opts,
+            sub,
+            v,
+            opts.before_date,
+            opts.refresh_remote_versions,
+        )
+        .await?;
         Box::pin(Self::resolve_version(config, request, &v, opts)).await
     }
 
@@ -814,6 +810,7 @@ impl ToolVersion {
 pub(crate) async fn resolve_sub_base(
     config: &Arc<Config>,
     backend: &ABackend,
+    selection_opts: &ToolVersionOptions,
     sub: &str,
     base: &str,
     before_date: Option<Timestamp>,
@@ -829,7 +826,13 @@ pub(crate) async fn resolve_sub_base(
     };
     let v = if base == "latest" {
         backend
-            .latest_version_with_refresh(config, None, before_date, refresh_remote_versions)
+            .latest_version_with_selection_options(
+                config,
+                None,
+                selection_opts,
+                before_date,
+                refresh_remote_versions,
+            )
             .await?
             .ok_or_else(|| ToolVersion::no_versions_found(backend, before_date))?
     } else {

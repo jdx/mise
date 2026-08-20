@@ -4695,18 +4695,30 @@ mod latest_version_tests {
         let _ = fs::remove_dir_all(&alpha.ba().cache_path);
 
         assert_eq!(
-            alpha.list_remote_versions(&config).await.unwrap(),
+            alpha
+                .list_remote_versions_with_selection_options(&config, &alpha.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
         // The defect: this read back the list `alpha` had cached under the shared key.
         assert_eq!(
-            beta.list_remote_versions(&config).await.unwrap(),
+            beta.list_remote_versions_with_selection_options(&config, &beta.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["2.0.0".to_string()]
         );
         // Same option value, same entry — which is what shows the key follows the value rather
         // than the instance, and that the fix did not trade staleness for a refetch every time.
         assert_eq!(
-            alpha_again.list_remote_versions(&config).await.unwrap(),
+            alpha_again
+                .list_remote_versions_with_selection_options(
+                    &config,
+                    &alpha_again.ba().opts(),
+                    false,
+                )
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
         assert_eq!(alpha_again.list_calls(), 0);
@@ -4733,7 +4745,10 @@ mod latest_version_tests {
             .unwrap();
 
         assert_eq!(
-            backend.list_remote_versions(&config).await.unwrap(),
+            backend
+                .list_remote_versions_with_selection_options(&config, &backend.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
 
