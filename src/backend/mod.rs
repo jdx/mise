@@ -2559,7 +2559,11 @@ pub trait Backend: Debug + Send + Sync {
         query: &str,
         selection_opts: &ToolVersionOptions,
     ) -> Vec<String> {
-        let versions = self.list_installed_versions();
+        let versions = self
+            .list_installed_versions()
+            .into_iter()
+            .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
+            .collect();
         let filter = !self.include_prereleases(selection_opts);
         self.fuzzy_match_filter(versions, query, filter)
     }
@@ -2809,7 +2813,7 @@ pub trait Backend: Debug + Send + Sync {
             .into_iter()
             .filter(|v| !v.starts_with('.'))
             .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-            .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+            .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
             .filter(|v| v != "latest")
             .filter(|v| !filter_prereleases || !self.is_prerelease_version(v))
             .collect_vec();
@@ -5032,6 +5036,7 @@ mod latest_version_tests {
             stable_result: Some("9.9.9".to_string()),
             stable_info: None,
             remote_versions: vec![],
+            listing_keys: &[],
             stable_calls: AtomicUsize::new(0),
             stable_info_calls: AtomicUsize::new(0),
             list_calls: AtomicUsize::new(0),
@@ -5041,6 +5046,58 @@ mod latest_version_tests {
             backend.latest_installed_version(None).unwrap(),
             Some("nightly".into())
         );
+    }
+
+    #[tokio::test]
+    async fn test_latest_installed_version_ignores_incomplete_installs() {
+        let _config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let name = format!(
+            "latest-incomplete-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut ba = BackendArg::new_raw(
+            name.clone(),
+            None,
+            name,
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir.path().join("installs");
+        fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("2.0.0")).unwrap();
+        let marker = install_state::incomplete_file_path(&ba.short, "2.0.0");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, []).unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_result: None,
+            stable_info: None,
+            remote_versions: vec![],
+            listing_keys: &[],
+            stable_calls: AtomicUsize::new(0),
+            stable_info_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("1.0.0".into())
+        );
+        assert_eq!(
+            backend
+                .latest_installed_version_with_selection_options(
+                    Some("2".into()),
+                    &ToolVersionOptions::default(),
+                )
+                .unwrap(),
+            None
+        );
+        fs::remove_file(marker).unwrap();
     }
 
     #[tokio::test]
