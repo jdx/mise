@@ -2,6 +2,11 @@
 
 Status: DONE
 Priority: P0
+
+Current exact-head confirmation (2026-08-20): prerequisite head
+`7d422518ed1674c8cb5f819411af9bee4d4b6ce6` passed all 14 jobs in
+[run 32352460903](https://github.com/jdx/mise/actions/runs/32352460903),
+including the real source-build provenance oracle and marker verification.
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010
