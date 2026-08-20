@@ -3008,10 +3008,10 @@ pub trait Backend: Debug + Send + Sync {
                 .collect()
         } else if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
         {
-            crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
-                .into_iter()
-                .map(|version| (version, None))
-                .collect()
+            crate::config::config_file::idiomatic_version::package_json::parse_with_options(
+                path,
+                self.id(),
+            )?
         } else {
             self._parse_idiomatic_file_with_options(path).await?
         };

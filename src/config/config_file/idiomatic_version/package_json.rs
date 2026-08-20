@@ -1,4 +1,5 @@
 use crate::file;
+use crate::toolset::ToolVersionOptions;
 use eyre::Result;
 use serde::Deserialize;
 use serde::de::Deserializer;
@@ -81,7 +82,7 @@ impl PackageJsonData {
             .filter(|pm| pm.name.as_deref() == Some(tool_name))
             .and_then(|pm| pm.version.as_deref())
             .filter(|v| !v.is_empty())
-            .map(str::to_string)
+            .map(version_without_checksum)
             .or_else(|| {
                 // Fall back to packageManager field (e.g. "pnpm@9.1.0+sha256.abc")
                 let pm_field = self.package_manager.as_deref()?;
@@ -89,20 +90,49 @@ impl PackageJsonData {
                 if name != tool_name {
                     return None;
                 }
-                // Strip +sha... suffix
-                let version = rest.split('+').next().unwrap_or(rest).trim();
+                let version = version_without_checksum(rest);
                 if version.is_empty() {
                     return None;
                 }
-                Some(version.to_string())
+                Some(version)
+            })
+    }
+
+    fn package_manager_checksum(&self, tool_name: &str) -> Option<String> {
+        self.dev_engines
+            .as_ref()
+            .and_then(|de| de.package_manager.as_ref())
+            .filter(|pm| pm.name.as_deref() == Some(tool_name))
+            .and_then(|pm| pm.version.as_deref())
+            .and_then(checksum_from_version)
+            .or_else(|| {
+                let raw = self.package_manager.as_deref()?;
+                let (name, version) = raw.split_once('@')?;
+                (name == tool_name)
+                    .then(|| checksum_from_version(version))
+                    .flatten()
             })
     }
 }
 
-pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
+fn version_without_checksum(raw: &str) -> String {
+    raw.split('+').next().unwrap_or(raw).trim().to_string()
+}
+
+fn checksum_from_version(raw: &str) -> Option<String> {
+    let (_, checksum) = raw.split_once('+')?;
+    if let Some((algorithm, digest)) = checksum.split_once('.') {
+        return Some(format!("{algorithm}:{digest}"));
+    }
+    Some(checksum.to_string())
+}
+
+pub fn parse_with_options(
+    path: &Path,
+    tool_name: &str,
+) -> Result<Vec<(String, Option<ToolVersionOptions>)>> {
     let pkg = PackageJsonData::parse(path)?;
-    // We ignore unknown tools in package.json
-    let v = match tool_name {
+    let version = match tool_name {
         "node" | "deno" => pkg.runtime_version(tool_name),
         "bun" => pkg
             .runtime_version(tool_name)
@@ -110,11 +140,26 @@ pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
         "npm" | "yarn" | "pnpm" => pkg.package_manager_version(tool_name),
         _ => None,
     };
-    if let Some(v) = v {
-        Ok(vec![v])
-    } else {
-        Ok(vec![])
-    }
+    let Some(version) = version else {
+        return Ok(vec![]);
+    };
+
+    let options = pkg.package_manager_checksum(tool_name).map(|checksum| {
+        let mut options = ToolVersionOptions::default();
+        options.opts.insert(
+            "package_manager_checksum".to_string(),
+            toml::Value::String(checksum),
+        );
+        options
+    });
+    Ok(vec![(version, options)])
+}
+
+pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
+    Ok(parse_with_options(path, tool_name)?
+        .into_iter()
+        .map(|(version, _)| version)
+        .collect())
 }
 
 #[cfg(test)]
@@ -162,6 +207,53 @@ mod tests {
 
         assert_eq!(parse(&path, "bun").unwrap(), vec!["1.0.0".to_string()]);
         assert_eq!(parse(&path, "node").unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_package_manager_checksum_becomes_install_option() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(&path, r#"{"packageManager":"pnpm@9.1.0+sha224.abcdef"}"#).unwrap();
+
+        let parsed = parse_with_options(&path, "pnpm").unwrap();
+        assert_eq!(parsed[0].0, "9.1.0");
+        assert_eq!(
+            parsed[0]
+                .1
+                .as_ref()
+                .and_then(|options| options.opts.get("package_manager_checksum"))
+                .and_then(toml::Value::as_str),
+            Some("sha224:abcdef")
+        );
+    }
+
+    #[test]
+    fn test_dev_engines_package_manager_checksum_becomes_install_option() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "packageManager": {
+                        "name": "yarn",
+                        "version": "4.1.0+sha512.abcdef"
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = parse_with_options(&path, "yarn").unwrap();
+        assert_eq!(parsed[0].0, "4.1.0");
+        assert_eq!(
+            parsed[0]
+                .1
+                .as_ref()
+                .and_then(|options| options.opts.get("package_manager_checksum"))
+                .and_then(toml::Value::as_str),
+            Some("sha512:abcdef")
+        );
     }
 
     #[test]

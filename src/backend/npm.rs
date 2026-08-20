@@ -84,6 +84,10 @@ impl<'a> NpmOptions<'a> {
         self.values.str("aube_args")
     }
 
+    fn checksum(&self) -> Option<&'a str> {
+        self.values.str("checksum")
+    }
+
     fn trust_policy_excludes(&self) -> eyre::Result<Vec<String>> {
         Self::string_list_option(
             self.values.raw().opts.get("trust_policy_excludes"),
@@ -403,6 +407,7 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        let package = self.package_install_spec(ctx, &tv, &options).await?;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -415,16 +420,18 @@ impl Backend for NPMBackend {
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
-                self.install_via_aube_embed(ctx, &tv, &options).await?;
+                self.install_via_aube_embed(ctx, &tv, &options, &package)
+                    .await?;
             }
             NpmPackageManager::AubeCli => {
-                self.install_via_aube_cli(ctx, &tv, &options).await?;
+                self.install_via_aube_cli(ctx, &tv, &options, &package)
+                    .await?;
             }
             NpmPackageManager::Bun => {
                 let mut cmd =
                     CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "bun").await)
                         .arg("install")
-                        .arg(format!("{}@{}", self.tool_name(), tv.version))
+                        .arg(&package)
                         .arg("--global")
                         // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
                         // https://github.com/jdx/mise/discussions/7541
@@ -457,7 +464,7 @@ impl Backend for NPMBackend {
                 )
                 .arg("add")
                 .arg("--global")
-                .arg(format!("{}@{}", self.tool_name(), tv.version))
+                .arg(&package)
                 .arg("--global-dir")
                 .arg(tv.install_path())
                 .arg("--global-bin-dir")
@@ -505,7 +512,7 @@ impl Backend for NPMBackend {
                     CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "npm").await)
                         .arg("install")
                         .arg("-g")
-                        .arg(format!("{}@{}", self.tool_name(), tv.version))
+                        .arg(&package)
                         .arg("--prefix")
                         .arg(tv.install_path())
                         .args(install_before_args)
@@ -559,6 +566,30 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
+    async fn package_install_spec(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        options: &NpmOptions<'_>,
+    ) -> Result<String> {
+        let Some(checksum) = options.checksum() else {
+            return Ok(format!("{}@{}", self.tool_name(), tv.version));
+        };
+        let (algorithm, digest) = checksum
+            .split_once(':')
+            .ok_or_else(|| eyre::eyre!("invalid packageManager checksum {checksum:?}"))?;
+        let download_dir = tv.download_path();
+        crate::file::create_dir_all(&download_dir)?;
+        let archive = download_dir.join("package.tgz");
+        ctx.pr
+            .set_message(format!("download {}@{}", self.tool_name(), tv.version));
+        npm_registry::download_tarball(&self.tool_name(), &tv.version, &archive).await?;
+        ctx.pr
+            .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
+        crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
+        Ok(archive.to_string_lossy().into_owned())
+    }
+
     pub fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: TokioMutex::new(
@@ -928,6 +959,7 @@ impl NPMBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
+        package: &str,
     ) -> Result<()> {
         crate::backend::aube_host::init();
         let install_path = tv.install_path();
@@ -972,7 +1004,7 @@ impl NPMBackend {
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
-        let package = format!("{}@{}", self.tool_name(), tv.version);
+        let package = package.to_string();
         let install = aube::embed::add_with_overrides(
             &install_path,
             std::slice::from_ref(&package),
@@ -1007,6 +1039,7 @@ impl NPMBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
+        package: &str,
     ) -> Result<()> {
         let bin_dir = tv.install_path().join("bin");
         let aube_program = self
@@ -1022,7 +1055,7 @@ impl NPMBackend {
         let mut cmd = CmdLineRunner::new(aube_program)
             .arg("add")
             .arg("--global")
-            .arg(format!("{}@{}", self.tool_name(), tv.version))
+            .arg(package)
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
             .env_values(tv.install_env())

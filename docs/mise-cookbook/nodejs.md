@@ -112,14 +112,9 @@ This example uses `pnpm` as the package manager. This will skip installing depen
 [tools]
 node = '24'
 
-[hooks]
-# Enabling corepack will install the `pnpm` package manager specified in your package.json
-# alternatively, you can also install `pnpm` with mise
-postinstall = 'npx corepack enable'
-
 [settings]
-# This must be enabled to make the hooks work
-experimental = true
+# Read the pnpm version from package.json's packageManager field
+idiomatic_version_file_enable_tools = ['pnpm']
 
 [env]
 _.path = ['{{config_root}}/node_modules/.bin']
@@ -139,5 +134,57 @@ depends = ['pnpm-install']
 With this setup, getting started in a NodeJS project is as simple as running `mise dev`:
 
 - `mise` will install the correct version of NodeJS
-- `mise` will enable `corepack`
+- `mise` will install the `pnpm` version declared in `package.json`
 - `pnpm install` will be run before `node --run dev`
+
+## Replacing Corepack
+
+mise can install and select npm, pnpm, and Yarn without Corepack. The simplest
+setup is to declare both Node.js and the package manager in `mise.toml`:
+
+```toml [mise.toml]
+[tools]
+node = '24'
+pnpm = '10.15.0'
+```
+
+To keep `package.json` as the package-manager version source, enable its
+[idiomatic version file](/configuration.html#idiomatic-version-files) support:
+
+```json [package.json]
+{
+  "packageManager": "pnpm@10.15.0+sha224.88208eb7c2e7de6ed534fa298248dee656723116995eda4b508fd0c9"
+}
+```
+
+```toml [mise.toml]
+[tools]
+node = '24'
+
+[settings]
+idiomatic_version_file_enable_tools = ['pnpm']
+```
+
+Run `mise install` to install the declared versions. With shell activation,
+mise's shims can also install a missing configured package manager when it is
+first invoked. This uses
+[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install),
+which is enabled by default.
+
+Corepack-style `+sha1`, `+sha224`, `+sha256`, `+sha384`, and `+sha512` suffixes
+are verified against the exact package-manager artifact before installation.
+For npm, pnpm, and Yarn Classic this is the registry tarball; for modern Yarn it
+is Yarn's published CLI file. Without a checksum, mise uses the package
+manager's preferred registry backend (usually Aqua) and that backend's normal
+verification.
+
+Enable each package manager that a repository may declare:
+
+```toml [mise.toml]
+[settings]
+idiomatic_version_file_enable_tools = ['npm', 'pnpm', 'yarn']
+```
+
+Unlike Corepack, mise does not supply a built-in "known good" package-manager
+version when a project declares none. Configure the version in `mise.toml`,
+`package.json`, or your global mise config instead.

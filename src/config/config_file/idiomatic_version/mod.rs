@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, eyre};
 
 use crate::backend::BackendList;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, BackendResolution};
 use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
@@ -33,9 +33,14 @@ impl IdiomaticVersionFile {
         for plugin in plugins {
             match plugin.parse_idiomatic_file_with_options(&path).await {
                 Ok(versions) => {
-                    for (version, options) in versions {
-                        let mut tr =
-                            ToolRequest::new(plugin.ba().clone(), &version, source.clone())?;
+                    for (version, mut options) in versions {
+                        let backend = package_manager_checksum_backend(
+                            plugin.ba(),
+                            &version,
+                            &mut options,
+                            &path,
+                        )?;
+                        let mut tr = ToolRequest::new(backend, &version, source.clone())?;
                         tr.set_options(options);
                         tools.add_version(tr, &source);
                     }
@@ -56,6 +61,57 @@ impl IdiomaticVersionFile {
             file::display_path(&self.path)
         )
     }
+}
+
+fn package_manager_checksum_backend(
+    backend: &std::sync::Arc<BackendArg>,
+    version: &str,
+    options: &mut crate::toolset::ToolVersionOptions,
+    path: &Path,
+) -> Result<std::sync::Arc<BackendArg>> {
+    if !package_json::is_package_json(path) {
+        return Ok(backend.clone());
+    }
+    let Some(checksum) = options.opts.shift_remove("package_manager_checksum") else {
+        return Ok(backend.clone());
+    };
+    options.opts.insert("checksum".to_string(), checksum);
+
+    let full = match backend.short.as_str() {
+        "npm" => "npm:npm",
+        "pnpm" => "npm:pnpm",
+        "yarn" => {
+            let version = semver::Version::parse(version).map_err(|error| {
+                eyre!("packageManager checksum requires an exact Yarn version: {error}")
+            })?;
+            if version.major < 2 {
+                "npm:yarn"
+            } else {
+                options.opts.insert(
+                    "url".to_string(),
+                    toml::Value::String(format!(
+                        "https://repo.yarnpkg.com/{version}/packages/yarnpkg-cli/bin/yarn.js"
+                    )),
+                );
+                options
+                    .opts
+                    .insert("bin".to_string(), toml::Value::String("yarn".to_string()));
+                "http:yarn"
+            }
+        }
+        _ => return Ok(backend.clone()),
+    };
+    let tool_name = full
+        .split_once(':')
+        .map(|(_, tool_name)| tool_name)
+        .unwrap_or(full);
+    Ok(std::sync::Arc::new(BackendArg::new_raw(
+        backend.short.clone(),
+        Some(full.to_string()),
+        tool_name.to_string(),
+        None,
+        BackendResolution::new(true),
+    )))
 }
 
 impl ConfigFile for IdiomaticVersionFile {
@@ -200,5 +256,36 @@ mod tests {
             err.to_string()
                 .contains("cannot remove tools from idiomatic version file")
         );
+    }
+
+    #[test]
+    fn test_package_manager_checksums_use_matching_corepack_artifacts() {
+        let path = Path::new("package.json");
+        for (tool, version, expected) in [
+            ("npm", "11.0.0", "npm:npm"),
+            ("pnpm", "10.0.0", "npm:pnpm"),
+            ("yarn", "1.22.22", "npm:yarn"),
+            ("yarn", "4.0.0", "http:yarn"),
+        ] {
+            let mut options = crate::toolset::ToolVersionOptions::default();
+            options.opts.insert(
+                "package_manager_checksum".to_string(),
+                toml::Value::String("sha224:abc".to_string()),
+            );
+            let backend = MockBackend::new(tool, false, None).ba;
+            let backend =
+                package_manager_checksum_backend(&backend, version, &mut options, path).unwrap();
+            assert_eq!(backend.full(), expected);
+            if expected == "http:yarn" {
+                assert_eq!(
+                    options.opts.get("url").and_then(toml::Value::as_str),
+                    Some("https://repo.yarnpkg.com/4.0.0/packages/yarnpkg-cli/bin/yarn.js")
+                );
+                assert_eq!(
+                    options.opts.get("bin").and_then(toml::Value::as_str),
+                    Some("yarn")
+                );
+            }
+        }
     }
 }
