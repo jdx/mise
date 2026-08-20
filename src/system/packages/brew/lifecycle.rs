@@ -3365,10 +3365,14 @@ async fn execute_run(
         CmdLineRunner::new(&execution_executable).current_dir_fd(nix::unistd::dup(bound_cwd.fd())?);
     #[cfg(not(unix))]
     let command = CmdLineRunner::new(&execution_executable).current_dir(cwd);
-    let mut command = command
-        .args(&rewritten_args)
-        .with_process_group_cleanup()
-        .with_sandbox(sandbox);
+    let mut command = command.args(&rewritten_args).with_process_group_cleanup();
+    // The only audited executable is the exact formula- and SHA-bound
+    // ca-certificates helper. It needs macOS security services that generic
+    // Seatbelt confinement cannot represent, while its writes are already
+    // confined to retained private staging and atomically published targets.
+    if audited_executable_sha256.is_none() {
+        command = command.with_sandbox(sandbox);
+    }
     shared_writes.validate()?;
     #[cfg(unix)]
     bound_cwd.validate()?;
