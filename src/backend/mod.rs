@@ -2943,6 +2943,11 @@ pub trait Backend: Debug + Send + Sync {
             .or_else(|| install_state::read_checksum(&tv.install_path()));
 
         let Some(baseline) = baseline else {
+            if rolling_state == Some(false) {
+                // Explicitly pinned: never reinstall via the fallback path either,
+                // even without a checksum baseline to compare against.
+                return false;
+            }
             // No checksum baseline at all — defer to the vfox-style fallback
             // (VersionInfo.rolling + install_state checksum).
             return self.is_rolling_version_outdated_fallback(config, tv).await;
@@ -2964,6 +2969,11 @@ pub trait Backend: Debug + Send + Sync {
         };
 
         let Some(fresh) = fresh else {
+            if rolling_state == Some(false) {
+                // Explicitly pinned: never reinstall via the fallback path either,
+                // even when the fast/slow checksum paths came back empty.
+                return false;
+            }
             return self.is_rolling_version_outdated_fallback(config, tv).await;
         };
 
@@ -3323,10 +3333,9 @@ pub trait Backend: Debug + Send + Sync {
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.checksum.clone())
+            && let Err(e) = install_state::write_checksum(&tv.install_path(), &checksum)
         {
-            if let Err(e) = install_state::write_checksum(&tv.install_path(), &checksum) {
-                warn!("failed to write checksum for {}: {e}", tv);
-            }
+            warn!("failed to write checksum for {}: {e}", tv);
         }
 
         self.cleanup_install_dirs(&tv);

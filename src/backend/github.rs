@@ -952,15 +952,24 @@ impl Backend for UnifiedGitBackend {
         if self.is_gitlab() || self.is_forgejo() {
             return None;
         }
+        if Settings::get().offline() {
+            return None;
+        }
         let repo = self.repo();
         let raw_opts = tv.request.options();
         let opts = self.options(&raw_opts);
+        let target = PlatformTarget::from_current();
+        if opts.direct_url_for_target(&target).is_some() {
+            // A direct `url` option bypasses asset selection entirely, so the
+            // release-asset digest picked here would be unrelated to what's
+            // actually installed. Rolling detection simply no-ops.
+            return None;
+        }
         let api_url = opts.api_url();
         let releases =
             github::list_releases_including_prereleases_from_url(api_url.as_str(), &repo)
                 .await
                 .ok()?;
-        let target = PlatformTarget::from_current();
         let release = releases
             .iter()
             .find(|r| self.strip_version_prefix(&r.tag_name, &opts) == tv.version)?;

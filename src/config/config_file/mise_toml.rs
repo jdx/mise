@@ -295,6 +295,9 @@ fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVers
         insert_table_item_preserving_decor(table, "depends", Item::Value(Value::Array(arr)));
     }
     update_install_env_table(table, options);
+    if let Some(rolling) = options.rolling {
+        insert_table_item_preserving_decor(table, "rolling", Item::Value(Value::from(rolling)));
+    }
 }
 
 fn update_standard_tool_table(
@@ -1338,7 +1341,17 @@ impl ConfigFile for MiseToml {
                 *table.decor_mut() = decor;
                 table.set_position(position);
             }
-            update_standard_tool_table(&mut table, &versions[0], ba.explicit_opts());
+            // `ba.explicit_opts()` only covers bracketed inline options
+            // (`tool[key=val]`); the `--rolling`/`--no-rolling` CLI flags set
+            // `rolling` directly on the request, so fold it in explicitly here
+            // or a table-form entry would silently drop the override.
+            let mut explicit_options = ba.explicit_opts().cloned();
+            if let Some(rolling) = versions[0].rolling() {
+                explicit_options
+                    .get_or_insert_with(ToolVersionOptions::default)
+                    .rolling = Some(rolling);
+            }
+            update_standard_tool_table(&mut table, &versions[0], explicit_options.as_ref());
             replace_tool_entries_preserving_position(tools, &keys, key, Item::Table(table));
             if is_tools_sorted {
                 tools.sort_values();

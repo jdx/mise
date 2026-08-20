@@ -261,6 +261,20 @@ impl ToolRequest {
         }
     }
 
+    /// Sets the explicit `rolling` tool option on this request, regardless of
+    /// which request variant it is (`prefix:`, `ref:`, `sub-N:`, `path:`, and
+    /// `system` requests carry `rolling` the same way `Version` does).
+    pub fn set_rolling(&mut self, rolling: bool) {
+        match self {
+            Self::Version { options: o, .. }
+            | Self::Prefix { options: o, .. }
+            | Self::Ref { options: o, .. }
+            | Self::Sub { options: o, .. }
+            | Self::Path { options: o, .. }
+            | Self::System { options: o, .. } => o.rolling = Some(rolling),
+        }
+    }
+
     /// Rejects install options that can execute configuration-provided code in safe mode.
     pub fn ensure_safe_install_options(&self) -> Result<()> {
         if !Settings::safe_mode() {

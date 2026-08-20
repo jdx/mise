@@ -2932,47 +2932,54 @@ where
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
-            if !existing_tool.options.is_empty() {
-                if let Some(entry) = by_key.get_mut(&key) {
-                    // Detect a rolling release: the same version string and artifact
-                    // (URL) now resolves to a different checksum than what the lockfile
-                    // recorded. That means the content moved under a stable version
-                    // pointer (e.g. a `nightly` tag), so mark the tool rolling. Compare
-                    // BEFORE merging platforms, since merge_with may overwrite the new
-                    // checksum with the existing one.
-                    // Don't auto-mark when the tool is explicitly pinned (`rolling =
-                    // false`) — there, a changed checksum is an integrity concern the
-                    // backend surfaces as a warning, not a rolling update.
-                    if entry.rolling != Some(false) {
-                        for (platform, existing_info) in &existing_tool.platforms {
-                            if let (Some(new_info), Some(old_ck)) =
-                                (entry.platforms.get(platform), &existing_info.checksum)
-                                && let Some(new_ck) = &new_info.checksum
-                            {
-                                let same_artifact = new_info.url.is_none()
-                                    || existing_info.url.is_none()
-                                    || new_info.url == existing_info.url;
-                                if same_artifact && new_ck != old_ck {
-                                    entry.rolling = Some(true);
-                                }
+            // An exact (version, options) match — including the common empty-options
+            // case — is unambiguous, so detect rolling releases and merge platform
+            // data for it regardless of whether options are set. Only entries with
+            // no exact match at all (typically legacy empty-options entries written
+            // before a backend recorded explicit options) fall through to the
+            // rekey-by-platform migration below.
+            if let Some(entry) = by_key.get_mut(&key) {
+                // Detect a rolling release: the same version string and artifact
+                // (URL) now resolves to a different checksum than what the lockfile
+                // recorded. That means the content moved under a stable version
+                // pointer (e.g. a `nightly` tag), so mark the tool rolling. Compare
+                // BEFORE merging platforms, since merge_with may overwrite the new
+                // checksum with the existing one.
+                // Don't auto-mark when the tool is explicitly pinned (`rolling =
+                // false`) — there, a changed checksum is an integrity concern the
+                // backend surfaces as a warning, not a rolling update.
+                if entry.rolling != Some(false) {
+                    for (platform, existing_info) in &existing_tool.platforms {
+                        if let (Some(new_info), Some(old_ck)) =
+                            (entry.platforms.get(platform), &existing_info.checksum)
+                            && let Some(new_ck) = &new_info.checksum
+                        {
+                            let same_artifact = new_info.url.is_none()
+                                || existing_info.url.is_none()
+                                || new_info.url == existing_info.url;
+                            if same_artifact && new_ck != old_ck {
+                                entry.rolling = Some(true);
                             }
                         }
-                        // The rolling flag is sticky: once observed, keep it set.
-                        if existing_tool.rolling == Some(true) {
-                            entry.rolling = Some(true);
-                        }
                     }
-                    // Preserve platform data only for an exact non-empty option
-                    // match. Moving it to another real variant could attach a
-                    // stale checksum to a different artifact.
-                    for (platform, info) in &existing_tool.platforms {
-                        entry
-                            .platforms
-                            .entry(platform.clone())
-                            .and_modify(|existing| *existing = existing.merge_with(info))
-                            .or_insert(info.clone());
+                    // The rolling flag is sticky: once observed, keep it set.
+                    if existing_tool.rolling == Some(true) {
+                        entry.rolling = Some(true);
                     }
                 }
+                // Preserve platform data only for an exact option match. Moving it
+                // to another real variant could attach a stale checksum to a
+                // different artifact.
+                for (platform, info) in &existing_tool.platforms {
+                    entry
+                        .platforms
+                        .entry(platform.clone())
+                        .and_modify(|existing| *existing = existing.merge_with(info))
+                        .or_insert(info.clone());
+                }
+                continue;
+            }
+            if !existing_tool.options.is_empty() {
                 continue;
             }
             if !fresh_versions.contains(&existing_tool.version) {
@@ -4244,6 +4251,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::new(),
+            rolling: None,
             platforms,
         }];
         let mut options = BTreeMap::new();
@@ -4260,6 +4268,7 @@ options = { exe = "rg" }
                 version: "26.0.1".to_string(),
                 backend: Some("core:java".to_string()),
                 options: options.clone(),
+                rolling: None,
                 platforms: fresh_platforms,
             }],
             Some(&existing),
@@ -4283,6 +4292,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
+            rolling: None,
             platforms: BTreeMap::new(),
         });
         let mut merged = vec![basic_tool("22.0.0", "core:node")];
@@ -4321,6 +4331,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::new(),
+            rolling: None,
             platforms: existing_platforms,
         }];
 
@@ -4339,6 +4350,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: new_options.clone(),
+            rolling: None,
             platforms: fresh_platforms,
         }];
 
@@ -4372,6 +4384,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options.clone(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4384,6 +4397,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
                     PlatformInfo {
@@ -4398,6 +4412,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options,
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4410,6 +4425,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
                     PlatformInfo {
@@ -4468,6 +4484,7 @@ options = { exe = "rg" }
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: old_options,
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4480,6 +4497,7 @@ options = { exe = "rg" }
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: new_options.clone(),
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4506,6 +4524,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::new(),
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4518,6 +4537,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
+            rolling: None,
             platforms: BTreeMap::new(),
         }];
 
@@ -4563,6 +4583,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4575,6 +4596,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options.clone(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4588,6 +4610,7 @@ options = { exe = "rg" }
             version: "3.4.2".to_string(),
             backend: Some("core:ruby".to_string()),
             options: unix_options.clone(),
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4616,12 +4639,14 @@ options = { exe = "rg" }
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: other_options.clone(),
+            rolling: None,
             platforms: BTreeMap::new(),
         }];
         let fresh = vec![LockfileTool {
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: current_options,
+            rolling: None,
             platforms: BTreeMap::new(),
         }];
         let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
@@ -4685,6 +4710,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options.clone(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4698,6 +4724,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
                     PlatformInfo {
@@ -6215,7 +6242,7 @@ backend = "conda:jq"
         let new = tool_with_checksum("nightly", url, "sha256:NEW");
         let existing = vec![tool_with_checksum("nightly", url, "sha256:OLD")];
 
-        let merged = merge_tool_entries(vec![new], Some(&existing));
+        let (merged, _consumed) = merge_tool_entries(vec![new], Some(&existing), |_, _| None);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].rolling, Some(true));
         // The baseline must advance to the new checksum so detection converges
@@ -6232,7 +6259,7 @@ backend = "conda:jq"
         let new = tool_with_checksum("nightly", url, "sha256:SAME");
         let existing = vec![tool_with_checksum("nightly", url, "sha256:SAME")];
 
-        let merged = merge_tool_entries(vec![new], Some(&existing));
+        let (merged, _consumed) = merge_tool_entries(vec![new], Some(&existing), |_, _| None);
         assert_eq!(merged[0].rolling, None);
     }
 
@@ -6246,7 +6273,8 @@ backend = "conda:jq"
         let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:OLD");
         existing_tool.rolling = Some(false);
 
-        let merged = merge_tool_entries(vec![new], Some(&vec![existing_tool]));
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
         assert_eq!(merged[0].rolling, Some(false));
     }
 
@@ -6257,7 +6285,8 @@ backend = "conda:jq"
         let mut existing_tool = tool_with_checksum("nightly", url, "sha256:SAME");
         existing_tool.rolling = Some(true);
 
-        let merged = merge_tool_entries(vec![new], Some(&vec![existing_tool]));
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
         assert_eq!(merged[0].rolling, Some(true));
     }
 
@@ -6273,7 +6302,7 @@ backend = "conda:jq"
             "sha256:OLD",
         )];
 
-        let merged = merge_tool_entries(vec![new], Some(&existing));
+        let (merged, _consumed) = merge_tool_entries(vec![new], Some(&existing), |_, _| None);
         assert_eq!(merged[0].rolling, None);
     }
 

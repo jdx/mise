@@ -174,25 +174,44 @@ impl Use {
             refresh_remote_versions: false,
             inactive: false,
         };
+        // Tri-state from --rolling / --no-rolling (neither = leave as-is). Applied
+        // before resolution/install so the current invocation's checksum decision
+        // (e.g. a pinned tool skipping the rolling reinstall) sees the override too.
+        let rolling_override = if self.no_rolling {
+            Some(false)
+        } else if self.rolling {
+            Some(true)
+        } else {
+            None
+        };
         let versions: Vec<_> = self
             .tool
             .iter()
             .cloned()
             .map(|t| match t.tvr {
-                Some(tvr) => {
+                Some(mut tvr) => {
                     if tvr.version() == "latest" && !Settings::get().locked {
                         // user specified `@latest` so we should resolve the latest version
                         // TODO: this should only happen on this tool, not all of them
                         resolve_options.latest_versions = true;
                         resolve_options.use_locked_version = false;
                     }
+                    if let Some(rolling) = rolling_override {
+                        tvr.set_rolling(rolling);
+                    }
                     Ok(tvr)
                 }
-                None => ToolRequest::new(
-                    t.ba,
-                    "latest",
-                    ToolSource::MiseToml(cf.get_path().to_path_buf()),
-                ),
+                None => {
+                    let mut tvr = ToolRequest::new(
+                        t.ba,
+                        "latest",
+                        ToolSource::MiseToml(cf.get_path().to_path_buf()),
+                    )?;
+                    if let Some(rolling) = rolling_override {
+                        tvr.set_rolling(rolling);
+                    }
+                    Ok(tvr)
+                }
             })
             .collect::<Result<_>>()?;
         let mut versions = ts
@@ -213,14 +232,6 @@ impl Use {
             .await?;
 
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
-        // Tri-state from --rolling / --no-rolling (neither = leave as-is).
-        let rolling_override = if self.no_rolling {
-            Some(false)
-        } else if self.rolling {
-            Some(true)
-        } else {
-            None
-        }
 
         // Installation can take long enough for another `mise use` process to update this file.
         // Serialize only the read-modify-write phase, then re-read under the lock so we apply our
@@ -254,10 +265,8 @@ impl Use {
                             backend,
                         };
                     }
-                    if let Some(rolling) = rolling_override
-                        && let ToolRequest::Version { options, .. } = &mut request
-                    {
-                        options.core.rolling = Some(rolling);
+                    if let Some(rolling) = rolling_override {
+                        request.set_rolling(rolling);
                     }
                     request
                 })
