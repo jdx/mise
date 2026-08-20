@@ -40,6 +40,7 @@ mod pour;
 mod prefix;
 mod relocate;
 mod resolve;
+mod sbom;
 mod source;
 mod tag;
 
@@ -539,6 +540,7 @@ mod tests {
                 "post_install_steps": steps
             }))
             .unwrap(),
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: false,
         }

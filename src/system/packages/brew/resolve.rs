@@ -13,6 +13,9 @@ use crate::system::packages::PackageRequest;
 #[derive(Debug, Clone)]
 pub struct ResolvedFormula {
     pub formula: Formula,
+    /// Canonical tap identity validated while resolving metadata. Core uses
+    /// its explicit Homebrew identity instead of an absent optional value.
+    pub tap_name: String,
     pub tap_raw_base: Option<String>,
     /// directly requested in config (vs pulled in as a dependency)
     pub on_request: bool,
@@ -208,6 +211,10 @@ async fn resolve_closure_pairs(
         ctx.done.insert(key.clone());
         ctx.sorted.push(ResolvedFormula {
             formula: ctx.formulae[key].clone(),
+            tap_name: key
+                .tap_name
+                .clone()
+                .unwrap_or_else(|| "homebrew/core".to_string()),
             tap_raw_base: ctx.raw_bases.get(key).cloned().flatten(),
             on_request: ctx.on_request.contains(key),
         });

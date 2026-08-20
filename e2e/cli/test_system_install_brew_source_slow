@@ -66,6 +66,7 @@ assert_contains "$MISE_SYSTEM_BREW_PREFIX/bin/hello --greeting=mise" "mise"
 assert_succeed "jq -e '.poured_from_bottle == false' $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json"
 assert_succeed "test -s $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/.brew/hello.rb"
 assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/sbom.spdx.json" '"name": "hello"'
+assert_succeed "jq -e '.packages[] | select(.name == \"hello\") | .externalRefs[] | select(.referenceType == \"purl\" and .referenceLocator == \"pkg:brew/homebrew/core/hello@2.12.2\")' $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/sbom.spdx.json"
 assert_succeed "test -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello && test -e $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello"
 
 # idempotent

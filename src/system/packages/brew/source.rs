@@ -1980,6 +1980,7 @@ mod tests {
         root_formula.dependencies = vec!["owner/tools/dependency-alias".to_string()];
         let root = ResolvedFormula {
             formula: root_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: true,
         };
@@ -1989,6 +1990,7 @@ mod tests {
         dependency_formula.versions.stable = Some("2.0".to_string());
         let dependency = ResolvedFormula {
             formula: dependency_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: false,
         };
@@ -2019,6 +2021,7 @@ mod tests {
         root_formula.dependencies = vec!["owner/tools/missing-direct".to_string()];
         let root = ResolvedFormula {
             formula: root_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: true,
         };
@@ -2039,6 +2042,7 @@ mod tests {
         root_formula.dependencies = vec!["dependency".to_string()];
         let root = ResolvedFormula {
             formula: root_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: true,
         };
@@ -2047,6 +2051,7 @@ mod tests {
         dependency_formula.dependencies = vec!["other/tap/missing-transitive".to_string()];
         let dependency = ResolvedFormula {
             formula: dependency_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: false,
         };
@@ -2076,6 +2081,7 @@ mod tests {
         root_formula.dependencies = vec!["dependency".to_string()];
         let root = ResolvedFormula {
             formula: root_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: true,
         };
@@ -2084,6 +2090,7 @@ mod tests {
         dependency_formula.versions.stable = Some("2.0".to_string());
         let dependency = ResolvedFormula {
             formula: dependency_formula,
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: false,
         };

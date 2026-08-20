@@ -1078,7 +1078,7 @@ fn share_path_requires_mkpath(path: &str) -> bool {
         "sounds",
     ];
     EXACT.contains(&path)
-        || ["icons/", "zsh", "fish", "lua/", "guile/", "pypy"]
+        || ["icons/", "zsh", "fish", "pwsh", "lua/", "guile/", "pypy"]
             .iter()
             .any(|prefix| path.starts_with(prefix))
         || starts_with_numbered_prefix(path, "postgresql@")
@@ -3751,6 +3751,8 @@ fn write_source_sbom(rf: &ResolvedFormula, keg: &Path, time: u64) -> Result<()> 
         "https://mise.jdx.dev/sbom/brew/{}/{}/{}",
         formula.name, version, checksum
     );
+    let external_refs =
+        super::sbom::source_external_refs(&rf.tap_name, &formula.name, version, &source.url);
     let sbom = json!({
         "spdxVersion": "SPDX-2.3",
         "dataLicense": "CC0-1.0",
@@ -3768,6 +3770,7 @@ fn write_source_sbom(rf: &ResolvedFormula, keg: &Path, time: u64) -> Result<()> 
             "versionInfo": version,
             "downloadLocation": source.url,
             "filesAnalyzed": false,
+            "externalRefs": external_refs,
             "checksums": [{"algorithm": "SHA256", "checksumValue": checksum}],
         }],
     });
@@ -4250,6 +4253,7 @@ mod tests {
                 "tap_git_head": "deadbeef"
             }))
             .unwrap(),
+            tap_name: "homebrew/core".to_string(),
             tap_raw_base: None,
             on_request: true,
         }
@@ -4479,7 +4483,8 @@ mod tests {
     #[test]
     fn source_receipt_requires_snapshot_and_writes_sbom() -> Result<()> {
         let tmp = tempfile::tempdir()?;
-        let rf = resolved_formula("foo", "1.0");
+        let mut rf = resolved_formula("foo", "1.0");
+        rf.tap_name = "owner/tools".to_string();
         let keg = tmp.path().join("foo/1.0");
         crate::file::create_dir_all(keg.join(".brew"))?;
         let snapshot = keg.join(".brew/foo.rb");
@@ -4500,6 +4505,10 @@ mod tests {
         assert!(keg.join("INSTALL_RECEIPT.json").is_file());
         let sbom: Value = serde_json::from_slice(&std::fs::read(keg.join("sbom.spdx.json"))?)?;
         assert_eq!(sbom["packages"][0]["name"], "foo");
+        assert_eq!(
+            sbom["packages"][0]["externalRefs"][0]["referenceLocator"],
+            "pkg:brew/owner/tools/foo@1.0"
+        );
         Ok(())
     }
 
@@ -5555,6 +5564,8 @@ mod tests {
         let keg = prefix.join("Cellar/foo/1.0");
         crate::file::create_dir_all(keg.join("share/private-empty"))?;
         crate::file::create_dir_all(keg.join("share/man"))?;
+        crate::file::create_dir_all(keg.join("share/pwsh/completions"))?;
+        crate::file::write(keg.join("share/pwsh/completions/foo.ps1"), "foo")?;
         crate::file::create_dir_all(prefix.join("share"))?;
 
         link_keg("foo", "1.0", false)?;
@@ -5562,6 +5573,10 @@ mod tests {
         assert!(prefix.join("share/private-empty").is_symlink());
         assert!(prefix.join("share/man").is_dir());
         assert!(!prefix.join("share/man").symlink_metadata()?.is_symlink());
+        assert!(prefix.join("share/pwsh").is_dir());
+        assert!(!prefix.join("share/pwsh").symlink_metadata()?.is_symlink());
+        assert!(prefix.join("share/pwsh/completions").is_dir());
+        assert!(prefix.join("share/pwsh/completions/foo.ps1").is_symlink());
         Ok(())
     }
 
@@ -5865,6 +5880,14 @@ mod tests {
         );
         assert_eq!(
             keg_link_policy("share", Path::new("man"), true),
+            KegLinkPolicy::Mkpath
+        );
+        assert_eq!(
+            keg_link_policy("share", Path::new("pwsh"), true),
+            KegLinkPolicy::Mkpath
+        );
+        assert_eq!(
+            keg_link_policy("share", Path::new("pwsh/completions"), true),
             KegLinkPolicy::Mkpath
         );
         assert_eq!(
