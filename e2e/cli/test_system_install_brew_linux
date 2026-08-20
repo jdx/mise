@@ -58,12 +58,6 @@ for proc in /proc/[0-9]*; do
   done
 done
 
-{
-  printf 'existed=%s\n' "$linuxbrew_home_existed"
-  printf 'mode=%s\n' "${linuxbrew_home_mode:-absent}"
-  printf 'owner=%s\n' "$(stat -c %u:%g /home/linuxbrew 2>/dev/null || printf absent)"
-} >"$MISE_BREW_ORACLE_RESULT_DIR/linux-home.preexisting"
-
 cleanup_linuxbrew_home() {
   rm -rf /home/linuxbrew
   if [[ $linuxbrew_home_existed == 1 ]]; then
@@ -126,5 +120,3 @@ assert_contains "mise bootstrap packages prune --manager brew --dry-run" "remove
 mise bootstrap packages prune --manager brew --yes
 assert_fail "test -e /home/linuxbrew/.linuxbrew/opt/xz"
 assert_fail "test -L /home/linuxbrew/.linuxbrew/var/homebrew/linked/xz"
-
-brew_oracle_complete test_system_install_brew_linux 1 /home/linuxbrew/.linuxbrew

@@ -75,7 +75,6 @@ within_isolated_env() {
   case "$(realpath "$TEST_SCRIPT")" in
     "$ROOT/e2e/cli/test_system_install_brew_linux" | \
       "$ROOT/e2e/cli/test_system_install_brew_source_slow" | \
-      "$ROOT/e2e/cli/test_system_install_brew_macos_slow" | \
       "$ROOT/e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow")
       brew_oracle_vars+=(
         # Keep GitHub's process-tree identity so a canceled destructive oracle
@@ -83,10 +82,7 @@ within_isolated_env() {
         # capability and is forwarded only to the four oracle entry points.
         RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
         MISE_BREW_ORACLE_DISPOSABLE="${MISE_BREW_ORACLE_DISPOSABLE:-}"
-        MISE_BREW_ORACLE_RESULT_DIR="${MISE_BREW_ORACLE_RESULT_DIR:-}"
         MISE_BREW_ORACLE_RUNNER_TEMP="${MISE_BREW_ORACLE_RUNNER_TEMP:-}"
-        MISE_BREW_ORACLE_RESULT_UID="${MISE_BREW_ORACLE_RESULT_UID:-}"
-        MISE_BREW_ORACLE_RESULT_GID="${MISE_BREW_ORACLE_RESULT_GID:-}"
         MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
         MISE_BREW_ORACLE_BREW_SOURCE="${MISE_BREW_ORACLE_BREW_SOURCE:-}"
         MISE_BREW_ORACLE_HOMEBREW_REPOSITORY="${MISE_BREW_ORACLE_HOMEBREW_REPOSITORY:-}"
@@ -96,7 +92,6 @@ within_isolated_env() {
         MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
         MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}"
         MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}"
-        MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST="${MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST:-}"
       )
       ;;
   esac
@@ -279,25 +274,16 @@ run_in_docker() {
     "$ROOT/e2e/cli/test_system_install_brew_linux" | \
       "$ROOT/e2e/cli/test_system_install_brew_source_slow")
       if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
-        [[ -d ${MISE_BREW_ORACLE_RESULT_DIR:-} ]] || {
-          err "brew oracle result directory must exist before container isolation"
-          return 1
-        }
         docker_args+=(
-          -v "$MISE_BREW_ORACLE_RESULT_DIR:/oracle/results"
           -e RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
           -e MISE_BREW_ORACLE_DISPOSABLE=1
-          -e MISE_BREW_ORACLE_RESULT_DIR=/oracle/results
-          -e MISE_BREW_ORACLE_RUNNER_TEMP=/oracle
-          -e MISE_BREW_ORACLE_RESULT_UID="$(id -u)"
-          -e MISE_BREW_ORACLE_RESULT_GID="$(id -g)"
+          -e MISE_BREW_ORACLE_RUNNER_TEMP=/tmp
           -e MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
           -e MISE_BREW_ORACLE_SOURCE_PREFIX="${MISE_BREW_ORACLE_SOURCE_PREFIX:-}"
           -e MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:-}"
           -e MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
           -e MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}"
           -e MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}"
-          -e MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST="${MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST:-}"
         )
       fi
       ;;

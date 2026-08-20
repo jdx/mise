@@ -22,20 +22,6 @@ shared_fixture_paths=(
   "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates"
   "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3"
 )
-preexisting_record="$MISE_BREW_ORACLE_RESULT_DIR/macos-formula-lifecycle.preexisting"
-
-{
-  printf 'prefix=%s\n' "$("$brew" --prefix)"
-  for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
-    "$brew" list --versions "$formula" 2>/dev/null || true
-  done
-  for path in "${shared_fixture_paths[@]}"; do
-    if [[ -e $path || -L $path ]]; then
-      ls -ld "$path"
-    fi
-  done
-} >"$preexisting_record"
-
 cleanup_formula_fixtures() {
   local formula path
   for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
@@ -119,10 +105,8 @@ python_status=$(mise bootstrap packages status 2>&1)
 grep -F "post-install permission is missing" <<<"$python_status" >/dev/null ||
   brew_oracle_fail "Python status omitted its missing lifecycle permission"
 mise bootstrap --yes
-python_modes="$MISE_BREW_ORACLE_RESULT_DIR/python-permissions.tsv"
+python_modes=$(mktemp)
 find "$python_scripts" -mindepth 1 -exec stat -f '%Lp\t%N' {} + | LC_ALL=C sort >"$python_modes"
 awk '$1 !~ /^[2367]/ { print > "/dev/stderr"; bad=1 } END { exit bad }' "$python_modes" ||
   brew_oracle_fail "Python venv lifecycle left a path without owner-write permission"
 assert_contains "mise bootstrap packages status" "installed"
-
-brew_oracle_complete test_system_install_brew_formula_lifecycle_macos_slow 5 "$MISE_SYSTEM_BREW_PREFIX"

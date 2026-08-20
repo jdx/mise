@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Capability data is forwarded only to the three named destructive oracles.
+# Capability data is forwarded only to the named destructive formula tests.
 # A normal e2e test must never inherit it, even when its parent process sets it.
 assert_fail "env | grep -q '^MISE_BREW_ORACLE_'"
 assert_fail "env | grep -q '^MISE_BREW_LIFECYCLE_TEST_PREFIX='"

@@ -64,7 +64,6 @@ for index in "${!FILES[@]}"; do
 
   case "$TEST_NAME" in
     cli/test_system_install_brew_linux | \
-      cli/test_system_install_brew_macos_slow | \
       cli/test_system_install_brew_formula_lifecycle_macos_slow)
       if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} != 1 ]]; then
         skipped_count=$((skipped_count + 1))

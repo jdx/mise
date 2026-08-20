@@ -73,7 +73,3 @@ assert_succeed "test -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello && te
 
 # idempotent
 assert_contains "mise bootstrap packages apply --yes 2>&1" "already"
-
-if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
-  brew_oracle_complete test_system_install_brew_source_slow 1 "$MISE_SYSTEM_BREW_PREFIX"
-fi

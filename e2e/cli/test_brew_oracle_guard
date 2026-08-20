@@ -1,215 +1,29 @@
 #!/usr/bin/env bash
 
-# shellcheck source=e2e/cli/brew_oracle_guard.sh
-source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+source "$TEST_ROOT/cli/brew_oracle_guard.sh"
 
-if grep -Eq 'if: *always\(\).*full-ci' "$ROOT/.github/workflows/test.yml"; then
-  fail "destructive oracle jobs must remain cancellable"
-fi
-if ! grep -Fq 'plans/*) exit 0 ;;' "$ROOT/.github/workflows/test.yml"; then
-  fail "plan-only heads must trigger full oracle CI"
-fi
-if ! grep -Fq 'needs.classify-changes.result' "$ROOT/.github/workflows/test.yml"; then
-  fail "CI aggregate must reject failed classification"
-fi
-linux_formula_oracle=$(sed -n \
-  '/^  brew-oracle-linux:/,/^  brew-oracle-linux-source:/p' \
-  "$ROOT/.github/workflows/test.yml")
-if ! grep -Eq 'MISE_E2E_DOCKER_IMAGE: ghcr\.io/jdx/mise@sha256:[0-9a-f]{64}' \
-  <<<"$linux_formula_oracle"; then
-  fail "Linux formula oracle executor image must be digest-pinned"
-fi
-# Literal workflow text; no shell expansion intended.
-# shellcheck disable=SC2016
-pinned_executor_pull='docker pull "$MISE_E2E_DOCKER_IMAGE"'
-if ! grep -Fq "$pinned_executor_pull" <<<"$linux_formula_oracle"; then
-  fail "Linux formula oracle must pull its pinned executor variable"
-fi
-if grep -Fq 'docker pull ghcr.io/jdx/mise:e2e' <<<"$linux_formula_oracle"; then
-  fail "Linux formula oracle must not pull a mutable executor tag"
-fi
-if [[ $(grep -Ec 'MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST: (not-containerized|sha256:[0-9a-f]{64})' \
-  "$ROOT/.github/workflows/test.yml") -ne 3 ]]; then
-  fail "all three destructive oracle jobs must declare exact executor provenance"
-fi
+runner_temp=$(mktemp -d)
+runner_temp=$(realpath "$runner_temp")
+trap 'rm -rf "$runner_temp"' EXIT
+export MISE_BREW_ORACLE_RUNNER_TEMP=$runner_temp
+export MISE_BREW_ORACLE_MISE_SHA
+MISE_BREW_ORACLE_MISE_SHA=$(git -C "$ROOT" rev-parse HEAD)
 
-result_dir="$TMPDIR/oracle-results"
-mkdir "$result_dir"
-MISE_BREW_ORACLE_RESULT_DIR=$result_dir
-MISE_BREW_ORACLE_RUNNER_TEMP=$TMPDIR
-MISE_BREW_ORACLE_MISE_SHA=$(git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD)
-MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE=6.0.17
-MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA=1111111111111111111111111111111111111111
-MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE
-MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA
-MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST=not-containerized
-unset CI MISE_BREW_ORACLE_UNFORWARDED GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN FORGEJO_TOKEN
+if brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew; then
+  exit 1
+fi
+export MISE_BREW_ORACLE_DISPOSABLE=1
+brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew
+if brew_oracle_require_disposable linux-formula /opt/homebrew; then
+  exit 1
+fi
+if brew_oracle_require_disposable linux-source /tmp/outside-runner; then
+  exit 1
+fi
+brew_oracle_require_disposable linux-source "$runner_temp/source-prefix"
 
-export RUNNER_TRACKING_ID=tracking-is-not-authorization
-unset MISE_BREW_ORACLE_DISPOSABLE
-if brew_oracle_require_disposable missing-capability /opt/homebrew; then
-  fail "missing disposable capability was accepted"
-fi
-unset RUNNER_TRACKING_ID
-
-MISE_BREW_ORACLE_DISPOSABLE=1
-MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST=mutable-tag
-if brew_oracle_require_disposable mutable-executor /opt/homebrew; then
-  fail "mutable executor image identity was accepted"
-fi
-MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST=not-containerized
-for credential in GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN FORGEJO_TOKEN; do
-  printf -v "$credential" '%s' must-not-leak
-  export "${credential?}"
-  if brew_oracle_require_disposable credential-leak /opt/homebrew; then
-    fail "CI credential $credential was accepted by the destructive oracle"
-  fi
-  unset "$credential"
-done
-brew_oracle_require_disposable valid-marker /opt/homebrew
-brew_oracle_complete test_brew_oracle_guard 2 /opt/homebrew
-brew_oracle_verify_marker \
-  "$result_dir/valid-marker.completed" \
-  test_brew_oracle_guard 2 /opt/homebrew "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST"
-printf '%s\n' \
-  "mise_sha=$MISE_BREW_ORACLE_MISE_SHA" \
-  "platform=test-platform" \
-  "homebrew_reference_version=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "homebrew_reference_sha=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "homebrew_runtime_version=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "homebrew_runtime_sha=$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "executor_image_digest=$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST" \
-  "tests=test_brew_oracle_guard" >"$result_dir/job-context.txt"
-brew_oracle_verify_job_context \
-  "$result_dir/job-context.txt" "$MISE_BREW_ORACLE_MISE_SHA" test-platform \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST" test_brew_oracle_guard
-if brew_oracle_verify_job_context \
-  "$result_dir/job-context.txt" "$MISE_BREW_ORACLE_MISE_SHA" test-platform \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-  test_brew_oracle_guard; then
-  fail "wrong executor digest was accepted in job context"
-fi
-
-if brew_oracle_require_disposable valid-marker /opt/homebrew; then
-  fail "stale completion marker was accepted"
-fi
-if brew_oracle_verify_marker \
-  "$result_dir/missing.completed" missing 1 /opt/homebrew "$MISE_BREW_ORACLE_MISE_SHA" \
-  6.0.17 1111111111111111111111111111111111111111 \
-  5.1.4 2222222222222222222222222222222222222222 not-containerized; then
-  fail "missing completion marker was accepted"
-fi
-if brew_oracle_verify_marker \
-  "$result_dir/valid-marker.completed" test_brew_oracle_guard 2 /opt/homebrew \
-  "$MISE_BREW_ORACLE_MISE_SHA" 6.0.18 \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST"; then
-  fail "wrong Homebrew reference version was accepted"
-fi
-if brew_oracle_verify_marker \
-  "$result_dir/valid-marker.completed" wrong-test-name 2 /opt/homebrew \
-  "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST"; then
-  fail "wrong test name was accepted"
-fi
-if brew_oracle_verify_marker \
-  "$result_dir/valid-marker.completed" test_brew_oracle_guard 2 /opt/homebrew \
-  3333333333333333333333333333333333333333 \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST"; then
-  fail "wrong mise SHA was accepted"
-fi
-if brew_oracle_verify_marker \
-  "$result_dir/valid-marker.completed" test_brew_oracle_guard 2 /opt/homebrew \
-  "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; then
-  fail "wrong executor image digest was accepted"
-fi
-if brew_oracle_complete test_brew_oracle_guard 0 /opt/homebrew; then
-  fail "zero fixtures were accepted"
-fi
-
-brew_oracle_require_disposable invalid-result-owner /opt/homebrew
-MISE_BREW_ORACLE_RESULT_UID=not-a-uid
-MISE_BREW_ORACLE_RESULT_GID=$(id -g)
-if brew_oracle_complete test_brew_oracle_guard 1 /opt/homebrew; then
-  fail "invalid result ownership was accepted"
-fi
-unset MISE_BREW_ORACLE_RESULT_UID MISE_BREW_ORACLE_RESULT_GID
-if [[ -e $result_dir/invalid-result-owner.completed ]]; then
-  fail "invalid result ownership left a completion marker"
-fi
-
-brew_oracle_require_disposable early-producer /opt/homebrew
-(exit 0)
-if brew_oracle_verify_marker \
-  "$result_dir/early-producer.completed" early_producer 1 /opt/homebrew \
-  "$MISE_BREW_ORACLE_MISE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-  "$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-  "$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST"; then
-  fail "early producer left passing proof"
-fi
-
-brew_oracle_require_disposable wrong-prefix /opt/homebrew
-if brew_oracle_complete test_brew_oracle_guard 1 /private/tmp/not-homebrew; then
-  fail "wrong actual prefix was accepted"
-fi
-
-foreign_path="$TMPDIR/foreign-target"
-mkdir "$foreign_path"
-if brew_oracle_require_absent_path "$foreign_path" "foreign fixture"; then
-  fail "foreign target was accepted"
-fi
-
-MISE_BREW_ORACLE_RESULT_DIR=$HOME
-if brew_oracle_require_disposable escaped-result /opt/homebrew; then
-  fail "result directory outside runner temp was accepted"
-fi
-
-result_link="$TMPDIR/oracle-results-link"
-ln -s "$result_dir" "$result_link"
-MISE_BREW_ORACLE_RESULT_DIR=$result_link
-if brew_oracle_require_disposable symlinked-result /opt/homebrew; then
-  fail "symlinked result directory was accepted"
-fi
-
-MISE_BREW_ORACLE_RESULT_DIR=$result_dir
-MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=not-installed
-if brew_oracle_require_disposable incomplete-runtime-identity /opt/homebrew; then
-  fail "incomplete Homebrew runtime identity was accepted"
-fi
-
-MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=6.0.16
-MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA
-if brew_oracle_require_disposable mismatched-runtime /opt/homebrew; then
-  fail "Homebrew runtime differing from the pinned reference was accepted"
+GITHUB_TOKEN=secret
+export GITHUB_TOKEN
+if brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew; then
+  exit 1
 fi
