@@ -422,7 +422,7 @@ impl MaterializedFormulaSource {
         #[cfg(target_os = "linux")]
         {
             self.identity.validate_file(&self.file, 0o400)?;
-            return self.identity.validate(&self.path);
+            self.identity.validate(&self.path)
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -558,24 +558,6 @@ fn hash_open_file(file: &std::fs::File) -> Result<String> {
         offset += u64::try_from(count)?;
     }
     Ok(hex::encode(hasher.finalize()))
-}
-
-#[cfg(target_os = "linux")]
-fn make_inherited(file: &std::fs::File) -> Result<()> {
-    use std::os::fd::AsRawFd;
-
-    let current = nix::fcntl::fcntl(file, nix::fcntl::FcntlArg::F_GETFD)?;
-    let flags = nix::fcntl::FdFlag::from_bits_truncate(current);
-    nix::fcntl::fcntl(
-        file,
-        nix::fcntl::FcntlArg::F_SETFD(flags & !nix::fcntl::FdFlag::FD_CLOEXEC),
-    )?;
-    if unsafe { nix::libc::fcntl(file.as_raw_fd(), nix::libc::F_GETFD) } & nix::libc::FD_CLOEXEC
-        != 0
-    {
-        bail!("retained source descriptor could not be inherited")
-    }
-    Ok(())
 }
 
 #[derive(Clone)]
@@ -982,9 +964,22 @@ pub async fn build(
         install_helper.validate()?;
         formula_source.validate()?;
         shim.validate()?;
-        cmd.execute_async()
-            .await
-            .wrap_err(format!("failed to build {name} {pkg_version} from source"))?;
+        if let Err(error) = cmd.execute_async().await {
+            let config_log = buildpath.join("config.log");
+            let diagnostic = std::fs::read(&config_log).ok().map(|contents| {
+                const MAX_DIAGNOSTIC_BYTES: usize = 32 * 1024;
+                let start = contents.len().saturating_sub(MAX_DIAGNOSTIC_BYTES);
+                String::from_utf8_lossy(&contents[start..]).into_owned()
+            });
+            let error = error.wrap_err(format!("failed to build {name} {pkg_version} from source"));
+            if let Some(diagnostic) = diagnostic {
+                return Err(error).wrap_err(format!(
+                    "source configure diagnostic from {}:\n{diagnostic}",
+                    config_log.display()
+                ));
+            }
+            return Err(error);
+        }
         install_helper.validate()?;
         formula_source.validate()?;
         shim.validate()?;
