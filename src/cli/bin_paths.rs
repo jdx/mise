@@ -16,10 +16,7 @@ pub struct BinPaths {
     tool: Option<Vec<ToolArg>>,
 
     /// Output executable names instead of bin directories
-    #[arg(
-        long,
-        default_value_if("json", clap::builder::ArgPredicate::IsPresent, Some("true"))
-    )]
+    #[arg(long)]
     bin_names: bool,
 
     /// Output executable entries in JSON format (implies --bin-names)
@@ -40,7 +37,7 @@ impl BinPaths {
         }
         ts.notify_if_versions_missing(&config).await;
         let paths = ts.list_paths(&config).await;
-        if self.bin_names {
+        if self.bin_names || self.json {
             let bins = list_bins(paths)?;
             if self.json {
                 miseprintln!("{}", serde_json::to_string_pretty(&bins)?);

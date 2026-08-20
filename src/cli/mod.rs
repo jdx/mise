@@ -151,7 +151,7 @@ Shorthand for `mise tasks run <TASK>`."#
     )]
     pub tool: Vec<ToolArg>,
     /// Show extra output (use -vv for even more)
-    #[arg(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
+    #[arg(short='v', long, global=true, count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
     pub verbose: u8,
     #[arg(long, short = 'V', hide = true)]
     pub version: bool,

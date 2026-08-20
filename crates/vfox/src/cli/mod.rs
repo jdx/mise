@@ -7,7 +7,7 @@ mod install;
 mod plugins;
 
 #[derive(usage_rs::Cli)]
-#[command(version)]
+#[command(name = "vfox", version, unknown_flags = "error")]
 pub(crate) struct Cli {
     #[command(subcommand)]
     command: Commands,

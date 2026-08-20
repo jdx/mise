@@ -5,7 +5,7 @@ mod list;
 #[derive(usage_rs::Subcommands)]
 pub(crate) enum Commands {
     // Install(install::Install),
-    #[command(alias = "ls")]
+    #[command(alias_hidden = "ls")]
     List(list::List),
 }
 
