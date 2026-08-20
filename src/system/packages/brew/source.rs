@@ -612,6 +612,11 @@ impl SourceInstallHelper {
             return Err(std::io::Error::last_os_error().into());
         }
         file.sync_all()?;
+        drop(file);
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+            .open(&executable)?;
         let identity = SourceInstallHelperIdentity::capture_file(&file)?;
         Ok(Self {
             file,
