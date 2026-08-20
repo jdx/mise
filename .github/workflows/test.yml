@@ -314,6 +314,33 @@ jobs:
             MISE_E2E_DOCKER_IMAGE="$MISE_E2E_DOCKER_IMAGE" \
             MISE_E2E_DOCKER=1 \
             mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_linux
+
+  brew-formula-linux-source:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GITHUB_TOKEN: ""
+      GH_TOKEN: ""
+      MISE_GITHUB_TOKEN: ""
+      FORGEJO_TOKEN: ""
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
+      MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
+      MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: not-installed
+    needs: [classify-changes]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Build exact-head binary
+        run: |
+          cargo build --all-features --ignore-rust-version
+          strip --strip-debug target/debug/mise
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - name: Test Linux source lifecycle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
@@ -325,24 +352,9 @@ jobs:
           MISE_AUTO_INSTALL: "false"
         run: |
           for command in bash cc make ar ranlib git jq realpath stat awk sed grep install mkdir xargs; do
-            if ! command -v "$command" >/dev/null; then
-              echo "missing source-build oracle prerequisite: $command" >&2
-              exit 1
-            fi
+            command -v "$command" >/dev/null || { echo "missing source-build oracle prerequisite: $command" >&2; exit 1; }
           done
-          env \
-            MISE_BREW_ORACLE_DISPOSABLE="$MISE_BREW_ORACLE_DISPOSABLE" \
-            MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
-            MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
-            MISE_BREW_ORACLE_SOURCE_PREFIX="$MISE_BREW_ORACLE_SOURCE_PREFIX" \
-            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
-            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
-            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
-            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
-            MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
-            MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
-            MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
-            mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
+          mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
 
   nightly:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
@@ -662,6 +674,7 @@ jobs:
       - windows-e2e
       - brew-formula-macos
       - brew-formula-linux
+      - brew-formula-linux-source
     # Evaluate skipped and failed dependencies, but do not waste a runner when
     # the workflow is cancelled.
     if: ${{ always() && !cancelled() }}
@@ -718,6 +731,10 @@ jobs:
               echo "brew-formula-linux failed or was skipped"
               exit 1
             fi
+            if [ "${{ needs.brew-formula-linux-source.result }}" != "success" ]; then
+              echo "brew-formula-linux-source failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.bootstrap-linux-host.result }}" != "success" ]; then
               echo "bootstrap-linux-host failed or was skipped"
               exit 1
@@ -739,7 +756,8 @@ jobs:
               "${{ needs.windows-unit.result }}" \
               "${{ needs.windows-e2e.result }}" \
               "${{ needs.brew-formula-macos.result }}" \
-              "${{ needs.brew-formula-linux.result }}"; do
+              "${{ needs.brew-formula-linux.result }}" \
+              "${{ needs.brew-formula-linux-source.result }}"; do
               if [ "$result" != "skipped" ]; then
                 echo "docs-only jobs should be skipped"
                 exit 1
