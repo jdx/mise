@@ -1,10 +1,8 @@
-use std::collections::HashSet;
-
 use eyre::{Result, bail};
 use tokio::sync::mpsc;
 
-use crate::cli::args::BackendArg;
 use crate::deps_graph::DepsGraph;
+use crate::install_context::install_dependency_declarations;
 use crate::toolset::tool_request::ToolRequest;
 
 /// Unique key for a tool request (tool short name + version).
@@ -58,59 +56,39 @@ impl ToolDeps {
             .map(|tr| (tool_key(tr), tr.clone()))
             .collect();
 
-        // Build a set of all tool identifiers being installed for dependency lookup
-        let versions_hash: HashSet<String> =
-            requests.iter().flat_map(|tr| tr.ba().all_fulls()).collect();
-
-        // Compute edges from backend dependencies
+        // Compute edges from the shared backend/plugin and per-tool declarations.
+        // Metadata errors remain ignored here, matching the scheduler's historical
+        // behavior; strict consumers validate the same declaration object.
         let mut edges: Vec<(ToolKey, ToolKey)> = vec![];
         for tr in &requests {
             let tr_key = tool_key(tr);
-
-            if let Ok(backend) = tr.backend()
-                && let Ok(deps) = backend.get_all_dependencies(true)
-            {
-                for dep_ba in deps {
-                    let dep_fulls = dep_ba.all_fulls();
-                    if dep_fulls.iter().any(|full| versions_hash.contains(full)) {
-                        for other_tr in &requests {
-                            let other_fulls = other_tr.ba().all_fulls();
-                            if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
-                                let other_key = tool_key(other_tr);
-                                if tr_key != other_key {
-                                    edges.push((tr_key.clone(), other_key));
-                                }
-                            }
+            let declarations = install_dependency_declarations(tr);
+            for dependency in declarations.iter() {
+                for other_tr in &requests {
+                    if dependency
+                        .all_fulls()
+                        .iter()
+                        .any(|identity| other_tr.ba().all_fulls().contains(identity))
+                    {
+                        let other_key = tool_key(other_tr);
+                        if tr_key != other_key {
+                            edges.push((tr_key.clone(), other_key));
                         }
                     }
                 }
             }
-        }
-
-        // Add edges from user-specified depends in tool options
-        for tr in &requests {
-            let tr_key = tool_key(tr);
-            if let Some(user_deps) = &tr.options().depends {
-                for dep_str in user_deps {
-                    let dep_ba = BackendArg::from(dep_str.as_str());
-                    let dep_fulls = dep_ba.all_fulls();
-                    let mut found = false;
-                    for other_tr in &requests {
-                        let other_fulls = other_tr.ba().all_fulls();
-                        if dep_fulls.iter().any(|f| other_fulls.contains(f)) {
-                            let other_key = tool_key(other_tr);
-                            if tr_key != other_key {
-                                edges.push((tr_key.clone(), other_key));
-                                found = true;
-                            }
-                        }
-                    }
-                    if !found {
-                        warn!(
-                            "tool '{}': depends on '{}' which is not in the current install set",
-                            tr_key, dep_str
-                        );
-                    }
+            for (raw, dependency) in declarations.direct() {
+                if !requests.iter().any(|other| {
+                    tr_key != tool_key(other)
+                        && dependency
+                            .all_fulls()
+                            .iter()
+                            .any(|identity| other.ba().all_fulls().contains(identity))
+                }) {
+                    warn!(
+                        "tool '{}': depends on '{}' which is not in the current install set",
+                        tr_key, raw
+                    );
                 }
             }
         }
@@ -145,6 +123,7 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
+    use crate::cli::args::BackendArg;
     use crate::config::Config;
     use crate::toolset::{CoreToolOptions, ToolSource, ToolVersionOptions, parse_tool_options};
 
@@ -254,6 +233,38 @@ mod tests {
         assert!(
             err.to_string()
                 .contains("conflicting options for tiny@1.0.0")
+        );
+    }
+
+    fn request(tool: &str, options: &str) -> ToolRequest {
+        ToolRequest::new_opts(
+            Arc::new(BackendArg::from(tool)),
+            "1.0.0",
+            parse_tool_options(options),
+            ToolSource::Argument,
+        )
+        .unwrap()
+    }
+
+    fn assert_dependency_edge(dependent: ToolRequest, dependency: ToolRequest) {
+        let mut deps = ToolDeps::new(vec![dependent.clone(), dependency.clone()]).unwrap();
+        let mut rx = deps.subscribe();
+        assert_eq!(rx.try_recv().unwrap(), Some(dependency.clone()));
+        assert!(rx.try_recv().is_err());
+        deps.complete_success(&dependency);
+        assert_eq!(rx.try_recv().unwrap(), Some(dependent));
+    }
+
+    #[test]
+    fn backend_dependency_graph_edge_is_preserved() {
+        assert_dependency_edge(request("elixir", ""), request("erlang", ""));
+    }
+
+    #[test]
+    fn per_tool_dependency_graph_edge_is_preserved() {
+        assert_dependency_edge(
+            request("needs-dummy", "depends=dummy"),
+            request("dummy", ""),
         );
     }
 }

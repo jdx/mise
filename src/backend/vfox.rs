@@ -294,8 +294,8 @@ impl Backend for VfoxBackend {
         // `dependency_env`. (#10282, follow-up to #10432)
         {
             let base: EnvMap = cmd_env.clone().into_iter().collect();
-            let tool_vals = match self.install_dependency_toolset(&ctx.config, &tv).await {
-                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+            let tool_vals = match self.install_dependency_context(ctx, &tv).await {
+                Ok(dependencies) => dependencies.toolset.tool_val_env(&ctx.config, &base).await,
                 Err(e) => Err(e),
             };
             match tool_vals {

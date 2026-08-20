@@ -4,6 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use tokio::sync::OnceCell;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
@@ -585,6 +586,7 @@ impl Toolset {
             dry_run: opts.dry_run,
             locked: opts.locked || config.tool_config_locked(tr.source()),
             before_date,
+            dependency_context: OnceCell::new(),
         };
 
         backend.install_version(ctx, tv).await

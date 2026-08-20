@@ -434,8 +434,9 @@ impl Backend for AsdfBackend {
         // on the first install (#4384). Keep the existing active-tool paths after the
         // dependencies for compatibility, and preserve each toolset's path order.
         let dependency_paths = self
-            .install_dependency_toolset(&ctx.config, &tv)
+            .install_dependency_context(ctx, &tv)
             .await?
+            .toolset
             .list_paths(&ctx.config)
             .await;
         let active_paths = ctx.ts.list_paths(&ctx.config).await;
