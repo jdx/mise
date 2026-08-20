@@ -4,18 +4,18 @@ This file is the canonical agent guide. `CLAUDE.md` is a symlink to `AGENTS.md` 
 
 ## Registry Submissions: READ THIS FIRST
 
-**Most registry PRs from agents get rejected.** Before adding anything to `registry/`, understand the rules:
+**Most new registry additions from agents get rejected.** Before adding a new tool to `registry/`, understand the rules:
 
 - **mise does not host self-written, personal, niche, or low-popularity tools.** The registry is curated for tools that are *already* widely used. "It works" or "it has tests" is not the bar.
-- **Tools that aren't VERY popular will be rejected without explanation.** Per [contributing.md](docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
+- **There is a high bar for new registry additions: tools generally need thousands of GitHub stars, not hundreds.** jdx will reject projects that do not meet this popularity bar and will not give a reason. Per [contributing.md](docs/contributing.md): "@jdx won't explain why a given tool wasn't accepted." There is no appeal, no checklist, no second chance — the PR is closed and that's it.
 - **Wasted PRs are the default outcome** for tools the agent or user has not vetted against this bar. Do not submit one speculatively.
 
-### Required pre-submission check
+### Required check for new registry additions
 
-Before touching `registry/`, ALWAYS do the following:
+Before adding a new tool or shorthand to `registry/`, ALWAYS do the following. This check does not apply when editing an existing registry entry; do not ask the user about popularity for maintenance or fixes to tools already in the registry.
 
-1. **Ask the user:** "Is this tool already widely used outside your own projects?" — if it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
-2. **Actively check popularity for every registry PR — no exceptions.** Look up real numbers; do not guess. Useful sources:
+1. **Warn the user clearly and ask:** "New registry additions have a high popularity bar: jdx generally rejects projects without thousands of GitHub stars and will not give a reason. Is this tool already widely used outside your own projects and does it meet that bar?" If it's the user's own tool, a fork, an internal/company tool, or something with a small audience, **stop and tell them the PR will be rejected.** Do not submit.
+2. **Actively check popularity for every new registry addition — no exceptions.** Look up real numbers; do not guess. Useful sources:
    - GitHub stars and fork count (`gh repo view owner/repo --json stargazerCount,forkCount`)
    - Recent release activity / last commit date (`gh repo view owner/repo --json pushedAt,latestRelease`)
    - Download counts on relevant package registries (npm `npmjs.com/package/x`, crates.io, PyPI, Homebrew analytics, etc.)
@@ -25,7 +25,7 @@ Before touching `registry/`, ALWAYS do the following:
    - Active maintenance (recent releases, not abandoned)
    - Real third-party usage (referenced in docs, blog posts, other tools, package registries)
    - Recognizable in its ecosystem
-4. **Include the popularity data in the PR description.** Every registry PR body MUST contain a short section like:
+4. **Include the popularity data in the PR description.** Every PR adding a new registry tool or shorthand MUST contain a short section like:
 
    ```
    ## Popularity
@@ -34,7 +34,7 @@ Before touching `registry/`, ALWAYS do the following:
    - Used by: <project A>, <project B>
    ```
 
-   This is non-negotiable — it lets the maintainer evaluate the submission without re-doing the research. PRs without it look speculative and are more likely to be rejected.
+   This is non-negotiable for new additions — it lets the maintainer evaluate the submission without re-doing the research. New-tool PRs without it look speculative and are more likely to be rejected.
 5. **If the tool is borderline or numbers are low, warn the user clearly** that the PR is likely to be rejected without reason, and ask if they still want to proceed. Do not soften this — users have repeatedly been surprised when their PR was closed, and the agent should have warned them up front.
 6. **Suggest the alternative:** users can install any tool themselves via explicit backend syntax (`mise use aqua:owner/repo`, `mise use github:owner/repo`, `mise use cargo:name`, `mise use npm:name`, etc.) or by writing a [tool plugin](https://mise.jdx.dev/tool-plugin-development.html). The registry is *only* for shorthand convenience for popular tools — not for enabling installation.
 

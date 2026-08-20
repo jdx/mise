@@ -1284,24 +1284,6 @@ fn remove_open_link(file: File) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn remove_symlinks_with_target_prefix(
-    symlink_dir: &Path,
-    target_prefix: &Path,
-) -> Result<Vec<PathBuf>> {
-    if !symlink_dir.exists() {
-        return Ok(vec![]);
-    }
-    let mut removed = vec![];
-    for entry in symlink_dir.read_dir()? {
-        let path = entry?.path();
-        if is_symlink_target_within(&path, target_prefix)? {
-            remove_symlink_or_junction(&path)?;
-            removed.push(path);
-        }
-    }
-    Ok(removed)
-}
-
 #[cfg(unix)]
 pub fn is_executable(path: &Path) -> bool {
     if let Ok(metadata) = path.metadata() {
@@ -3116,26 +3098,6 @@ mod tests {
     }
 
     #[test]
-    fn test_remove_symlinks_with_target_prefix() {
-        let dir = tempfile::tempdir().unwrap();
-        let prefix = dir.path().join("provider");
-        let target = prefix.join("version");
-        let other = dir.path().join("other");
-        let link = dir.path().join("link");
-        let other_link = dir.path().join("other-link");
-        fs::create_dir_all(&target).unwrap();
-        fs::create_dir_all(&other).unwrap();
-        make_symlink(&target, &link).unwrap();
-        make_symlink(&other, &other_link).unwrap();
-
-        let removed = remove_symlinks_with_target_prefix(dir.path(), &prefix).unwrap();
-        assert_eq!(removed, vec![link.clone()]);
-        assert!(std::fs::symlink_metadata(&link).is_err());
-        assert!(std::fs::symlink_metadata(&other_link).is_ok());
-        assert!(target.exists());
-    }
-
-    #[test]
     #[cfg(windows)]
     fn test_symlink_prefix_detection_uses_filesystem_casing() {
         let dir = tempfile::tempdir().unwrap();
@@ -3215,7 +3177,6 @@ mod tests {
             Ok(())
         }
     }
-
     #[test]
     #[cfg(unix)]
     fn test_symlink_prefix_detection_uses_the_immediate_target() {
