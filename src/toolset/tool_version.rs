@@ -837,6 +837,34 @@ pub(crate) async fn resolve_sub_base(
     tool_request::version_sub(&v, sub)
 }
 
+/// Resolve the base of a `sub-N:<base>` request without applying release-age cutoffs.
+///
+/// Upgrade uses this to compare an age-filtered candidate with the true upstream
+/// baseline. In particular, `sub-N:latest` must derive its range from the unfiltered
+/// latest release or hidden releases will disappear from the comparison.
+pub(crate) async fn resolve_sub_base_unfiltered(
+    config: &Arc<Config>,
+    backend: &ABackend,
+    selection_opts: &ToolVersionOptions,
+    sub: &str,
+    base: &str,
+) -> Result<String> {
+    let base = if base == "latest" {
+        base.to_string()
+    } else {
+        config.resolve_alias(backend, base).await?
+    };
+    let v = if base == "latest" {
+        backend
+            .latest_version_unfiltered_with_selection_options(config, None, selection_opts)
+            .await?
+            .ok_or_else(|| ToolVersion::no_versions_found(backend, None))?
+    } else {
+        base
+    };
+    tool_request::version_sub(&v, sub)
+}
+
 impl Display for ToolVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}@{}", self.ba().full(), self.version)

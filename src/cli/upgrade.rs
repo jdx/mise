@@ -15,8 +15,9 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
+    ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
+    ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
+    get_versions_needed_by_tracked_stubs, resolve_sub_base_unfiltered,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -790,7 +791,24 @@ impl Upgrade {
         backend: &ABackend,
     ) -> Result<Option<String>> {
         if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
-            let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+            let version = config.resolve_alias(backend, &tv.request.version()).await?;
+            let rolling = backend.is_rolling_channel(&version);
+            if rolling {
+                if let Some(concrete) = backend.resolve_channel_version(config, &version).await? {
+                    return Ok(Some(concrete));
+                }
+                return Ok(backend
+                    .latest_version_with_selection_options(
+                        config,
+                        Some(version.clone()),
+                        &tv.request.options(),
+                        opts.before_date,
+                        false,
+                    )
+                    .await?
+                    .or(Some(version)));
+            }
+            let (prefix, prefix_version) = split_version_prefix(&version);
             backend
                 .latest_version_with_selection_options(
                     config,
@@ -824,10 +842,39 @@ impl Upgrade {
         backend: &ABackend,
     ) -> Result<Option<String>> {
         let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
-            let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+            let version = config.resolve_alias(backend, &tv.request.version()).await?;
+            let rolling = backend.is_rolling_channel(&version);
+            if rolling {
+                return Ok(backend
+                    .resolve_channel_version(config, &version)
+                    .await?
+                    .or(Some(version)));
+            }
+            let (prefix, prefix_version) = split_version_prefix(&version);
             prefixed_latest_query(&prefix, &prefix_version)
         } else {
-            Some(tv.request.version())
+            let version = config.resolve_alias(backend, &tv.request.version()).await?;
+            match ToolRequest::new_opts(
+                tv.request.ba().clone(),
+                &version,
+                tv.request.options(),
+                tv.request.source().clone(),
+            )? {
+                ToolRequest::Sub {
+                    sub, orig_version, ..
+                } => Some(
+                    resolve_sub_base_unfiltered(
+                        config,
+                        backend,
+                        &tv.request.options(),
+                        &sub,
+                        &orig_version,
+                    )
+                    .await?,
+                ),
+                ToolRequest::Prefix { prefix, .. } => Some(prefix),
+                request => Some(request.version()),
+            }
         };
         backend
             .latest_version_unfiltered_with_selection_options(config, query, &tv.request.options())
@@ -1008,12 +1055,14 @@ mod tests {
         release_is_eligible_at,
     };
     use crate::backend::{
-        ABackend,
+        ABackend, VersionInfo,
         test_helpers::{RemoteVersionsBackend, prerelease_options, request_tool_version},
     };
     use crate::cli::args::BackendArg;
     use crate::config::Config;
-    use crate::toolset::{ResolveOptions, ToolVersionOptions};
+    use crate::toolset::{
+        ResolveOptions, ToolRequest, ToolSource, ToolVersion, ToolVersionOptions,
+    };
     use jiff::tz::TimeZone;
     use std::sync::Arc;
 
@@ -1065,6 +1114,161 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("1.1.0-rc.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn upgrade_preserves_range_and_unresolved_rolling_selectors() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("upgrade-selector-test"));
+        let backend_impl = RemoteVersionsBackend::new(
+            ba.clone(),
+            vec![
+                VersionInfo {
+                    version: "1.0.0".into(),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "edge".into(),
+                    ..Default::default()
+                },
+            ],
+            Some("1.0.0"),
+        )
+        .with_rolling_channel("edge", None);
+        let backend: ABackend = Arc::new(backend_impl);
+        let prefix = ToolVersion::new(
+            ToolRequest::Prefix {
+                backend: ba.clone(),
+                prefix: "1".into(),
+                options: ToolVersionOptions::default(),
+                source: ToolSource::Argument,
+            },
+            "1.0.0".into(),
+        );
+        let sub = ToolVersion::new(
+            ToolRequest::Sub {
+                backend: ba.clone(),
+                sub: "1".into(),
+                orig_version: "2".into(),
+                options: ToolVersionOptions::default(),
+                source: ToolSource::Argument,
+            },
+            "1.0.0".into(),
+        );
+        let rolling = ToolVersion::new(
+            ToolRequest::Version {
+                backend: ba,
+                version: "edge".into(),
+                options: ToolVersionOptions::default(),
+                source: ToolSource::Argument,
+            },
+            "edge".into(),
+        );
+        let rolling_upgrade = Upgrade {
+            bump: true,
+            dry_run: true,
+            ..Default::default()
+        };
+        let prefix_upgrade = Upgrade {
+            dry_run: true,
+            ..Default::default()
+        };
+
+        assert_eq!(
+            prefix_upgrade
+                .baseline_latest_for_upgrade_with_backend(
+                    &config,
+                    &prefix,
+                    &ResolveOptions::default(),
+                    &backend,
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            prefix_upgrade
+                .baseline_latest_for_upgrade_with_backend(
+                    &config,
+                    &sub,
+                    &ResolveOptions::default(),
+                    &backend,
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            rolling_upgrade
+                .latest_for_upgrade_with_backend(
+                    &config,
+                    &rolling,
+                    &ResolveOptions::default(),
+                    &backend,
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("edge")
+        );
+    }
+
+    #[tokio::test]
+    async fn upgrade_sub_latest_baseline_ignores_minimum_release_age() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("upgrade-sub-latest-baseline-test"));
+        let backend: ABackend = Arc::new(RemoteVersionsBackend::new(
+            ba.clone(),
+            vec![
+                VersionInfo {
+                    version: "1.0.0".into(),
+                    created_at: Some("2020-01-01T00:00:00Z".into()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "2.0.0".into(),
+                    created_at: Some("2020-01-01T00:00:00Z".into()),
+                    ..Default::default()
+                },
+                VersionInfo {
+                    version: "3.0.0".into(),
+                    created_at: Some("2099-01-01T00:00:00Z".into()),
+                    ..Default::default()
+                },
+            ],
+            Some("3.0.0"),
+        ));
+        let mut options = ToolVersionOptions::default();
+        options.opts.insert(
+            "minimum_release_age".into(),
+            toml::Value::String("1d".into()),
+        );
+        let sub = ToolVersion::new(
+            ToolRequest::Sub {
+                backend: ba,
+                sub: "1".into(),
+                orig_version: "latest".into(),
+                options,
+                source: ToolSource::Argument,
+            },
+            "1.0.0".into(),
+        );
+
+        assert_eq!(
+            Upgrade::default()
+                .baseline_latest_for_upgrade_with_backend(
+                    &config,
+                    &sub,
+                    &ResolveOptions::default(),
+                    &backend,
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("2.0.0")
         );
     }
 

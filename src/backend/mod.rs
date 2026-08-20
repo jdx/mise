@@ -4094,6 +4094,8 @@ pub(crate) mod test_helpers {
         ba: Arc<BackendArg>,
         remote_versions: Vec<VersionInfo>,
         stable_result: Option<String>,
+        rolling_channel: Option<String>,
+        channel_result: Option<String>,
         list_calls: AtomicUsize,
     }
 
@@ -4107,8 +4109,16 @@ pub(crate) mod test_helpers {
                 ba,
                 remote_versions,
                 stable_result: stable_result.map(str::to_string),
+                rolling_channel: None,
+                channel_result: None,
                 list_calls: AtomicUsize::new(0),
             }
+        }
+
+        pub fn with_rolling_channel(mut self, channel: &str, result: Option<&str>) -> Self {
+            self.rolling_channel = Some(channel.to_string());
+            self.channel_result = result.map(str::to_string);
+            self
         }
 
         pub fn stable_and_prerelease(ba: Arc<BackendArg>) -> Self {
@@ -4165,6 +4175,21 @@ pub(crate) mod test_helpers {
                 .unwrap_or_default()
                 .into_iter()
                 .collect()
+        }
+
+        fn is_rolling_channel(&self, version: &str) -> bool {
+            self.rolling_channel.as_deref() == Some(version)
+        }
+
+        async fn resolve_channel_version(
+            &self,
+            _config: &Arc<Config>,
+            version: &str,
+        ) -> eyre::Result<Option<String>> {
+            Ok(self
+                .is_rolling_channel(version)
+                .then(|| self.channel_result.clone())
+                .flatten())
         }
 
         async fn _list_remote_versions(

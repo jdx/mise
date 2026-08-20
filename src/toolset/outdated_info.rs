@@ -219,7 +219,24 @@ async fn latest_for_outdated(
     use_backend_latest: bool,
 ) -> eyre::Result<Option<String>> {
     if use_backend_latest {
-        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+        let version = config.resolve_alias(backend, &tv.request.version()).await?;
+        let rolling = backend.is_rolling_channel(&version);
+        if rolling {
+            if let Some(concrete) = backend.resolve_channel_version(config, &version).await? {
+                return Ok(Some(concrete));
+            }
+            return Ok(backend
+                .latest_version_with_selection_options(
+                    config,
+                    Some(version.clone()),
+                    &tv.request.options(),
+                    opts.before_date,
+                    false,
+                )
+                .await?
+                .or(Some(version)));
+        }
+        let (prefix, prefix_version) = split_version_prefix(&version);
         let query = prefixed_latest_query(&prefix, &prefix_version);
         backend
             .latest_version_with_selection_options(
@@ -458,7 +475,7 @@ mod tests {
         prefixed_latest_query,
     };
     use crate::backend::{
-        ABackend,
+        ABackend, VersionInfo,
         test_helpers::{RemoteVersionsBackend, prerelease_options, request_tool_version},
     };
     use crate::cli::args::{BackendArg, BackendResolution};
@@ -493,6 +510,46 @@ mod tests {
                 .unwrap()
                 .as_deref(),
             Some("1.1.0-rc.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn outdated_preserves_unresolved_rolling_selector() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("outdated-rolling-test"));
+        let backend: ABackend = Arc::new(
+            RemoteVersionsBackend::new(
+                ba.clone(),
+                vec![VersionInfo {
+                    version: "edge".into(),
+                    ..Default::default()
+                }],
+                None,
+            )
+            .with_rolling_channel("edge", None),
+        );
+        let rolling = ToolVersion::new(
+            ToolRequest::Version {
+                backend: ba,
+                version: "edge".into(),
+                options: ToolVersionOptions::default(),
+                source: ToolSource::Argument,
+            },
+            "edge".into(),
+        );
+
+        assert_eq!(
+            latest_for_outdated(
+                &config,
+                &backend,
+                &rolling,
+                &crate::toolset::ResolveOptions::default(),
+                true,
+            )
+            .await
+            .unwrap()
+            .as_deref(),
+            Some("edge")
         );
     }
 
