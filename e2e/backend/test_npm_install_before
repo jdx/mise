@@ -35,11 +35,12 @@ assert \
   "MISE_CACHE_DIR='$PWD/npm-shell-out-cache' MISE_NPM_SHELL_OUT=1 mise latest npm:aws-cdk --minimum-release-age 2025-04-10" \
   "2.1007.0"
 
-# Fully deprecated packages have no automatically resolvable latest version.
-# Every release of request is deprecated on npm.
-assert_empty "MISE_CACHE_DIR='$PWD/npm-request-cache' mise latest npm:request"
-assert_empty \
-  "MISE_CACHE_DIR='$PWD/npm-request-shell-out-cache' MISE_NPM_SHELL_OUT=1 mise latest npm:request"
+# A package whose entire version history is deprecated remains resolvable. npm
+# treats that as package-level deprecation and warns during installation.
+assert "MISE_CACHE_DIR='$PWD/npm-request-cache' mise latest npm:request" "2.88.2"
+assert \
+  "MISE_CACHE_DIR='$PWD/npm-request-shell-out-cache' MISE_NPM_SHELL_OUT=1 mise latest npm:request" \
+  "2.88.2"
 
 # Test: CLI --minimum-release-age flag overrides the global minimum_release_age setting
 # Global is 2024-01-01 (would give 3.1.0), CLI is 2023-06-01 (gives 2.8.8)

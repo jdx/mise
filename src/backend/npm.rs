@@ -631,7 +631,7 @@ impl NPMBackend {
                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                 .read()?;
                 let data: Value = serde_json::from_str(&raw)?;
-                let mut versions = npm_view_versions_time(&data)?;
+                let versions = npm_view_versions_time(&data)?;
 
                 // `npm view <package> versions time` omits per-version
                 // deprecation metadata. The shell-out compatibility path
@@ -651,9 +651,8 @@ impl NPMBackend {
                 .read()?;
                 let deprecated_versions =
                     npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
-                versions.retain(|version| !deprecated_versions.contains(&version.version));
 
-                Ok(versions)
+                Ok(filter_deprecated_versions(versions, &deprecated_versions))
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -665,11 +664,11 @@ impl NPMBackend {
         let prefix = Self::npm_meta_prefix()?;
         let npm = self.spawn_program(config, None, "npm").await;
         let raw = cmd!(
-            npm,
+            &npm,
             "view",
             self.tool_name(),
+            "versions",
             "dist-tags",
-            "deprecated",
             "--json",
             "--prefix",
             &prefix
@@ -677,8 +676,26 @@ impl NPMBackend {
         .full_env(self.dependency_env(config).await?)
         .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
         .read()?;
-        let dist_tags: Value = serde_json::from_str(&raw)?;
-        npm_view_latest_dist_tag(&dist_tags)
+        let data: Value = serde_json::from_str(&raw)?;
+        let versions = npm_view_versions_time(&data)?;
+        let latest = npm_view_latest_dist_tag(&data)?;
+
+        let deprecated_query = format!("{}@>=0.0.0-0", self.tool_name());
+        let deprecated_raw = cmd!(
+            &npm,
+            "view",
+            deprecated_query,
+            "deprecated",
+            "--prefix",
+            &prefix
+        )
+        .full_env(self.dependency_env(config).await?)
+        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+        .read()?;
+        let deprecated_versions = npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
+        let versions = filter_deprecated_versions(versions, &deprecated_versions);
+
+        Ok(latest.filter(|latest| versions.iter().any(|version| version.version == *latest)))
     }
 
     async fn build_transitive_release_age_args(
@@ -1560,16 +1577,29 @@ fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> 
         .collect()
 }
 
+/// Exclude individually deprecated releases while retaining a package whose
+/// entire version history is deprecated. npm uses that all-versions state for
+/// package-level deprecation and still permits the package to be installed.
+fn filter_deprecated_versions(
+    versions: Vec<VersionInfo>,
+    deprecated_versions: &HashSet<String>,
+) -> Vec<VersionInfo> {
+    if deprecated_versions.is_empty()
+        || versions
+            .iter()
+            .all(|version| deprecated_versions.contains(&version.version))
+    {
+        return versions;
+    }
+
+    versions
+        .into_iter()
+        .filter(|version| !deprecated_versions.contains(&version.version))
+        .collect()
+}
+
 fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
     let data = npm_view_json(data)?;
-    let deprecated = match data.get("deprecated") {
-        Some(Value::String(message)) => !message.trim().is_empty(),
-        Some(Value::Bool(deprecated)) => *deprecated,
-        _ => false,
-    };
-    if deprecated {
-        return Ok(None);
-    }
     let dist_tags = data.get("dist-tags").unwrap_or(data);
     Ok(match dist_tags["latest"] {
         Value::String(ref s) => Some(s.clone()),
@@ -2080,25 +2110,57 @@ aws-cdk@2.0.0 'published accidentally'
     }
 
     #[test]
-    fn test_npm_view_latest_dist_tag_returns_none_when_deprecated() {
-        let data = serde_json::json!([{
-            "dist-tags": { "latest": "1.0.0" },
-            "deprecated": "use another package"
-        }]);
-
-        assert_eq!(npm_view_latest_dist_tag(&data).unwrap(), None);
-    }
-
-    #[test]
     fn test_npm_view_latest_dist_tag_accepts_nested_dist_tags() {
         let data = serde_json::json!([{
-            "dist-tags": { "latest": "1.0.0" },
-            "deprecated": ""
+            "versions": ["1.0.0"],
+            "dist-tags": { "latest": "1.0.0" }
         }]);
 
         assert_eq!(
             npm_view_latest_dist_tag(&data).unwrap(),
             Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_versions_excludes_individual_releases() {
+        let versions = ["1.0.0", "1.1.0", "2.0.0"]
+            .map(|version| VersionInfo {
+                version: version.into(),
+                ..Default::default()
+            })
+            .into();
+        let deprecated_versions = HashSet::from(["1.1.0".into(), "2.0.0".into()]);
+
+        let filtered = filter_deprecated_versions(versions, &deprecated_versions);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|version| version.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_versions_retains_package_level_deprecation() {
+        let versions = ["1.0.0", "1.1.0"]
+            .map(|version| VersionInfo {
+                version: version.into(),
+                ..Default::default()
+            })
+            .into();
+        let deprecated_versions = HashSet::from(["1.0.0".into(), "1.1.0".into()]);
+
+        let filtered = filter_deprecated_versions(versions, &deprecated_versions);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|version| version.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0", "1.1.0"]
         );
     }
 
