@@ -1360,6 +1360,18 @@ fn activate_app_at(
     caskroom_app: &Path,
     logical_target: &Path,
 ) -> Result<()> {
+    if exists_at(&parent.fd, name)? {
+        // Same class of pain as `brew reinstall --cask`: TCC is keyed to the
+        // app identity at this path, so an atomic bundle swap clears grants.
+        warn!(
+            "brew-cask: replacing {} — macOS may revoke Privacy & Security \
+             permissions for this app (Accessibility, Screen Recording, Full \
+             Disk Access, etc.); re-grant them in System Settings if prompted. \
+             To take over an existing app without replacing it, set adopt = true \
+             or [bootstrap.brew] adopt = true",
+            logical_target.display()
+        );
+    }
     swap_app_at(parent, name, tmp_name, old_name)?;
     replace_caskroom_app_with_symlink(caskroom_app, logical_target)
 }
