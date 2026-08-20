@@ -87,6 +87,21 @@ pub(super) enum ConfigFileDetection {
 )]
 struct DisabledIdiomaticVersionFile(PathBuf);
 
+fn detection_error(path: &Path, detection: ConfigFileDetection) -> eyre::Report {
+    match detection {
+        ConfigFileDetection::DisabledRegistryIdiomatic => {
+            DisabledIdiomaticVersionFile(path.to_path_buf()).into()
+        }
+        ConfigFileDetection::Unknown => {
+            eyre!("unknown config file type: {}", display_path(path))
+        }
+        ConfigFileDetection::DiscoveryFailed(err) => err,
+        ConfigFileDetection::Recognized(_) => {
+            unreachable!("recognized config detection cannot be converted to an error")
+        }
+    }
+}
+
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     fn min_version(&self) -> Option<&MinVersionSpec> {
@@ -316,13 +331,7 @@ async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
         ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(backends)) => Ok(
             Arc::new(IdiomaticVersionFile::parse(path.to_path_buf(), backends).await?),
         ),
-        ConfigFileDetection::DisabledRegistryIdiomatic => {
-            Err(DisabledIdiomaticVersionFile(path.to_path_buf()).into())
-        }
-        ConfigFileDetection::Unknown => {
-            Err(eyre!("unknown config file type: {}", display_path(path)))
-        }
-        ConfigFileDetection::DiscoveryFailed(err) => Err(err),
+        detection => Err(detection_error(path, detection)),
     }
 }
 
@@ -404,13 +413,7 @@ pub(super) async fn parse_detected(
         ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(backends)) => Ok(
             Arc::new(IdiomaticVersionFile::parse(path.to_path_buf(), backends).await?),
         ),
-        ConfigFileDetection::DisabledRegistryIdiomatic => {
-            Err(DisabledIdiomaticVersionFile(path.to_path_buf()).into())
-        }
-        ConfigFileDetection::Unknown => {
-            Err(eyre!("unknown config file type: {}", display_path(path)))
-        }
-        ConfigFileDetection::DiscoveryFailed(err) => Err(err),
+        detection => Err(detection_error(path, detection)),
     }
 }
 
@@ -905,6 +908,13 @@ fn path_matches_registry_idiomatic(path: &Path) -> bool {
     !matching_idiomatic_filenames(path, filenames).is_empty()
 }
 
+fn registry_tool_matches_idiomatic_path(tool: &str, path: &Path) -> bool {
+    REGISTRY.get(tool).is_some_and(|registry_tool| {
+        let filenames = registry_tool.idiomatic_files.iter().map(|file| file.path);
+        !matching_idiomatic_filenames(path, filenames).is_empty()
+    })
+}
+
 fn path_is_disabled_registry_idiomatic(
     path: &Path,
     settings: &IdiomaticVersionFileSettings,
@@ -988,7 +998,10 @@ async fn detect_idiomatic_backends(
     if let Some(err) = first_error {
         return Err(err);
     }
-    if let Some(tool) = unseen_tools.into_iter().next() {
+    if let Some(tool) = unseen_tools
+        .into_iter()
+        .find(|tool| registry_tool_matches_idiomatic_path(tool, path))
+    {
         return Err(eyre!(
             "enabled idiomatic backend {tool} is not available for discovery"
         ));
@@ -1230,16 +1243,19 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn test_missing_enabled_backend_is_discovery_failure() {
-        backend::load_tools().await.unwrap();
-        let settings = IdiomaticVersionFileSettings {
-            enable_tools: BTreeSet::from(["missing".to_string()]),
-            disable_files: BTreeSet::new(),
-        };
-        assert!(matches!(
-            detect_config_file_with_settings(Path::new("/foo/package.json"), &settings).await,
-            ConfigFileDetection::DiscoveryFailed(_)
+    #[test]
+    fn test_unavailable_backend_only_matters_for_matching_registry_path() {
+        assert!(registry_tool_matches_idiomatic_path(
+            "node",
+            Path::new("/foo/package.json")
+        ));
+        assert!(!registry_tool_matches_idiomatic_path(
+            "node",
+            Path::new("/foo/.ruby-version")
+        ));
+        assert!(!registry_tool_matches_idiomatic_path(
+            "missing",
+            Path::new("/foo/package.json")
         ));
     }
 

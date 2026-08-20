@@ -60,7 +60,7 @@ assert_contains "echo '$output'" "error loading tracked config file"
 assert_contains "echo '$output'" "broken/mise.toml"
 
 # Untrusted owner settings must not activate plugin discovery while scanning tracked files.
-marker="$TMPDIR/untrusted-idiomatic-metadata-loaded"
+marker="$PWD/untrusted-idiomatic-metadata-loaded"
 mkdir -p "$MISE_DATA_DIR/plugins/untrusted-sideeffect" untrusted
 cat <<EOF >"$MISE_DATA_DIR/plugins/untrusted-sideeffect/metadata.lua"
 PLUGIN = {
@@ -79,6 +79,7 @@ cat <<'EOF' >untrusted/mise.toml
 idiomatic_version_file_enable_tools = ["untrusted-sideeffect"]
 EOF
 printf '{"name":"untrusted"}\n' >untrusted/package.json
+mkdir -p "$MISE_STATE_DIR/tracked-configs"
 ln -s "$PWD/untrusted/package.json" "$MISE_STATE_DIR/tracked-configs/untrusted-package"
 MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" mise -C other ls --all-sources >/dev/null 2>&1
 assert_fail "test -e '$marker'"

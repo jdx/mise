@@ -1655,6 +1655,26 @@ fn idiomatic_settings_env_locks() -> (bool, bool) {
     )
 }
 
+fn apply_idiomatic_settings_partial(
+    settings: &mut config_file::IdiomaticVersionFileSettings,
+    partial: settings::SettingsPartial,
+    enable_tools_resolved: &mut bool,
+    disable_files_resolved: &mut bool,
+) -> bool {
+    let mut applied = false;
+    if !*enable_tools_resolved && let Some(tools) = partial.idiomatic_version_file_enable_tools {
+        settings.enable_tools = tools;
+        *enable_tools_resolved = true;
+        applied = true;
+    }
+    if !*disable_files_resolved && let Some(files) = partial.idiomatic_version_file_disable_files {
+        settings.disable_files = files;
+        *disable_files_resolved = true;
+        applied = true;
+    }
+    applied
+}
+
 /// Resolve command-wide idiomatic defaults without inheriting settings from the
 /// invocation directory's project hierarchy.
 fn tracked_idiomatic_default_settings() -> (config_file::IdiomaticVersionFileSettings, bool, bool) {
@@ -1679,18 +1699,12 @@ fn tracked_idiomatic_default_settings() -> (config_file::IdiomaticVersionFileSet
         .filter(|path| !config_path_is_ignored(path, false))
     {
         if let Ok(partial) = Settings::parse_settings_file(&path) {
-            if !enable_tools_resolved
-                && let Some(tools) = partial.idiomatic_version_file_enable_tools
-            {
-                settings.enable_tools = tools;
-                enable_tools_resolved = true;
-            }
-            if !disable_files_resolved
-                && let Some(files) = partial.idiomatic_version_file_disable_files
-            {
-                settings.disable_files = files;
-                disable_files_resolved = true;
-            }
+            apply_idiomatic_settings_partial(
+                &mut settings,
+                partial,
+                &mut enable_tools_resolved,
+                &mut disable_files_resolved,
+            );
         }
     }
     (settings, enable_tools_locked, disable_files_locked)
@@ -1734,20 +1748,12 @@ fn idiomatic_version_file_settings_for_root(
             continue;
         }
         if let Ok(partial) = Settings::parse_settings_file(&path) {
-            if !enable_tools_resolved
-                && let Some(tools) = partial.idiomatic_version_file_enable_tools
-            {
-                settings.enable_tools = tools;
-                enable_tools_resolved = true;
-                overridden = true;
-            }
-            if !disable_files_resolved
-                && let Some(files) = partial.idiomatic_version_file_disable_files
-            {
-                settings.disable_files = files;
-                disable_files_resolved = true;
-                overridden = true;
-            }
+            overridden |= apply_idiomatic_settings_partial(
+                &mut settings,
+                partial,
+                &mut enable_tools_resolved,
+                &mut disable_files_resolved,
+            );
         }
     }
     (settings, overridden)
