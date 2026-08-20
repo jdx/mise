@@ -66,6 +66,7 @@ const FORMULA_EXECUTION_SYSTEM_READ_PATHS: &[&str] = &[
     "/usr/sbin",
     "/usr/lib",
     "/usr/lib64",
+    "/usr/libexec",
     "/usr/include",
     "/usr/share",
     "/bin",
@@ -486,6 +487,29 @@ mod tests {
 
         std::fs::write(allowed.join("output"), b"allowed").unwrap();
         assert_eq!(std::fs::read(allowed.join("output")).unwrap(), b"allowed");
+        if std::path::Path::new("/usr/bin/cc").is_file() {
+            let source = allowed.join("conftest.c");
+            let executable = allowed.join("conftest");
+            std::fs::write(&source, b"int main(void) { return 0; }\n").unwrap();
+            let output = std::process::Command::new("/usr/bin/cc")
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .env("TMPDIR", &allowed)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "confined compiler helper failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                std::process::Command::new(executable)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
         for denied in [
             std::path::Path::new("/etc/hosts"),
             std::path::Path::new("/etc/shadow"),
