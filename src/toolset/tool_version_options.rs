@@ -154,14 +154,6 @@ impl std::fmt::Debug for ResolvedToolOptions {
     }
 }
 
-impl Deref for ResolvedToolOptions {
-    type Target = ToolVersionOptions;
-
-    fn deref(&self) -> &Self::Target {
-        &self.options
-    }
-}
-
 // Provenance affects future resolution, but effective options remain the
 // request's equality and deduplication identity.
 impl PartialEq for ResolvedToolOptions {
@@ -178,27 +170,12 @@ impl Hash for ResolvedToolOptions {
     }
 }
 
-impl From<ToolVersionOptions> for ResolvedToolOptions {
-    fn from(options: ToolVersionOptions) -> Self {
-        Self {
-            options,
-            sources: IndexMap::new(),
-        }
-    }
-}
-
 impl ResolvedToolOptions {
-    pub(crate) fn from_source(options: ToolVersionOptions, source: ToolOptionSource) -> Self {
-        let mut resolved = Self::default();
-        resolved.apply_overrides(&options, source);
-        resolved
-    }
-
-    pub(crate) fn options(&self) -> &ToolVersionOptions {
+    pub(crate) fn effective(&self) -> &ToolVersionOptions {
         &self.options
     }
 
-    pub(crate) fn into_options(self) -> ToolVersionOptions {
+    pub(crate) fn into_effective(self) -> ToolVersionOptions {
         self.options
     }
 

@@ -9,7 +9,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
-use crate::toolset::{ResolvedToolOptions, ToolRequest, ToolSource, ToolVersionOptions, Toolset};
+use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -297,22 +297,9 @@ fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolReques
         .get(tvr.ba())
         .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
     {
-        let options = resolved_options_for_runtime_request(&tvr, Some(config_options));
-        tvr.set_resolved_options(options);
+        tvr.apply_option_layers(Some(config_options));
     }
     tvr
-}
-
-/// Re-resolve a runtime request through the canonical option precedence chain.
-/// Request provenance is retained on `ResolvedToolOptions`, so equal values do
-/// not need to be compared to infer whether they were explicitly supplied.
-pub(super) fn resolved_options_for_runtime_request(
-    runtime: &ToolRequest,
-    config_options: Option<ToolVersionOptions>,
-) -> ResolvedToolOptions {
-    runtime
-        .ba()
-        .resolve_opts_with_config_and_request(config_options, Some(runtime.request_options()))
 }
 
 /// Select configured options for an explicit runtime request without assuming
@@ -576,7 +563,7 @@ mod tests {
         let collision = apply_config_options_to_runtime_arg(&trs, collision);
         assert_eq!(collision.options().get("bin"), Some("solc"));
         assert_eq!(
-            collision.resolved_options().source_for_key("bin"),
+            collision.option_source("bin"),
             Some(crate::toolset::ToolOptionSource::Request)
         );
     }

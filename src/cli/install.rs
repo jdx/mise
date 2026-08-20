@@ -482,12 +482,8 @@ impl Install {
                             if self.monorepo {
                                 continue;
                             }
-                            let tvr = ToolRequest::Version {
-                                backend: ta.ba.clone(),
-                                version: "latest".into(),
-                                options: ta.ba.opts().into(),
-                                source: ToolSource::Argument,
-                            };
+                            let tvr =
+                                ToolRequest::new(ta.ba.clone(), "latest", ToolSource::Argument)?;
                             requests.push(tvr);
                         }
                     }
