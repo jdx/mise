@@ -70,6 +70,15 @@ pub(crate) enum ToolRequest {
 
 impl ToolRequest {
     pub(crate) fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
+        Self::new_opts(backend, s, ToolVersionOptions::default(), source)
+    }
+
+    pub(crate) fn new_opts(
+        backend: Arc<BackendArg>,
+        s: &str,
+        request_options: ToolVersionOptions,
+        source: ToolSource,
+    ) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
@@ -91,13 +100,14 @@ impl ToolRequest {
                 backend.short
             );
         }
+        let options = backend.resolve_opts_with_config_and_request(None, Some(request_options));
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 validate_ref_string(r)?;
                 Self::Ref {
                     ref_: r.to_string(),
                     ref_type: ref_type.to_string(),
-                    options: backend.resolve_opts_with_config_and_request(None, None),
+                    options,
                     backend,
                     source,
                 }
@@ -106,7 +116,7 @@ impl ToolRequest {
                 validate_version_string(p)?;
                 Self::Prefix {
                     prefix: p.to_string(),
-                    options: backend.resolve_opts_with_config_and_request(None, None),
+                    options,
                     backend,
                     source,
                 }
@@ -117,7 +127,7 @@ impl ToolRequest {
                 let path = resolve_path(&p, &source);
                 Self::Path {
                     path,
-                    options: backend.resolve_opts_with_config_and_request(None, None),
+                    options,
                     backend,
                     source,
                 }
@@ -128,7 +138,7 @@ impl ToolRequest {
                 validate_version_string(v)?;
                 Self::Sub {
                     sub: sub.to_string(),
-                    options: backend.resolve_opts_with_config_and_request(None, None),
+                    options,
                     orig_version: v.to_string(),
                     backend,
                     source,
@@ -137,7 +147,7 @@ impl ToolRequest {
             None => {
                 if s == "system" {
                     Self::System {
-                        options: backend.resolve_opts_with_config_and_request(None, None),
+                        options,
                         backend,
                         source,
                     }
@@ -145,7 +155,7 @@ impl ToolRequest {
                     validate_version_string(&s)?;
                     Self::Version {
                         version: s,
-                        options: backend.resolve_opts_with_config_and_request(None, None),
+                        options,
                         backend,
                         source,
                     }
@@ -153,17 +163,6 @@ impl ToolRequest {
             }
             _ => bail!("invalid tool version request: {s}"),
         })
-    }
-    pub(crate) fn new_opts(
-        backend: Arc<BackendArg>,
-        s: &str,
-        options: ToolVersionOptions,
-        source: ToolSource,
-    ) -> eyre::Result<Self> {
-        let resolved = backend.resolve_opts_with_config_and_request(None, Some(options));
-        let mut tvr = Self::new(backend, s, source)?;
-        *tvr.resolved_options_mut() = resolved;
-        Ok(tvr)
     }
 
     /// Construct an unvalidated version request for tests that exercise paths
@@ -268,20 +267,17 @@ impl ToolRequest {
         }
     }
 
-    /// Re-resolve this request through the canonical option precedence chain.
+    /// Apply matching configuration through the canonical option precedence chain.
     ///
     /// Request provenance is retained internally, so an explicit value that
     /// equals a backend default still overrides configuration.
-    pub(super) fn apply_option_layers(
-        &mut self,
-        config_options: Option<ToolVersionOptions>,
-    ) -> &mut Self {
+    pub(super) fn apply_config_options(&mut self, config_options: ToolVersionOptions) -> &mut Self {
         let request_options = self
             .resolved_options()
             .options_from_sources(&[ToolOptionSource::Request]);
         let resolved = self
             .ba()
-            .resolve_opts_with_config_and_request(config_options, Some(request_options));
+            .resolve_opts_with_config_and_request(Some(config_options), Some(request_options));
         *self.resolved_options_mut() = resolved;
         self
     }
