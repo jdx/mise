@@ -8,10 +8,10 @@
 
 List built-in backends
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise backends ls
+$ [1mmise backends ls[22m
 aqua
 asdf
 cargo

@@ -2,7 +2,6 @@
 # `mise bootstrap dotfiles status`
 
 - **Usage**: `mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`
-- **Aliases**: `ls`
 - **Effect**: read-only
 - **Source code**: [`src/cli/dotfiles/status.rs`](https://github.com/jdx/mise/blob/main/src/cli/dotfiles/status.rs)
 
@@ -25,11 +24,11 @@ Output in JSON format
 Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap dotfiles status
-mise bootstrap dotfiles status ~/.zshrc
-mise bootstrap dotfiles status --json
-mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+[1mmise bootstrap dotfiles status[22m
+[1mmise bootstrap dotfiles status ~/.zshrc[22m
+[1mmise bootstrap dotfiles status --json[22m
+[1mmise bootstrap dotfiles status --missing[22m # exit 1 if anything is out of sync
 ```

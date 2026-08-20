@@ -11,7 +11,11 @@ use petgraph::dot::Dot;
 
 /// Display a tree visualization of a dependency graph
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[command(
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP,
+    unknown_flags = "error"
+)]
 pub struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces

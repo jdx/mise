@@ -24,7 +24,7 @@ This is necessary if users may use a different version of mise outside the proje
 
 Specify mise version to fetch
 
-### `-w --write <WRITE>`
+### `-w --write [WRITE]`
 
 instead of outputting the script to stdout, write to a file and make it executable
 
@@ -45,13 +45,13 @@ Generated on every host, not only on Windows: the file is committed, and whoever
 on Windows is not the person who generated it. Requires `--write`, since stdout cannot
 carry two files.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise generate install-script --write ./bin/mise
-$ ./bin/mise install                                    # downloads mise to .mise if not already installed
+$ [1mmise generate bootstrap --write ./bin/mise[22m
+$ [1m./bin/mise install[22m                                    [2m# downloads mise to .mise if not already installed[22m
 
-# add a launcher for contributors who clone the project on Windows
-$ mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
-$ .\bin\mise.cmd install
+[2m# add a launcher for contributors who clone the project on Windows[22m
+$ [1mmise generate bootstrap --write ./bin/mise --windows[22m  [2m# also writes bin/mise.cmd[22m
+$ [1m.\bin\mise.cmd install[22m
 ```

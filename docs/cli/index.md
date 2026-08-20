@@ -3,6 +3,8 @@
 
 **Usage**: `mise [FLAGS] [TASK] <SUBCOMMAND>`
 
+**Author**: Jeff Dickey <@jdx>
+
 - **Usage**: `mise [FLAGS] [TASK] <SUBCOMMAND>`
 
 ## Arguments
@@ -26,6 +28,8 @@ Set the environment for loading `mise.<ENV>.toml`
 ### `-j --jobs <JOBS>`
 
 How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
+
+**Environment Variable:** `MISE_JOBS`
 
 ### `-q --quiet`
 
@@ -232,7 +236,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
-- [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
+- [`mise sync ruby <--brew>`](/cli/sync/ruby.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
 - [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.md)

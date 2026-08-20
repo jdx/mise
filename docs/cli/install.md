@@ -20,7 +20,8 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
 ### `[TOOL@VERSION]…`
 
-Tool(s) to install e.g.: node@20
+Tool(s) to install
+e.g.: node@20
 
 ## Flags
 
@@ -34,6 +35,8 @@ With no tools specified, reinstall all configured tools
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+
+**Environment Variable:** `MISE_JOBS`
 
 ### `-n --dry-run`
 
@@ -71,9 +74,12 @@ Install tools from every [monorepo].config_roots config root
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
 
+**Environment Variable:** `MISE_MONOREPO`
+
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies --jobs=1
 
 ### `--shared <SHARED>`
 
@@ -89,17 +95,12 @@ Install tool(s) to the system-wide shared directory
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
 
-This shares the install location between users; it does not put binaries on
-PATH for use without mise. Every user still needs mise to run these tools.
-For binaries usable without mise, see `mise install-into` or
-`[bootstrap.packages]`.
-
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise install node@20.0.0  # install specific node version
-mise install node@20      # install fuzzy node version
-mise install node         # install version specified in mise.toml
-mise install              # installs everything specified in mise.toml
-mise install --include-task-tools # also install tools required by tasks
+[1mmise install node@20.0.0[22m  # install specific node version
+[1mmise install node@20[22m      # install fuzzy node version
+[1mmise install node[22m         # install version specified in mise.toml
+[1mmise install[22m              # installs everything specified in mise.toml
+[1mmise install --include-task-tools[22m # also install tools required by tasks
 ```

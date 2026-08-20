@@ -61,6 +61,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Perform a dry run, showing what would be installed and modified without making changes
@@ -69,7 +71,8 @@ Perform a dry run, showing what would be installed and modified without making c
 
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following the rules above.
+If a directory is specified, it will look for a config file in that directory following
+the rules above.
 
 ### `--dry-run-code`
 
@@ -104,29 +107,30 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies `--jobs=1`
 
 ### `--remove… <TOOL>`
 
 Remove the tool(s) from config file
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # run with no arguments to use the interactive selector
-$ mise use
+$ [1mmise use[22m
 
 # set the current version of node to 20.x in mise.toml of current directory
 # will write the fuzzy version (e.g.: 20)
-$ mise use node@20
+$ [1mmise use node@20[22m
 
 # set the current version of node to 20.x in ~/.config/mise/config.toml
 # will write the precise version (e.g.: 20.0.0)
-$ mise use -g --pin node@20
+$ [1mmise use -g --pin node@20[22m
 
 # sets .mise.local.toml (which is intended not to be committed to a project)
-$ mise use --env local node@20
+$ [1mmise use --env local node@20[22m
 
 # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-$ mise use --env staging node@20
+$ [1mmise use --env staging node@20[22m
 ```

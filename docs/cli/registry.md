@@ -35,16 +35,18 @@ Output in JSON format
 
 Include security features for each tool's backends in JSON output.
 
-Requires --json. Security info is de-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
+Requires --json. Security info is de-duplicated across
+all of a tool's backends. This can add noticeable time for large
+listings since each backend's security info is resolved individually.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise registry
+$ [1mmise registry[22m
 node    core:node
 poetry  asdf:mise-plugins/mise-poetry
 ubi     cargo:ubi-cli
 
-$ mise registry poetry
+$ [1mmise registry poetry[22m
 asdf:mise-plugins/mise-poetry
 ```

@@ -41,28 +41,29 @@ Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
 Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following the rules above.
+If a directory is specified, it will look for a config file in that directory following
+the rules above.
 
 ### `--no-prune`
 
 Do not also prune the installed version
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # will uninstall specific version
-$ mise unuse node@18.0.0
+$ [1mmise unuse node@18.0.0[22m
 
 # will uninstall specific version from global config
-$ mise unuse -g node@18.0.0
+$ [1mmise unuse -g node@18.0.0[22m
 
 # will uninstall specific version from .mise.local.toml
-$ mise unuse --env local node@20
+$ [1mmise unuse --env local node@20[22m
 
 # will uninstall specific version from .mise.staging.toml
-$ mise unuse --env staging node@20
+$ [1mmise unuse --env staging node@20[22m
 ```

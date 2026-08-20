@@ -21,10 +21,11 @@ Check if the configs are formatted, no formatting is done
 
 ### `-s --stdin`
 
-Read config from stdin and write its formatted version into stdout
+Read config from stdin and write its formatted version into
+stdout
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise fmt
+[1mmise fmt[22m
 ```

@@ -2,7 +2,6 @@
 # `mise bootstrap`
 
 - **Usage**: `mise bootstrap [FLAGS] [SUBCOMMAND]`
-- **Aliases**: `bs`
 - **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
@@ -84,7 +83,8 @@ Overwrite existing files that conflict with whole-file dotfile entries
 
 Run only one or more bootstrap parts
 
-Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
+Can be passed multiple times or as a comma-separated list.
+Cannot be used with `--skip`.
 
 **Choices:**
 
@@ -98,13 +98,9 @@ Can be passed multiple times or as a comma-separated list. Cannot be used with `
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
-- `shell`
 - `macos-defaults`
-- `defaults`
 - `macos-launchd-agents`
-- `launchd`
 - `linux-systemd-units`
-- `systemd`
 - `user`
 - `tools`
 - `task`
@@ -132,13 +128,9 @@ Can be passed multiple times or as a comma-separated list.
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
-- `shell`
 - `macos-defaults`
-- `defaults`
 - `macos-launchd-agents`
-- `launchd`
 - `linux-systemd-units`
-- `systemd`
 - `user`
 - `tools`
 - `task`
@@ -165,21 +157,21 @@ Refresh package manager metadata and update configured repos
 - [`mise bootstrap status [FLAGS]`](/cli/bootstrap/status.md)
 - [`mise bootstrap user <SUBCOMMAND>`](/cli/bootstrap/user.md)
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
-mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
-mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
-mise bootstrap --only tools       # run just tool installation
-mise bootstrap status --missing
-mise bootstrap packages apply --yes
-mise bootstrap repos status
-mise bootstrap repos apply --dry-run
-mise bootstrap dotfiles status
-mise bootstrap mise-shell-activate apply --dry-run
-mise bootstrap macos defaults status
-mise bootstrap macos launchd-agents apply --dry-run
-mise bootstrap linux systemd-units apply --dry-run
-mise bootstrap user apply --dry-run
+[1mmise bootstrap[22m                    # packages + repos + dotfiles + tools + bootstrap task
+[1mmise bootstrap --force-dotfiles[22m   # replace conflicting dotfile targets
+[1mmise bootstrap --skip tools,task[22m  # skip tool installation and the bootstrap task
+[1mmise bootstrap --only tools[22m       # run just tool installation
+[1mmise bootstrap status --missing[22m
+[1mmise bootstrap packages apply --yes[22m
+[1mmise bootstrap repos status[22m
+[1mmise bootstrap repos apply --dry-run[22m
+[1mmise bootstrap dotfiles status[22m
+[1mmise bootstrap mise-shell-activate apply --dry-run[22m
+[1mmise bootstrap macos defaults status[22m
+[1mmise bootstrap macos launchd-agents apply --dry-run[22m
+[1mmise bootstrap linux systemd-units apply --dry-run[22m
+[1mmise bootstrap user apply --dry-run[22m
 ```

@@ -47,10 +47,10 @@ Only show requested versions
 
 Only show tool options
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise tool node
+$ [1mmise tool node[22m
 Backend:            core
 Installed Versions: 20.0.0 22.0.0
 Active Version:     20.0.0

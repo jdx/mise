@@ -13,16 +13,17 @@ Used for building a tool to a directory for use outside of mise
 
 ### `<TOOL@VERSION>`
 
-Tool to install e.g.: node@20
+Tool to install
+e.g.: node@20
 
 ### `<PATH>`
 
 Path to install the tool into
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # install node@20.0.0 into ./mynode
-$ mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
+$ [1mmise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v[22m
 20.0.0
 ```

@@ -49,7 +49,9 @@ Use this to pin to a specific version (e.g., "2025.1.0").
 
 Checksum algorithm to use when downloading artifacts
 
-Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lock` or `--skip-download` because those modes do not calculate checksums.
+Accepts `blake3` or `sha256` and defaults to `blake3`.
+Cannot be used with `--lock` or `--skip-download` because those modes do not
+calculate checksums.
 
 **Choices:**
 
@@ -62,7 +64,8 @@ Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lo
 
 Fetch checksums and sizes for an existing tool stub file
 
-This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
+This reads an existing stub file and fills in any missing checksum/size fields
+by downloading the files. URLs must already be present in the stub.
 
 ### `--http <HTTP>`
 
@@ -72,7 +75,8 @@ HTTP backend type to use
 
 ### `--lock`
 
-Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
+Resolve and embed lockfile data (exact version + platform URLs/checksums)
+into an existing stub file for reproducible installs without runtime API calls
 
 ### `--platform-bin… <PLATFORM_BIN>`
 
@@ -84,11 +88,15 @@ Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
 
 Platform-specific URLs in the format platform:url or just url (auto-detect platform)
 
-When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
+When the output file already exists, new platforms will be appended to the existing
+platforms table. Existing platform URLs will be updated if specified again.
 
-If only a URL is provided (without platform:), the platform will be automatically detected from the URL filename.
+If only a URL is provided (without platform:), the platform will be automatically
+detected from the URL filename.
 
-Examples: --platform-url linux-x64:https://... --platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
+Examples:
+--platform-url linux-x64:https://...
+--platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
 
 ### `--skip-download`
 
@@ -106,53 +114,53 @@ Version of the tool
 
 **Default:** `latest`
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 Generate a tool stub for a single URL:
-$ mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"
+$ [1mmise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_amd64.tar.gz"[22m
 
 Generate a tool stub with platform-specific URLs:
-$ mise generate tool-stub ./bin/rg \
+$ [1mmise generate tool-stub ./bin/rg \
     --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-    --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+    --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz[22m
 
 Append additional platforms to an existing stub:
-$ mise generate tool-stub ./bin/rg \
-    --platform-url linux-x64:https://example.com/rg-linux.tar.gz
-$ mise generate tool-stub ./bin/rg \
-    --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz
+$ [1mmise generate tool-stub ./bin/rg \
+    --platform-url linux-x64:https://example.com/rg-linux.tar.gz[22m
+$ [1mmise generate tool-stub ./bin/rg \
+    --platform-url darwin-arm64:https://example.com/rg-darwin.tar.gz[22m
 # The stub now contains both platforms
 
 Use auto-detection for platform from URL:
-$ mise generate tool-stub ./bin/node \
-    --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
+$ [1mmise generate tool-stub ./bin/node \
+    --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz[22m
 # Platform 'macos-arm64' will be auto-detected from the URL
 
 Generate with platform-specific binary paths:
-$ mise generate tool-stub ./bin/tool \
+$ [1mmise generate tool-stub ./bin/tool \
     --platform-url linux-x64:https://example.com/tool-linux.tar.gz \
     --platform-url windows-x64:https://example.com/tool-windows.zip \
-    --platform-bin windows-x64:tool.exe
+    --platform-bin windows-x64:tool.exe[22m
 
 Generate without downloading (faster):
-$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download
+$ [1mmise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --skip-download[22m
 
 Fetch checksums for an existing stub:
-$ mise generate tool-stub ./bin/jq --fetch
+$ [1mmise generate tool-stub ./bin/jq --fetch[22m
 # This will read the existing stub and download files to fill in any missing checksums/sizes
 
 Generate a bootstrap stub that installs mise if needed:
-$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap
+$ [1mmise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap[22m
 # The stub will check for mise and install it automatically before running the tool
 
 Generate a bootstrap stub with a pinned mise version:
-$ mise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0
+$ [1mmise generate tool-stub ./bin/tool --url "https://example.com/tool.tar.gz" --bootstrap --bootstrap-version 2025.1.0[22m
 
 Lock an existing tool stub with pinned version and platform URLs/checksums:
-$ mise generate tool-stub ./bin/node --lock
+$ [1mmise generate tool-stub ./bin/node --lock[22m
 
 Bump the version in a locked stub:
-$ mise generate tool-stub ./bin/node --lock --version 22
+$ [1mmise generate tool-stub ./bin/node --lock --version 22[22m
 # Resolves the latest node 22.x, pins it, and updates platform URLs/checksums
 ```

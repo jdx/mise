@@ -41,7 +41,12 @@ use crate::{config, env, exit, file};
 ///
 /// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_alias = "u", after_long_help = AFTER_LONG_HELP)]
+#[command(
+    verbatim_doc_comment,
+    visible_alias = "u",
+    after_long_help = AFTER_LONG_HELP,
+    unknown_flags = "error"
+)]
 pub struct Use {
     /// Tool(s) to add to config file
     ///

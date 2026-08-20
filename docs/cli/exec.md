@@ -19,7 +19,8 @@ The "--" separates runtimes from the commands to pass along to the subprocess.
 
 ### `[TOOL@VERSION]…`
 
-Tool(s) to start e.g.: node@20 python@3.10
+Tool(s) to start
+e.g.: node@20 python@3.10
 
 ### `[-- COMMAND]…`
 
@@ -27,7 +28,7 @@ Command string to execute (same as --command)
 
 ## Flags
 
-### `-c --command <C>`
+### `-c --command <COMMAND>`
 
 Command string to execute
 
@@ -36,6 +37,8 @@ Command string to execute
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+
+**Environment Variable:** `MISE_JOBS`
 
 ### `--allow-env… <VAR>`
 
@@ -85,17 +88,18 @@ Skip automatic dependency preparation
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies --jobs=1
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
-$ mise x node@20 -- node ./app.js     # shorter alias
+$ [1mmise exec node@20 -- node ./app.js[22m  # launch app.js using node-20.x
+$ [1mmise x node@20 -- node ./app.js[22m     # shorter alias
 
 # Specify command as a string:
-$ mise exec node@20 python@3.11 --command "node -v && python -V"
+$ [1mmise exec node@20 python@3.11 --command "node -v && python -V"[22m
 
 # Run a command in a different directory:
-$ mise x -C /path/to/project node@20 -- node ./app.js
+$ [1mmise x -C /path/to/project node@20 -- node ./app.js[22m
 ```

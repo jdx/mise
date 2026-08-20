@@ -28,8 +28,8 @@ The value to set (optional if provided as KEY=VALUE)
 
 Use the local config file instead of the global one
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise settings idiomatic_version_file=true
+[1mmise settings idiomatic_version_file=true[22m
 ```

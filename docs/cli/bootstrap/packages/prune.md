@@ -32,11 +32,11 @@ Print what would be removed without deleting anything
 
 Skip the confirmation prompt
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap packages prune --manager brew
-mise bootstrap packages prune --manager brew --dry-run
-mise bootstrap packages prune --manager brew --yes
-mise bootstrap packages prune --manager brew-cask --dry-run
+[1mmise bootstrap packages prune --manager brew[22m
+[1mmise bootstrap packages prune --manager brew --dry-run[22m
+[1mmise bootstrap packages prune --manager brew --yes[22m
+[1mmise bootstrap packages prune --manager brew-cask --dry-run[22m
 ```

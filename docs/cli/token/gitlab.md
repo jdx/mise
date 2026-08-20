@@ -5,7 +5,10 @@
 - **Effect**: read-only
 - **Source code**: [`src/cli/token/gitlab.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/gitlab.rs)
 
-GitLab token
+Display the GitLab token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 
 ## Arguments
 
@@ -21,15 +24,15 @@ GitLab hostname
 
 Show the full unmasked token
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise token gitlab
+$ [1mmise token gitlab[22m
 gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
 
-$ mise token gitlab --unmask
+$ [1mmise token gitlab --unmask[22m
 gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
 
-$ mise token gitlab gitlab.mycompany.com
+$ [1mmise token gitlab gitlab.mycompany.com[22m
 gitlab.mycompany.com: (none)
 ```

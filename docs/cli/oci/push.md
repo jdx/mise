@@ -37,7 +37,9 @@ Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
 
 Reuse unchanged tool layers from this image instead of the destination ref
 
-Must live in the same repository as the destination. Useful when each push gets a unique tag (e.g. per-commit tags in CI): `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+Must live in the same repository as the destination. Useful when each
+push gets a unique tag (e.g. per-commit tags in CI):
+`--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
 
 ### `--from <FROM>`
 
@@ -69,32 +71,37 @@ Don't embed the mise binary (ignored with --image-dir)
 
 UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+omitted, it defaults to UID. This affects file ownership only; [oci].user
+controls the image USER directive.
 
 ### `--update-index`
 
 Maintain the tag as a multi-arch image index
 
-Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
+Pushes this build's manifest by digest and points the tag at an OCI
+image index containing one entry per platform, preserving entries
+other architectures pushed. Run `mise oci push --update-index` from
+one runner per platform to assemble a multi-arch tag.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 Build and push to GHCR:
-$ mise oci push ghcr.io/me/devenv:latest
+$ [1mmise oci push ghcr.io/me/devenv:latest[22m
 
 Push an image built earlier:
-$ mise oci build -o ./img
-$ mise oci push --image-dir ./img ghcr.io/me/devenv:v1
+$ [1mmise oci build -o ./img[22m
+$ [1mmise oci push --image-dir ./img ghcr.io/me/devenv:v1[22m
 ```
 
-Auth:
+[1m[4mAuth:[22m[24m
 
 ```
 Credentials are resolved the same way docker/podman resolve them:
-$REGISTRY_AUTH_FILE, $XDG_RUNTIME_DIR/containers/auth.json,
-~/.config/containers/auth.json, then ~/.docker/config.json
+[1m$REGISTRY_AUTH_FILE[22m, [1m$XDG_RUNTIME_DIR/containers/auth.json[22m,
+[1m~/.config/containers/auth.json[22m, then [1m~/.docker/config.json[22m
 (inline auths and credential helpers). Log in with either:
-$ docker login ghcr.io
-$ podman login ghcr.io
+$ [1mdocker login ghcr.io[22m
+$ [1mpodman login ghcr.io[22m
 ```

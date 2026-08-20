@@ -40,17 +40,17 @@ Match type: equal, contains, or fuzzy
 
 Don't display headers
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise search jq
+$ [1mmise search jq[22m
 Tool  Description
 jq    Command-line JSON processor. https://github.com/jqlang/jq
 jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp
 jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq
 gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq
 
-$ mise search --interactive
+$ [1mmise search --interactive[22m
 Tool
 Search a tool
 ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq

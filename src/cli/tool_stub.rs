@@ -623,17 +623,21 @@ async fn execute_with_tool_request(
 /// and execution.
 ///
 /// A tool stub consists of:
+///
 /// - A shebang line: #!/usr/bin/env -S mise tool-stub
 /// - TOML configuration specifying the tool, version, and options
 /// - Optional comments describing the tool's purpose
 ///
 /// Example stub file:
-///   #!/usr/bin/env -S mise tool-stub
-///   # Node.js v20 development environment
-///   
-///   tool = "node"
-///   version = "20.0.0"
-///   bin = "node"
+///
+/// ```toml
+/// #!/usr/bin/env -S mise tool-stub
+/// # Node.js v20 development environment
+///
+/// tool = "node"
+/// version = "20.0.0"
+/// bin = "node"
+/// ```
 ///
 /// The stub will automatically install the specified tool version if missing
 /// and execute it with any arguments passed to the stub.
@@ -647,7 +651,7 @@ pub struct ToolStub {
     /// The stub file must contain TOML configuration specifying the tool
     /// and version to run. At minimum, it should specify a 'version' field.
     /// Other common fields include 'tool', 'bin', and backend-specific options.
-    #[arg(value_name = "FILE")]
+    #[arg(value_name = "FILE", double_dash = "automatic")]
     pub file: PathBuf,
 
     /// Arguments to pass to the tool

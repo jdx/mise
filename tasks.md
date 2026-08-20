@@ -5,6 +5,12 @@
 
 Build the project
 
+## `build-usage`
+
+- **Usage**: `build-usage`
+
+Build the usage CLI matching the generated spec dialect
+
 ## `ci`
 
 - Depends: format, build, test
@@ -180,7 +186,7 @@ Render JSON schema
 
 ## `render:usage`
 
-- Depends: build
+- Depends: build, build-usage
 
 - **Usage**: `render:usage`
 

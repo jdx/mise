@@ -26,8 +26,8 @@ The value to set (optional if provided as KEY=VALUE)
 
 Use the local config file instead of the global one
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise settings add disable_hints python_multi
+[1mmise settings add disable_hints python_multi[22m
 ```

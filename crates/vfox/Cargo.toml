@@ -65,7 +65,9 @@ xx = { version = "2", default-features = false, features = [
 
 # cli dependencies
 env_logger = { version = "0.11", optional = true }
-usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "d116b89e0f36f5b5a241300b7e286eb77b47ac58", features = ["diagnostics"], optional = true }
+usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "f55d71685720d9bdeef505fce7bacfb77fcb89cf", features = [
+  "diagnostics",
+], optional = true }
 tempfile = "3"
 mise-sigstore = { path = "../mise-sigstore", default-features = false }
 

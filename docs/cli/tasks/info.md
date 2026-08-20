@@ -19,16 +19,16 @@ Name of the task to get information about
 
 Output in JSON format
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise tasks info
+$ [1mmise tasks info[22m
 Name: test
 Aliases: t
 Description: Test the application
 Source: ~/src/myproj/mise.toml
 
-$ mise tasks info test --json
+$ [1mmise tasks info test --json[22m
 {
   "name": "test",
   "aliases": "t",

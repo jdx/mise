@@ -43,8 +43,8 @@ root directory to search for tasks
 
 **Default:** `simple`
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise generate task-docs
+[1mmise generate task-docs[22m
 ```

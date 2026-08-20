@@ -56,24 +56,24 @@ Requires --json and --no-versions-host.
 This prevents metadata consumers from accepting empty fallback results
 when a backend's metadata-producing upstream request fails.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise ls-remote node
+$ [1mmise ls-remote node[22m
 18.0.0
 20.0.0
 
-$ mise ls-remote node@20
+$ [1mmise ls-remote node@20[22m
 20.0.0
 20.1.0
 
-$ mise ls-remote node 20
+$ [1mmise ls-remote node 20[22m
 20.0.0
 20.1.0
 
-$ mise ls-remote node --minimum-release-age 2024-01-01
+$ [1mmise ls-remote node --minimum-release-age 2024-01-01[22m
 20.0.0
 
-$ mise ls-remote github:cli/cli --json
+$ [1mmise ls-remote github:cli/cli --json[22m
 [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
 ```

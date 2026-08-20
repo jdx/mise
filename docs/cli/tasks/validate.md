@@ -24,33 +24,33 @@ Only show errors (skip warnings)
 
 Output validation results in JSON format
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # Validate all tasks
-$ mise tasks validate
+$ [1mmise tasks validate[22m
 
 # Validate specific tasks
-$ mise tasks validate build test
+$ [1mmise tasks validate build test[22m
 
 # Output results as JSON
-$ mise tasks validate --json
+$ [1mmise tasks validate --json[22m
 
 # Only show errors (skip warnings)
-$ mise tasks validate --errors-only
+$ [1mmise tasks validate --errors-only[22m
 ```
 
-Validation Checks:
+[1m[4mValidation Checks:[22m[24m
 
 The validate command performs the following checks:
 
-  • Circular Dependencies: Detects dependency cycles
-  • Missing References: Finds references to nonexistent tasks
-  • Usage Spec Parsing: Validates #USAGE directives and specs
-  • Timeout Format: Checks timeout values are valid durations
-  • Alias Conflicts: Detects duplicate aliases across tasks
-  • File Existence: Verifies file-based tasks exist
-  • Directory Templates: Validates directory paths and templates
-  • Shell Commands: Checks shell executables exist
-  • Glob Patterns: Validates source and output patterns
-  • Run Entries: Ensures tasks reference valid dependencies
+  • [1mCircular Dependencies[22m: Detects dependency cycles
+  • [1mMissing References[22m: Finds references to nonexistent tasks
+  • [1mUsage Spec Parsing[22m: Validates #USAGE directives and specs
+  • [1mTimeout Format[22m: Checks timeout values are valid durations
+  • [1mAlias Conflicts[22m: Detects duplicate aliases across tasks
+  • [1mFile Existence[22m: Verifies file-based tasks exist
+  • [1mDirectory Templates[22m: Validates directory paths and templates
+  • [1mShell Commands[22m: Checks shell executables exist
+  • [1mGlob Patterns[22m: Validates source and output patterns
+  • [1mRun Entries[22m: Ensures tasks reference valid dependencies

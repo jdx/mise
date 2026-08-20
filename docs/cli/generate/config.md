@@ -27,12 +27,12 @@ Show what would be generated without writing to file
 
 Path to a .tool-versions file to import tools from
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise generate config             # generate mise.toml interactively
-mise generate config .mise.toml  # generate a specific file
-mise generate config -g          # generate the global config file
-mise generate config -y          # skip interactive editor
-mise generate config -n          # preview without writing
+[1mmise generate config[22m             [2m# generate mise.toml interactively[22m
+[1mmise generate config .mise.toml[22m  [2m# generate a specific file[22m
+[1mmise generate config -g[22m          [2m# generate the global config file[22m
+[1mmise generate config -y[22m          [2m# skip interactive editor[22m
+[1mmise generate config -n[22m          [2m# preview without writing[22m
 ```

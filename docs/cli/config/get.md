@@ -15,7 +15,7 @@ The path of the config to display
 
 ## Flags
 
-### `-f --file <FILE>`
+### `-f --file --path <FILE>`
 
 The path to the mise.toml file to read
 
@@ -23,9 +23,9 @@ Can be a file path or directory. If a directory is provided, the config file in 
 
 If not provided, the nearest mise.toml file will be used
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise toml get tools.python
+$ [1mmise toml get tools.python[22m
 3.12
 ```

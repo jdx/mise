@@ -46,19 +46,19 @@ Values below 1 are treated as 1
 
 Show installation output
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # install the poetry via shorthand
-$ mise plugins install poetry
+$ [1mmise plugins install poetry[22m
 
 # install the poetry plugin using a specific git url
-$ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git
+$ [1mmise plugins install poetry https://github.com/mise-plugins/mise-poetry.git[22m
 
 # install the poetry plugin using the git url only
 # (poetry is inferred from the url)
-$ mise plugins install https://github.com/mise-plugins/mise-poetry.git
+$ [1mmise plugins install https://github.com/mise-plugins/mise-poetry.git[22m
 
 # install the poetry plugin using a specific ref
-$ mise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e
+$ [1mmise plugins install poetry https://github.com/mise-plugins/mise-poetry.git#11d0c1e[22m
 ```

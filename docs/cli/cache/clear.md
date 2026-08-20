@@ -12,7 +12,8 @@ Deletes all cache files in mise
 
 ### `[TOOL]…`
 
-Tool(s) to clear cache for e.g.: node, python
+Tool(s) to clear cache for
+e.g.: node, python
 
 ## Flags
 

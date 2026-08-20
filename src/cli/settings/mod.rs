@@ -31,7 +31,20 @@ enum Commands {
 }
 
 impl Commands {
-    pub(crate) fn run(self) -> Result<()> {
+    fn inherit_local(&mut self, local: bool) {
+        if !local {
+            return;
+        }
+        match self {
+            Self::Add(cmd) => cmd.local = true,
+            Self::Get(cmd) => cmd.local = true,
+            Self::Ls(cmd) => cmd.local = true,
+            Self::Set(cmd) => cmd.local = true,
+            Self::Unset(cmd) => cmd.local = true,
+        }
+    }
+
+    pub fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => cmd.run(),
             Self::Get(cmd) => cmd.run(),
@@ -43,8 +56,9 @@ impl Commands {
 }
 
 impl Settings {
-    pub(crate) async fn run(self) -> Result<()> {
-        let cmd = self.command.unwrap_or_else(|| {
+    pub async fn run(self) -> Result<()> {
+        let parent_local = self.ls.local;
+        let mut cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {
                 Commands::Set(set::SettingsSet {
                     setting: self.ls.setting.unwrap(),
@@ -68,6 +82,7 @@ impl Settings {
                 Commands::Ls(self.ls)
             }
         });
+        cmd.inherit_local(parent_local);
 
         cmd.run()
     }

@@ -24,10 +24,10 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 Default: 4
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise plugins update              # update all plugins
-mise plugins update cmake       # update only cmake
-mise plugins update cmake#beta  # specify a ref
+[1mmise plugins update[22m              # update all plugins
+[1mmise plugins update cmake[22m       # update only cmake
+[1mmise plugins update cmake#beta[22m  # specify a ref
 ```

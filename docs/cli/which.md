@@ -30,15 +30,15 @@ Show the plugin name instead of the path
 
 Show the version instead of the path
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise which node
+$ [1mmise which node[22m
 /home/username/.local/share/mise/installs/node/20.0.0/bin/node
 
-$ mise which node --plugin
+$ [1mmise which node --plugin[22m
 node
 
-$ mise which node --version
+$ [1mmise which node --version[22m
 20.0.0
 ```

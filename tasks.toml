@@ -60,9 +60,18 @@ for i in $(ls -1 tapes/*.tape); do
 done
 """
 
+[build-usage]
+description = "Build the usage CLI matching the generated spec dialect"
+run = [
+  "rustup toolchain install 1.95 --profile minimal",
+  "cargo +1.95 install --locked --git https://github.com/jdx/usage --rev f55d71685720d9bdeef505fce7bacfb77fcb89cf --root target/usage-cli usage-cli",
+]
+sources = ["Cargo.lock", "tasks.toml"]
+outputs = ["target/usage-cli/bin/usage"]
+
 ["render:usage"]
 description = 'Generate usage documentation'
-depends = ["build"]
+depends = ["build", "build-usage"]
 env = { CLICOLOR_FORCE = "0" }
 run = [
   "mise usage > mise.usage.kdl",
@@ -144,7 +153,7 @@ env = { CARGO_TERM_COLOR = "always", "RUST_TEST_THREADS" = "1" }
 
 ["test:e2e"]
 description = "run end-to-end tests"
-depends = ["build"]
+depends = ["build", "build-usage"]
 run = "e2e/run_all_tests"
 
 ["test:shuffle"]

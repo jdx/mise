@@ -13,7 +13,7 @@ Print the current PATH entries mise is providing
 
 Print all entries including those not provided by mise
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 Get the current PATH entries mise is providing

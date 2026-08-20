@@ -27,12 +27,12 @@ Show what would be generated without writing to file
 
 Path to a .tool-versions file to import tools from
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise edit             # edit mise.toml interactively
-mise edit .mise.toml  # edit a specific file
-mise edit -g          # edit the global config file
-mise edit -y          # skip interactive editor
-mise edit -n          # preview without writing
+[1mmise edit[22m             [2m# edit mise.toml interactively[22m
+[1mmise edit .mise.toml[22m  [2m# edit a specific file[22m
+[1mmise edit -g[22m          [2m# edit the global config file[22m
+[1mmise edit -y[22m          [2m# skip interactive editor[22m
+[1mmise edit -n[22m          [2m# preview without writing[22m
 ```

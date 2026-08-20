@@ -23,7 +23,7 @@ Write to the global config (~/.config/mise/config.toml)
 
 ### `-m --manager <MANAGER>`
 
-Only import packages for this manager. Currently only `brew` is supported
+Only import packages for this manager. Currently only `brew` is supported.
 
 **Choices:**
 
@@ -39,15 +39,15 @@ Import every linked formula, including dependencies
 
 Print the config change without writing config
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Write to this config file or directory
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap packages import --manager brew
-mise bootstrap packages import --manager brew --all
-mise bootstrap packages import --manager brew --global
-mise bootstrap packages import --manager brew --dry-run
+[1mmise bootstrap packages import --manager brew[22m
+[1mmise bootstrap packages import --manager brew --all[22m
+[1mmise bootstrap packages import --manager brew --global[22m
+[1mmise bootstrap packages import --manager brew --dry-run[22m
 ```
