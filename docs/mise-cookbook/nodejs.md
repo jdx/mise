@@ -106,12 +106,18 @@ echo "NODE_ENV: $NODE_ENV"
 
 ## Example with `pnpm`
 
-This example uses `pnpm` as the package manager. It expects the `packageManager` field in
+This example uses `pnpm` as the package manager. It expects the `devEngines.packageManager` field in
 `package.json` to pin the pnpm version:
 
 ```json [package.json]
 {
-  "packageManager": "pnpm@10.15.0"
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "^11.22.0",
+      "onFail": "download"
+    }
+  }
 }
 ```
 
