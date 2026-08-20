@@ -1503,7 +1503,10 @@ For local and monorepo task discovery, mise uses the nearest config file that de
 `task_config.includes`. When the parent has `task_config.cascade = true`, its includes are inherited
 until a child defines its own. A child config's `includes` replaces both the defaults and any
 inherited `includes` for that directory.
-Global config files are loaded independently, so each global config file uses its own `task_config.includes` or the default directories if `includes` is unset.
+User-global config files form one config scope, as do system config files. Within each scope, the
+highest-precedence config that defines `task_config.includes` replaces lower-precedence includes and
+the default directories. User-global and system scopes remain independent, so user includes do not
+remove tasks provided by the system config.
 
 Entries are evaluated in order, and when more than one include defines a task with the same name the **last** entry in the list wins.
 This applies uniformly to directory, toml-file, and `git::` includes, so to override a task coming from a `git::` include with a local one, list the local directory after the `git::` entry:

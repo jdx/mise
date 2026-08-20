@@ -3969,49 +3969,56 @@ fn discover_monorepo_subdirs(
 }
 
 async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
-    // User-global config overrides system config. Within each group the path
-    // lists are lowest-first, so reverse them before applying first-wins task
-    // precedence.
-    let config_paths = global_config_files()
-        .into_iter()
-        .rev()
-        .chain(system_config_files().into_iter().rev())
-        .collect::<Vec<_>>();
-    let configs = config_paths
-        .iter()
-        .filter_map(|path| {
-            config.config_files.get(path).or_else(|| {
-                let path = file::desymlink_path(path);
-                config
-                    .config_files
-                    .iter()
-                    .find(|(loaded, _)| file::desymlink_path(loaded) == path)
-                    .map(|(_, cf)| cf)
+    // User-global config overrides system config. Compose each group as one
+    // config scope so task_config fields follow the same override semantics as
+    // local config files. Keep the groups separate so a user include does not
+    // remove tasks provided by the system config.
+    let mut seen_configs = BTreeSet::new();
+    let mut config_groups = vec![];
+    for config_paths in [global_config_files(), system_config_files()] {
+        let configs = config_paths
+            .iter()
+            .rev()
+            .filter_map(|path| {
+                config.config_files.get(path).or_else(|| {
+                    let path = file::desymlink_path(path);
+                    config
+                        .config_files
+                        .iter()
+                        .find(|(loaded, _)| file::desymlink_path(loaded) == path)
+                        .map(|(_, cf)| cf)
+                })
             })
-        })
-        .unique_by(|cf| file::desymlink_path(cf.get_path()))
-        .collect::<Vec<_>>();
+            .filter(|cf| seen_configs.insert(file::desymlink_path(cf.get_path())))
+            .collect::<Vec<_>>();
+        if !configs.is_empty() {
+            config_groups.push(configs);
+        }
+    }
 
-    // Global config files keep independent task include sets. Aggregate their
-    // results high-to-low. When a lower config supplies the first inline
-    // definition for a script already rediscovered by a higher config, apply
-    // only that inline metadata to the higher script so its config context is
-    // preserved.
+    // Aggregate the user and system scopes high-to-low. When the lower scope
+    // supplies the first inline definition for a script rediscovered by the
+    // higher scope, apply only that inline metadata to the higher script so its
+    // config context is preserved.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
-    for cf in configs {
+    for configs in config_groups {
+        let config_root = configs
+            .first()
+            .expect("global config group should not be empty")
+            .config_root();
         let sources = load_task_sources_from_configs(
             config,
-            &cf.config_root(),
-            vec![cf],
+            &config_root,
+            configs,
             templates,
             false,
             None,
             Some(&mut rendered_file_tasks),
         )
         .await?;
-        rendered_file_tasks.finish_config();
+        rendered_file_tasks.finish_scope();
         let mut inline_tasks = IndexMap::new();
         for task in &sources.config_tasks {
             inline_tasks
@@ -4723,7 +4730,7 @@ impl RenderedTaskCache {
         self.current_config.insert(key, task);
     }
 
-    fn finish_config(&mut self) {
+    fn finish_scope(&mut self) {
         for (key, task) in self.current_config.drain() {
             self.previous_configs.entry(key).or_insert(task);
         }
@@ -4776,9 +4783,9 @@ async fn load_tasks_from_configs(
 
 /// Load file and inline task sources without merging them.
 ///
-/// Global configs use this boundary because each config has independent file
-/// includes, while inline metadata may still need to decorate a script selected
-/// from a higher-precedence config.
+/// Global user and system scopes use this boundary because inline metadata from
+/// the lower scope may still need to decorate a script selected from the
+/// higher-precedence scope.
 async fn load_task_sources_from_configs(
     config: &Arc<Config>,
     dir: &Path,
