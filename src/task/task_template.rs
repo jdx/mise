@@ -205,11 +205,14 @@ impl Task {
         // `quiet = false` but gets overridden by a template's `quiet = true`. Users
         // must explicitly set these in their task if needed.
 
-        // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
-        if matches!(self.silent, Silent::Off)
+        // Preserve whether `silent = false` was explicitly selected. The resolved
+        // value alone cannot distinguish that from an omitted `silent` field, and
+        // overlays need the same provenance after a template is applied.
+        if !self.toml_bool_presence.silent
             && let Some(ref silent) = template.silent
         {
             self.silent = silent.clone();
+            self.toml_bool_presence.record("silent");
         }
 
         // usage: use template only if local is empty
