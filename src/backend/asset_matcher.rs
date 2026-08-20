@@ -752,16 +752,65 @@ fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
 
 fn asset_name_stem(asset: &str) -> String {
     let mut name = asset.rsplit('/').next().unwrap_or(asset).to_lowercase();
-    let suffixes = [
-        ".tar.gz", ".tar.xz", ".tar.bz2", ".tar.zst", ".tgz", ".txz", ".tzst", ".tar", ".zip",
-        ".gz", ".xz", ".bz2", ".zst", ".phar", ".jar", ".pyz", ".exe", ".msi",
-    ];
-
-    if let Some(suffix) = suffixes.iter().find(|suffix| name.ends_with(*suffix)) {
+    if let Some(suffix_len) = extraction_suffix_len(&name) {
+        name.truncate(name.len() - suffix_len);
+        return name;
+    }
+    // Runtime/installer suffixes are not ExtractionFormats but still need to
+    // be stripped so preferred_name matching sees the same stem as archives.
+    const EXTRA_SUFFIXES: [&str; 5] = [".phar", ".jar", ".pyz", ".exe", ".msi"];
+    if let Some(suffix) = EXTRA_SUFFIXES.iter().find(|suffix| name.ends_with(*suffix)) {
         name.truncate(name.len() - suffix.len());
     }
-
     name
+}
+
+/// Length of an archive/compression suffix that can be removed when matching an
+/// asset's preferred name.
+///
+/// Shorthand names like `.txz` / `.tzst` / `.tbz2` must be stripped as a whole
+/// unit. Keeping a separate suffix table in sync with [`ExtractionFormat`]
+/// omitted bzip shorthands, and a shorter `.bz2` match left a trailing `t` that
+/// then failed [`asset_matches_preferred_name`].
+fn extraction_suffix_len(name: &str) -> Option<usize> {
+    let lowercase = name.to_lowercase();
+    let format = ExtractionFormat::from_file_name(&lowercase);
+    if let Some(idx) = lowercase.rfind(".tar.")
+        && ExtractionFormat::from_ext(&lowercase[idx + 1..]) == Some(format)
+        && is_asset_stem_format(format, &lowercase[idx + 1..])
+    {
+        return Some(lowercase.len() - idx);
+    }
+    if let Some((_, ext)) = lowercase.rsplit_once('.')
+        && ExtractionFormat::from_ext(ext) == Some(format)
+        && is_asset_stem_format(format, ext)
+    {
+        return Some(ext.len() + 1);
+    }
+    None
+}
+
+/// Keep preferred-name normalization scoped to the suffix families mise
+/// already treated as executable assets, plus the missing bzip shorthands.
+/// Other `ExtractionFormat` variants include unsupported archives (`rar`,
+/// `tar.br`, ...) and semantically distinct packages (`vsix`); granting those
+/// the preferred-name bonus can make them beat an installable asset.
+fn is_asset_stem_format(format: ExtractionFormat, ext: &str) -> bool {
+    match format {
+        ExtractionFormat::TarGz
+        | ExtractionFormat::Gz
+        | ExtractionFormat::TarXz
+        | ExtractionFormat::Xz
+        | ExtractionFormat::TarBz2
+        | ExtractionFormat::Bz2
+        | ExtractionFormat::TarZst
+        | ExtractionFormat::Zst
+        | ExtractionFormat::Tar => true,
+        // VSIX uses ZIP extraction too, but it is an extension package rather
+        // than a preferred executable asset.
+        ExtractionFormat::Zip if ext == "zip" => true,
+        _ => false,
+    }
 }
 
 /// Detects platform information from a URL
@@ -950,12 +999,9 @@ impl AssetMatcher {
 
     /// Find checksum file for a given asset
     pub fn find_checksum_for(&self, asset_name: &str, assets: &[String]) -> Option<String> {
-        let base_name = asset_name
-            .trim_end_matches(".tar.gz")
-            .trim_end_matches(".tar.xz")
-            .trim_end_matches(".tar.bz2")
-            .trim_end_matches(".zip")
-            .trim_end_matches(".tgz");
+        let base_name = extraction_suffix_len(asset_name)
+            .map(|suffix_len| &asset_name[..asset_name.len() - suffix_len])
+            .unwrap_or(asset_name);
 
         // Try exact match with checksum extension
         for ext in CHECKSUM_EXTENSIONS.iter() {
@@ -1305,6 +1351,20 @@ mod tests {
         let assets = vec!["tool-1.0.0.tar.gz".to_string(), "checksums.txt".to_string()];
         let checksum = matcher.find_checksum_for("tool-1.0.0.tar.gz", &assets);
         assert_eq!(checksum, Some("checksums.txt".to_string()));
+    }
+
+    #[test]
+    fn test_find_stem_checksum_for_shorthand_archives() {
+        let matcher = AssetMatcher::new();
+        for suffix in ["tar.zst", "txz", "tzst", "tbz2", "tbz", "TXZ"] {
+            let asset = format!("tool.{suffix}");
+            let assets = vec![asset.clone(), "tool.sha256".to_string()];
+            assert_eq!(
+                matcher.find_checksum_for(&asset, &assets),
+                Some("tool.sha256".to_string()),
+                "failed to match checksum for {asset}"
+            );
+        }
     }
 
     // ========== Checksum Helper Tests ==========
@@ -1715,18 +1775,70 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-1.0.0-dar
             .pick_best_asset(&[tar_gz.to_string(), tar_xz.to_string()])
             .unwrap();
         assert_eq!(picked, tar_xz);
+
+        let tzst = "tool-1.0.0-linux-x86_64.tzst";
+        let txz = "tool-1.0.0-linux-x86_64.txz";
+        let tgz = "tool-1.0.0-linux-x86_64.tgz";
+        let picked = picker
+            .pick_best_asset(&[tgz.to_string(), txz.to_string(), tzst.to_string()])
+            .unwrap();
+        assert_eq!(picked, tzst);
+        let picked = picker
+            .pick_best_asset(&[tgz.to_string(), txz.to_string()])
+            .unwrap();
+        assert_eq!(picked, txz);
+    }
+
+    #[test]
+    fn test_shorthand_txz_preferred_over_tgz_with_preferred_name() {
+        // #12156 changed both txz stem handling and xz format scoring. Preserve
+        // coverage for their combined effect with the Elide-style names that
+        // originally exposed the issue.
+        let assets = vec![
+            "elide.linux-amd64.tgz".to_string(),
+            "elide.linux-amd64.txz".to_string(),
+            "elide.linux-amd64.zip".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("elide");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "elide.linux-amd64.txz");
+    }
+
+    #[test]
+    fn test_tbz2_receives_preferred_name_bonus() {
+        let assets = vec![
+            "other.linux-amd64.tar.zst".to_string(),
+            "elide.linux-amd64.tbz2".to_string(),
+        ];
+        let picker = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None)
+            .with_preferred_name("elide");
+        let picked = picker.pick_best_asset(&assets).unwrap();
+        assert_eq!(picked, "elide.linux-amd64.tbz2");
     }
 
     #[test]
     fn test_asset_name_stem_strips_shorthand_archive_suffixes() {
+        let stem = "tool-1.0.0-linux-x86_64";
+        for suffix in [
+            "tar.gz", "tgz", "gz", "tar.xz", "txz", "xz", "tar.bz2", "tbz2", "tbz", "bz2",
+            "tar.zst", "tzst", "zst", "tar", "zip",
+        ] {
+            assert_eq!(
+                asset_name_stem(&format!("{stem}.{suffix}")),
+                stem,
+                "failed to strip .{suffix}"
+            );
+        }
         assert_eq!(
-            asset_name_stem("tool-1.0.0-linux-x86_64.tzst"),
-            "tool-1.0.0-linux-x86_64"
+            asset_name_stem("elide.linux-amd64.txz"),
+            "elide.linux-amd64"
         );
-        assert_eq!(
-            asset_name_stem("tool-1.0.0-linux-x86_64.txz"),
-            "tool-1.0.0-linux-x86_64"
-        );
+
+        for suffix in ["rar", "tbr", "tlz4", "tsz", "vsix"] {
+            let asset = format!("{stem}.{suffix}");
+            assert_eq!(asset_name_stem(&asset), asset);
+        }
     }
 
     #[test]
