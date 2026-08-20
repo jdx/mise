@@ -754,13 +754,13 @@ enum TopologyOperation {
     Link(PathBuf),
     InfoLink {
         target: PathBuf,
-        installer: PathBuf,
-        index: PathBuf,
+        installer: Option<PathBuf>,
+        index: Option<PathBuf>,
         previous_index: Option<Vec<u8>>,
     },
 }
 
-fn install_info_executable() -> Result<PathBuf> {
+fn install_info_executable() -> Result<Option<PathBuf>> {
     use std::os::unix::fs::PermissionsExt;
 
     for candidate in [
@@ -772,10 +772,10 @@ fn install_info_executable() -> Result<PathBuf> {
         };
         let metadata = path.symlink_metadata()?;
         if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
-            return Ok(path);
+            return Ok(Some(path));
         }
     }
-    bail!("Homebrew install-info lifecycle requires an exact install-info executable")
+    Ok(None)
 }
 
 fn info_index_before(path: &Path) -> Result<Option<Vec<u8>>> {
@@ -1286,11 +1286,19 @@ impl PublicTopologyPlanner<'_> {
                 if self.native_observation {
                     continue;
                 }
-                let index = destination_entry.parent().unwrap().join("dir");
+                let installer = install_info_executable()?;
+                let index = installer
+                    .as_ref()
+                    .map(|_| destination_entry.parent().unwrap().join("dir"));
+                let previous_index = index
+                    .as_deref()
+                    .map(info_index_before)
+                    .transpose()?
+                    .flatten();
                 TopologyOperation::InfoLink {
                     target: source_entry.clone(),
-                    installer: install_info_executable()?,
-                    previous_index: info_index_before(&index)?,
+                    installer,
+                    previous_index,
                     index,
                 }
             } else {
@@ -1390,16 +1398,18 @@ fn apply_topology_repair(repairs: &[TopologyRepairLink]) -> Result<()> {
                     previous_index,
                 } => {
                     apply_topology_link(repair, target)?;
-                    let result = update_info_index(
-                        installer,
-                        &repair.destination,
-                        index,
-                        previous_index.as_deref(),
-                    );
-                    if let Err(error) = result {
-                        let _ = crate::file::remove_file(&repair.destination);
-                        restore_info_index(index, previous_index.as_deref());
-                        return Err(error);
+                    if let (Some(installer), Some(index)) = (installer, index) {
+                        let result = update_info_index(
+                            installer,
+                            &repair.destination,
+                            index,
+                            previous_index.as_deref(),
+                        );
+                        if let Err(error) = result {
+                            let _ = crate::file::remove_file(&repair.destination);
+                            restore_info_index(index, previous_index.as_deref());
+                            return Err(error);
+                        }
                     }
                 }
             }
@@ -1434,7 +1444,9 @@ fn apply_topology_repair(repairs: &[TopologyRepairLink]) -> Result<()> {
                         ..
                     } => {
                         let _ = crate::file::remove_file(&completed_repair.destination);
-                        restore_info_index(index, previous_index.as_deref());
+                        if let Some(index) = index {
+                            restore_info_index(index, previous_index.as_deref());
+                        }
                     }
                 }
                 if let TopologyPrevious::Symlink(previous) = &completed_repair.previous
