@@ -297,7 +297,7 @@ fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolReques
         .get(tvr.ba())
         .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
     {
-        tvr.apply_option_layers(Some(config_options));
+        tvr.apply_config_options(config_options);
     }
     tvr
 }

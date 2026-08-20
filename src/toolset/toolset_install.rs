@@ -140,7 +140,7 @@ impl Toolset {
                         tr,
                     )
                 {
-                    tr.apply_option_layers(Some(config_options));
+                    tr.apply_config_options(config_options);
                 }
             }
         }

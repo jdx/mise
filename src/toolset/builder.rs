@@ -135,8 +135,11 @@ impl ToolsetBuilder {
                 .map(|tvl| tvl.requests.clone())
                 .unwrap_or_default();
             let apply_arg_options = |mut tvr: ToolRequest| {
-                let config_options = configured_options_for_runtime_request(&configured, &tvr);
-                tvr.apply_option_layers(config_options);
+                if let Some(config_options) =
+                    configured_options_for_runtime_request(&configured, &tvr)
+                {
+                    tvr.apply_config_options(config_options);
+                }
                 tvr
             };
             for arg in args {
