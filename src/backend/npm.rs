@@ -644,6 +644,7 @@ impl NPMBackend {
                     deprecated_query,
                     "version",
                     "deprecated",
+                    "--json=false",
                     "--prefix",
                     &prefix
                 )
@@ -688,6 +689,7 @@ impl NPMBackend {
             deprecated_query,
             "version",
             "deprecated",
+            "--json=false",
             "--prefix",
             &prefix
         )
@@ -695,9 +697,12 @@ impl NPMBackend {
         .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
         .read()?;
         let deprecated_versions = npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
-        let versions = filter_deprecated_versions(versions, &deprecated_versions);
 
-        Ok(latest.filter(|latest| versions.iter().any(|version| version.version == *latest)))
+        Ok(filter_deprecated_latest_dist_tag(
+            latest,
+            &versions,
+            &deprecated_versions,
+        ))
     }
 
     async fn build_transitive_release_age_args(
@@ -1608,6 +1613,25 @@ fn filter_deprecated_versions(
         .collect()
 }
 
+/// Reject a selectively deprecated latest target. Preserve a missing target
+/// because npm registries can briefly publish a dist-tag before its version
+/// metadata, matching the direct registry path's behavior.
+fn filter_deprecated_latest_dist_tag(
+    latest: Option<String>,
+    versions: &[VersionInfo],
+    deprecated_versions: &HashSet<String>,
+) -> Option<String> {
+    let all_versions_deprecated = versions
+        .iter()
+        .all(|version| deprecated_versions.contains(&version.version));
+    latest.filter(|latest| {
+        all_versions_deprecated
+            || versions.iter().all(|version| {
+                version.version != *latest || !deprecated_versions.contains(&version.version)
+            })
+    })
+}
+
 fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
     let data = npm_view_json(data)?;
     let dist_tags = data.get("dist-tags").unwrap_or(data);
@@ -2190,6 +2214,42 @@ pkg@1.2.0 '1.2.0'
                 .map(|version| version.version.as_str())
                 .collect::<Vec<_>>(),
             ["1.0.0", "1.1.0"]
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_latest_dist_tag_rejects_selective_deprecation() {
+        let versions = ["1.0.0", "2.0.0"].map(|version| VersionInfo {
+            version: version.into(),
+            ..Default::default()
+        });
+        let deprecated_versions = HashSet::from(["2.0.0".into()]);
+
+        assert_eq!(
+            filter_deprecated_latest_dist_tag(
+                Some("2.0.0".into()),
+                &versions,
+                &deprecated_versions
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_latest_dist_tag_preserves_missing_target() {
+        let versions = [VersionInfo {
+            version: "1.0.0".into(),
+            ..Default::default()
+        }];
+        let deprecated_versions = HashSet::from(["2.0.0".into()]);
+
+        assert_eq!(
+            filter_deprecated_latest_dist_tag(
+                Some("2.0.0".into()),
+                &versions,
+                &deprecated_versions
+            ),
+            Some("2.0.0".into())
         );
     }
 

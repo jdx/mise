@@ -32,7 +32,7 @@ assert "mise latest npm:aws-cdk --minimum-release-age 2025-04-10" "2.1007.0"
 
 # The npm CLI metadata path needs an additional query for deprecated releases.
 assert \
-  "MISE_CACHE_DIR='$PWD/npm-shell-out-cache' MISE_NPM_SHELL_OUT=1 mise latest npm:aws-cdk --minimum-release-age 2025-04-10" \
+  "MISE_CACHE_DIR='$PWD/npm-shell-out-cache' MISE_NPM_SHELL_OUT=1 NPM_CONFIG_JSON=true mise latest npm:aws-cdk --minimum-release-age 2025-04-10" \
   "2.1007.0"
 
 # A package whose entire version history is deprecated remains resolvable. npm
