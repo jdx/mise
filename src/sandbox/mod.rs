@@ -548,9 +548,7 @@ fn bindings_cover_paths(paths: &[PathBuf], bindings: &[BoundSandboxPath]) -> boo
     paths
         .iter()
         .all(|path| bindings.iter().any(|binding| binding.path == *path))
-        && bindings
-            .iter()
-            .all(|binding| paths.iter().any(|path| *path == binding.path))
+        && bindings.iter().all(|binding| paths.contains(&binding.path))
 }
 
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).

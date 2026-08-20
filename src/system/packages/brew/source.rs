@@ -366,11 +366,11 @@ impl MaterializedFormulaSource {
             make_inherited(&file)?;
             let path = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
             let identity = SourceReadOnlyIdentity::capture_file(&file, 0o400)?;
-            return Ok(Self {
+            Ok(Self {
                 file,
                 path,
                 identity,
-            });
+            })
         }
 
         #[cfg(not(target_os = "linux"))]
@@ -1358,7 +1358,11 @@ pub(crate) async fn ruby_bin() -> Result<PathBuf> {
         for bin_dir in backend.list_bin_paths(&config, &tv).await? {
             let ruby = bin_dir.join("ruby");
             if ruby.is_file() {
-                return Ok(ruby);
+                // Tool requests may resolve through a mutable `latest` alias,
+                // but strict formula-execution bindings reject symlink
+                // components. Freeze the provisioned executable to its
+                // concrete installed version before constructing authority.
+                return ruby.canonicalize().map_err(Into::into);
             }
         }
     }
@@ -1777,13 +1781,23 @@ mod tests {
         let formula = tmp.path().join("test.rb");
         let keg = prefix.join("Cellar/test/1.0");
         let install_helper = SourceInstallHelper::new(&ruby, &build, &keg)?;
+        let install_helper_path = install_helper
+            .executable
+            .parent()
+            .ok_or_else(|| eyre::eyre!("source install helper has no parent directory"))?;
         crate::file::write(&shim, SHIM_RB)?;
         crate::file::write(&formula, source)?;
         let mut command = std::process::Command::new(&ruby);
         command
             .arg(&shim)
             .env_clear()
-            .env("PATH", "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin")
+            .env(
+                "PATH",
+                format!(
+                    "{}:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+                    install_helper_path.display()
+                ),
+            )
             .env("INSTALL", &install_helper.executable)
             .env("INSTALL_PROGRAM", &install_helper.executable)
             .env("INSTALL_SCRIPT", &install_helper.executable)

@@ -3,7 +3,9 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Write};
+#[cfg(unix)]
+use std::io::{Seek, SeekFrom};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -2031,6 +2033,7 @@ pub fn untar(
 /// Callers that authenticate archive bytes before extraction must not reopen a
 /// mutable pathname afterwards. The retained descriptor keeps inspection and
 /// installation on the same inode.
+#[cfg(unix)]
 pub fn untar_file(
     mut archive: File,
     archive_label: &Path,
