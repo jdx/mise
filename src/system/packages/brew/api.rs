@@ -136,6 +136,8 @@ pub struct Versions {
 #[derive(Debug, Clone, Deserialize)]
 pub struct BottleSpec {
     #[serde(default)]
+    pub rebuild: u32,
+    #[serde(default)]
     pub files: HashMap<String, BottleFile>,
 }
 

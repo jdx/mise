@@ -1720,7 +1720,7 @@ mod tests {
             .collect();
         let mut bottle = HashMap::new();
         if !tags.is_empty() {
-            bottle.insert("stable".to_string(), BottleSpec { files });
+            bottle.insert("stable".to_string(), BottleSpec { rebuild: 0, files });
         }
         Formula {
             name: "test".to_string(),

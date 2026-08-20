@@ -265,13 +265,15 @@ pub async fn fetch_bottle(
 pub async fn fetch_oci_bottle_metadata(
     name: &str,
     pkg_version: &str,
+    rebuild: u32,
     tag: &str,
     bottle: &BottleFile,
 ) -> Result<Option<OciBottleMetadata>> {
     let Some((registry, _)) = bottle.url.split_once("/blobs/") else {
         return Ok(None);
     };
-    let url = format!("{registry}/manifests/{pkg_version}");
+    let manifest_version = manifest_version_rebuild(pkg_version, rebuild);
+    let url = format!("{registry}/manifests/{manifest_version}");
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer QQ=="));
     headers.insert(
@@ -285,17 +287,26 @@ pub async fn fetch_oci_bottle_metadata(
         .await?
         .error_for_status()?;
     let index: Value = response.json().await?;
-    oci_metadata_from_index(name, pkg_version, tag, &bottle.sha256, &index).map(Some)
+    oci_metadata_from_index(name, pkg_version, rebuild, tag, &bottle.sha256, &index).map(Some)
+}
+
+fn manifest_version_rebuild(pkg_version: &str, rebuild: u32) -> String {
+    if rebuild == 0 {
+        pkg_version.to_string()
+    } else {
+        format!("{pkg_version}-{rebuild}")
+    }
 }
 
 fn oci_metadata_from_index(
     name: &str,
     pkg_version: &str,
+    rebuild: u32,
     tag: &str,
     bottle_sha256: &str,
     index: &Value,
 ) -> Result<OciBottleMetadata> {
-    let expected_ref = format!("{pkg_version}.{tag}");
+    let expected_ref = format!("{}.{tag}", manifest_version_rebuild(pkg_version, rebuild));
     let descriptor = index
         .get("manifests")
         .and_then(Value::as_array)
@@ -383,7 +394,7 @@ mod tests {
             sha256: "abc123".to_string(),
         };
         assert!(
-            fetch_oci_bottle_metadata("tool", "1.0.0", "arm64_sonoma", &bottle)
+            fetch_oci_bottle_metadata("tool", "1.0.0", 0, "arm64_sonoma", &bottle)
                 .await
                 .unwrap()
                 .is_none()
@@ -395,14 +406,14 @@ mod tests {
         let index = serde_json::json!({
             "manifests": [{
                 "annotations": {
-                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe",
+                    "org.opencontainers.image.ref.name": "1.0-1.arm64_tahoe",
                     "sh.brew.bottle.digest": "abc123",
                     "sh.brew.tab": "{\"compiler\":\"clang\"}"
                 }
             }]
         });
         let metadata =
-            oci_metadata_from_index("foo", "1.0", "arm64_tahoe", "abc123", &index).unwrap();
+            oci_metadata_from_index("foo", "1.0", 1, "arm64_tahoe", "abc123", &index).unwrap();
         assert_eq!(metadata.tab["compiler"], "clang");
         assert!(metadata.sbom_supplement.is_none());
     }
@@ -419,7 +430,14 @@ mod tests {
             }]
         });
 
-        let error = oci_metadata_from_index("foo", "1.0", "arm64_tahoe", "expected-bottle", &index)
+        let error = oci_metadata_from_index(
+            "foo",
+            "1.0",
+            0,
+            "arm64_tahoe",
+            "expected-bottle",
+            &index,
+        )
             .unwrap_err();
         assert!(error.downcast_ref::<DescriptorIdentityMiss>().is_some());
     }
@@ -468,7 +486,8 @@ mod tests {
             }]
         });
 
-        let metadata = oci_metadata_from_index("foo", "1.0", "all", "abc123", &index).unwrap();
+        let metadata =
+            oci_metadata_from_index("foo", "1.0", 0, "all", "abc123", &index).unwrap();
         assert_eq!(metadata.sbom_supplement, Some(expected));
     }
 }

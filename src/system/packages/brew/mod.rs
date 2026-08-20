@@ -234,9 +234,16 @@ impl BrewManager {
                 lifecycle.bind_bottle_formula_snapshot_sha256(
                     pour::bottle_formula_snapshot_sha256(&rf.formula.name, &pkg_version, &archive)?,
                 )?;
+                let rebuild = rf
+                    .formula
+                    .bottle
+                    .get("stable")
+                    .map(|spec| spec.rebuild)
+                    .unwrap_or_default();
                 let oci_metadata = match fetch::fetch_oci_bottle_metadata(
                     &rf.formula.name,
                     &pkg_version,
+                    rebuild,
                     &tag,
                     bottle,
                 )
