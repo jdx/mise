@@ -474,27 +474,32 @@ fn record_action_hit(action: &CacheDigest, restore: RestoreStats) {
 }
 
 fn find_blobs(digests: &[CacheDigest]) -> Result<Vec<PathBuf>> {
-    let requests = digests
-        .iter()
-        .cloned()
-        .map(|digest| AgentRequest::FindBlob { digest })
-        .collect::<Vec<_>>();
-    let responses = session::request_agent(&requests)?;
-    if responses.len() != digests.len() {
-        bail!("cache agent returned an incomplete blob lookup response");
+    let responses = session::request_agent(&[AgentRequest::FindBlobs {
+        digests: digests.to_vec(),
+    }])?;
+    let Some(response) = responses.into_iter().next() else {
+        bail!("cache agent did not return a blob lookup response");
+    };
+    match response {
+        AgentResponse::Blobs { paths } if paths.len() == digests.len() => paths
+            .into_iter()
+            .zip(digests)
+            .map(|(path, digest)| match path {
+                Some(path) => Ok(path),
+                None => bail!("cached rustc action is missing blob {}", digest.hash),
+            })
+            .collect(),
+        AgentResponse::Blobs { .. } => {
+            bail!("cache agent returned an incomplete blob lookup response")
+        }
+        AgentResponse::Blob { path: Some(path) } if digests.len() == 1 => Ok(vec![path]),
+        AgentResponse::Blob { path: None } if digests.len() == 1 => {
+            let digest = &digests[0];
+            bail!("cached rustc action is missing blob {}", digest.hash)
+        }
+        AgentResponse::Error { message } => bail!(message),
+        _ => bail!("cache agent returned an unexpected blob lookup response"),
     }
-    responses
-        .into_iter()
-        .zip(digests)
-        .map(|(response, digest)| match response {
-            AgentResponse::Blob { path: Some(path) } => Ok(path),
-            AgentResponse::Blob { path: None } => {
-                bail!("cached rustc action is missing blob {}", digest.hash)
-            }
-            AgentResponse::Error { message } => bail!(message),
-            _ => bail!("cache agent returned an unexpected blob lookup response"),
-        })
-        .collect()
 }
 
 fn read_canonical_blob<T>(path: &Path, digest: &CacheDigest, description: &str) -> Result<T>

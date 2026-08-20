@@ -10,10 +10,6 @@ set -eu
 #
 # The second half of the test is the other side of that refresh: `mise deactivate`
 # leaves this handler registered, so the refresh has to be gated on MISE_SHELL.
-#
-# Checks are written out rather than using the assert.sh helpers: those declare
-# `local status`, and `status` is read-only in zsh, so they misreport. Every other zsh
-# test in this suite checks directly for the same reason.
 
 eval "$(mise activate zsh --no-hook-env)"
 

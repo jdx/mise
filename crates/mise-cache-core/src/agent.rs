@@ -50,6 +50,10 @@ pub enum AgentRequest {
     FindBlob {
         digest: CacheDigest,
     },
+    /// Resolve blobs to session-verified local CAS paths.
+    FindBlobs {
+        digests: Vec<CacheDigest>,
+    },
     StoreBlob {
         digest: CacheDigest,
         source: PathBuf,
@@ -110,6 +114,10 @@ pub enum AgentResponse {
     /// A local CAS path already verified against the requested digest.
     Blob {
         path: Option<PathBuf>,
+    },
+    /// Local CAS paths already verified against the requested digests.
+    Blobs {
+        paths: Vec<Option<PathBuf>>,
     },
     Stored {
         path: PathBuf,
@@ -878,7 +886,11 @@ impl CacheAgent {
             }
         }
         let mut verified = self
-            .prefetch_remote_blobs(remote, top_level.into_keys().collect())
+            .fetch_remote_blobs(
+                remote,
+                top_level.into_keys().collect(),
+                Some(&self.prefetch_transfers),
+            )
             .await;
 
         let mut next = BTreeMap::new();
@@ -1015,13 +1027,17 @@ impl CacheAgent {
             return;
         }
         let digests = std::mem::take(pending).into_keys().collect();
-        verified.extend(self.prefetch_remote_blobs(remote, digests).await);
+        verified.extend(
+            self.fetch_remote_blobs(remote, digests, Some(&self.prefetch_transfers))
+                .await,
+        );
     }
 
-    async fn prefetch_remote_blobs(
+    async fn fetch_remote_blobs(
         &self,
         remote: &RemoteCacheClient,
         digests: Vec<CacheDigest>,
+        prefetch_limit: Option<&tokio::sync::Semaphore>,
     ) -> BTreeMap<CacheDigest, PathBuf> {
         let mut verified = BTreeMap::new();
         let mut missing = BTreeMap::new();
@@ -1046,17 +1062,39 @@ impl CacheAgent {
         let mut pack_candidates = missing.clone();
         while !pack_candidates.is_empty() {
             let requested = pack_candidates.keys().cloned().collect::<Vec<_>>();
-            let transfer_started = Instant::now();
-            let pack = match remote
-                .get_blob_pack(&requested, self.remote_staging_dir.as_path())
-                .await
-            {
+            let (pack, transfer_duration_ns) = {
+                let _prefetch_permit = match prefetch_limit {
+                    Some(limit) => match limit.acquire().await {
+                        Ok(permit) => Some(permit),
+                        Err(error) => {
+                            warn!(
+                                "remote cache blob pack could not acquire prefetch limit: {error}"
+                            );
+                            break;
+                        }
+                    },
+                    None => None,
+                };
+                let _transfer_permit = match self.remote_transfers.acquire().await {
+                    Ok(permit) => permit,
+                    Err(error) => {
+                        warn!("remote cache blob pack could not acquire transfer limit: {error}");
+                        break;
+                    }
+                };
+                let transfer_started = Instant::now();
+                let pack = remote
+                    .get_blob_pack(&requested, self.remote_staging_dir.as_path())
+                    .await;
+                (pack, duration_ns(transfer_started))
+            };
+            let pack = match pack {
                 Ok(Some(pack)) => pack,
                 Ok(None) => break,
                 Err(error) => {
                     atomic_saturating_add(
                         &self.stats.remote_blob_transfer_duration_ns,
-                        duration_ns(transfer_started),
+                        transfer_duration_ns,
                     );
                     warn!(
                         "remote cache blob pack failed; falling back to individual blobs: {error}"
@@ -1066,13 +1104,11 @@ impl CacheAgent {
             };
             atomic_saturating_add(
                 &self.stats.remote_blob_transfer_duration_ns,
-                duration_ns(transfer_started),
+                transfer_duration_ns,
             );
             atomic_saturating_add(&self.stats.remote_blob_pack_requests, pack.requests);
-            atomic_saturating_add(
-                &self.stats.remote_blob_pack_blobs,
-                pack.blobs.len().try_into().unwrap_or(u64::MAX),
-            );
+            atomic_saturating_add(&self.stats.remote_blob_pack_blobs, pack.blob_count);
+            atomic_saturating_add(&self.stats.downloaded_bytes, pack.payload_bytes);
             if pack.requested.is_empty() {
                 break;
             }
@@ -1108,7 +1144,8 @@ impl CacheAgent {
             async move {
                 (
                     digest_for_result,
-                    self.fetch_remote_blob_prefetch(remote, &digest).await,
+                    self.fetch_remote_blob_with_limit(remote, &digest, prefetch_limit)
+                        .await,
                 )
             }
         }))
@@ -1128,7 +1165,6 @@ impl CacheAgent {
     }
 
     async fn ingest_packed_blob(&self, digest: CacheDigest, source: PathBuf) -> Result<PathBuf> {
-        atomic_saturating_add(&self.stats.downloaded_bytes, digest.size);
         let digest_size = digest.size;
         let lock = self.write_lock(&digest);
         let _guard = lock.lock().await;
@@ -1249,12 +1285,17 @@ impl CacheAgent {
             if seen.len() > MAX_PREFETCH_DIRECTORY_OBJECTS {
                 bail!("remote action output tree is too large");
             }
-            self.fetch_remote_blob_prefetch(remote, &digest).await?;
+            self.fetch_remote_blob_with_limit(remote, &digest, Some(&self.prefetch_transfers))
+                .await?;
             let directory = self.load_cache_directory(&digest)?;
             let mut transfers = stream::iter(directory.files.into_iter().map(|file| async move {
-                self.fetch_remote_blob_prefetch(remote, &file.digest)
-                    .await
-                    .map(|_| ())
+                self.fetch_remote_blob_with_limit(
+                    remote,
+                    &file.digest,
+                    Some(&self.prefetch_transfers),
+                )
+                .await
+                .map(|_| ())
             }))
             .buffer_unordered(MAX_PREFETCH_TRANSFERS);
             while let Some(result) = transfers.next().await {
@@ -1268,15 +1309,6 @@ impl CacheAgent {
             );
         }
         Ok(())
-    }
-
-    async fn fetch_remote_blob_prefetch(
-        &self,
-        remote: &RemoteCacheClient,
-        digest: &CacheDigest,
-    ) -> Result<PathBuf> {
-        self.fetch_remote_blob_with_limit(remote, digest, Some(&self.prefetch_transfers))
-            .await
     }
 
     async fn fetch_remote_blob(
@@ -1329,6 +1361,7 @@ impl CacheAgent {
     async fn respond(&self, request: AgentRequest) -> AgentResponse {
         let result = match request {
             AgentRequest::FindBlob { digest } => self.find_blob(&digest).await,
+            AgentRequest::FindBlobs { digests } => self.find_blobs(digests).await,
             AgentRequest::StoreBlob { digest, source } => self.store_blob(&digest, &source).await,
             AgentRequest::FindActionResult { action } => {
                 self.stats.lookups.fetch_add(1, Ordering::Relaxed);
@@ -1390,6 +1423,35 @@ impl CacheAgent {
                 Ok(AgentResponse::Blob { path: None })
             }
         }
+    }
+
+    async fn find_blobs(&self, digests: Vec<CacheDigest>) -> Result<AgentResponse> {
+        let mut paths = BTreeMap::new();
+        let mut missing = Vec::new();
+        for digest in &digests {
+            match self.find_verified_blob(digest)? {
+                Some(path) => {
+                    paths.insert(digest.clone(), path);
+                }
+                None => {
+                    missing.push(digest.clone());
+                }
+            }
+        }
+
+        if !missing.is_empty()
+            && self.remote_mode.reads()
+            && let Some(remote) = &self.remote
+        {
+            paths.extend(self.fetch_remote_blobs(remote, missing, None).await);
+        }
+
+        Ok(AgentResponse::Blobs {
+            paths: digests
+                .into_iter()
+                .map(|digest| paths.get(&digest).cloned())
+                .collect(),
+        })
     }
 
     async fn store_blob(&self, digest: &CacheDigest, source: &Path) -> Result<AgentResponse> {
@@ -2699,6 +2761,79 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn foreground_blob_batches_use_blob_packs() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let mut entries = [
+            (CacheDigest::blake3(b"first"), b"first".as_slice()),
+            (CacheDigest::blake3(b"second"), b"second".as_slice()),
+        ];
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        let requested = entries
+            .iter()
+            .map(|(digest, _)| digest.clone())
+            .collect::<Vec<_>>();
+        let response_requested = vec![
+            entries[0].0.clone(),
+            entries[1].0.clone(),
+            entries[0].0.clone(),
+        ];
+        let capabilities = server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "digests": requested.clone()
+            })))
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_body(blob_pack_body(&entries))
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let response = agent
+            .respond(AgentRequest::FindBlobs {
+                digests: response_requested,
+            })
+            .await;
+
+        let AgentResponse::Blobs { paths } = response else {
+            panic!("unexpected blob lookup response");
+        };
+        assert_eq!(paths.len(), 3);
+        for (expected, path) in [entries[0].1, entries[1].1, entries[0].1]
+            .into_iter()
+            .zip(paths)
+        {
+            assert_eq!(fs::read(path.unwrap()).unwrap(), expected);
+        }
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_requests, 0);
+        assert_eq!(stats.remote_blob_pack_requests, 1);
+        assert_eq!(stats.remote_blob_pack_blobs, 2);
+        capabilities.assert_async().await;
+        pack.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn preserves_successful_pack_metrics_when_a_later_chunk_falls_back() {
         let directory = tempfile::tempdir().unwrap();
         let mut server = mockito::Server::new_async().await;
@@ -2759,7 +2894,11 @@ mod tests {
         let remote = agent.remote.as_deref().unwrap();
 
         let verified = agent
-            .prefetch_remote_blobs(remote, vec![first_digest.clone(), second_digest.clone()])
+            .fetch_remote_blobs(
+                remote,
+                vec![first_digest.clone(), second_digest.clone()],
+                Some(&agent.prefetch_transfers),
+            )
             .await;
 
         assert_eq!(verified.len(), 2);
@@ -2772,6 +2911,63 @@ mod tests {
         capabilities.assert_async().await;
         first_pack.assert_async().await;
         failed_pack.assert_async().await;
+        fallback.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn malformed_blob_pack_metadata_falls_back_to_individual_blobs() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let bytes = b"fallback blob";
+        let digest = CacheDigest::blake3(bytes);
+        server
+            .mock("GET", "/v1/capabilities")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "protocol":{"major":1},
+                    "features":{"blob_packs":true},
+                    "limits":{"max_batch_items":100,"max_pack_bytes":1048576}
+                })
+                .to_string(),
+            )
+            .expect(1)
+            .create_async()
+            .await;
+        let pack = server
+            .mock("POST", "/v1/blobs:pack")
+            .with_status(200)
+            .with_header("content-type", crate::BLOB_PACK_MEDIA_TYPE)
+            .with_header(crate::BLOB_PACK_BYTES_HEADER, "not-a-number")
+            .with_body(blob_pack_body(&[(digest.clone(), bytes.as_slice())]))
+            .expect(1)
+            .create_async()
+            .await;
+        let fallback = server
+            .mock("GET", blob_path(&digest).as_str())
+            .with_status(200)
+            .with_body(bytes)
+            .expect(1)
+            .create_async()
+            .await;
+        let agent = remote_agent(
+            &server,
+            directory.path().join("reader"),
+            RemoteCacheMode::ReadOnly,
+        );
+        let remote = agent.remote.as_deref().unwrap();
+
+        let verified = agent
+            .fetch_remote_blobs(remote, vec![digest.clone()], None)
+            .await;
+
+        assert_eq!(fs::read(&verified[&digest]).unwrap(), bytes);
+        let stats = agent.stats();
+        assert_eq!(stats.remote_blob_pack_requests, 0);
+        assert_eq!(stats.remote_blob_pack_blobs, 0);
+        assert_eq!(stats.remote_blob_requests, 1);
+        pack.assert_async().await;
         fallback.assert_async().await;
     }
 
