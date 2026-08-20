@@ -100,13 +100,16 @@ impl ToolVersion {
     }
 
     pub fn new_rolling(request: ToolRequest, version: String) -> Self {
+        // Respect an explicit pin (`rolling = false`); default to `true` only
+        // when the request has no explicit setting.
+        let rolling = request.rolling().unwrap_or(true);
         ToolVersion {
             request,
             version,
             before_date: None,
             locked: false,
             resolved_from_lockfile: false,
-            rolling: Some(true),
+            rolling: Some(rolling),
             lock_platforms: Default::default(),
             install_path: None,
             install_path_is_exact: false,

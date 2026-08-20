@@ -2939,25 +2939,30 @@ where
             // before a backend recorded explicit options) fall through to the
             // rekey-by-platform migration below.
             if let Some(entry) = by_key.get_mut(&key) {
-                // Detect a rolling release: the same version string and artifact
-                // (URL) now resolves to a different checksum than what the lockfile
-                // recorded. That means the content moved under a stable version
-                // pointer (e.g. a `nightly` tag), so mark the tool rolling. Compare
-                // BEFORE merging platforms, since merge_with may overwrite the new
-                // checksum with the existing one.
-                // Don't auto-mark when the tool is explicitly pinned (`rolling =
-                // false`) — there, a changed checksum is an integrity concern the
-                // backend surfaces as a warning, not a rolling update. Check the
-                // existing on-disk entry, not the fresh one: a resolve that skips
-                // the lockfile (e.g. `mise lock --bump`) produces a fresh entry
-                // with `rolling: None`, which would otherwise promote a pinned
-                // tool to rolling on the first checksum drift.
-                if existing_tool.rolling == Some(false) {
-                    // The pin is sticky too: a fresh, lockfile-unaware resolve
-                    // (same `rolling: None` case as above) must not silently
-                    // drop it.
-                    entry.rolling = Some(false);
+                // An explicit state on the fresh entry (e.g. from `mise use
+                // --rolling`/`--no-rolling`, threaded through via
+                // ToolVersion::rolling) always wins, so a user can flip a
+                // previously pinned or previously rolling tool the other way.
+                // Only when the fresh entry has no explicit state (`rolling:
+                // None` — the common case, and also what a lockfile-unaware
+                // resolve like `mise lock --bump` always produces) do we fall
+                // back to the existing on-disk entry's state, so that doesn't
+                // silently clear or flip a prior explicit choice.
+                if entry.rolling.is_none() {
+                    entry.rolling = existing_tool.rolling;
+                }
+                if entry.rolling == Some(false) {
+                    // Explicitly pinned: a changed checksum is an integrity
+                    // concern the backend surfaces as a warning, not a
+                    // rolling update — never auto-promote here.
                 } else {
+                    // Detect a rolling release: the same version string and
+                    // artifact (URL) now resolves to a different checksum
+                    // than what the lockfile recorded. That means the content
+                    // moved under a stable version pointer (e.g. a `nightly`
+                    // tag), so mark the tool rolling. Compare BEFORE merging
+                    // platforms, since merge_with may overwrite the new
+                    // checksum with the existing one.
                     for (platform, existing_info) in &existing_tool.platforms {
                         if let (Some(new_info), Some(old_ck)) =
                             (entry.platforms.get(platform), &existing_info.checksum)
@@ -2970,10 +2975,6 @@ where
                                 entry.rolling = Some(true);
                             }
                         }
-                    }
-                    // The rolling flag is sticky: once observed, keep it set.
-                    if existing_tool.rolling == Some(true) {
-                        entry.rolling = Some(true);
                     }
                 }
                 // Preserve platform data only for an exact option match. Moving it
@@ -6297,6 +6298,36 @@ backend = "conda:jq"
         let new = tool_with_checksum("2.62.0", url, "sha256:NEW");
         let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:OLD");
         existing_tool.rolling = Some(false);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(false));
+    }
+
+    #[test]
+    fn test_merge_honors_explicit_fresh_rolling_true_over_existing_pin() {
+        // `mise use --rolling` on a previously pinned tool must be able to
+        // flip it: an explicit fresh state always wins over stale disk state.
+        let url = "https://github.com/cli/cli/releases/download/v2.62.0/gh.tar.gz";
+        let mut new = tool_with_checksum("2.62.0", url, "sha256:SAME");
+        new.rolling = Some(true);
+        let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:SAME");
+        existing_tool.rolling = Some(false);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(true));
+    }
+
+    #[test]
+    fn test_merge_honors_explicit_fresh_rolling_false_over_existing_sticky_true() {
+        // `mise use --no-rolling` on a previously rolling tool must be able to
+        // pin it: an explicit fresh state always wins over a sticky Some(true).
+        let url = "https://github.com/neovim/neovim/releases/download/nightly/nvim.tar.gz";
+        let mut new = tool_with_checksum("nightly", url, "sha256:NEW");
+        new.rolling = Some(false);
+        let mut existing_tool = tool_with_checksum("nightly", url, "sha256:OLD");
+        existing_tool.rolling = Some(true);
 
         let (merged, _consumed) =
             merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);

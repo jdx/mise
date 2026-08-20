@@ -1267,18 +1267,18 @@ impl ConfigFile for MiseToml {
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
+            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba())
+                && reg_ba.opts.as_ref().is_some_and(|o| o == opts)
+            {
+                // in this case the options specified are the same as in the registry so output no options and rely on the defaults
+                return true;
+            }
             if opts.os.as_ref().is_some_and(|o| !o.is_empty())
                 || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
                 || !opts.install_env.is_empty()
                 || opts.rolling.is_some()
             {
                 return false;
-            }
-            if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba())
-                && reg_ba.opts.as_ref().is_some_and(|o| o == opts)
-            {
-                // in this case the options specified are the same as in the registry so output no options and rely on the defaults
-                return true;
             }
             opts.is_empty()
         };

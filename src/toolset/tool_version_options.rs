@@ -267,6 +267,7 @@ impl ToolOptions {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
             && self.install_env.is_empty()
+            && self.rolling.is_none()
             && self.opts.is_empty()
     }
 
@@ -1287,6 +1288,27 @@ mod tests {
         let tvo = ToolVersionOptions {
             core: CoreToolOptions {
                 os: Some(vec!["linux".to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!tvo.is_empty());
+    }
+
+    #[test]
+    fn test_rolling_field_is_not_empty() {
+        let tvo = ToolVersionOptions {
+            core: CoreToolOptions {
+                rolling: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!tvo.is_empty());
+
+        let tvo = ToolVersionOptions {
+            core: CoreToolOptions {
+                rolling: Some(false),
                 ..Default::default()
             },
             ..Default::default()
