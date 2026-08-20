@@ -1,4 +1,4 @@
-use usage_rs::{Cli as _, Subcommands};
+use usage_rs::Subcommands;
 use vfox::VfoxResult;
 
 mod available;
