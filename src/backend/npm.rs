@@ -2158,7 +2158,7 @@ pkg@1.2.0 '1.2.0'
     }
 
     #[test]
-    fn test_npm_deprecated_query_includes_every_prerelease_core() {
+    fn test_npm_deprecated_query_and_filter_include_prereleases() {
         let versions = [
             ("1.0.0", false),
             ("2.0.0-beta.1", true),
@@ -2174,6 +2174,20 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             npm_deprecated_query("pkg", &versions),
             "pkg@>=0.0.0-0 || >=2.0.0-0 <2.0.0 || >=3.1.4-0 <3.1.4"
+        );
+
+        let deprecated_versions = npm_view_deprecated_versions(
+            "pkg",
+            "pkg@2.0.0-beta.1 deprecated = 'published accidentally'\n",
+        );
+        let filtered = filter_deprecated_versions(versions.into(), &deprecated_versions);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|version| version.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0", "2.0.0-rc.1", "3.1.4-dev.1"]
         );
     }
 
