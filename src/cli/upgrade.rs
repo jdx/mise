@@ -278,19 +278,17 @@ impl Upgrade {
                 }
             }
         }
-        let config_file_updates = outdated_with_config_files
-            .iter()
-            .filter_map(|(o, cf)| {
-                if let Ok(trs) = cf.to_tool_request_set()
-                    && let Some(versions) = trs.tools.get(o.tool_request.ba())
-                    && versions.len() != 1
-                {
-                    warn!("upgrading multiple versions with --bump is not yet supported");
-                    return None;
-                }
-                Some((*o, Arc::clone(cf)))
-            })
-            .collect::<Vec<_>>();
+        let mut config_file_updates = Vec::new();
+        for (o, cf) in &outdated_with_config_files {
+            let trs = cf.to_tool_request_set()?;
+            if let Some(versions) = trs.tools.get(o.tool_request.ba())
+                && versions.len() != 1
+            {
+                warn!("upgrading multiple versions with --bump is not yet supported");
+                continue;
+            }
+            config_file_updates.push((*o, Arc::clone(cf)));
+        }
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
@@ -342,7 +340,7 @@ impl Upgrade {
                     .iter()
                     .map(|(n, v)| (n.as_str(), v.as_str()))
                     .collect();
-                let bumps = compute_config_bumps(config, &refs);
+                let bumps = compute_config_bumps(config, &refs)?;
                 for bump in &bumps {
                     miseprintln!(
                         "Would update {} from {} to {} in {}",
@@ -460,7 +458,7 @@ impl Upgrade {
                 .iter()
                 .map(|(n, v)| (n.as_str(), v.as_str()))
                 .collect();
-            let bumps = compute_config_bumps(config, &refs);
+            let bumps = compute_config_bumps(config, &refs)?;
             apply_config_bumps(config, &bumps)?;
         }
 
@@ -501,9 +499,7 @@ impl Upgrade {
             }
         }
         for (path, cf) in config.config_files.iter() {
-            let Ok(trs) = cf.to_tool_request_set() else {
-                continue;
-            };
+            let trs = cf.to_tool_request_set()?;
             if trs
                 .tools
                 .keys()

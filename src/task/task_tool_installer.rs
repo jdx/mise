@@ -116,28 +116,15 @@ impl<'a> TaskToolInstaller<'a> {
                 );
                 cached
             } else {
-                match cf.to_tool_request_set() {
-                    Ok(trs) => {
-                        let trs = Arc::new(trs);
-                        let mut cache = self
-                            .context_builder
-                            .tool_request_set_cache()
-                            .write()
-                            .expect("tool_request_set_cache RwLock poisoned");
-                        cache.insert(config_path.clone(), Arc::clone(&trs));
-                        trace!("Cached tool request set from {}", config_path.display());
-                        trs
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse tools from {} for task {}: {}",
-                            source.display(),
-                            task_name,
-                            e
-                        );
-                        continue;
-                    }
-                }
+                let trs = Arc::new(cf.to_tool_request_set()?);
+                let mut cache = self
+                    .context_builder
+                    .tool_request_set_cache()
+                    .write()
+                    .expect("tool_request_set_cache RwLock poisoned");
+                cache.insert(config_path.clone(), Arc::clone(&trs));
+                trace!("Cached tool request set from {}", config_path.display());
+                trs
             };
 
             for (ba, reqs) in trs.tools.iter() {

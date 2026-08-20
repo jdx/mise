@@ -303,13 +303,18 @@ impl Install {
             Some(union) => union.config_files.clone(),
             None => config.config_files.clone(),
         };
-        let configured_tools: HashSet<String> = configured_config_files
-            .values()
-            .filter_map(|cf| cf.to_tool_request_set().ok())
-            .flat_map(|cf_trs| cf_trs.tools.into_keys().map(|ba| ba.short.clone()))
-            .chain(tool_env_vars().map(|(name, _, _)| name))
+        let mut configured_tools: HashSet<String> = tool_env_vars()
+            .map(|(name, _, _)| name)
             .chain(task_requests.iter().map(|tr| tr.ba().short.clone()))
             .collect();
+        for cf in configured_config_files.values() {
+            configured_tools.extend(
+                cf.to_tool_request_set()?
+                    .tools
+                    .into_keys()
+                    .map(|ba| ba.short.clone()),
+            );
+        }
         let inactive_tools: Vec<String> = tools
             .iter()
             .filter(|t| !configured_tools.contains(*t))

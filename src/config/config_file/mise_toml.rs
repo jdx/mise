@@ -1809,7 +1809,10 @@ fn set_value_decor(item: &mut Item, decor: &Option<toml_edit::Decor>) {
 
 impl Debug for MiseToml {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let tools = self.to_tool_request_set().unwrap().to_string();
+        let tools = self
+            .to_tool_request_set()
+            .map(|tools| tools.to_string())
+            .unwrap_or_else(|err| format!("<invalid tools: {err:#}>"));
         let title = format!("MiseToml({}): {tools}", display_path(&self.path));
         let mut d = f.debug_struct(&title);
         if let Some(min_version) = &self.min_version {

@@ -257,13 +257,13 @@ impl Lock {
             let tools = self
                 .get_tools_to_lock(&collection_context, lockfile_path, config_paths)
                 .await?;
-            let configured_selectors = self.configured_tool_selectors_for_target(
+            let configured_selectors = Some(self.configured_tool_selectors_for_target(
                 &config,
                 &tools,
                 lockfile_path,
                 config_paths,
                 effective_config_files,
-            );
+            )?);
             prepared_targets.push((
                 lockfile_path.clone(),
                 config_paths.clone(),
@@ -452,7 +452,7 @@ impl Lock {
                 .iter()
                 .map(|(n, v)| (n.as_str(), v.as_str()))
                 .collect();
-            let bumps = compute_config_bumps_for_paths(&config, &refs, &scoped_config_paths);
+            let bumps = compute_config_bumps_for_paths(&config, &refs, &scoped_config_paths)?;
             if self.dry_run {
                 if !self.json {
                     for bump in &bumps {
@@ -733,7 +733,7 @@ impl Lock {
         target_lockfile_path: &Path,
         config_paths: &[PathBuf],
         effective_config_files: &ConfigMap,
-    ) -> Option<ToolSelectors> {
+    ) -> Result<ToolSelectors> {
         let (mut configured_tools, mut configured_backends) = self.configured_tool_selectors(tools);
         let config_paths: BTreeSet<&PathBuf> = config_paths.iter().collect();
 
@@ -746,17 +746,7 @@ impl Lock {
             {
                 continue;
             }
-            let trs = match cf.to_tool_request_set() {
-                Ok(trs) => trs,
-                Err(err) => {
-                    debug!(
-                        "skipping stale-tool pruning for {} because {} could not be parsed: {err}",
-                        display_path(target_lockfile_path),
-                        display_path(path)
-                    );
-                    return None;
-                }
-            };
+            let trs = cf.to_tool_request_set()?;
             for (ba, _, _) in trs.iter() {
                 // Pruning answers whether the tool is still declared, not whether its
                 // backend can resolve on this machine. In particular, OS-restricted
@@ -766,7 +756,7 @@ impl Lock {
             }
         }
 
-        Some((configured_tools, configured_backends))
+        Ok((configured_tools, configured_backends))
     }
 
     fn current_tool_versions(&self, tools: &[LockTool]) -> BTreeMap<String, BTreeSet<String>> {
@@ -969,82 +959,79 @@ impl Lock {
             {
                 continue;
             }
-            if let Ok(trs) = cf.to_tool_request_set() {
-                for (ba, requests, source) in trs.iter() {
-                    for request in requests {
-                        if ba.backend().is_ok() {
-                            // Check if the resolved toolset has a matching request.
-                            let mut matched_resolved = false;
-                            if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
-                                for tv in &resolved_tv.versions {
-                                    if request_matches(&tv.request, request)
-                                        && tv.version != "latest"
-                                        && !ba.backend().is_ok_and(|backend| {
-                                            backend.is_rolling_channel(&tv.version)
-                                        })
-                                    {
-                                        matched_resolved = true;
-                                        push_unique_lock_tool(
-                                            &mut all_tools,
-                                            (ba.as_ref().clone(), tv.clone()),
-                                        );
-                                    }
+            let trs = cf.to_tool_request_set()?;
+            for (ba, requests, source) in trs.iter() {
+                for request in requests {
+                    if ba.backend().is_ok() {
+                        // Check if the resolved toolset has a matching request.
+                        let mut matched_resolved = false;
+                        if let Some(resolved_tv) = ts.versions.get(ba.as_ref()) {
+                            for tv in &resolved_tv.versions {
+                                if request_matches(&tv.request, request)
+                                    && tv.version != "latest"
+                                    && !ba.backend().is_ok_and(|backend| {
+                                        backend.is_rolling_channel(&tv.version)
+                                    })
+                                {
+                                    matched_resolved = true;
+                                    push_unique_lock_tool(
+                                        &mut all_tools,
+                                        (ba.as_ref().clone(), tv.clone()),
+                                    );
                                 }
                             }
-                            let requested_tool = self.tool.is_empty()
-                                || self.tool.iter().any(|tool| tool.ba.short == ba.short);
-                            let active_unresolved = requested_tool
-                                && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
-                                    tvl.requests
-                                        .iter()
-                                        .any(|active| request_matches(active, request))
-                                });
-                            // Resolve overridden requests through the same path as active
-                            // tools when the request cannot be copied from the resolved
-                            // toolset. Keep this broad only for idiomatic version files;
-                            // other sources preserve the previous latest-only behavior.
-                            let should_resolve_overridden = active_unresolved
-                                || request.version() == "latest"
-                                || source.is_idiomatic_version_file();
-                            if !matched_resolved && should_resolve_overridden {
-                                let mut resolve_options = match request
-                                    .resolve_options(context.resolve_options)
-                                {
-                                    Ok(opts) => opts,
-                                    Err(err) => {
-                                        if active_unresolved {
-                                            return Err(err.wrap_err(format!(
+                        }
+                        let requested_tool = self.tool.is_empty()
+                            || self.tool.iter().any(|tool| tool.ba.short == ba.short);
+                        let active_unresolved = requested_tool
+                            && ts.versions.get(ba.as_ref()).is_some_and(|tvl| {
+                                tvl.requests
+                                    .iter()
+                                    .any(|active| request_matches(active, request))
+                            });
+                        // Resolve overridden requests through the same path as active
+                        // tools when the request cannot be copied from the resolved
+                        // toolset. Keep this broad only for idiomatic version files;
+                        // other sources preserve the previous latest-only behavior.
+                        let should_resolve_overridden = active_unresolved
+                            || request.version() == "latest"
+                            || source.is_idiomatic_version_file();
+                        if !matched_resolved && should_resolve_overridden {
+                            let mut resolve_options = match request
+                                .resolve_options(context.resolve_options)
+                            {
+                                Ok(opts) => opts,
+                                Err(err) => {
+                                    if active_unresolved {
+                                        return Err(err.wrap_err(format!(
                                                     "failed to resolve options for {request} for lockfile {}",
                                                     display_path(target_lockfile_path)
                                                 )));
-                                        } else {
-                                            debug!(
-                                                "failed to resolve options for {request}: {err}"
-                                            );
-                                            continue;
-                                        }
+                                    } else {
+                                        debug!("failed to resolve options for {request}: {err}");
+                                        continue;
                                     }
-                                };
-                                resolve_options.use_locked_version = false;
-                                if resolve_options.before_date.is_some() {
-                                    resolve_options.latest_versions = true;
                                 }
-                                match request.resolve(config, &resolve_options).await {
-                                    Ok(tv) => {
-                                        push_unique_lock_tool(
-                                            &mut all_tools,
-                                            (ba.as_ref().clone(), tv),
-                                        );
-                                    }
-                                    Err(err) => {
-                                        if active_unresolved {
-                                            return Err(err.wrap_err(format!(
-                                                "failed to resolve {request} for lockfile {}",
-                                                display_path(target_lockfile_path)
-                                            )));
-                                        } else {
-                                            debug!("failed to resolve overridden {request}: {err}");
-                                        }
+                            };
+                            resolve_options.use_locked_version = false;
+                            if resolve_options.before_date.is_some() {
+                                resolve_options.latest_versions = true;
+                            }
+                            match request.resolve(config, &resolve_options).await {
+                                Ok(tv) => {
+                                    push_unique_lock_tool(
+                                        &mut all_tools,
+                                        (ba.as_ref().clone(), tv),
+                                    );
+                                }
+                                Err(err) => {
+                                    if active_unresolved {
+                                        return Err(err.wrap_err(format!(
+                                            "failed to resolve {request} for lockfile {}",
+                                            display_path(target_lockfile_path)
+                                        )));
+                                    } else {
+                                        debug!("failed to resolve overridden {request}: {err}");
                                     }
                                 }
                             }

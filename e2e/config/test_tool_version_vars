@@ -133,3 +133,14 @@ EOF
 
 assert_fail "mise ls tiny" "invalid version for tiny"
 assert_fail "mise ls tiny" 'rendered to "bogus:1.0"'
+
+# Commands that inspect or override configured tools must propagate the same deferred parse error.
+# These paths previously panicked (`config ls`) or silently discarded it (`install`).
+cat <<EOF >mise.toml
+[tools]
+tiny = "bogus:1.0"
+EOF
+
+assert_fail "mise config ls" "invalid version for tiny"
+assert_fail "mise config ls --json" "invalid version for tiny"
+assert_fail "mise install tiny@3.1.0 --dry-run" "invalid version for tiny"

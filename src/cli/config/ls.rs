@@ -46,7 +46,7 @@ impl ConfigLs {
             .collect_vec();
         let mut table = MiseTable::new(self.no_header, &["Path", "Tools"]);
         for cfg in configs {
-            let ts = cfg.to_tool_request_set().unwrap();
+            let ts = cfg.to_tool_request_set()?;
             let tools = ts.list_tools().into_iter().join(", ");
             let tools = if tools.is_empty() {
                 Cell::new("(none)")
@@ -87,26 +87,25 @@ impl ConfigLs {
         let array_items: Vec<serde_json::Value> = config
             .config_files
             .values()
-            .map(|cf| {
+            .map(|cf| -> Result<serde_json::Value> {
                 let tools: Vec<String> = cf
-                    .to_tool_request_set()
-                    .unwrap()
+                    .to_tool_request_set()?
                     .list_tools()
                     .into_iter()
                     .map(|s| s.to_string())
                     .collect();
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "path": cf.get_path().to_string_lossy(),
                     "tools": tools,
-                })
+                }))
             })
             .chain(env_results.env_files.iter().map(|f| {
-                serde_json::json!({
+                Ok(serde_json::json!({
                     "path": f.to_string_lossy(),
                     "tools": [],
-                })
+                }))
             }))
-            .collect();
+            .collect::<Result<_>>()?;
         miseprintln!("{}", serde_json::to_string_pretty(&array_items)?);
         Ok(())
     }

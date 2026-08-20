@@ -351,7 +351,7 @@ pub struct ConfigBump {
 pub fn compute_config_bumps(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
-) -> Vec<ConfigBump> {
+) -> Result<Vec<ConfigBump>> {
     let config_paths = config.config_files.keys().cloned().collect();
     compute_config_bumps_for_paths(config, tool_versions, &config_paths)
 }
@@ -364,7 +364,7 @@ pub fn compute_config_bumps_for_paths(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
     config_paths: &BTreeSet<PathBuf>,
-) -> Vec<ConfigBump> {
+) -> Result<Vec<ConfigBump>> {
     let mut bumps = Vec::new();
 
     for &(tool_name, cli_version) in tool_versions {
@@ -375,9 +375,7 @@ pub fn compute_config_bumps_for_paths(
             if crate::config::is_global_config(path) {
                 continue;
             }
-            let Ok(trs) = cf.to_tool_request_set() else {
-                continue;
-            };
+            let trs = cf.to_tool_request_set()?;
 
             // Find the tool by short name in this config file
             let matching = trs.tools.iter().find(|(ba, _)| ba.short == tool_name);
@@ -435,7 +433,7 @@ pub fn compute_config_bumps_for_paths(
         }
     }
 
-    bumps
+    Ok(bumps)
 }
 
 /// Apply config bumps by writing the new versions to their config files.
@@ -444,9 +442,7 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
         let Some(cf) = config.config_files.get(&bump.config_path) else {
             continue;
         };
-        let Ok(trs) = cf.to_tool_request_set() else {
-            continue;
-        };
+        let trs = cf.to_tool_request_set()?;
         let Some((ba, _)) = trs.tools.iter().find(|(ba, _)| ba.short == bump.tool_name) else {
             continue;
         };
