@@ -8,7 +8,9 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::lockfile::{self, LockResolutionResult, Lockfile};
 use crate::platform::Platform;
 use crate::task::Task;
-use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBuilder};
+use crate::toolset::{
+    ResolveOptions, ToolRequest, ToolSource, ToolVersionOptions, Toolset, ToolsetBuilder,
+};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
@@ -46,6 +48,27 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
     {
         tools.push(tool);
     }
+}
+
+fn options_for_lock_request(
+    tv: &crate::toolset::ToolVersion,
+    specified_request: &ToolRequest,
+) -> ToolVersionOptions {
+    specified_request
+        .ba()
+        .opts_with_config(Some(tv.request.options()))
+}
+
+fn is_known_concrete_lock_version(backend: &dyn crate::backend::Backend, version: &str) -> bool {
+    if backend.is_rolling_channel(version) || crate::semver::is_npm_semver_range_query(version) {
+        return false;
+    }
+    version.matches('.').count() >= 2
+        || backend.is_exact_version(version)
+        || backend
+            .list_installed_versions()
+            .iter()
+            .any(|installed| installed == version)
 }
 
 /// Update lockfile checksums and URLs for all specified platforms
@@ -1061,6 +1084,7 @@ impl Lock {
             {
                 if let Some(Some(request)) = specified_versions.get(&ba.short) {
                     let version = request.version();
+                    let request_options = options_for_lock_request(&tv, request);
                     let backend = crate::backend::get(&ba);
                     let effective_version = match &backend {
                         Some(backend) => config.resolve_alias(backend, &version).await?,
@@ -1069,41 +1093,46 @@ impl Lock {
                     let request = ToolRequest::new_opts(
                         Arc::new(ba.clone()),
                         &effective_version,
-                        tv.request.options(),
+                        request_options.clone(),
                         ToolSource::Argument,
-                    );
-                    let resolve_options = request
-                        .as_ref()
-                        .ok()
-                        .and_then(|request| request.resolve_options(context.resolve_options).ok());
-                    let is_rolling = backend
-                        .is_some_and(|backend| backend.is_rolling_channel(&effective_version));
-                    if let (Ok(request), Some(mut resolve_options)) = (request, resolve_options)
-                        && (self.bump || resolve_options.before_date.is_some() || is_rolling)
-                    {
-                        resolve_options.use_locked_version = false;
+                    )?;
+                    let mut resolve_options = request.resolve_options(context.resolve_options)?;
+                    resolve_options.use_locked_version = false;
+                    if self.bump || resolve_options.before_date.is_some() {
                         resolve_options.latest_versions = true;
-                        match request.resolve(config, &resolve_options).await {
-                            Ok(resolved_tv) => tv = resolved_tv,
-                            Err(err) if is_rolling => {
-                                return Err(err.wrap_err(format!(
-                                    "failed to resolve specified rolling channel {request}"
-                                )));
-                            }
-                            Err(err) => debug!("failed to resolve specified {request}: {err}"),
-                        }
-                    } else if version == "latest" {
-                        if let Some(latest_version) = crate::backend::get(&ba)
-                            .and_then(|b| {
-                                b.latest_installed_version(Some("latest".to_string())).ok()
-                            })
-                            .flatten()
-                        {
-                            tv.version = latest_version;
-                        }
-                    } else {
-                        tv.version = version;
                     }
+                    let resolved_tv =
+                        request
+                            .resolve(config, &resolve_options)
+                            .await
+                            .map_err(|err| {
+                                err.wrap_err(format!("failed to resolve specified {request}"))
+                            })?;
+                    let mut concrete = backend.as_ref().is_none_or(|backend| {
+                        is_known_concrete_lock_version(backend.as_ref(), &resolved_tv.version)
+                    });
+                    let offline = Settings::get().offline() || resolve_options.offline;
+                    if !concrete
+                        && !offline
+                        && let Some(backend) = &backend
+                        && !backend.is_rolling_channel(&resolved_tv.version)
+                        && !crate::semver::is_npm_semver_range_query(&resolved_tv.version)
+                    {
+                        concrete = backend
+                            .list_versions_matching_with_selection_options(
+                                config,
+                                &resolved_tv.version,
+                                &request.options(),
+                                None,
+                                resolve_options.refresh_remote_versions,
+                            )
+                            .await?
+                            .contains(&resolved_tv.version);
+                    }
+                    if !concrete {
+                        eyre::bail!("failed to resolve specified {request} to a concrete version");
+                    }
+                    tv = resolved_tv;
                 }
                 tools.push((ba, tv));
             }
@@ -1392,8 +1421,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use super::{
-        Lock, LockTaskResult, LockTaskStatus, classify_lock_result, push_unique_lock_tool,
+        Lock, LockTaskResult, LockTaskStatus, classify_lock_result, is_known_concrete_lock_version,
+        options_for_lock_request, push_unique_lock_tool,
     };
+    use crate::backend::test_helpers::RemoteVersionsBackend;
     use crate::cli::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
     use crate::platform::Platform;
@@ -1565,6 +1596,47 @@ mod tests {
         assert_eq!(tools[1].0.full(), "http:one");
         assert_eq!(tools[2].0.full(), "http:two");
         assert_ne!(tools[0].1.request.options(), tools[1].1.request.options());
+    }
+
+    #[tokio::test]
+    async fn lock_request_options_preserve_config_and_inline_precedence() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let plain_tool = ToolArg::from_str("vfox:tiny@latest").unwrap();
+        let inline_tool = ToolArg::from_str("vfox:tiny[prerelease=true]@latest").unwrap();
+        let mut config_options = ToolVersionOptions::default();
+        config_options
+            .opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(false));
+        let configured_request =
+            ToolRequest::new_opts(plain_tool.ba, "1.0.0", config_options, ToolSource::Argument)
+                .unwrap();
+        let configured_tv = ToolVersion::new(configured_request, "1.0.0".to_string());
+
+        let plain_options = options_for_lock_request(&configured_tv, &plain_tool.tvr.unwrap());
+        let inline_options = options_for_lock_request(&configured_tv, &inline_tool.tvr.unwrap());
+
+        assert_eq!(
+            plain_options.get_string("prerelease").as_deref(),
+            Some("false")
+        );
+        assert_eq!(
+            inline_options.get_string("prerelease").as_deref(),
+            Some("true")
+        );
+    }
+
+    #[test]
+    fn symbolic_lock_versions_are_not_concrete_even_when_installed() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::from("lock-symbolic-version-test");
+        ba.installs_path = temp_dir.path().join("installs");
+        std::fs::create_dir_all(ba.installs_path.join("edge")).unwrap();
+        let backend = RemoteVersionsBackend::new(Arc::new(ba), vec![], None)
+            .with_rolling_channel("edge", None);
+
+        assert!(!is_known_concrete_lock_version(&backend, "edge"));
+        assert!(!is_known_concrete_lock_version(&backend, "^1.2.3"));
+        assert!(!is_known_concrete_lock_version(&backend, "1.2.x"));
     }
 
     #[test]

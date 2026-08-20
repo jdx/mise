@@ -66,7 +66,9 @@ impl OutdatedInfo {
             // When minimum_release_age causes "latest" to resolve to a version not yet
             // installed on disk, fall back to finding the highest installed version.
             // Otherwise to_remove in `mise up` won't know which old version to uninstall.
-            let Some(current) = backend.latest_installed_version(None)? else {
+            let Some(current) = backend
+                .latest_installed_version_with_selection_options(None, &tv.request.options())?
+            else {
                 return Ok(None);
             };
             let current_tv = ToolVersion::new(tv.request.clone(), current);
@@ -81,7 +83,9 @@ impl OutdatedInfo {
             ToolRequest::Prefix { prefix, .. } => Some(prefix.clone()),
             _ => return Ok(None),
         };
-        let Some(current) = backend.latest_installed_version(query)? else {
+        let Some(current) = backend
+            .latest_installed_version_with_selection_options(query, &tv.request.options())?
+        else {
             return Ok(None);
         };
         let current_tv = ToolVersion::new(tv.request.clone(), current);
@@ -100,19 +104,11 @@ impl OutdatedInfo {
     ) -> eyre::Result<Option<Self>> {
         let t = tv.backend()?;
         // prefix is something like "temurin-" or "corretto-"
-        let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
+        let (prefix, _) = split_version_prefix(&tv.request.version());
         let use_backend_latest =
             bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown);
 
-        let latest_result = if use_backend_latest {
-            let prefix = prefixed_latest_query(&prefix, &prefix_version);
-            // For bumps and installed-but-inactive tools (`--no-source`), use backend latest.
-            t.latest_version(config, prefix, opts.before_date).await
-        } else {
-            tv.latest_version_with_opts(config, opts)
-                .await
-                .map(Option::from)
-        };
+        let latest_result = latest_for_outdated(config, &t, &tv, opts, use_backend_latest).await;
         let latest = match latest_result {
             Ok(Some(latest)) => latest,
             Ok(None) => {
@@ -212,6 +208,49 @@ impl OutdatedInfo {
         } else {
             "[NONE]".to_string()
         }
+    }
+}
+
+async fn latest_for_outdated(
+    config: &Arc<Config>,
+    backend: &ABackend,
+    tv: &ToolVersion,
+    opts: &ResolveOptions,
+    use_backend_latest: bool,
+) -> eyre::Result<Option<String>> {
+    if use_backend_latest {
+        let version = config.resolve_alias(backend, &tv.request.version()).await?;
+        let rolling = backend.is_rolling_channel(&version);
+        if rolling {
+            if let Some(concrete) = backend.resolve_channel_version(config, &version).await? {
+                return Ok(Some(concrete));
+            }
+            return Ok(backend
+                .latest_version_with_selection_options(
+                    config,
+                    Some(version.clone()),
+                    &tv.request.options(),
+                    opts.before_date,
+                    false,
+                )
+                .await?
+                .or(Some(version)));
+        }
+        let (prefix, prefix_version) = split_version_prefix(&version);
+        let query = prefixed_latest_query(&prefix, &prefix_version);
+        backend
+            .latest_version_with_selection_options(
+                config,
+                query,
+                &tv.request.options(),
+                opts.before_date,
+                false,
+            )
+            .await
+    } else {
+        tv.latest_version_with_opts(config, opts)
+            .await
+            .map(Option::from)
     }
 }
 
@@ -431,10 +470,88 @@ mod tests {
     use std::sync::Arc;
     use test_log::test;
 
-    use super::{OutdatedInfo, check_semver_bump, is_outdated_version, prefixed_latest_query};
+    use super::{
+        OutdatedInfo, check_semver_bump, is_outdated_version, latest_for_outdated,
+        prefixed_latest_query,
+    };
+    use crate::backend::{
+        ABackend, VersionInfo,
+        test_helpers::{RemoteVersionsBackend, prerelease_options, request_tool_version},
+    };
     use crate::cli::args::{BackendArg, BackendResolution};
     use crate::config::Config;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions, install_state};
+
+    #[tokio::test]
+    async fn outdated_latest_uses_request_prerelease_option() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("outdated-request-options-test"));
+        let backend: ABackend = Arc::new(RemoteVersionsBackend::stable_and_prerelease(ba.clone()));
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let stable = request_tool_version(ba.clone(), ToolVersionOptions::default());
+        let prerelease = request_tool_version(ba, prerelease_options());
+        let resolve_options = crate::toolset::ResolveOptions::default();
+
+        assert_eq!(
+            latest_for_outdated(&config, &backend, &stable, &resolve_options, true)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            latest_for_outdated(&config, &backend, &prerelease, &resolve_options, true)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.1.0-rc.1")
+        );
+    }
+
+    #[tokio::test]
+    async fn outdated_preserves_unresolved_rolling_selector() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("outdated-rolling-test"));
+        let backend: ABackend = Arc::new(
+            RemoteVersionsBackend::new(
+                ba.clone(),
+                vec![VersionInfo {
+                    version: "edge".into(),
+                    ..Default::default()
+                }],
+                None,
+            )
+            .with_rolling_channel("edge", None),
+        );
+        let rolling = ToolVersion::new(
+            ToolRequest::Version {
+                backend: ba,
+                version: "edge".into(),
+                options: ToolVersionOptions::default(),
+                source: ToolSource::Argument,
+            },
+            "edge".into(),
+        );
+
+        assert_eq!(
+            latest_for_outdated(
+                &config,
+                &backend,
+                &rolling,
+                &crate::toolset::ResolveOptions::default(),
+                true,
+            )
+            .await
+            .unwrap()
+            .as_deref(),
+            Some("edge")
+        );
+    }
 
     #[test]
     fn test_is_outdated_version() {

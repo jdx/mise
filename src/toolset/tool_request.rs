@@ -159,12 +159,7 @@ impl ToolRequest {
         source: ToolSource,
     ) -> eyre::Result<Self> {
         let mut tvr = Self::new(backend, s, source)?;
-        match &mut tvr {
-            Self::Version { options: o, .. }
-            | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => *o = options,
-            _ => Default::default(),
-        }
+        tvr.set_options(options);
         Ok(tvr)
     }
     pub fn set_source(&mut self, source: ToolSource) -> Self {
@@ -438,7 +433,8 @@ impl ToolRequest {
             return Ok(Some(lt.version));
         }
         if let Some(backend) = backend::get(self.ba()) {
-            let matches = backend.list_installed_versions_matching(v);
+            let matches =
+                backend.list_installed_versions_matching_with_selection_options(v, &self.options());
             if matches.iter().any(|m| m == v) {
                 return Ok(Some(v.to_string()));
             }
@@ -777,6 +773,24 @@ mod tests {
         let (query, boundary) = version.lockfile_version_query();
         assert_str_eq!(query, "0.8");
         assert!(!boundary);
+    }
+
+    #[test]
+    fn test_new_opts_applies_options_to_sub_requests() {
+        let mut options = ToolVersionOptions::default();
+        options
+            .opts
+            .insert("prerelease".into(), toml::Value::Boolean(true));
+
+        let request = ToolRequest::new_opts(
+            test_ba(),
+            "sub-1:latest",
+            options.clone(),
+            ToolSource::Argument,
+        )
+        .unwrap();
+
+        assert_eq!(request.options(), options);
     }
 
     #[test]

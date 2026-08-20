@@ -11,6 +11,7 @@ tiny = "myalias"
 
 [tool_alias.tiny.versions]
 myalias = "2"
+missing = "prefix:999"
 
 [settings]
 lockfile = true
@@ -25,3 +26,31 @@ rm -rf "$MISE_DATA_DIR/installs/tiny"
 mise install
 assert "mise ls tiny --json --current | jq -r '.[0].requested_version'" "myalias"
 assert "mise ls tiny --json --current | jq -r '.[0].version'" "2.0.0"
+
+# Explicit selectors must resolve independently of the configured version and
+# write a concrete result.
+cat <<EOF >mise.toml
+[tools]
+tiny = "1.0.0"
+
+[tool_alias.tiny.versions]
+myalias = "2"
+missing = "prefix:999"
+
+[settings]
+lockfile = true
+EOF
+rm mise.lock
+mise lock tiny@myalias
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+rm mise.lock
+mise lock tiny@2
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_fail_contains "mise lock tiny@999 2>&1" "to a concrete version"
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_fail_contains "MISE_OFFLINE=1 mise lock tiny@prefix:999 2>&1" "failed to resolve specified"
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_fail_contains "MISE_OFFLINE=1 mise lock tiny@missing 2>&1" "failed to resolve specified"
+assert_contains "cat mise.lock" 'version = "2.0.0"'
+assert_fail_contains "MISE_OFFLINE=1 mise lock tiny@sub-1:4 2>&1" "to a concrete version"
+assert_contains "cat mise.lock" 'version = "2.0.0"'
