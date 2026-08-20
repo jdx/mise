@@ -642,6 +642,7 @@ impl NPMBackend {
                     &npm,
                     "view",
                     deprecated_query,
+                    "version",
                     "deprecated",
                     "--prefix",
                     &prefix
@@ -685,6 +686,7 @@ impl NPMBackend {
             &npm,
             "view",
             deprecated_query,
+            "version",
             "deprecated",
             "--prefix",
             &prefix
@@ -1572,8 +1574,16 @@ fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> 
     output
         .lines()
         .filter_map(|line| line.strip_prefix(&prefix))
-        .filter_map(|line| line.split_whitespace().next())
-        .map(str::to_string)
+        .filter_map(|line| line.split_once(' '))
+        .filter_map(|(version, field)| {
+            // With both fields requested npm prefixes each matched version and
+            // labels deprecation metadata. npm sometimes renders version-only
+            // entries without a `version =` label, so match the field name
+            // positively rather than treating every other line as deprecated.
+            field
+                .starts_with("deprecated = ")
+                .then_some(version.to_string())
+        })
         .collect()
 }
 
@@ -2058,8 +2068,10 @@ mod tests {
     #[test]
     fn test_npm_view_deprecated_versions_extracts_versions() {
         let output = "\
-aws-cdk@1.0.0 'use 1.2.0'
-aws-cdk@2.0.0 'published accidentally'
+aws-cdk@1.0.0 version = '1.0.0'
+aws-cdk@1.0.0 deprecated = 'use 1.2.0'
+aws-cdk@2.0.0 version = '2.0.0'
+aws-cdk@2.0.0 deprecated = 'published accidentally'
 ";
         assert_eq!(
             npm_view_deprecated_versions("aws-cdk", output),
@@ -2070,9 +2082,11 @@ aws-cdk@2.0.0 'published accidentally'
     #[test]
     fn test_npm_view_deprecated_versions_handles_scoped_packages_and_multiline_messages() {
         let output = "\
-@scope/pkg@1.0.0 'first line\n' +
+@scope/pkg@1.0.0 version = '1.0.0'
+@scope/pkg@1.0.0 deprecated = 'first line\n' +
   'second line'
-@scope/pkg@2.0.0 'use a newer version'
+@scope/pkg@2.0.0 version = '2.0.0'
+@scope/pkg@2.0.0 deprecated = 'use a newer version'
 ";
         assert_eq!(
             npm_view_deprecated_versions("@scope/pkg", output),
@@ -2083,6 +2097,21 @@ aws-cdk@2.0.0 'published accidentally'
     #[test]
     fn test_npm_view_deprecated_versions_accepts_empty_output() {
         assert!(npm_view_deprecated_versions("prettier", "").is_empty());
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_preserves_a_single_deprecated_release() {
+        let output = "\
+pkg@1.0.0 '1.0.0'
+pkg@1.1.0 version = '1.1.0'
+pkg@1.1.0 deprecated = 'published accidentally'
+pkg@1.2.0 '1.2.0'
+";
+
+        assert_eq!(
+            npm_view_deprecated_versions("pkg", output),
+            HashSet::from(["1.1.0".into()])
+        );
     }
 
     #[test]
