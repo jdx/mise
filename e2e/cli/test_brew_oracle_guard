@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
 source "$TEST_ROOT/cli/brew_oracle_guard.sh"
 
 runner_temp=$(mktemp -d)
