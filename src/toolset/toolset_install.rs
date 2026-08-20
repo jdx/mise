@@ -133,8 +133,7 @@ impl Toolset {
                     continue;
                 }
                 // Use matching config options when available. If selection is
-                // ambiguous, preserve options already carried by the request;
-                // synthesize backend defaults only for an empty request.
+                // ambiguous, preserve options already carried by the request.
                 if let Some(config_options) =
                     super::tool_request_set::configured_options_for_runtime_request(
                         &tvl.requests,
@@ -142,8 +141,6 @@ impl Toolset {
                     )
                 {
                     tr.apply_option_layers(Some(config_options));
-                } else if tr.options().is_empty() {
-                    tr.apply_option_layers(None);
                 }
             }
         }
