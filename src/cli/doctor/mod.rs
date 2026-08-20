@@ -164,6 +164,8 @@ impl Doctor {
         self.analyze_plugins();
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
+        #[cfg(windows)]
+        self.analyze_self_update_leftovers();
         self.check_path_ordering(ts, &config).await;
         self.check_shim_shadowing(&desired_shims).await;
         data.insert(
@@ -318,6 +320,8 @@ impl Doctor {
                 *version::V
             ));
         }
+        #[cfg(windows)]
+        self.analyze_self_update_leftovers();
 
         miseprintln!();
 
@@ -394,6 +398,27 @@ impl Doctor {
                 self.warnings.push(msg);
             }
         }
+    }
+
+    /// Windows `self-update` moves the running mise.exe aside and spawns a copy of it to do the
+    /// deleting; when that copy fails to remove itself both stay in `TEMP`, a full mise.exe each.
+    /// Only another `self-update` collects them, so without this nothing says they are there: they
+    /// sit outside the cache, and their generated names mean nothing to anyone reading a directory
+    /// listing. Reported rather than deleted — `doctor` is not a command that should remove files.
+    #[cfg(windows)]
+    fn analyze_self_update_leftovers(&mut self) {
+        let orphans = crate::cli::self_update::helper_orphans();
+        if orphans.is_empty() {
+            return;
+        }
+        let total: u64 = orphans.iter().map(|(_, size)| size).sum();
+        let plural = if orphans.len() == 1 { "y" } else { "ies" };
+        self.warnings.push(format!(
+            "{} stale cop{plural} of mise ({}) left by self-update in {}\n`mise self-update` removes them",
+            orphans.len(),
+            bytesize::ByteSize::b(total).display().iec(),
+            display_path(std::env::temp_dir()),
+        ));
     }
 
     fn analyze_settings(&mut self) -> eyre::Result<()> {
