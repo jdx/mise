@@ -178,7 +178,6 @@ mod tests {
         let _test_lock = REMOTE_TASK_ARTIFACT_TEST_LOCK.lock().await;
         assert_eq!(*REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap(), 0);
         REMOTE_TASK_ARTIFACTS.clear();
-        crate::config::clear_remote_task_include_artifacts();
 
         let outer = RemoteTaskArtifactsGuard::new();
         let inner = RemoteTaskArtifactsGuard::new();
@@ -190,21 +189,12 @@ mod tests {
             },
             Arc::new(OnceCell::new()),
         );
-        crate::config::insert_remote_task_include_artifact_for_test();
 
         drop(inner);
         assert_eq!(REMOTE_TASK_ARTIFACTS.len(), 1);
-        assert_eq!(
-            crate::config::remote_task_include_artifact_count_for_test(),
-            1
-        );
 
         drop(outer);
         assert!(REMOTE_TASK_ARTIFACTS.is_empty());
-        assert_eq!(
-            crate::config::remote_task_include_artifact_count_for_test(),
-            0
-        );
     }
 
     #[tokio::test]

@@ -67,11 +67,6 @@ type RemoteTaskIncludeKey = (String, Option<String>);
 type RemoteTaskIncludeArtifacts = DashMap<RemoteTaskIncludeKey, Arc<OnceCell<TaskFileArtifact>>>;
 static REMOTE_TASK_INCLUDE_ARTIFACTS: Lazy<RemoteTaskIncludeArtifacts> = Lazy::new(DashMap::new);
 
-#[cfg(test)]
-pub(crate) fn clear_remote_task_include_artifacts() {
-    drop(take_remote_task_include_artifacts());
-}
-
 pub(crate) fn take_remote_task_include_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
     let keys = REMOTE_TASK_INCLUDE_ARTIFACTS
         .iter()
@@ -87,16 +82,22 @@ pub(crate) fn take_remote_task_include_artifacts() -> Vec<Arc<OnceCell<TaskFileA
 }
 
 #[cfg(test)]
-pub(crate) fn insert_remote_task_include_artifact_for_test() {
-    REMOTE_TASK_INCLUDE_ARTIFACTS.insert(
-        ("https://example.test/repo.git".into(), None),
-        Arc::new(OnceCell::new()),
-    );
-}
+mod remote_task_include_tests {
+    use super::*;
 
-#[cfg(test)]
-pub(crate) fn remote_task_include_artifact_count_for_test() -> usize {
-    REMOTE_TASK_INCLUDE_ARTIFACTS.len()
+    #[test]
+    fn take_remote_task_include_artifacts_drains_cache() {
+        drop(take_remote_task_include_artifacts());
+        REMOTE_TASK_INCLUDE_ARTIFACTS.insert(
+            ("https://example.test/repo.git".into(), None),
+            Arc::new(OnceCell::new()),
+        );
+
+        let artifacts = take_remote_task_include_artifacts();
+
+        assert!(REMOTE_TASK_INCLUDE_ARTIFACTS.is_empty());
+        assert_eq!(artifacts.len(), 1);
+    }
 }
 
 pub(crate) struct MonorepoUnion {

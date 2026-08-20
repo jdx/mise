@@ -174,16 +174,6 @@ impl RemoteTaskGit {
         Self::prepare_remote_path(&full_path)?;
         Ok(full_path)
     }
-
-    #[cfg(test)]
-    fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
-        RemoteSource::parse_git_ssh(file).map(|source| source.into())
-    }
-
-    #[cfg(test)]
-    fn parse_https(file: &str) -> Option<GitRepoStructure> {
-        RemoteSource::parse_git_https(file).map(|source| source.into())
-    }
 }
 
 impl From<RemoteGitSource> for GitRepoStructure {
@@ -226,6 +216,14 @@ impl TaskFileProvider for RemoteTaskGit {
 mod tests {
 
     use super::*;
+
+    fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
+        RemoteSource::parse_git_ssh(file).map(Into::into)
+    }
+
+    fn parse_https(file: &str) -> Option<GitRepoStructure> {
+        RemoteSource::parse_git_https(file).map(Into::into)
+    }
 
     #[test]
     fn test_unique_artifact_root_remains_reserved_for_clone() {
@@ -307,11 +305,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_ssh(url).is_some(),
-                "Failed for: {}",
-                url
-            );
+            assert!(parse_ssh(url).is_some(), "Failed for: {}", url);
         }
     }
 
@@ -329,11 +323,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_ssh(url).is_none(),
-                "Should fail for: {}",
-                url
-            );
+            assert!(parse_ssh(url).is_none(), "Should fail for: {}", url);
         }
     }
 
@@ -355,11 +345,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_https(url).is_some(),
-                "Failed for: {}",
-                url
-            );
+            assert!(parse_https(url).is_some(), "Failed for: {}", url);
         }
     }
 
@@ -376,11 +362,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_https(url).is_none(),
-                "Should fail for: {}",
-                url
-            );
+            assert!(parse_https(url).is_none(), "Should fail for: {}", url);
         }
     }
 
@@ -444,7 +426,7 @@ mod tests {
         ];
 
         for (url, expected_repo, expected_path, expected_branch) in test_cases {
-            let repo = RemoteTaskGit::parse_ssh(url).unwrap();
+            let repo = parse_ssh(url).unwrap();
             assert_eq!(expected_repo, repo.url_without_path);
             assert_eq!(expected_path, repo.path);
             assert_eq!(expected_branch, repo.branch);
@@ -493,7 +475,7 @@ mod tests {
         ];
 
         for (url, expected_repo, expected_path, expected_branch) in test_cases {
-            let repo = RemoteTaskGit::parse_https(url).unwrap();
+            let repo = parse_https(url).unwrap();
             assert_eq!(expected_repo, repo.url_without_path);
             assert_eq!(expected_path, repo.path);
             assert_eq!(expected_branch, repo.branch);
@@ -538,8 +520,8 @@ mod tests {
         ];
 
         for (first_url, second_url, expected) in test_cases {
-            let first_repo = RemoteTaskGit::parse_ssh(first_url).unwrap();
-            let second_repo = RemoteTaskGit::parse_ssh(second_url).unwrap();
+            let first_repo = parse_ssh(first_url).unwrap();
+            let second_repo = parse_ssh(second_url).unwrap();
             let first_cache_key = remote_task_git.get_cache_key(&first_repo);
             let second_cache_key = remote_task_git.get_cache_key(&second_repo);
             assert_eq!(expected, first_cache_key == second_cache_key);
@@ -584,8 +566,8 @@ mod tests {
         ];
 
         for (first_url, second_url, expected) in test_cases {
-            let first_repo = RemoteTaskGit::parse_https(first_url).unwrap();
-            let second_repo = RemoteTaskGit::parse_https(second_url).unwrap();
+            let first_repo = parse_https(first_url).unwrap();
+            let second_repo = parse_https(second_url).unwrap();
             let first_cache_key = remote_task_git.get_cache_key(&first_repo);
             let second_cache_key = remote_task_git.get_cache_key(&second_repo);
             assert_eq!(expected, first_cache_key == second_cache_key);
