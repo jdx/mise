@@ -3969,10 +3969,10 @@ fn discover_monorepo_subdirs(
 }
 
 async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
-    // User-global config overrides system config. Compose each group as one
-    // config scope so task_config fields follow the same override semantics as
-    // local config files. Keep the groups separate so a user include does not
-    // remove tasks provided by the system config.
+    // Compose user-global and system configs as separate scopes so task_config
+    // fields follow the same override semantics as local config files. Load the
+    // user scope first so a user task replaces a same-named system task without
+    // inheriting metadata from it.
     let mut seen_configs = BTreeSet::new();
     let mut config_groups = vec![];
     for config_paths in [global_config_files(), system_config_files()] {
@@ -3996,12 +3996,10 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         }
     }
 
-    // Aggregate the user and system scopes high-to-low. When the lower scope
-    // supplies the first inline definition for a script rediscovered by the
-    // higher scope, apply only that inline metadata to the higher script so its
-    // config context is preserved.
+    // Aggregate the user and system scopes high-to-low. Each scope has already
+    // composed its file and inline tasks, so precedence between scopes is a
+    // simple first-wins replacement by task name.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
-    let mut seen_config_task_names = BTreeSet::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for configs in config_groups {
         let config_root = configs
@@ -4019,30 +4017,8 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         )
         .await?;
         rendered_file_tasks.finish_scope();
-        let mut inline_tasks = IndexMap::new();
-        for task in &sources.config_tasks {
-            inline_tasks
-                .entry(task.name.clone())
-                .or_insert_with(|| task.clone());
-        }
-        let loaded = sources.into_tasks();
-        for task in loaded {
-            if let Some(inline_task) = inline_tasks.get(&task.name) {
-                if seen_config_task_names.insert(task.name.clone()) {
-                    if let Some(existing) = tasks.get_mut(&task.name) {
-                        let rediscovered_file = resolved_task_file(existing)
-                            .zip(resolved_task_file(&task))
-                            .is_some_and(|(left, right)| file::same_file(&left, &right));
-                        if rediscovered_file {
-                            existing.merge_toml_overlay(inline_task.clone());
-                        }
-                    } else {
-                        tasks.insert(task.name.clone(), task);
-                    }
-                }
-            } else {
-                tasks.entry(task.name.clone()).or_insert(task);
-            }
+        for task in sources.into_tasks() {
+            tasks.entry(task.name.clone()).or_insert(task);
         }
     }
     Ok(tasks.into_values().collect())
@@ -4783,9 +4759,8 @@ async fn load_tasks_from_configs(
 
 /// Load file and inline task sources without merging them.
 ///
-/// Global user and system scopes use this boundary because inline metadata from
-/// the lower scope may still need to decorate a script selected from the
-/// higher-precedence scope.
+/// Global user and system scopes use this boundary so they can share rendered
+/// file tasks without merging task definitions across the scope boundary.
 async fn load_task_sources_from_configs(
     config: &Arc<Config>,
     dir: &Path,

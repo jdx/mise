@@ -1505,8 +1505,9 @@ until a child defines its own. A child config's `includes` replaces both the def
 inherited `includes` for that directory.
 User-global config files form one config scope, as do system config files. Within each scope, the
 highest-precedence config that defines `task_config.includes` replaces lower-precedence includes and
-the default directories. User-global and system scopes remain independent, so user includes do not
-remove tasks provided by the system config.
+the default directories. User-global and system scopes remain independent. User-global tasks replace
+same-named system tasks without inheriting system task metadata, while system tasks with other names
+remain available.
 
 Entries are evaluated in order, and when more than one include defines a task with the same name the **last** entry in the list wins.
 This applies uniformly to directory, toml-file, and `git::` includes, so to override a task coming from a `git::` include with a local one, list the local directory after the `git::` entry:
