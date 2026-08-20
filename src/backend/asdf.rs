@@ -436,9 +436,8 @@ impl Backend for AsdfBackend {
         let dependency_paths = self
             .install_dependency_context(ctx, &tv)
             .await?
-            .toolset
-            .list_paths(&ctx.config)
-            .await;
+            .paths
+            .clone();
         let active_paths = ctx.ts.list_paths(&ctx.config).await;
         let mut seen = HashSet::new();
         let paths: Vec<_> = dependency_paths

@@ -3290,6 +3290,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let will_uninstall =
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
+        if install_satisfied && !will_uninstall {
+            return Ok(tv);
+        }
+
+        // The scheduler has released this tool only after its in-batch dependencies
+        // succeeded. Validate configured dependencies before replacing the target or
+        // creating any of its install directories, then reuse the stored context in
+        // backend and tool-level hooks.
+        self.install_dependency_context(&ctx, &tv).await?;
+
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
         let total_ops = if will_uninstall {
@@ -3303,8 +3313,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
             self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
                 .await?;
             ctx.pr.next_operation();
-        } else if install_satisfied {
-            return Ok(tv);
         }
 
         // Track the installation asynchronously (fire-and-forget)
@@ -3392,16 +3400,17 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
             }
         }
+        let dependencies = self.install_dependency_context(ctx, &tv_exact).await?;
 
         // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
         // hook, resolved against this tool's already-installed dependencies. The
         // config env added above is resolved without tools (`NonToolsOnly`), so it
-        // omits these; `install_dependency_context` is fully resolved (offline) so
+        // omits these; the install dependency context is fully resolved (offline) so
         // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
         // unresolved install toolset during a combined install. PATH stays owned by
-        // `path_env` below. Best-effort: any resolution error leaves the tool-less
-        // env untouched.
+        // `path_env` below. Best-effort: a `tools = true` value evaluation error
+        // leaves the tool-less env untouched.
         //
         // Gated on the tool declaring dependencies. Only a `tools = true` value that
         // can reference a dependency (installed first, by depends ordering) is
@@ -3410,22 +3419,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // (#6418, e2e/config/test_hooks_postinstall_env) — since a *static*
         // `tools = true` value (no `{{ tools.* }}` reference) would otherwise leak in.
         // (#10282, follow-up to #10432)
-        let declares_deps = self
-            .get_all_dependencies(true)
-            .map(|deps| !deps.is_empty())
-            .unwrap_or(false)
-            || tv_exact
-                .request
-                .options()
-                .core
-                .depends
-                .is_some_and(|deps| !deps.is_empty());
-        if declares_deps {
+        if !dependencies.declarations.is_empty() {
             let base = env_vars.clone();
-            let tool_vals = match self.install_dependency_context(ctx, &tv_exact).await {
-                Ok(dependencies) => dependencies.toolset.tool_val_env(&ctx.config, &base).await,
-                Err(e) => Err(e),
-            };
+            let tool_vals = dependencies.toolset.tool_val_env(&ctx.config, &base).await;
             match tool_vals {
                 Ok(vals) => {
                     for (k, v) in vals {
@@ -3448,9 +3444,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // instead of hardcoding install_path/bin, which may not match the actual
         // binary location for backends like aqua.
         let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let mut path_env = PathEnv::new();
         for p in bin_paths {
             path_env.add(p);
+        }
+        for p in &dependencies.paths {
+            path_env.add(p.clone());
+        }
+        for p in env::PATH.iter() {
+            path_env.add(p.clone());
         }
 
         // Render tera template variables (e.g. {{tools.ripgrep.path}})
@@ -3919,6 +3921,26 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // filtering only one used to leak recursion through the other (#8475
         // closed the user dir for `dependency_env`, this PR closes the system dir
         // and aligns with the dual-dir guard already in `which_shim` (#8816)).
+        self.remove_dependency_shims(&mut env)?;
+
+        Ok(env)
+    }
+
+    async fn dependency_env_for_install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let dependencies = self.install_dependency_context(ctx, tv).await?;
+        let mut env = dependencies
+            .toolset
+            .full_env_without_tools_with_paths(&ctx.config, &dependencies.paths)
+            .await?;
+        self.remove_dependency_shims(&mut env)?;
+        Ok(env)
+    }
+
+    fn remove_dependency_shims(&self, env: &mut BTreeMap<String, String>) -> eyre::Result<()> {
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
@@ -3934,8 +3956,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 );
             }
         }
-
-        Ok(env)
+        Ok(())
     }
 
     /// Default fuzzy-match. `filter_prereleases = true` applies the historical

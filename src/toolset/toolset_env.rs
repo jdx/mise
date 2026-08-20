@@ -46,6 +46,34 @@ impl Toolset {
         Ok(env)
     }
 
+    /// Build the install-hook base environment with already-validated dependency
+    /// paths ahead of ambient alternatives. `tools = true` directives remain
+    /// excluded because a partial install context cannot evaluate arbitrary modules.
+    pub(crate) async fn full_env_without_tools_with_paths(
+        &self,
+        config: &Arc<Config>,
+        tool_paths: &[PathBuf],
+    ) -> Result<EnvMap> {
+        let mut full_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
+        let (mut env, add_paths) = self.env(config).await?;
+        let mut path_env = PathEnv::new();
+        for path in tool_paths {
+            path_env.add(path.clone());
+        }
+        for path in config.path_dirs().await?.clone() {
+            path_env.add(path);
+        }
+        for path in add_paths {
+            path_env.add(path);
+        }
+        for path in pristine_path_without_install_dirs() {
+            path_env.add(path);
+        }
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
+        full_env.extend(env);
+        Ok(full_env)
+    }
+
     /// Like env_with_path but skips `tools=true` env directives.
     /// Used during tool installation where tool-dependent env vars
     /// may reference tools that aren't installed yet, and in

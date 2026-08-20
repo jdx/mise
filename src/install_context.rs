@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use eyre::{Result, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use indexmap::IndexSet;
 use jiff::Timestamp;
 use tokio::sync::OnceCell;
@@ -21,7 +21,6 @@ use crate::{
 #[derive(Debug, Default)]
 pub(crate) struct InstallDependencyDeclarations {
     dependencies: IndexSet<BackendArg>,
-    direct: Vec<(String, BackendArg)>,
     metadata_error: Option<String>,
 }
 
@@ -30,8 +29,8 @@ impl InstallDependencyDeclarations {
         self.dependencies.iter()
     }
 
-    pub(crate) fn direct(&self) -> impl Iterator<Item = (&str, &BackendArg)> {
-        self.direct.iter().map(|(raw, ba)| (raw.as_str(), ba))
+    pub(crate) fn is_empty(&self) -> bool {
+        self.dependencies.is_empty()
     }
 
     pub(crate) fn matches(&self, candidate: &BackendArg) -> bool {
@@ -98,7 +97,6 @@ pub(crate) fn install_dependency_declarations(
     if let Some(dependencies) = request.options().core.depends {
         for raw in dependencies {
             let dependency = BackendArg::from(raw.as_str());
-            declarations.direct.push((raw, dependency.clone()));
             declarations.insert(request.ba(), dependency);
         }
     }
@@ -111,6 +109,7 @@ pub(crate) struct InstallDependencyContext {
     pub(crate) declarations: InstallDependencyDeclarations,
     pub(crate) requests: ToolRequestSet,
     pub(crate) toolset: Toolset,
+    pub(crate) paths: Vec<std::path::PathBuf>,
 }
 
 impl InstallDependencyContext {
@@ -119,19 +118,59 @@ impl InstallDependencyContext {
         declarations.validate()?;
         let requests = declarations.matching_requests(config.get_tool_request_set().await?);
         let mut toolset: Toolset = requests.clone().into();
-        toolset
-            .resolve_with_opts(
-                config,
-                &ResolveOptions {
-                    offline: true,
-                    ..Default::default()
-                },
-            )
-            .await?;
+        let resolve_options = ResolveOptions {
+            offline: true,
+            ..Default::default()
+        };
+        for (dependency, versions) in &mut toolset.versions {
+            versions
+                .resolve(config, &resolve_options)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to resolve configured install dependency '{}' for '{}'",
+                        dependency, request
+                    )
+                })?;
+        }
+        for (backend, dependency) in toolset.list_current_versions() {
+            if !backend.is_version_installed(config, &dependency, true) {
+                let unresolved = match &dependency.request {
+                    ToolRequest::Prefix { .. } | ToolRequest::Sub { .. } => {
+                        dependency.version.matches('.').count() < 2
+                            && !backend.is_exact_version(&dependency.version)
+                    }
+                    ToolRequest::Version { .. } => {
+                        dependency.version.matches('.').count() < 2
+                            && !backend.is_exact_version(&dependency.version)
+                    }
+                    ToolRequest::Ref { .. }
+                    | ToolRequest::Path { .. }
+                    | ToolRequest::System { .. } => false,
+                };
+                if unresolved {
+                    bail!(
+                        "failed to resolve configured install dependency '{}' for '{}' while offline",
+                        dependency.request,
+                        request
+                    );
+                }
+                bail!(
+                    "tool '{}' requires configured install dependency '{}', but its selected version is not installed\n\
+                     hint: Run `mise install {}` before installing '{}'. Remove the dependency from configuration to allow the install hook to rely on system PATH instead.",
+                    request,
+                    dependency.request,
+                    dependency.request,
+                    request,
+                );
+            }
+        }
+        let paths = toolset.list_paths_strict(config, request).await?;
         let context = Self {
             declarations,
             requests,
             toolset,
+            paths,
         };
         debug_assert_eq!(context.requests.tools.len(), context.toolset.versions.len());
         debug_assert!(

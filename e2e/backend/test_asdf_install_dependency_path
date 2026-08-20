@@ -53,6 +53,9 @@ mkdir -p "$ASDF_INSTALL_PATH/bin"
 cp "$ASDF_DOWNLOAD_PATH/dependency-path" "$ASDF_INSTALL_PATH/download-dependency-path"
 command -v node >"$ASDF_INSTALL_PATH/install-dependency-path"
 node install >/dev/null
+if command -v legacy-active >/dev/null 2>&1; then
+  legacy-active >"$ASDF_INSTALL_PATH/legacy-active-output"
+fi
 printf '%s\n' "$PATH" >"$ASDF_INSTALL_PATH/install-path"
 cat >"$ASDF_INSTALL_PATH/bin/asdf-path-dependent" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -82,3 +85,37 @@ assert "cat '$DEPENDENT_PATH/download-dependency-path'" "$DEPENDENCY_BIN"
 assert "cat '$DEPENDENT_PATH/install-dependency-path'" "$DEPENDENCY_BIN"
 assert "tr ':' '\n' <'$DEPENDENT_PATH/install-path' | grep -Fxc '$(dirname "$DEPENDENCY_BIN")'" "1"
 assert "mise exec -- asdf-path-dependent" "installed"
+
+# Keep the asdf-only compatibility fallback for an already-installed active
+# tool that was not declared as a dependency.
+LEGACY_PLUGIN_DIR="$MISE_DATA_DIR/plugins/asdf-legacy-active"
+mkdir -p "$LEGACY_PLUGIN_DIR/bin"
+cat >"$LEGACY_PLUGIN_DIR/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+cat >"$LEGACY_PLUGIN_DIR/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat >"$ASDF_INSTALL_PATH/bin/legacy-active" <<'SCRIPT'
+#!/usr/bin/env bash
+echo legacy-active
+SCRIPT
+chmod +x "$ASDF_INSTALL_PATH/bin/legacy-active"
+EOF
+chmod +x "$LEGACY_PLUGIN_DIR/bin/list-all" "$LEGACY_PLUGIN_DIR/bin/install"
+
+mise install asdf:legacy-active@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+"asdf:asdf-path-dependent" = { version = "1.0.0", depends = ["nodejs"] }
+node = "1.0.0"
+"asdf:legacy-active" = "1.0.0"
+EOF
+rm -rf "$DEPENDENT_PATH"
+legacy_output="$(mise exec -- mise install asdf:asdf-path-dependent 2>&1)"
+assert_not_contains_text "$legacy_output" "deprecated"
+
+DEPENDENT_PATH="$(mise where asdf:asdf-path-dependent)"
+assert "cat '$DEPENDENT_PATH/legacy-active-output'" "legacy-active"
