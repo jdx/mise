@@ -106,7 +106,16 @@ echo "NODE_ENV: $NODE_ENV"
 
 ## Example with `pnpm`
 
-This example uses `pnpm` as the package manager. This will skip installing dependencies if the lock file hasn't changed.
+This example uses `pnpm` as the package manager. It expects the `packageManager` field in
+`package.json` to pin the pnpm version:
+
+```json [package.json]
+{
+  "packageManager": "pnpm@10.15.0"
+}
+```
+
+The install task will be skipped when the lockfile has not changed.
 
 ```toml [mise.toml]
 [tools]
@@ -114,7 +123,6 @@ node = '24'
 
 [settings]
 # Use the pnpm version specified in package.json
-# https://mise.jdx.dev/configuration.html#idiomatic-version-files
 idiomatic_version_file_enable_tools = ['pnpm']
 
 [env]
