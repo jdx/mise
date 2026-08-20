@@ -124,6 +124,8 @@ pub struct CmdLineRunner<'a> {
     cleanup_process_group: bool,
     #[cfg(unix)]
     process_group_prepared: bool,
+    #[cfg(unix)]
+    current_dir_fd_prepared: bool,
 }
 
 const GUARD_RUNNING: u8 = 0;
@@ -639,6 +641,8 @@ impl<'a> CmdLineRunner<'a> {
             cleanup_process_group: false,
             #[cfg(unix)]
             process_group_prepared: false,
+            #[cfg(unix)]
+            current_dir_fd_prepared: false,
         }
     }
 
@@ -767,6 +771,7 @@ impl<'a> CmdLineRunner<'a> {
                 Ok(())
             });
         }
+        self.current_dir_fd_prepared = true;
         self
     }
 
@@ -1713,7 +1718,12 @@ impl<'a> CmdLineRunner<'a> {
         if !sandbox.is_active() {
             return Ok(());
         }
-        sandbox.validate_formula_execution_for_runner(self.cleanup_process_group)?;
+        #[cfg(unix)]
+        let bound_current_dir = self.current_dir_fd_prepared;
+        #[cfg(not(unix))]
+        let bound_current_dir = false;
+        sandbox
+            .validate_formula_execution_for_runner(self.cleanup_process_group, bound_current_dir)?;
 
         // Fail early on Linux if per-host network filtering is requested
         #[cfg(target_os = "linux")]
@@ -1732,6 +1742,7 @@ impl<'a> CmdLineRunner<'a> {
                 crate::sandbox::ensure_strict_formula_execution_available(
                     "formula-execution sandbox",
                 )?;
+                sandbox.require_bound_formula_execution_paths()?;
             } else if sandbox.require_full_filesystem_confinement
                 && (sandbox.effective_deny_read() || sandbox.effective_deny_write())
             {
@@ -2380,7 +2391,9 @@ mod tests {
             ..Default::default()
         };
         sandbox.resolve_paths();
+        sandbox.bind_formula_execution_paths().unwrap();
         let mut runner = super::CmdLineRunner::new("/bin/true")
+            .current_dir_fd(std::fs::File::open(root.path()).unwrap().into())
             .env_clear()
             .with_sandbox(sandbox)
             .with_process_group_cleanup();
@@ -2394,6 +2407,79 @@ mod tests {
         }
         expected_preflight.unwrap();
         runner.execute_async().await.unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn strict_formula_paths_and_cwd_remain_bound_across_pathname_swaps() {
+        use std::os::fd::OwnedFd;
+
+        if !super::should_use_pgroup() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let readable = root.path().join("formula.rb");
+        std::fs::write(&readable, "original").unwrap();
+        let writable = root.path().join("writable");
+        std::fs::create_dir(&writable).unwrap();
+        let cwd = root.path().join("cwd");
+        std::fs::create_dir(&cwd).unwrap();
+        let cwd_fd = OwnedFd::from(std::fs::File::open(&cwd).unwrap());
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_read: true,
+            deny_write: true,
+            deny_net: true,
+            deny_local_sockets: true,
+            deny_env: true,
+            allow_read: vec![readable.clone()],
+            allow_write: vec![writable.clone(), cwd.clone()],
+            deny_system_temp_write: true,
+            deny_mise_data_read: true,
+            require_full_filesystem_confinement: true,
+            system_access_profile: crate::sandbox::SystemAccessProfile::FormulaExecution,
+            ..Default::default()
+        };
+        sandbox.resolve_paths();
+        sandbox.bind_formula_execution_paths().unwrap();
+        let script = format!(
+            "cat {} >/dev/null 2>&1 && exit 41; printf owned >relative; \
+             printf leaked >{}/leak 2>/dev/null && exit 42; exit 0",
+            shell_escape::escape(readable.to_string_lossy()),
+            shell_escape::escape(writable.to_string_lossy()),
+        );
+        let mut runner = super::CmdLineRunner::new("/bin/sh")
+            .args(["-c", &script])
+            .current_dir_fd(cwd_fd)
+            .env_clear()
+            .with_sandbox(sandbox)
+            .with_process_group_cleanup();
+
+        let expected_preflight =
+            crate::sandbox::ensure_strict_formula_execution_available("formula-execution sandbox")
+                .map_err(|error| error.to_string());
+        if let Err(error) = runner.apply_sandbox().await {
+            assert_eq!(Err(error.to_string()), expected_preflight);
+            return;
+        }
+        expected_preflight.unwrap();
+
+        let old_readable = root.path().join("old-formula.rb");
+        std::fs::rename(&readable, &old_readable).unwrap();
+        std::fs::write(&readable, "foreign").unwrap();
+        let old_writable = root.path().join("old-writable");
+        std::fs::rename(&writable, &old_writable).unwrap();
+        std::fs::create_dir(&writable).unwrap();
+        let old_cwd = root.path().join("old-cwd");
+        std::fs::rename(&cwd, &old_cwd).unwrap();
+        std::fs::create_dir(&cwd).unwrap();
+
+        runner.execute_async().await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(old_cwd.join("relative")).unwrap(),
+            "owned"
+        );
+        assert!(!cwd.join("relative").exists());
+        assert!(!writable.join("leak").exists());
     }
 
     #[tokio::test]

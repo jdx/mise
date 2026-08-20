@@ -1,12 +1,95 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: DONE
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010, 011
 Implementation start: #11915 `94c66938ca1163d26de49902575f0b779367ee41`
-Implementation commits: `94c66938c`, `06a9bf68c`, `57319487b`, `b5b4810c3`
+Implementation commits: `94c66938c`, `06a9bf68c`, `57319487b`, `b5b4810c3`,
+`ca2438834`, `09bccf0a7`, `56ef7caf1`, `75bdcadbd`, `c9390008a`,
+`38b25fa5b`, `93df3357c`, `7c5374c0a`
+
+Final repair-authority audit (2026-08-20): external lifecycle state was keyed
+only by rack/version and could survive a real-Homebrew replacement at the same
+path. Commit `ca2438834` binds every lifecycle state and repair journal to a
+per-install incarnation marker, the formula snapshot digest, and a canonical
+immutable native-receipt projection containing bottle/source/version/tap
+identity. A different tap or receipt identity invalidates stale authority
+before mutation. Legitimate Homebrew Tab rewrites remain compatible because
+mutable `installed_on_request` / `installed_as_dependency`, Homebrew version,
+unknown fields, and JSON key order are excluded. The same commit records exact
+shared source-to-target mappings, including `.default`, so missing shared state
+is repairable only from its original keg source. Regressions prove stale
+different-tap state cannot execute its journal and a deleted default is restored
+while user configuration plus keg/receipt/public-link inodes remain unchanged.
+Historical local proof passed all 314 brew module tests; exact run
+[32285796215](https://github.com/jdx/mise/actions/runs/32285796215) then passed
+all 13 jobs and both authenticated oracles on
+`e5fc0f5f7d1791a2ee0b1b157e1c3c6eed15fd80`. The later authority audit kept
+this evidence historical rather than calling it final closure.
+
+Final correction `56ef7caf16a5e660ce62e016acf65fa001f1433d`
+binds repair, permission, and removal authority to the exact install plus full
+prefix/Cellar/rack/keg/`.brew` and private-state directory identities. Prepared
+removal tokens bind state hashes, canonical receipt identity, and exact
+symlink type/device/inode/raw-target evidence; native same-version replacement
+can discard only stale private state, never stale lifecycle effects. Typed
+copy/tree/stdout/symlink effects stage atomically and use no-clobber or
+revalidated overwrite authority. Every metadata error other than `NotFound`
+fails closed.
+
+Signed merge `75bdcadbdec7e2b93d50409e4f3d4fa9e319e655` integrates canonical
+`origin/main` `b0795afa7d23de9eed01b3f82cde5789830fc550` without conflict. Exact
+[run 32298940105](https://github.com/jdx/mise/actions/runs/32298940105) exposed
+that a declared lifecycle Run target could not create its absent exact parent
+under the macOS sandbox; no lifecycle marker was emitted. Linux formula proof
+passed, while source proof failed closed because mandatory Landlock was
+unavailable inside the disposable container.
+
+Correction `c9390008a07ca71797b93c158e6ef5a9bff0e0ae` creates only the
+declared target's missing real parent chain, binds and revalidates every
+directory identity before and after the command, and removes only unchanged
+empty directories on failure. The sandbox still grants no parent or sibling
+subtree writes. Its macOS regression writes the declared CA-style target while
+an attempted sibling overwrite remains denied. Local proof passes 392 brew
+tests, 3,525 workspace/all-feature tests with four ignored, native-Linux
+sandbox/cmd suites `22`/`27`, full workspace/all-feature/all-target Clippy with
+`-D warnings`, formatting, and diff gates without lint exclusions. Exact hosted
+[run 32302254890](https://github.com/jdx/mise/actions/runs/32302254890) on that
+head failed and is retained as negative evidence. The real macOS
+`ca-certificates` helper needed an adjacent temporary directory that the exact
+leaf sandbox correctly denied, so the lifecycle marker was absent. The Linux
+source guard also rejected the installed Homebrew runtime against its
+`not-installed` declaration; unit, Windows unused-code, and aggregate gates did
+not pass.
+
+Security correction `38b25fa5b71da407a82ae12600896f2f85f1ed96`
+replaces parent-subtree access with private mirrored Run outputs and
+identity-bound, multi-output transactional publication. Rollback authority is
+retained through validation and durability; typed published regular-file
+effects record identity, mode, and content semantics for health. Missing or
+changed effects are therefore classified from durable typed evidence rather
+than bare required paths. Strict Linux formula execution is mandatory, while
+unsupported execution fails before lifecycle mutation. Local exact-lineage
+proof passes 87 lifecycle tests, all 423 brew tests, strict
+workspace/all-feature/all-target Clippy, formatting, and diff checks.
+
+Oracle-provenance correction `93df3357c6be57fae0ceda4aa03973ad8d2c407e`
+splits the Linux formula and source proofs, pins executor provenance, strips CI
+credentials, and makes exact job-context and marker validation part of the
+aggregate. Signed merge `7c5374c0a5d41343a4f3dfcf7e3c3e69373f6358`
+integrates canonical `origin/main`
+`60c5ff113a672269c1bd9455f4eb50a079371a17`; its docs, registry, and Aqua
+changes do not overlap lifecycle health or repair.
+
+Exact-head [run 32312879235](https://github.com/jdx/mise/actions/runs/32312879235)
+for `7c5374c0a5d41343a4f3dfcf7e3c3e69373f6358` failed and remains negative
+evidence. Linux formula completed; macOS lifecycle rejected mutable API/bottle
+snapshot drift; Linux source rejected GNU `install` metadata mutation; nightly
+portability and Linux Clippy gates also failed. The aggregate correctly failed.
+Restore `DONE` only after a later exact head's complete workflow, authenticated
+formula/source markers, and aggregate gate pass.
 
 Acceptance extension (2026-08-16): `python@3.14` makes lifecycle permissions an
 operational output. Mise-owned lifecycle state must record each affected path,

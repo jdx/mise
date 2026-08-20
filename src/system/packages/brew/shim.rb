@@ -16,12 +16,12 @@
 #   MISE_BREW_VERSION       upstream version ("2.12.3")
 #   MISE_BREW_PKG_VERSION   keg directory name ("2.12.3_1")
 #   MISE_BREW_BUILDPATH     staged source directory (also the cwd)
-#   MISE_BREW_CACHE         download cache for resources/patches
 #   MISE_BREW_MAKE_JOBS     build parallelism
+#   MISE_BREW_INSTALL_HELPER identity-bound private install helper
 #
 # The main source archive is downloaded, verified, and staged by Rust before
-# this script runs; the shim only downloads resources and external patches
-# (each verified against the sha256 declared in the formula).
+# this script runs. Formula resources and external patches are rejected during
+# inspection until Rust can prefetch and identity-bind them for offline use.
 
 require "digest/sha2"
 require "date"
@@ -312,7 +312,9 @@ class Pathname
   end
 
   def ensure_executable!
-    chmod(0o755) if file?
+    return unless file?
+
+    shim_unsupported!("Pathname#ensure_executable! requires inode-preserving chmod")
   end
 end
 
@@ -753,16 +755,20 @@ class Formula
     args = args.map(&:to_s)
     pretty = ([cmd] + args).join(" ")
     ohai pretty
+    cmd = ENV.fetch("MISE_BREW_INSTALL_HELPER") if cmd.to_s == "install"
     # single-string invocations go through the shell, like Kernel#system
     ok = Kernel.system(cmd.to_s, *args)
     raise "command failed: #{pretty}" unless ok
   end
 
   def quiet_system(cmd, *args)
+    cmd = ENV.fetch("MISE_BREW_INSTALL_HELPER") if cmd.to_s == "install"
     Kernel.system(cmd.to_s, *args.map(&:to_s), out: File::NULL, err: File::NULL)
   end
 
   def which(cmd)
+    return Pathname.new(ENV.fetch("MISE_BREW_INSTALL_HELPER")) if cmd.to_s == "install"
+
     ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
       candidate = Pathname.new(dir) + cmd.to_s
       return candidate if candidate.executable? && candidate.file?

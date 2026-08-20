@@ -342,15 +342,17 @@ still without Homebrew:
    `poured_from_bottle: false` — exactly how brew marks its own source
    builds.
 
-The shim implements the commonly-used subset of the formula DSL
-(configure/cmake/meson-style builds, resources, patches, the standard path
-and environment helpers). Formulae that use parts of the DSL the shim
-doesn't cover — language-specific helpers like `virtualenv_install_with_resources`,
-VCS downloads, and similar — fail with a clear `formula uses ...` error
-rather than miscompiling silently.
+The shim implements a fail-closed subset of the formula DSL for common
+configure/cmake/meson-style builds and standard path/environment helpers.
+Formula resources, external patches, language-specific helpers such as
+`virtualenv_install_with_resources`, VCS downloads, and other unsupported DSL
+features fail during inspection with a clear `formula uses ...` error rather
+than reaching the package transaction or miscompiling silently.
 
-Source builds need a working toolchain (Xcode Command Line Tools on macOS,
-gcc/make on Linux), exactly as they would under plain Homebrew.
+Source builds currently require Linux with the fully enforced formula sandbox
+and a working gcc/make toolchain. macOS source builds fail before download or
+Cellar mutation because `sandbox-exec` cannot contain detached descendants;
+install a compatible bottle instead.
 
 ## Upgrades
 

@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
 
 use crate::file::replace_path;
 
@@ -55,6 +57,121 @@ pub struct SandboxConfig {
     /// Select the built-in system-path policy independently from enforcement
     /// compatibility. Formula execution must not inherit the broad task policy.
     pub system_access_profile: SystemAccessProfile,
+    /// Parent-opened allow nodes for strict formula execution. Compatibility
+    /// sandboxes intentionally keep their historical pathname behavior.
+    #[cfg(target_os = "linux")]
+    pub(super) bound_allow_read: Vec<BoundSandboxPath>,
+    #[cfg(target_os = "linux")]
+    pub(super) bound_allow_write: Vec<BoundSandboxPath>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+pub(super) struct BoundSandboxPath {
+    pub(super) path: PathBuf,
+    pub(super) fd: Arc<std::os::fd::OwnedFd>,
+    device: nix::libc::dev_t,
+    inode: nix::libc::ino_t,
+    is_directory: bool,
+    validate_pathname: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl BoundSandboxPath {
+    fn from_fd(path: &std::path::Path, fd: std::os::fd::OwnedFd) -> eyre::Result<Self> {
+        let stat = nix::sys::stat::fstat(&fd)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+        if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+            eyre::bail!(
+                "formula-execution sandbox descriptor is a symlink: {}",
+                path.display()
+            )
+        }
+        Ok(Self {
+            path: path.to_path_buf(),
+            fd: Arc::new(fd),
+            device: stat.st_dev,
+            inode: stat.st_ino,
+            is_directory: kind.contains(nix::sys::stat::SFlag::S_IFDIR),
+            validate_pathname: false,
+        })
+    }
+
+    fn open(path: &std::path::Path) -> eyre::Result<Self> {
+        use std::path::Component;
+
+        if !path.is_absolute() {
+            eyre::bail!(
+                "formula-execution sandbox allow path is not absolute: {}",
+                path.display()
+            )
+        }
+        let mut fd = nix::fcntl::open(
+            "/",
+            nix::fcntl::OFlag::O_PATH
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let components = path
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (index, name) in components.iter().enumerate() {
+            let mut flags = nix::fcntl::OFlag::O_PATH
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC;
+            if index + 1 != components.len() {
+                flags |= nix::fcntl::OFlag::O_DIRECTORY;
+            }
+            fd = nix::fcntl::openat(&fd, *name, flags, nix::sys::stat::Mode::empty()).map_err(
+                |error| {
+                    eyre::eyre!(
+                        "failed to bind formula-execution sandbox path {}: {error}",
+                        path.display()
+                    )
+                },
+            )?;
+            let stat = nix::sys::stat::fstat(&fd)?;
+            let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+            if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+                eyre::bail!(
+                    "formula-execution sandbox path contains a symlink: {}",
+                    path.display()
+                )
+            }
+            if index + 1 != components.len() && !kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+                eyre::bail!(
+                    "formula-execution sandbox path ancestor is not a directory: {}",
+                    path.display()
+                )
+            }
+        }
+        let mut bound = Self::from_fd(path, fd)?;
+        bound.validate_pathname = true;
+        Ok(bound)
+    }
+
+    fn validate_path(&self) -> eyre::Result<()> {
+        if !self.validate_pathname {
+            return Ok(());
+        }
+        let current = Self::open(&self.path)?;
+        if current.device != self.device
+            || current.inode != self.inode
+            || current.is_directory != self.is_directory
+        {
+            eyre::bail!(
+                "formula-execution sandbox path changed while it was being bound: {}",
+                self.path.display()
+            )
+        }
+        Ok(())
+    }
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -114,13 +231,14 @@ impl SandboxConfig {
     pub(crate) fn validate_formula_execution_for_runner(
         &self,
         cleanup_process_group: bool,
+        bound_current_dir: bool,
     ) -> eyre::Result<()> {
         if self.system_access_profile != SystemAccessProfile::FormulaExecution {
             return Ok(());
         }
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = cleanup_process_group;
+            let _ = (cleanup_process_group, bound_current_dir);
             eyre::bail!(
                 "formula-execution sandbox is supported only on Linux with fully enforced Landlock ABI V6 confinement"
             );
@@ -136,9 +254,10 @@ impl SandboxConfig {
                 || !self.deny_mise_data_read
                 || !self.require_full_filesystem_confinement
                 || !cleanup_process_group
+                || !bound_current_dir
             {
                 eyre::bail!(
-                    "formula-execution sandbox requires strict read, write, network, local-socket, environment, temp, mise-data, filesystem, and process-group confinement"
+                    "formula-execution sandbox requires strict read, write, network, local-socket, environment, temp, mise-data, filesystem, process-group, and descriptor-bound working-directory confinement"
                 );
             }
             Ok(())
@@ -148,6 +267,7 @@ impl SandboxConfig {
     /// Resolve allow_* paths to absolute paths relative to cwd.
     pub fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
+        let canonicalize = self.system_access_profile != SystemAccessProfile::FormulaExecution;
         let resolve = |paths: &mut Vec<PathBuf>| {
             paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
@@ -156,13 +276,110 @@ impl SandboxConfig {
                     *p = cwd.join(&*p);
                 }
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
-                if let Ok(canonical) = p.canonicalize() {
+                if canonicalize && let Ok(canonical) = p.canonicalize() {
                     *p = canonical;
                 }
             }
         };
         resolve(&mut self.allow_read);
         resolve(&mut self.allow_write);
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn bind_formula_execution_paths(&mut self) -> eyre::Result<()> {
+        if self.system_access_profile != SystemAccessProfile::FormulaExecution {
+            return Ok(());
+        }
+        for path in &self.allow_read {
+            if !self
+                .bound_allow_read
+                .iter()
+                .any(|bound| bound.path == *path)
+            {
+                self.bound_allow_read.push(BoundSandboxPath::open(path)?);
+            }
+        }
+        for path in &self.allow_write {
+            if !self
+                .bound_allow_write
+                .iter()
+                .any(|bound| bound.path == *path)
+            {
+                self.bound_allow_write.push(BoundSandboxPath::open(path)?);
+            }
+        }
+        for path in self.bound_allow_read.iter().chain(&self.bound_allow_write) {
+            path.validate_path()?;
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn require_bound_formula_execution_paths(&self) -> eyre::Result<()> {
+        if self.system_access_profile == SystemAccessProfile::FormulaExecution
+            && (!bindings_cover_paths(&self.allow_read, &self.bound_allow_read)
+                || !bindings_cover_paths(&self.allow_write, &self.bound_allow_write))
+        {
+            eyre::bail!(
+                "formula-execution sandbox allow paths must be descriptor-bound before runner setup"
+            )
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prebind_formula_execution_read(
+        &mut self,
+        path: &std::path::Path,
+        fd: std::os::fd::OwnedFd,
+    ) -> eyre::Result<()> {
+        self.prebind_formula_execution_path(path, fd, false)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prebind_formula_execution_write(
+        &mut self,
+        path: &std::path::Path,
+        fd: std::os::fd::OwnedFd,
+    ) -> eyre::Result<()> {
+        self.prebind_formula_execution_path(path, fd, true)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn prebind_formula_execution_path(
+        &mut self,
+        path: &std::path::Path,
+        fd: std::os::fd::OwnedFd,
+        write: bool,
+    ) -> eyre::Result<()> {
+        if self.system_access_profile != SystemAccessProfile::FormulaExecution {
+            eyre::bail!("only formula-execution sandboxes accept prebound paths")
+        }
+        let allowed = if write {
+            &self.allow_write
+        } else {
+            &self.allow_read
+        };
+        if !allowed.iter().any(|allowed| allowed == path) {
+            eyre::bail!(
+                "prebound formula-execution path is not declared: {}",
+                path.display()
+            )
+        }
+        let bound = BoundSandboxPath::from_fd(path, fd)?;
+        let bindings = if write {
+            &mut self.bound_allow_write
+        } else {
+            &mut self.bound_allow_read
+        };
+        if bindings.iter().any(|existing| existing.path == path) {
+            eyre::bail!(
+                "formula-execution sandbox path was bound more than once: {}",
+                path.display()
+            )
+        }
+        bindings.push(bound);
+        Ok(())
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
@@ -324,6 +541,16 @@ impl SandboxConfig {
             args: sandbox_args,
         }))
     }
+}
+
+#[cfg(target_os = "linux")]
+fn bindings_cover_paths(paths: &[PathBuf], bindings: &[BoundSandboxPath]) -> bool {
+    paths
+        .iter()
+        .all(|path| bindings.iter().any(|binding| binding.path == *path))
+        && bindings
+            .iter()
+            .all(|binding| paths.iter().any(|path| *path == binding.path))
 }
 
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).
@@ -723,24 +950,67 @@ mod tests {
         };
 
         assert!(strict.is_active());
-        strict.validate_formula_execution_for_runner(true).unwrap();
+        strict
+            .validate_formula_execution_for_runner(true, true)
+            .unwrap();
         assert!(
             strict
-                .validate_formula_execution_for_runner(false)
+                .validate_formula_execution_for_runner(false, true)
                 .unwrap_err()
                 .to_string()
-                .contains("process-group confinement")
+                .contains("process-group")
+        );
+        assert!(
+            strict
+                .validate_formula_execution_for_runner(true, false)
+                .unwrap_err()
+                .to_string()
+                .contains("descriptor-bound working-directory confinement")
         );
 
         let mut incomplete = strict;
         incomplete.deny_local_sockets = false;
         assert!(
             incomplete
-                .validate_formula_execution_for_runner(true)
+                .validate_formula_execution_for_runner(true, true)
                 .unwrap_err()
                 .to_string()
                 .contains("formula-execution sandbox requires strict")
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn formula_execution_binding_rejects_missing_and_replaced_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let readable = tmp.path().join("formula.rb");
+        std::fs::write(&readable, "original").unwrap();
+        let mut strict = SandboxConfig {
+            system_access_profile: SystemAccessProfile::FormulaExecution,
+            allow_read: vec![readable.clone()],
+            ..Default::default()
+        };
+        strict.resolve_paths();
+        strict.bind_formula_execution_paths().unwrap();
+        std::fs::rename(&readable, tmp.path().join("original.rb")).unwrap();
+        std::fs::write(&readable, "foreign").unwrap();
+        assert!(strict.bound_allow_read[0].validate_path().is_err());
+
+        let mut missing = SandboxConfig {
+            system_access_profile: SystemAccessProfile::FormulaExecution,
+            allow_read: vec![tmp.path().join("missing")],
+            ..Default::default()
+        };
+        missing.resolve_paths();
+        assert!(missing.bind_formula_execution_paths().is_err());
+
+        let mut compatibility = SandboxConfig {
+            system_access_profile: SystemAccessProfile::Compatibility,
+            allow_read: vec![tmp.path().join("missing")],
+            ..Default::default()
+        };
+        compatibility.resolve_paths();
+        compatibility.bind_formula_execution_paths().unwrap();
     }
 
     #[test]

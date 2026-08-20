@@ -278,6 +278,10 @@ impl Exec {
                 deny_mise_data_read: false,
                 require_full_filesystem_confinement: false,
                 system_access_profile: crate::sandbox::SystemAccessProfile::Compatibility,
+                #[cfg(target_os = "linux")]
+                bound_allow_read: vec![],
+                #[cfg(target_os = "linux")]
+                bound_allow_write: vec![],
             },
         );
         sandbox.resolve_paths();

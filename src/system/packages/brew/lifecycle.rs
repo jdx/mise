@@ -45,8 +45,21 @@ impl PreparedFormulaLifecycle {
     /// the same checksum as the current tap source for the same package
     /// version, so the repair preflight replaces the source checksum with the
     /// checksum from the currently pinned, verified bottle when applicable.
-    pub(super) fn set_formula_snapshot_sha256(&mut self, sha256: String) {
+    pub(super) fn bind_bottle_formula_snapshot_sha256(&mut self, sha256: String) -> Result<()> {
         self.formula_snapshot_sha256 = Some(sha256);
+        #[cfg(target_os = "macos")]
+        if self
+            .steps
+            .iter()
+            .any(|step| matches!(step, PreparedStep::AuditedCaCertificates(_)))
+            && self.formula_snapshot_sha256.as_deref()
+                != Some(AUDITED_CA_CERTIFICATES_FORMULA_SHA256)
+        {
+            bail!(
+                "brew:ca-certificates bottle formula snapshot is not the audited macOS lifecycle recipe; no package state was changed"
+            )
+        }
+        Ok(())
     }
 }
 
@@ -670,16 +683,6 @@ fn prepare_run(formula: &Formula, keg: &Path, index: usize, raw: RawRun) -> Resu
             && run.stdout_path.is_none()
             && run.guards.is_empty();
         if audited_ca_shape {
-            if formula
-                .ruby_source_checksum
-                .as_ref()
-                .and_then(|checksum| checksum.sha256.as_deref())
-                != Some(AUDITED_CA_CERTIFICATES_FORMULA_SHA256)
-            {
-                bail!(
-                    "brew:ca-certificates formula snapshot is not the audited macOS lifecycle recipe; no package state was changed"
-                )
-            }
             return Ok(PreparedStep::AuditedCaCertificates(run));
         }
         bail!(
@@ -1441,7 +1444,7 @@ fn lifecycle_run_file_matches(expected: &LifecycleRunFile) -> Result<bool> {
         };
         Ok(run_file_device(current.device)? == expected.device
             && current.inode == expected.inode
-            && u32::from(current.mode) == expected.mode
+            && run_file_mode(current.mode)? == expected.mode
             && current.sha256 == expected.sha256
             && expected
                 .metadata_sha256
@@ -3350,6 +3353,8 @@ async fn execute_run(
         audited_executable_sha256.is_none(),
     );
     sandbox.resolve_paths();
+    #[cfg(target_os = "linux")]
+    sandbox.bind_formula_execution_paths()?;
     let cwd = run.cwd.as_deref().unwrap_or(&prepared.keg);
     #[cfg(unix)]
     let bound_cwd = BoundRunSharedParent::open_existing(cwd)?;
@@ -3742,7 +3747,7 @@ impl BoundRunSharedParent {
             let (device, inode) = permission_device_inode(&metadata)?;
             if !metadata.file_type().is_dir()
                 || metadata.file_type().is_symlink()
-                || u64::try_from(directory.device).ok() != Some(device)
+                || run_file_device(directory.device)? != device
                 || directory.inode != inode
             {
                 bail!(
@@ -3756,7 +3761,7 @@ impl BoundRunSharedParent {
 }
 
 #[cfg(unix)]
-fn remove_run_tree_contents<Fd: std::os::fd::AsFd>(directory: Fd) -> Result<()> {
+pub(super) fn remove_run_tree_contents<Fd: std::os::fd::AsFd>(directory: Fd) -> Result<()> {
     let mount = run_directory_mount_identity(&directory)?;
     remove_run_tree_contents_on_mount(directory, mount)
 }
@@ -4436,13 +4441,36 @@ fn lifecycle_run_file(path: &Path, identity: &BoundRunFileIdentity) -> Result<Li
         metadata_sha256: Some(identity.metadata_sha256.clone()),
         device: run_file_device(identity.device)?,
         inode: identity.inode,
-        mode: u32::from(identity.mode),
+        mode: run_file_mode(identity.mode)?,
     })
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android"))))]
 fn run_file_device(device: nix::libc::dev_t) -> Result<u64> {
     u64::try_from(device).map_err(|_| eyre!("post-install output has an invalid device identity"))
+}
+
+#[cfg(all(unix, any(target_os = "linux", target_os = "android")))]
+fn run_file_device(device: nix::libc::dev_t) -> Result<u64> {
+    Ok(device)
+}
+
+#[cfg(all(unix, target_os = "macos"))]
+fn run_file_mode(mode: nix::libc::mode_t) -> Result<u32> {
+    Ok(u32::from(mode))
+}
+
+#[cfg(all(
+    unix,
+    not(any(target_os = "linux", target_os = "android", target_os = "macos"))
+))]
+fn run_file_mode(mode: nix::libc::mode_t) -> Result<u32> {
+    u32::try_from(mode).map_err(|_| eyre!("post-install output has an invalid file mode"))
+}
+
+#[cfg(all(unix, any(target_os = "linux", target_os = "android")))]
+fn run_file_mode(mode: nix::libc::mode_t) -> Result<u32> {
+    Ok(mode)
 }
 
 #[cfg(unix)]
@@ -6245,6 +6273,27 @@ mod tests {
         .unwrap()
     }
 
+    #[cfg(target_os = "linux")]
+    fn strict_formula_execution_unavailable(error: &eyre::Report) -> bool {
+        error.chain().any(|cause| {
+            cause
+                .to_string()
+                .contains(": strict formula execution is unavailable:")
+        })
+    }
+
+    #[cfg(target_os = "linux")]
+    fn prepare_when_strict_formula_execution_is_available(
+        formula: &Formula,
+        keg: &Path,
+    ) -> Result<Option<PreparedFormulaLifecycle>> {
+        match prepare(formula, keg) {
+            Ok(prepared) => Ok(Some(prepared)),
+            Err(error) if strict_formula_execution_unavailable(&error) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     #[cfg(target_os = "macos")]
     fn ca_certificates_formula() -> Formula {
         serde_json::from_value(serde_json::json!({
@@ -6320,6 +6369,13 @@ mod tests {
             }]
         }))
         .unwrap();
+        #[cfg(target_os = "linux")]
+        let ca = {
+            let mut ca = ca;
+            ca.post_install_steps[0]["guards"] =
+                serde_json::json!([{"condition": "on", "value": "macos"}]);
+            ca
+        };
         #[cfg(target_os = "macos")]
         let ca = {
             let mut ca = ca;
@@ -6361,7 +6417,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn macos_audited_ca_rejects_wrong_formula_snapshot_during_prepare() -> Result<()> {
+    fn macos_audited_ca_rejects_wrong_bottle_snapshot_during_binding() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
         let mut env = crate::test::EnvVarGuard::new();
@@ -6370,17 +6426,37 @@ mod tests {
         let target = prefix.join("etc/ca-certificates/cert.pem");
         crate::file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(&target, "preserve")?;
-        let mut formula = ca_certificates_formula();
-        formula.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
-            sha256: Some("wrong-snapshot".into()),
-        });
+        let mut prepared = prepare(&ca_certificates_formula(), &keg)?;
+        let error = prepared
+            .bind_bottle_formula_snapshot_sha256("wrong-snapshot".into())
+            .unwrap_err();
 
-        let error = prepare(&formula, &keg).unwrap_err();
-
-        assert!(format!("{error:#}").contains("formula snapshot is not the audited"));
+        assert!(format!("{error:#}").contains("bottle formula snapshot is not the audited"));
         assert_eq!(crate::file::read_to_string(&target)?, "preserve");
         assert!(keg.symlink_metadata().is_err());
         assert!(state_path(&keg).symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_audited_ca_binds_embedded_snapshot_not_live_api() -> Result<()> {
+        let mut formula = ca_certificates_formula();
+        formula.ruby_source_checksum = Some(super::super::api::RubySourceChecksum {
+            sha256: Some("mutable-api-snapshot".into()),
+        });
+        let mut prepared = prepare(
+            &formula,
+            &prefix::cellar().join("ca-certificates/2026-08-13"),
+        )?;
+
+        prepared
+            .bind_bottle_formula_snapshot_sha256(AUDITED_CA_CERTIFICATES_FORMULA_SHA256.into())?;
+
+        assert_eq!(
+            prepared.formula_snapshot_sha256.as_deref(),
+            Some(AUDITED_CA_CERTIFICATES_FORMULA_SHA256)
+        );
         Ok(())
     }
 
@@ -6396,7 +6472,7 @@ mod tests {
         crate::file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(&target, "preserve")?;
         let mut prepared = prepare(&ca_certificates_formula(), &keg)?;
-        prepared.set_formula_snapshot_sha256("wrong-snapshot".into());
+        prepared.formula_snapshot_sha256 = Some("wrong-snapshot".into());
 
         let error = match execute_step(&prepared, &prepared.steps[0]).await {
             Err(error) => error,
@@ -6426,7 +6502,8 @@ mod tests {
         crate::file::write(&source, "certificate-data")?;
         crate::file::write(&target, "preserve")?;
         let mut prepared = prepare(&ca_certificates_formula(), &keg)?;
-        prepared.set_formula_snapshot_sha256(AUDITED_CA_CERTIFICATES_FORMULA_SHA256.into());
+        prepared
+            .bind_bottle_formula_snapshot_sha256(AUDITED_CA_CERTIFICATES_FORMULA_SHA256.into())?;
 
         let error = match execute_step(&prepared, &prepared.steps[0]).await {
             Err(error) => error,
@@ -6580,7 +6657,7 @@ mod tests {
         });
         let mut prepared = prepare(&formula, &keg)?;
         assert!(validate_legacy_formula_snapshot(&prepared).is_err());
-        prepared.set_formula_snapshot_sha256(bottle_sha256);
+        prepared.bind_bottle_formula_snapshot_sha256(bottle_sha256)?;
         validate_legacy_formula_snapshot(&prepared)?;
         Ok(())
     }
@@ -7306,7 +7383,7 @@ mod tests {
         let keg = prefix::cellar().join("openssl@3/1");
         let mut first = prepare(&formula(vec![]), &keg)?;
         let original = prepared_identity_sha256(&first)?;
-        first.set_formula_snapshot_sha256("snapshot-a".into());
+        first.bind_bottle_formula_snapshot_sha256("snapshot-a".into())?;
         assert_ne!(prepared_identity_sha256(&first)?, original);
 
         let second = prepare(
@@ -7468,7 +7545,7 @@ mod tests {
         let target = prefix.join("etc/openssl@3/generated");
         crate::file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(&target, "user-owned")?;
-        let prepared = prepare(
+        let Some(prepared) = prepare_when_strict_formula_execution_is_available(
             &formula(vec![serde_json::json!({
                 "type": "run",
                 "command": {"path": "/bin/echo"},
@@ -7476,7 +7553,11 @@ mod tests {
                 "stdout_path": {"base": "pkgetc", "path": "generated"}
             })]),
             &keg,
-        )?;
+        )?
+        else {
+            assert_eq!(crate::file::read_to_string(&target)?, "user-owned");
+            return Ok(());
+        };
 
         assert!(execute_step(&prepared, &prepared.steps[0]).await.is_err());
         assert_eq!(crate::file::read_to_string(target)?, "user-owned");
@@ -7501,7 +7582,8 @@ mod tests {
                 "args": [
                     declared,
                     format!("printf unsafe > {}", embedded.display())
-                ]
+                ],
+                "guards": [{"condition": "on", "value": "macos"}]
             })]),
             &keg,
         )?;
@@ -7626,14 +7708,19 @@ fi
         )?;
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
         assert!(target.parent().unwrap().symlink_metadata().is_err());
-        let prepared = prepare(
+        let Some(prepared) = prepare_when_strict_formula_execution_is_available(
             &formula(vec![serde_json::json!({
                 "command": {"base": "libexec", "path": "post-install"},
                 "type": "run",
                 "args": ["{{pkgshare}}/cacert.pem", "{{pkgetc}}/cert.pem"]
             })]),
             &keg,
-        )?;
+        )?
+        else {
+            assert!(target.parent().unwrap().symlink_metadata().is_err());
+            assert_eq!(crate::file::read_to_string(&sibling)?, "preserve");
+            return Ok(());
+        };
 
         let effects = execute_step(&prepared, &prepared.steps[0]).await?;
 
@@ -7677,14 +7764,20 @@ printf confined > "$1"
             ),
         )?;
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o755))?;
-        let prepared = prepare(
+        let Some(prepared) = prepare_when_strict_formula_execution_is_available(
             &formula(vec![serde_json::json!({
                 "command": {"base": "libexec", "path": "post-install"},
                 "type": "run",
                 "args": [target]
             })]),
             &keg,
-        )?;
+        )?
+        else {
+            assert_eq!(crate::file::read_to_string(&secret)?, "host-secret");
+            assert!(target.symlink_metadata().is_err());
+            assert!(escaped.symlink_metadata().is_err());
+            return Ok(());
+        };
 
         let effects = execute_step(&prepared, &prepared.steps[0]).await?;
 
@@ -7707,7 +7800,7 @@ printf confined > "$1"
         let output = keg.join("output");
         crate::file::create_dir_all(&keg)?;
         crate::file::write(&input, "nonempty-stdin")?;
-        let prepared = prepare(
+        let Some(prepared) = prepare_when_strict_formula_execution_is_available(
             &formula(vec![serde_json::json!({
                 "command": {"path": "/bin/cat"},
                 "type": "run",
@@ -7715,7 +7808,12 @@ printf confined > "$1"
                 "stdout_path": {"path": "output"}
             })]),
             &keg,
-        )?;
+        )?
+        else {
+            assert_eq!(crate::file::read_to_string(&input)?, "nonempty-stdin");
+            assert!(output.symlink_metadata().is_err());
+            return Ok(());
+        };
 
         execute_step(&prepared, &prepared.steps[0]).await?;
 
@@ -7733,7 +7831,7 @@ printf confined > "$1"
         crate::file::create_dir_all(&prefix)?;
         let keg = prefix.join("Cellar/openssl@3/1");
         let target = prefix.join("etc/openssl@3/nested/generated");
-        let prepared = prepare(
+        let Some(prepared) = prepare_when_strict_formula_execution_is_available(
             &formula(vec![serde_json::json!({
                 "type": "run",
                 "command": {"path": "/bin/echo"},
@@ -7741,7 +7839,11 @@ printf confined > "$1"
                 "stdout_path": {"base": "pkgetc", "path": "nested/generated"}
             })]),
             &keg,
-        )?;
+        )?
+        else {
+            assert!(target.symlink_metadata().is_err());
+            return Ok(());
+        };
 
         let effects = execute_step(&prepared, &prepared.steps[0]).await?;
 
@@ -8963,13 +9065,47 @@ printf confined > "$1"
         Ok(())
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn strict_run_preflight_unavailability_is_fail_closed() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let sentinel = prefix.join("etc/openssl@3/sentinel");
+        crate::file::create_dir_all(sentinel.parent().unwrap())?;
+        crate::file::write(&sentinel, "preserve")?;
+
+        let result = prepare(
+            &formula(vec![serde_json::json!({
+                "type": "run",
+                "command": {"path": "/bin/true"}
+            })]),
+            &keg,
+        );
+
+        assert_eq!(crate::file::read_to_string(&sentinel)?, "preserve");
+        assert!(keg.symlink_metadata().is_err());
+        assert!(state_path(&keg).symlink_metadata().is_err());
+        match result {
+            Ok(_) => Ok(()),
+            Err(error) if strict_formula_execution_unavailable(&error) => {
+                assert!(format!("{error:#}").contains("no package state was changed"));
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     #[cfg(not(target_os = "macos"))]
     #[test]
     fn run_environment_contains_only_fixed_and_typed_keys() -> Result<()> {
         let formula = formula(vec![serde_json::json!({
             "type": "run",
             "command": {"base": "bin", "path": "tool"},
-            "env": {"FORMULA_KEY": "formula-value"}
+            "env": {"FORMULA_KEY": "formula-value"},
+            "guards": [{"condition": "on", "value": "macos"}]
         })]);
         let prepared = prepare(&formula, &prefix::cellar().join("openssl@3/1"))?;
         let PreparedStep::Run(run) = &prepared.steps[0] else {

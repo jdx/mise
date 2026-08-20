@@ -1,6 +1,6 @@
 # Plan 009: Make destructive Homebrew oracles safe and non-skippable
 
-Status: DONE
+Status: IN PROGRESS
 Priority: P0
 Effort: M
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
@@ -8,7 +8,9 @@ Depends on: none
 Implementation commits: `dc37ee04a`, `459bb9d9b`, `3912e6fdc`,
 `48782874f`, `2128bcf2b`, `94c66938c`, `84d74314f`, `df067e021`,
 `a5046918a`, `12477a479`, `300551418`, `667866575`, `ce40d79d0`,
-`671eedd2c`, `f373ab31e`, `8d6139272`, `a122a6601`, `7acd9be56`
+`671eedd2c`, `f373ab31e`, `8d6139272`, `a122a6601`, `7acd9be56`,
+`855602c94`, `1b821d2fc`, `56ef7caf1`, `75bdcadbd`, `c9390008a`,
+`38b25fa5b`, `93df3357c`, `7c5374c0a`
 
 ## Objective
 
@@ -143,6 +145,103 @@ The validated markers record macOS cask/lifecycle fixture counts `1`/`5` and
 Linux formula/source counts `1`/`1`, exact mise head, and Homebrew `6.0.17` at
 `4dacfe77a24dead72de749c0876028b77b99cd04`; only isolated Linux source
 intentionally records runtime `not-installed`.
+
+Credential-isolation correction (2026-08-20): commit `855602c94410343ead04d36abccc4e0f3407474d`
+clears `GITHUB_TOKEN`, `GH_TOKEN`, and `MISE_GITHUB_TOKEN` from both destructive
+oracle jobs, disables persisted checkout credentials, and makes the common
+disposable-runner preflight reject leaked GitHub credentials before mutation.
+The guard E2E sets a token deliberately and proves this refusal path. Exact
+implementation [run 32280764818](https://github.com/jdx/mise/actions/runs/32280764818)
+executed the corrected jobs: the
+[macOS oracle](https://github.com/jdx/mise/actions/runs/32280764818/job/96159101336)
+emitted cask/lifecycle counts `1`/`5`, and the
+[Linux/source oracle](https://github.com/jdx/mise/actions/runs/32280764818/job/96159101396)
+emitted counts `1`/`1`. All four markers bind exact implementation head
+`855602c94410343ead04d36abccc4e0f3407474d` and Homebrew `6.0.17` at
+`4dacfe77a24dead72de749c0876028b77b99cd04`; only isolated source records
+runtime `not-installed`.
+
+Latest-main refresh: signed merges `b6f4074ed3d8752fb94a9456d7e2e74a7dedd96b`
+and `e5fc0f5f7d1791a2ee0b1b157e1c3c6eed15fd80` integrate canonical
+`origin/main` through `f7ad18b4b00047af872d58fa571bbf412c24be83`. The
+upstream deltas are release, registry, pacman, vendor, completion, and generated
+metadata; they do not overlap brew production, oracle, or plan code. The
+following plan closure commit owns the final exact-head hosted suite.
+
+General-E2E correction: although both authenticated oracle jobs and their four
+markers passed in run `32280764818`, the complete workflow was not green. Its
+generic E2E job inherited `MISE_GITHUB_TOKEN`; the guard self-test cleared only
+the token it injected, so both retries failed before the positive preflight.
+Commit `1b821d2fc` makes the test environment deterministic by clearing all
+three GitHub token variables first, then independently proving that
+`GITHUB_TOKEN`, `GH_TOKEN`, and `MISE_GITHUB_TOKEN` each block destructive
+authorization. The production guard is unchanged and remains fail-closed.
+`rtk mise run test:e2e e2e/cli/test_brew_oracle_guard`, shellcheck, and shfmt
+pass locally.
+
+Run [32285796215](https://github.com/jdx/mise/actions/runs/32285796215)
+subsequently completed all 13 jobs on `e5fc0f5f7d1791a2ee0b1b157e1c3c6eed15fd80`;
+both authenticated oracles and all four exact-head markers passed. That run is
+retained as valid historical evidence, but not final closure: the following
+ownership audit found product authority gaps that required a new implementation
+head.
+
+Final ownership hardening is commit `56ef7caf16a5e660ce62e016acf65fa001f1433d`.
+Signed merge `75bdcadbdec7e2b93d50409e4f3d4fa9e319e655` integrates canonical
+`origin/main` `b0795afa7d23de9eed01b3f82cde5789830fc550` without conflict. Exact
+[run 32298940105](https://github.com/jdx/mise/actions/runs/32298940105) is
+retained as negative evidence: only the macOS cask and Linux formula markers
+completed. The macOS lifecycle oracle exposed missing exact-parent creation for
+a declared shared output; the Linux source oracle exposed that its disposable
+Docker environment could not enforce mandatory Landlock; Windows found two
+Unix-only cleanup calls; and unit/nightly jobs found a stale Ruby fixture plus
+test-child cwd reinitialization.
+
+Correction `c9390008a07ca71797b93c158e6ef5a9bff0e0ae` creates only declared
+shared-output parents with identity-bound rollback, reports unavailable
+Landlock before spawn, runs the source oracle directly on the fresh Linux host,
+and makes both brew oracle jobs mandatory dependencies of `test-ci`. It also
+fixes the Windows gates and isolates re-executed test children. Local proof on
+that exact head passes 392 brew tests, 3,525 workspace/all-feature tests with
+four ignored, native-Linux sandbox/cmd suites `22`/`27`, strict
+workspace/all-target Clippy, formatting, Actionlint, ShellCheck, Ruby 4 syntax,
+diff checks, and the oracle-guard E2E. Exact hosted
+[run 32302254890](https://github.com/jdx/mise/actions/runs/32302254890) on that
+head failed and is retained as negative evidence, not closure. The macOS
+lifecycle body could not create the adjacent temporary directory required by
+the audited `ca-certificates` helper; the Linux source body was rejected because
+Homebrew was present despite a `not-installed` runtime declaration. Nightly and
+macOS unit tests, the Windows unused-code gate, and the aggregate also failed.
+The macOS lifecycle and Linux source completion markers were therefore absent.
+
+Security correction `38b25fa5b71da407a82ae12600896f2f85f1ed96`
+supersedes the incomplete pathname-parent scheme. Formula execution and typed
+lifecycle effects now bind exact filesystem identities, retain transactional
+rollback authority, stage shared regular-file outputs privately, and fail
+closed unless strict Linux Landlock/seccomp/process containment is available.
+The audited macOS `ca-certificates` helper is pinned and executed from a verified
+private copy; generic uncontained macOS formula execution remains rejected.
+Local exact-lineage proof passes 87 lifecycle tests, all 423 brew tests, strict
+workspace/all-feature/all-target Clippy, formatting, and diff checks.
+
+Oracle-provenance correction `93df3357c6be57fae0ceda4aa03973ad8d2c407e`
+splits Linux formula and source proof across capable environments, pins the
+disposable image by digest, strips every supported CI credential, and binds job
+context plus completion markers to the exact head, platform, Homebrew reference
+and runtime, executor identity, and declared test set. Missing or mismatched
+evidence fails the aggregate. Signed merge
+`7c5374c0a5d41343a4f3dfcf7e3c3e69373f6358` then integrates canonical
+`origin/main` `60c5ff113a672269c1bd9455f4eb50a079371a17`; that docs, registry,
+and Aqua delta does not overlap brew implementation or oracle code.
+
+Exact-head [run 32312879235](https://github.com/jdx/mise/actions/runs/32312879235)
+for `7c5374c0a5d41343a4f3dfcf7e3c3e69373f6358` failed and remains negative
+evidence. Linux formula completed with an authenticated marker; macOS cask
+completed, but formula lifecycle rejected mutable API snapshot drift before its
+marker; Linux source rejected GNU `install` metadata mutation; nightly exposed
+strict-sandbox test portability; Linux Clippy found four platform conversions.
+The aggregate correctly failed. Restore `DONE` only after a later exact head's
+complete workflow, all authenticated markers, and aggregate gate pass.
 
 ```bash
 rtk mise run test:e2e e2e/cli/test_system_install_brew_macos_slow

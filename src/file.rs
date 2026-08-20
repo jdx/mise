@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Display;
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 #[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
@@ -2026,8 +2026,60 @@ pub fn untar(
     })
 }
 
+/// Extract a tar archive from an already-open, identity-bound file.
+///
+/// Callers that authenticate archive bytes before extraction must not reopen a
+/// mutable pathname afterwards. The retained descriptor keeps inspection and
+/// installation on the same inode.
+pub fn untar_file(
+    mut archive: File,
+    archive_label: &Path,
+    dest: &Path,
+    format: ExtractionFormat,
+    opts: &ExtractOptions,
+) -> Result<()> {
+    if !format.is_tar_archive() && format != ExtractionFormat::Raw {
+        bail!("untar only supports tar formats, got {}", format);
+    }
+    archive.seek(SeekFrom::Start(0))?;
+    debug!("tar -xf {} -C {}", archive_label.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive_label
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+        ));
+    }
+    let archive_display = display_path(archive_label);
+    let dest_display = display_path(dest);
+    let err = || format!("failed to extract tar: {archive_display} to {dest_display}");
+
+    run_blocking(|| {
+        let tar = open_tar_file(format, archive)?;
+        create_dir_all(dest).wrap_err_with(err)?;
+        let mut unpack_opts = UnpackOptions::default();
+        unpack_opts.preserve_mtime = opts.preserve_mtime;
+        unpack_opts.on_entry = Some(Box::new(|entry| {
+            trace!("extracting {}", entry.path.display());
+        }));
+        let summary = Archive::new(tar)
+            .unpack(dest, &mut unpack_opts)
+            .wrap_err_with(err)?;
+        debug!("tar extraction summary: {summary:?}");
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!("failed to strip path components from tar archive: {archive_display}")
+        })
+    })
+}
+
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
+    open_tar_file(format, f)
+}
+
+fn open_tar_file(format: ExtractionFormat, f: File) -> Result<Box<dyn std::io::Read>> {
     Ok(match format {
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),

@@ -85,7 +85,7 @@ const FORMULA_EXECUTION_SYSTEM_READ_FILES: &[&str] = &[
     "/etc/group",
 ];
 
-fn access_for_fd(fd: &PathFd, access: BitFlags<AccessFs>) -> Result<BitFlags<AccessFs>> {
+fn access_for_fd<F: AsFd>(fd: &F, access: BitFlags<AccessFs>) -> Result<BitFlags<AccessFs>> {
     let file = std::fs::File::from(
         fd.as_fd()
             .try_clone_to_owned()
@@ -99,6 +99,22 @@ fn access_for_fd(fd: &PathFd, access: BitFlags<AccessFs>) -> Result<BitFlags<Acc
     } else {
         access & AccessFs::from_file(PRODUCTION_ABI)
     })
+}
+
+fn add_bound_rule(
+    ruleset: landlock::RulesetCreated,
+    path: &super::BoundSandboxPath,
+    access: BitFlags<AccessFs>,
+) -> Result<landlock::RulesetCreated> {
+    let access = access_for_fd(path.fd.as_ref(), access)?;
+    ruleset
+        .add_rule(PathBeneath::new(path.fd.as_ref(), access))
+        .map_err(|error| {
+            eyre!(
+                "landlock add_rule failed for bound {}: {error}",
+                path.path.display()
+            )
+        })
 }
 
 fn add_rule(
@@ -211,6 +227,9 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
             "formula-execution system access requires strict read, write, temp, mise-data, and filesystem enforcement"
         );
     }
+    if config.system_access_profile == SystemAccessProfile::FormulaExecution {
+        config.require_bound_formula_execution_paths()?;
+    }
 
     // Only handle the access types we're actually restricting.
     // If we handle_access(full_access) but only add read rules,
@@ -265,11 +284,20 @@ pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
             }
             ruleset = add_path_rule(ruleset, &crate::env::MISE_DATA_DIR, read_access)?;
         }
-        for path in &config.allow_read {
-            ruleset = add_path_rule(ruleset, path, read_access)?;
-        }
-        for path in &config.allow_write {
-            ruleset = add_path_rule(ruleset, path, writable_access)?;
+        if config.system_access_profile == SystemAccessProfile::FormulaExecution {
+            for path in &config.bound_allow_read {
+                ruleset = add_bound_rule(ruleset, path, read_access)?;
+            }
+            for path in &config.bound_allow_write {
+                ruleset = add_bound_rule(ruleset, path, writable_access)?;
+            }
+        } else {
+            for path in &config.allow_read {
+                ruleset = add_path_rule(ruleset, path, read_access)?;
+            }
+            for path in &config.allow_write {
+                ruleset = add_path_rule(ruleset, path, writable_access)?;
+            }
         }
     } else if deny_read {
         // Only reads restricted — only handle read access so writes are unaffected
@@ -425,7 +453,7 @@ mod tests {
             "re-executed parent secret is absent from procfs"
         );
 
-        let config = SandboxConfig {
+        let mut config = SandboxConfig {
             deny_read: true,
             deny_write: true,
             allow_read: vec![allowed.clone()],
@@ -436,7 +464,25 @@ mod tests {
             system_access_profile: SystemAccessProfile::FormulaExecution,
             ..Default::default()
         };
+        config.resolve_paths();
+        config.bind_formula_execution_paths().unwrap();
         apply_landlock(&config).unwrap();
+
+        let parent_pid = unsafe { libc::getppid() };
+        assert_eq!(unsafe { libc::kill(parent_pid, 0) }, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().kind(),
+            std::io::ErrorKind::PermissionDenied,
+            "strict formula execution signaled a process outside its Landlock domain"
+        );
+        let mut same_domain = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let same_domain_pid = same_domain.id() as libc::pid_t;
+        assert_eq!(unsafe { libc::kill(same_domain_pid, 0) }, 0);
+        assert_eq!(unsafe { libc::kill(same_domain_pid, libc::SIGTERM) }, 0);
+        same_domain.wait().unwrap();
 
         std::fs::write(allowed.join("output"), b"allowed").unwrap();
         assert_eq!(std::fs::read(allowed.join("output")).unwrap(), b"allowed");

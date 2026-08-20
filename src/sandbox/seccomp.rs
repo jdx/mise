@@ -132,32 +132,32 @@ pub fn apply_seccomp_net_filter(
             libc::SYS_move_mount,
             libc::SYS_open_tree,
             libc::SYS_mount_setattr,
+            libc::SYS_fchmod,
             libc::SYS_fchmodat,
+            libc::SYS_fchown,
             libc::SYS_fchownat,
             libc::SYS_setxattr,
             libc::SYS_lsetxattr,
+            libc::SYS_fsetxattr,
             libc::SYS_getxattr,
             libc::SYS_lgetxattr,
+            libc::SYS_fgetxattr,
             libc::SYS_listxattr,
             libc::SYS_llistxattr,
+            libc::SYS_flistxattr,
             libc::SYS_removexattr,
             libc::SYS_lremovexattr,
+            libc::SYS_fremovexattr,
+            libc::SYS_utimensat,
         ] {
             rules.insert(syscall_number(syscall), vec![]);
         }
         // fchmodat2 is syscall 452 on both supported Linux architectures but
         // older libc headers expose the constant only on x86_64.
         rules.insert(452, vec![]);
-        // Preserve futimens(fd, ...) while rejecting pathname-based utimensat.
-        rules.insert(
-            syscall_number(libc::SYS_utimensat),
-            vec![SeccompRule::new(vec![SeccompCondition::new(
-                1,
-                SeccompCmpArgLen::Qword,
-                SeccompCmpOp::Ne,
-                0,
-            )?])?],
-        );
+        // utimensat also implements futimens when pathname is null. Reject the
+        // whole syscall so a pre-opened descriptor cannot bypass Landlock's
+        // path-based confinement to mutate timestamps.
         // clone remains available for ordinary processes and threads, but no
         // descendant may create a new namespace.
         let namespace_flags = [
@@ -372,7 +372,19 @@ mod tests {
                     std::fs::set_permissions(&sentinel, std::fs::Permissions::from_mode(0o600))
                         .unwrap_err();
                 assert_eq!(error.raw_os_error(), Some(libc::EPERM));
-                assert_eq!(unsafe { libc::fchmod(file.as_raw_fd(), 0o600) }, 0);
+                assert_eq!(unsafe { libc::fchmod(file.as_raw_fd(), 0o600) }, -1);
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
+                assert_eq!(
+                    unsafe { libc::fchown(file.as_raw_fd(), libc::geteuid(), libc::getegid()) },
+                    -1
+                );
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
                 let sentinel_c =
                     std::ffi::CString::new(sentinel.as_os_str().as_encoded_bytes().to_vec())
                         .unwrap();
@@ -399,7 +411,56 @@ mod tests {
                     )
                 };
                 assert_eq!(fd_xattr, -1);
-                assert_ne!(
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
+                let xattr_value = b"value";
+                assert_eq!(
+                    unsafe {
+                        libc::fsetxattr(
+                            file.as_raw_fd(),
+                            xattr_name.as_ptr(),
+                            xattr_value.as_ptr().cast(),
+                            xattr_value.len(),
+                            0,
+                        )
+                    },
+                    -1
+                );
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
+                assert_eq!(
+                    unsafe { libc::flistxattr(file.as_raw_fd(), std::ptr::null_mut(), 0) },
+                    -1
+                );
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
+                assert_eq!(
+                    unsafe { libc::fremovexattr(file.as_raw_fd(), xattr_name.as_ptr()) },
+                    -1
+                );
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
+                assert_eq!(
+                    unsafe {
+                        libc::syscall(
+                            libc::SYS_utimensat,
+                            file.as_raw_fd(),
+                            std::ptr::null::<libc::c_char>(),
+                            std::ptr::null::<libc::timespec>(),
+                            0,
+                        )
+                    },
+                    -1
+                );
+                assert_eq!(
                     std::io::Error::last_os_error().raw_os_error(),
                     Some(libc::EPERM)
                 );

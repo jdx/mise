@@ -1,12 +1,19 @@
 # Plan 010: Compile formula lifecycle once, preflight it, and confine it
 
-Status: DONE
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11915 `b94b6b1c1`
 Depends on: 009
 Implementation start: #11915 `4989ac953`
 Implementation commits: `4989ac953`, `43cc1d8c1`, `57319487b`, `5bc0ba042`
+
+Current closure note (2026-08-20): the published exact head `7c5374c0a`
+failed hosted nightly, lint, macOS oracle, Linux source oracle, and aggregate
+jobs. Confinement hardening and source-transaction rollback closure are newer
+uncommitted work, so historical green runs do not prove the current boundary.
+Return this plan to `DONE` only after the final pushed exact head passes the
+full workflow and its authenticated oracle markers are audited.
 
 Acceptance extension (2026-08-16): direct resolution of all 31 downstream
 formula roots reaches current `python@3.14`, whose typed lifecycle requires

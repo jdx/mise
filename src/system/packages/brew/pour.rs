@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::api::BottleFile;
-use super::fetch::OciBottleMetadata;
+use super::fetch::{OciBottleMetadata, VerifiedArtifact};
 use super::lifecycle;
 use super::prefix;
 use super::relocate;
@@ -572,11 +572,12 @@ fn read_regular_file_for_health(path: &Path) -> Option<Vec<u8>> {
 pub(super) fn bottle_formula_snapshot_sha256(
     name: &str,
     pkg_version: &str,
-    tarball: &Path,
+    bottle: &VerifiedArtifact,
 ) -> Result<String> {
     let scratch = tempfile::tempdir()?;
-    crate::file::untar(
-        tarball,
+    crate::file::untar_file(
+        bottle.reader()?,
+        bottle.label(),
         scratch.path(),
         ExtractionFormat::TarGz,
         &ExtractOptions {
@@ -1553,7 +1554,7 @@ pub(super) struct BottlePour<'a> {
     pub tag: &'a str,
     pub bottle: &'a BottleFile,
     pub oci_metadata: Option<&'a OciBottleMetadata>,
-    pub tarball: &'a Path,
+    pub tarball: &'a VerifiedArtifact,
     pub closure: &'a [ResolvedFormula],
     pub lifecycle: &'a super::lifecycle::PreparedFormulaLifecycle,
     pub pr: &'a dyn SingleReport,
@@ -1590,8 +1591,9 @@ pub async fn pour(input: BottlePour<'_>) -> Result<()> {
 
     // bottle tarballs contain <name>/<pkg_version>/...
     pr.set_message("extract".to_string());
-    crate::file::untar(
-        tarball,
+    crate::file::untar_file(
+        tarball.reader()?,
+        tarball.label(),
         &scratch,
         ExtractionFormat::TarGz,
         &ExtractOptions {
@@ -4101,9 +4103,17 @@ mod tests {
         header.set_mode(0o644);
         archive.append_data(&mut header, "foo/1/.brew/foo.rb", contents.as_slice())?;
         archive.into_inner()?.finish()?;
+        let bottle_sha256 = crate::hash::file_hash_sha256(&tarball, None)?;
+        let bottle = VerifiedArtifact::from_path(&tarball, &bottle_sha256, None)?
+            .ok_or_else(|| eyre::eyre!("test bottle checksum unexpectedly mismatched"))?;
+        crate::file::write(&tarball, "swapped-cache-entry")?;
 
         assert_eq!(
-            bottle_formula_snapshot_sha256("foo", "1", &tarball)?,
+            bottle_formula_snapshot_sha256("foo", "1", &bottle)?,
+            expected
+        );
+        assert_eq!(
+            bottle_formula_snapshot_sha256("foo", "1", &bottle)?,
             expected
         );
         Ok(())

@@ -47,6 +47,13 @@ pub struct BrewManager {}
 pub use cask::{BrewCaskManager, apply_cask_prune_plan, cask_prune_plan};
 pub use maintenance::{apply_prune_plan, default_tap_url, linked_formulae, prune_plan};
 
+struct PreparedBottleInstall {
+    tag: String,
+    bottle: api::BottleFile,
+    archive: fetch::VerifiedArtifact,
+    oci_metadata: Option<fetch::OciBottleMetadata>,
+}
+
 impl BrewManager {
     pub fn new() -> Self {
         Self {}
@@ -117,7 +124,7 @@ impl BrewManager {
         // Compile every lifecycle that can mutate before the first extraction
         // or source build. Current formulae outside this mutation set are not
         // rejected for lifecycle types mise does not need to execute.
-        let prepared_lifecycles = prepare_lifecycles(&to_pour)?;
+        let mut prepared_lifecycles = prepare_lifecycles(&to_pour)?;
         let repair_formulae = to_repair.iter().map(|(rf, _)| *rf).collect::<Vec<_>>();
         let mut prepared_repairs = prepare_lifecycles(&repair_formulae)?;
         // A bottle embeds its build-time formula snapshot. That snapshot may
@@ -152,11 +159,13 @@ impl BrewManager {
                             rf.formula.name
                         )
                     })?;
-                    lifecycle.set_formula_snapshot_sha256(pour::bottle_formula_snapshot_sha256(
-                        &rf.formula.name,
-                        &pkg_version,
-                        &tarball,
-                    )?);
+                    lifecycle.bind_bottle_formula_snapshot_sha256(
+                        pour::bottle_formula_snapshot_sha256(
+                            &rf.formula.name,
+                            &pkg_version,
+                            &tarball,
+                        )?,
+                    )?;
                 }
                 Some(false) => {}
                 None => bail!(
@@ -196,6 +205,39 @@ impl BrewManager {
             }
             return Ok(());
         }
+        // Authenticate and retain every bottle before the first prefix,
+        // repair, or lifecycle mutation. Snapshot authorization and pour then
+        // consume the same anonymous descriptor, so a mutable cache pathname
+        // cannot swap bytes between preflight and extraction.
+        let mut prepared_bottles = Vec::with_capacity(to_pour.len());
+        for (rf, lifecycle) in to_pour.iter().zip(&mut prepared_lifecycles) {
+            let prepared = if source::has_bottle(&rf.formula) {
+                let pkg_version = rf.formula.pkg_version()?;
+                let Some((tag, bottle)) = rf.formula.bottle_files().and_then(tag::select) else {
+                    bail!(
+                        "brew:{} lost its selected bottle during preflight",
+                        rf.formula.name
+                    )
+                };
+                let archive =
+                    fetch::fetch_bottle(&rf.formula.name, &pkg_version, bottle, None).await?;
+                lifecycle.bind_bottle_formula_snapshot_sha256(
+                    pour::bottle_formula_snapshot_sha256(&rf.formula.name, &pkg_version, &archive)?,
+                )?;
+                let oci_metadata =
+                    fetch::fetch_oci_bottle_metadata(&rf.formula.name, &pkg_version, &tag, bottle)
+                        .await?;
+                Some(PreparedBottleInstall {
+                    tag,
+                    bottle: bottle.clone(),
+                    archive,
+                    oci_metadata,
+                })
+            } else {
+                None
+            };
+            prepared_bottles.push(prepared);
+        }
         if prefix::sudo_invoking_user().is_some() {
             warn!(
                 "running under sudo — poured files will be owned by root; run \
@@ -231,30 +273,24 @@ impl BrewManager {
             pr.finish_with_message(health.version.clone());
             mpr.footer_inc(1);
         }
-        for (rf, lifecycle) in to_pour.iter().zip(&prepared_lifecycles) {
+        for ((rf, lifecycle), prepared_bottle) in to_pour
+            .iter()
+            .zip(&mut prepared_lifecycles)
+            .zip(&prepared_bottles)
+        {
             let name = &rf.formula.name;
             let pkg_version = rf.formula.pkg_version()?;
             let pr: Box<dyn SingleReport> = mpr.add(&format!("brew:{name}"));
             // branch on the same predicate the upfront classification used
-            let bottle = if source::has_bottle(&rf.formula) {
-                rf.formula.bottle_files().and_then(tag::select)
-            } else {
-                None
-            };
-            let installed = match bottle {
-                Some((tag, bottle)) => {
+            let installed = match prepared_bottle {
+                Some(prepared_bottle) => {
                     async {
-                        let tarball =
-                            fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
-                        let metadata =
-                            fetch::fetch_oci_bottle_metadata(name, &pkg_version, &tag, bottle)
-                                .await?;
                         pour::pour(pour::BottlePour {
                             rf,
-                            tag: &tag,
-                            bottle,
-                            oci_metadata: metadata.as_ref(),
-                            tarball: &tarball,
+                            tag: &prepared_bottle.tag,
+                            bottle: &prepared_bottle.bottle,
+                            oci_metadata: prepared_bottle.oci_metadata.as_ref(),
+                            tarball: &prepared_bottle.archive,
                             closure: &closure,
                             lifecycle,
                             pr: &*pr,

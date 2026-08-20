@@ -466,6 +466,10 @@ impl TaskExecutor {
             deny_mise_data_read: self.sandbox.deny_mise_data_read,
             require_full_filesystem_confinement: self.sandbox.require_full_filesystem_confinement,
             system_access_profile: self.sandbox.system_access_profile,
+            #[cfg(target_os = "linux")]
+            bound_allow_read: vec![],
+            #[cfg(target_os = "linux")]
+            bound_allow_write: vec![],
         };
         if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
             && let Some(session) = &self.cache_session

@@ -1,11 +1,13 @@
 # Plan 011: Unify formula finalization and preserve truthful provenance
 
-Status: DONE
+Status: IN PROGRESS
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010
-Implementation commits: `a7f2352e1`, `43cc1d8c1`, `227664100`, `7cebd5e51`
+Implementation commits: `a7f2352e1`, `43cc1d8c1`, `227664100`, `7cebd5e51`,
+`b9a82d4fb`, `a2697d00f`, `ca2438834`, `09bccf0a7`, `56ef7caf1`,
+`75bdcadbd`, `c9390008a`, `38b25fa5b`, `93df3357c`, `7c5374c0a`
 
 Post-review correction (2026-08-15):
 
@@ -40,6 +42,120 @@ Exact-predecessor completion proof:
   executes the regressions proving that a stale non-predecessor default cannot
   authorize overwrite and that same-version replacement compares against the
   transaction backup containing the exact predecessor.
+
+Interrupted-finalization review correction (2026-08-20):
+
+- review threads [3814465247](https://github.com/jdx/mise/pull/11915#discussion_r3814465247)
+  and [3814704826](https://github.com/jdx/mise/pull/11915#discussion_r3814704826)
+  showed that retry reconstructed predecessor state from the newly active keg,
+  so an interruption after link mutation could lose the original predecessor;
+- commit `b9a82d4fb3292a24041224965b7f38f269ea5f3d` persists the original
+  predecessor in the durable finalization journal, validates transaction
+  identity, and reuses a deterministic recovery backup only when a matching
+  incomplete journal proves ownership;
+- commit `a2697d00f77fa535b140a951f94a9cfeea68b06a` closes the retry state
+  machine: absent progress retries with the durable predecessor, complete
+  progress commits cleanup without replay, and incomplete or unknown progress
+  fails before mutation. Shared-state completion is recorded explicitly and
+  source finalization performs the same pre-check;
+- five focused finalizer regressions, all 310 formula-stack brew tests, and full
+  workspace/all-feature/all-target Clippy with `-D warnings` pass locally. Both
+  review threads are resolved. Exact implementation
+  [run 32280764818](https://github.com/jdx/mise/actions/runs/32280764818)
+  executed both authenticated Homebrew oracles on
+  `855602c94410343ead04d36abccc4e0f3407474d`; their four completion markers
+  bind that exact head and the pinned Homebrew source. Signed merge
+  `b6f4074ed3d8752fb94a9456d7e2e74a7dedd96b` then integrates canonical main
+  `b7c9cbaa0320a70d63ec3fe69aa86ea604839b00` without touching finalizer or
+  lifecycle code. Signed merge `e5fc0f5f7d1791a2ee0b1b157e1c3c6eed15fd80`
+  subsequently integrates canonical main
+  `f7ad18b4b00047af872d58fa571bbf412c24be83`; its release/pacman delta is also
+  disjoint from brew code.
+
+Final shared-state provenance correction (2026-08-20): commit `ca2438834`
+persists the exact `.bottle/etc|var` source to installed target mapping. This
+retains the authoritative `.default` destination selected when user-modified
+configuration is preserved; lifecycle repair can recreate a deleted default
+without repouring or changing the user file, keg, native receipt, or public
+link. The same correction accepts a valid Homebrew directory-level public link
+only when resolving its ancestor plus leaf suffix reaches the exact expected
+keg path; another version or subtree remains a hard conflict.
+Follow-up `09bccf0a7` constructs `.default` paths from raw platform path bytes
+instead of display-formatted text, preserving non-UTF-8 path identity while
+satisfying strict Clippy without exclusions.
+
+Run [32285796215](https://github.com/jdx/mise/actions/runs/32285796215)
+completed all 13 jobs on `e5fc0f5f7d1791a2ee0b1b157e1c3c6eed15fd80`,
+including both authenticated formula/source oracles. It is historical proof,
+not final closure, because the subsequent authority audit found finalization,
+topology, source-confinement, and removal gaps.
+
+Final authority correction `56ef7caf16a5e660ce62e016acf65fa001f1433d`
+binds finalization and lifecycle plans to exact receipt/snapshot/incarnation
+identity; persists original rollback state and full public-topology journals;
+quiesces same-version links before build/replacement; validates full real
+directory ancestry; and stages bottle/source work under unique identity-bound
+roots with bounded cleanup. Resume accepts only the exact durable phase,
+predecessor, lifecycle digest, and filesystem identities.
+
+Linux source execution is environment-, filesystem-, network-, local-socket-,
+and process-group-confined. Formula API names, versions, tap identity, checksums,
+install policy, and the supported Ruby DSL are validated before mutation.
+Unknown DSL and install-affecting metadata fail closed. macOS remains
+bottle-only: source builds fail before download or Cellar mutation because
+`sandbox-exec` cannot prove cleanup of a deliberately detached descendant.
+This is an explicit platform boundary, not a false equivalence claim.
+
+Signed merge `75bdcadbdec7e2b93d50409e4f3d4fa9e319e655` integrates canonical
+`origin/main` `b0795afa7d23de9eed01b3f82cde5789830fc550` without conflict. Exact
+[run 32298940105](https://github.com/jdx/mise/actions/runs/32298940105) proved
+the macOS cask and Linux formula paths, then failed the macOS lifecycle oracle
+on exact shared-output parent creation and the Linux source oracle because its
+Docker environment could not enforce mandatory Landlock. It is failure
+evidence, not closure.
+
+Correction `c9390008a07ca71797b93c158e6ef5a9bff0e0ae` preserves exact
+shared-output authority while creating required real parents and moves the
+source oracle to the fresh Linux host where the same production command must
+successfully enforce Landlock, seccomp, local-socket denial, and process-group
+cleanup before a marker can be emitted. Local proof passes 392 brew tests,
+3,525 workspace/all-feature tests with four ignored, native-Linux sandbox/cmd
+suites `22`/`27`, strict workspace/all-target Clippy, formatting, and diff
+checks. Exact hosted
+[run 32302254890](https://github.com/jdx/mise/actions/runs/32302254890) on that
+head failed and remains negative evidence: the macOS lifecycle helper still
+required an adjacent temporary directory denied by the sandbox, the Linux
+source guard rejected the host's installed Homebrew against its declared
+`not-installed` runtime, and no marker was emitted for either body. Unit,
+Windows unused-code, and aggregate failures independently prevent closure.
+
+Security correction `38b25fa5b71da407a82ae12600896f2f85f1ed96`
+binds lifecycle and source effects to typed filesystem identities and retained
+transactional rollback authority. Shared regular-file outputs are built in a
+private mirror and published transactionally; strict Linux
+Landlock/seccomp/local-socket/process containment is mandatory. The only macOS
+formula Run exception is the exact pinned and audited `ca-certificates` recipe
+and helper, executed from verified private copies; drift fails closed before
+publication. Local exact-lineage proof passes 87 lifecycle tests, all 423 brew
+tests, strict workspace/all-feature/all-target Clippy, formatting, and diff
+checks.
+
+Oracle-provenance correction `93df3357c6be57fae0ceda4aa03973ad8d2c407e`
+separates Linux formula and source execution, pins the disposable executor by
+digest, removes CI credentials, and authenticates exact-head job context and
+completion markers before aggregation. Signed merge
+`7c5374c0a5d41343a4f3dfcf7e3c3e69373f6358` integrates canonical
+`origin/main` `60c5ff113a672269c1bd9455f4eb50a079371a17`; its docs, registry,
+and Aqua changes do not overlap formula finalization or lifecycle code.
+
+Exact-head [run 32312879235](https://github.com/jdx/mise/actions/runs/32312879235)
+for `7c5374c0a5d41343a4f3dfcf7e3c3e69373f6358` failed and remains negative
+evidence. Linux formula completed; macOS lifecycle rejected a live-API formula
+checksum that differed from the checksum-verified bottle snapshot; Linux
+source rejected GNU `install` metadata mutation under strict confinement;
+nightly portability and Linux Clippy gates also failed. The aggregate correctly
+failed. Restore `DONE` only after a later exact head's complete workflow,
+authenticated formula/source markers, and aggregate gate pass.
 
 ## Objective
 
