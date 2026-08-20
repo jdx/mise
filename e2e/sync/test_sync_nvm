@@ -31,6 +31,8 @@ touch "$MISE_CACHE_DIR/node/22.0.0/incomplete"
 assert_fail_matches "mise sync node --nvm" 'failed to clear incomplete markers: 18\.0\.0.*19\.0\.0'
 assert "test -L \"$MISE_DATA_DIR/installs/node/19.0.0\""
 assert "test -L \"$MISE_DATA_DIR/installs/node/22.0.0\""
+assert_contains "readlink \"$MISE_DATA_DIR/installs/node/19.0.0\"" ".nvm/versions/node/v19.0.0"
+assert_contains "readlink \"$MISE_DATA_DIR/installs/node/22.0.0\"" ".nvm/versions/node/v22.0.0"
 assert "test ! -f \"$MISE_CACHE_DIR/node/22.0.0/incomplete\""
 assert "test -d \"$MISE_CACHE_DIR/node/18.0.0/incomplete\""
 assert "test -d \"$MISE_CACHE_DIR/node/19.0.0/incomplete\""
