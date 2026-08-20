@@ -593,6 +593,8 @@ impl AssetPicker {
 
         if format == ExtractionFormat::Zip {
             if self.target_os == "windows" {
+                // Native Windows ZIP extraction is faster than tar. Keep this
+                // strictly above every tar format score below.
                 return 15;
             } else {
                 return 5;
@@ -601,12 +603,11 @@ impl AssetPicker {
 
         if format.is_archive() {
             return match format {
-                // Since we are downloading, prefer small archives: zstd and xz
-                // tend to be smaller archives.
-                ExtractionFormat::TarZst => 15,
-                // xz comes in after zst because it can cost more CPU to decompress.
-                ExtractionFormat::TarXz => 13,
-                // All other archive formats roughly created equal.
+                // Prefer zstd over xz over other tarballs: zstd decompresses
+                // faster, which usually beats xz's slightly smaller download.
+                // Stay below the Windows ZIP score so zip still wins there.
+                ExtractionFormat::TarZst => 12,
+                ExtractionFormat::TarXz => 11,
                 _ => 10,
             };
         }
@@ -2704,6 +2705,28 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             score_linux_zip,
             score_linux_tar
         );
+
+        // Windows ZIP must strictly outrank tar.zst / tar.xz, not merely tie
+        // and win on the shortest-name fallback.
+        let zip = "tool-1.0.0-windows-x86_64.zip";
+        let tar_zst = "tool-1.0.0-windows-x86_64.tar.zst";
+        let tar_xz = "tool-1.0.0-windows-x86_64.tar.xz";
+        assert!(
+            picker_win.score_asset(zip) > picker_win.score_asset(tar_zst),
+            "Windows zip score ({}) should beat tar.zst ({})",
+            picker_win.score_asset(zip),
+            picker_win.score_asset(tar_zst)
+        );
+        assert!(
+            picker_win.score_asset(zip) > picker_win.score_asset(tar_xz),
+            "Windows zip score ({}) should beat tar.xz ({})",
+            picker_win.score_asset(zip),
+            picker_win.score_asset(tar_xz)
+        );
+        let picked = picker_win
+            .pick_best_asset(&[tar_zst.to_string(), tar_xz.to_string(), zip.to_string()])
+            .unwrap();
+        assert_eq!(picked, zip);
     }
 
     #[test]
