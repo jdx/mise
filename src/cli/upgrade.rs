@@ -869,7 +869,7 @@ fn monorepo_toolset_is_complete(ts: &Toolset) -> bool {
     // per-tool failures, so its Ok result alone does not prove completeness.
     ts.versions
         .values()
-        .all(|tvl| tvl.versions.len() == tvl.requests.len())
+        .all(|tvl| tvl.os_supported_versions().count() == tvl.os_supported_requests().count())
 }
 
 fn current_satisfies_hidden_release(
@@ -1046,7 +1046,7 @@ mod tests {
         upgrade_lockfile_update,
     };
     use crate::cli::args::BackendArg;
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset, parse_tool_options};
     use jiff::tz::TimeZone;
     use std::sync::Arc;
 
@@ -1068,8 +1068,18 @@ mod tests {
         crate::toolset::install_state::init().await.unwrap();
         let mut ts = Toolset::new(ToolSource::Unknown);
         let ba = Arc::new(BackendArg::new("dummy".to_string(), None));
-        let request = ToolRequest::new(ba, "1", ToolSource::Unknown).unwrap();
+        let request = ToolRequest::new(ba.clone(), "1", ToolSource::Unknown).unwrap();
         ts.add_version(request);
+
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        let mut inactive_options = parse_tool_options("");
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        let inactive_request =
+            ToolRequest::new_opts(ba, "2", inactive_options, ToolSource::Unknown).unwrap();
+        ts.add_version(inactive_request);
         assert!(!monorepo_toolset_is_complete(&ts));
 
         let tvl = ts.versions.values_mut().next().unwrap();
@@ -1077,6 +1087,7 @@ mod tests {
             tvl.requests[0].clone(),
             "1.0.0".to_string(),
         ));
+        // The unresolved OS-gated request does not make the union incomplete.
         assert!(monorepo_toolset_is_complete(&ts));
     }
 

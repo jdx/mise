@@ -1501,7 +1501,7 @@ impl LockfileUpdateMode {
     }
 }
 
-pub(crate) enum LockfileUpdateScope<'a> {
+pub enum LockfileUpdateScope<'a> {
     Active,
     MonorepoUnion(&'a Toolset),
 }
