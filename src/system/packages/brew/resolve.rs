@@ -60,6 +60,13 @@ fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
 }
 
 pub async fn resolve_closure_with_taps(roots: &[PackageRequest]) -> Result<Vec<ResolvedFormula>> {
+    resolve_closure_with_taps_mode(roots, api::FetchMode::Cached).await
+}
+
+pub(super) async fn resolve_closure_with_taps_mode(
+    roots: &[PackageRequest],
+    mode: api::FetchMode,
+) -> Result<Vec<ResolvedFormula>> {
     let roots = roots
         .iter()
         .map(|req| {
@@ -70,7 +77,7 @@ pub async fn resolve_closure_with_taps(roots: &[PackageRequest]) -> Result<Vec<R
             )
         })
         .collect::<Vec<_>>();
-    resolve_closure_pairs(&roots).await
+    resolve_closure_pairs(&roots, mode).await
 }
 
 /// Resolve the runtime closure of `roots` into install order (dependencies
@@ -78,6 +85,7 @@ pub async fn resolve_closure_with_taps(roots: &[PackageRequest]) -> Result<Vec<R
 /// their canonical formula.
 async fn resolve_closure_pairs(
     roots: &[(String, Option<String>, Option<String>)],
+    mode: api::FetchMode,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
     let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
@@ -102,7 +110,7 @@ async fn resolve_closure_pairs(
             Some(c) => c,
             None => {
                 let (formula, effective_tap_name, effective_tap_url) = match fetch_formula(
-                    &key, requested,
+                    &key, requested, mode,
                 )
                 .await
                 {
@@ -123,7 +131,7 @@ async fn resolve_closure_pairs(
                             "brew: {} unavailable in tap metadata ({err}); falling back to core metadata",
                             key.name
                         );
-                        (api::formula(&key.name).await?, None, None)
+                        (api::formula_with_mode(&key.name, mode).await?, None, None)
                     }
                     Err(err) => return Err(err),
                 };
@@ -385,9 +393,9 @@ fn validate_formula_response_identity(
     Ok(())
 }
 
-async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
+async fn fetch_formula(key: &FormulaKey, requested: bool, mode: api::FetchMode) -> Result<Formula> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
-        match api::formula(&key.name).await {
+        match api::formula_with_mode(&key.name, mode).await {
             Ok(formula) => return Ok(formula),
             Err(err) => {
                 debug!(
@@ -397,7 +405,13 @@ async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
             }
         }
     }
-    api::formula_with_tap_name(&key.name, key.tap_name.as_deref(), key.tap_url.as_deref()).await
+    api::formula_with_tap_name_mode(
+        &key.name,
+        key.tap_name.as_deref(),
+        key.tap_url.as_deref(),
+        mode,
+    )
+    .await
 }
 
 fn tap_raw_base(key: &FormulaKey) -> Option<String> {

@@ -67,6 +67,16 @@ impl BrewManager {
     }
 
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        self.install_via_pour_mode(pkgs, opts, api::FetchMode::Cached)
+            .await
+    }
+
+    async fn install_via_pour_mode(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        fetch_mode: api::FetchMode,
+    ) -> Result<()> {
         // bottles only exist for a formula's current version — versioning is
         // expressed in the formula name itself (postgresql@17); the CLI
         // filters pinned requests out before calling
@@ -77,7 +87,7 @@ impl BrewManager {
             );
         }
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
-        let closure = resolve::resolve_closure_with_taps(pkgs).await?;
+        let closure = resolve::resolve_closure_with_taps_mode(pkgs, fetch_mode).await?;
         for rf in &closure {
             if rf.on_request
                 && !roots.contains(&rf.formula.name)
@@ -224,9 +234,33 @@ impl BrewManager {
                 lifecycle.bind_bottle_formula_snapshot_sha256(
                     pour::bottle_formula_snapshot_sha256(&rf.formula.name, &pkg_version, &archive)?,
                 )?;
-                let oci_metadata =
-                    fetch::fetch_oci_bottle_metadata(&rf.formula.name, &pkg_version, &tag, bottle)
-                        .await?;
+                let oci_metadata = match fetch::fetch_oci_bottle_metadata(
+                    &rf.formula.name,
+                    &pkg_version,
+                    &tag,
+                    bottle,
+                )
+                .await
+                {
+                    Ok(metadata) => metadata,
+                    Err(error)
+                        if fetch_mode == api::FetchMode::Cached
+                            && error
+                                .downcast_ref::<fetch::DescriptorIdentityMiss>()
+                                .is_some() =>
+                    {
+                        debug!(
+                            "brew: Homebrew API and OCI metadata are incoherent; reacquiring the complete formula closure once"
+                        );
+                        return Box::pin(self.install_via_pour_mode(
+                            pkgs,
+                            opts,
+                            api::FetchMode::Fresh,
+                        ))
+                        .await;
+                    }
+                    Err(error) => return Err(error),
+                };
                 Some(PreparedBottleInstall {
                     tag,
                     bottle: bottle.clone(),

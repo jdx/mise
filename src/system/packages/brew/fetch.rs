@@ -8,6 +8,7 @@ use std::os::unix::fs::OpenOptionsExt;
 #[cfg(not(target_os = "linux"))]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::{error::Error, fmt};
 
 use eyre::{WrapErr, bail};
 use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
@@ -25,6 +26,24 @@ pub struct OciBottleMetadata {
     pub tab: Value,
     pub sbom_supplement: Option<Value>,
 }
+
+#[derive(Debug)]
+pub(super) struct DescriptorIdentityMiss {
+    name: String,
+    tag: String,
+}
+
+impl fmt::Display for DescriptorIdentityMiss {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "brew:{}: OCI index has no descriptor for {}",
+            self.name, self.tag
+        )
+    }
+}
+
+impl Error for DescriptorIdentityMiss {}
 
 /// Checksum-verified bottle bytes retained on an anonymous file descriptor.
 ///
@@ -293,7 +312,10 @@ fn oci_metadata_from_index(
                         == Some(expected_ref.as_str())
             })
         })
-        .ok_or_else(|| eyre::eyre!("brew:{name}: OCI index has no descriptor for {tag}"))?;
+        .ok_or_else(|| DescriptorIdentityMiss {
+            name: name.to_string(),
+            tag: tag.to_string(),
+        })?;
     let annotations = descriptor
         .get("annotations")
         .and_then(Value::as_object)
@@ -397,10 +419,9 @@ mod tests {
             }]
         });
 
-        assert!(
-            oci_metadata_from_index("foo", "1.0", "arm64_tahoe", "expected-bottle", &index)
-                .is_err()
-        );
+        let error = oci_metadata_from_index("foo", "1.0", "arm64_tahoe", "expected-bottle", &index)
+            .unwrap_err();
+        assert!(error.downcast_ref::<DescriptorIdentityMiss>().is_some());
     }
 
     #[test]

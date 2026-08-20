@@ -11,6 +11,12 @@ use crate::result::Result;
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FetchMode {
+    Cached,
+    Fresh,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Formula {
     pub name: String,
@@ -334,27 +340,29 @@ fn policy_detail(
 
 /// Fetch formula metadata by name (or alias — brew's API redirects aliases
 /// to the canonical formula).
-pub async fn formula(name: &str) -> Result<Formula> {
+pub(super) async fn formula_with_mode(name: &str, mode: FetchMode) -> Result<Formula> {
     let url = format!("{API_BASE}/formula/{name}.json");
-    HTTP_FETCH
-        .json_cached::<Formula, _>(url)
-        .await
-        .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+    let result = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
+    };
+    result.wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
 }
 
-pub async fn formula_with_tap_name(
+pub(super) async fn formula_with_tap_name_mode(
     name: &str,
     tap_name: Option<&str>,
     tap_url: Option<&str>,
+    mode: FetchMode,
 ) -> Result<Formula> {
     let Some((owner, tap, formula_name)) = split_tap_name(name).or_else(|| {
         let (owner, tap) = split_tap(tap_name?)?;
         Some((owner, tap, name))
     }) else {
-        return formula(name).await;
+        return formula_with_mode(name, mode).await;
     };
     if owner == "homebrew" && tap == "core" {
-        return formula(formula_name).await;
+        return formula_with_mode(formula_name, mode).await;
     }
     let Some(url) = tap_formula_api_url(owner, tap, formula_name, tap_url) else {
         bail!(
@@ -362,16 +370,17 @@ pub async fn formula_with_tap_name(
              so mise can fetch metadata directly without the brew CLI"
         );
     };
-    HTTP_FETCH
-        .json_cached::<Formula, _>(url)
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "failed to fetch Homebrew tap formula '{name}' directly. \
+    let result = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
+    };
+    result.wrap_err_with(|| {
+        format!(
+            "failed to fetch Homebrew tap formula '{name}' directly. \
                  The tap must publish API metadata at api/formula/{formula_name}.json; \
                  mise will not proxy to the brew CLI"
-            )
-        })
+        )
+    })
 }
 
 pub(super) fn tap_name(name: &str) -> Option<String> {
