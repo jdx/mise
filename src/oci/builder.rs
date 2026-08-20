@@ -30,6 +30,9 @@ pub const ANNOTATION_TOOL_SHORT: &str = "dev.mise.tool.short";
 pub const ANNOTATION_TOOL_VERSION: &str = "dev.mise.tool.version";
 pub const ANNOTATION_LAYER_PREFIX: &str = "dev.mise.layer.prefix";
 pub const ANNOTATION_LAYER_OWNER: &str = "dev.mise.layer.owner";
+pub const ANNOTATION_LAYER_RELOCATION: &str = "dev.mise.layer.relocation";
+
+const TOOL_LAYER_RELOCATION_VERSION: &str = "1";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
@@ -65,6 +68,7 @@ struct ReuseKey {
     version: String,
     prefix: String,
     owner: String,
+    relocation: String,
 }
 
 /// A tool layer taken verbatim from the remote cache image.
@@ -83,11 +87,12 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
     let mut index = IndexMap::new();
     for (layer, diff_id) in remote.manifest.layers.iter().zip(&remote.diff_ids) {
         let a = &layer.annotations;
-        let (Some(short), Some(version), Some(prefix), Some(owner)) = (
+        let (Some(short), Some(version), Some(prefix), Some(owner), Some(relocation)) = (
             a.get(ANNOTATION_TOOL_SHORT),
             a.get(ANNOTATION_TOOL_VERSION),
             a.get(ANNOTATION_LAYER_PREFIX),
             a.get(ANNOTATION_LAYER_OWNER),
+            a.get(ANNOTATION_LAYER_RELOCATION),
         ) else {
             continue;
         };
@@ -97,6 +102,7 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
                 version: version.clone(),
                 prefix: prefix.clone(),
                 owner: owner.clone(),
+                relocation: relocation.clone(),
             },
             ReusedLayer {
                 media_type: layer.media_type.clone(),
@@ -268,6 +274,19 @@ impl Builder {
         // the layer is never built locally and the tool doesn't need to be
         // installed at all.
         let owner_str = format!("{}:{}", owner.uid, owner.gid);
+        let python = versions
+            .iter()
+            .find(|(_, tv)| tv.ba().short == "python")
+            .map(|(_, tv)| tv);
+        let relocation_paths: Vec<(PathBuf, PathBuf)> = versions
+            .iter()
+            .map(|(_, tv)| {
+                (
+                    tv.install_path(),
+                    PathBuf::from(tool_in_image_path(&mount_point, tv)),
+                )
+            })
+            .collect();
         let reuse_index = self
             .opts
             .reuse_from
@@ -283,6 +302,7 @@ impl Builder {
                         version: tv.version.clone(),
                         prefix: tool_tar_prefix(&mount_point, tv),
                         owner: owner_str.clone(),
+                        relocation: tool_layer_relocation_key(tv, python),
                     })
                     .cloned()
             })
@@ -338,6 +358,7 @@ impl Builder {
             short: String,
             version: String,
             prefix: String,
+            relocation: String,
             layer: ToolLayer,
         }
         enum ToolLayer {
@@ -347,6 +368,7 @@ impl Builder {
         let mut tool_layers: Vec<ToolLayerEntry> = Vec::new();
         for (i, (_, tv)) in versions.iter().enumerate() {
             let tv_prefix = tool_tar_prefix(&mount_point, tv);
+            let relocation_key = tool_layer_relocation_key(tv, python);
             let layer = if let Some(reused) = &tool_reuse[i] {
                 info!(
                     "oci: reusing {} layer from the cache image (unchanged)",
@@ -354,14 +376,42 @@ impl Builder {
                 );
                 ToolLayer::Reused(reused.clone())
             } else {
-                let blob = layer::build_layer_from_dir(&tv.install_path(), &tv_prefix, owner)
-                    .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
+                let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
+                let external_python = if is_pipx {
+                    python.map(|python| {
+                        PathBuf::from(tool_in_image_path(&mount_point, python)).join("bin/python")
+                    })
+                } else {
+                    None
+                };
+                // Only pipx layers are expected to link into another tool's
+                // install. Other backends get their own mapping for shebang
+                // relocation without making their reuse key depend on the
+                // complete toolset.
+                let paths = if is_pipx {
+                    relocation_paths.clone()
+                } else {
+                    vec![(
+                        tv.install_path(),
+                        PathBuf::from(tool_in_image_path(&mount_point, tv)),
+                    )]
+                };
+                let relocation =
+                    layer::ToolRelocation::new(paths).with_external_python(external_python);
+                let blob = layer::build_relocated_tool_layer_from_dir(
+                    &tv.install_path(),
+                    &tv_prefix,
+                    owner,
+                    &relocation,
+                )
+                .wrap_err_with(|| format!("building layer for {}", tv.style()))?;
                 ToolLayer::Built(blob)
             };
             tool_layers.push(ToolLayerEntry {
                 short: tv.ba().short.clone(),
                 version: tv.version.clone(),
                 prefix: tv_prefix,
+                relocation: relocation_key,
                 layer,
             });
         }
@@ -473,6 +523,10 @@ impl Builder {
             annotations.insert(ANNOTATION_TOOL_VERSION.to_string(), entry.version.clone());
             annotations.insert(ANNOTATION_LAYER_PREFIX.to_string(), entry.prefix.clone());
             annotations.insert(ANNOTATION_LAYER_OWNER.to_string(), owner_str.clone());
+            annotations.insert(
+                ANNOTATION_LAYER_RELOCATION.to_string(),
+                entry.relocation.clone(),
+            );
             let (media_type, digest, size, diff_id, reused) = match &entry.layer {
                 ToolLayer::Built(blob) => {
                     layout.write_blob_with_digest(&blob.digest, &blob.bytes)?;
@@ -1117,6 +1171,17 @@ fn tool_tar_prefix(mount_point: &str, tv: &ToolVersion) -> String {
         .to_string()
 }
 
+fn tool_layer_relocation_key(tv: &ToolVersion, python: Option<&ToolVersion>) -> String {
+    if tv.ba().backend_type() == BackendType::Pipx {
+        format!(
+            "{TOOL_LAYER_RELOCATION_VERSION}:python={}",
+            python.map_or("none", |python| python.version.as_str())
+        )
+    } else {
+        TOOL_LAYER_RELOCATION_VERSION.to_string()
+    }
+}
+
 fn synthesize_embedded_config_toml(
     versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
     _mount_point: &str,
@@ -1217,14 +1282,15 @@ mod tests {
     }
 
     #[test]
-    fn reuse_index_keys_on_all_four_annotations() {
+    fn reuse_index_keys_on_all_relocation_annotations() {
         let full = [
             (ANNOTATION_TOOL_SHORT, "jq"),
             (ANNOTATION_TOOL_VERSION, "1.8.1"),
             (ANNOTATION_LAYER_PREFIX, "mise/installs/jq/1.8.1"),
             (ANNOTATION_LAYER_OWNER, "0:0"),
+            (ANNOTATION_LAYER_RELOCATION, TOOL_LAYER_RELOCATION_VERSION),
         ];
-        // Second layer lacks prefix/owner (pushed by an older mise) —
+        // Second layer lacks prefix/owner/relocation (pushed by an older mise) —
         // not reusable.
         let partial = [
             (ANNOTATION_TOOL_SHORT, "node"),
@@ -1249,6 +1315,7 @@ mod tests {
                 version: "1.8.1".into(),
                 prefix: "mise/installs/jq/1.8.1".into(),
                 owner: "0:0".into(),
+                relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
             })
             .unwrap();
         assert_eq!(hit.digest, "sha256:aaa");
@@ -1261,6 +1328,7 @@ mod tests {
                     version: "1.8.1".into(),
                     prefix: "mise/installs/jq/1.8.1".into(),
                     owner: "1000:1000".into(),
+                    relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
                 })
                 .is_none()
         );
