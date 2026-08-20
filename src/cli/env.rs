@@ -13,35 +13,35 @@ use indexmap::IndexSet;
 ///
 /// Use this if you don't want to permanently install mise. It's not necessary to
 /// use this if you have `mise activate` in your shell rc file.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Env {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Env {
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION")]
+    #[arg(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
     /// Output in dotenv format
-    #[clap(long, short = 'D', overrides_with = "shell")]
+    #[arg(long, short = 'D', overrides_with = "shell")]
     dotenv: bool,
 
     /// Output in JSON format
-    #[clap(long, short = 'J', overrides_with = "shell")]
+    #[arg(long, short = 'J', overrides_with = "shell")]
     json: bool,
 
     /// Shell type to generate environment variables for
-    #[clap(long, short, overrides_with = "json")]
+    #[arg(long, short, overrides_with = "json")]
     shell: Option<ShellType>,
 
     /// Output in JSON format with additional information (source, tool)
-    #[clap(long, overrides_with = "shell")]
+    #[arg(long, overrides_with = "shell")]
     json_extended: bool,
 
     /// Only show redacted environment variables
-    #[clap(long)]
+    #[arg(long)]
     redacted: bool,
 
     /// Only show values of environment variables
-    #[clap(long)]
+    #[arg(long)]
     values: bool,
 }
 

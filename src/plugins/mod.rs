@@ -10,7 +10,6 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use crate::{config::Config, dirs};
 use async_trait::async_trait;
-use clap::Command;
 use eyre::{Result, bail, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
@@ -29,6 +28,12 @@ pub(crate) mod core;
 pub(crate) mod mise_plugin_toml;
 pub(crate) mod script_manager;
 pub(crate) mod vfox_plugin;
+
+#[derive(Clone, Debug)]
+pub struct ExternalCommand {
+    pub topic: String,
+    pub subcommands: Vec<String>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
 pub(crate) enum PluginType {
@@ -119,7 +124,7 @@ impl PluginEnum {
         }
     }
 
-    pub(crate) fn external_commands(&self) -> eyre::Result<Vec<Command>> {
+    pub fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),
@@ -358,7 +363,7 @@ pub(crate) trait Plugin: Debug + Send {
     async fn install(&self, _config: &Arc<Config>, _pr: &dyn SingleReport) -> eyre::Result<()> {
         Ok(())
     }
-    fn external_commands(&self) -> eyre::Result<Vec<Command>> {
+    fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
         Ok(vec![])
     }
     #[cfg_attr(coverage_nightly, coverage(off))]

@@ -1,6 +1,6 @@
 use crate::Result;
-use crate::cli::Cli;
 use crate::cli::args::BackendArg;
+use crate::cli::render_subcommand_help;
 use crate::cmd;
 use crate::config::Config;
 use crate::dirs;
@@ -9,7 +9,6 @@ use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
-use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
 use itertools::Itertools;
 use std::cmp::PartialEq;
@@ -23,34 +22,34 @@ use std::path::{Path, PathBuf};
 ///
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Watch {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
     /// Defaults to `default`
-    #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
+    #[arg(double_dash = "automatic", verbatim_doc_comment)]
     task: Option<String>,
 
     /// Tasks to run
-    #[clap(short, long, verbatim_doc_comment, hide = true)]
+    #[arg(short, long, verbatim_doc_comment, hide = true)]
     task_flag: Vec<String>,
 
     /// Task and arguments to run
-    #[clap(allow_hyphen_values = true, trailing_var_arg = true)]
+    #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 
     /// Files to watch
     /// Defaults to sources from the task(s)
-    #[clap(short, long, verbatim_doc_comment, hide = true)]
+    #[arg(short, long, verbatim_doc_comment, hide = true)]
     glob: Vec<String>,
 
     /// Run only the specified tasks skipping all dependencies
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub skip_deps: bool,
 
-    #[clap(flatten)]
+    #[arg(flatten)]
     watchexec: WatchexecArgs,
 }
 
@@ -58,11 +57,11 @@ impl Watch {
     pub(crate) async fn run(self) -> Result<()> {
         if let Some(task) = &self.task {
             if task == "-h" {
-                self.get_clap_command().print_help()?;
+                print!("{}", render_subcommand_help("watch", false));
                 return Ok(());
             }
             if task == "--help" {
-                self.get_clap_command().print_long_help()?;
+                print!("{}", render_subcommand_help("watch", true));
                 return Ok(());
             }
         }
@@ -361,14 +360,6 @@ impl Watch {
         result?;
         Ok(())
     }
-
-    fn get_clap_command(&self) -> clap::Command {
-        Cli::command()
-            .get_subcommands()
-            .find(|s| s.get_name() == "watch")
-            .unwrap()
-            .clone()
-    }
 }
 
 /// Longest path that is a prefix of every input path. Returns `None` for
@@ -553,13 +544,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 //region watchexec
-const OPTSET_FILTERING: &str = "Filtering";
-const OPTSET_COMMAND: &str = "Command";
-const OPTSET_DEBUGGING: &str = "Debugging";
-const OPTSET_OUTPUT: &str = "Output";
-
-#[derive(Debug, clap::Args)]
-pub(super) struct WatchexecArgs {
+#[derive(Debug, usage_rs::Args)]
+pub struct WatchexecArgs {
     /// Watch a specific file or directory
     ///
     /// By default, Watchexec watches the current directory.
@@ -578,7 +564,7 @@ pub(super) struct WatchexecArgs {
     #[arg(
 		short = 'w',
 		long = "watch",
-		help_heading = OPTSET_FILTERING,
+		help_heading = "Filtering",
 		value_hint = ValueHint::AnyPath,
 		value_name = "PATH",
     )]
@@ -592,7 +578,7 @@ pub(super) struct WatchexecArgs {
     #[arg(
 		short = 'W',
 		long = "watch-non-recursive",
-		help_heading = OPTSET_FILTERING,
+		help_heading = "Filtering",
 		value_hint = ValueHint::AnyPath,
 		value_name = "PATH",
     )]
@@ -609,7 +595,7 @@ pub(super) struct WatchexecArgs {
     #[arg(
 		short = 'F',
 		long,
-		help_heading = OPTSET_FILTERING,
+		help_heading = "Filtering",
 		value_hint = ValueHint::AnyPath,
 		value_name = "PATH",
     )]
@@ -621,9 +607,10 @@ pub(super) struct WatchexecArgs {
     #[arg(
 		short = 'c',
 		long = "clear",
-		help_heading = OPTSET_OUTPUT,
+		help_heading = "Output",
 		num_args = 0..=1,
 		default_missing_value = "clear",
+		value_enum,
 		value_name = "MODE",
     )]
     pub screen_clear: Option<ClearMode>,
@@ -643,6 +630,7 @@ pub(super) struct WatchexecArgs {
         long,
         default_value = "do-nothing",
         hide_default_value = true,
+        value_enum,
         value_name = "MODE"
     )]
     pub on_busy_update: OnBusyUpdate,
@@ -775,10 +763,7 @@ pub(super) struct WatchexecArgs {
     /// files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
     ///
     /// This option is useful if you want to watch files that are ignored by Git.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[arg(long, help_heading = "Filtering")]
     pub no_vcs_ignore: bool,
 
     /// Don't load project-local ignores
@@ -800,11 +785,7 @@ pub(super) struct WatchexecArgs {
     /// VCS ignore files (Git, Mercurial, Bazaar, Darcs, Fossil) are only used if the corresponding
     /// VCS is discovered to be in use for the project/origin. For example, a .bzrignore in a Git
     /// repository will be discarded.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-		verbatim_doc_comment,
-    )]
+    #[arg(long, help_heading = "Filtering", verbatim_doc_comment)]
     pub no_project_ignore: bool,
 
     /// Don't load global ignores
@@ -822,11 +803,7 @@ pub(super) struct WatchexecArgs {
     ///
     /// Like for project files, Git and Bazaar global files will only be used for the corresponding
     /// VCS as used in the project.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-		verbatim_doc_comment,
-    )]
+    #[arg(long, help_heading = "Filtering", verbatim_doc_comment)]
     pub no_global_ignore: bool,
 
     /// Don't use internal default ignores
@@ -834,10 +811,7 @@ pub(super) struct WatchexecArgs {
     /// Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
     /// `.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
     /// Watchexec log files.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[arg(long, help_heading = "Filtering")]
     pub no_default_ignore: bool,
 
     /// Don't discover ignore files at all
@@ -846,10 +820,7 @@ pub(super) struct WatchexecArgs {
     /// even more efficient as it will skip all the ignore discovery mechanisms from the get go.
     ///
     /// Note that default ignores are still loaded, see '--no-default-ignore'.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[arg(long, help_heading = "Filtering")]
     pub no_discover_ignore: bool,
 
     /// Don't ignore anything at all
@@ -858,10 +829,7 @@ pub(super) struct WatchexecArgs {
     ///
     /// Note that ignores explicitly loaded via other command line options, such as '--ignore' or
     /// '--ignore-file', will still be used.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[arg(long, help_heading = "Filtering")]
     pub ignore_nothing: bool,
 
     /// Wait until first change before running command
@@ -947,18 +915,11 @@ pub(super) struct WatchexecArgs {
     /// Use with a unix shell and options:
     ///
     ///   $ watchexec --shell='zsh -x -o shwordsplit' -- scr
-    #[arg(
-		long,
-		help_heading = OPTSET_COMMAND,
-		value_name = "SHELL",
-    )]
+    #[arg(long, help_heading = "Command", value_name = "SHELL")]
     pub shell: Option<String>,
 
     /// Shorthand for '--shell=none'
-    #[arg(
-		short = 'n',
-		help_heading = OPTSET_COMMAND,
-    )]
+    #[arg(short = 'n', help_heading = "Command")]
     pub no_shell: bool,
 
     /// Configure event emission
@@ -1062,13 +1023,14 @@ pub(super) struct WatchexecArgs {
     /// the process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the
     /// multiple confused queries that have landed in my inbox over the years.
     #[arg(
-		long,
-		help_heading = OPTSET_COMMAND,
-		verbatim_doc_comment,
-		default_value = "none",
-		hide_default_value = true,
-		value_name = "MODE",
-		required_if_eq("only_emit_events", "true"),
+        long,
+        help_heading = "Command",
+        verbatim_doc_comment,
+        default_value = "none",
+        hide_default_value = true,
+        value_name = "MODE",
+        required_if_eq("only_emit_events", "true"),
+        value_enum
     )]
     pub emit_events_to: EmitEvents,
 
@@ -1083,7 +1045,7 @@ pub(super) struct WatchexecArgs {
     /// of the command.
     #[arg(
 		long,
-		help_heading = OPTSET_OUTPUT,
+		help_heading = "Output",
 		conflicts_with_all = ["manual"],
     )]
     pub only_emit_events: bool,
@@ -1094,12 +1056,7 @@ pub(super) struct WatchexecArgs {
     /// setting them for the Watchexec process itself.
     ///
     /// Use key=value syntax. Multiple variables can be set by repeating the option.
-    #[arg(
-		long,
-		short = 'E',
-		help_heading = OPTSET_COMMAND,
-		value_name = "KEY=VALUE",
-    )]
+    #[arg(long, short = 'E', help_heading = "Command", value_name = "KEY=VALUE")]
     pub env: Vec<String>,
 
     /// Configure how the process is wrapped
@@ -1111,33 +1068,26 @@ pub(super) struct WatchexecArgs {
     ///
     /// Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
     /// the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
-    #[arg(
-		long,
-		help_heading = OPTSET_COMMAND,
-		value_name = "MODE",
-    )]
+    #[arg(long, help_heading = "Command", value_name = "MODE", value_enum)]
     pub wrap_process: Option<WrapMode>,
 
     /// Alert when commands start and end
     ///
     /// With this, Watchexec will emit a desktop notification when a command starts and ends, on
     /// supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
-    #[arg(
-		short = 'N',
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[arg(short = 'N', long, help_heading = "Output")]
     pub notify: bool,
 
     /// When to use terminal colours
     ///
     /// Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
     #[arg(
-		long,
-		help_heading = OPTSET_OUTPUT,
-		default_value = "auto",
-		value_name = "MODE",
-		alias = "colour",
+        long,
+        help_heading = "Output",
+        default_value = "auto",
+        value_name = "MODE",
+        alias = "colour",
+        value_enum
     )]
     pub color: ColourMode,
 
@@ -1145,28 +1095,18 @@ pub(super) struct WatchexecArgs {
     ///
     /// This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use
     /// the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
-    #[arg(
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[arg(long, help_heading = "Output")]
     pub timings: bool,
 
     /// Don't print starting and stopping messages
     ///
     /// By default Watchexec will print a message when the command starts and stops. This option
     /// disables this behaviour, so only the command's output, warnings, and errors will be printed.
-    #[arg(
-		short,
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[arg(short, long, help_heading = "Output")]
     pub quiet: bool,
 
     /// Ring the terminal bell on command completion
-    #[arg(
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[arg(long, help_heading = "Output")]
     pub bell: bool,
 
     /// Set the project origin
@@ -1203,11 +1143,11 @@ pub(super) struct WatchexecArgs {
     /// can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
     /// be given by repeating the option or by separating them with commas.
     #[arg(
-		long = "exts",
-		short = 'e',
-		help_heading = OPTSET_FILTERING,
-		value_delimiter = ',',
-		value_name = "EXTENSIONS",
+        long = "exts",
+        short = 'e',
+        help_heading = "Filtering",
+        value_delimiter = ',',
+        value_name = "EXTENSIONS"
     )]
     pub filter_extensions: Vec<String>,
 
@@ -1217,10 +1157,10 @@ pub(super) struct WatchexecArgs {
     /// emitted. Multiple patterns can be given by repeating the option. Events that are not from
     /// files (e.g. signals, keyboard events) will pass through untouched.
     #[arg(
-		long = "filter",
-		short = 'f',
-		help_heading = OPTSET_FILTERING,
-		value_name = "PATTERN",
+        long = "filter",
+        short = 'f',
+        help_heading = "Filtering",
+        value_name = "PATTERN"
     )]
     pub filter_patterns: Vec<String>,
 
@@ -1232,13 +1172,14 @@ pub(super) struct WatchexecArgs {
     /// This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
     #[arg(
 		long = "filter-file",
-		help_heading = OPTSET_FILTERING,
-		value_delimiter = env::PATH_ENV_SEP,
+		help_heading = "Filtering",
 		value_hint = ValueHint::FilePath,
 		value_name = "PATH",
 		env = "WATCHEXEC_FILTER_FILES",
 		hide_env = true,
     )]
+    #[cfg_attr(windows, arg(value_delimiter = ';'))]
+    #[cfg_attr(not(windows), arg(value_delimiter = ':'))]
     pub filter_files: Vec<PathBuf>,
 
     /// [experimental] Filter programs.
@@ -1302,10 +1243,10 @@ pub(super) struct WatchexecArgs {
     ///
     ///   'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
     #[arg(
-		long = "filter-prog",
-		short = 'J',
-		help_heading = OPTSET_FILTERING,
-		value_name = "EXPRESSION",
+        long = "filter-prog",
+        short = 'J',
+        help_heading = "Filtering",
+        value_name = "EXPRESSION"
     )]
     pub filter_programs: Vec<String>,
 
@@ -1315,10 +1256,10 @@ pub(super) struct WatchexecArgs {
     /// excluded. Multiple patterns can be given by repeating the option. Events that are not from
     /// files (e.g. signals, keyboard events) will pass through untouched.
     #[arg(
-		long = "ignore",
-		short = 'i',
-		help_heading = OPTSET_FILTERING,
-		value_name = "PATTERN",
+        long = "ignore",
+        short = 'i',
+        help_heading = "Filtering",
+        value_name = "PATTERN"
     )]
     pub ignore_patterns: Vec<String>,
 
@@ -1330,13 +1271,14 @@ pub(super) struct WatchexecArgs {
     /// This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
     #[arg(
 		long = "ignore-file",
-		help_heading = OPTSET_FILTERING,
-		value_delimiter = env::PATH_ENV_SEP,
+		help_heading = "Filtering",
 		value_hint = ValueHint::FilePath,
 		value_name = "PATH",
 		env = "WATCHEXEC_IGNORE_FILES",
 		hide_env = true,
     )]
+    #[cfg_attr(windows, arg(value_delimiter = ';'))]
+    #[cfg_attr(not(windows), arg(value_delimiter = ':'))]
     pub ignore_files: Vec<PathBuf>,
 
     /// Filesystem events to filter to
@@ -1349,12 +1291,13 @@ pub(super) struct WatchexecArgs {
     /// This may apply filtering at the kernel level when possible, which can be more efficient, but
     /// may be more confusing when reading the logs.
     #[arg(
-		long = "fs-events",
-		help_heading = OPTSET_FILTERING,
-		default_value = "create,remove,rename,modify,metadata",
-		value_delimiter = ',',
-		hide_default_value = true,
-		value_name = "EVENTS",
+        long = "fs-events",
+        help_heading = "Filtering",
+        default_value = "create,remove,rename,modify,metadata",
+        value_delimiter = ',',
+        hide_default_value = true,
+        value_enum,
+        value_name = "EVENTS"
     )]
     pub filter_fs_events: Vec<FsEvent>,
 
@@ -1363,9 +1306,9 @@ pub(super) struct WatchexecArgs {
     /// This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the
     /// '--fs-events' option is non-sensical and not allowed.
     #[arg(
-		long = "no-meta",
-		help_heading = OPTSET_FILTERING,
-		conflicts_with = "filter_fs_events",
+        long = "no-meta",
+        help_heading = "Filtering",
+        conflicts_with = "filter_fs_events"
     )]
     pub filter_fs_meta: bool,
 
@@ -1375,10 +1318,7 @@ pub(super) struct WatchexecArgs {
     /// human readable form. This is useful for debugging filters.
     ///
     /// Use '-vvv' instead when you need more diagnostic information.
-    #[arg(
-		long,
-		help_heading = OPTSET_DEBUGGING,
-    )]
+    #[arg(long, help_heading = "Debugging")]
     pub print_events: bool,
 
     /// Show the manual page
@@ -1386,54 +1326,51 @@ pub(super) struct WatchexecArgs {
     /// This shows the manual page for Watchexec, if the output is a terminal and the 'man' program
     /// is available. If not, the manual page is printed to stdout in ROFF format (suitable for
     /// writing to a watchexec.1 file).
-    #[arg(
-		long,
-		help_heading = OPTSET_DEBUGGING,
-    )]
+    #[arg(long, help_heading = "Debugging")]
     pub manual: bool,
     // /// Change to this directory before executing the command
-    // #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
+    // #[arg(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     // pub cd: Option<PathBuf>,
     //
     // /// Don't actually run the task(s), just print them in order of execution
-    // #[clap(long, short = 'n', verbatim_doc_comment)]
+    // #[arg(long, short = 'n', verbatim_doc_comment)]
     // pub dry_run: bool,
     //
     // /// Force the tasks to run even if outputs are up to date
-    // #[clap(long, short, verbatim_doc_comment)]
+    // #[arg(long, short, verbatim_doc_comment)]
     // pub force: bool,
     //
     // /// Print stdout/stderr by line, prefixed with the tasks's label
     // /// Defaults to true if --jobs > 1
     // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    // #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
+    // #[arg(long, short, verbatim_doc_comment, overrides_with = "interleave")]
     // pub prefix: bool,
     //
     // /// Print directly to stdout/stderr instead of by line
     // /// Defaults to true if --jobs == 1
     // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    // #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
+    // #[arg(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     // pub interleave: bool,
     //
     // /// Tool(s) to also add
     // /// e.g.: node@20 python@3.10
-    // #[clap(short, long, value_name = "TOOL@VERSION")]
+    // #[arg(short, long, value_name = "TOOL@VERSION")]
     // pub tool: Vec<ToolArg>,
     //
     // /// Number of tasks to run in parallel
     // /// [default: 4]
     // /// Configure with `jobs` config or `MISE_JOBS` env var
-    // #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    // #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     // pub jobs: Option<usize>,
     //
     // /// Read/write directly to stdin/stdout/stderr instead of by line
     // /// Configure with `raw` config or `MISE_RAW` env var
-    // #[clap(long, short, verbatim_doc_comment)]
+    // #[arg(long, short, verbatim_doc_comment)]
     // pub raw: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub(super) enum EmitEvents {
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+pub enum EmitEvents {
     #[default]
     Environment,
     Stdio,
@@ -1443,7 +1380,7 @@ pub(super) enum EmitEvents {
     None,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub(super) enum OnBusyUpdate {
     #[default]
@@ -1468,7 +1405,7 @@ fn wrap_process_args(mode: Option<WrapMode>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub(super) enum WrapMode {
     #[default]
@@ -1477,15 +1414,15 @@ pub(super) enum WrapMode {
     None,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub(super) enum ClearMode {
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+pub enum ClearMode {
     #[default]
     Clear,
     Reset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(super) enum FsEvent {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+pub enum FsEvent {
     Access,
     Create,
     Remove,
@@ -1494,19 +1431,8 @@ pub(super) enum FsEvent {
     Metadata,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-#[clap(rename_all = "lower")]
-pub(super) enum ShellCompletion {
-    Bash,
-    Elvish,
-    Fish,
-    Nu,
-    PowerShell,
-    Zsh,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(super) enum ColourMode {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+pub enum ColourMode {
     Auto,
     Always,
     Never,

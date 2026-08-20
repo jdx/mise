@@ -8,7 +8,6 @@ use crate::config::{
 };
 use crate::file::{display_path, remove_file};
 use crate::{config, dirs, env, file};
-use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -32,31 +31,31 @@ use itertools::Itertools;
 /// worktree is trusted when the equivalent path in the repository's main
 /// checkout has been trusted. Paranoid mode disables this sharing since
 /// worktrees can check out branches with different config contents.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Trust {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Trust {
     /// The config file whose trust status to change
-    #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
+    #[arg(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 
     /// Trust all config files in the current directory, its parents, and its subdirectories
     ///
     /// Subdirectories are walked respecting .gitignore, skipping hidden directories
     /// and common build/dependency directories (node_modules, vendor, target, dist, build).
-    #[clap(long, short, verbatim_doc_comment, conflicts_with_all = &["ignore", "untrust"])]
+    #[arg(long, short, verbatim_doc_comment, conflicts_with_all = &["ignore", "untrust"])]
     all: bool,
 
     /// Do not trust this config and ignore it in the future
-    #[clap(long, conflicts_with = "untrust")]
+    #[arg(long, conflicts_with = "untrust")]
     ignore: bool,
 
     /// Show the trusted status of config files from the current directory and its parents.
     /// Does not trust or untrust any files.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     show: bool,
 
     /// Remove explicit trust for this config
-    #[clap(long)]
+    #[arg(long)]
     untrust: bool,
 }
 

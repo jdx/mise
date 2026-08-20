@@ -3,11 +3,11 @@ use crate::config::Config;
 use std::env;
 
 /// Print the current PATH entries mise is providing
-#[derive(Debug, clap::Args)]
-#[clap(alias="paths", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Path {
+#[derive(Debug, usage_rs::Args)]
+#[command(alias="paths", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Path {
     /// Print all entries including those not provided by mise
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     full: bool,
 }
 

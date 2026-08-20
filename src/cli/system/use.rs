@@ -22,28 +22,28 @@ use crate::system::packages::PackageRequest;
 /// version through their names instead (for example `brew:postgresql@17`,
 /// `brew-cask:temurin@17`), where `@` is part of the Homebrew name rather than
 /// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct SystemUse {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct SystemUse {
     /// Packages in `manager:package[@version]` form
-    #[clap(value_name = "PACKAGE", required = true)]
+    #[arg(value_name = "PACKAGE", required = true)]
     packages: Vec<String>,
 
     /// Write to the config file for this environment (mise.<ENV>.toml)
-    #[clap(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
+    #[arg(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
     env: Option<String>,
 
     /// Write to the global config (~/.config/mise/config.toml) instead of the
     /// local one
-    #[clap(long, short)]
+    #[arg(long, short)]
     global: bool,
 
     /// Print the commands that would run without writing config or installing
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[clap(
+    #[arg(
         long,
         short,
         visible_alias = "file",
@@ -53,7 +53,7 @@ pub(crate) struct SystemUse {
     path: Option<PathBuf>,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 

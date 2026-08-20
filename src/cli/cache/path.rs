@@ -3,9 +3,9 @@ use eyre::Result;
 use crate::env;
 
 /// Show the cache directory path
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "dir")]
-pub(super) struct CachePath {}
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, visible_alias = "dir")]
+pub struct CachePath {}
 
 impl CachePath {
     pub(super) fn run(self) -> Result<()> {

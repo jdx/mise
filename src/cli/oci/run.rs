@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use clap::ValueHint;
 use eyre::{Context, Result, bail};
 use tempfile::TempDir;
 
@@ -19,27 +18,27 @@ use crate::oci::{BuildOptions, LayerOwner};
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`) and
 /// one of: `podman`, `docker`.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct Run {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Run {
     // Long-only flags, kept alphabetical (asserted by
     // `cli::tests::test_subcommands_are_sorted`).
     /// Container engine to use (`auto`, `podman`, or `docker`)
-    #[clap(long, default_value = "auto")]
+    #[arg(long, default_value = "auto", value_enum)]
     engine: Engine,
 
     /// Base image reference for the build (ignored with --image-dir)
-    #[clap(long)]
+    #[arg(long)]
     from: Option<String>,
 
     /// Use an already-built OCI image layout instead of building fresh
-    #[clap(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise", "owner", "include_global"])]
+    #[arg(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise", "owner", "include_global"])]
     image_dir: Option<PathBuf>,
 
     /// Also include tools from the global / system config (default: project-only)
     ///
     /// See `mise oci build --help` for details.
-    #[clap(long)]
+    #[arg(long)]
     include_global: bool,
 
     /// Keep the loaded image in the engine's storage after the run
@@ -49,15 +48,15 @@ pub(super) struct Run {
     /// don't accumulate images in podman / docker storage. Pass `--keep`
     /// to retain the image under the tag mise used (`mise-oci:run-*` for
     /// docker; the pulled image ID for podman).
-    #[clap(long)]
+    #[arg(long)]
     keep: bool,
 
     /// Override in-image mount point (ignored with --image-dir)
-    #[clap(long)]
+    #[arg(long)]
     mount_point: Option<String>,
 
     /// Don't embed the mise binary (ignored with --image-dir)
-    #[clap(long)]
+    #[arg(long)]
     no_mise: bool,
 
     /// UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
@@ -65,39 +64,39 @@ pub(super) struct Run {
     /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
     /// omitted, it defaults to UID. This affects file ownership only; [oci].user
     /// controls the image USER directive.
-    #[clap(long, value_name = "UID[:GID]")]
+    #[arg(long, value_name = "UID[:GID]")]
     owner: Option<LayerOwner>,
 
     /// Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
     ///
     /// Note: unlike `docker run -v`, there's no `-v` short flag here because
     /// mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
-    #[clap(long = "volume", alias = "mount", value_name = "HOST:CONTAINER")]
+    #[arg(long = "volume", alias = "mount", value_name = "HOST:CONTAINER")]
     volume: Vec<String>,
 
     // Flags that have both a short and a long form.
     /// Set environment variable in the container (repeatable, `KEY=VAL`)
-    #[clap(short = 'e', long = "env", value_name = "KEY=VAL")]
+    #[arg(short = 'e', long = "env", value_name = "KEY=VAL")]
     env: Vec<String>,
 
     /// Run interactively (pass `-i` to the engine)
-    #[clap(short, long)]
+    #[arg(short, long)]
     interactive: bool,
 
     /// Allocate a TTY (pass `-t` to the engine)
-    #[clap(short, long)]
+    #[arg(short, long)]
     tty: bool,
 
     /// Working directory inside the container
-    #[clap(short = 'w', long = "workdir")]
+    #[arg(short = 'w', long = "workdir")]
     workdir: Option<String>,
 
     /// Command and arguments to run inside the container (after `--`)
-    #[clap(last = true)]
+    #[arg(last = true)]
     cmd: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, usage_rs::ValueEnum)]
 enum Engine {
     Auto,
     Podman,

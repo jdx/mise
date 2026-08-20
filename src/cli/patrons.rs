@@ -14,15 +14,15 @@ use crate::{dirs, duration, file};
 /// name as a clickable link via OSC 8 hyperlinks.
 ///
 /// To appear here, become a patron at <https://jdx.dev/sponsors.html>.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Patrons {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Patrons {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Bypass the local cache and re-fetch
-    #[clap(long)]
+    #[arg(long)]
     refresh: bool,
 }
 

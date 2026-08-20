@@ -16,14 +16,14 @@ use crate::task::{GetMatchingExt, Task};
 use crate::ui::table::MiseTable;
 
 /// Inspect output cache entries for a task
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
-pub(super) struct CacheTask {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
+pub struct CacheTask {
     /// Task name or pattern to inspect
     task: String,
 
     /// Output in JSON format
-    #[clap(short = 'J', long)]
+    #[arg(short = 'J', long)]
     json: bool,
 }
 

@@ -2,7 +2,6 @@ use crate::file::display_path;
 use crate::http::HTTP;
 use crate::ui::info;
 use crate::{Result, file, minisign};
-use clap::ValueHint;
 use eyre::{bail, eyre};
 use std::path::{Path, PathBuf};
 use xx::regex;
@@ -10,25 +9,22 @@ use xx::regex;
 /// Generate a script to download+execute mise
 ///
 /// This is designed to be used in a project where contributors may not have mise installed.
-///
-/// Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
-/// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct InstallScript {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Bootstrap {
     /// Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
     ///
     /// This is necessary if users may use a different version of mise outside the project.
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     localize: bool,
     /// Specify mise version to fetch
-    #[clap(long, short = 'V', verbatim_doc_comment)]
+    #[arg(long, short = 'V', verbatim_doc_comment)]
     version: Option<String>,
     /// instead of outputting the script to stdout, write to a file and make it executable
-    #[clap(long, short, verbatim_doc_comment, num_args=0..=1, default_missing_value = "./bin/mise")]
+    #[arg(long, short, verbatim_doc_comment, num_args=0..=1, default_missing_value = "./bin/mise")]
     write: Option<PathBuf>,
     /// Directory to put localized data into
-    #[clap(long, verbatim_doc_comment, default_value=".mise", value_hint=ValueHint::DirPath)]
+    #[arg(long, verbatim_doc_comment, default_value=".mise", value_hint=ValueHint::DirPath)]
     localized_dir: PathBuf,
     /// Also write a Windows launcher, `<WRITE>.cmd`
     ///
@@ -40,7 +36,7 @@ pub(super) struct InstallScript {
     /// carry two files.
     // Declared last because `clap-sort` requires long-only flags to be in alphabetical order, and
     // the rendered docs follow declaration order. Not a doc comment: this is not help text.
-    #[clap(long, verbatim_doc_comment, requires = "write")]
+    #[arg(long, verbatim_doc_comment, requires = "write")]
     windows: bool,
 }
 

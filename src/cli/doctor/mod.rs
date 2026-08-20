@@ -30,21 +30,21 @@ use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
 
 /// Check mise installation for possible problems
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Doctor {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Doctor {
+    #[arg(subcommand)]
     subcommand: Option<Commands>,
-    #[clap(skip)]
+    #[arg(skip)]
     errors: Vec<String>,
-    #[clap(skip)]
+    #[arg(skip)]
     warnings: Vec<String>,
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 }
 
-#[derive(Debug, clap::Subcommand)]
-pub(super) enum Commands {
+#[derive(Debug, usage_rs::Subcommands)]
+pub enum Commands {
     Path(path::Path),
 }
 

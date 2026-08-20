@@ -1,8 +1,8 @@
 use eyre::Result;
 
 /// Show the companies sponsoring mise and the jdx.dev open source tools
-#[derive(Debug, clap::Args)]
-pub(crate) struct Sponsors;
+#[derive(Debug, usage_rs::Args)]
+pub struct Sponsors;
 
 impl Sponsors {
     pub(crate) fn run(&self) -> Result<()> {

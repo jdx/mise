@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 pub(super) mod tap;
@@ -8,14 +7,14 @@ pub(super) mod untap;
 ///
 /// These commands edit `[bootstrap.brew.taps]` so tapped formulae and casks
 /// can be fetched directly by mise without a Homebrew installation.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
-pub(crate) struct SystemBrew {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
+pub struct SystemBrew {
+    #[arg(subcommand)]
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Tap(tap::SystemBrewTap),
     Untap(untap::SystemBrewUntap),

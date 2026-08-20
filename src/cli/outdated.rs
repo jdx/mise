@@ -13,13 +13,13 @@ use tabled::settings::location::ByColumnName;
 /// Shows outdated tool versions
 ///
 /// See `mise upgrade` to upgrade these versions.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Outdated {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Outdated {
     /// Tool(s) to show outdated versions for
     /// e.g.: node@20 python@3.10
     /// If not specified, all tools in global and local configs will be shown
-    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
     /// Compares against the latest versions available, not what matches the current config
@@ -28,36 +28,36 @@ pub(crate) struct Outdated {
     /// show other 20.x versions, not 21.x or 22.x versions.
     ///
     /// Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
-    #[clap(long, short = 'b', verbatim_doc_comment)]
+    #[arg(long, short = 'b', verbatim_doc_comment)]
     pub bump: bool,
 
     /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[arg(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Deprecated shorthand for --bump
-    #[clap(short = 'l', hide = true)]
+    #[arg(short = 'l', hide = true)]
     pub legacy_bump: bool,
 
     /// Show outdated tools including installed-but-inactive tools not present in the current config
     ///
     /// By default, `mise outdated` only shows tools that come from the current config.
-    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    #[arg(long, verbatim_doc_comment, conflicts_with = "local")]
     pub inactive: bool,
 
     /// Only show outdated tools defined in local config files
     ///
     /// This will only show tools that are defined in project-local mise.toml and
     /// will skip tools defined in the global config (~/.config/mise/config.toml).
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub local: bool,
 
     /// Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is not implemented yet.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub monorepo: bool,
 
     /// Don't show table header
-    #[clap(long)]
+    #[arg(long)]
     pub no_header: bool,
 }
 

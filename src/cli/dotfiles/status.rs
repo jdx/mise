@@ -8,20 +8,20 @@ use crate::system::files::FileState;
 use crate::ui::table::MiseTable;
 
 /// Show the status of dotfiles from `[dotfiles]`
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct DotfilesStatus {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct DotfilesStatus {
     /// Only show these targets
-    #[clap(value_name = "TARGET")]
+    #[arg(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured dotfiles are not in their desired
     /// state (missing, source missing, differs)
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 

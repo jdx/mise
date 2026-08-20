@@ -13,29 +13,29 @@ use std::{collections::BTreeSet, sync::Arc};
 use tokio::task::JoinSet;
 
 /// Test a tool installs and executes
-#[derive(Debug, Clone, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct TestTool {
+#[derive(Debug, Clone, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TestTool {
     /// Tool(s) to test
-    #[clap(required_unless_present_any = ["all", "all_config"])]
+    #[arg(required_unless_present_any = ["all", "all_config"])]
     pub tools: Option<Vec<ToolArg>>,
     /// Test every tool specified in registry/
-    #[clap(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
+    #[arg(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
     pub all: bool,
     /// Number of tool tests to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[clap(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
+    #[arg(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
     /// Test all tools specified in config files
-    #[clap(long, conflicts_with = "tools", conflicts_with = "all")]
+    #[arg(long, conflicts_with = "tools", conflicts_with = "all")]
     pub all_config: bool,
     /// Also test tools not defined in registry/, guessing how to test it
-    #[clap(long)]
+    #[arg(long)]
     pub include_non_defined: bool,
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[clap(long, overrides_with = "jobs")]
+    #[arg(long, overrides_with = "jobs")]
     pub raw: bool,
 }
 

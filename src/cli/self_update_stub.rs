@@ -4,21 +4,21 @@ use std::path::PathBuf;
 
 use crate::env;
 
-#[derive(Debug, Default, clap::Args)]
-pub(crate) struct SelfUpdate {
+#[derive(Debug, Default, usage_rs::Args)]
+pub struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
     /// Update even if already up to date
-    #[clap(long, short)]
+    #[arg(long, short)]
     force: bool,
 
     /// Skip confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 
     /// Disable auto-updating plugins
-    #[clap(long)]
+    #[arg(long)]
     no_plugins: bool,
 }
 

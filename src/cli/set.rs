@@ -23,46 +23,46 @@ use tabled::Tabled;
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 ///
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
-#[derive(Debug, clap::Args)]
-#[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Set {
+#[derive(Debug, usage_rs::Args)]
+#[command(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
-    #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
+    #[arg(value_name = "ENV_VAR", verbatim_doc_comment)]
     env_vars: Option<Vec<EnvVarArg>>,
 
     /// Create/modify an environment-specific config file like .mise.<env>.toml
-    #[clap(short = 'E', long, overrides_with_all = &["global", "file"])]
+    #[arg(short = 'E', long, overrides_with_all = &["global", "file"])]
     env: Option<String>,
 
     /// Set the environment variable in the global config file
-    #[clap(short, long, verbatim_doc_comment, overrides_with_all = &["file", "env"])]
+    #[arg(short, long, verbatim_doc_comment, overrides_with_all = &["file", "env"])]
     global: bool,
 
     /// [experimental] Encrypt the value with age before storing
-    #[clap(long, requires = "env_vars")]
+    #[arg(long, requires = "env_vars")]
     age_encrypt: bool,
 
     /// [experimental] Age identity file for encryption
     ///
     /// Defaults to ~/.config/mise/age.txt if it exists
-    #[clap(long, value_name = "PATH", requires = "age_encrypt", value_hint = clap::ValueHint::FilePath)]
+    #[arg(long, value_name = "PATH", requires = "age_encrypt", value_hint = usage_rs::ValueHint::FilePath)]
     age_key_file: Option<PathBuf>,
 
     /// [experimental] Age recipient (x25519 public key) for encryption
     ///
     /// Can be used multiple times. Requires --age-encrypt.
-    #[clap(long, value_name = "RECIPIENT", requires = "age_encrypt")]
+    #[arg(long, value_name = "RECIPIENT", requires = "age_encrypt")]
     age_recipient: Vec<String>,
 
     /// [experimental] SSH recipient (public key or path) for age encryption
     ///
     /// Can be used multiple times. Requires --age-encrypt.
-    #[clap(long, value_name = "PATH_OR_PUBKEY", requires = "age_encrypt")]
+    #[arg(long, value_name = "PATH_OR_PUBKEY", requires = "age_encrypt")]
     age_ssh_recipient: Vec<String>,
 
     /// Render completions
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true)]
     complete: bool,
 
     /// The TOML file to update
@@ -70,28 +70,28 @@ pub(crate) struct Set {
     /// Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
     /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
     /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-    #[clap(long, visible_alias = "path", verbatim_doc_comment, required = false, value_hint = clap::ValueHint::AnyPath)]
+    #[arg(long, visible_alias = "path", verbatim_doc_comment, required = false, value_hint = usage_rs::ValueHint::AnyPath)]
     file: Option<PathBuf>,
 
     /// Show raw values instead of redacting secrets
-    #[clap(long)]
+    #[arg(long)]
     no_redact: bool,
 
     /// Prompt for environment variable values
-    #[clap(long)]
+    #[arg(long)]
     prompt: bool,
 
     /// Remove the environment variable from config file
     ///
     /// Can be used multiple times.
-    #[clap(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
+    #[arg(long, value_name = "ENV_KEY", verbatim_doc_comment, visible_aliases = ["rm", "unset"], hide = true)]
     remove: Option<Vec<String>>,
 
     /// Read the value from stdin (for multiline input)
     ///
     /// When using --stdin, provide a single key without a value.
     /// The value will be read from stdin until EOF.
-    #[clap(long, conflicts_with = "prompt", requires = "env_vars")]
+    #[arg(long, conflicts_with = "prompt", requires = "env_vars")]
     stdin: bool,
 }
 

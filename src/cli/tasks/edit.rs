@@ -8,15 +8,15 @@ use std::path::MAIN_SEPARATOR_STR;
 /// Edit a task with $EDITOR
 ///
 /// The task will be created as a standalone script if it does not already exist.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksEdit {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TasksEdit {
     /// Task to edit
-    #[clap()]
+    #[arg()]
     task: String,
 
     /// Display the path to the task instead of editing it
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     path: bool,
 }
 

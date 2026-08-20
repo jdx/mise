@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 mod add;
@@ -14,22 +13,22 @@ mod remove;
 ///
 /// Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
 /// unless skipped with the --no-deps flag.
-#[derive(Debug, clap::Args)]
-#[clap(
+#[derive(Debug, usage_rs::Args)]
+#[command(
     visible_alias = "dep",
     alias = "prepare",
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
-pub(crate) struct Deps {
-    #[clap(subcommand)]
+pub struct Deps {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
-    #[clap(flatten)]
+    #[arg(flatten)]
     install: install::DepsInstall,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Add(add::DepsAdd),
     Install(install::DepsInstall),

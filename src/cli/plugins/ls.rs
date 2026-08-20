@@ -13,36 +13,36 @@ use crate::ui::table;
 /// List installed plugins
 ///
 /// Can also show remotely available plugins to install.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub(super) struct PluginsLs {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+pub struct PluginsLs {
     /// List all available remote plugins
     /// Same as `mise plugins ls-remote`
-    #[clap(short, long, hide = true, verbatim_doc_comment)]
+    #[arg(short, long, hide = true, verbatim_doc_comment)]
     pub all: bool,
 
     /// The built-in plugins only
     /// Normally these are not shown
-    #[clap(short, long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
+    #[arg(short, long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub core: bool,
 
     /// Show plugins with available updates
     /// Checks the remote for newer versions and only displays plugins that are outdated
-    #[clap(short, long, verbatim_doc_comment)]
+    #[arg(short, long, verbatim_doc_comment)]
     pub outdated: bool,
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
-    #[clap(short, long, alias = "url", verbatim_doc_comment)]
+    #[arg(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
     /// Show the git refs for each plugin
     /// e.g.: main 1234abc
-    #[clap(long, hide = true, verbatim_doc_comment)]
+    #[arg(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 
     /// List installed plugins
-    #[clap(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
+    #[arg(long, verbatim_doc_comment, conflicts_with = "all", hide = true)]
     pub user: bool,
 }
 

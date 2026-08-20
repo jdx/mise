@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 use crate::cli::args::BackendArg;
@@ -8,27 +7,27 @@ mod ls;
 mod set;
 mod unset;
 
-#[derive(Debug, clap::Args)]
-#[clap(
+#[derive(Debug, usage_rs::Args)]
+#[command(
     name = "tool-alias",
     about = "Manage tool version aliases.",
     alias = "alias",
     alias = "aliases"
 )]
-pub(crate) struct ToolAlias {
-    #[clap(subcommand)]
+pub struct ToolAlias {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
     /// Filter aliases by tool
-    #[clap(short = 'p', long = "tool", alias = "plugin", value_name = "TOOL")]
+    #[arg(short = 'p', long = "tool", alias = "plugin", value_name = "TOOL")]
     pub tool: Option<BackendArg>,
 
     /// Don't show table header
-    #[clap(long)]
+    #[arg(long)]
     pub no_header: bool,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Get(get::ToolAliasGet),
     Ls(ls::ToolAliasLs),

@@ -10,16 +10,16 @@ use crate::{config, duration, file};
 /// This modifies the contents of ~/.config/mise/config.toml by default.
 /// With `--local`, modifies the local config file instead.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
-#[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub(super) struct SettingsSet {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+pub struct SettingsSet {
     /// The setting to set
-    #[clap()]
+    #[arg()]
     pub setting: String,
     /// The value to set (optional if provided as KEY=VALUE)
     pub value: Option<String>,
     /// Use the local config file instead of the global one
-    #[clap(long, short)]
+    #[arg(long, short)]
     pub local: bool,
 }
 

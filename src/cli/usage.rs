@@ -1,14 +1,12 @@
 use crate::cli::Cli;
-use clap::CommandFactory;
-use clap::builder::Resettable;
 use eyre::Result;
 
 /// Generate a usage CLI spec
 ///
 /// See https://usage.jdx.dev for more information on this specification.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true)]
-pub(crate) struct Usage {}
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, hide = true)]
+pub struct Usage {}
 
 /// mise's own usage spec, with everything clap cannot express applied.
 ///
@@ -17,11 +15,7 @@ pub(crate) struct Usage {}
 /// an agent reads is the one that must not.
 pub(super) fn spec() -> usage::Spec {
     {
-        let cli = Cli::command()
-            .version(Resettable::Reset)
-            .disable_help_subcommand(true);
-        let cli = super::expand_deferred_subcommands(cli);
-        let mut spec: usage::Spec = cli.into();
+        let mut spec: usage::Spec = Cli::to_kdl().parse().expect("generated mise usage spec");
 
         // Enable "naked" task completions: `mise foo` completes like `mise run foo`
         spec.default_subcommand = Some("run".to_string());
@@ -34,6 +28,16 @@ pub(super) fn spec() -> usage::Spec {
         // bind each word to the flag it was read as, so the promotion is no longer needed.
         if let Some(run) = spec.cmd.subcommands.get_mut("run") {
             run.args = vec![];
+            // The mounted task commands replace the typed TASK positional in the
+            // completion spec, so relationships to that removed positional must
+            // leave with it. Runtime parsing still enforces `--all` against `task`
+            // from the typed tables.
+            for flag in &mut run.flags {
+                flag.conflicts.retain(|selector| selector != "TASK");
+                flag.requires.retain(|selector| selector != "TASK");
+                flag.required_if.retain(|selector| selector != "TASK");
+                flag.required_unless.retain(|selector| selector != "TASK");
+            }
             run.mounts
                 .push(usage::SpecMount::new("mise tasks --usage".to_string()));
             // Enable completions after ::: separator for multi-task invocations

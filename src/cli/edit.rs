@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use clap::ValueHint;
 use eyre::{Result, eyre};
 use indoc::formatdoc;
 use mise_interactive_config::{
@@ -120,25 +119,25 @@ impl BackendProvider for MiseBackendProvider {
 }
 
 /// Edit mise.toml interactively
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Edit {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Edit {
     /// Edit the global config file (~/.config/mise/config.toml)
     // Rejected alongside a path rather than resolved in its favour: "edit the global config
     // file, namely ./custom.toml" has no meaning, and resolving it silently is how
     // `mise edit config --global` came to write a file called `config` into the current
     // directory and report success. `mise bootstrap dotfiles add` states the same collision the
     // same way, with `conflicts_with_all` between its own `--global` and `--path`.
-    #[clap(long, short = 'g', conflicts_with = "path")]
+    #[arg(long, short = 'g', conflicts_with = "path")]
     global: bool,
     /// Show what would be generated without writing to file
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
     /// Path to the config file to create
-    #[clap(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    #[arg(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
     /// Path to a .tool-versions file to import tools from
-    #[clap(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    #[arg(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     tool_versions: Option<PathBuf>,
 }
 

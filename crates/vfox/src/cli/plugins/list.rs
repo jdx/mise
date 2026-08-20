@@ -1,9 +1,8 @@
 use vfox::Vfox;
 use vfox::VfoxResult;
 
-#[derive(clap::Args)]
-#[command(alias = "ls")]
-pub(crate) struct List {}
+#[derive(usage_rs::Args)]
+pub struct List {}
 
 impl List {
     pub(crate) async fn run(&self) -> VfoxResult<()> {

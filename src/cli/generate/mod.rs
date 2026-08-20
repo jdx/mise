@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use std::path::{Path, PathBuf};
 
 mod config;
@@ -11,14 +10,14 @@ mod task_stubs;
 mod tool_stub;
 
 /// Generate files for various tools/services
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "gen", alias = "g")]
-pub(crate) struct Generate {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "gen", alias = "g")]
+pub struct Generate {
+    #[arg(subcommand)]
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     /// Deprecated. Use `mise generate install-script` instead
     // Renamed because `bootstrap` read as a form of `mise bootstrap` (machine setup), which this

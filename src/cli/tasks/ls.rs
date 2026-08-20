@@ -19,40 +19,40 @@ use serde_json::json;
 /// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksLs {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TasksLs {
     /// Only show global tasks
-    #[clap(short, long, overrides_with = "local", verbatim_doc_comment)]
+    #[arg(short, long, overrides_with = "local", verbatim_doc_comment)]
     pub global: bool,
 
     /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[arg(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Only show non-global tasks
-    #[clap(short, long, overrides_with = "global", verbatim_doc_comment)]
+    #[arg(short, long, overrides_with = "global", verbatim_doc_comment)]
     pub local: bool,
 
     /// Show all columns
-    #[clap(short = 'x', long, verbatim_doc_comment)]
+    #[arg(short = 'x', long, verbatim_doc_comment)]
     pub extended: bool,
 
     /// Load all tasks from the entire monorepo, including sibling directories.
     /// By default, only tasks from the current directory hierarchy are loaded.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub all: bool,
 
     /// Display tasks for usage completion
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true)]
     pub complete: bool,
 
     /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub hidden: bool,
 
     /// Only show task names, one per line. Useful for piping to fzf and similar tools.
-    #[clap(
+    #[arg(
         long,
         verbatim_doc_comment,
         conflicts_with_all = ["json", "extended", "usage"]
@@ -60,31 +60,31 @@ pub(super) struct TasksLs {
     pub name_only: bool,
 
     /// Do not print table header
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
+    #[arg(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
     /// Sort by column. Default is name.
-    #[clap(long, value_name = "COLUMN", verbatim_doc_comment)]
+    #[arg(long, value_name = "COLUMN", verbatim_doc_comment, value_enum)]
     pub sort: Option<SortColumn>,
 
     /// Sort order. Default is asc.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment, value_enum)]
     pub sort_order: Option<SortOrder>,
 
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true)]
     pub usage: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub(super) enum SortColumn {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub enum SortColumn {
     Name,
     Alias,
     Description,
     Source,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub(super) enum SortOrder {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub enum SortOrder {
     Asc,
     Desc,
 }

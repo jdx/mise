@@ -1,4 +1,3 @@
-use clap::Command;
 use eyre::Result;
 use std::collections::HashMap;
 use std::sync::LazyLock as Lazy;
@@ -6,7 +5,7 @@ use std::sync::LazyLock as Lazy;
 use crate::backend;
 use crate::cli::args::BackendArg;
 
-pub(super) static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
+pub static COMMANDS: Lazy<HashMap<String, crate::plugins::ExternalCommand>> = Lazy::new(|| {
     backend::list()
         .into_iter()
         .flat_map(|b| {
@@ -19,18 +18,29 @@ pub(super) static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
             }
             vec![]
         })
-        .map(|cmd| (cmd.get_name().to_string(), cmd))
+        .map(|cmd| (cmd.topic.clone(), cmd))
         .collect()
 });
 
-pub(super) fn execute(ba: &BackendArg, mut cmd: Command, args: Vec<String>) -> Result<()> {
-    if let Some(subcommand) = cmd.find_subcommand(&args[0]) {
+pub fn execute(
+    ba: &BackendArg,
+    cmd: crate::plugins::ExternalCommand,
+    args: Vec<String>,
+) -> Result<()> {
+    if let Some(subcommand) = args
+        .first()
+        .filter(|name| cmd.subcommands.contains(name))
+        .cloned()
+    {
         let backend = ba.backend()?;
         if let Some(p) = backend.plugin() {
-            p.execute_external_command(subcommand.get_name(), args)?;
+            p.execute_external_command(&subcommand, args)?;
         }
     } else {
-        cmd.print_help().unwrap();
+        eprintln!("Commands provided by {} plugin:", cmd.topic);
+        for subcommand in cmd.subcommands {
+            eprintln!("  {subcommand}");
+        }
     }
 
     Ok(())

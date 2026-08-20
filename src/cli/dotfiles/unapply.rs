@@ -9,23 +9,23 @@ use crate::ui::prompt;
 /// Removes configured whole-file entries and edits while preserving files
 /// mise cannot identify as managed. Modified copies, templates, and plain-line
 /// edits require `--force`.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct DotfilesUnapply {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct DotfilesUnapply {
     /// Only unapply these targets
-    #[clap(value_name = "TARGET")]
+    #[arg(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Remove modified or otherwise ambiguous managed files and lines
-    #[clap(long, short)]
+    #[arg(long, short)]
     force: bool,
 
     /// Print the actions that would run without writing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 

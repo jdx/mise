@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 
-use clap::Subcommand;
 use eyre::{Report, Result, WrapErr, eyre};
 use tokio::task::{Id, JoinSet};
 
@@ -82,42 +81,42 @@ async fn join_plugin_tasks(
     }
 }
 
-#[derive(Debug, clap::Args)]
-#[clap(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
-pub(crate) struct Plugins {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
+pub struct Plugins {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
     /// list all available remote plugins
     ///
     /// same as `mise plugins ls-remote`
-    #[clap(short, long, hide = true)]
+    #[arg(short, long, hide = true)]
     pub all: bool,
 
     /// The built-in plugins only
     /// Normally these are not shown
-    #[clap(short, long, verbatim_doc_comment, conflicts_with = "all")]
+    #[arg(short, long, verbatim_doc_comment, conflicts_with = "all")]
     pub core: bool,
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
-    #[clap(short, long, alias = "url", verbatim_doc_comment)]
+    #[arg(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
     /// Show the git refs for each plugin
     /// e.g.: main 1234abc
-    #[clap(long, hide = true, verbatim_doc_comment)]
+    #[arg(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 
     /// List installed plugins
     ///
     /// This is the default behavior but can be used with --core
     /// to show core and user plugins
-    #[clap(long, verbatim_doc_comment, conflicts_with = "all")]
+    #[arg(long, verbatim_doc_comment, conflicts_with = "all")]
     pub user: bool,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Install(install::PluginsInstall),
     Link(link::PluginsLink),

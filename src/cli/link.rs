@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use clap::ValueHint;
 use color_eyre::eyre::{Result, eyre};
 use console::style;
 use eyre::bail;
@@ -14,20 +13,20 @@ use crate::{cli::args::ToolArg, config::Config};
 /// Symlinks a tool version into mise
 ///
 /// Use this for adding installs either custom compiled outside mise or built with a different tool.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Link {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Link {
     /// Tool name and version to create a symlink for
-    #[clap(value_name = "TOOL@VERSION")]
+    #[arg(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// The local path to the tool version
     /// e.g.: ~/.nvm/versions/node/v20.0.0
-    #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
+    #[arg(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     path: PathBuf,
 
     /// Overwrite an existing tool version if it exists
-    #[clap(long, short = 'f')]
+    #[arg(long, short = 'f')]
     force: bool,
 }
 

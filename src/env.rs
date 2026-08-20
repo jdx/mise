@@ -794,11 +794,6 @@ pub(crate) static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
 });
 
-#[cfg(unix)]
-pub(crate) const PATH_ENV_SEP: char = ':';
-#[cfg(windows)]
-pub(crate) const PATH_ENV_SEP: char = ';';
-
 fn get_env_diff() -> EnvDiff {
     let env = vars_safe().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {

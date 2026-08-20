@@ -17,33 +17,33 @@ use crate::{
 /// Use MISE_ASDF_COMPAT=1 to default the global config to ~/.tool-versions
 ///
 /// Use `mise local` to set a tool version locally in the current directory.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Global {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
+pub struct Global {
     /// Tool(s) to add to .tool-versions
     /// e.g.: node@20
     /// If this is a single tool with no version, the current value of the global
     /// .tool-versions will be displayed
-    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Save fuzzy version to `~/.tool-versions`
     /// e.g.: `mise global --fuzzy node@20` will save `node 20` to ~/.tool-versions
     /// this is the default behavior unless MISE_ASDF_COMPAT=1
-    #[clap(long, verbatim_doc_comment, overrides_with = "pin")]
+    #[arg(long, verbatim_doc_comment, overrides_with = "pin")]
     fuzzy: bool,
 
     /// Get the path of the global config file
-    #[clap(long)]
+    #[arg(long)]
     path: bool,
 
     /// Save exact version to `~/.tool-versions`
     /// e.g.: `mise global --pin node@20` will save `node 20.0.0` to ~/.tool-versions
-    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
+    #[arg(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Remove the tool(s) from ~/.tool-versions
-    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
+    #[arg(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Option<Vec<BackendArg>>,
 }
 

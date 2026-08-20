@@ -10,28 +10,28 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// Gets the latest available version for a plugin
 ///
 /// Supports prefixes such as `node@20` to get the latest version of node 20.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Latest {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Latest {
     /// Tool to get the latest version of
-    #[clap(value_name = "TOOL@VERSION")]
+    #[arg(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     /// used for asdf compatibility
-    #[clap(hide = true)]
+    #[arg(hide = true)]
     asdf_version: Option<String>,
 
     /// Show latest installed instead of available version
-    #[clap(short, long)]
+    #[arg(short, long)]
     installed: bool,
 
     /// Only consider versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
     /// Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
-    #[clap(
+    #[arg(
         long,
         alias = "before",
         verbatim_doc_comment,

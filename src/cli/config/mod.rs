@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 mod get;
@@ -6,20 +5,20 @@ mod ls;
 mod set;
 
 /// Manage config files
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "cfg", alias = "toml")]
-pub(crate) struct Config {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "cfg", alias = "toml")]
+pub struct Config {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
-    #[clap(flatten)]
+    #[arg(flatten)]
     pub ls: ls::ConfigLs,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Get(get::ConfigGet),
-    #[clap(visible_alias = "list")]
+    #[command(visible_alias = "list")]
     Ls(ls::ConfigLs),
     Set(set::ConfigSet),
 }

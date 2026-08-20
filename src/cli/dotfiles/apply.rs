@@ -9,23 +9,23 @@ use crate::system;
 /// desired state. Whole-file entries may symlink, copy, or render templates.
 /// Edit entries manage a marker-delimited block or a single line in a file
 /// mise doesn't otherwise own.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct DotfilesApply {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct DotfilesApply {
     /// Only apply these targets
-    #[clap(value_name = "TARGET")]
+    #[arg(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Overwrite existing files that conflict with whole-file dotfile entries
-    #[clap(long, short)]
+    #[arg(long, short)]
     force: bool,
 
     /// Print the actions that would run without writing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 

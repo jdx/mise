@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::{Result, eyre};
 use std::path::Path;
 
@@ -17,24 +16,24 @@ pub(crate) use unapply::DotfilesUnapply;
 /// Manage dotfiles from `[dotfiles]` (deprecated)
 ///
 /// Use `mise bootstrap dotfiles` instead.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true)]
-pub(crate) struct Dotfiles {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, hide = true)]
+pub struct Dotfiles {
+    #[arg(subcommand)]
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Add(add::DotfilesAdd),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Apply(apply::DotfilesApply),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Edit(edit::DotfilesEdit),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Status(status::DotfilesStatus),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Unapply(unapply::DotfilesUnapply),
 }
 

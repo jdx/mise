@@ -12,14 +12,14 @@ use crate::task::task_source_checker::task_cwd;
 use crate::ui::info;
 
 /// Get information about a task
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksInfo {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TasksInfo {
     /// Name of the task to get information about
-    #[clap(verbatim_doc_comment)]
+    #[arg(verbatim_doc_comment)]
     pub task: String,
     /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[arg(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 }
 

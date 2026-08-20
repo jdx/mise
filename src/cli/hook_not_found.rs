@@ -7,15 +7,15 @@ use crate::shell::ShellType;
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] called by shell when a command is not found
-#[derive(Debug, clap::Args)]
-#[clap(hide = true)]
-pub(crate) struct HookNotFound {
+#[derive(Debug, usage_rs::Args)]
+#[command(hide = true)]
+pub struct HookNotFound {
     /// Attempted bin to run
-    #[clap()]
+    #[arg()]
     bin: String,
 
     /// Shell type to generate script for
-    #[clap(long, short)]
+    #[arg(long, short)]
     shell: Option<ShellType>,
 }
 

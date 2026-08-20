@@ -24,42 +24,42 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 /// e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
 ///
 /// This behavior can be modified in ~/.config/mise/config.toml
-#[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
 )]
 pub(crate) struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: cmake, poetry
     /// Can specify multiple plugins: `mise plugins install cmake poetry`
-    #[clap(required_unless_present = "all", verbatim_doc_comment)]
+    #[arg(required_unless_present = "all", verbatim_doc_comment)]
     new_plugin: Option<String>,
 
     /// The git url of the plugin
     /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
-    #[clap(help = "The git url of the plugin", value_hint = clap::ValueHint::Url, verbatim_doc_comment
+    #[arg(help = "The git url of the plugin", value_hint = usage_rs::ValueHint::Url, verbatim_doc_comment
     )]
     git_url: Option<String>,
 
-    #[clap(hide = true)]
+    #[arg(hide = true)]
     rest: Vec<String>,
 
     /// Install all missing plugins
     /// This will only install plugins that have matching shorthands.
     /// i.e.: they don't need the full git repo url
-    #[clap(short, long, conflicts_with_all = ["new_plugin", "force"], verbatim_doc_comment)]
+    #[arg(short, long, conflicts_with_all = ["new_plugin", "force"], verbatim_doc_comment)]
     all: bool,
 
     /// Reinstall even if plugin exists
-    #[clap(short, long, verbatim_doc_comment)]
+    #[arg(short, long, verbatim_doc_comment)]
     force: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Show installation output
-    #[clap(long, short, action = clap::ArgAction::Count, verbatim_doc_comment)]
+    #[arg(long, short, action = usage_rs::ArgAction::Count, verbatim_doc_comment)]
     verbose: u8,
 }
 

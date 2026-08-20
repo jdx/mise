@@ -11,7 +11,6 @@ use crate::lockfile::PlatformInfo;
 use crate::toolset::{
     CoreToolOptions, InstallOptions, ToolRequest, ToolSource, ToolVersionOptions,
 };
-use clap::Parser;
 use color_eyre::eyre::{Result, bail, eyre};
 use eyre::ensure;
 use serde::{Deserialize, Deserializer};
@@ -640,15 +639,15 @@ async fn execute_with_tool_request(
 /// and execute it with any arguments passed to the stub.
 ///
 /// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
-#[derive(Debug, Parser)]
-#[clap(disable_help_flag = true, disable_version_flag = true)]
-pub(crate) struct ToolStub {
+#[derive(Debug, usage_rs::Args)]
+#[command(disable_help_flag = true, disable_version_flag = true)]
+pub struct ToolStub {
     /// Path to the TOML tool stub file to execute
     ///
     /// The stub file must contain TOML configuration specifying the tool
     /// and version to run. At minimum, it should specify a 'version' field.
     /// Other common fields include 'tool', 'bin', and backend-specific options.
-    #[clap(value_name = "FILE")]
+    #[arg(value_name = "FILE")]
     pub file: PathBuf,
 
     /// Arguments to pass to the tool
@@ -656,7 +655,7 @@ pub(crate) struct ToolStub {
     /// All arguments after the stub file path will be forwarded to the
     /// underlying tool. Use '--' to separate mise arguments from tool arguments
     /// if needed.
-    #[clap(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
 }
 

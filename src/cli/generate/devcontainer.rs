@@ -8,23 +8,23 @@ use crate::{
 use serde::Serialize;
 
 /// Generate a devcontainer to execute mise
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct Devcontainer {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Devcontainer {
     /// The image to use for the devcontainer
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     image: Option<String>,
 
     /// Bind the mise-data-volume to the devcontainer
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     mount_mise_data: bool,
 
     /// The name of the devcontainer
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     name: Option<String>,
 
     /// write to .devcontainer/devcontainer.json
-    #[clap(long, short)]
+    #[arg(long, short)]
     write: bool,
 }
 

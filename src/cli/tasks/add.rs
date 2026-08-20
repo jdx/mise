@@ -9,61 +9,61 @@ use toml_edit::Item;
 ///
 /// Adds a task to the local mise.toml file.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksAdd {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TasksAdd {
     /// Tasks name to add
-    #[clap()]
+    #[arg()]
     task: String,
 
-    #[clap(last = true)]
+    #[arg(last = true)]
     run: Vec<String>,
 
     /// Other names for the task
-    #[clap(long, short)]
+    #[arg(long, short)]
     alias: Vec<String>,
     /// Add dependencies to the task
-    #[clap(long, short)]
+    #[arg(long, short)]
     depends: Vec<String>,
     /// Run the task in a specific directory
-    #[clap(long, short = 'D')]
+    #[arg(long, short = 'D')]
     dir: Option<String>,
     /// Create a file task instead of a toml task
-    #[clap(long, short)]
+    #[arg(long, short)]
     file: bool,
     /// Hide the task from `mise tasks` and completions
-    #[clap(long, short = 'H')]
+    #[arg(long, short = 'H')]
     hide: bool,
     /// Do not print the command before running
-    #[clap(long, short)]
+    #[arg(long, short)]
     quiet: bool,
     /// Directly connect stdin/stdout/stderr
-    #[clap(long, short)]
+    #[arg(long, short)]
     raw: bool,
     /// Glob patterns of files this task uses as input
-    #[clap(long, short)]
+    #[arg(long, short)]
     sources: Vec<String>,
     /// Wait for these tasks to complete if they are to run
-    #[clap(long, short)]
+    #[arg(long, short)]
     wait_for: Vec<String>,
 
     /// Dependencies to run after the task runs
-    #[clap(long)]
+    #[arg(long)]
     depends_post: Vec<String>,
     /// Description of the task
-    #[clap(long)]
+    #[arg(long)]
     description: Option<String>,
     /// Glob patterns of files this task creates, to skip if they are not modified
-    #[clap(long)]
+    #[arg(long)]
     outputs: Vec<String>,
     /// Command to run on windows
-    #[clap(long)]
+    #[arg(long)]
     run_windows: Option<String>,
     /// Run the task in a specific shell
-    #[clap(long)]
+    #[arg(long)]
     shell: Option<String>,
     /// Do not print the command or its output
-    #[clap(long)]
+    #[arg(long)]
     silent: bool,
     // TODO
     // env: Vec<String>,

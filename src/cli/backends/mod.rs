@@ -1,16 +1,15 @@
-use clap::Subcommand;
 use eyre::Result;
 
 mod ls;
 
-#[derive(Debug, clap::Args)]
-#[clap(
+#[derive(Debug, usage_rs::Args)]
+#[command(
     about = "Manage backends",
     aliases = ["b", "backend", "backend-list"],
     after_long_help = AFTER_LONG_HELP
 )]
-pub(crate) struct Backends {
-    #[clap(subcommand)]
+pub struct Backends {
+    #[arg(subcommand)]
     command: Option<Commands>,
 }
 
@@ -22,7 +21,7 @@ Use `mise backends` instead.
 "#
 );
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Ls(ls::BackendsLs),
 }

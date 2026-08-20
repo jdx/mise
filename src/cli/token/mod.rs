@@ -3,14 +3,14 @@ pub(crate) mod github;
 mod gitlab;
 
 /// Display git provider tokens mise will use
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
-pub(crate) struct Token {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
+pub struct Token {
+    #[arg(subcommand)]
     subcommand: Commands,
 }
 
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     /// Forgejo token
     Forgejo(forgejo::Forgejo),

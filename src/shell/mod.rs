@@ -1,11 +1,11 @@
 use crate::env;
 use crate::hook_env;
-use clap::ValueEnum;
 use indoc::formatdoc;
 use itertools::Itertools;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::str::FromStr;
+use usage_rs::spec::ValueEnum;
 
 mod bash;
 mod elvish;
@@ -15,8 +15,8 @@ mod pwsh;
 mod xonsh;
 mod zsh;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub(crate) enum ShellType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub enum ShellType {
     Bash,
     Elvish,
     Fish,
@@ -201,7 +201,7 @@ fn no_shell_error(how: &str) -> String {
         }
         false => "",
     };
-    let supported = ShellType::value_variants().iter().join(", ");
+    let supported = ShellType::CHOICES.iter().join(", ");
     formatdoc! {r#"
         mise could not tell which shell to generate for.
         {why}{how}
@@ -214,8 +214,8 @@ fn no_shell_error(how: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::ValueEnum;
     use std::str::FromStr;
+    use usage_rs::spec::ValueEnum;
 
     #[test]
     fn a_windows_path_resolves_to_its_shell() {
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn powershell_is_accepted_as_pwsh() {
-        // Two paths reach this enum: clap for `mise activate <SHELL>`, and FromStr for detecting
+        // Two paths reach this enum: usage-rs for `mise activate <SHELL>`, and FromStr for detecting
         // the shell the user is already in. Both have to take the alias or the fix is half done.
         // Qualified because both traits in scope define `from_str`.
         assert_eq!(
@@ -280,13 +280,13 @@ mod tests {
             "FromStr"
         );
         assert_eq!(
-            <ShellType as ValueEnum>::from_str("powershell", true),
-            Ok(ShellType::Pwsh),
-            "clap"
+            <ShellType as ValueEnum>::from_choice("powershell"),
+            Some(ShellType::Pwsh),
+            "usage-rs"
         );
         assert_eq!(
-            <ShellType as ValueEnum>::from_str("pwsh", true),
-            Ok(ShellType::Pwsh)
+            <ShellType as ValueEnum>::from_choice("pwsh"),
+            Some(ShellType::Pwsh)
         );
     }
 
@@ -312,10 +312,9 @@ mod tests {
         // Only the *names*. The alias is deliberately not asserted absent here: `mise usage`
         // renders aliases into `mise.usage.kdl` and the CLI docs, so "hidden" would be false.
         // What this pins is that adding an alias did not rename or reorder an existing value.
-        let listed: Vec<String> = ShellType::value_variants()
+        let listed: Vec<&str> = ShellType::DETAILS
             .iter()
-            .filter_map(|v| v.to_possible_value())
-            .map(|pv| pv.get_name().to_string())
+            .map(|choice| choice.value)
             .collect();
         assert_eq!(
             listed,
@@ -325,7 +324,7 @@ mod tests {
 
     /// The message replaced a `.expect()`, so it is the only thing the user gets. It has to carry
     /// the caller's instruction and every shell that would have been accepted — the list is built
-    /// from `value_variants()` so that adding a shell cannot leave it stale.
+    /// from `CHOICES` so that adding a shell cannot leave it stale.
     #[test]
     fn the_no_shell_message_says_what_to_do_and_what_is_accepted() {
         let msg = no_shell_error("Name the shell: `mise activate zsh`.");
@@ -334,8 +333,8 @@ mod tests {
             msg.contains("Name the shell: `mise activate zsh`."),
             "{msg}"
         );
-        for shell in ShellType::value_variants() {
-            assert!(msg.contains(&shell.to_string()), "{shell} missing:\n{msg}");
+        for shell in ShellType::CHOICES {
+            assert!(msg.contains(shell), "{shell} missing:\n{msg}");
         }
     }
 

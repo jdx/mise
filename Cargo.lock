@@ -2031,15 +2031,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clap-sort"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c9f374a541bd277ba6f4ccd08d955024ba09fda8dfc69ca1a750799ebed97a9"
-dependencies = [
- "clap",
-]
-
-[[package]]
 name = "clap_builder"
 version = "4.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2076,7 +2067,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3671e15a3e8444d399658989389a0eca99bee6f4aca10b836aad27882d4c4d7"
 dependencies = [
  "clap",
- "usage-lib",
+ "usage-lib 5.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -6375,8 +6366,6 @@ dependencies = [
  "chacha20poly1305 0.11.0",
  "chrono",
  "ci_info",
- "clap",
- "clap-sort",
  "clx",
  "color-eyre",
  "color-print",
@@ -6485,7 +6474,8 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib",
+ "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=468a8fa7)",
+ "usage-rs",
  "versions",
  "vfox",
  "walkdir",
@@ -11109,6 +11099,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
+name = "usage-argv"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+
+[[package]]
+name = "usage-derive"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
 name = "usage-lib"
 version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11130,6 +11136,46 @@ dependencies = [
  "thiserror 2.0.20",
  "versions",
  "xx",
+]
+
+[[package]]
+name = "usage-lib"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+dependencies = [
+ "heck",
+ "indexmap 2.14.0",
+ "itertools 0.15.0",
+ "kdl",
+ "log",
+ "miette",
+ "regex",
+ "roff",
+ "serde",
+ "shell-words",
+ "strum 0.28.0",
+ "tera 2.1.1",
+ "thiserror 2.0.20",
+ "versions",
+ "xx",
+]
+
+[[package]]
+name = "usage-rs"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+dependencies = [
+ "usage-argv",
+ "usage-derive",
+ "usage-validation",
+]
+
+[[package]]
+name = "usage-validation"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+dependencies = [
+ "expr-lang",
 ]
 
 [[package]]
@@ -11207,7 +11253,6 @@ dependencies = [
 name = "vfox"
 version = "2026.7.2"
 dependencies = [
- "clap",
  "env_logger",
  "glob",
  "homedir",
@@ -11226,6 +11271,7 @@ dependencies = [
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "url",
+ "usage-rs",
  "wiremock",
  "xx",
 ]
