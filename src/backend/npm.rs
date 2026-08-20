@@ -23,7 +23,7 @@ use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{fmt::Debug, sync::Arc};
@@ -637,7 +637,7 @@ impl NPMBackend {
                 // deprecation metadata. The shell-out compatibility path
                 // intentionally pays for a second query so its resolution
                 // semantics match the default HTTP registry client.
-                let deprecated_query = format!("{}@>=0.0.0-0", self.tool_name());
+                let deprecated_query = npm_deprecated_query(&self.tool_name(), &versions);
                 let deprecated_raw = cmd!(
                     &npm,
                     "view",
@@ -682,7 +682,7 @@ impl NPMBackend {
         let versions = npm_view_versions_time(&data)?;
         let latest = npm_view_latest_dist_tag(&data)?;
 
-        let deprecated_query = format!("{}@>=0.0.0-0", self.tool_name());
+        let deprecated_query = npm_deprecated_query(&self.tool_name(), &versions);
         let deprecated_raw = cmd!(
             &npm,
             "view",
@@ -1592,6 +1592,25 @@ fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> 
         .collect()
 }
 
+/// Build one npm range that covers every stable release plus every prerelease
+/// core returned by the versions query. npm ranges exclude prereleases unless
+/// a comparator in the same set names their major/minor/patch tuple.
+fn npm_deprecated_query(package: &str, versions: &[VersionInfo]) -> String {
+    let prerelease_cores = versions
+        .iter()
+        .filter(|version| version.prerelease)
+        .filter_map(|version| semver::Version::parse(&version.version).ok())
+        .map(|version| (version.major, version.minor, version.patch))
+        .collect::<BTreeSet<_>>();
+    let ranges = std::iter::once(">=0.0.0-0".to_string())
+        .chain(prerelease_cores.into_iter().map(|(major, minor, patch)| {
+            format!(">={major}.{minor}.{patch}-0 <{major}.{minor}.{patch}")
+        }))
+        .collect::<Vec<_>>()
+        .join(" || ");
+    format!("{package}@{ranges}")
+}
+
 /// Exclude individually deprecated releases while retaining a package whose
 /// entire version history is deprecated. npm uses that all-versions state for
 /// package-level deprecation and still permits the package to be installed.
@@ -2135,6 +2154,26 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             npm_view_deprecated_versions("pkg", output),
             HashSet::from(["1.1.0".into()])
+        );
+    }
+
+    #[test]
+    fn test_npm_deprecated_query_includes_every_prerelease_core() {
+        let versions = [
+            ("1.0.0", false),
+            ("2.0.0-beta.1", true),
+            ("2.0.0-rc.1", true),
+            ("3.1.4-dev.1", true),
+        ]
+        .map(|(version, prerelease)| VersionInfo {
+            version: version.into(),
+            prerelease,
+            ..Default::default()
+        });
+
+        assert_eq!(
+            npm_deprecated_query("pkg", &versions),
+            "pkg@>=0.0.0-0 || >=2.0.0-0 <2.0.0 || >=3.1.4-0 <3.1.4"
         );
     }
 
