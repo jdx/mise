@@ -691,7 +691,7 @@ mod tests {
             BackendResolution::new(true),
         ));
         let request =
-            ToolRequest::new_opts(backend, version, options, ToolSource::Argument).unwrap();
+            ToolRequest::new_with_options(backend, version, options, ToolSource::Argument).unwrap();
         ToolVersion::new(request, version.to_string())
     }
 

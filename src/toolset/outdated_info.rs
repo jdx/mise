@@ -132,7 +132,7 @@ impl OutdatedInfo {
             let backend = oi.tool_request.ba().clone();
             let source = oi.tool_request.source().clone();
             let options = oi.tool_request.options();
-            oi.tool_request = ToolRequest::new_opts(backend, &oi.latest, options, source)?;
+            oi.tool_request = ToolRequest::new_with_options(backend, &oi.latest, options, source)?;
         }
         if oi
             .current

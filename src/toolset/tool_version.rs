@@ -1040,7 +1040,8 @@ mod tests {
             toml::Value::String("https://registry.example.test".to_string()),
         );
         let request =
-            ToolRequest::new_opts(backend, "latest", options, ToolSource::Argument).unwrap();
+            ToolRequest::new_with_options(backend, "latest", options, ToolSource::Argument)
+                .unwrap();
         let lt = LockfileTool {
             version: "11.17.0".to_string(),
             backend: Some("npm:npm".to_string()),
@@ -1078,7 +1079,7 @@ mod tests {
             .opts
             .insert("bin".to_string(), toml::Value::String("solc".to_string()));
         let request =
-            ToolRequest::new_opts(backend, "latest", options.clone(), ToolSource::Argument)
+            ToolRequest::new_with_options(backend, "latest", options.clone(), ToolSource::Argument)
                 .unwrap();
 
         let resolved = ToolVersion::resolve_ref("main".to_string(), "ref".to_string(), &request);

@@ -70,10 +70,10 @@ pub(crate) enum ToolRequest {
 
 impl ToolRequest {
     pub(crate) fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
-        Self::new_opts(backend, s, ToolVersionOptions::default(), source)
+        Self::new_with_options(backend, s, ToolVersionOptions::default(), source)
     }
 
-    pub(crate) fn new_opts(
+    pub(crate) fn new_with_options(
         backend: Arc<BackendArg>,
         s: &str,
         request_options: ToolVersionOptions,

@@ -572,7 +572,7 @@ mod tests {
             Some("cargo:tool".to_string()),
         ));
         let request =
-            ToolRequest::new_opts(backend, "1.0.0", options, ToolSource::Unknown).unwrap();
+            ToolRequest::new_with_options(backend, "1.0.0", options, ToolSource::Unknown).unwrap();
         let mut tv = ToolVersion::new(request, "1.0.0".to_string());
         tv.install_path = Some(install_path.to_path_buf());
         tv
