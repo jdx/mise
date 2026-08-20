@@ -44,7 +44,7 @@ impl SyncPython {
             for v in changed.next().unwrap_or_default() {
                 miseprintln!("Synced python@{v} from uv to mise");
             }
-            self.mise_to_uv()?;
+            self.sync_mise_installs_to_uv()?;
         }
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
@@ -93,7 +93,7 @@ impl SyncPython {
         Ok(reconcile::ProviderLinks::new(ownership, links))
     }
 
-    fn mise_to_uv(&self) -> Result<()> {
+    fn sync_mise_installs_to_uv(&self) -> Result<()> {
         let uv_versions_path = &*env::UV_PYTHON_INSTALL_DIR;
         let installed_python_versions_path = dirs::INSTALLS.join("python");
         let subdirs = file::dir_subdirs(&installed_python_versions_path)?;
