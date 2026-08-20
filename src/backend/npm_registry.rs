@@ -78,12 +78,14 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
 /// stable position at the end.
 pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
     let packument = fetch_packument(name).await?;
-    let deprecated_versions = packument
+    let all_versions_deprecated = packument
         .versions
-        .iter()
-        .filter_map(|(version, metadata)| metadata.deprecated.as_ref().map(|_| version.clone()))
-        .collect();
-    let versions = sort_versions(packument.versions.keys())
+        .values()
+        .all(|metadata| metadata.deprecated.is_some());
+    let versions = packument.versions.iter().filter_map(|(version, metadata)| {
+        (all_versions_deprecated || metadata.deprecated.is_none()).then_some(version)
+    });
+    Ok(sort_versions(versions)
         .into_iter()
         .map(|version| VersionInfo {
             version: version.clone(),
@@ -91,8 +93,7 @@ pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
             prerelease: is_semver_prerelease(version),
             ..Default::default()
         })
-        .collect();
-    Ok(filter_deprecated_versions(versions, &deprecated_versions))
+        .collect())
 }
 
 /// Exclude selectively deprecated releases from fuzzy/latest resolution. If a
