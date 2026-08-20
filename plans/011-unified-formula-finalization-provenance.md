@@ -3,6 +3,12 @@
 Status: DONE
 Priority: P0
 
+Final current-main proof (2026-08-20): exact prerequisite head
+`1547bfdbee85a7f406fca9f0712b050ca9c46723` contains canonical main
+`30cbe7afe3396bf4e2747c5d58b7b7e1b2dc7d70` and passed all 14 jobs in
+[run 32370674862](https://github.com/jdx/mise/actions/runs/32370674862),
+including authenticated bottle/source provenance and SBOM assertions.
+
 Current exact-head confirmation (2026-08-20): prerequisite head
 `7d422518ed1674c8cb5f819411af9bee4d4b6ce6` passed all 14 jobs in
 [run 32352460903](https://github.com/jdx/mise/actions/runs/32352460903),

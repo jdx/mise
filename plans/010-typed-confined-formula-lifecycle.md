@@ -2,6 +2,13 @@
 
 Status: DONE
 Priority: P0
+
+Final current-main proof (2026-08-20): exact prerequisite head
+`1547bfdbee85a7f406fca9f0712b050ca9c46723` contains canonical main
+`30cbe7afe3396bf4e2747c5d58b7b7e1b2dc7d70` and passed all 14 jobs in
+[run 32370674862](https://github.com/jdx/mise/actions/runs/32370674862).
+The hosted source oracle compiled, linked, installed, finalized, and rechecked
+GNU hello under strict confinement.
 Effort: L
 Planned against: #11915 `b94b6b1c1`
 Depends on: 009
