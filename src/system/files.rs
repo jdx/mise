@@ -101,7 +101,7 @@ pub enum FileTomlEntry {
 pub struct FileRequest {
     /// target path as written in config (display/merge key)
     pub target_raw: String,
-    /// absolute target path (`~` expanded)
+    /// absolute, lexically normalized target path (`~` expanded)
     pub target: PathBuf,
     /// absolute source path (relative sources resolve against the config
     /// file's directory; omitted sources resolve under dotfiles.root)
@@ -153,13 +153,19 @@ pub enum FileState {
 /// Keys union global -> local; a more local config overrides an entry for the
 /// same target. Malformed entries and unknown modes warn and are skipped.
 pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
-    let mut composed: IndexMap<PathBuf, FileRequest> = IndexMap::new();
+    let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for request in files_from_config_files(config_files) {
-            if let Some(existing) = composed.get(&request.target) {
-                if file_requests_match(config, existing, &request) {
-                    continue;
-                }
+            let siblings = composed.entry(request.target.clone()).or_default();
+            if siblings
+                .iter()
+                .any(|existing| file_requests_match(config, existing, &request))
+            {
+                continue;
+            }
+            if let Some(existing) = siblings.iter().find(|existing| {
+                existing.mode != FileMode::SymlinkEach || request.mode != FileMode::SymlinkEach
+            }) {
                 bail!(
                     "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
                     request.target.display(),
@@ -167,10 +173,68 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
                     request.origin.conflict_description(),
                 );
             }
-            composed.insert(request.target.clone(), request);
+            siblings.push(request);
         }
     }
-    Ok(composed.into_values().collect())
+    let composed = composed.into_values().flatten().collect::<Vec<_>>();
+    Ok(composed)
+}
+
+/// Same-target `symlink-each` declarations compose by their expanded target
+/// paths. Shared directories are fine, but two sources cannot own the same
+/// leaf or require a directory where another source places a leaf.
+pub(crate) fn validate_composed_symlink_each(requests: &[FileRequest]) -> Result<()> {
+    let mut groups: IndexMap<&Path, Vec<&FileRequest>> = IndexMap::new();
+    for request in requests
+        .iter()
+        .filter(|request| request.mode == FileMode::SymlinkEach)
+    {
+        groups.entry(&request.target).or_default().push(request);
+    }
+
+    for siblings in groups.into_values().filter(|siblings| siblings.len() > 1) {
+        let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
+        let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
+        for request in siblings {
+            // Preserve the normal source-missing/type diagnostic. Once every
+            // source directory exists its complete composed footprint can be
+            // checked before status or apply performs any mutation.
+            if !request.source.is_dir() {
+                continue;
+            }
+            for (_, target) in walk_source_files(request)? {
+                if let Some(existing) = leaves.get(&target).or_else(|| directories.get(&target)) {
+                    return Err(composed_symlink_each_conflict(&target, existing, request));
+                }
+                leaves.insert(target, request);
+            }
+            for directory in needed_dirs(request)?
+                .into_iter()
+                .filter(|directory| *directory != request.target)
+            {
+                if let Some(existing) = leaves.get(&directory) {
+                    return Err(composed_symlink_each_conflict(
+                        &directory, existing, request,
+                    ));
+                }
+                directories.entry(directory).or_insert(request);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn composed_symlink_each_conflict(
+    path: &Path,
+    first: &FileRequest,
+    second: &FileRequest,
+) -> eyre::Report {
+    eyre::eyre!(
+        "conflicting symlink-each declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+        path.display(),
+        first.origin.conflict_description(),
+        second.origin.conflict_description(),
+    )
 }
 
 /// Returns whether sibling declarations produce the same whole-file resource.
@@ -297,7 +361,7 @@ fn merge_file_entry(
             }
         },
     };
-    let target = file::replace_path(&target_raw);
+    let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
             "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"
@@ -1171,7 +1235,7 @@ pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
         info!("files: {}", describe_applied(req)?);
     }
     for req in plan.record_symlink_each {
-        if !plan.todo.iter().any(|(todo, _)| todo.target == req.target) {
+        if !plan.todo.iter().any(|(todo, _)| std::ptr::eq(*todo, req)) {
             save_symlink_each_state(req);
         }
     }
@@ -1193,6 +1257,7 @@ pub fn plan_apply<'a>(
     requests: &'a [FileRequest],
     opts: &ApplyOpts,
 ) -> Result<ApplyPlan<'a>> {
+    validate_composed_symlink_each(requests)?;
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
@@ -2210,6 +2275,70 @@ mod tests {
 
     fn symlink_req(source: &Path, target: &Path) -> FileRequest {
         link_req(source, target, FileMode::Symlink)
+    }
+
+    #[test]
+    fn composed_symlink_each_allows_disjoint_leaves() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_a = dir.path().join("a");
+        let source_b = dir.path().join("b");
+        let target = dir.path().join("target");
+        file::create_dir_all(source_a.join("conf.d"))?;
+        file::create_dir_all(source_b.join("conf.d"))?;
+        file::write(source_a.join("conf.d/a.toml"), "a")?;
+        file::write(source_b.join("conf.d/b.toml"), "b")?;
+
+        validate_composed_symlink_each(&[
+            link_req(&source_a, &target, FileMode::SymlinkEach),
+            link_req(&source_b, &target, FileMode::SymlinkEach),
+        ])?;
+        Ok(())
+    }
+
+    #[test]
+    fn composed_symlink_each_rejects_duplicate_leaves() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_a = dir.path().join("a");
+        let source_b = dir.path().join("b");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_a)?;
+        file::create_dir_all(&source_b)?;
+        file::write(source_a.join("shared"), "a")?;
+        file::write(source_b.join("shared"), "b")?;
+
+        let err = validate_composed_symlink_each(&[
+            link_req(&source_a, &target, FileMode::SymlinkEach),
+            link_req(&source_b, &target, FileMode::SymlinkEach),
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&target.join("shared").to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn composed_symlink_each_rejects_file_directory_collisions() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_a = dir.path().join("a");
+        let source_b = dir.path().join("b");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_a)?;
+        file::create_dir_all(source_b.join("shared"))?;
+        file::write(source_a.join("shared"), "a")?;
+        file::write(source_b.join("shared/nested"), "b")?;
+
+        let err = validate_composed_symlink_each(&[
+            link_req(&source_a, &target, FileMode::SymlinkEach),
+            link_req(&source_b, &target, FileMode::SymlinkEach),
+        ])
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(&target.join("shared").to_string_lossy().to_string())
+        );
+        Ok(())
     }
 
     /// The fix: a file the user wrote is not mise's to replace. This used to pass on Windows,
