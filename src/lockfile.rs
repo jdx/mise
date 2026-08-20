@@ -1501,8 +1501,11 @@ impl LockfileUpdateMode {
     }
 }
 
+/// Controls whether a lockfile update has only the active view or an authoritative union.
 pub enum LockfileUpdateScope<'a> {
+    /// Preserve entries that may belong to unloaded sibling projects.
     Active,
+    /// Preserve only concrete versions present in the resolved monorepo union.
     MonorepoUnion(&'a Toolset),
 }
 
@@ -1684,6 +1687,7 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
     }
 }
 
+/// Updates lockfiles from the active toolset using the requested sibling-preservation scope.
 pub fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
@@ -1962,8 +1966,10 @@ pub fn update_lockfiles(
     Ok(has_deferred_provenance)
 }
 
+/// Resolved tool versions grouped first by config source and then by tool short name.
 type ToolsBySource = HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>>;
 
+/// Groups resolved and newly installed versions by their contributing config source.
 fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> ToolsBySource {
     let mut tools_by_source: ToolsBySource = HashMap::new();
     for (ba, tvl) in &ts.versions {
@@ -1992,6 +1998,7 @@ fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> Too
     tools_by_source
 }
 
+/// Collects the concrete versions that each target lockfile must preserve.
 fn lockfile_versions_by_path(
     config: &Config,
     tools_by_source: &ToolsBySource,
@@ -3031,13 +3038,18 @@ where
     (tools, consumed_keys)
 }
 
+/// Determines how merge handles existing entries absent from the active update.
 #[derive(Clone, Copy)]
 enum AbsentEntryPolicy<'a> {
+    /// Drop entries absent from an authoritative non-monorepo update.
     Drop,
+    /// Keep every absent entry because sibling ownership is unknown.
     PreserveAll,
+    /// Keep only absent entries whose concrete version remains in the union.
     PreserveVersions(&'a BTreeSet<String>),
 }
 
+/// Merges current entries and applies the selected absent-entry preservation policy.
 fn merge_tool_entries_for_update<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
@@ -3059,6 +3071,7 @@ where
     merged_tools
 }
 
+/// Restores eligible existing entries that were not consumed by the merge.
 fn preserve_absent_tool_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,

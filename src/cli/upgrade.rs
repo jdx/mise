@@ -852,11 +852,15 @@ impl Upgrade {
     }
 }
 
+/// Selects whether upgrade lockfile maintenance has an authoritative monorepo union.
 enum UpgradeLockfileUpdate<'a> {
+    /// Use the active toolset and preserve all absent monorepo sibling entries.
     Active,
+    /// Use the resolved union to preserve only versions still configured by siblings.
     MonorepoUnion(&'a Toolset),
 }
 
+/// Uses the union only when it was loaded and completely resolved.
 fn upgrade_lockfile_update(monorepo_ts: Option<&Toolset>) -> UpgradeLockfileUpdate<'_> {
     match monorepo_ts {
         Some(ts) => UpgradeLockfileUpdate::MonorepoUnion(ts),
@@ -864,12 +868,18 @@ fn upgrade_lockfile_update(monorepo_ts: Option<&Toolset>) -> UpgradeLockfileUpda
     }
 }
 
+/// Returns whether every monorepo request can safely contribute to the preservation keep-set.
 fn monorepo_toolset_is_complete(ts: &Toolset) -> bool {
     // Toolset::resolve warns and retains a partially resolved list for ordinary
     // per-tool failures, so its Ok result alone does not prove completeness.
-    ts.versions
-        .values()
-        .all(|tvl| tvl.os_supported_versions().count() == tvl.os_supported_requests().count())
+    // OS-gated requests intentionally make this false: they do not resolve on
+    // this platform, so treating the union as authoritative would prune their
+    // cross-platform lock entries. Consequently, monorepos containing any
+    // OS-gated request do not prune stale entries on this upgrade path.
+    ts.versions.values().all(|tvl| {
+        tvl.requests.iter().all(|request| request.is_os_supported())
+            && tvl.versions.len() == tvl.requests.len()
+    })
 }
 
 fn current_satisfies_hidden_release(
@@ -1070,7 +1080,21 @@ mod tests {
         let ba = Arc::new(BackendArg::new("dummy".to_string(), None));
         let request = ToolRequest::new(ba.clone(), "1", ToolSource::Unknown).unwrap();
         ts.add_version(request);
+        assert!(!monorepo_toolset_is_complete(&ts));
 
+        let tvl = ts.versions.values_mut().next().unwrap();
+        tvl.versions.push(ToolVersion::new(
+            tvl.requests[0].clone(),
+            "1.0.0".to_string(),
+        ));
+        assert!(monorepo_toolset_is_complete(&ts));
+    }
+
+    #[tokio::test]
+    async fn test_os_gated_monorepo_request_forces_preserve_all_fallback() {
+        crate::toolset::install_state::init().await.unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        let ba = Arc::new(BackendArg::new("dummy".to_string(), None));
         let inactive_os = match crate::cli::version::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
@@ -1080,15 +1104,13 @@ mod tests {
         let inactive_request =
             ToolRequest::new_opts(ba, "2", inactive_options, ToolSource::Unknown).unwrap();
         ts.add_version(inactive_request);
-        assert!(!monorepo_toolset_is_complete(&ts));
 
-        let tvl = ts.versions.values_mut().next().unwrap();
-        tvl.versions.push(ToolVersion::new(
-            tvl.requests[0].clone(),
-            "1.0.0".to_string(),
+        let complete = monorepo_toolset_is_complete(&ts);
+        assert!(!complete);
+        assert!(matches!(
+            upgrade_lockfile_update(complete.then_some(&ts)),
+            UpgradeLockfileUpdate::Active
         ));
-        // The unresolved OS-gated request does not make the union incomplete.
-        assert!(monorepo_toolset_is_complete(&ts));
     }
 
     #[test]

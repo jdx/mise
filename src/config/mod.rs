@@ -3291,6 +3291,7 @@ fn is_global_task_include_path(path: &Path) -> bool {
 }
 
 #[async_backtrace::framed]
+/// Rebuilds active runtime links and shims, then updates lockfiles from the active toolset.
 pub async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -3307,7 +3308,7 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     .await
 }
 
-/// Rebuild active shims while using the complete monorepo toolset to preserve configured siblings.
+/// Rebuilds active links and shims while using a complete monorepo union to preserve siblings.
 pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -3325,6 +3326,7 @@ pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
     .await
 }
 
+/// Runs the shared rebuild flow with an explicit lockfile preservation scope.
 async fn rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
     config: &Arc<Config>,
     ts: &Toolset,

@@ -259,7 +259,8 @@ assert "cd monorepo-upgrade/packages/a && mise install"
 assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
 
-sed -i 's/dummy = "1.0.0"/dummy = "1"/' monorepo-upgrade/mise.toml
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' monorepo-upgrade/mise.toml
+rm monorepo-upgrade/mise.toml.bak
 assert "cd monorepo-upgrade && mise upgrade dummy"
 
 assert_not_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
