@@ -177,14 +177,13 @@ pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
         }
     }
     let composed = composed.into_values().flatten().collect::<Vec<_>>();
-    validate_composed_symlink_each(&composed)?;
     Ok(composed)
 }
 
 /// Same-target `symlink-each` declarations compose by their expanded target
 /// paths. Shared directories are fine, but two sources cannot own the same
 /// leaf or require a directory where another source places a leaf.
-fn validate_composed_symlink_each(requests: &[FileRequest]) -> Result<()> {
+pub(crate) fn validate_composed_symlink_each(requests: &[FileRequest]) -> Result<()> {
     let mut groups: IndexMap<&Path, Vec<&FileRequest>> = IndexMap::new();
     for request in requests
         .iter()
@@ -1258,6 +1257,7 @@ pub fn plan_apply<'a>(
     requests: &'a [FileRequest],
     opts: &ApplyOpts,
 ) -> Result<ApplyPlan<'a>> {
+    validate_composed_symlink_each(requests)?;
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];

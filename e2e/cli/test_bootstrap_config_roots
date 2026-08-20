@@ -193,6 +193,14 @@ rm "$shared_tree/conf.d/b.toml"
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "find '$MISE_STATE_DIR/dotfiles' -type f | wc -l | tr -d ' '" "2"
 
+# Unapply uses recorded ownership and does not need to traverse composed
+# source trees that have become unreadable.
+chmod 000 "$root_a/tree/conf.d"
+assert_succeed "mise bootstrap dotfiles unapply --yes"
+chmod 755 "$root_a/tree/conf.d"
+assert_fail "test -e $shared_tree"
+assert_succeed "mise bootstrap dotfiles apply --yes"
+
 # The leaf identity, rather than only the shared directory target, conflicts.
 echo conflict >"$root_b/tree/conf.d/a.toml"
 assert_fail "mise bootstrap dotfiles status" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
