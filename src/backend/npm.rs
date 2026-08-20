@@ -23,7 +23,7 @@ use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{fmt::Debug, sync::Arc};
@@ -618,7 +618,7 @@ impl NPMBackend {
                 let npm = self.spawn_program(config, None, "npm").await;
 
                 let raw = cmd!(
-                    npm,
+                    &npm,
                     "view",
                     self.tool_name(),
                     "versions",
@@ -631,9 +631,31 @@ impl NPMBackend {
                 .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                 .read()?;
                 let data: Value = serde_json::from_str(&raw)?;
-                let version_info = npm_view_versions_time(&data)?;
+                let versions = npm_view_versions_time(&data)?;
 
-                Ok(version_info)
+                // `npm view <package> versions time` omits per-version
+                // deprecation metadata. The shell-out compatibility path
+                // intentionally pays for a second query so its resolution
+                // semantics match the default HTTP registry client.
+                let deprecated_query = format!("{}@>=0.0.0-0", self.tool_name());
+                let deprecated_raw = cmd!(
+                    &npm,
+                    "view",
+                    deprecated_query,
+                    "deprecated",
+                    "--prefix",
+                    &prefix
+                )
+                .full_env(&env)
+                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+                .read()?;
+                let deprecated_versions =
+                    npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
+
+                Ok(npm_registry::filter_deprecated_versions(
+                    versions,
+                    &deprecated_versions,
+                ))
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -1529,6 +1551,16 @@ fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
         .collect())
 }
 
+fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> {
+    let prefix = format!("{package}@");
+    output
+        .lines()
+        .filter_map(|line| line.strip_prefix(&prefix))
+        .filter_map(|line| line.split_whitespace().next())
+        .map(str::to_string)
+        .collect()
+}
+
 fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
     Ok(match npm_view_json(data)?["latest"] {
         Value::String(ref s) => Some(s.clone()),
@@ -1982,6 +2014,36 @@ mod tests {
             error,
             "expected npm view --json to return one result, got 2"
         );
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_extracts_versions() {
+        let output = "\
+aws-cdk@1.0.0 'use 1.2.0'
+aws-cdk@2.0.0 'published accidentally'
+";
+        assert_eq!(
+            npm_view_deprecated_versions("aws-cdk", output),
+            HashSet::from(["1.0.0".into(), "2.0.0".into()])
+        );
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_handles_scoped_packages_and_multiline_messages() {
+        let output = "\
+@scope/pkg@1.0.0 'first line\n' +
+  'second line'
+@scope/pkg@2.0.0 'use a newer version'
+";
+        assert_eq!(
+            npm_view_deprecated_versions("@scope/pkg", output),
+            HashSet::from(["1.0.0".into(), "2.0.0".into()])
+        );
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_accepts_empty_output() {
+        assert!(npm_view_deprecated_versions("prettier", "").is_empty());
     }
 
     #[test]
