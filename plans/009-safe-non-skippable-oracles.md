@@ -1,6 +1,6 @@
 # Plan 009: Make destructive Homebrew oracles safe and non-skippable
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: M
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
@@ -255,6 +255,11 @@ the real bodies only in the dedicated disposable workflow. Inspect logs for
 fixture commands and marker contents; elapsed time alone is not evidence.
 
 ## Done criteria
+
+Final closure: exact code head `be74f2563308dcc1ea6628bbcb7364fd124a64f0`
+passed the complete workflow in [run 32339247676](https://github.com/jdx/mise/actions/runs/32339247676),
+including credential-cleared macOS, Linux bottle, and Linux source jobs with
+exact completion-marker verification.
 
 - Dedicated jobs name every intended oracle, and every job validates a unique
   completion marker with a nonzero fixture count.

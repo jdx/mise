@@ -1,6 +1,6 @@
 # Plan 010: Compile formula lifecycle once, preflight it, and confine it
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11915 `b94b6b1c1`
@@ -171,6 +171,11 @@ Final prerequisite proof:
   [run 31921306723](https://github.com/jdx/mise/actions/runs/31921306723).
 
 ## Done criteria
+
+Final closure: exact code head `be74f2563308dcc1ea6628bbcb7364fd124a64f0`
+passed the complete workflow in [run 32339247676](https://github.com/jdx/mise/actions/runs/32339247676).
+The Linux source oracle configured, compiled, linked, installed, finalized,
+executed, and idempotently rechecked GNU hello under strict confinement.
 
 - One typed value is both validated and executed.
 - Every formula that may mutate is prepared before any formula mutates.

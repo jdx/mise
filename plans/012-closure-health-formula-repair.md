@@ -1,6 +1,6 @@
 # Plan 012: Add closure-aware formula health and lifecycle-only repair
 
-Status: IN PROGRESS
+Status: DONE
 Priority: P0
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
@@ -299,6 +299,11 @@ rtk mise run lint
 ```
 
 ## Done criteria
+
+Final closure: exact code head `be74f2563308dcc1ea6628bbcb7364fd124a64f0`
+passed the complete workflow in [run 32339247676](https://github.com/jdx/mise/actions/runs/32339247676),
+including canonical macOS lifecycle repair plus Linux bottle and source
+health/idempotency proof.
 
 - Configured-root status reflects required dependency health and stays read-only.
 - Provable lifecycle damage repairs without repour.
