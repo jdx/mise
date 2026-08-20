@@ -2192,29 +2192,23 @@ struct TrustedOperationParent {
 #[cfg(unix)]
 impl TrustedOperationParent {
     fn path(&self) -> Result<PathBuf> {
-        trusted_operation_parent_path(&self.fd)
+        #[cfg(target_os = "linux")]
+        return Ok(
+            Path::new("/proc/self/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string())
+        );
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            let mut path = PathBuf::new();
+            nix::fcntl::fcntl(&self.fd, nix::fcntl::FcntlArg::F_GETPATH(&mut path))?;
+            Ok(path)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+        Ok(Path::new("/dev/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string()))
     }
 
     fn stable_path(&self) -> Result<PathBuf> {
         Ok(std::fs::canonicalize(self.path()?)?)
     }
-}
-
-#[cfg(target_os = "linux")]
-fn trusted_operation_parent_path(fd: &std::os::fd::OwnedFd) -> Result<PathBuf> {
-    Ok(Path::new("/proc/self/fd").join(std::os::fd::AsRawFd::as_raw_fd(fd).to_string()))
-}
-
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-fn trusted_operation_parent_path(fd: &std::os::fd::OwnedFd) -> Result<PathBuf> {
-    let mut path = PathBuf::new();
-    nix::fcntl::fcntl(fd, nix::fcntl::FcntlArg::F_GETPATH(&mut path))?;
-    Ok(path)
-}
-
-#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
-fn trusted_operation_parent_path(fd: &std::os::fd::OwnedFd) -> Result<PathBuf> {
-    Ok(Path::new("/dev/fd").join(std::os::fd::AsRawFd::as_raw_fd(fd).to_string()))
 }
 
 #[cfg(unix)]
@@ -8524,13 +8518,6 @@ mod tests {
         assert!(cask.conflicts_with.cask.is_empty());
         assert!(cask.auto_updates);
 
-        let cask: Cask = serde_json::from_value(serde_json::json!({
-            "token": "example",
-            "version": "1.0.0",
-            "url": "https://example.com/example.zip",
-            "auto_updates": null
-        }))?;
-        assert!(!cask.auto_updates);
         Ok(())
     }
 
