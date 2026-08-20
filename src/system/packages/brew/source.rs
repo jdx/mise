@@ -968,8 +968,8 @@ pub async fn build(
             let config_log = buildpath.join("config.log");
             let diagnostic = std::fs::read(&config_log).ok().map(|contents| {
                 const MAX_DIAGNOSTIC_BYTES: usize = 32 * 1024;
-                let start = contents.len().saturating_sub(MAX_DIAGNOSTIC_BYTES);
-                String::from_utf8_lossy(&contents[start..]).into_owned()
+                let end = contents.len().min(MAX_DIAGNOSTIC_BYTES);
+                String::from_utf8_lossy(&contents[..end]).into_owned()
             });
             let error = error.wrap_err(format!("failed to build {name} {pkg_version} from source"));
             if let Some(diagnostic) = diagnostic {
