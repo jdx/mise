@@ -130,10 +130,10 @@ pub(super) fn reconcile_all(
         }
 
         file::make_symlink(target, &link)?;
-        if target.exists() {
-            if let Err(err) = install_state::clear_incomplete_marker(&tool.short, &version) {
-                marker_errors.push(format!("{version}: {err:#}"));
-            }
+        if target.exists()
+            && let Err(err) = install_state::clear_incomplete_marker(&tool.short, &version)
+        {
+            marker_errors.push(format!("{version}: {err:#}"));
         }
         changed[*provider_index].insert(version);
     }
