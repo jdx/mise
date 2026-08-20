@@ -4689,8 +4689,8 @@ fn cascaded_task_config_for_dir(
 
 #[derive(Default)]
 struct RenderedTaskCache {
-    previous_configs: HashMap<(PathBuf, String), Task>,
-    current_config: HashMap<(PathBuf, String), Task>,
+    previous_scopes: HashMap<(PathBuf, String), Task>,
+    current_scope: HashMap<(PathBuf, String), Task>,
 }
 
 fn rendered_task_cache_key(task: &Task) -> (PathBuf, String) {
@@ -4699,16 +4699,16 @@ fn rendered_task_cache_key(task: &Task) -> (PathBuf, String) {
 
 impl RenderedTaskCache {
     fn get(&self, key: &(PathBuf, String)) -> Option<&Task> {
-        self.previous_configs.get(key)
+        self.previous_scopes.get(key)
     }
 
     fn insert(&mut self, key: (PathBuf, String), task: Task) {
-        self.current_config.insert(key, task);
+        self.current_scope.insert(key, task);
     }
 
     fn finish_scope(&mut self) {
-        for (key, task) in self.current_config.drain() {
-            self.previous_configs.entry(key).or_insert(task);
+        for (key, task) in self.current_scope.drain() {
+            self.previous_scopes.entry(key).or_insert(task);
         }
     }
 }
