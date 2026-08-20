@@ -4,7 +4,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
@@ -924,12 +924,14 @@ impl Config {
             load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
         let global_tasks = load_global_tasks(&config, &task_definitions).await?;
         local_tasks.retain(|local| {
-            !global_tasks
-                .iter()
-                .any(|global| tasks_have_same_source(local, global))
+            !local.suppress_if_global_duplicate
+                || !global_tasks
+                    .iter()
+                    .any(|global| tasks_have_same_source(&local.task, global))
         });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
+            .map(|local| local.task)
             .chain(global_tasks)
             .rev()
             .inspect(|t| {
@@ -3452,11 +3454,28 @@ fn dir_is_in_enclosing_monorepo(
         && !file::path_starts_with_resolved(dir, selected_root)
 }
 
+struct LoadedLocalTask {
+    task: Task,
+    suppress_if_global_duplicate: bool,
+}
+
+fn task_config_has_file_context(task_config: &TaskConfig) -> bool {
+    task_config.includes.is_some()
+        || task_config.dir.is_some()
+        || task_config.shell.is_some()
+        || task_config.cache.is_some()
+        || task_config.rust_cache.is_some()
+        || !task_config.global_env.is_empty()
+        || !task_config.global_pass_through_env.is_empty()
+        || !task_config.global_inputs.is_empty()
+        || !task_config.input_groups.is_empty()
+}
+
 async fn load_local_tasks_with_context(
     config: &Arc<Config>,
     ctx: Option<&crate::task::TaskLoadContext>,
     templates: &TaskDefinitions,
-) -> Result<Vec<Task>> {
+) -> Result<Vec<LoadedLocalTask>> {
     let mut tasks = vec![];
     let monorepo_config = find_monorepo_config(&config.config_files);
     let monorepo_root = monorepo_config.and_then(|cf| cf.project_root().map(|p| p.to_path_buf()));
@@ -3473,6 +3492,11 @@ async fn load_local_tasks_with_context(
         .as_deref()
         .map(|root| enclosing_monorepo_roots(&config.config_files, root))
         .unwrap_or_default();
+    let user_global_config_paths = global_config_files();
+    let has_user_global_config = config
+        .config_files
+        .values()
+        .any(|cf| config_set_contains(&user_global_config_paths, cf.get_path()));
     for d in all_dirs()? {
         if cfg!(test) && !d.starts_with(*dirs::HOME) {
             continue;
@@ -3487,14 +3511,55 @@ async fn load_local_tasks_with_context(
             );
             continue;
         }
-        let mut dir_tasks =
-            load_tasks_in_dir_with_definitions(config, &d, &local_config_files, templates).await?;
+        let local_configs = configs_at_root(&d, &local_config_files);
+        let cascaded_task_config = cascaded_task_config_for_dir(&d, &local_config_files)?;
+        let effective_cascaded_task_config =
+            if local_configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
+                None
+            } else {
+                cascaded_task_config.as_ref()
+            };
+        let mut dir_tasks = load_tasks_from_configs(
+            config,
+            &d,
+            local_configs.clone(),
+            templates,
+            false,
+            effective_cascaded_task_config,
+        )
+        .await?;
+
+        let mut suppress_if_global_duplicate = !has_user_global_config;
+        let mut local_inline_task_names = HashSet::new();
+        if has_user_global_config && file::same_file(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
+            let local_file_context = local_configs
+                .iter()
+                .any(|cf| task_config_has_file_context(cf.task_config()))
+                || effective_cascaded_task_config
+                    .is_some_and(|tc| task_config_has_file_context(&tc.task_config));
+            suppress_if_global_duplicate = false;
+            if !local_file_context {
+                local_inline_task_names = local_configs
+                    .iter()
+                    .flat_map(|cf| cf.tasks())
+                    .map(|task| task.name.clone())
+                    .collect();
+                // A user-global config owns the HOME include decision, so
+                // omitted defaults must not be resurrected by the local
+                // hierarchy walk.
+                dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
+            }
+        }
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
         }
 
-        tasks.extend(dir_tasks);
+        tasks.extend(dir_tasks.into_iter().map(|task| LoadedLocalTask {
+            suppress_if_global_duplicate: suppress_if_global_duplicate
+                && !local_inline_task_names.contains(&task.name),
+            task,
+        }));
     }
 
     // Determine if we should load monorepo tasks from subdirectories
@@ -3620,7 +3685,10 @@ async fn load_local_tasks_with_context(
         }
 
         while let Some(result) = join_set.join_next().await {
-            tasks.extend(result??);
+            tasks.extend(result??.into_iter().map(|task| LoadedLocalTask {
+                task,
+                suppress_if_global_duplicate: !has_user_global_config,
+            }));
         }
     }
 
