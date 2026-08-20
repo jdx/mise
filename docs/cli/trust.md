@@ -30,7 +30,7 @@ worktrees can check out branches with different config contents.
 
 ### `[CONFIG_FILE]`
 
-The config file to trust
+The config file whose trust status to change
 
 ## Flags
 
