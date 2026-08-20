@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::cmd::{RunningPidGuard, prepare_noninteractive_child};
 use crate::config::Config;
-use clap::Parser;
 use rmcp::{
     RoleServer, ServiceExt,
     handler::server::{ServerHandler, tool::ToolRouter, wrapper::Parameters},
@@ -46,9 +45,9 @@ use std::sync::Arc;
 ///
 /// Note: This is primarily intended for integration with AI assistants like Claude,
 /// Cursor, or other tools that support the Model Context Protocol.
-#[derive(Debug, Parser)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Mcp {}
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Mcp {}
 
 #[derive(Clone)]
 struct MiseServer {

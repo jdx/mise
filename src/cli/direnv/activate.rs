@@ -8,9 +8,9 @@ use indoc::indoc;
 /// Because this generates the idiomatic files based on currently installed plugins,
 /// you should run this command after installing new plugins. Otherwise
 /// direnv may not know to update environment variables when idiomatic file versions change.
-#[derive(Debug, clap::Args)]
-#[clap(hide=true, verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct DirenvActivate {}
+#[derive(Debug, usage_rs::Args)]
+#[command(hide=true, verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct DirenvActivate {}
 
 impl DirenvActivate {
     pub(super) async fn run(self) -> Result<()> {

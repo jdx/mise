@@ -13,26 +13,26 @@ use super::reconcile;
 /// For example, use this to import all Homebrew node installs into mise
 ///
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct SyncNode {
-    #[clap(flatten)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct SyncNode {
+    #[arg(flatten)]
     _type: SyncNodeType,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 #[group(required = true, multiple = true)]
 pub(super) struct SyncNodeType {
     /// Get tool versions from Homebrew
-    #[clap(long)]
+    #[arg(long)]
     brew: bool,
 
     /// Get tool versions from nodenv
-    #[clap(long)]
+    #[arg(long)]
     nodenv: bool,
 
     /// Get tool versions from nvm
-    #[clap(long)]
+    #[arg(long)]
     nvm: bool,
 }
 

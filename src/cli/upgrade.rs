@@ -35,13 +35,13 @@ use jiff::{Span, Timestamp, civil::date};
 /// and bump the version in mise.toml.
 ///
 /// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Upgrade {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
-    #[clap(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
+    #[arg(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Upgrades to the latest version available, bumping the version in mise.toml
@@ -51,47 +51,47 @@ pub(crate) struct Upgrade {
     ///
     /// It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
     /// would change your config to `node = "22"`.
-    #[clap(long, short = 'b', verbatim_doc_comment)]
+    #[arg(long, short = 'b', verbatim_doc_comment)]
     bump: bool,
 
     /// Display multiselect menu to choose which tools to upgrade
-    #[clap(long, short, verbatim_doc_comment, conflicts_with = "tool")]
+    #[arg(long, short, verbatim_doc_comment, conflicts_with = "tool")]
     interactive: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Deprecated shorthand for --bump
-    #[clap(short = 'l', hide = true)]
+    #[arg(short = 'l', hide = true)]
     legacy_bump: bool,
 
     /// Just print what would be done, don't actually do it
-    #[clap(long, short = 'n', verbatim_doc_comment)]
+    #[arg(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
     /// Tool(s) to exclude from upgrading
     /// e.g.: go python
-    #[clap(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
+    #[arg(long, short = 'x', value_name = "INSTALLED_TOOL", verbatim_doc_comment)]
     exclude: Vec<ToolArg>,
 
     /// Like --dry-run but exits with code 1 if there are outdated tools
     ///
     /// This is useful for scripts to check if tools need to be upgraded.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
     /// Upgrade all tools, including installed-but-inactive tools not present in the current config
-    #[clap(long, verbatim_doc_comment, conflicts_with = "local")]
+    #[arg(long, verbatim_doc_comment, conflicts_with = "local")]
     inactive: bool,
 
     /// Only upgrade tools defined in local config files
     ///
     /// This will only upgrade tools that are defined in project-local mise.toml and
     /// will skip tools defined in the global config (~/.config/mise/config.toml).
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     local: bool,
 
     /// Only upgrade to versions released before this date or older than this duration
@@ -101,11 +101,11 @@ pub(crate) struct Upgrade {
     ///
     /// This only affects fuzzy version matches like "20" or "latest".
     /// Explicitly pinned versions like "22.5.0" are not filtered.
-    #[clap(long, alias = "before", verbatim_doc_comment)]
+    #[arg(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
     /// Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     monorepo: bool,
 
     /// Do not uninstall the versions that were upgraded away from
@@ -115,19 +115,19 @@ pub(crate) struct Upgrade {
     /// something outside of mise points at the old install directory.
     ///
     /// Set `upgrade.auto_prune = false` to make this the default.
-    #[clap(long, verbatim_doc_comment, overrides_with = "prune")]
+    #[arg(long, verbatim_doc_comment, overrides_with = "prune")]
     no_prune: bool,
 
     /// Uninstall the versions that were upgraded away from
     ///
     /// This is already the default. Use it to override `upgrade.auto_prune = false`
     /// for a single run.
-    #[clap(long, verbatim_doc_comment, overrides_with = "no_prune")]
+    #[arg(long, verbatim_doc_comment, overrides_with = "no_prune")]
     prune: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[clap(long, overrides_with = "jobs")]
+    #[arg(long, overrides_with = "jobs")]
     raw: bool,
 }
 

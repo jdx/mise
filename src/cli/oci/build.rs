@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use clap::ValueHint;
 use eyre::Result;
 
 use crate::cli::oci::common::{perform_build, short_digest};
@@ -17,19 +16,19 @@ use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 /// `podman load`.
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct Build {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Build {
     /// Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
-    #[clap(long, value_name = "HOST_PATH:IMAGE_PATH")]
+    #[arg(long, value_name = "HOST_PATH:IMAGE_PATH")]
     copy: Vec<OciCopy>,
 
     /// Output directory for the OCI image layout
-    #[clap(long, short, default_value = "./mise-oci", value_hint = ValueHint::DirPath)]
+    #[arg(long, short, default_value = "./mise-oci", value_hint = ValueHint::DirPath)]
     output: PathBuf,
 
     /// Base image reference (overrides [oci].from and the oci.default_from setting)
-    #[clap(long)]
+    #[arg(long)]
     from: Option<String>,
 
     /// Also include tools from the global / system config (default: project-only)
@@ -40,19 +39,19 @@ pub(super) struct Build {
     /// `~/.config/mise/config.toml` are excluded so they don't bake into a
     /// project image. Pass `--include-global` to revert to the old
     /// "merge all loaded configs" behavior.
-    #[clap(long)]
+    #[arg(long)]
     include_global: bool,
 
     /// Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
-    #[clap(long, short)]
+    #[arg(long, short)]
     tag: Option<String>,
 
     /// Where to place tool installs inside the image (default: /mise)
-    #[clap(long)]
+    #[arg(long)]
     mount_point: Option<String>,
 
     /// Do not embed the currently-running mise binary at /usr/local/bin/mise
-    #[clap(long)]
+    #[arg(long)]
     no_mise: bool,
 
     /// UID[:GID] to assign to every tar entry in generated layers
@@ -60,7 +59,7 @@ pub(super) struct Build {
     /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
     /// omitted, it defaults to UID. This affects file ownership only; [oci].user
     /// controls the image USER directive.
-    #[clap(long, value_name = "UID[:GID]")]
+    #[arg(long, value_name = "UID[:GID]")]
     owner: Option<LayerOwner>,
 }
 

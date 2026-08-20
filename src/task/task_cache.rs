@@ -48,8 +48,8 @@ pub(crate) struct TaskCacheConfig {
     pub command_inputs: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
-pub(crate) enum TaskCacheMode {
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, usage_rs::ValueEnum)]
+pub enum TaskCacheMode {
     /// Read cached results and write new results.
     #[default]
     ReadWrite,
@@ -71,7 +71,7 @@ impl TaskCacheMode {
         let value = value
             .into_string()
             .map_err(|_| eyre!("MISE_TASK_CACHE must be valid UTF-8"))?;
-        <Self as clap::ValueEnum>::from_str(&value, false).map_err(|_| {
+        <Self as usage_rs::spec::ValueEnum>::from_choice(&value).ok_or_else(|| {
             eyre!(
                 "invalid MISE_TASK_CACHE value {value:?}; expected read-write, read-only, \
                  write-only, off, or local-only"

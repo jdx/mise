@@ -4,7 +4,6 @@ use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
 use crate::{hook_env as hook_env_module, logger, migrate, shims};
-use clap::{ArgAction, CommandFactory, Subcommand};
 use eyre::{Report, bail};
 use std::path::PathBuf;
 
@@ -86,7 +85,7 @@ mod watch;
 mod r#where;
 mod r#which;
 
-#[derive(clap::ValueEnum, Debug, Clone, strum::Display)]
+#[derive(usage_rs::ValueEnum, Debug, Clone, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub(crate) enum LevelFilter {
     Trace,
@@ -96,48 +95,54 @@ pub(crate) enum LevelFilter {
     Error,
 }
 
-#[derive(clap::Parser)]
-#[clap(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
-pub(crate) struct Cli {
-    #[clap(subcommand)]
+#[derive(usage_rs::Cli)]
+#[command(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true)]
+pub struct Cli {
+    #[arg(subcommand)]
     pub command: Option<Commands>,
     /// Task to run
-    #[clap(name = "TASK", long_help = LONG_TASK_ABOUT)]
+    #[arg(
+        name = "TASK",
+        double_dash = "automatic",
+        long_help = r#"Task to run.
+
+Shorthand for `mise tasks run <TASK>`."#
+    )]
     pub task: Option<String>,
     /// Task arguments
-    #[clap(allow_hyphen_values = true, hide = true)]
+    #[arg(hide = true)]
     pub task_args: Option<Vec<String>>,
-    #[clap(last = true, hide = true)]
+    #[arg(last = true, hide = true)]
     pub task_args_last: Vec<String>,
     /// Continue running tasks even if one fails
-    #[clap(long, short = 'c', hide = true, verbatim_doc_comment)]
+    #[arg(long, short = 'c', hide = true, verbatim_doc_comment)]
     pub continue_on_error: bool,
     /// Change directory before running command
-    #[clap(short='C', long, global=true, value_name="DIR", value_hint=clap::ValueHint::DirPath)]
+    #[arg(short='C', long, global=true, value_name="DIR", value_hint=usage_rs::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
     /// Set the environment for loading `mise.<ENV>.toml`
-    #[clap(short = 'E', long, global = true)]
+    #[arg(short = 'E', long, global = true)]
     pub env: Option<Vec<String>>,
     /// Force the operation
-    #[clap(long, short, hide = true)]
+    #[arg(long, short, hide = true)]
     pub force: bool,
     /// How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
-    #[clap(long, short, global = true, env = "MISE_JOBS")]
+    #[arg(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     /// Dry run, don't actually do anything
-    #[clap(short = 'n', long, hide = true)]
+    #[arg(short = 'n', long, hide = true)]
     pub dry_run: bool,
     /// Set the profile (environment)
-    #[clap(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
+    #[arg(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
     /// Suppress non-error messages
-    #[clap(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
+    #[arg(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
     pub quiet: bool,
-    #[clap(long, short, hide = true)]
+    #[arg(long, short, hide = true)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[clap(
+    #[arg(
         short,
         long,
         hide = true,
@@ -146,64 +151,76 @@ pub(crate) struct Cli {
     )]
     pub tool: Vec<ToolArg>,
     /// Show extra output (use -vv for even more)
-    #[clap(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
+    #[arg(short='v', long, global=true, action=ArgAction::Count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
     pub verbose: u8,
-    #[clap(long, short = 'V', hide = true)]
+    #[arg(long, short = 'V', hide = true)]
     pub version: bool,
     /// Answer yes to all confirmation prompts
-    #[clap(short = 'y', long, global = true)]
+    #[arg(short = 'y', long, global = true)]
     pub yes: bool,
     /// Sets log level to debug
-    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
+    #[arg(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
     pub debug: bool,
-    #[clap(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
+    #[arg(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
     pub log_level: Option<LevelFilter>,
     /// Do not load any config files
     ///
     /// Can also use `MISE_NO_CONFIG=1`
-    #[clap(long)]
+    #[arg(long)]
     pub no_config: bool,
     /// Do not load environment variables from config files
     ///
     /// Can also use `MISE_NO_ENV=1`
-    #[clap(long)]
+    #[arg(long)]
     pub no_env: bool,
     /// Do not execute hooks from config files
     ///
     /// Can also use `MISE_NO_HOOKS=1`
-    #[clap(long)]
+    #[arg(long)]
     pub no_hooks: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[clap(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
+    #[arg(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
     pub no_timings: bool,
-    #[clap(long)]
+    #[arg(long)]
     pub output: Option<TaskOutput>,
     /// Read/write directly to stdin/stdout/stderr instead of by line
-    #[clap(long, global = true)]
+    #[arg(long, global = true)]
     pub raw: bool,
     /// Require lockfile URLs to be present during installation
     ///
     /// Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
     /// This prevents API calls to GitHub, aqua registry, etc.
     /// Can also be enabled via MISE_LOCKED=1 or settings.locked=true
-    #[clap(long, global = true, verbatim_doc_comment)]
+    #[arg(long, global = true, verbatim_doc_comment)]
     pub locked: bool,
     /// Suppress all task output and mise non-error messages
-    #[clap(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
+    #[arg(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
     pub silent: bool,
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    #[arg(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
     /// Sets log level to trace
-    #[clap(long, global = true, hide = true, overrides_with_all = &["quiet", "silent", "verbose", "debug", "log_level"])]
+    #[arg(long, global = true, hide = true, overrides_with_all = &["quiet", "silent", "verbose", "debug", "log_level"])]
     pub trace: bool,
 }
 
-#[derive(Subcommand, strum::Display)]
+fn render_subcommand_help(name: &str, long: bool) -> String {
+    let spec = Cli::spec();
+    let command = spec
+        .root
+        .subcommands
+        .iter()
+        .find(|command| command.cmd.name == name)
+        .unwrap_or_else(|| panic!("missing generated {name} command"));
+    usage_rs::help::render(spec, command.cmd, long)
+        .unwrap_or_else(|| panic!("generated {name} command is outside the usage spec"))
+}
+
+#[derive(usage_rs::Subcommands, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub(crate) enum Commands {
     Activate(activate::Activate),
@@ -211,7 +228,8 @@ pub(crate) enum Commands {
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
-    Bootstrap(bootstrap::DeferredBootstrap),
+    #[command(alias = "bs")]
+    Bootstrap(bootstrap::Bootstrap),
     Cache(cache::Cache),
     Completion(completion::Completion),
     Config(config::Config),
@@ -276,15 +294,6 @@ pub(crate) enum Commands {
     Watch(Box<watch::Watch>),
     Where(r#where::Where),
     Which(which::Which),
-}
-
-/// Expand command sections that are deferred during normal startup. Use this
-/// only for full-tree introspection such as generated docs and validation.
-pub(crate) fn expand_deferred_subcommands(mut command: clap::Command) -> clap::Command {
-    *command
-        .find_subcommand_mut("bootstrap")
-        .expect("bootstrap command is registered") = bootstrap::full_command();
-    command
 }
 
 impl Commands {
@@ -393,33 +402,27 @@ impl Commands {
     }
 }
 
-fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+fn get_global_flags(cmd: &usage_rs::Command<'_>) -> (Vec<String>, Vec<String>) {
     let mut flags_with_values = Vec::new();
     let mut boolean_flags = Vec::new();
 
-    for arg in cmd.get_arguments() {
-        let takes_value = matches!(
-            arg.get_action(),
-            clap::ArgAction::Set | clap::ArgAction::Append
-        );
-        let is_bool = matches!(
-            arg.get_action(),
-            clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
-        );
+    for arg in cmd.flags {
+        let takes_value = arg.takes_value;
+        let is_bool = !takes_value;
 
         if takes_value {
-            if let Some(long) = arg.get_long() {
+            if let Some(long) = arg.longs.first() {
                 flags_with_values.push(format!("--{}", long));
             }
-            if let Some(short) = arg.get_short() {
-                flags_with_values.push(format!("-{}", short));
+            if let Some(short) = arg.shorts.first() {
+                flags_with_values.push(format!("-{}", *short as char));
             }
         } else if is_bool {
-            if let Some(long) = arg.get_long() {
+            if let Some(long) = arg.longs.first() {
                 boolean_flags.push(format!("--{}", long));
             }
-            if let Some(short) = arg.get_short() {
-                boolean_flags.push(format!("-{}", short));
+            if let Some(short) = arg.shorts.first() {
+                boolean_flags.push(format!("-{}", *short as char));
             }
         }
     }
@@ -428,12 +431,12 @@ fn get_global_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
 }
 
 /// Get all flags (with values and boolean) from both global Cli and Run subcommand
-fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
+fn get_all_run_flags(cmd: &usage_rs::Command<'_>) -> (Vec<String>, Vec<String>) {
     // Get global flags from Cli
     let (mut flags_with_values, mut boolean_flags) = get_global_flags(cmd);
 
     // Get run-specific flags from Run subcommand
-    if let Some(run_cmd) = cmd.get_subcommands().find(|s| s.get_name() == "run") {
+    if let Some(run_cmd) = cmd.subcommands.iter().find(|s| s.name == "run") {
         let (run_vals, run_bools) = get_global_flags(run_cmd);
         flags_with_values.extend(run_vals);
         boolean_flags.extend(run_bools);
@@ -442,24 +445,21 @@ fn get_all_run_flags(cmd: &clap::Command) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
-fn get_value_taking_short_flags(cmd: &clap::Command) -> Vec<(String, String)> {
-    cmd.get_arguments()
-        .filter(|arg| {
-            matches!(
-                arg.get_action(),
-                clap::ArgAction::Set | clap::ArgAction::Append
-            )
-        })
-        .filter_map(|arg| Some((arg.get_short()?, arg.get_long()?)))
+fn get_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(String, String)> {
+    cmd.flags
+        .iter()
+        .filter(|arg| arg.takes_value)
+        .filter_map(|arg| Some((*arg.shorts.first()? as char, *arg.longs.first()?)))
         .map(|(short, long)| (format!("-{short}"), format!("--{long}")))
         .collect()
 }
 
-fn get_all_run_value_taking_short_flags(cmd: &clap::Command) -> Vec<(String, String)> {
+fn get_all_run_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(String, String)> {
     let mut flags = get_value_taking_short_flags(cmd);
     if let Some(run_cmd) = cmd
-        .get_subcommands()
-        .find(|subcommand| subcommand.get_name() == "run")
+        .subcommands
+        .iter()
+        .find(|subcommand| subcommand.name == "run")
     {
         flags.extend(get_value_taking_short_flags(run_cmd));
     }
@@ -513,7 +513,10 @@ pub(crate) const GLOBAL_FLAGS_WITH_VALUES: &[&str] = &[
 /// Takes a `&Command` so callers that have already built one (argument parsing)
 /// use its real flag set. Callers without one want
 /// [`first_non_global_arg_idx_cached`].
-pub(crate) fn first_non_global_arg_idx(cmd: &clap::Command, args: &[String]) -> Option<usize> {
+pub(crate) fn first_non_global_arg_idx(
+    cmd: &usage_rs::Command<'_>,
+    args: &[String],
+) -> Option<usize> {
     let flags = get_global_flags(cmd).0;
     first_non_global_arg_idx_with(|f| flags.iter().any(|x| x == f), args)
 }
@@ -569,13 +572,14 @@ fn first_non_global_arg_idx_with(
     None
 }
 
-fn is_known_subcommand(cmd: &clap::Command, arg: &str) -> bool {
-    cmd.get_subcommands()
-        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+fn is_known_subcommand(cmd: &usage_rs::Command<'_>, arg: &str) -> bool {
+    cmd.subcommands
+        .iter()
+        .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
         .any(|name| name == arg)
 }
 
-fn uses_deprecated_backends_alias(cmd: &clap::Command, args: &[String]) -> bool {
+fn uses_deprecated_backends_alias(cmd: &usage_rs::Command<'_>, args: &[String]) -> bool {
     matches!(
         first_non_global_arg_idx(cmd, args).and_then(|idx| args.get(idx)),
         Some(arg) if arg == "b"
@@ -596,7 +600,7 @@ fn warn_deprecated_backends_alias(uses_alias: bool) {
 /// Escape flags after task names so clap doesn't parse them as mise flags.
 /// This preserves ::: separators for multi-task handling while preventing
 /// clap from consuming flags like --jobs that appear after task names.
-fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
+fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
     // Find the mise `run` subcommand position. Do not scan past `--`; values
     // after that boundary belong to another command or a task.
     let first_idx = first_non_global_arg_idx(cmd, args);
@@ -717,7 +721,7 @@ pub(crate) fn unescape_task_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<String> {
+fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
         return args.to_vec();
@@ -786,21 +790,17 @@ impl Cli {
                 crate::toolset::install_state::init().await?
             });
         }
-        // Pre-process args to handle naked runs before clap parsing
+        // Pre-process args to handle naked runs before parsing
         let cmd = measure!("build_cli_command", { Cli::command() });
-        let processed_args = preprocess_args_for_naked_run(&cmd, args);
+        let processed_args = preprocess_args_for_naked_run(cmd, args);
         // Escape flags after task names so they go to tasks, not mise
-        let processed_args = escape_task_args(&cmd, &processed_args);
-        let deprecated_backends_alias = uses_deprecated_backends_alias(&cmd, args);
+        let processed_args = escape_task_args(cmd, &processed_args);
+        let deprecated_backends_alias = uses_deprecated_backends_alias(cmd, args);
 
-        // Reuse the already-built clap command rather than letting
-        // `Cli::parse_from` construct the whole tree a second time.
-        let cli = measure!("get_matches_from", {
-            let matches = cmd
-                .try_get_matches_from(processed_args.iter())
-                .map_err(clap_error)?;
-            <Cli as clap::FromArgMatches>::from_arg_matches(&matches)
-                .map_err(|err| clap_error(err.format(&mut Cli::command())))
+        let parsed_argv: Vec<&std::ffi::OsStr> =
+            processed_args.iter().map(std::ffi::OsStr::new).collect();
+        let cli = measure!("parse_args", {
+            Cli::parse_from_argv(&parsed_argv).map_err(|err| usage_error(&parsed_argv[1..], err))
         })?;
         config_file::set_implicitly_trust_active_config(
             cli.command
@@ -858,7 +858,9 @@ impl Cli {
             if let Some(task) = self.task {
                 // Handle special case: "help", "-h", or "--help" as task should print help
                 if task == "help" || task == "-h" || task == "--help" {
-                    Cli::command().print_help()?;
+                    if let Some(page) = usage_rs::help::render(Cli::spec(), Cli::command(), false) {
+                        print!("{page}");
+                    }
                     return Err(request_exit(0));
                 }
 
@@ -938,7 +940,9 @@ impl Cli {
                     return Err(request_exit(0));
                 }
             }
-            Cli::command().print_help()?;
+            if let Some(page) = usage_rs::help::render(Cli::spec(), Cli::command(), false) {
+                print!("{page}");
+            }
             Err(request_exit(1))
         }
     }
@@ -954,19 +958,45 @@ async fn run_with_exit_signal<T>(
     }
 }
 
-fn clap_error(err: clap::Error) -> Report {
-    let code = err.exit_code();
-    match err.print() {
-        Ok(()) => request_exit(code),
-        Err(err) => err.into(),
+fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Report {
+    let spec = Cli::spec();
+    match err {
+        usage_rs::Error::Help { cmd, long } => {
+            if let Some(page) = usage_rs::help::render(spec, cmd, long) {
+                print!("{page}");
+            }
+            request_exit(0)
+        }
+        usage_rs::Error::HelpAll { cmd } => {
+            if let Some(page) = usage_rs::help::render_all(spec, cmd) {
+                print!("{page}");
+            }
+            request_exit(0)
+        }
+        usage_rs::Error::MissingArgsHelp { cmd } => {
+            if let Some(page) = usage_rs::help::render(spec, cmd, false) {
+                eprint!("{page}");
+            }
+            request_exit(2)
+        }
+        usage_rs::Error::Version { long } => {
+            let version = if long {
+                spec.long_version.or(spec.version)
+            } else {
+                spec.version
+            }
+            .unwrap_or_default();
+            println!("{} {version}", spec.name);
+            request_exit(0)
+        }
+        err => {
+            eprint!("{}", usage_rs::render_failure(spec, argv, &err));
+            request_exit(2)
+        }
     }
 }
 
 const LONG_ABOUT: &str = "mise prepares your development environment before each command runs. https://github.com/jdx/mise";
-
-const LONG_TASK_ABOUT: &str = r#"Task to run.
-
-Shorthand for `mise tasks run <TASK>`."#;
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
@@ -1035,9 +1065,12 @@ fn validate_cd_path(cd: &Option<PathBuf>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use clap::Parser;
-
     use super::*;
+
+    fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
+        let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        Cli::parse_from_argv(&argv)
+    }
 
     #[test]
     fn test_commands_that_implicitly_trust_active_config() {
@@ -1048,7 +1081,7 @@ mod tests {
             vec!["mise", "watch", "task"],
         ];
         for args in trusting {
-            let cli = Cli::try_parse_from(&args).unwrap();
+            let cli = parse_cli(&args).unwrap();
             assert!(
                 cli.command
                     .as_ref()
@@ -1063,7 +1096,7 @@ mod tests {
             vec!["mise", "ls"],
         ];
         for args in non_trusting {
-            let cli = Cli::try_parse_from(&args).unwrap();
+            let cli = parse_cli(&args).unwrap();
             assert!(
                 !cli.command
                     .as_ref()
@@ -1101,11 +1134,11 @@ mod tests {
     }
 
     /// Guards [`GLOBAL_FLAGS_WITH_VALUES`]. It is hardcoded so that startup does
-    /// not have to build the clap tree; this keeps it honest. If you added a
+    /// not have to walk the generated tables; this keeps it honest. If you added a
     /// value-taking flag to `Cli`, add it to that list too.
     #[test]
-    fn test_global_flags_with_values_matches_clap() {
-        let derived = get_global_flags(&Cli::command()).0;
+    fn test_global_flags_with_values_matches_generated_tables() {
+        let derived = get_global_flags(Cli::command()).0;
         let mut derived_sorted = derived.clone();
         derived_sorted.sort();
         let mut hardcoded: Vec<String> = GLOBAL_FLAGS_WITH_VALUES
@@ -1115,7 +1148,7 @@ mod tests {
         hardcoded.sort();
         assert_eq!(
             hardcoded, derived_sorted,
-            "GLOBAL_FLAGS_WITH_VALUES is stale; clap reports {derived:?}"
+            "GLOBAL_FLAGS_WITH_VALUES is stale; usage-rs reports {derived:?}"
         );
     }
     #[tokio::test]
@@ -1144,32 +1177,14 @@ mod tests {
     }
 
     #[test]
-    fn test_subcommands_are_sorted() {
-        let cmd = Cli::command();
-        // Check all subcommands except watch (which has many watchexec passthrough args)
-        for subcmd in cmd.get_subcommands() {
-            if subcmd.get_name() != "watch" {
-                clap_sort::assert_sorted(subcmd);
-            }
-        }
-        let cmd = expand_deferred_subcommands(Cli::command());
-        let bootstrap = cmd
-            .get_subcommands()
-            .find(|subcommand| subcommand.get_name() == "bootstrap")
-            .unwrap();
-        for subcommand in bootstrap.get_subcommands() {
-            clap_sort::assert_sorted(subcommand);
-        }
-    }
-
-    #[test]
-    fn test_bootstrap_command_tree_is_deferred_until_parsing() {
+    fn test_bootstrap_command_tree_is_static_and_parses_aliases() {
         let cmd = Cli::command();
         let bootstrap = cmd
-            .get_subcommands()
-            .find(|subcommand| subcommand.get_name() == "bootstrap")
+            .subcommands
+            .iter()
+            .find(|subcommand| subcommand.name == "bootstrap")
             .unwrap();
-        assert_eq!(bootstrap.get_subcommands().count(), 0);
+        assert!(!bootstrap.subcommands.is_empty());
 
         let alias_args = vec![
             "mise".to_string(),
@@ -1177,20 +1192,16 @@ mod tests {
             "status".to_string(),
             "--json".to_string(),
         ];
-        assert_eq!(preprocess_args_for_naked_run(&cmd, &alias_args), alias_args);
-        assert!(cmd.clone().try_get_matches_from(alias_args).is_ok());
-
-        assert!(
-            cmd.try_get_matches_from(["mise", "bootstrap", "status", "--json"])
-                .is_ok()
-        );
+        assert_eq!(preprocess_args_for_naked_run(cmd, &alias_args), alias_args);
+        assert!(parse_cli(&["mise", "bs", "status", "--json"]).is_ok());
+        assert!(parse_cli(&["mise", "bootstrap", "status", "--json"]).is_ok());
     }
 
     /// Commands that name a config file to write to accept both spellings, so it
     /// does not matter which one you remember. See
     /// <https://github.com/jdx/mise/discussions/4881>.
     ///
-    /// Asserted through clap rather than end-to-end because several of these
+    /// Asserted through the generated tables rather than end-to-end because several of these
     /// commands install or apply something when actually run.
     #[test]
     fn test_config_target_options_accept_both_names() {
@@ -1219,26 +1230,27 @@ mod tests {
                 cfg!(not(windows)),
             ),
         ];
-        let root = expand_deferred_subcommands(Cli::command());
+        let root = Cli::command();
 
         for (path, arg_name, alias, available) in cases {
             if !available {
                 continue;
             }
-            let command = path.iter().fold(&root, |command, name| {
+            let command = path.iter().fold(root, |command, name| {
                 command
-                    .get_subcommands()
-                    .find(|subcommand| subcommand.get_name() == *name)
+                    .subcommands
+                    .iter()
+                    .find(|subcommand| subcommand.name == *name)
                     .unwrap_or_else(|| panic!("missing command path {}", path.join(" ")))
             });
             let arg = command
-                .get_arguments()
-                .find(|arg| arg.get_id() == *arg_name)
+                .flags
+                .iter()
+                .find(|arg| arg.name == *arg_name)
                 .unwrap_or_else(|| panic!("missing --{arg_name} on {}", path.join(" ")));
 
             assert!(
-                arg.get_visible_aliases()
-                    .is_some_and(|aliases| aliases.contains(alias)),
+                arg.longs.contains(alias),
                 "missing visible --{alias} alias for --{arg_name} on {}",
                 path.join(" ")
             );
@@ -1255,40 +1267,38 @@ mod tests {
     /// even if the case table above is left alone.
     #[test]
     fn config_target_aliases_do_not_shadow_another_short_flag() {
-        fn check(command: &clap::Command, path: &mut Vec<String>) {
-            for arg in command.get_arguments() {
-                let Some(aliases) = arg.get_visible_aliases() else {
-                    continue;
-                };
-                for alias in aliases {
+        fn check(command: &usage_rs::Command<'_>, path: &mut Vec<String>) {
+            for arg in command.flags {
+                for alias in arg.longs.iter().skip(1) {
                     // Only this vocabulary — an unrelated alias sharing a letter with some
                     // other flag is ordinary and not what this is about.
-                    if alias != "file" && alias != "path" {
+                    if *alias != "file" && *alias != "path" {
                         continue;
                     }
                     let short = alias.chars().next().unwrap();
-                    if let Some(owner) = command.get_arguments().find(|other| {
-                        other.get_id() != arg.get_id() && other.get_short() == Some(short)
-                    }) {
+                    if let Some(owner) = command
+                        .flags
+                        .iter()
+                        .find(|other| other.key != arg.key && other.shorts.contains(&(short as u8)))
+                    {
                         panic!(
                             "mise {}: --{alias} aliases --{}, but -{short} is --{} — \
                              drop the alias or the collision",
                             path.join(" "),
-                            arg.get_id().as_str(),
-                            owner.get_id().as_str()
+                            arg.name,
+                            owner.name
                         );
                     }
                 }
             }
-            for subcommand in command.get_subcommands() {
-                path.push(subcommand.get_name().to_string());
+            for subcommand in command.subcommands {
+                path.push(subcommand.name.to_string());
                 check(subcommand, path);
                 path.pop();
             }
         }
 
-        let root = expand_deferred_subcommands(Cli::command());
-        check(&root, &mut Vec::new());
+        check(Cli::command(), &mut Vec::new());
     }
 
     #[test]
@@ -1304,7 +1314,7 @@ mod tests {
             "--help".to_string(),
         ];
 
-        let escaped = escape_task_args(&cmd, &args);
+        let escaped = escape_task_args(cmd, &args);
         let separator_idx = escaped.iter().position(|arg| arg == "--").unwrap();
         assert_eq!(escaped[..=separator_idx], args[..=separator_idx]);
         assert!(escaped[separator_idx + 1].starts_with(TASK_ARG_ESCAPE_PREFIX));
@@ -1328,7 +1338,7 @@ mod tests {
         ];
 
         assert_eq!(
-            escape_task_args(&cmd, &args),
+            escape_task_args(cmd, &args),
             [
                 "mise",
                 "run",
@@ -1345,14 +1355,14 @@ mod tests {
     fn test_escape_task_args_preserves_equals_attached_option_values() {
         let cmd = Cli::command();
         let args = ["mise", "run", "-C=/tmp", "-o=prefix", "atask"].map(str::to_string);
-        let processed = escape_task_args(&cmd, &args);
+        let processed = escape_task_args(cmd, &args);
 
         assert_eq!(
             processed,
             ["mise", "run", "--cd=/tmp", "--output=prefix", "atask"].map(str::to_string)
         );
-        let matches = cmd.try_get_matches_from(processed).unwrap();
-        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        let refs: Vec<&str> = processed.iter().map(String::as_str).collect();
+        let cli = parse_cli(&refs).unwrap();
         assert_eq!(cli.cd, Some(PathBuf::from("/tmp")));
         let Some(Commands::Run(run)) = cli.command else {
             panic!("expected run command");
@@ -1364,15 +1374,15 @@ mod tests {
     fn test_escape_task_args_keeps_hyphen_prefixed_attached_value_bound_to_option() {
         let cmd = Cli::command();
         let args = ["mise", "run", "-C-dir", "atask"].map(str::to_string);
-        let processed = escape_task_args(&cmd, &args);
+        let processed = escape_task_args(cmd, &args);
 
         assert_eq!(
             processed,
             ["mise", "run", "--cd=-dir", "atask"].map(str::to_string)
         );
 
-        let matches = cmd.try_get_matches_from(processed).unwrap();
-        let cli = <Cli as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+        let refs: Vec<&str> = processed.iter().map(String::as_str).collect();
+        let cli = parse_cli(&refs).unwrap();
         assert_eq!(cli.cd, Some(PathBuf::from("-dir")));
         let Some(Commands::Run(run)) = cli.command else {
             panic!("expected run command");
@@ -1391,8 +1401,8 @@ mod tests {
             "--help".to_string(),
         ];
 
-        assert_eq!(preprocess_args_for_naked_run(&cmd, &args), args);
-        let escaped = escape_task_args(&cmd, &args);
+        assert_eq!(preprocess_args_for_naked_run(cmd, &args), args);
+        let escaped = escape_task_args(cmd, &args);
         let separator_idx = escaped.iter().position(|arg| arg == "--").unwrap();
         assert_eq!(escaped[..=separator_idx], args[..=separator_idx]);
         assert!(escaped[separator_idx + 1].starts_with(TASK_ARG_ESCAPE_PREFIX));
@@ -1413,7 +1423,7 @@ mod tests {
             "--flag".to_string(),
         ];
 
-        assert_eq!(escape_task_args(&cmd, &args), args);
+        assert_eq!(escape_task_args(cmd, &args), args);
     }
 
     #[test]
@@ -1421,7 +1431,7 @@ mod tests {
         let cmd = Cli::command();
         let args = vec!["mise".to_string(), "b".to_string()];
 
-        assert!(uses_deprecated_backends_alias(&cmd, &args));
+        assert!(uses_deprecated_backends_alias(cmd, &args));
     }
 
     #[test]
@@ -1434,7 +1444,7 @@ mod tests {
             "b".to_string(),
         ];
 
-        assert!(uses_deprecated_backends_alias(&cmd, &args));
+        assert!(uses_deprecated_backends_alias(cmd, &args));
     }
 
     #[test]
@@ -1447,7 +1457,7 @@ mod tests {
             "backends".to_string(),
         ];
 
-        assert!(!uses_deprecated_backends_alias(&cmd, &args));
+        assert!(!uses_deprecated_backends_alias(cmd, &args));
     }
 
     #[test]
@@ -1465,7 +1475,7 @@ mod tests {
             args(&["mise", "-C=/tmp", "lock"]),
             args(&["mise", "-j8", "lock"]),
         ] {
-            let idx = first_non_global_arg_idx(&cmd, &args).unwrap();
+            let idx = first_non_global_arg_idx(cmd, &args).unwrap();
             assert_eq!(args[idx], "lock");
         }
     }
@@ -1475,7 +1485,7 @@ mod tests {
         let cmd = Cli::command();
         let args = vec!["mise".to_string(), "run".to_string(), "b".to_string()];
 
-        assert!(!uses_deprecated_backends_alias(&cmd, &args));
+        assert!(!uses_deprecated_backends_alias(cmd, &args));
     }
 
     #[test]
@@ -1491,6 +1501,6 @@ mod tests {
             "--help".to_string(),
         ];
 
-        assert_eq!(escape_task_args(&cmd, &args), args);
+        assert_eq!(escape_task_args(cmd, &args), args);
     }
 }

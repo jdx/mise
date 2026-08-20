@@ -1,4 +1,3 @@
-use clap::ValueEnum;
 use demand::DemandOption;
 use demand::Select;
 use eyre::Result;
@@ -15,8 +14,8 @@ use crate::{
     ui::table::MiseTable,
 };
 
-#[derive(Debug, Clone, ValueEnum)]
-pub(super) enum MatchType {
+#[derive(Debug, Clone, usage_rs::ValueEnum)]
+pub enum MatchType {
     Equal,
     Contains,
     Fuzzy,
@@ -28,22 +27,22 @@ pub(super) enum MatchType {
 ///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
-#[derive(Debug, clap::Args)]
-#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub(crate) struct Search {
+#[derive(Debug, usage_rs::Args)]
+#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+pub struct Search {
     /// The tool to search for
     name: Option<String>,
 
     /// Show interactive search
-    #[clap(long, short, conflicts_with_all = &["match_type", "no_header"])]
+    #[arg(long, short, conflicts_with_all = &["match_type", "no_header"])]
     interactive: bool,
 
     /// Match type: equal, contains, or fuzzy
-    #[clap(long, short, value_enum, default_value = "fuzzy")]
+    #[arg(long, short, value_enum, default_value = "fuzzy")]
     match_type: MatchType,
 
     /// Don't display headers
-    #[clap(long, alias = "no-headers")]
+    #[arg(long, alias = "no-headers")]
     no_header: bool,
 }
 

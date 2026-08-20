@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::args::ToolArg;
-use crate::cli::{Cli, unescape_task_args};
+use crate::cli::{render_subcommand_help, unescape_task_args};
 use crate::config::{Config, Settings};
 use crate::deps::{DepsEngine, DepsOptions, DepsStepResult};
 use crate::duration;
@@ -22,7 +22,6 @@ use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
 use bytesize::ByteSize;
-use clap::{CommandFactory, ValueHint};
 use eyre::{Context, Result, bail, eyre};
 use futures_util::FutureExt;
 use itertools::Itertools;
@@ -55,35 +54,35 @@ use tokio::sync::Mutex;
 ///     npm run build
 ///     EOF
 ///     $ mise run build
-#[derive(clap::Args)]
-#[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Run {
+#[derive(usage_rs::Args)]
+#[command(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
+pub struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
     /// Defaults to `default` when omitted
-    #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
+    #[arg(double_dash = "automatic", verbatim_doc_comment)]
     pub task: Option<String>,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
-    #[clap(allow_hyphen_values = true)]
+    #[arg()]
     pub args: Vec<String>,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
-    #[clap(allow_hyphen_values = true, hide = true, last = true)]
+    #[arg(hide = true, last = true)]
     pub args_last: Vec<String>,
 
     /// Run matching tasks only for projects affected by Git changes
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub affected: bool,
 
     /// Git base revision for --affected
     /// Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
-    #[clap(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    #[arg(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
     pub affected_base: Option<String>,
 
     /// Explain why projects and tasks were selected by --affected
-    #[clap(
+    #[arg(
         long,
         requires = "affected",
         conflicts_with = "affected_json",
@@ -93,11 +92,11 @@ pub(crate) struct Run {
 
     /// Git head revision for --affected
     /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
-    #[clap(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    #[arg(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
     pub affected_head: Option<String>,
 
     /// Output affected projects and tasks as JSON without running tasks
-    #[clap(
+    #[arg(
         long,
         requires = "affected",
         conflicts_with = "affected_explain",
@@ -106,30 +105,30 @@ pub(crate) struct Run {
     pub affected_json: bool,
 
     /// Open the interactive selector with all tasks from the entire monorepo
-    #[clap(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
+    #[arg(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
     pub all: bool,
 
     /// Continue running tasks even if one fails
-    #[clap(long, short = 'c', verbatim_doc_comment)]
+    #[arg(long, short = 'c', verbatim_doc_comment)]
     pub continue_on_error: bool,
 
     /// Change to this directory before executing the command
-    #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
+    #[arg(short = 'C', long, value_hint = ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
 
     /// Force the tasks to run even if outputs are up to date
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     pub force: bool,
 
     /// Number of tasks to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
     /// Don't actually run the task(s), just print them in order of execution
-    #[clap(long, short = 'n', verbatim_doc_comment)]
+    #[arg(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
     /// Change how tasks information is output when running tasks
@@ -141,17 +140,17 @@ pub(crate) struct Run {
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
     /// - `quiet` - Don't show extra output
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
-    #[clap(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
+    #[arg(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
     /// Don't show extra output
-    #[clap(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
+    #[arg(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
     pub quiet: bool,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
     /// Redactions are not applied with this option
     /// Configure with `raw` config or `MISE_RAW` env var
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
     /// Shell to use to run toml tasks
@@ -159,85 +158,85 @@ pub(crate) struct Run {
     /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
     /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
     /// Or it can be overridden with the `shell` property on a task.
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     pub shell: Option<String>,
 
     /// Don't show any output except for errors
-    #[clap(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    #[arg(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
     pub silent: bool,
 
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[clap(short, long, value_name = "TOOL@VERSION")]
+    #[arg(short, long, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub is_linear: bool,
 
     /// Allow specific env var through (implies --deny-env for everything else)
     /// Supports wildcards, e.g. --allow-env='MYAPP_*'
-    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    #[arg(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
-    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    #[arg(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
     /// Allow reads from specific path (implies --deny-read for everything else)
-    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    #[arg(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
     /// Allow writes to specific path (implies --deny-write for everything else)
-    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    #[arg(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
     /// Block reads, writes, network, and env vars
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
     /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
     /// Block all network access
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub deny_net: bool,
 
     /// Block filesystem reads (system libs and tool dirs still accessible)
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
     /// Block all filesystem writes
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
     /// Bypass the environment cache and recompute the environment
-    #[clap(long)]
+    #[arg(long)]
     pub fresh_env: bool,
 
     /// Do not use cache on remote tasks
-    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    #[arg(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
 
     /// Skip automatic dependency preparation
-    #[clap(long)]
+    #[arg(long)]
     pub no_deps: bool,
 
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[clap(long, alias = "no-timing", verbatim_doc_comment)]
+    #[arg(long, alias = "no-timing", verbatim_doc_comment)]
     pub no_timings: bool,
 
     /// Run only the specified tasks skipping all dependencies
-    #[clap(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
+    #[arg(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
     pub skip_deps: bool,
 
     /// Skip installing tools before running tasks
     ///
     /// Can also be set persistently with the `task.run_auto_install` setting
     /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub skip_tools: bool,
 
     /// Set task output cache access for this run
@@ -247,7 +246,7 @@ pub(crate) struct Run {
     /// - `write-only` - Write new results without reading cached results
     /// - `off` - Disable task output caching
     /// - `local-only` - Read and write only the local cache; currently equivalent to `read-write`
-    #[clap(
+    #[arg(
         long,
         value_enum,
         default_value = "read-write",
@@ -257,11 +256,11 @@ pub(crate) struct Run {
     pub task_cache: TaskCacheMode,
 
     /// Explain the inputs that produced each task's output cache key
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub task_cache_explain: bool,
 
     /// Output cache-key input details as JSON Lines without running tasks
-    #[clap(
+    #[arg(
         long,
         requires = "dry_run",
         conflicts_with = "task_cache_explain",
@@ -270,33 +269,33 @@ pub(crate) struct Run {
     pub task_cache_explain_json: bool,
 
     /// Report task output cache hits, restored bytes, and time saved
-    #[clap(long, conflicts_with = "dry_run", verbatim_doc_comment)]
+    #[arg(long, conflicts_with = "dry_run", verbatim_doc_comment)]
     pub task_cache_stats: bool,
 
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub timeout: Option<String>,
 
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[clap(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    #[arg(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub tmpdir: PathBuf,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub output_handler: Option<OutputHandler>,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub context_builder: crate::task::task_context_builder::TaskContextBuilder,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
 
-    #[clap(skip)]
+    #[arg(skip)]
     pub cache_session: Option<crate::cache::session::CacheSession>,
 }
 
@@ -560,11 +559,11 @@ impl Run {
     pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
-            self.get_clap_command().print_help()?;
+            print!("{}", render_subcommand_help("run", false));
             return Ok(());
         }
         if self.task.as_deref() == Some("--help") {
-            self.get_clap_command().print_long_help()?;
+            print!("{}", render_subcommand_help("run", true));
             return Ok(());
         }
 
@@ -622,7 +621,7 @@ impl Run {
                 }
             } else {
                 // No task found, show run command help
-                self.get_clap_command().print_long_help()?;
+                print!("{}", render_subcommand_help("run", true));
                 return Ok(());
             }
         }
@@ -839,14 +838,6 @@ impl Run {
 
         time!("run done");
         Ok(())
-    }
-
-    fn get_clap_command(&self) -> clap::Command {
-        Cli::command()
-            .get_subcommands()
-            .find(|s| s.get_name() == "run")
-            .unwrap()
-            .clone()
     }
 
     async fn parallelize_tasks(

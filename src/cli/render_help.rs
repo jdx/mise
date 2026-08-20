@@ -1,7 +1,6 @@
 use crate::cli::Cli;
 use crate::file;
 use crate::registry;
-use clap::{Command, CommandFactory};
 use eyre::{ContextCompat, Result, ensure};
 use indoc::formatdoc;
 use itertools::Itertools;
@@ -10,9 +9,9 @@ const IDIOMATIC_FILES_START: &str = "<!-- mise:idiomatic-version-files:start -->
 const IDIOMATIC_FILES_END: &str = "<!-- mise:idiomatic-version-files:end -->";
 
 /// internal command to generate markdown from help
-#[derive(Debug, clap::Args)]
-#[clap(hide = true)]
-pub(crate) struct RenderHelp {}
+#[derive(Debug, usage_rs::Args)]
+#[command(hide = true)]
+pub struct RenderHelp {}
 
 impl RenderHelp {
     pub(crate) fn run(self) -> Result<()> {
@@ -109,15 +108,13 @@ fn render_command_ts() -> String {
         }};
         "#});
     doc.push_str("export const commands: { [key: string]: Command } = {\n");
-    let cli = Cli::command()
-        .term_width(80)
-        .max_term_width(80)
-        .disable_help_subcommand(true)
-        .disable_help_flag(true);
-    let mut cli = super::expand_deferred_subcommands(cli);
-    for command in cli
-        .get_subcommands_mut()
-        .sorted_by_cached_key(|c| c.get_name().to_string())
+    let spec = Cli::spec();
+    for command in spec
+        .root
+        .subcommands
+        .iter()
+        .copied()
+        .sorted_by_cached_key(|c| c.cmd.name)
     {
         doc.push_str(&render_command(command, 2));
     }
@@ -125,18 +122,19 @@ fn render_command_ts() -> String {
     doc
 }
 
-fn render_command(command: &mut Command, indent: usize) -> String {
+fn render_command(command: &usage_rs::spec::CommandMeta<'_>, indent: usize) -> String {
     let pad = " ".repeat(indent);
     let mut output = format!(
         "{pad}\"{}\": {{\n{pad}  hide: {},\n",
-        command.get_name(),
-        command.is_hide_set()
+        command.cmd.name, command.hide
     );
-    if command.has_subcommands() {
+    if !command.subcommands.is_empty() {
         output.push_str(&format!("{pad}  subcommands: {{\n"));
         for subcommand in command
-            .get_subcommands_mut()
-            .sorted_by_cached_key(|c| c.get_name().to_string())
+            .subcommands
+            .iter()
+            .copied()
+            .sorted_by_cached_key(|c| c.cmd.name)
         {
             output.push_str(&render_command(subcommand, indent + 4));
         }

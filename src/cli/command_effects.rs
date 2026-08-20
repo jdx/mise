@@ -333,17 +333,15 @@ fn annotate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
     use std::collections::HashSet;
 
     /// Every command in the tree, hidden ones included: a hidden command is
     /// still runnable, and `bootstrap launchd`/`systemd`/`macos-defaults` are
     /// hidden compatibility spellings of commands that change system state.
     fn all_commands() -> Vec<String> {
-        let command = crate::cli::expand_deferred_subcommands(
-            crate::cli::Cli::command().disable_help_subcommand(true),
-        );
-        let spec: usage::Spec = command.into();
+        let spec: usage::Spec = crate::cli::Cli::to_kdl()
+            .parse()
+            .expect("generated mise usage spec");
         let mut out = vec![];
         collect(&spec.cmd, &mut vec![], &mut out);
         out
@@ -363,10 +361,9 @@ mod tests {
     /// actually transfers them.
     #[test]
     fn apply_annotates_the_spec() {
-        let command = crate::cli::expand_deferred_subcommands(
-            crate::cli::Cli::command().disable_help_subcommand(true),
-        );
-        let mut spec: usage::Spec = command.into();
+        let mut spec: usage::Spec = crate::cli::Cli::to_kdl()
+            .parse()
+            .expect("generated mise usage spec");
         apply(&mut spec);
 
         let cmd = |name: &str| {

@@ -7,11 +7,11 @@ use crate::config::config_file::ConfigFile;
 /// Clears an alias for a tool/backend
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
-#[derive(Debug, clap::Args)]
-#[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub(super) struct ToolAliasUnset {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+pub struct ToolAliasUnset {
     /// The tool/backend to remove the alias from
-    #[clap(value_name = "TOOL")]
+    #[arg(value_name = "TOOL")]
     pub tool: BackendArg,
     /// The alias to remove
     pub alias: Option<String>,

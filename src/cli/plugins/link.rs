@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 
-use clap::ValueHint;
 use color_eyre::eyre::{Result, eyre};
 use console::style;
 use path_absolutize::Absolutize;
@@ -12,21 +11,21 @@ use crate::{dirs, file};
 /// Symlinks a plugin into mise
 ///
 /// This is used for developing a plugin.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct PluginsLink {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct PluginsLink {
     /// The name of the plugin
     /// e.g.: cmake, poetry
-    #[clap(verbatim_doc_comment)]
+    #[arg(verbatim_doc_comment)]
     name: String,
 
     /// The local path to the plugin
     /// e.g.: ./vfox-cmake
-    #[clap(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
+    #[arg(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     dir: Option<PathBuf>,
 
     /// Overwrite existing plugin
-    #[clap(long, short = 'f')]
+    #[arg(long, short = 'f')]
     force: bool,
 }
 

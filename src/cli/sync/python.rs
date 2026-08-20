@@ -12,15 +12,15 @@ use super::reconcile;
 /// For example, use this to import all pyenv installs into mise
 ///
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct SyncPython {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct SyncPython {
     /// Get tool versions from pyenv
-    #[clap(long)]
+    #[arg(long)]
     pyenv: bool,
 
     /// Sync tool versions with uv (2-way sync)
-    #[clap(long)]
+    #[arg(long)]
     uv: bool,
 }
 

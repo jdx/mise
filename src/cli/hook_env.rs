@@ -18,35 +18,35 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-#[clap(rename_all = "lowercase")]
-pub(crate) enum HookReason {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+#[value(rename_all = "lowercase")]
+pub enum HookReason {
     Precmd,
     Chpwd,
 }
 
 /// [internal] called by activate hook to update env vars directory change
-#[derive(Debug, clap::Args)]
-#[clap(hide = true)]
-pub(crate) struct HookEnv {
+#[derive(Debug, usage_rs::Args)]
+#[command(hide = true)]
+pub struct HookEnv {
     /// Skip early exit check
-    #[clap(long, short)]
+    #[arg(long, short)]
     force: bool,
 
     /// Hide warnings such as when a tool is not installed
-    #[clap(long, short)]
+    #[arg(long, short)]
     quiet: bool,
 
     /// Shell type to generate script for
-    #[clap(long, short)]
+    #[arg(long, short)]
     shell: Option<ShellType>,
 
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true, value_enum)]
     reason: Option<HookReason>,
 
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true)]
     status: bool,
 }
 

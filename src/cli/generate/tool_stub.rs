@@ -15,7 +15,6 @@ use crate::ui::info;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
 use bytesize::ByteSize;
-use clap::ValueHint;
 use color_eyre::eyre::bail;
 use indexmap::IndexMap;
 use sha2::{Digest, Sha256};
@@ -35,17 +34,17 @@ use toml_edit::DocumentMut;
 /// When generating stubs with platform-specific URLs, the command will append new
 /// platforms to existing stub files rather than overwriting them. This allows you
 /// to incrementally build cross-platform tool stubs.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct ToolStub {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct ToolStub {
     /// Output file path for the tool stub
-    #[clap(value_hint = ValueHint::FilePath)]
+    #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
 
     /// Binary path within the extracted archive
     ///
     /// If not specified and the archive is downloaded, will auto-detect the most likely binary
-    #[clap(long, short)]
+    #[arg(long, short)]
     pub bin: Option<String>,
 
     /// Wrap stub in a bootstrap script that installs mise if not already present
@@ -54,14 +53,14 @@ pub(super) struct ToolStub {
     /// 1. Checks if mise is installed at the expected path
     /// 2. If not, downloads and installs mise using the embedded installer
     /// 3. Executes the tool stub using mise
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub bootstrap: bool,
 
     /// Specify mise version for the bootstrap script
     ///
     /// By default, uses the latest version from the install script.
     /// Use this to pin to a specific version (e.g., "2025.1.0").
-    #[clap(long, verbatim_doc_comment, requires = "bootstrap")]
+    #[arg(long, verbatim_doc_comment, requires = "bootstrap")]
     pub bootstrap_version: Option<String>,
 
     /// Checksum algorithm to use when downloading artifacts
@@ -69,7 +68,7 @@ pub(super) struct ToolStub {
     /// Accepts `blake3` or `sha256` and defaults to `blake3`.
     /// Cannot be used with `--lock` or `--skip-download` because those modes do not
     /// calculate checksums.
-    #[clap(
+    #[arg(
         long,
         value_enum,
         default_value = "blake3",
@@ -81,22 +80,22 @@ pub(super) struct ToolStub {
     ///
     /// This reads an existing stub file and fills in any missing checksum/size fields
     /// by downloading the files. URLs must already be present in the stub.
-    #[clap(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download", "lock"])]
+    #[arg(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download", "lock"])]
     pub fetch: bool,
 
     /// HTTP backend type to use
-    #[clap(long, default_value = "http")]
+    #[arg(long, default_value = "http")]
     pub http: String,
 
     /// Resolve and embed lockfile data (exact version + platform URLs/checksums)
     /// into an existing stub file for reproducible installs without runtime API calls
-    #[clap(long, conflicts_with_all = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"])]
+    #[arg(long, conflicts_with_all = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"])]
     pub lock: bool,
 
     /// Platform-specific binary paths in the format platform:path
     ///
     /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
-    #[clap(long)]
+    #[arg(long)]
     pub platform_bin: Vec<String>,
 
     /// Platform-specific URLs in the format platform:url or just url (auto-detect platform)
@@ -110,26 +109,26 @@ pub(super) struct ToolStub {
     /// Examples:
     /// --platform-url linux-x64:https://...
     /// --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
-    #[clap(long)]
+    #[arg(long)]
     pub platform_url: Vec<String>,
 
     /// Skip downloading for checksum and binary path detection (faster but less informative)
-    #[clap(long)]
+    #[arg(long)]
     pub skip_download: bool,
 
     /// URL for downloading the tool
     ///
     /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
-    #[clap(long, short)]
+    #[arg(long, short)]
     pub url: Option<String>,
 
     /// Version of the tool
-    #[clap(long, default_value = "latest")]
+    #[arg(long, default_value = "latest")]
     pub version: String,
 }
 
-#[derive(Debug, Default, Clone, Copy, clap::ValueEnum)]
-pub(super) enum ChecksumAlgorithm {
+#[derive(Debug, Default, Clone, Copy, usage_rs::ValueEnum)]
+pub enum ChecksumAlgorithm {
     #[default]
     Blake3,
     Sha256,

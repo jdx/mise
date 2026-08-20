@@ -2,15 +2,16 @@ use vfox::VfoxResult;
 
 mod list;
 
-#[derive(clap::Subcommand)]
+#[derive(usage_rs::Subcommands)]
 pub(crate) enum Commands {
     // Install(install::Install),
+    #[command(alias = "ls")]
     List(list::List),
 }
 
-#[derive(clap::Args)]
+#[derive(usage_rs::Args)]
 pub(crate) struct Plugins {
-    #[clap(subcommand)]
+    #[command(subcommand)]
     command: Commands,
 }
 

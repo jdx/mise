@@ -12,24 +12,24 @@ use crate::git::Git;
 /// Staged files are passed to the task as `STAGED`.
 ///
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
-pub(super) struct GitPreCommit {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
+pub struct GitPreCommit {
     /// The task to run when the pre-commit hook is triggered
-    #[clap(long, short, default_value = "pre-commit")]
+    #[arg(long, short, default_value = "pre-commit")]
     task: String,
     /// write to .git/hooks/pre-commit and make it executable
-    #[clap(long, short)]
+    #[arg(long, short)]
     write: bool,
     /// Which hook to generate (saves to .git/hooks/$hook)
-    #[clap(long, default_value = "pre-commit")]
+    #[arg(long, default_value = "pre-commit")]
     hook: String,
     /// mise flags to embed in the generated hook, given after `--`
     ///
     /// These are inserted between `mise` and `run`, so the hook carries the same context you
     /// would pass on the command line. Useful when the config is not at the repository root,
     /// since git runs hooks from the top level: `-- -C subdir` makes the hook find it.
-    #[clap(last = true, value_name = "MISE_ARG", verbatim_doc_comment)]
+    #[arg(last = true, value_name = "MISE_ARG", verbatim_doc_comment)]
     mise_args: Vec<String>,
 }
 
@@ -179,40 +179,30 @@ exec mise run pre-commit "$@"
     /// generated script silently unchanged. Parse a real command line to pin that down.
     #[test]
     fn passthrough_args_reach_the_command_through_the_parser() {
-        use clap::CommandFactory;
-
-        let matches = crate::cli::Cli::command()
-            .try_get_matches_from([
-                "mise",
-                "generate",
-                "git-pre-commit",
-                "--task",
-                "lint",
-                "--",
-                "-C",
-                "subdir",
-                "-E",
-                "ci",
-            ])
+        let argv = [
+            "mise",
+            "generate",
+            "git-pre-commit",
+            "--task",
+            "lint",
+            "--",
+            "-C",
+            "subdir",
+            "-E",
+            "ci",
+        ];
+        let argv: Vec<&std::ffi::OsStr> = argv.iter().map(std::ffi::OsStr::new).collect();
+        let cli = crate::cli::Cli::parse_from_argv(&argv)
             .expect("the documented invocation should parse");
-        let matches = matches
-            .subcommand_matches("generate")
-            .and_then(|m| m.subcommand_matches("git-pre-commit"))
-            .expect("git-pre-commit should be the resolved subcommand");
-
-        let mise_args: Vec<&str> = matches
-            .get_many::<String>("mise_args")
-            .expect("passthrough args should be captured")
-            .map(String::as_str)
-            .collect();
-        assert_eq!(mise_args, ["-C", "subdir", "-E", "ci"]);
-
-        // Same tokens, not consumed as the global flags they look like.
-        assert!(matches.get_one::<std::path::PathBuf>("cd").is_none());
-        assert!(matches.get_many::<String>("env").is_none());
-        assert_eq!(
-            matches.get_one::<String>("task").map(String::as_str),
-            Some("lint")
-        );
+        assert!(cli.cd.is_none());
+        assert!(cli.env.is_none());
+        let Some(crate::cli::Commands::Generate(generate)) = cli.command else {
+            panic!("generate should be the resolved subcommand");
+        };
+        let super::super::Commands::GitPreCommit(command) = generate.command else {
+            panic!("git-pre-commit should be the resolved subcommand");
+        };
+        assert_eq!(command.task, "lint");
+        assert_eq!(command.mise_args, ["-C", "subdir", "-E", "ci"]);
     }
 }

@@ -6,19 +6,19 @@ use eyre::Result;
 use serde::Serialize;
 
 /// [experimental] Inspect the workspace project graph
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksGraph {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TasksGraph {
     /// Output the project graph as JSON
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[arg(short = 'J', long, verbatim_doc_comment)]
     json: bool,
 
     /// Explain provider attribution for inferred projects and tasks
-    #[clap(long, conflicts_with = "json", verbatim_doc_comment)]
+    #[arg(long, conflicts_with = "json", verbatim_doc_comment)]
     explain: bool,
 
     /// Do not print table headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
+    #[arg(long, alias = "no-headers", verbatim_doc_comment)]
     no_header: bool,
 }
 

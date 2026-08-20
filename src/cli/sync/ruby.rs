@@ -12,18 +12,18 @@ use crate::{
 use super::reconcile;
 
 /// Symlinks all ruby tool versions from an external tool into mise
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct SyncRuby {
-    #[clap(flatten)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct SyncRuby {
+    #[arg(flatten)]
     _type: SyncRubyType,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 #[group(required = true, multiple = true)]
 pub(super) struct SyncRubyType {
     /// Get tool versions from Homebrew
-    #[clap(long)]
+    #[arg(long)]
     brew: bool,
 }
 

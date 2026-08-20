@@ -16,7 +16,6 @@ use crate::toolset::{
     Toolset, ensure_compatible_install_requests, tool_env_vars,
 };
 use crate::{config, env, exit, hooks};
-use clap::ValueHint;
 use eyre::Result;
 use itertools::Itertools;
 use jiff::Timestamp;
@@ -32,88 +31,83 @@ use std::path::PathBuf;
 /// Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
 ///
 /// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
-#[derive(Debug, Default, clap::Args)]
-#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Install {
+#[derive(Debug, Default, usage_rs::Args)]
+#[command(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
-    #[clap(value_name = "TOOL@VERSION")]
+    #[arg(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
     /// With no tools specified, reinstall all configured tools
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     force: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Show what would be installed without actually installing
-    #[clap(long, short = 'n', verbatim_doc_comment)]
+    #[arg(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
     /// Show installation output
     ///
     /// This argument will print backend output such as download, configuration, and compilation output.
-    #[clap(long, short, action = clap::ArgAction::Count)]
+    #[arg(long, short, action = usage_rs::ArgAction::Count)]
     verbose: u8,
 
     /// Like --dry-run but exits with code 1 if there are tools to install
     ///
     /// This is useful for scripts to check if tools need to be installed.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
     /// Also install tools required by tasks in the current scope
     ///
     /// This prepares task tools without running task commands or dependencies.
     /// Combine with --monorepo to include tasks from every configured root.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     include_task_tools: bool,
 
     /// Only install versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(long, alias = "before", verbatim_doc_comment)]
+    #[arg(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
     /// Install tools from every [monorepo].config_roots config root
     ///
     /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     /// [monorepo].config_roots in the monorepo root config.
-    #[clap(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    #[arg(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
     monorepo: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[clap(long, overrides_with = "jobs")]
+    #[arg(long, overrides_with = "jobs")]
     raw: bool,
 
     /// Install tool(s) to a shared directory
     ///
     /// Installs to the specified directory instead of the default install location.
     /// May require elevated permissions depending on the path.
-    #[clap(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
+    #[arg(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
     shared: Option<PathBuf>,
 
     /// Install tool(s) to the system-wide shared directory
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// May require elevated permissions (e.g. sudo).
-    ///
-    /// This shares the install location between users; it does not put binaries on
-    /// PATH for use without mise. Every user still needs mise to run these tools.
-    /// For binaries usable without mise, see `mise install-into` or
-    /// `[bootstrap.packages]`.
-    #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
+    #[arg(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
 
     /// Skip confirmation when installing missing plugin system dependencies.
     /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
-    #[clap(skip)]
+    #[arg(skip)]
     yes: bool,
 }
 

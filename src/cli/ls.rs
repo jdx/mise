@@ -25,54 +25,54 @@ use crate::ui::table::MiseTable;
 /// that are in a config file (active) but may or may not be installed.
 ///
 /// It's a useful command to get the current state of your tools.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Ls {
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Ls {
     /// Only show tool versions from [TOOL]
-    #[clap(conflicts_with = "tool_flag")]
+    #[arg(conflicts_with = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
 
     /// Only show tool versions currently specified in a mise.toml
-    #[clap(long, short)]
+    #[arg(long, short)]
     current: bool,
 
     /// Only show tool versions currently specified in the global mise.toml
-    #[clap(long, short, conflicts_with = "local")]
+    #[arg(long, short, conflicts_with = "local")]
     global: bool,
 
     /// Only show tool versions that are installed
     /// (Hides tools defined in mise.toml but not installed)
-    #[clap(long, short)]
+    #[arg(long, short)]
     installed: bool,
 
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Only show tool versions currently specified in the local mise.toml
-    #[clap(long, short, conflicts_with = "global")]
+    #[arg(long, short, conflicts_with = "global")]
     local: bool,
 
     /// Display missing tool versions
-    #[clap(long, short, conflicts_with = "installed")]
+    #[arg(long, short, conflicts_with = "installed")]
     missing: bool,
 
     /// Don't fetch information such as outdated versions
-    #[clap(long, short, hide = true)]
+    #[arg(long, short, hide = true)]
     offline: bool,
 
-    #[clap(long = "plugin", short = 'p', hide = true)]
+    #[arg(long = "plugin", short = 'p', hide = true)]
     tool_flag: Option<BackendArg>,
 
     /// Display all tracked config sources for tools
-    #[clap(long, conflicts_with_all = &["current", "global", "local", "prunable"])]
+    #[arg(long, conflicts_with_all = &["current", "global", "local", "prunable"])]
     all_sources: bool,
 
     /// List tools from every [monorepo].config_roots config root
     ///
     /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     /// [monorepo].config_roots in the monorepo root config.
-    #[clap(
+    #[arg(
         long,
         env = "MISE_MONOREPO",
         verbatim_doc_comment,
@@ -81,19 +81,19 @@ pub(crate) struct Ls {
     monorepo: bool,
 
     /// Don't display headers
-    #[clap(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
+    #[arg(long, alias = "no-headers", verbatim_doc_comment, conflicts_with_all = &["json"])]
     no_header: bool,
 
     /// Display whether a version is outdated
-    #[clap(long)]
+    #[arg(long)]
     outdated: bool,
 
     /// Display versions matching this prefix
-    #[clap(long, requires = "installed_tool")]
+    #[arg(long, requires = "installed_tool")]
     prefix: Option<String>,
 
     /// List only tools that can be pruned with `mise prune`
-    #[clap(long)]
+    #[arg(long)]
     prunable: bool,
 }
 

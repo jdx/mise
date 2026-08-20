@@ -28,30 +28,30 @@ use path_absolutize::Absolutize;
 /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 ///
 /// Will also prune the installed version if no other configurations are using it.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Unuse {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
+pub struct Unuse {
     /// Tool(s) to remove
-    #[clap(value_name = "INSTALLED_TOOL@VERSION", required = true)]
+    #[arg(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
     /// Create/modify an environment-specific config file like .mise.<env>.toml
-    #[clap(long, short, overrides_with_all = & ["global", "path"])]
+    #[arg(long, short, overrides_with_all = & ["global", "path"])]
     env: Option<String>,
 
     /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-    #[clap(short, long, overrides_with_all = & ["path", "env"])]
+    #[arg(short, long, overrides_with_all = & ["path", "env"])]
     global: bool,
 
     /// Specify a path to a config file or directory
     ///
     /// If a directory is specified, it will look for a config file in that directory following
     /// the rules above.
-    #[clap(short, long, visible_alias = "file", overrides_with_all = & ["global", "env"], value_hint = clap::ValueHint::FilePath)]
+    #[arg(short, long, visible_alias = "file", overrides_with_all = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Do not also prune the installed version
-    #[clap(long)]
+    #[arg(long)]
     no_prune: bool,
 }
 

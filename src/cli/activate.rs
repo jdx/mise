@@ -28,19 +28,19 @@ use itertools::Itertools;
 ///     echo 'eval "$(/path/to/mise activate zsh)"' >> ~/.zshrc
 ///
 /// Customize status output with `status` settings.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Activate {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Activate {
     /// Shell type to generate the script for
-    #[clap()]
+    #[arg()]
     shell_type: Option<ShellType>,
 
     /// Suppress non-error messages
-    #[clap(long, short)]
+    #[arg(long, short)]
     quiet: bool,
 
     /// Shell type to generate the script for
-    #[clap(long, short, hide = true)]
+    #[arg(long, short, hide = true)]
     shell: Option<ShellType>,
 
     /// Do not automatically call hook-env
@@ -49,7 +49,7 @@ pub(crate) struct Activate {
     /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
     /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
     /// information or just see the values that hook-env is outputting.
-    #[clap(long)]
+    #[arg(long)]
     no_hook_env: bool,
 
     /// Use shims instead of modifying PATH
@@ -59,11 +59,11 @@ pub(crate) struct Activate {
     ///
     /// `mise activate --shims` does not support all the features of `mise activate`.
     /// See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     shims: bool,
 
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true)]
     status: bool,
 }
 

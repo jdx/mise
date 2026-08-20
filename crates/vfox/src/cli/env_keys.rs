@@ -1,7 +1,7 @@
 use vfox::{Vfox, VfoxResult};
 
-#[derive(clap::Args)]
-pub(super) struct EnvKeys {
+#[derive(usage_rs::Args)]
+pub struct EnvKeys {
     pub sdk: String,
     pub version: String,
 }

@@ -9,19 +9,19 @@ use itertools::Itertools;
 use walkdir::WalkDir;
 
 /// Deletes all cache files in mise
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
-pub(super) struct CacheClear {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
+pub struct CacheClear {
     /// Tool(s) to clear cache for
     /// e.g.: node, python
     tool: Option<Vec<String>>,
 
     /// Mark all cache files as old
-    #[clap(long, hide = true)]
+    #[arg(long, hide = true)]
     outdate: bool,
 
     /// Clear output cache entries for a task name or pattern
-    #[clap(long, conflicts_with_all = ["tool", "outdate"])]
+    #[arg(long, conflicts_with_all = ["tool", "outdate"])]
     task: Option<String>,
 }
 

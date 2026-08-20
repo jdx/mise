@@ -97,7 +97,7 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-clap = { version = "4", features = ["env", "derive", "string"] }
+usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "468a8fa7", features = ["completions", "diagnostics", "validation"] }
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "8"
@@ -228,7 +228,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.10", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "5", features = ["clap", "docs"] }
+usage-lib = { version = "5", git = "https://github.com/jdx/usage", rev = "468a8fa7", features = ["docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
@@ -285,7 +285,6 @@ serde_yaml = "0.9"
 toml = "1"
 
 [dev-dependencies]
-clap-sort = "1"
 ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"

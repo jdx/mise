@@ -229,22 +229,22 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 /// Packagers can disable this command so that mise is updated through the
 /// package manager instead. See
 /// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
-#[derive(Debug, Default, clap::Args)]
-#[clap(verbatim_doc_comment)]
-pub(crate) struct SelfUpdate {
+#[derive(Debug, Default, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
+pub struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
     /// Update even if already up to date
-    #[clap(long, short)]
+    #[arg(long, short)]
     force: bool,
 
     /// Skip confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 
     /// Disable auto-updating plugins
-    #[clap(long)]
+    #[arg(long)]
     no_plugins: bool,
 }
 

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use eyre::{Result, bail};
+use heck::ToKebabCase;
 use serde_json::{Value, json};
 
 use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply};
@@ -25,99 +26,6 @@ use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
 use crate::toolset::ResolveOptions;
 use crate::ui::table::MiseTable;
-use clap::{Subcommand, ValueEnum};
-
-/// Set up a machine for the current config in one command
-// The wrapper defers construction of bootstrap's large nested command tree
-// until the user actually invokes `mise bootstrap`.
-pub(crate) struct DeferredBootstrap(Bootstrap);
-
-impl DeferredBootstrap {
-    pub(crate) async fn run(self) -> Result<()> {
-        self.0.run().await
-    }
-}
-
-impl clap::FromArgMatches for DeferredBootstrap {
-    fn from_arg_matches(matches: &clap::ArgMatches) -> std::result::Result<Self, clap::Error> {
-        let mut bootstrap = <Bootstrap as clap::FromArgMatches>::from_arg_matches(matches)?;
-        bootstrap.dry_run = matches.get_flag("dry_run");
-        bootstrap.yes = matches.get_flag("yes");
-        Ok(Self(bootstrap))
-    }
-
-    fn from_arg_matches_mut(
-        matches: &mut clap::ArgMatches,
-    ) -> std::result::Result<Self, clap::Error> {
-        let dry_run = matches.get_flag("dry_run");
-        let yes = matches.get_flag("yes");
-        let mut bootstrap = <Bootstrap as clap::FromArgMatches>::from_arg_matches_mut(matches)?;
-        bootstrap.dry_run = dry_run;
-        bootstrap.yes = yes;
-        Ok(Self(bootstrap))
-    }
-
-    fn update_from_arg_matches(
-        &mut self,
-        matches: &clap::ArgMatches,
-    ) -> std::result::Result<(), clap::Error> {
-        clap::FromArgMatches::update_from_arg_matches(&mut self.0, matches)?;
-        self.0.dry_run |= matches.get_flag("dry_run");
-        self.0.yes |= matches.get_flag("yes");
-        Ok(())
-    }
-
-    fn update_from_arg_matches_mut(
-        &mut self,
-        matches: &mut clap::ArgMatches,
-    ) -> std::result::Result<(), clap::Error> {
-        let dry_run = matches.get_flag("dry_run");
-        let yes = matches.get_flag("yes");
-        clap::FromArgMatches::update_from_arg_matches_mut(&mut self.0, matches)?;
-        self.0.dry_run |= dry_run;
-        self.0.yes |= yes;
-        Ok(())
-    }
-}
-
-impl clap::Args for DeferredBootstrap {
-    fn augment_args(command: clap::Command) -> clap::Command {
-        deferred_flags(command).defer(<Bootstrap as clap::Args>::augment_args)
-    }
-
-    fn augment_args_for_update(command: clap::Command) -> clap::Command {
-        deferred_flags(command).defer(<Bootstrap as clap::Args>::augment_args_for_update)
-    }
-}
-
-// This reconstructs the command for full-tree introspection because expanding
-// the deferred parser in place is not supported. Keep its command name and any
-// variant-level metadata aligned with `Commands::Bootstrap`; `deferred_flags`
-// is shared with normal parsing so the top-level arguments cannot drift.
-pub(crate) fn full_command() -> clap::Command {
-    <Bootstrap as clap::Args>::augment_args(deferred_flags(clap::Command::new("bootstrap")))
-}
-
-fn deferred_flags(command: clap::Command) -> clap::Command {
-    command
-        .about("Set up a machine for the current config in one command")
-        .visible_alias("bs")
-        .arg(
-            clap::Arg::new("dry_run")
-                .long("dry-run")
-                .short('n')
-                .help("Print what would happen without installing anything")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            clap::Arg::new("yes")
-                .long("yes")
-                .short('y')
-                .help("Skip confirmation prompts")
-                .action(clap::ArgAction::SetTrue),
-        )
-}
-
 /// Set up a machine for the current config in one command
 ///
 /// Runs the bootstrap steps for the current config in order:
@@ -167,50 +75,50 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
 /// Use `--skip <part>` to skip named parts, or `--only <part>` to run just
 /// named parts. Both flags can be repeated or comma-separated, but they
 /// cannot be used together.
-#[derive(Debug, clap::Args)]
-#[clap(
+#[derive(Debug, usage_rs::Args)]
+#[command(
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
-pub(super) struct Bootstrap {
-    #[clap(subcommand)]
+pub struct Bootstrap {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
     /// Print what would happen without installing anything
-    #[clap(skip)]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip confirmation prompts
-    #[clap(skip)]
+    #[arg(long, short = 'y')]
     yes: bool,
 
     /// Overwrite existing files that conflict with whole-file dotfile entries
-    #[clap(long)]
+    #[arg(long)]
     force_dotfiles: bool,
 
     /// Run only one or more bootstrap parts
     ///
     /// Can be passed multiple times or as a comma-separated list.
     /// Cannot be used with `--skip`.
-    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
+    #[arg(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
     only: Vec<BootstrapPart>,
 
     /// Prompt securely for missing bootstrap secret inputs
-    #[clap(long)]
+    #[arg(long)]
     prompt_secrets: bool,
 
     /// Skip one or more bootstrap parts
     ///
     /// Can be passed multiple times or as a comma-separated list.
-    #[clap(long, value_enum, value_delimiter = ',')]
+    #[arg(long, value_enum, value_delimiter = ',')]
     skip: Vec<BootstrapPart>,
 
     /// Refresh package manager metadata and update configured repos
-    #[clap(long)]
+    #[arg(long)]
     update: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, usage_rs::ValueEnum)]
 enum BootstrapPart {
     Plugins,
     Packages,
@@ -221,13 +129,13 @@ enum BootstrapPart {
     Compose,
     Repos,
     Dotfiles,
-    #[clap(name = "mise-shell-activate", alias = "shell")]
+    #[value(name = "mise-shell-activate", alias = "shell")]
     Shell,
-    #[clap(name = "macos-defaults", alias = "defaults")]
+    #[value(name = "macos-defaults", alias = "defaults")]
     Defaults,
-    #[clap(name = "macos-launchd-agents", alias = "launchd")]
+    #[value(name = "macos-launchd-agents", alias = "launchd")]
     Launchd,
-    #[clap(name = "linux-systemd-units", alias = "systemd")]
+    #[value(name = "linux-systemd-units", alias = "systemd")]
     Systemd,
     User,
     Tools,
@@ -297,32 +205,32 @@ fn bootstrap_prediction_has_skipped_change(
     })
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    #[clap(name = "__apply-account-plan", hide = true)]
+    #[command(name = "__apply-account-plan", hide = true)]
     ApplyAccountPlan(BootstrapApplyAccountPlan),
-    #[clap(name = "__apply-service-plan", hide = true)]
+    #[command(name = "__apply-service-plan", hide = true)]
     ApplyServicePlan(BootstrapApplyServicePlan),
-    #[clap(name = "__apply-firewall-plan", hide = true)]
+    #[command(name = "__apply-firewall-plan", hide = true)]
     ApplyFirewallPlan(BootstrapApplyFirewallPlan),
-    #[clap(name = "__apply-system-plan", hide = true)]
+    #[command(name = "__apply-system-plan", hide = true)]
     ApplySystemPlan(BootstrapApplySystemPlan),
-    #[clap(name = "__inspect-system-files", hide = true)]
+    #[command(name = "__inspect-system-files", hide = true)]
     InspectSystemFiles(BootstrapInspectSystemFiles),
-    #[clap(name = "__inspect-firewall-plan", hide = true)]
+    #[command(name = "__inspect-firewall-plan", hide = true)]
     InspectFirewallPlan(BootstrapInspectFirewallPlan),
     Accounts(BootstrapAccounts),
     Compose(BootstrapCompose),
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
     Firewall(BootstrapFirewall),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Launchd(BootstrapLaunchd),
     Linux(BootstrapLinux),
     Macos(BootstrapMacos),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     MacosDefaults(BootstrapMacosDefaults),
-    #[clap(name = "mise-shell-activate", alias = "shell")]
+    #[command(name = "mise-shell-activate", alias = "shell")]
     MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
     Plan(BootstrapPlan),
@@ -332,275 +240,275 @@ enum Commands {
     Secrets(BootstrapSecrets),
     Services(BootstrapServices),
     Status(BootstrapStatus),
-    #[clap(hide = true)]
+    #[command(hide = true)]
     Systemd(BootstrapSystemd),
     User(BootstrapUser),
 }
 
 /// Show the aggregate bootstrap status
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "ls", verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "ls", verbatim_doc_comment)]
 struct BootstrapStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured bootstrap state is not in its desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
-    #[clap(long)]
+    #[arg(long)]
     prompt_secrets: bool,
 }
 
 /// Show the changes declarative bootstrap resources would make
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapPlan {
     /// Output a stable machine-readable plan in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     detailed_exitcode: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
-    #[clap(long)]
+    #[arg(long)]
     prompt_secrets: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapApplySystemPlan {}
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapApplyAccountPlan {}
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapApplyServicePlan {}
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapApplyFirewallPlan {}
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapInspectFirewallPlan {}
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapInspectSystemFiles {}
 
 /// Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapAccounts {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapAccountsCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapAccountsCommands {
     Apply(BootstrapAccountsApply),
     Status(BootstrapAccountsStatus),
 }
 
 /// Apply configured Linux users and groups
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapAccountsApply {
     /// Print what would change without changing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
 /// Show configured Linux user and group state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapAccountsStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 when any account is not converged
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 }
 
 /// Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapFiles {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapFilesCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapFilesCommands {
     Apply(BootstrapFilesApply),
     Status(BootstrapFilesStatus),
 }
 
 /// Apply configured privileged files and directories
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapFilesApply {
     /// Print what would change without changing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
-    #[clap(long)]
+    #[arg(long)]
     prompt_secrets: bool,
 }
 
 /// Show configured privileged file and directory state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapFilesStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 when any resource is not converged
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 
     /// Prompt securely for missing bootstrap secret inputs
-    #[clap(long)]
+    #[arg(long)]
     prompt_secrets: bool,
 }
 
 /// Manage Linux system services from `[bootstrap.services]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapServices {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapServicesCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapServicesCommands {
     Apply(BootstrapServicesApply),
     Status(BootstrapServicesStatus),
 }
 
 /// Apply configured Linux system service state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesApply {
     /// Print what would change without changing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
 /// Show configured Linux system service state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapServicesStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 when any service is not converged
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 }
 
 /// Manage the Linux host firewall from `[bootstrap.linux.firewall]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapFirewall {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapFirewallCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapFirewallCommands {
     Apply(BootstrapFirewallApply),
     Status(BootstrapFirewallStatus),
 }
 
 /// Apply the configured Linux host firewall
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapFirewallApply {
     /// Print what would change without changing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
 /// Show configured Linux host firewall state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapFirewallStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 when the firewall is not converged
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 }
 
 /// Manage Docker Compose projects from `[bootstrap.compose]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapCompose {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapComposeCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapComposeCommands {
     Apply(BootstrapComposeApply),
     Status(BootstrapComposeStatus),
 }
 
 /// Apply configured Docker Compose project state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapComposeApply {
     /// Print what would change without changing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
 /// Show configured Docker Compose project state
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapComposeStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 when any Compose project is not converged
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 }
 
 /// Bootstrap one or more machines over OpenSSH
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapRemote {
     /// Inventory host names from `[bootstrap.remote.hosts]`
-    #[clap(value_name = "TARGET")]
+    #[arg(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Select every configured inventory host
-    #[clap(long)]
+    #[arg(long)]
     all: bool,
 
     /// Explicit remote shell command that installs mise and places it on PATH
-    #[clap(
+    #[arg(
         long,
         value_name = "COMMAND",
         conflicts_with_all = ["mise_bin", "remote_mise", "install_mise"]
@@ -608,39 +516,39 @@ struct BootstrapRemote {
     bootstrap_command: Option<String>,
 
     /// SSH connection timeout in seconds
-    #[clap(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 10, default = "10")]
     connect_timeout: u16,
 
     /// Dereference one source-relative symbolic link; repeat for multiple links
-    #[clap(long, value_name = "PATH", value_hint = clap::ValueHint::AnyPath)]
+    #[arg(long, value_name = "PATH", value_hint = usage_rs::ValueHint::AnyPath)]
     copy_link: Vec<std::path::PathBuf>,
 
     /// Dereference every symbolic link in the source archive
-    #[clap(long)]
+    #[arg(long)]
     copy_links: bool,
 
     /// Additional archive pattern to exclude; repeat for multiple patterns
-    #[clap(long, value_name = "PATTERN")]
+    #[arg(long, value_name = "PATTERN")]
     exclude: Vec<String>,
 
     /// Stop after the first failed target
-    #[clap(long)]
+    #[arg(long)]
     fail_fast: bool,
 
     /// Allow remote dotfile conflicts to be replaced
-    #[clap(long)]
+    #[arg(long)]
     force_dotfiles: bool,
 
     /// Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
-    #[clap(long, value_name = "[USER@]HOST")]
+    #[arg(long, value_name = "[USER@]HOST")]
     host: Vec<String>,
 
     /// SSH identity file override
-    #[clap(long, short = 'i', value_hint = clap::ValueHint::FilePath)]
+    #[arg(long, short = 'i', value_hint = usage_rs::ValueHint::FilePath)]
     identity_file: Option<std::path::PathBuf>,
 
     /// Print the remote bootstrap changes without applying them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Install the provisioned mise on each host instead of only staging it
@@ -658,13 +566,13 @@ struct BootstrapRemote {
     install_mise: Option<String>,
 
     /// Keep the remote staging directory for debugging
-    #[clap(long)]
+    #[arg(long)]
     keep_staging: bool,
 
     /// Local mise binary to upload (escape hatch for custom architectures)
-    #[clap(
+    #[arg(
         long,
-        value_hint = clap::ValueHint::FilePath,
+        value_hint = usage_rs::ValueHint::FilePath,
         conflicts_with_all = ["remote_mise", "bootstrap_command"]
     )]
     mise_bin: Option<std::path::PathBuf>,
@@ -674,23 +582,23 @@ struct BootstrapRemote {
     no_install_mise: bool,
 
     /// Run only one or more remote bootstrap parts
-    #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
+    #[arg(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
     only: Vec<BootstrapPart>,
 
     /// SSH port override
-    #[clap(long)]
+    #[arg(long)]
     port: Option<u16>,
 
     /// Prompt securely for missing secret inputs on the remote host
-    #[clap(long)]
+    #[arg(long)]
     prompt_secrets: bool,
 
     /// Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
-    #[clap(long, value_name = "ENV", value_delimiter = ',')]
+    #[arg(long, value_name = "ENV", value_delimiter = ',')]
     remote_env: Option<Vec<String>>,
 
     /// Existing mise executable name or path; relative paths use the staged project
-    #[clap(
+    #[arg(
         long,
         value_name = "COMMAND",
         conflicts_with_all = ["mise_bin", "bootstrap_command", "install_mise"]
@@ -698,64 +606,64 @@ struct BootstrapRemote {
     remote_mise: Option<String>,
 
     /// Skip one or more remote bootstrap parts
-    #[clap(long, value_enum, value_delimiter = ',')]
+    #[arg(long, value_enum, value_delimiter = ',')]
     skip: Vec<BootstrapPart>,
 
     /// Local directory archived and sent to each target
-    #[clap(long, value_hint = clap::ValueHint::DirPath)]
+    #[arg(long, value_hint = usage_rs::ValueHint::DirPath)]
     source: Option<std::path::PathBuf>,
 
     /// OpenSSH `-o` option; repeat for multiple options
-    #[clap(long, value_name = "OPTION")]
+    #[arg(long, value_name = "OPTION")]
     ssh_option: Vec<String>,
 
     /// Select configured hosts with this tag; repeat to match any tag
-    #[clap(long, value_name = "TAG")]
+    #[arg(long, value_name = "TAG")]
     tag: Vec<String>,
 
     /// Refresh package manager metadata and update configured repos remotely
-    #[clap(long)]
+    #[arg(long)]
     update: bool,
 
     /// Skip remote confirmation prompts
-    #[clap(long, short = 'y')]
+    #[arg(long, short = 'y')]
     yes: bool,
 }
 
 /// Inspect bootstrap secret inputs without revealing their values
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapSecrets {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapSecretsCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapSecretsCommands {
     Status(BootstrapSecretsStatus),
 }
 
 /// Show whether declared bootstrap secret inputs are available
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapSecretsStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if a declared secret input is unavailable
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 }
 
 /// Manage dotfiles from `[dotfiles]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapDotfiles {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapDotfilesCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapDotfilesCommands {
     Add(DotfilesAdd),
     Apply(BootstrapDotfilesApply),
@@ -770,24 +678,24 @@ enum BootstrapDotfilesCommands {
 /// desired state. Whole-file entries may symlink, copy, or render templates.
 /// Edit entries manage a marker-delimited block or a single line in a file
 /// mise doesn't otherwise own.
-#[derive(Debug, clap::Args)]
-#[clap(
+#[derive(Debug, usage_rs::Args)]
+#[command(
     verbatim_doc_comment,
     after_long_help = BOOTSTRAP_DOTFILES_APPLY_AFTER_LONG_HELP
 )]
 struct BootstrapDotfilesApply {
-    #[clap(flatten)]
+    #[arg(flatten)]
     cmd: DotfilesApply,
 }
 
 /// Show the status of dotfiles from `[dotfiles]`
-#[derive(Debug, clap::Args)]
-#[clap(
+#[derive(Debug, usage_rs::Args)]
+#[command(
     verbatim_doc_comment,
     after_long_help = BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP
 )]
 struct BootstrapDotfilesStatus {
-    #[clap(flatten)]
+    #[arg(flatten)]
     cmd: DotfilesStatus,
 }
 
@@ -811,43 +719,43 @@ static BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 /// Manage bootstrap system packages from `[bootstrap.packages]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapPackages {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapPackagesCommands,
 }
 
 /// Manage package manager plugins declared in `[bootstrap.plugins]`
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapPlugins {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapPluginsCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapPluginsCommands {
     Apply(BootstrapPluginsApply),
     Status(BootstrapPluginsStatus),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapPluginsApply {
     /// Print what would happen without installing plugins
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapPluginsStatus {
     /// Exit with code 1 if a declared plugin is missing
-    #[clap(long)]
+    #[arg(long)]
     missing: bool,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapPackagesCommands {
-    #[clap(alias = "install")]
+    #[command(alias = "install")]
     Apply(install::SystemInstall),
     #[cfg(unix)]
     Brew(super::system::brew::SystemBrew),
@@ -859,14 +767,14 @@ enum BootstrapPackagesCommands {
 }
 
 /// Manage git repo checkouts from `[bootstrap.repos]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapRepos {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapReposCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapReposCommands {
     Apply(BootstrapReposApply),
     Exec(BootstrapReposExec),
@@ -874,268 +782,268 @@ enum BootstrapReposCommands {
     Update(BootstrapReposUpdate),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapReposApply {
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapReposUpdate {
     /// Update only matching configured or expanded paths
-    #[clap(value_name = "PATH")]
+    #[arg(value_name = "PATH")]
     paths: Vec<String>,
 
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapReposExec {
     /// Run only in matching configured or expanded paths
-    #[clap(value_name = "PATH")]
+    #[arg(value_name = "PATH")]
     paths: Vec<String>,
 
     /// Continue running in other repos after a command fails
-    #[clap(long, short = 'c')]
+    #[arg(long, short = 'c')]
     continue_on_error: bool,
 
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Command and arguments to run in each repo
-    #[clap(last = true, required = true)]
+    #[arg(last = true, required = true)]
     command: Vec<String>,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapReposStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured repo is not in its desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage macOS bootstrap config from `[bootstrap.macos]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapMacos {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapMacosCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapMacosCommands {
     Defaults(BootstrapMacosDefaults),
-    #[clap(name = "launchd-agents", alias = "launchd")]
+    #[command(name = "launchd-agents", alias = "launchd")]
     LaunchdAgents(BootstrapLaunchd),
 }
 
 /// Manage Linux bootstrap config from `[bootstrap.linux]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapLinux {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapLinuxCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapLinuxCommands {
-    #[clap(name = "systemd-units", alias = "systemd")]
+    #[command(name = "systemd-units", alias = "systemd")]
     SystemdUnits(BootstrapSystemd),
 }
 
 /// Manage macOS defaults from `[bootstrap.macos.defaults]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapMacosDefaults {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapMacosDefaultsCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapMacosDefaultsCommands {
     Apply(BootstrapMacosDefaultsApply),
     Status(BootstrapMacosDefaultsStatus),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapMacosDefaultsApply {
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapMacosDefaultsStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured defaults are not in their desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapLaunchd {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapLaunchdCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapLaunchdCommands {
     Apply(BootstrapLaunchdApply),
     Status(BootstrapLaunchdStatus),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapLaunchdApply {
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapLaunchdStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured LaunchAgent is not in its desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage systemd user services from `[bootstrap.linux.systemd.units]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapSystemd {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapSystemdCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapSystemdCommands {
     Apply(BootstrapSystemdApply),
     Status(BootstrapSystemdStatus),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapSystemdApply {
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapSystemdStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured systemd user service is not in its desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage mise shell activation from `[bootstrap.mise_shell_activate]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapShell {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapShellCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapShellCommands {
     Apply(BootstrapShellApply),
     Status(BootstrapShellStatus),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapShellApply {
     /// Print the actions that would run without writing anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapShellStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured shell activation is not in its desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 
 /// Manage current-user bootstrap settings from `[bootstrap.user]`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 struct BootstrapUser {
-    #[clap(subcommand)]
+    #[arg(subcommand)]
     command: BootstrapUserCommands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum BootstrapUserCommands {
     Apply(BootstrapUserApply),
     Status(BootstrapUserStatus),
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapUserApply {
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 
-#[derive(Debug, clap::Args)]
+#[derive(Debug, usage_rs::Args)]
 struct BootstrapUserStatus {
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured user setting is not in its desired state
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     missing: bool,
 }
 
@@ -2485,10 +2393,13 @@ fn select_remote_inventory(
 }
 
 fn bootstrap_part_name(part: &BootstrapPart) -> String {
-    part.to_possible_value()
-        .expect("BootstrapPart values have clap names")
-        .get_name()
-        .to_string()
+    match part {
+        BootstrapPart::Shell => "mise-shell-activate".to_string(),
+        BootstrapPart::Defaults => "macos-defaults".to_string(),
+        BootstrapPart::Launchd => "macos-launchd-agents".to_string(),
+        BootstrapPart::Systemd => "linux-systemd-units".to_string(),
+        part => format!("{part:?}").to_kebab_case(),
+    }
 }
 
 impl BootstrapSecretsStatus {
@@ -4168,37 +4079,25 @@ fn file_state_json(state: &FileState) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use clap::{Args, FromArgMatches};
     use indexmap::{IndexMap, IndexSet};
+    use std::ffi::OsStr;
 
-    use super::{DeferredBootstrap, select_remote_inventory};
+    use super::select_remote_inventory;
+    use crate::cli::{Cli, Commands};
     use crate::system::remote;
 
-    fn matches(args: &[&str]) -> clap::ArgMatches {
-        <DeferredBootstrap as Args>::augment_args(clap::Command::new("bootstrap"))
-            .try_get_matches_from(args)
-            .unwrap()
-    }
-
     #[test]
-    fn deferred_bootstrap_preserves_dry_run_and_yes_flags() {
-        let parsed = DeferredBootstrap::from_arg_matches(&matches(&[
-            "bootstrap",
-            "--dry-run",
-            "--yes",
-            "status",
-        ]))
-        .unwrap();
-        assert!(parsed.0.dry_run);
-        assert!(parsed.0.yes);
-
-        let mut updated =
-            DeferredBootstrap::from_arg_matches(&matches(&["bootstrap", "status"])).unwrap();
-        updated
-            .update_from_arg_matches(&matches(&["bootstrap", "--dry-run", "--yes", "status"]))
-            .unwrap();
-        assert!(updated.0.dry_run);
-        assert!(updated.0.yes);
+    fn bootstrap_preserves_dry_run_and_yes_flags() {
+        let argv: Vec<&OsStr> = ["mise", "bootstrap", "--dry-run", "--yes", "status"]
+            .iter()
+            .map(OsStr::new)
+            .collect();
+        let cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Bootstrap(parsed)) = cli.command else {
+            panic!("bootstrap should be the resolved command");
+        };
+        assert!(parsed.dry_run);
+        assert!(parsed.yes);
     }
 
     #[test]

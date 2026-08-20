@@ -65,7 +65,7 @@ xx = { version = "2", default-features = false, features = [
 
 # cli dependencies
 env_logger = { version = "0.11", optional = true }
-clap = { version = "4", features = ["derive"], optional = true }
+usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "468a8fa7", features = ["diagnostics"], optional = true }
 tempfile = "3"
 mise-sigstore = { path = "../mise-sigstore", default-features = false }
 
@@ -76,7 +76,7 @@ wiremock = "0.6"
 
 [features]
 default = ["vendored-lua", "native-tls"]
-cli = ["clap", "tokio/full", "env_logger"]
+cli = ["usage_rs", "tokio/full", "env_logger"]
 native-tls = [
   "xx/native-tls",
   "xx/http",

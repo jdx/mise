@@ -22,38 +22,38 @@ use crate::{env, file};
 /// Use `mise global` to set a tool version globally
 /// This uses `.tool-version` by default unless there is a `mise.toml` file or if `MISE_USE_TOML`
 /// is set. A future v2 release of mise will default to using `mise.toml`.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Local {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
+pub struct Local {
     /// Tool(s) to add to .tool-versions/mise.toml
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/mise.toml will be displayed
-    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
     /// by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
-    #[clap(short, long, verbatim_doc_comment)]
+    #[arg(short, long, verbatim_doc_comment)]
     parent: bool,
 
     /// Save fuzzy version to `.tool-versions`
     /// e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions
     /// This is the default behavior unless MISE_ASDF_COMPAT=1
-    #[clap(long, overrides_with = "pin")]
+    #[arg(long, overrides_with = "pin")]
     fuzzy: bool,
 
     /// Get the path of the config file
-    #[clap(long)]
+    #[arg(long)]
     path: bool,
 
     /// Save exact version to `.tool-versions`
     /// e.g.: `mise local --pin node@20` will save `node 20.0.0` to .tool-versions
-    #[clap(long, verbatim_doc_comment, overrides_with = "fuzzy")]
+    #[arg(long, verbatim_doc_comment, overrides_with = "fuzzy")]
     pin: bool,
 
     /// Remove the tool(s) from .tool-versions
-    #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
+    #[arg(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Option<Vec<BackendArg>>,
 }
 

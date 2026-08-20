@@ -283,26 +283,6 @@ impl Config {
         Ok(config)
     }
 
-    /// Load only user-global and system configuration without replacing the process-wide config.
-    ///
-    /// This is intended for bootstrap paths such as completion generation, where consulting the
-    /// current project could trigger a trust prompt before the requested command can run.
-    pub(crate) async fn load_global() -> Result<Arc<Self>> {
-        backend::load_tools().await?;
-        let idiomatic_files = measure!("config::load_global idiomatic_files", {
-            load_idiomatic_filenames().await
-        });
-        let config_paths = measure!("config::load_global config_paths", {
-            load_global_config_paths(false)
-        });
-        trace!("global config_paths: {config_paths:?}");
-        let config_files = measure!("config::load_global config_files", {
-            load_all_config_files(&config_paths, &idiomatic_files).await?
-        });
-
-        Self::load_from_config_files(config_files, true).await
-    }
-
     async fn load_from_config_files(
         config_files: ConfigMap,
         global_only: bool,
@@ -2161,21 +2141,6 @@ pub(crate) fn load_config_paths(
 
     config_files
         .into_iter()
-        .unique_by(|p| file::desymlink_path(p))
-        .filter(|p| !config_path_is_ignored(p, include_ignored))
-        .collect()
-}
-
-fn load_global_config_paths(include_ignored: bool) -> Vec<PathBuf> {
-    if Settings::no_config() {
-        return vec![];
-    }
-
-    // rev: these groups are lowest-first, this list is highest-first
-    global_config_files()
-        .into_iter()
-        .rev()
-        .chain(system_config_files().into_iter().rev())
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, include_ignored))
         .collect()

@@ -17,19 +17,19 @@ use crate::ui::prompt;
 /// Supports Homebrew formulae and conservatively removable, mise-owned casks.
 /// Pruning keeps packages needed by the current config or by trusted, loadable
 /// tracked configs.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct SystemPrune {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct SystemPrune {
     /// Only prune packages for this manager
-    #[clap(long, short, default_value = "brew", value_parser = ["brew", "brew-cask"])]
+    #[arg(long, short, default_value = "brew", value_parser = ["brew", "brew-cask"])]
     manager: String,
 
     /// Print what would be removed without deleting anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 }
 

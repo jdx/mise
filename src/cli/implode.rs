@@ -11,15 +11,15 @@ use std::collections::BTreeSet;
 /// Removes mise CLI and all related data
 ///
 /// Skips config directory by default.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
-pub(crate) struct Implode {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
+pub struct Implode {
     /// List directories that would be removed without actually removing them
-    #[clap(long, short = 'n', verbatim_doc_comment)]
+    #[arg(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
     /// Also remove config directory
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     config: bool,
 }
 

@@ -7,19 +7,19 @@ use crate::ui::style;
 use crate::{backend, plugins};
 
 /// Removes a plugin
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
-pub(super) struct PluginsUninstall {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
+pub struct PluginsUninstall {
     /// Plugin(s) to remove
-    #[clap(verbatim_doc_comment)]
+    #[arg(verbatim_doc_comment)]
     plugin: Vec<String>,
 
     /// Remove all plugins
-    #[clap(long, short, verbatim_doc_comment, conflicts_with = "plugin")]
+    #[arg(long, short, verbatim_doc_comment, conflicts_with = "plugin")]
     all: bool,
 
     /// Also remove the plugin's installs, downloads, and cache
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     purge: bool,
 }
 

@@ -16,25 +16,25 @@ use petgraph::dot::Dot;
 /// (`{ task = "..." }` or `{ tasks = [...] }`) are execution steps, not graph
 /// edges, so they do not appear here. Those nested tasks still run, including
 /// their own `depends`.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksDeps {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
     /// e.g.: mise tasks deps lint test check
-    #[clap(verbatim_doc_comment)]
+    #[arg(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
     /// Collapse repeated dependencies after their first occurrence
-    #[clap(long, conflicts_with = "dot", verbatim_doc_comment)]
+    #[arg(long, conflicts_with = "dot", verbatim_doc_comment)]
     pub compact: bool,
 
     /// Display dependencies in DOT format
-    #[clap(long, alias = "dot", verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub dot: bool,
 
     /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub hidden: bool,
 }
 

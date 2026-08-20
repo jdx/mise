@@ -7,34 +7,34 @@ const TASK_PLACEHOLDER_START: &str = "<!-- mise-tasks -->";
 const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 
 /// Generate documentation for tasks in a project
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TaskDocs {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct TaskDocs {
     /// inserts the documentation into an existing file
     ///
     /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
     /// It will replace everything between the comment and the next comment, `<!-- /mise-tasks -->` so it can be
     /// run multiple times on the same file to update the documentation.
     /// The file must already contain both comments; mise errors instead of modifying the file if they are missing.
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     inject: bool,
     /// write only an index of tasks, intended for use with `--multi`
-    #[clap(long, short = 'I', verbatim_doc_comment)]
+    #[arg(long, short = 'I', verbatim_doc_comment)]
     index: bool,
     /// render each task as a separate document, requires `--output` to be a directory
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     multi: bool,
     /// writes the generated docs to a file/directory
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     output: Option<PathBuf>,
     /// root directory to search for tasks
-    #[clap(long, short, verbatim_doc_comment, value_hint = clap::ValueHint::DirPath)]
+    #[arg(long, short, verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
     root: Option<PathBuf>,
-    #[clap(long, short, verbatim_doc_comment, value_enum, default_value_t)]
+    #[arg(long, short, verbatim_doc_comment, value_enum, default = "simple")]
     style: TaskDocsStyle,
 }
 
-#[derive(Debug, Default, Clone, clap::ValueEnum)]
+#[derive(Debug, Default, Clone, usage_rs::ValueEnum)]
 enum TaskDocsStyle {
     #[default]
     #[value()]

@@ -7,23 +7,23 @@ use serde::Serialize;
 use std::path::PathBuf;
 
 /// List all the active runtime bin paths
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
-pub(crate) struct BinPaths {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
+pub struct BinPaths {
     /// Tool(s) to look up
     /// e.g.: ruby@3
-    #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Option<Vec<ToolArg>>,
 
     /// Output executable names instead of bin directories
-    #[clap(
+    #[arg(
         long,
         default_value_if("json", clap::builder::ArgPredicate::IsPresent, Some("true"))
     )]
     bin_names: bool,
 
     /// Output executable entries in JSON format (implies --bin-names)
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 }
 

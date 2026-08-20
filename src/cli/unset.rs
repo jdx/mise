@@ -9,12 +9,12 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 /// Remove environment variable(s) from the config file.
 ///
 /// By default, this command modifies `mise.toml` in the current directory.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Unset {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Unset {
     /// Environment variable(s) to remove
     /// e.g.: NODE_ENV
-    #[clap(verbatim_doc_comment, value_name = "ENV_KEY")]
+    #[arg(verbatim_doc_comment, value_name = "ENV_KEY")]
     keys: Vec<String>,
 
     /// Specify a file to use instead of `mise.toml`
@@ -23,11 +23,11 @@ pub(crate) struct Unset {
     ///
     /// Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
     /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-    #[clap(short, long, visible_alias = "path", value_hint = clap::ValueHint::FilePath)]
+    #[arg(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::FilePath)]
     file: Option<PathBuf>,
 
     /// Use the global config file
-    #[clap(short, long, overrides_with = "file")]
+    #[arg(short, long, overrides_with = "file")]
     global: bool,
 }
 

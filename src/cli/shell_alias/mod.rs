@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 mod get;
@@ -6,18 +5,18 @@ mod ls;
 mod set;
 mod unset;
 
-#[derive(Debug, clap::Args)]
-#[clap(name = "shell-alias", about = "Manage shell aliases.")]
-pub(crate) struct ShellAlias {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(name = "shell-alias", about = "Manage shell aliases.")]
+pub struct ShellAlias {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
     /// Don't show table header
-    #[clap(long)]
+    #[arg(long)]
     pub no_header: bool,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Get(get::ShellAliasGet),
     Ls(ls::ShellAliasLs),

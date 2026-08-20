@@ -30,33 +30,33 @@ use super::trust::Trust;
 /// Versions still referenced by a tracked stub are not deleted.
 ///
 /// You can list prunable tools with `mise ls --prunable`
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Prune {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Prune {
     /// Prune only these tools
-    #[clap()]
+    #[arg()]
     pub installed_tool: Option<Vec<ToolArg>>,
 
     /// Do not actually delete anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     pub dry_run: bool,
 
     /// Prune only tracked and trusted configuration links that point to nonexistent configurations
-    #[clap(long)]
+    #[arg(long)]
     pub configs: bool,
 
     /// Like --dry-run but exits with code 1 if there are tools to prune
     ///
     /// This is useful for scripts to check if tools need to be pruned.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub dry_run_code: bool,
 
     /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub monorepo: bool,
 
     /// Prune only unused versions of tools
-    #[clap(long)]
+    #[arg(long)]
     pub tools: bool,
 }
 

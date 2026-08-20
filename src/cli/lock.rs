@@ -58,33 +58,33 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
 /// including tools declared by tasks.
 /// This allows you to refresh lockfile data for platforms other than the one you're currently on.
 /// Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Lock {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Lock {
     /// Tool(s) to update in lockfile
     /// e.g.: node python
     /// If not specified, all configured and task-specific tools will be updated
-    #[clap(value_name = "TOOL", verbatim_doc_comment)]
+    #[arg(value_name = "TOOL", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
     /// Target only global config lockfiles (~/.config/mise/mise.lock and system config)
     /// By default, only the active project config root is locked
-    #[clap(long, short, verbatim_doc_comment)]
+    #[arg(long, short, verbatim_doc_comment)]
     pub global: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
     /// Show what would be updated without making changes
-    #[clap(long, short = 'n', verbatim_doc_comment)]
+    #[arg(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
     /// Comma-separated list of platforms to target
     /// e.g.: linux-x64,macos-arm64,windows-x64
     /// If not specified, all platforms already in lockfile will be updated
-    #[clap(long, short, value_delimiter = ',', verbatim_doc_comment)]
+    #[arg(long, short, value_delimiter = ',', verbatim_doc_comment)]
     pub platform: Vec<String>,
 
     /// Re-resolve fuzzy version selectors against the latest available versions
@@ -95,7 +95,7 @@ pub(crate) struct Lock {
     /// advances without installing anything. Config files are never modified:
     /// exactly pinned versions resolve to themselves and stay unchanged
     /// (use `mise upgrade --bump` to rewrite pins in mise.toml).
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub bump: bool,
 
     /// Output version changes as JSON
@@ -108,12 +108,12 @@ pub(crate) struct Lock {
     /// typically prints `[]` while still updating the lockfile.
     /// Suppresses the human-readable output. Combine with `--dry-run` to
     /// detect available updates without writing the lockfile.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Update mise.local.lock instead of mise.lock
     /// Use for tools defined in .local.toml configs
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     pub local: bool,
 
     /// Only lock versions released before this age or date
@@ -122,7 +122,7 @@ pub(crate) struct Lock {
     /// This only affects fuzzy version matches like "20" or "latest".
     /// Explicitly pinned versions like "22.5.0" are not filtered.
     /// Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
-    #[clap(
+    #[arg(
         long,
         alias = "before",
         value_name = "MINIMUM_RELEASE_AGE",

@@ -14,25 +14,25 @@ use crate::{config, dirs, exit, file};
 /// Removes installed tool versions
 ///
 /// This only removes the installed version, it does not modify mise.toml.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Uninstall {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Uninstall {
     /// Tool(s) to remove
-    #[clap(value_name = "INSTALLED_TOOL@VERSION", required_unless_present = "all")]
+    #[arg(value_name = "INSTALLED_TOOL@VERSION", required_unless_present = "all")]
     installed_tool: Vec<ToolArg>,
 
     /// Delete all installed versions
-    #[clap(long, short)]
+    #[arg(long, short)]
     all: bool,
 
     /// Do not actually delete anything
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Like --dry-run but exits with code 1 if there are tools to uninstall
     ///
     /// This is useful for scripts to check if tools need to be uninstalled.
-    #[clap(long, verbatim_doc_comment)]
+    #[arg(long, verbatim_doc_comment)]
     dry_run_code: bool,
 }
 

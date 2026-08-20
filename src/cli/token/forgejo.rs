@@ -5,15 +5,15 @@ use crate::tokens;
 ///
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct Forgejo {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Forgejo {
     /// Forgejo hostname
-    #[clap(default_value = "codeberg.org")]
+    #[arg(default_value = "codeberg.org")]
     host: String,
 
     /// Show the full unmasked token
-    #[clap(long)]
+    #[arg(long)]
     unmask: bool,
 }
 

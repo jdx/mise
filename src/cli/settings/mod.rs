@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 mod add;
@@ -7,25 +6,25 @@ mod ls;
 mod set;
 mod unset;
 
-#[derive(Debug, clap::Args)]
-#[clap(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Settings {
-    #[clap(subcommand)]
+#[derive(Debug, usage_rs::Args)]
+#[command(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
+pub struct Settings {
+    #[arg(subcommand)]
     command: Option<Commands>,
 
-    #[clap(flatten)]
+    #[arg(flatten)]
     ls: ls::SettingsLs,
 
     /// Setting value to set
-    #[clap(conflicts_with = "all")]
+    #[arg(conflicts_with = "all")]
     value: Option<String>,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Add(add::SettingsAdd),
     Get(get::SettingsGet),
-    #[clap(visible_alias = "list")]
+    #[command(visible_alias = "list")]
     Ls(ls::SettingsLs),
     Set(set::SettingsSet),
     Unset(unset::SettingsUnset),

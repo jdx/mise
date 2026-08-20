@@ -10,48 +10,48 @@ use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
 /// Gets information about a tool
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct Tool {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct Tool {
     /// Tool name to get information about
     tool: BackendArg,
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[arg(long, short = 'J')]
     json: bool,
 
-    #[clap(flatten)]
+    #[arg(flatten)]
     filter: ToolInfoFilter,
 }
 
-#[derive(Debug, Clone, clap::Args)]
+#[derive(Debug, Clone, usage_rs::Args)]
 #[group(multiple = false)]
 pub(super) struct ToolInfoFilter {
     /// Only show active versions
-    #[clap(long)]
+    #[arg(long)]
     active: bool,
 
     /// Only show backend field
-    #[clap(long)]
+    #[arg(long)]
     backend_: bool,
 
     /// Only show config source
-    #[clap(long)]
+    #[arg(long)]
     config_source: bool,
 
     /// Only show description field
-    #[clap(long)]
+    #[arg(long)]
     description: bool,
 
     /// Only show installed versions
-    #[clap(long)]
+    #[arg(long)]
     installed: bool,
 
     /// Only show requested versions
-    #[clap(long)]
+    #[arg(long)]
     requested: bool,
 
     /// Only show tool options
-    #[clap(long)]
+    #[arg(long)]
     tool_options: bool,
 }
 

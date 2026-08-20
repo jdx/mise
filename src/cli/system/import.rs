@@ -33,31 +33,31 @@ use toml_edit::{Array, InlineTable, Value};
 /// Currently supports Homebrew formulae only. By default, imports linked
 /// formulae whose active keg receipt says they were installed on request.
 /// Pass `--all` to import every linked formula, including dependencies.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(crate) struct SystemImport {
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub struct SystemImport {
     /// Write to the config file for this environment (mise.<ENV>.toml)
-    #[clap(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
+    #[arg(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
     env: Option<String>,
 
     /// Write to the global config (~/.config/mise/config.toml)
-    #[clap(long, short, conflicts_with_all = ["env", "path"])]
+    #[arg(long, short, conflicts_with_all = ["env", "path"])]
     global: bool,
 
     /// Only import packages for this manager. Currently only `brew` is supported.
-    #[clap(long, short, default_value = "brew", value_parser = ["brew"])]
+    #[arg(long, short, default_value = "brew", value_parser = ["brew"])]
     manager: String,
 
     /// Import every linked formula, including dependencies
-    #[clap(long)]
+    #[arg(long)]
     all: bool,
 
     /// Print the config change without writing config
-    #[clap(long, short = 'n')]
+    #[arg(long, short = 'n')]
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[clap(
+    #[arg(
         long,
         short,
         visible_alias = "file",
