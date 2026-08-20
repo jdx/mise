@@ -132,8 +132,6 @@ pub fn apply_seccomp_net_filter(
             libc::SYS_move_mount,
             libc::SYS_open_tree,
             libc::SYS_mount_setattr,
-            libc::SYS_fchmod,
-            libc::SYS_fchmodat,
             libc::SYS_fchown,
             libc::SYS_fchownat,
             libc::SYS_setxattr,
@@ -151,10 +149,7 @@ pub fn apply_seccomp_net_filter(
         ] {
             rules.insert(syscall_number(syscall), vec![]);
         }
-        // fchmodat2 is syscall 452 on both supported Linux architectures but
-        // older libc headers expose the constant only on x86_64.
-        rules.insert(452, vec![]);
-        // Timestamp mutation remains available. Every retained authority is
+        // Permission and timestamp mutation remain available. Every retained authority is
         // CLOEXEC, so executed formula code can acquire timestamp-capable file
         // descriptors only through the Landlock-confined hierarchy.
         // clone remains available for ordinary processes and threads, but no
@@ -239,7 +234,6 @@ pub fn apply_seccomp_net_filter(
 
         #[cfg(target_arch = "x86_64")]
         for syscall in [
-            libc::SYS_chmod,
             libc::SYS_chown,
             libc::SYS_lchown,
             libc::SYS_iopl,
@@ -357,22 +351,12 @@ mod tests {
             assert_child_syscall(deny_process_group_escape, call_setsid);
             if strict_formula_execution {
                 use std::os::fd::AsRawFd;
-                use std::os::unix::fs::PermissionsExt;
                 let sentinel = std::path::PathBuf::from(std::env::var_os(SENTINEL_ENV).unwrap());
                 let file = std::fs::OpenOptions::new()
                     .read(true)
                     .write(true)
                     .open(&sentinel)
                     .unwrap();
-                let error =
-                    std::fs::set_permissions(&sentinel, std::fs::Permissions::from_mode(0o600))
-                        .unwrap_err();
-                assert_eq!(error.raw_os_error(), Some(libc::EPERM));
-                assert_eq!(unsafe { libc::fchmod(file.as_raw_fd(), 0o600) }, -1);
-                assert_eq!(
-                    std::io::Error::last_os_error().raw_os_error(),
-                    Some(libc::EPERM)
-                );
                 assert_eq!(
                     unsafe { libc::fchown(file.as_raw_fd(), libc::geteuid(), libc::getegid()) },
                     -1
