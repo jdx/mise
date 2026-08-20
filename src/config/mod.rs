@@ -4150,13 +4150,13 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
                         task: selected,
                         has_inline_definition,
                     } => {
-                        if let Some(inline_task) = inline_task {
-                            if !*has_inline_definition {
-                                *has_inline_definition = true;
-                                if tasks_have_same_source(selected, &task) {
-                                    selected.merge_toml_overlay(inline_task.clone());
-                                    selected.infer_auto_outputs();
-                                }
+                        if let Some(inline_task) = inline_task
+                            && !*has_inline_definition
+                        {
+                            *has_inline_definition = true;
+                            if tasks_have_same_source(selected, &task) {
+                                selected.merge_toml_overlay(inline_task.clone());
+                                selected.infer_auto_outputs();
                             }
                         }
                     }
