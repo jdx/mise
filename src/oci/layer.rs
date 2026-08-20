@@ -756,7 +756,16 @@ fn relocated_script_contents(
         return Ok(None);
     }
 
-    let size = entry.size - line.len() as u64 + shebang.len() as u64;
+    let Some(size) = entry
+        .size
+        .checked_sub(line.len() as u64)
+        .and_then(|rest| rest.checked_add(shebang.len() as u64))
+    else {
+        // The file changed after collect_sorted_entries recorded its size.
+        // Let the ordinary file path detect a short read instead of creating
+        // a relocated tar header with a wrapped size.
+        return Ok(None);
+    };
     let contents = Cursor::new(shebang.into_bytes()).chain(reader);
     Ok(Some(RelocatedFileContents {
         size,
@@ -829,6 +838,17 @@ fn compatible_python<'a>(
     {
         return Some(exact);
     }
+    if let Some(requested) = python_release(&version) {
+        let mut compatible = relocation
+            .pythons
+            .iter()
+            .filter(|python| python_release(&python.version) == Some(requested));
+        if let Some(candidate) = compatible.next()
+            && compatible.next().is_none()
+        {
+            return Some(candidate);
+        }
+    }
     let requested = python_major_minor(&version)?;
     let mut compatible = relocation
         .pythons
@@ -836,6 +856,17 @@ fn compatible_python<'a>(
         .filter(|python| python_major_minor(&python.version) == Some(requested));
     let candidate = compatible.next()?;
     compatible.next().is_none().then_some(candidate)
+}
+
+fn python_release(version: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    let patch = parts.next()?;
+    [major, minor, patch]
+        .iter()
+        .all(|part| part.chars().all(|c| c.is_ascii_digit()))
+        .then_some((major, minor, patch))
 }
 
 fn pyvenv_version(path: &Path) -> Option<String> {
@@ -1215,7 +1246,7 @@ mod tests {
         symlink("/usr/sbin/python", pipx.join("gitlabcis/bin/python")).unwrap();
         fs::write(
             pipx.join("gitlabcis/pyvenv.cfg"),
-            "home = /usr/sbin\nimplementation = CPython\nversion_info = 3.14.3\nexecutable = /usr/sbin/python\ncommand = /usr/sbin/python -m venv /tmp/host-venv\n",
+            "home = /usr/sbin\nimplementation = CPython\nversion_info = 3.14.3.final.0\nexecutable = /usr/sbin/python\ncommand = /usr/sbin/python -m venv /tmp/host-venv\n",
         )
         .unwrap();
 
@@ -1236,11 +1267,18 @@ mod tests {
             (pipx.clone(), image_pipx.clone()),
             (python.clone(), image_python.clone()),
         ])
-        .with_pythons(vec![PythonRelocation {
-            version: "3.14.3".to_string(),
-            host: python,
-            image: image_python.clone(),
-        }]);
+        .with_pythons(vec![
+            PythonRelocation {
+                version: "3.14.2".to_string(),
+                host: installs.join("python/3.14.2"),
+                image: PathBuf::from("/mise/installs/python/3.14.2"),
+            },
+            PythonRelocation {
+                version: "3.14.3".to_string(),
+                host: python,
+                image: image_python.clone(),
+            },
+        ]);
         let blob = build_relocated_tool_layer_from_dir(
             &pipx,
             "mise/installs/pipx-gitlabcis/1.20.0",

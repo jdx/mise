@@ -1189,7 +1189,7 @@ fn python_relocation_fingerprint(pythons: &[PythonRelocation]) -> String {
             python.host.to_string_lossy().into_owned(),
             python.image.to_string_lossy().into_owned(),
         ] {
-            hash.update(input.len().to_le_bytes());
+            hash.update((input.len() as u64).to_le_bytes());
             hash.update(input.as_bytes());
         }
     }
