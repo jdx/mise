@@ -584,12 +584,25 @@ impl Upgrade {
             match config.monorepo_union_tool_request_set().await {
                 Ok(requests) => {
                     let mut ts: Toolset = requests.into();
-                    ts.resolve(config).await?;
-                    Some(ts)
+                    match ts.resolve(config).await {
+                        Ok(()) if monorepo_toolset_is_complete(&ts) => Some(ts),
+                        Ok(()) => {
+                            warn!(
+                                "could not completely resolve the monorepo toolset for lockfile update; preserving existing sibling entries"
+                            );
+                            None
+                        }
+                        Err(err) => {
+                            warn!(
+                                "could not resolve the monorepo toolset for lockfile update: {err:#}; preserving existing sibling entries"
+                            );
+                            None
+                        }
+                    }
                 }
                 Err(err) => {
                     warn!(
-                        "could not load the complete monorepo toolset for lockfile update: {err:#}"
+                        "could not load the complete monorepo toolset for lockfile update: {err:#}; preserving existing sibling entries"
                     );
                     None
                 }
@@ -597,23 +610,26 @@ impl Upgrade {
         } else {
             None
         };
-        if let Some(monorepo_ts) = &monorepo_ts {
-            config::rebuild_shims_and_runtime_symlinks_for_monorepo(
-                config,
-                ts,
-                monorepo_ts,
-                &successful_versions,
-                crate::lockfile::LockfileUpdateMode::AllowLocked,
-            )
-            .await?;
-        } else {
-            config::rebuild_shims_and_runtime_symlinks(
-                config,
-                ts,
-                &successful_versions,
-                crate::lockfile::LockfileUpdateMode::AllowLocked,
-            )
-            .await?;
+        match upgrade_lockfile_update(monorepo_ts.as_ref()) {
+            UpgradeLockfileUpdate::Active => {
+                config::rebuild_shims_and_runtime_symlinks(
+                    config,
+                    ts,
+                    &successful_versions,
+                    crate::lockfile::LockfileUpdateMode::AllowLocked,
+                )
+                .await?;
+            }
+            UpgradeLockfileUpdate::MonorepoUnion(monorepo_ts) => {
+                config::rebuild_shims_and_runtime_symlinks_for_monorepo(
+                    config,
+                    ts,
+                    monorepo_ts,
+                    &successful_versions,
+                    crate::lockfile::LockfileUpdateMode::AllowLocked,
+                )
+                .await?;
+            }
         }
 
         if successful_versions.iter().any(|v| v.short() == "python") {
@@ -836,6 +852,26 @@ impl Upgrade {
     }
 }
 
+enum UpgradeLockfileUpdate<'a> {
+    Active,
+    MonorepoUnion(&'a Toolset),
+}
+
+fn upgrade_lockfile_update(monorepo_ts: Option<&Toolset>) -> UpgradeLockfileUpdate<'_> {
+    match monorepo_ts {
+        Some(ts) => UpgradeLockfileUpdate::MonorepoUnion(ts),
+        None => UpgradeLockfileUpdate::Active,
+    }
+}
+
+fn monorepo_toolset_is_complete(ts: &Toolset) -> bool {
+    // Toolset::resolve warns and retains a partially resolved list for ordinary
+    // per-tool failures, so its Ok result alone does not prove completeness.
+    ts.versions
+        .values()
+        .all(|tvl| tvl.versions.len() == tvl.requests.len())
+}
+
 fn current_satisfies_hidden_release(
     config: &Arc<Config>,
     tv: &ToolVersion,
@@ -1005,10 +1041,44 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 #[cfg(test)]
 mod tests {
     use super::{
-        current_version_satisfies_hidden_release, format_hidden_release_details,
-        release_is_eligible_at,
+        UpgradeLockfileUpdate, current_version_satisfies_hidden_release,
+        format_hidden_release_details, monorepo_toolset_is_complete, release_is_eligible_at,
+        upgrade_lockfile_update,
     };
+    use crate::cli::args::BackendArg;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset};
     use jiff::tz::TimeZone;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_upgrade_uses_complete_monorepo_union_for_lockfile_update() {
+        let ts = Toolset::new(ToolSource::Unknown);
+        assert!(matches!(
+            upgrade_lockfile_update(Some(&ts)),
+            UpgradeLockfileUpdate::MonorepoUnion(_)
+        ));
+        assert!(matches!(
+            upgrade_lockfile_update(None),
+            UpgradeLockfileUpdate::Active
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_monorepo_toolset_completeness_requires_every_request_to_resolve() {
+        crate::toolset::install_state::init().await.unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        let ba = Arc::new(BackendArg::new("dummy".to_string(), None));
+        let request = ToolRequest::new(ba, "1", ToolSource::Unknown).unwrap();
+        ts.add_version(request);
+        assert!(!monorepo_toolset_is_complete(&ts));
+
+        let tvl = ts.versions.values_mut().next().unwrap();
+        tvl.versions.push(ToolVersion::new(
+            tvl.requests[0].clone(),
+            "1.0.0".to_string(),
+        ));
+        assert!(monorepo_toolset_is_complete(&ts));
+    }
 
     #[test]
     fn test_current_version_satisfies_hidden_release() {

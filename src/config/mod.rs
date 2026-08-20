@@ -3300,15 +3300,14 @@ pub async fn rebuild_shims_and_runtime_symlinks(
     rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
         config,
         ts,
-        ts,
         new_versions,
         lockfile_update_mode,
-        false,
+        lockfile::LockfileUpdateScope::Active,
     )
     .await
 }
 
-/// Rebuild active shims while updating a shared lockfile from the complete monorepo toolset.
+/// Rebuild active shims while using the complete monorepo toolset to preserve configured siblings.
 pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -3319,10 +3318,9 @@ pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
     rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
         config,
         ts,
-        monorepo_ts,
         new_versions,
         lockfile_update_mode,
-        true,
+        lockfile::LockfileUpdateScope::MonorepoUnion(monorepo_ts),
     )
     .await
 }
@@ -3330,10 +3328,9 @@ pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
 async fn rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
     config: &Arc<Config>,
     ts: &Toolset,
-    lockfile_ts: &Toolset,
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
-    monorepo_update_is_complete: bool,
+    lockfile_update_scope: lockfile::LockfileUpdateScope<'_>,
 ) -> Result<()> {
     measure!("rebuilding runtime symlinks", {
         runtime_symlinks::rebuild_for_toolset(config, ts)
@@ -3352,15 +3349,15 @@ async fn rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
     let pre_install_platforms = if new_versions.is_empty() {
         Default::default()
     } else {
-        lockfile::snapshot_pre_install_platforms(config, lockfile_ts, new_versions)
+        lockfile::snapshot_pre_install_platforms(config, ts, new_versions)
     };
     let has_deferred_provenance = measure!("updating lockfiles", {
         lockfile::update_lockfiles(
             config,
-            lockfile_ts,
+            ts,
             new_versions,
             lockfile_update_mode,
-            monorepo_update_is_complete,
+            lockfile_update_scope,
         )
         .wrap_err("failed to update lockfiles")?
     });
@@ -3368,7 +3365,7 @@ async fn rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
         measure!("auto-locking platforms", {
             lockfile::auto_lock_new_versions(
                 config,
-                lockfile_ts,
+                ts,
                 new_versions,
                 &pre_install_platforms,
                 lockfile_update_mode,

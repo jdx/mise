@@ -233,3 +233,37 @@ assert_fail "test -f monorepo-optout/mise.lock"
 output=$(cd monorepo-optout/packages/a && mise lock --dry-run --platform linux-x64 2>&1)
 assert_contains "echo '$output'" "tiny"
 assert_not_contains "echo '$output'" "dummy"
+
+echo "=== upgrade prunes a superseded root pin and preserves sibling versions ==="
+mkdir -p monorepo-upgrade/packages/a
+cat >monorepo-upgrade/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-upgrade/packages/a/mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+
+assert "cd monorepo-upgrade && mise install"
+assert "cd monorepo-upgrade/packages/a && mise install"
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
+
+sed -i 's/dummy = "1.0.0"/dummy = "1"/' monorepo-upgrade/mise.toml
+assert "cd monorepo-upgrade && mise upgrade dummy"
+
+assert_not_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.1.0"'
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
+assert "cd monorepo-upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-upgrade/packages/a && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"

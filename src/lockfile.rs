@@ -1501,6 +1501,11 @@ impl LockfileUpdateMode {
     }
 }
 
+pub(crate) enum LockfileUpdateScope<'a> {
+    Active,
+    MonorepoUnion(&'a Toolset),
+}
+
 pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
     if !Settings::get().lockfile_enabled() {
         return Ok(());
@@ -1684,38 +1689,24 @@ pub fn update_lockfiles(
     ts: &Toolset,
     new_versions: &[ToolVersion],
     mode: LockfileUpdateMode,
-    monorepo_update_is_complete: bool,
+    scope: LockfileUpdateScope<'_>,
 ) -> Result<bool> {
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(false);
     }
 
-    // Collect tools by source (config file)
-    let mut tools_by_source: HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>> =
-        HashMap::new();
-    for (ba, tvl) in &ts.versions {
-        for tv in &tvl.versions {
-            tools_by_source
-                .entry(tv.request.source().clone())
-                .or_default()
-                .entry(ba.short.to_string())
-                .or_default()
-                .push(tv.clone());
+    // Only the active toolset contributes lockfile entries and auto-lock work. A
+    // complete monorepo union is used below solely to decide which existing
+    // sibling versions remain configured and must be preserved.
+    let tools_by_source = tools_by_source_for_update(ts, new_versions);
+    let monorepo_versions = match scope {
+        LockfileUpdateScope::Active => None,
+        LockfileUpdateScope::MonorepoUnion(ts) => {
+            let tools = tools_by_source_for_update(ts, new_versions);
+            Some(lockfile_versions_by_path(config, &tools))
         }
-    }
-
-    // Add versions added within this session (from `mise use` or `mise up`)
-    for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
-        let tvs = group.cloned().collect_vec();
-        let source = tvs[0].request.source().clone();
-        let source_tools = tools_by_source.entry(source.clone()).or_default();
-
-        let existing_versions = source_tools.entry(backend.short.to_string()).or_default();
-        for new_tv in tvs {
-            existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
-            existing_versions.push(new_tv);
-        }
-    }
+    };
+    let empty_versions = BTreeSet::new();
 
     // Group config files by target lockfile path
     let mut lockfile_configs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
@@ -1912,13 +1903,24 @@ pub fn update_lockfiles(
             } else {
                 build_rekey_decisions(versions, existing_lockfile.tools.get(&short))
             };
+            let absent_entry_policy = if !is_monorepo_root_lockfile {
+                AbsentEntryPolicy::Drop
+            } else if let Some(monorepo_versions) = &monorepo_versions {
+                // "Complete" means complete for the config roots currently matched
+                // by [monorepo].config_roots. Entries from roots removed from those
+                // globs have no attribution in the lockfile and may be pruned.
+                let keep_versions = monorepo_versions
+                    .get(&lockfile_path)
+                    .and_then(|tools| tools.get(&short))
+                    .unwrap_or(&empty_versions);
+                AbsentEntryPolicy::PreserveVersions(keep_versions)
+            } else {
+                AbsentEntryPolicy::PreserveAll
+            };
             let mut merged_tools = merge_tool_entries_for_update(
                 entries,
                 existing_lockfile.tools.get(&short),
-                // A partial monorepo update must retain sibling entries that were
-                // not loaded. A complete union is authoritative, so preserving an
-                // absent entry there would resurrect the version just upgraded away from.
-                is_monorepo_root_lockfile && !monorepo_update_is_complete,
+                absent_entry_policy,
                 |version, platform| {
                     rekey_decisions
                         .get(&(version.to_string(), platform.to_key()))
@@ -1958,6 +1960,56 @@ pub fn update_lockfiles(
     }
 
     Ok(has_deferred_provenance)
+}
+
+type ToolsBySource = HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>>;
+
+fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> ToolsBySource {
+    let mut tools_by_source: ToolsBySource = HashMap::new();
+    for (ba, tvl) in &ts.versions {
+        for tv in &tvl.versions {
+            tools_by_source
+                .entry(tv.request.source().clone())
+                .or_default()
+                .entry(ba.short.to_string())
+                .or_default()
+                .push(tv.clone());
+        }
+    }
+
+    // Add versions added within this session (from `mise use` or `mise up`).
+    for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
+        let tvs = group.cloned().collect_vec();
+        let source = tvs[0].request.source().clone();
+        let source_tools = tools_by_source.entry(source).or_default();
+        let existing_versions = source_tools.entry(backend.short.to_string()).or_default();
+        for new_tv in tvs {
+            existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+            existing_versions.push(new_tv);
+        }
+    }
+
+    tools_by_source
+}
+
+fn lockfile_versions_by_path(
+    config: &Config,
+    tools_by_source: &ToolsBySource,
+) -> HashMap<PathBuf, HashMap<String, BTreeSet<String>>> {
+    let mut versions_by_path: HashMap<PathBuf, HashMap<String, BTreeSet<String>>> = HashMap::new();
+    for (source, tools) in tools_by_source {
+        let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, source) else {
+            continue;
+        };
+        let versions_by_short = versions_by_path.entry(lockfile_path).or_default();
+        for (short, versions) in tools {
+            versions_by_short
+                .entry(short.clone())
+                .or_default()
+                .extend(versions.iter().map(|tv| tv.version.clone()));
+        }
+    }
+    versions_by_path
 }
 
 /// Find the prior lockfile entry a version would regress against by losing provenance.
@@ -2979,18 +3031,30 @@ where
     (tools, consumed_keys)
 }
 
+#[derive(Clone, Copy)]
+enum AbsentEntryPolicy<'a> {
+    Drop,
+    PreserveAll,
+    PreserveVersions(&'a BTreeSet<String>),
+}
+
 fn merge_tool_entries_for_update<F>(
     entries: Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
-    preserve_absent: bool,
+    absent_entry_policy: AbsentEntryPolicy<'_>,
     resolve: F,
 ) -> Vec<LockfileTool>
 where
     F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
 {
     let (mut merged_tools, consumed_keys) = merge_tool_entries(entries, existing_tools, resolve);
-    if preserve_absent {
-        preserve_absent_tool_entries(&mut merged_tools, existing_tools, &consumed_keys);
+    if !matches!(absent_entry_policy, AbsentEntryPolicy::Drop) {
+        preserve_absent_tool_entries(
+            &mut merged_tools,
+            existing_tools,
+            &consumed_keys,
+            absent_entry_policy,
+        );
     }
     merged_tools
 }
@@ -2999,6 +3063,7 @@ fn preserve_absent_tool_entries(
     merged_tools: &mut Vec<LockfileTool>,
     existing_tools: Option<&Vec<LockfileTool>>,
     consumed_keys: &HashSet<LockfileToolKey>,
+    policy: AbsentEntryPolicy<'_>,
 ) {
     let Some(existing_tools) = existing_tools else {
         return;
@@ -3011,6 +3076,16 @@ fn preserve_absent_tool_entries(
     for existing_tool in existing_tools {
         let key = (existing_tool.version.clone(), existing_tool.options.clone());
         if keys.contains(&key) || consumed_keys.contains(&key) {
+            continue;
+        }
+        let preserve = match policy {
+            AbsentEntryPolicy::Drop => false,
+            AbsentEntryPolicy::PreserveAll => true,
+            AbsentEntryPolicy::PreserveVersions(versions) => {
+                versions.contains(&existing_tool.version)
+            }
+        };
+        if !preserve {
             continue;
         }
         if keys.insert(key) {
@@ -4143,13 +4218,12 @@ options = { exe = "rg" }
     #[test]
     fn test_preserve_absent_tool_entries_for_monorepo_upsert() {
         let existing = vec![basic_tool("20.0.0", "core:node")];
-        let (mut merged, consumed) = merge_tool_entries(
+        let merged = merge_tool_entries_for_update(
             vec![basic_tool("22.0.0", "core:node")],
             Some(&existing),
+            AbsentEntryPolicy::PreserveAll,
             |_, _| None,
         );
-
-        preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
 
         let versions = merged
             .iter()
@@ -4167,13 +4241,11 @@ options = { exe = "rg" }
             basic_tool("2.0.0", "aqua:jqlang/jq"),
         ];
 
+        let keep_versions = BTreeSet::from(["1.8.2".to_string(), "2.0.0".to_string()]);
         let merged = merge_tool_entries_for_update(
-            vec![
-                basic_tool("1.8.2", "aqua:jqlang/jq"),
-                basic_tool("2.0.0", "aqua:jqlang/jq"),
-            ],
+            vec![basic_tool("1.8.2", "aqua:jqlang/jq")],
             Some(&existing),
-            false,
+            AbsentEntryPolicy::PreserveVersions(&keep_versions),
             |_, _| None,
         );
 
@@ -4243,7 +4315,12 @@ options = { exe = "rg" }
             |_, _| Some(options.clone()),
         );
 
-        preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
+        preserve_absent_tool_entries(
+            &mut merged,
+            Some(&existing),
+            &consumed,
+            AbsentEntryPolicy::PreserveAll,
+        );
 
         // Single entry: rekeyed, not duplicated — and it kept the platforms.
         assert_eq!(merged.len(), 1, "rekeyed entry duplicated: {merged:?}");
@@ -4263,7 +4340,12 @@ options = { exe = "rg" }
             platforms: BTreeMap::new(),
         });
         let mut merged = vec![basic_tool("22.0.0", "core:node")];
-        preserve_absent_tool_entries(&mut merged, Some(&fragmented), &HashSet::new());
+        preserve_absent_tool_entries(
+            &mut merged,
+            Some(&fragmented),
+            &HashSet::new(),
+            AbsentEntryPolicy::PreserveAll,
+        );
         assert_eq!(
             merged.len(),
             3,
@@ -4603,7 +4685,12 @@ options = { exe = "rg" }
         }];
         let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
 
-        preserve_absent_tool_entries(&mut merged, Some(&existing), &consumed);
+        preserve_absent_tool_entries(
+            &mut merged,
+            Some(&existing),
+            &consumed,
+            AbsentEntryPolicy::PreserveAll,
+        );
 
         assert_eq!(merged.len(), 2);
         assert!(merged.iter().any(|tool| tool.options == other_options));
