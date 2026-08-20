@@ -148,32 +148,60 @@ fn helper_name_len(exe_stem: Option<&str>) -> usize {
 /// Delete the copies of mise that earlier updates left in `TEMP`.
 ///
 /// `self-replace` moves the running binary aside and spawns a copy of it to delete the leftovers.
-/// When that copy does not recognise itself — measured with `TEMP` at 199 and 201 characters, just
-/// under the length #12062 refuses outright — the deletion never happens and a **full copy of
-/// mise.exe** stays in `TEMP` for good. Nothing else collects them: they are not under the cache, so
+/// When that copy does not delete itself the deletion never happens and a **full copy of mise.exe**
+/// stays in `TEMP` for good. Nothing else collects them: they are not under the cache, so
 /// `mise cache clear` does not reach them, and their names mean nothing to anyone else.
+///
+/// A long `TEMP` is not the only trigger, though it was the one this was first written for
+/// (measured at 199 and 201 characters, just under the length #12062 refuses outright). Measured
+/// again on a `TEMP` of 31: a successful update leaves **both** copies — the `__relocated__`
+/// original and the `__selfdelete__` helper — and neither is locked afterwards, so any later mise
+/// can remove them. That is what this exists to do.
 ///
 /// Best effort by design. A copy another mise is still using cannot be deleted on Windows, which is
 /// the outcome we want, so failures are ignored rather than warned about.
 #[cfg(windows)]
 fn sweep_helper_orphans() {
-    let Some(stem) = current_exe_stem() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else { continue };
-        if !env::is_self_replace_helper(name, &stem) {
-            continue;
-        }
-        match std::fs::remove_file(entry.path()) {
-            Ok(()) => debug!("removed stale self-update copy: {name}"),
-            Err(e) => trace!("could not remove {name}: {e}"),
+    for (path, _) in helper_orphans() {
+        match std::fs::remove_file(&path) {
+            Ok(()) => debug!("removed stale self-update copy: {}", path.display()),
+            Err(e) => trace!("could not remove {}: {e}", path.display()),
         }
     }
+}
+
+/// The copies an earlier update left in `TEMP`, with their sizes.
+///
+/// Shared with `mise doctor` so that "what counts as a leftover" has one definition rather than two
+/// that can drift: the predicate stays [`env::is_self_replace_helper`], and this is only the walk.
+/// A file whose size cannot be read is still reported, at 0 — it exists, which is the part that
+/// matters, and the size is decoration.
+#[cfg(windows)]
+pub(crate) fn helper_orphans() -> Vec<(std::path::PathBuf, u64)> {
+    let Some(stem) = current_exe_stem() else {
+        return Vec::new();
+    };
+    helper_orphans_in(&std::env::temp_dir(), &stem)
+}
+
+#[cfg(windows)]
+fn helper_orphans_in(dir: &std::path::Path, stem: &str) -> Vec<(std::path::PathBuf, u64)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| env::is_self_replace_helper(name, stem))
+        })
+        .map(|entry| {
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            (entry.path(), size)
+        })
+        .collect()
 }
 
 #[cfg(windows)]
@@ -201,12 +229,15 @@ impl SelfUpdate {
             }
             bail!("mise is installed via a package manager, cannot update");
         }
-        #[cfg(windows)]
-        Self::ensure_temp_dir_can_replace_binary()?;
         // Before the update, not after: this run is about to create a copy of its own, and that one
-        // is in use rather than stale.
+        // is in use rather than stale. Before the length check too, and that ordering is the whole
+        // point: a `TEMP` long enough to refuse the update is the case the leftovers come from, so
+        // running the sweep afterwards means the only machines that accumulate them are the only
+        // machines that never reach the code that collects them.
         #[cfg(windows)]
         sweep_helper_orphans();
+        #[cfg(windows)]
+        Self::ensure_temp_dir_can_replace_binary()?;
         let status = self.do_update()?;
 
         if status.updated() {
@@ -544,6 +575,49 @@ mod tests {
         let tmp = temp_dir_of_len(202);
         assert!(!temp_dir_breaks_self_replace(&tmp, Some("mise")));
         assert!(temp_dir_breaks_self_replace(&tmp, Some("mise-dev")));
+    }
+
+    /// The walk, not the predicate — `env::is_self_replace_helper` has its own tests. What matters
+    /// here is that `doctor` and the sweep see the same set, and that a directory full of unrelated
+    /// files does not turn into a warning about mise.
+    #[test]
+    fn only_the_generated_copies_are_collected() {
+        let dir = tempfile::tempdir().unwrap();
+        let rand = "a".repeat(env::SELF_REPLACE_RANDOM_LEN);
+        let collected = [
+            format!(".mise.{rand}.__selfdelete__.exe"),
+            format!(".mise.{rand}.__relocated__.exe"),
+        ];
+        let ignored = [
+            "mise.exe".to_string(),
+            // a different binary's leftovers are not ours to delete
+            format!(".other.{rand}.__selfdelete__.exe"),
+            // near-misses on the random segment: too short, and not lowercase
+            format!(".mise.{}.__selfdelete__.exe", "a".repeat(31)),
+            format!(".mise.{}A.__selfdelete__.exe", "a".repeat(31)),
+            "setup-x64.exe".to_string(),
+        ];
+        for name in collected.iter().chain(ignored.iter()) {
+            std::fs::write(dir.path().join(name), b"xyz").unwrap();
+        }
+
+        let found = helper_orphans_in(dir.path(), "mise");
+        let mut names = found
+            .iter()
+            .map(|(p, _)| p.file_name().unwrap().to_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        names.sort();
+        let mut want = collected.to_vec();
+        want.sort();
+        assert_eq!(names, want);
+        // the size is what `doctor` adds up, so it has to come from the files rather than a count
+        assert_eq!(found.iter().map(|(_, size)| size).sum::<u64>(), 6);
+    }
+
+    #[test]
+    fn a_missing_directory_is_not_an_error() {
+        // `TEMP` pointing at something unreadable must not take `self-update` or `doctor` down.
+        assert!(helper_orphans_in(Path::new("C:\\nope\\nope\\nope"), "mise").is_empty());
     }
 
     #[test]
