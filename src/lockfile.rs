@@ -1684,6 +1684,7 @@ pub fn update_lockfiles(
     ts: &Toolset,
     new_versions: &[ToolVersion],
     mode: LockfileUpdateMode,
+    monorepo_update_is_complete: bool,
 ) -> Result<bool> {
     if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
         return Ok(false);
@@ -1911,9 +1912,13 @@ pub fn update_lockfiles(
             } else {
                 build_rekey_decisions(versions, existing_lockfile.tools.get(&short))
             };
-            let (mut merged_tools, consumed_keys) = merge_tool_entries(
+            let mut merged_tools = merge_tool_entries_for_update(
                 entries,
                 existing_lockfile.tools.get(&short),
+                // A partial monorepo update must retain sibling entries that were
+                // not loaded. A complete union is authoritative, so preserving an
+                // absent entry there would resurrect the version just upgraded away from.
+                is_monorepo_root_lockfile && !monorepo_update_is_complete,
                 |version, platform| {
                     rekey_decisions
                         .get(&(version.to_string(), platform.to_key()))
@@ -1921,13 +1926,6 @@ pub fn update_lockfiles(
                         .flatten()
                 },
             );
-            if is_monorepo_root_lockfile {
-                preserve_absent_tool_entries(
-                    &mut merged_tools,
-                    existing_lockfile.tools.get(&short),
-                    &consumed_keys,
-                );
-            }
             // Keep the prior provenance-bearing entry alive for unverified upgrades so
             // the auto-lock pass can verify the new version and compare against it. The
             // merge above drops superseded versions; without this the baseline would be
@@ -2979,6 +2977,22 @@ where
         })
         .collect();
     (tools, consumed_keys)
+}
+
+fn merge_tool_entries_for_update<F>(
+    entries: Vec<LockfileTool>,
+    existing_tools: Option<&Vec<LockfileTool>>,
+    preserve_absent: bool,
+    resolve: F,
+) -> Vec<LockfileTool>
+where
+    F: FnMut(&str, &Platform) -> Option<BTreeMap<String, String>>,
+{
+    let (mut merged_tools, consumed_keys) = merge_tool_entries(entries, existing_tools, resolve);
+    if preserve_absent {
+        preserve_absent_tool_entries(&mut merged_tools, existing_tools, &consumed_keys);
+    }
+    merged_tools
 }
 
 fn preserve_absent_tool_entries(
@@ -4144,6 +4158,32 @@ options = { exe = "rg" }
         assert_eq!(versions.len(), 2);
         assert!(versions.contains(&"20.0.0"));
         assert!(versions.contains(&"22.0.0"));
+    }
+
+    #[test]
+    fn test_complete_monorepo_update_prunes_superseded_version() {
+        let existing = vec![
+            basic_tool("1.8.0", "aqua:jqlang/jq"),
+            basic_tool("2.0.0", "aqua:jqlang/jq"),
+        ];
+
+        let merged = merge_tool_entries_for_update(
+            vec![
+                basic_tool("1.8.2", "aqua:jqlang/jq"),
+                basic_tool("2.0.0", "aqua:jqlang/jq"),
+            ],
+            Some(&existing),
+            false,
+            |_, _| None,
+        );
+
+        assert_eq!(
+            merged
+                .iter()
+                .map(|tool| tool.version.as_str())
+                .collect_vec(),
+            vec!["1.8.2", "2.0.0"]
+        );
     }
 
     #[test]

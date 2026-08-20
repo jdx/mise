@@ -15,7 +15,7 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
+    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
     get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -580,13 +580,41 @@ impl Upgrade {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(
-            config,
-            ts,
-            &successful_versions,
-            crate::lockfile::LockfileUpdateMode::AllowLocked,
-        )
-        .await?;
+        let monorepo_ts = if config.monorepo_lockfile_root().is_some() {
+            match config.monorepo_union_tool_request_set().await {
+                Ok(requests) => {
+                    let mut ts: Toolset = requests.into();
+                    ts.resolve(config).await?;
+                    Some(ts)
+                }
+                Err(err) => {
+                    warn!(
+                        "could not load the complete monorepo toolset for lockfile update: {err:#}"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(monorepo_ts) = &monorepo_ts {
+            config::rebuild_shims_and_runtime_symlinks_for_monorepo(
+                config,
+                ts,
+                monorepo_ts,
+                &successful_versions,
+                crate::lockfile::LockfileUpdateMode::AllowLocked,
+            )
+            .await?;
+        } else {
+            config::rebuild_shims_and_runtime_symlinks(
+                config,
+                ts,
+                &successful_versions,
+                crate::lockfile::LockfileUpdateMode::AllowLocked,
+            )
+            .await?;
+        }
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
