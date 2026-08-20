@@ -2637,15 +2637,19 @@ impl Task {
     }
 
     fn store_raw_render_inputs(&mut self) {
-        if !self.sources.is_empty() && self.outputs.is_empty() {
-            self.outputs = TaskOutputs::Auto;
-        }
+        self.infer_auto_outputs();
         self.raw_outputs = self.outputs.raw_templates_without_env();
         // Save unrendered dependency templates so they can be re-rendered later
         // with parent task args available (for passing args to dependencies).
         self.depends_raw = Some(self.depends.clone());
         self.depends_post_raw = Some(self.depends_post.clone());
         self.wait_for_raw = Some(self.wait_for.clone());
+    }
+
+    pub(crate) fn infer_auto_outputs(&mut self) {
+        if !self.sources.is_empty() && self.outputs.is_empty() {
+            self.outputs = TaskOutputs::Auto;
+        }
     }
 
     fn parse_plain_depends(&mut self) -> Result<()> {

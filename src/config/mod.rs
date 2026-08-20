@@ -3205,17 +3205,17 @@ fn render_task_input_entries(
         .collect()
 }
 
-async fn apply_task_config_inputs(
-    task: &mut Task,
+async fn resolve_task_config_inputs(
+    task: &Task,
     config: &Arc<Config>,
     task_inputs: &ResolvedTaskInputs,
-) -> Result<()> {
+) -> Result<Option<ResolvedTaskInputs>> {
     let has_group_references = task
         .sources
         .iter()
         .any(|source| source.starts_with(TASK_INPUT_GROUP_PREFIX));
     if task_inputs.is_empty() && !has_group_references {
-        return Ok(());
+        return Ok(None);
     }
     Settings::get().ensure_experimental("task input groups")?;
 
@@ -3242,23 +3242,29 @@ async fn apply_task_config_inputs(
         )),
         None => None,
     };
-    let task_inputs = ResolvedTaskInputs {
+    Ok(Some(ResolvedTaskInputs {
         global_inputs,
         input_groups,
-    };
-    let had_sources = !task.sources.is_empty();
-    let mut sources = expand_task_inputs(
+    }))
+}
+
+fn apply_task_input_groups(task: &mut Task, task_inputs: &ResolvedTaskInputs) -> Result<()> {
+    task.sources = expand_task_inputs(
         &task.sources,
-        &task_inputs,
+        task_inputs,
         Path::new(""),
         &task.name,
         &mut vec![],
         false,
     )?;
+    Ok(())
+}
+
+fn apply_task_global_inputs(task: &mut Task, task_inputs: &ResolvedTaskInputs) -> Result<()> {
     if let Some((global_inputs, root)) = &task_inputs.global_inputs {
-        sources.extend(expand_task_inputs(
+        task.sources.extend(expand_task_inputs(
             global_inputs,
-            &task_inputs,
+            task_inputs,
             root,
             &task.name,
             &mut vec![],
@@ -3266,9 +3272,18 @@ async fn apply_task_config_inputs(
         )?);
     }
 
-    task.sources = sources;
-    if !had_sources && !task.sources.is_empty() && task.outputs.is_empty() {
-        task.outputs = TaskOutputs::Auto;
+    task.infer_auto_outputs();
+    Ok(())
+}
+
+async fn apply_task_config_inputs(
+    task: &mut Task,
+    config: &Arc<Config>,
+    task_inputs: &ResolvedTaskInputs,
+) -> Result<()> {
+    if let Some(task_inputs) = resolve_task_config_inputs(task, config, task_inputs).await? {
+        apply_task_input_groups(task, &task_inputs)?;
+        apply_task_global_inputs(task, &task_inputs)?;
     }
     Ok(())
 }
@@ -4062,9 +4077,9 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 
     // Global config files keep independent task include sets. Aggregate their
     // results high-to-low. When a lower config supplies the first inline
-    // definition for a script already rediscovered by a higher config, apply
-    // only that inline metadata to the higher script so its config context is
-    // preserved.
+    // definition for a task source already rediscovered by a higher config,
+    // apply only that inline metadata to the higher task so its config context
+    // is preserved.
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut seen_config_task_names = BTreeSet::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
@@ -4081,7 +4096,11 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
         .await?;
         rendered_file_tasks.finish_config();
         let mut inline_tasks = IndexMap::new();
-        for task in &sources.config_tasks {
+        for task in sources
+            .config_tasks
+            .iter()
+            .filter_map(|task| task.explicit_overlay.as_ref())
+        {
             inline_tasks
                 .entry(task.name.clone())
                 .or_insert_with(|| task.clone());
@@ -4091,11 +4110,9 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             if let Some(inline_task) = inline_tasks.get(&task.name) {
                 if seen_config_task_names.insert(task.name.clone()) {
                     if let Some(existing) = tasks.get_mut(&task.name) {
-                        let rediscovered_file = resolved_task_file(existing)
-                            .zip(resolved_task_file(&task))
-                            .is_some_and(|(left, right)| file::same_file(&left, &right));
-                        if rediscovered_file {
+                        if tasks_have_same_source(existing, &task) {
                             existing.merge_toml_overlay(inline_task.clone());
+                            existing.infer_auto_outputs();
                         }
                     } else {
                         tasks.insert(task.name.clone(), task);
@@ -4281,10 +4298,10 @@ async fn load_config_tasks(
     templates: &TaskDefinitions,
     monorepo_cf: Option<&Arc<dyn ConfigFile>>,
     task_config: &ResolvedTaskConfig,
-) -> Result<Vec<Task>> {
+) -> Result<Vec<LoadedConfigTask>> {
     let is_global = is_global_config(cf.get_path());
     let config_root = Arc::new(config_root.to_path_buf());
-    let mut tasks = vec![];
+    let mut loaded_tasks = vec![];
     for t in cf.tasks().into_iter() {
         let config_root = config_root.clone();
         let config = config.clone();
@@ -4300,6 +4317,9 @@ async fn load_config_tasks(
         }
         // Resolve template if the task extends one
         resolve_task_template(&mut t, templates)?;
+        let has_explicit_dir = t.dir.is_some();
+        let has_explicit_shell = t.shell.is_some();
+        let has_explicit_outputs = !t.outputs.is_empty();
         if t.dir.is_none() {
             t.dir = task_config.dir.clone();
         }
@@ -4308,11 +4328,36 @@ async fn load_config_tasks(
         }
         match t.render(&config, &config_root).await {
             Ok(()) => {
-                apply_task_config_inputs(&mut t, &config, &task_config.inputs).await?;
+                let resolved_task_inputs =
+                    resolve_task_config_inputs(&t, &config, &task_config.inputs).await?;
+                if let Some(task_inputs) = &resolved_task_inputs {
+                    apply_task_input_groups(&mut t, task_inputs)?;
+                }
+                let explicit_overlay = if is_global {
+                    let mut overlay = t.clone();
+                    if !has_explicit_dir {
+                        overlay.dir = None;
+                    }
+                    if !has_explicit_shell {
+                        overlay.shell = None;
+                    }
+                    if !has_explicit_outputs {
+                        overlay.outputs = TaskOutputs::default();
+                    }
+                    Some(overlay)
+                } else {
+                    None
+                };
+                if let Some(task_inputs) = &resolved_task_inputs {
+                    apply_task_global_inputs(&mut t, task_inputs)?;
+                }
                 apply_task_config_cache_default(&mut t, &task_config.cache);
                 apply_task_config_rust_cache_default(&mut t, &task_config.rust_cache);
                 task_config.environment.apply(&mut t)?;
-                tasks.push(t);
+                loaded_tasks.push(LoadedConfigTask {
+                    effective: t,
+                    explicit_overlay,
+                });
             }
             Err(e) => {
                 if monorepo_cf.is_some() {
@@ -4327,7 +4372,7 @@ async fn load_config_tasks(
             }
         }
     }
-    Ok(tasks)
+    Ok(loaded_tasks)
 }
 
 struct LoadTaskIncludesOptions<'a> {
@@ -4681,7 +4726,12 @@ async fn load_tasks_in_dir_with_definitions(
 
 struct TaskSources {
     file_tasks: Vec<Task>,
-    config_tasks: Vec<Task>,
+    config_tasks: Vec<LoadedConfigTask>,
+}
+
+struct LoadedConfigTask {
+    effective: Task,
+    explicit_overlay: Option<Task>,
 }
 
 #[derive(Clone)]
@@ -4800,7 +4850,12 @@ impl RenderedTaskCache {
 
 impl TaskSources {
     fn into_tasks(self) -> Vec<Task> {
-        let mut tasks = merge_file_and_config_tasks(self.file_tasks, self.config_tasks)
+        let config_tasks = self
+            .config_tasks
+            .into_iter()
+            .map(|task| task.effective)
+            .collect();
+        let mut tasks = merge_file_and_config_tasks(self.file_tasks, config_tasks)
             .into_iter()
             .sorted_by_cached_key(|t| t.name.clone())
             .collect::<Vec<_>>();
@@ -4915,7 +4970,7 @@ async fn load_task_sources_from_configs(
     for (precedence, cf) in configs.iter().enumerate() {
         let dir = dir.to_path_buf();
         let monorepo_cf = monorepo_context.then_some(*cf);
-        let mut loaded = load_config_tasks(
+        let loaded = load_config_tasks(
             config,
             (*cf).clone(),
             &dir,
@@ -4924,10 +4979,20 @@ async fn load_task_sources_from_configs(
             &task_config,
         )
         .await?;
-        for task in &mut loaded {
-            task.config_precedence = precedence;
+        for LoadedConfigTask {
+            mut effective,
+            mut explicit_overlay,
+        } in loaded
+        {
+            effective.config_precedence = precedence;
+            if let Some(overlay) = &mut explicit_overlay {
+                overlay.config_precedence = precedence;
+            }
+            config_tasks.push(LoadedConfigTask {
+                effective,
+                explicit_overlay,
+            });
         }
-        config_tasks.extend(loaded);
     }
 
     let mut file_tasks = vec![];
