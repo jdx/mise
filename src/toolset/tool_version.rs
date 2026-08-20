@@ -735,7 +735,7 @@ impl ToolVersion {
             backend: tr.ba().clone(),
             ref_,
             ref_type,
-            options: tr.option_state(),
+            options: tr.resolved_options(),
             source: tr.source().clone(),
         };
         let version = request.version();
@@ -748,7 +748,7 @@ impl ToolVersion {
             backend: tr.ba().clone(),
             path,
             source: tr.source().clone(),
-            options: tr.option_state(),
+            options: tr.resolved_options(),
         };
         let version = request.version();
         Ok(Self::new(request, version))
@@ -1091,7 +1091,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ref_resolution_preserves_request_option_overlay() {
+    async fn ref_resolution_preserves_request_option_source() {
         crate::toolset::install_state::init().await.unwrap();
         let backend = Arc::new(BackendArg::from("solidity"));
         let mut options = ToolVersionOptions::default();
@@ -1104,7 +1104,7 @@ mod tests {
 
         let resolved = ToolVersion::resolve_ref("main".to_string(), "ref".to_string(), &request);
 
-        assert_eq!(resolved.request.request_options(), Some(&options));
+        assert_eq!(resolved.request.request_options(), options);
     }
 
     #[test]

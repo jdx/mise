@@ -9,7 +9,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
 use crate::registry::{REGISTRY, tool_enabled};
-use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
+use crate::toolset::{ResolvedToolOptions, ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -289,41 +289,30 @@ impl ToolRequestSetBuilder {
 ///
 /// A request can already contain registry, install-manifest, or backend-alias
 /// defaults, so option emptiness cannot indicate whether config should apply.
-/// `opts_with_config` preserves the normal precedence and reapplies explicit
-/// inline backend options last.
+/// The canonical backend resolver preserves the normal precedence and reapplies
+/// explicit inline backend options last.
 fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolRequest) -> ToolRequest {
     if let Some(config_options) = trs
         .tools
         .get(tvr.ba())
         .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
     {
-        let options = layered_options_for_runtime_request(&tvr, Some(config_options));
-        tvr.set_options(options);
+        let options = resolved_options_for_runtime_request(&tvr, Some(config_options));
+        tvr.set_resolved_options(options);
     }
     tvr
 }
 
-/// Layer configuration onto a runtime request without discarding options that
-/// were attached independently through `ToolRequest::new_opts`.
-///
-/// Requests built with `ToolRequest::new` contain inherited backend options,
-/// while `ToolRequest::new_opts` records its options as an explicit request
-/// overlay. Keeping those layers distinct prevents inherited or previously
-/// layered values from being mistaken for request overrides. Explicit inline
-/// options remain the final, highest-precedence layer.
-pub(super) fn layered_options_for_runtime_request(
+/// Re-resolve a runtime request through the canonical option precedence chain.
+/// Request provenance is retained on `ResolvedToolOptions`, so equal values do
+/// not need to be compared to infer whether they were explicitly supplied.
+pub(super) fn resolved_options_for_runtime_request(
     runtime: &ToolRequest,
     config_options: Option<ToolVersionOptions>,
-) -> ToolVersionOptions {
-    let mut options = runtime.ba().opts_with_config(config_options);
-    if let Some(request_options) = runtime.request_options() {
-        options.apply_overrides(request_options);
-    }
-    if let Some(inline_options) = runtime.ba().explicit_opts() {
-        options.apply_overrides(inline_options);
-    }
-
-    options
+) -> ResolvedToolOptions {
+    runtime
+        .ba()
+        .resolve_opts_with_config_and_request(config_options, Some(runtime.request_options()))
 }
 
 /// Select configured options for an explicit runtime request without assuming
@@ -586,6 +575,10 @@ mod tests {
         .unwrap();
         let collision = apply_config_options_to_runtime_arg(&trs, collision);
         assert_eq!(collision.options().get("bin"), Some("solc"));
+        assert_eq!(
+            collision.resolved_options().source_for_key("bin"),
+            Some(crate::toolset::ToolOptionSource::Request)
+        );
     }
 
     #[tokio::test]
