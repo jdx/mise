@@ -1283,9 +1283,6 @@ impl PublicTopologyPlanner<'_> {
                 continue;
             }
             let operation = if policy == KegLinkPolicy::Info {
-                if self.native_observation {
-                    continue;
-                }
                 let installer = install_info_executable()?;
                 let index = installer
                     .as_ref()
@@ -4324,27 +4321,6 @@ mod tests {
         )?;
         link_keg(name, version, false)?;
         Ok(keg)
-    }
-
-    #[test]
-    fn native_install_info_is_not_mise_repair_work() -> Result<()> {
-        let _lock = ENV_LOCK.blocking_lock();
-        let (_tmp, prefix) = canonical_tempdir()?;
-        let _guard = BrewPrefixGuard::set(&prefix);
-        let keg = write_installed_formula(&prefix, "foo", "1.0", false, &[])?;
-        crate::file::create_dir_all(keg.join("share/info"))?;
-        crate::file::write(keg.join("share/info/foo.info"), "native info")?;
-        crate::file::create_dir_all(prefix.join("share/info"))?;
-        crate::file::write(prefix.join("share/info/dir"), "native index")?;
-
-        let health = installed_formula_health("foo", "1.0");
-        assert_eq!(
-            health.kind,
-            FormulaHealthKind::Healthy,
-            "{:?}",
-            health.reasons
-        );
-        Ok(())
     }
 
     #[test]
