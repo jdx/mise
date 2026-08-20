@@ -4051,6 +4051,26 @@ fn discover_monorepo_subdirs(
     Ok(subdirs)
 }
 
+enum GlobalTaskState {
+    Resolved {
+        task: Task,
+        has_inline_definition: bool,
+    },
+    Pending {
+        fallback: Task,
+        overlays: Vec<Task>,
+    },
+}
+
+impl GlobalTaskState {
+    fn into_task(self) -> Task {
+        match self {
+            Self::Resolved { task, .. } => task,
+            Self::Pending { fallback, .. } => fallback,
+        }
+    }
+}
+
 async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) -> Result<Vec<Task>> {
     // User-global config overrides system config. Within each group the path
     // lists are lowest-first, so reverse them before applying first-wins task
@@ -4077,11 +4097,11 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 
     // Global config files keep independent task include sets. Aggregate their
     // results high-to-low. When a lower config supplies the first inline
-    // definition for a task source already rediscovered by a higher config,
-    // apply only that inline metadata to the higher task so its config context
-    // is preserved.
-    let mut tasks: IndexMap<String, Task> = IndexMap::new();
-    let mut seen_config_task_names = BTreeSet::new();
+    // definition for a script already rediscovered by a higher config, apply
+    // only that inline metadata to the higher script so its config context is
+    // preserved. A metadata-only task remains pending until the nearest lower
+    // execution- or include-backed definition supplies its runnable base.
+    let mut tasks: IndexMap<String, GlobalTaskState> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for cf in configs {
         let sources = load_task_sources_from_configs(
@@ -4106,24 +4126,69 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
                 .or_insert_with(|| task.clone());
         }
         let loaded = sources.into_tasks();
-        for task in loaded {
-            if let Some(inline_task) = inline_tasks.get(&task.name) {
-                if seen_config_task_names.insert(task.name.clone()) {
-                    if let Some(existing) = tasks.get_mut(&task.name) {
-                        if tasks_have_same_source(existing, &task) {
-                            existing.merge_toml_overlay(inline_task.clone());
-                            existing.infer_auto_outputs();
+        for mut task in loaded {
+            let name = task.name.clone();
+            let inline_task = inline_tasks.get(&name);
+            let can_back_inline_overlay = task_defines_execution(&task) || task.is_toml_include;
+            if let Some(state) = tasks.get_mut(&name) {
+                match state {
+                    GlobalTaskState::Pending { overlays, .. } => {
+                        if can_back_inline_overlay {
+                            for overlay in std::mem::take(overlays).into_iter().rev() {
+                                task.merge_toml_overlay(overlay);
+                            }
+                            task.infer_auto_outputs();
+                            *state = GlobalTaskState::Resolved {
+                                task,
+                                has_inline_definition: true,
+                            };
+                        } else if let Some(inline_task) = inline_task {
+                            overlays.push(inline_task.clone());
                         }
-                    } else {
-                        tasks.insert(task.name.clone(), task);
+                    }
+                    GlobalTaskState::Resolved {
+                        task: selected,
+                        has_inline_definition,
+                    } => {
+                        if let Some(inline_task) = inline_task {
+                            if !*has_inline_definition {
+                                *has_inline_definition = true;
+                                if tasks_have_same_source(selected, &task) {
+                                    selected.merge_toml_overlay(inline_task.clone());
+                                    selected.infer_auto_outputs();
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let state = if let Some(inline_task) = inline_task {
+                if can_back_inline_overlay {
+                    GlobalTaskState::Resolved {
+                        task,
+                        has_inline_definition: true,
+                    }
+                } else {
+                    GlobalTaskState::Pending {
+                        fallback: task,
+                        overlays: vec![inline_task.clone()],
                     }
                 }
             } else {
-                tasks.entry(task.name.clone()).or_insert(task);
-            }
+                GlobalTaskState::Resolved {
+                    task,
+                    has_inline_definition: false,
+                }
+            };
+            tasks.insert(name, state);
         }
     }
-    Ok(tasks.into_values().collect())
+    Ok(tasks
+        .into_values()
+        .map(GlobalTaskState::into_task)
+        .collect())
 }
 
 /// Combine file tasks (auto-discovered executable scripts and included TOML
@@ -4135,13 +4200,22 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
 /// [`Task::merge_toml_overlay`]. An inline block replaces a same-named task from
 /// an included TOML file. When the same name appears in multiple inline blocks
 /// (e.g. `mise.toml` and `mise.local.toml`), the highest-precedence block wins.
-/// If that block has no command, it overlays the nearest lower-precedence
-/// command-bearing block; definitions below that selected base are skipped.
+/// If that block has no execution, it overlays the nearest lower-precedence
+/// execution-bearing block; definitions below that selected base are skipped.
 /// When the same name appears in more than one file task (e.g. a local
 /// `.mise/tasks` script and a same-named task from a `git::` include), the last
 /// one wins. Callers load `file_tasks` in declared `task_config.includes`
 /// order, so the later include in the list takes precedence — see
 /// `load_tasks_in_dir`.
+fn task_defines_execution(task: &Task) -> bool {
+    !task.run.is_empty()
+        || !task.run_windows.is_empty()
+        || task.file.is_some()
+        || !task.depends.is_empty()
+        || !task.depends_post.is_empty()
+        || !task.wait_for.is_empty()
+}
+
 fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -> Vec<Task> {
     let mut by_name: IndexMap<String, Task> = IndexMap::new();
     for t in prefer_windows_file_task_siblings(file_tasks) {
@@ -4151,8 +4225,8 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
     let mut pending_inline_overlays: IndexMap<String, Vec<Task>> = IndexMap::new();
     for t in config_tasks {
         if !seen_config_task_names.insert(t.name.clone()) {
-            let has_command = !t.run.is_empty() || !t.run_windows.is_empty() || t.file.is_some();
-            if pending_inline_overlays.contains_key(&t.name) && has_command {
+            let defines_execution = task_defines_execution(&t);
+            if pending_inline_overlays.contains_key(&t.name) && defines_execution {
                 let overlays = pending_inline_overlays
                     .shift_remove(&t.name)
                     .expect("pending inline overlays should be present");
@@ -4171,7 +4245,7 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
             .filter(|existing| existing.is_toml_include)
         {
             if t.config_precedence <= existing.config_precedence {
-                if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+                if !task_defines_execution(&t) {
                     existing.merge_toml_overlay(t);
                 } else {
                     *existing = t;
@@ -4182,7 +4256,7 @@ fn merge_file_and_config_tasks(file_tasks: Vec<Task>, config_tasks: Vec<Task>) -
                 existing.merge_toml_overlay(t);
             }
         } else {
-            if t.run.is_empty() && t.run_windows.is_empty() && t.file.is_none() {
+            if !task_defines_execution(&t) {
                 pending_inline_overlays
                     .entry(t.name.clone())
                     .or_default()

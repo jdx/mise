@@ -14,6 +14,9 @@ run = "echo system"
 EOF
 
 cat <<'EOF' >"$HOME/.config/mise/conf.d/01-base.toml"
+[task_config]
+includes = ["dependency-tasks.toml"]
+
 [tasks.e]
 description = "global/conf.d/01/e"
 env = { LOWER_PRECEDENCE = "applied" }
@@ -24,21 +27,58 @@ run = "echo conf-d"
 [tasks.conf-d-order]
 run = "echo conf-d-01"
 
+[tasks.metadata-over-command]
+run = '''
+echo "HIGH_METADATA=${HIGH_METADATA:-<unset>}"
+echo "MIDDLE_METADATA=${MIDDLE_METADATA:-<unset>}"
+echo "OVERLAY_ORDER=${OVERLAY_ORDER:-<unset>}"
+'''
+
+[tasks.inline-dependency-wrapper]
+depends = ["dependency-child"]
+EOF
+
+cat <<'EOF' >"$HOME/dependency-tasks.toml"
+[dependency-wrapper]
+depends = ["dependency-child"]
+
+[dependency-child]
+run = "echo dependency-child"
+EOF
+
+cat <<'EOF' >"$HOME/included-command-tasks.toml"
+[inline-dependency-replaces-include]
+run = "echo included-command-should-not-run"
 EOF
 
 cat <<'EOF' >"$HOME/.config/mise/conf.d/02-override.toml"
+[tasks.metadata-over-command]
+env = { MIDDLE_METADATA = "applied", OVERLAY_ORDER = "middle" }
+
 [tasks.conf-d-order]
 run = "echo conf-d-02"
 EOF
 
 cat <<'EOF' >"$HOME/.config/mise/config.toml"
 [task_config]
-includes = [".config/mise/tasks"]
+includes = [".config/mise/tasks", "included-command-tasks.toml"]
 
 [tasks.e]
 description = "global/config/e"
 env = { HIGHER_PRECEDENCE = "applied" }
 
+[tasks.metadata-over-command]
+sources = ["pending-input"]
+env = { HIGH_METADATA = "applied", OVERLAY_ORDER = "high" }
+
+[tasks.dependency-wrapper]
+description = "high metadata on a dependency-only task"
+
+[tasks.inline-dependency-wrapper]
+description = "high metadata on an inline dependency-only task"
+
+[tasks.inline-dependency-replaces-include]
+depends = ["dependency-child"]
 EOF
 
 cat <<'EOF' >"$HOME/.config/mise/tasks/e"
@@ -59,3 +99,10 @@ assert_contains "mise -C '$TMPDIR/outside-home' run e" "LOWER_PRECEDENCE=<unset>
 assert_contains "mise -C '$TMPDIR/outside-home' run e" "SYSTEM_PRECEDENCE=<unset>"
 assert "mise run system-vs-conf-d" "conf-d"
 assert "mise run conf-d-order" "conf-d-02"
+assert "mise run metadata-over-command" \
+  $'HIGH_METADATA=applied\nMIDDLE_METADATA=applied\nOVERLAY_ORDER=high'
+assert "mise tasks ls --json | jq -c '.[] | select(.name == \"metadata-over-command\") | .outputs'" \
+  '{"auto":true}'
+assert "mise run dependency-wrapper" "dependency-child"
+assert "mise run inline-dependency-wrapper" "dependency-child"
+assert "mise run inline-dependency-replaces-include" "dependency-child"

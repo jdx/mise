@@ -110,7 +110,7 @@ assert \
 # An explicit project include of the same global scripts must retain local
 # precedence. Same-source deduplication may discard only the incidental copy
 # discovered while walking the global config root, not project task context.
-mkdir -p "$HOME/project" "$HOME/local-project-dir"
+mkdir -p "$HOME/project/.config/mise/conf.d" "$HOME/local-project-dir"
 
 cat <<'EOF' >>"$HOME/.config/mise/config.toml"
 
@@ -126,6 +126,16 @@ dir = "$HOME/local-project-dir"
 [tasks.local-overlay-wins]
 env = { LOCAL_CONTEXT = "applied" }
 
+[tasks.local-dependency-wrapper]
+description = "higher local metadata"
+
+[tasks.local-dependency-child]
+run = "echo local-dependency-child"
+EOF
+
+cat <<'EOF' >"$HOME/project/.config/mise/conf.d/01-dependency-base.toml"
+[tasks.local-dependency-wrapper]
+depends = ["local-dependency-child"]
 EOF
 
 cat <<'EOF' >"$HOME/.config/mise/tasks/local-overlay-wins"
@@ -145,3 +155,4 @@ assert_contains "mise -C '$HOME/project' run local-overlay-wins" "LOCAL_CONTEXT=
 assert_contains "mise -C '$HOME/project' run local-overlay-wins" "GLOBAL_CONTEXT=<unset>"
 assert_contains "mise -C '$HOME/project' run local-dir-wins" "TASK_DIR=$HOME/local-project-dir"
 assert_not_contains "mise -C '$HOME/project' run local-dir-wins" "TASK_DIR=$HOME/high-global-dir"
+assert "mise -C '$HOME/project' run local-dependency-wrapper" "local-dependency-child"
