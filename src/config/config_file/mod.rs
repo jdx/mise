@@ -969,7 +969,7 @@ async fn detect_idiomatic_path_for_enabled_tools(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 async fn path_is_idiomatic_for_enabled_tools(
     path: &Path,
     enable_tools: &BTreeSet<String>,
