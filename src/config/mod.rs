@@ -4505,9 +4505,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
 
     let artifact = checkout.with_path(checkout.path.join(source.path));
     let metadata = artifact.path.symlink_metadata()?;
-    if metadata.file_type().is_file() {
-        file::make_executable(&artifact.path)?;
-    } else if !metadata.file_type().is_dir() {
+    if !metadata.file_type().is_file() && !metadata.file_type().is_dir() {
         bail!(
             "remote task path is not a regular file or directory: {}",
             display_path(&artifact.path)
