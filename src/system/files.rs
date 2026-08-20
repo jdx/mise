@@ -101,7 +101,7 @@ pub enum FileTomlEntry {
 pub struct FileRequest {
     /// target path as written in config (display/merge key)
     pub target_raw: String,
-    /// absolute target path (`~` expanded)
+    /// absolute, lexically normalized target path (`~` expanded)
     pub target: PathBuf,
     /// absolute source path (relative sources resolve against the config
     /// file's directory; omitted sources resolve under dotfiles.root)
@@ -361,7 +361,7 @@ fn merge_file_entry(
             }
         },
     };
-    let target = file::replace_path(&target_raw);
+    let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
             "[dotfiles].\"{target_raw}\": target must be absolute or start with ~/, ignoring entry"

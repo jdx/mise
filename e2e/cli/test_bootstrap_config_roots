@@ -202,7 +202,17 @@ assert_fail "test -e $shared_tree"
 assert_succeed "mise bootstrap dotfiles apply --yes"
 
 # The leaf identity, rather than only the shared directory target, conflicts.
+# Use an equivalent target spelling in one contributor to cover filtered
+# applies: lexical aliases must still be selected and validated together.
+aliased_shared_tree="$PWD/roots/../shared-tree"
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$aliased_shared_tree" = { source = "tree", mode = "symlink-each" }
+EOF
 echo conflict >"$root_b/tree/conf.d/a.toml"
 assert_fail "mise bootstrap dotfiles status" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
 assert_fail "mise bootstrap dotfiles status" "$root_a/mise.toml"
 assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
+assert_fail "mise bootstrap dotfiles apply --yes '$shared_tree'" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
+assert "readlink $shared_tree/conf.d/a.toml" "$root_a/tree/conf.d/a.toml"
+assert "readlink $shared_tree/conf.d/b.toml" "$root_b/tree/conf.d/b.toml"
