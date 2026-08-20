@@ -1,8 +1,13 @@
 //! Client for the formulae.brew.sh JSON API (static JSON, no auth).
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use base64::Engine;
+use base64::alphabet;
+use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
 use eyre::{WrapErr, bail, eyre};
+use ring::signature::{RSA_PSS_2048_8192_SHA512, UnparsedPublicKey};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -10,6 +15,13 @@ use crate::http::HTTP_FETCH;
 use crate::result::Result;
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
+const HOMEBREW_1_SPKI_B64: &str = "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyKoOYzp1rhwXISRi61BYXBEr2PalSK8lEVOL2USy7mpy0OubOlFyujawyQcBcCn+uPOJ/WaK+POhNWcLLoiKL2m8GViaQm7SMwdLKUXFgKSPHcG/1m6Vu+TNBKTfQqT60PjEYIrn5NW9ZrM0cUhKREmsbeAMBevdSaW9UwY9iIhprrgovvT8SzKhF8ZOIZKXfJX4VNk0y/7VJYNuGGqH3npxV7OKd4yTGRGqFcC9kJ84me3thiu0yqlOjASmfWIwIwcfp4j6BEM2LuqKd7yXh51/O+MTthkuxV36moDKfdgdOFsvlCFkziaYLScCX9lOlmZHtOfJTAOXxTmM7qGrwTGK0vhvTi8k9dBmH/dccredQBtPOfM/FEdeyakGLoTcDguiBS/4El3I2KtF6B2hOGoBumR915/cI4drr5yPMduZ7gjs7ZEZnVkeVzic24TfUHpnOYzrhucNJtHMBDj96d1Gk82AhtuF9KlusLmCb6qXCWQSp/A4RZpN37E/p9q8rLp/7B/zp8X2TVvecPNyBdMagdktdEqK7WPlYMcUp56JaOph8vqYoU+oGyCpWoLvcXFb75o4eefuu6Rs5SyMc9JCCJ0DDFPjCRFnGPkvsKxFCzMFqH1jpWH0RQIrgmNVM5PO84iRH9YJsSPQzpMjKvK/ZH4YgR9wNkBNagFo7lsCAwEAAQ==";
+const BASE64_URL_NO_PAD: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::URL_SAFE,
+    GeneralPurposeConfig::new()
+        .with_encode_padding(false)
+        .with_decode_padding_mode(DecodePaddingMode::RequireNone),
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FetchMode {
@@ -383,12 +395,173 @@ fn policy_detail(
 /// Fetch formula metadata by name (or alias — brew's API redirects aliases
 /// to the canonical formula).
 pub(super) async fn formula_with_mode(name: &str, mode: FetchMode) -> Result<Formula> {
+    internal_formula_source(name).await?;
     let url = format!("{API_BASE}/formula/{name}.json");
     let result = match mode {
         FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
         FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
     };
     result.wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+}
+
+#[derive(Deserialize)]
+struct InternalApiEnvelope {
+    payload: String,
+    signatures: Vec<InternalApiSignature>,
+}
+
+#[derive(Deserialize)]
+struct InternalApiSignature {
+    protected: String,
+    signature: String,
+    header: InternalApiSignatureHeader,
+}
+
+#[derive(Deserialize)]
+struct InternalApiSignatureHeader {
+    kid: String,
+}
+
+#[derive(Deserialize)]
+struct InternalApiProtectedHeader {
+    alg: String,
+    b64: bool,
+    crit: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct InternalFormulaIndex {
+    formulae: HashMap<String, serde_json::Value>,
+}
+
+static INTERNAL_FORMULAE: tokio::sync::OnceCell<
+    std::result::Result<Arc<InternalFormulaIndex>, String>,
+> = tokio::sync::OnceCell::const_new();
+
+pub(super) fn verify_internal_api_envelope(raw: &str) -> Result<String> {
+    let spki = base64::engine::general_purpose::STANDARD
+        .decode(HOMEBREW_1_SPKI_B64)
+        .wrap_err("invalid embedded Homebrew API trust anchor")?;
+    verify_internal_api_envelope_with_key(raw, &spki)
+}
+
+fn verify_internal_api_envelope_with_key(raw: &str, spki: &[u8]) -> Result<String> {
+    let envelope: InternalApiEnvelope =
+        serde_json::from_str(raw).wrap_err("invalid Homebrew internal API envelope")?;
+    let signature = envelope
+        .signatures
+        .iter()
+        .find(|signature| signature.header.kid == "homebrew-1")
+        .ok_or_else(|| eyre!("Homebrew internal API envelope has no trusted signature"))?;
+    let protected = BASE64_URL_NO_PAD
+        .decode(&signature.protected)
+        .wrap_err("invalid Homebrew internal API protected header encoding")?;
+    let protected: InternalApiProtectedHeader = serde_json::from_slice(&protected)
+        .wrap_err("invalid Homebrew internal API protected header")?;
+    if protected.alg != "PS512" || protected.b64 || protected.crit.as_slice() != ["b64"] {
+        bail!("unsupported Homebrew internal API signature parameters");
+    }
+    let signature_bytes = BASE64_URL_NO_PAD
+        .decode(&signature.signature)
+        .wrap_err("invalid Homebrew internal API signature encoding")?;
+    let mut signing_input =
+        Vec::with_capacity(signature.protected.len() + 1 + envelope.payload.len());
+    signing_input.extend_from_slice(signature.protected.as_bytes());
+    signing_input.push(b'.');
+    signing_input.extend_from_slice(envelope.payload.as_bytes());
+    let rsa_public_key = rsa_public_key_from_spki(spki)?;
+    UnparsedPublicKey::new(&RSA_PSS_2048_8192_SHA512, rsa_public_key)
+        .verify(&signing_input, &signature_bytes)
+        .map_err(|_| eyre!("Homebrew internal API signature verification failed"))?;
+    Ok(envelope.payload)
+}
+
+fn rsa_public_key_from_spki(spki: &[u8]) -> Result<&[u8]> {
+    const RSA_ENCRYPTION_ALGORITHM: &[u8] = &[
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
+    ];
+    let mut input = spki;
+    let sequence = der_value(&mut input, 0x30)?;
+    if !input.is_empty() {
+        bail!("Homebrew API trust anchor has trailing DER data");
+    }
+    let mut sequence = sequence;
+    let algorithm = der_value(&mut sequence, 0x30)?;
+    if algorithm != RSA_ENCRYPTION_ALGORITHM {
+        bail!("Homebrew API trust anchor uses an unsupported key algorithm");
+    }
+    let bit_string = der_value(&mut sequence, 0x03)?;
+    if !sequence.is_empty() || bit_string.first() != Some(&0) || bit_string.len() == 1 {
+        bail!("Homebrew API trust anchor has an invalid public-key bit string");
+    }
+    Ok(&bit_string[1..])
+}
+
+fn der_value<'a>(input: &mut &'a [u8], expected_tag: u8) -> Result<&'a [u8]> {
+    let (&tag, rest) = input
+        .split_first()
+        .ok_or_else(|| eyre!("truncated Homebrew API trust anchor"))?;
+    if tag != expected_tag {
+        bail!("invalid Homebrew API trust anchor DER tag");
+    }
+    let (&first_length, mut rest) = rest
+        .split_first()
+        .ok_or_else(|| eyre!("truncated Homebrew API trust anchor"))?;
+    let length = if first_length & 0x80 == 0 {
+        usize::from(first_length)
+    } else {
+        let octets = usize::from(first_length & 0x7f);
+        if octets == 0 || octets > std::mem::size_of::<usize>() || rest.len() < octets {
+            bail!("invalid Homebrew API trust anchor DER length");
+        }
+        if rest[0] == 0 {
+            bail!("non-minimal Homebrew API trust anchor DER length");
+        }
+        let mut length = 0usize;
+        for &octet in &rest[..octets] {
+            length = length
+                .checked_mul(256)
+                .and_then(|length| length.checked_add(usize::from(octet)))
+                .ok_or_else(|| eyre!("oversized Homebrew API trust anchor DER length"))?;
+        }
+        if length < 128 {
+            bail!("non-minimal Homebrew API trust anchor DER length");
+        }
+        rest = &rest[octets..];
+        length
+    };
+    if rest.len() < length {
+        bail!("truncated Homebrew API trust anchor DER value");
+    }
+    let (value, trailing) = rest.split_at(length);
+    *input = trailing;
+    Ok(value)
+}
+
+async fn internal_formula_source(name: &str) -> Result<String> {
+    let url = format!(
+        "{API_BASE}/internal/packages.{}.jws.json",
+        super::tag::host_tag()
+    );
+    let result = INTERNAL_FORMULAE
+        .get_or_init(|| async {
+            let raw = HTTP_FETCH
+                .get_text(&url)
+                .await
+                .map_err(|err| err.to_string())?;
+            let payload = verify_internal_api_envelope(&raw).map_err(|err| err.to_string())?;
+            serde_json::from_str(&payload)
+                .map(Arc::new)
+                .map_err(|err| err.to_string())
+        })
+        .await;
+    let index = result
+        .as_ref()
+        .map_err(|err| eyre!("failed to load Homebrew internal formula API: {err}"))?;
+    if !index.formulae.contains_key(name) {
+        bail!("Homebrew internal API has no formula '{name}'");
+    }
+    Ok(url)
 }
 
 pub(super) async fn formula_with_tap_name_mode(
@@ -496,6 +669,70 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+
+    const TEST_SPKI_B64: &str = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwIWspWJVE51stHOwJaaOdZnrECZuI3LH+tzYwTrFaAkcPvC9XEZuV/HX/fV2pFXR6HTjwl1UyIihJ1zGpfaMmy+SYfImuDincSaNQGpJsuLb5xesPilOsP46eu5JwJ7zbzRpMyIntlqZEe6zoNRYnJXxna2hZnauDGrldtYDtj/MSaES0gNIVQemuzSG14L7JFuhK9Pkuh+xW9x5xcIBvk/38B4QC8yMOGB1WWryV+QREC/Zzm3jcSs4GoYVbpakGhVYYHvQvN+HRjDA1CcwGCgJPhNZ76RkOP47da0pSXh9ibrKUVQpLgyN7mC/1ypwELrL7FPmYwjsJqoViC4LYwIDAQAB";
+    const TEST_PROTECTED: &str = "eyJhbGciOiJQUzUxMiIsImI2NCI6ZmFsc2UsImNyaXQiOlsiYjY0Il19";
+    const TEST_SIGNATURE: &str = "jYKZ5fGzdy7jgMu4IlrlGJdGLb9bfcAVlqS0Bmfy1_6Ov0GMLTPgixYlIERMFa5OHptV8eeR3Fvd13e2_72ScxGpV_41cx83LQ-vFbZ19pT-_v6sMqb6oBOWeJTYomC5Tq5CKK7nchqTd6faEPTWl5qelL1yoFIwrq4fdTVL0KG5jvO0iomMkgLI6PhWtDKbLks1nsOwC_S0Pf0XttgDFcelqWe29IYs4GxbTfMBEsbhIKMyPO3V_lhJyGM9trqtMXR4Ks5io6LjbKSJxIT3Gy34CeTjVdrO42D1_hOQbf_E_8rVTIu_ht3oRrocjHkmXT7eA5TS7CPHikNOc0FE6A";
+    const TEST_PAYLOAD: &str = r#"{"formulae":{"hello":{}}}"#;
+
+    fn test_envelope(protected: &str, kid: &str, payload: &str) -> String {
+        serde_json::json!({
+            "payload": payload,
+            "signatures": [{
+                "protected": protected,
+                "header": { "kid": kid },
+                "signature": TEST_SIGNATURE
+            }]
+        })
+        .to_string()
+    }
+
+    fn test_spki() -> Vec<u8> {
+        base64::engine::general_purpose::STANDARD
+            .decode(TEST_SPKI_B64)
+            .unwrap()
+    }
+
+    fn encoded_protected(value: Value) -> String {
+        BASE64_URL_NO_PAD.encode(serde_json::to_vec(&value).unwrap())
+    }
+
+    #[test]
+    fn internal_api_envelope_verifies_detached_payload() {
+        let raw = test_envelope(TEST_PROTECTED, "homebrew-1", TEST_PAYLOAD);
+        assert_eq!(
+            verify_internal_api_envelope_with_key(&raw, &test_spki()).unwrap(),
+            TEST_PAYLOAD
+        );
+    }
+
+    #[test]
+    fn internal_api_envelope_rejects_tampering_and_unknown_keys() {
+        let tampered = test_envelope(TEST_PROTECTED, "homebrew-1", "{}");
+        assert!(verify_internal_api_envelope_with_key(&tampered, &test_spki()).is_err());
+        let unknown = test_envelope(TEST_PROTECTED, "other", TEST_PAYLOAD);
+        assert!(verify_internal_api_envelope_with_key(&unknown, &test_spki()).is_err());
+    }
+
+    #[test]
+    fn internal_api_envelope_rejects_unsupported_protected_headers() {
+        for header in [
+            json!({"alg":"RS512", "b64":false, "crit":["b64"]}),
+            json!({"alg":"PS512", "b64":true, "crit":["b64"]}),
+            json!({"alg":"PS512", "b64":false, "crit":["b64", "other"]}),
+            json!({"alg":"PS512", "b64":false, "crit":[]}),
+        ] {
+            let raw = test_envelope(&encoded_protected(header), "homebrew-1", TEST_PAYLOAD);
+            assert!(verify_internal_api_envelope_with_key(&raw, &test_spki()).is_err());
+        }
+    }
+
+    #[test]
+    fn internal_api_envelope_rejects_malformed_input() {
+        assert!(verify_internal_api_envelope_with_key("not-json", &test_spki()).is_err());
+        let malformed = test_envelope("***", "homebrew-1", TEST_PAYLOAD);
+        assert!(verify_internal_api_envelope_with_key(&malformed, &test_spki()).is_err());
+    }
 
     fn formula_with_policy(policy: Value) -> Formula {
         let mut value = json!({

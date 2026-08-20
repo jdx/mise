@@ -6453,6 +6453,7 @@ dependencies = [
  "reflink-copy",
  "regex",
  "reqwest",
+ "ring",
  "rmcp",
  "rmp-serde",
  "rops",
