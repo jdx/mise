@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use eyre::{Context, Result, bail};
 use indexmap::{IndexMap, IndexSet};
+use sha2::{Digest, Sha256};
 
 use crate::backend::backend_type::BackendType;
 use crate::config::{Config, Settings};
 use crate::file;
-use crate::oci::layer::{self, LayerBlob, LayerOwner};
+use crate::oci::layer::{self, LayerBlob, LayerOwner, PythonRelocation};
 use crate::oci::layout::ImageLayout;
 use crate::oci::manifest::{self, Descriptor, ImageConfig, ImageManifest, Platform, RootFs};
 use crate::oci::packages;
@@ -32,7 +33,7 @@ pub const ANNOTATION_LAYER_PREFIX: &str = "dev.mise.layer.prefix";
 pub const ANNOTATION_LAYER_OWNER: &str = "dev.mise.layer.owner";
 pub const ANNOTATION_LAYER_RELOCATION: &str = "dev.mise.layer.relocation";
 
-const TOOL_LAYER_RELOCATION_VERSION: &str = "1";
+const TOOL_LAYER_RELOCATION_VERSION: &str = "2";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
@@ -274,17 +275,13 @@ impl Builder {
         // the layer is never built locally and the tool doesn't need to be
         // installed at all.
         let owner_str = format!("{}:{}", owner.uid, owner.gid);
-        let python = versions
+        let python_relocations: Vec<PythonRelocation> = versions
             .iter()
-            .find(|(_, tv)| tv.ba().short == "python")
-            .map(|(_, tv)| tv);
-        let relocation_paths: Vec<(PathBuf, PathBuf)> = versions
-            .iter()
-            .map(|(_, tv)| {
-                (
-                    tv.install_path(),
-                    PathBuf::from(tool_in_image_path(&mount_point, tv)),
-                )
+            .filter(|(_, tv)| tv.ba().short == "python")
+            .map(|(_, tv)| PythonRelocation {
+                version: tv.version.clone(),
+                host: tv.install_path(),
+                image: PathBuf::from(tool_in_image_path(&mount_point, tv)),
             })
             .collect();
         let reuse_index = self
@@ -302,7 +299,7 @@ impl Builder {
                         version: tv.version.clone(),
                         prefix: tool_tar_prefix(&mount_point, tv),
                         owner: owner_str.clone(),
-                        relocation: tool_layer_relocation_key(tv, python),
+                        relocation: tool_layer_relocation_key(tv, &python_relocations),
                     })
                     .cloned()
             })
@@ -368,7 +365,7 @@ impl Builder {
         let mut tool_layers: Vec<ToolLayerEntry> = Vec::new();
         for (i, (_, tv)) in versions.iter().enumerate() {
             let tv_prefix = tool_tar_prefix(&mount_point, tv);
-            let relocation_key = tool_layer_relocation_key(tv, python);
+            let relocation_key = tool_layer_relocation_key(tv, &python_relocations);
             let layer = if let Some(reused) = &tool_reuse[i] {
                 info!(
                     "oci: reusing {} layer from the cache image (unchanged)",
@@ -377,27 +374,27 @@ impl Builder {
                 ToolLayer::Reused(reused.clone())
             } else {
                 let is_pipx = tv.ba().backend_type() == BackendType::Pipx;
-                let external_python = if is_pipx {
-                    python.map(|python| {
-                        PathBuf::from(tool_in_image_path(&mount_point, python)).join("bin/python")
-                    })
-                } else {
-                    None
-                };
                 // Only pipx layers are expected to link into another tool's
                 // install. Other backends get their own mapping for shebang
                 // relocation without making their reuse key depend on the
                 // complete toolset.
-                let paths = if is_pipx {
-                    relocation_paths.clone()
+                let mut paths = vec![(
+                    tv.install_path(),
+                    PathBuf::from(tool_in_image_path(&mount_point, tv)),
+                )];
+                if is_pipx {
+                    paths.extend(
+                        python_relocations
+                            .iter()
+                            .map(|python| (python.host.clone(), python.image.clone())),
+                    );
+                }
+                let pythons = if is_pipx {
+                    python_relocations.clone()
                 } else {
-                    vec![(
-                        tv.install_path(),
-                        PathBuf::from(tool_in_image_path(&mount_point, tv)),
-                    )]
+                    Vec::new()
                 };
-                let relocation =
-                    layer::ToolRelocation::new(paths).with_external_python(external_python);
+                let relocation = layer::ToolRelocation::new(paths).with_pythons(pythons);
                 let blob = layer::build_relocated_tool_layer_from_dir(
                     &tv.install_path(),
                     &tv_prefix,
@@ -1171,15 +1168,32 @@ fn tool_tar_prefix(mount_point: &str, tv: &ToolVersion) -> String {
         .to_string()
 }
 
-fn tool_layer_relocation_key(tv: &ToolVersion, python: Option<&ToolVersion>) -> String {
+fn tool_layer_relocation_key(tv: &ToolVersion, pythons: &[PythonRelocation]) -> String {
     if tv.ba().backend_type() == BackendType::Pipx {
         format!(
             "{TOOL_LAYER_RELOCATION_VERSION}:python={}",
-            python.map_or("none", |python| python.version.as_str())
+            python_relocation_fingerprint(pythons)
         )
     } else {
         TOOL_LAYER_RELOCATION_VERSION.to_string()
     }
+}
+
+fn python_relocation_fingerprint(pythons: &[PythonRelocation]) -> String {
+    let mut pythons = pythons.to_vec();
+    pythons.sort_by(|a, b| (&a.version, &a.host, &a.image).cmp(&(&b.version, &b.host, &b.image)));
+    let mut hash = Sha256::new();
+    for python in pythons {
+        for input in [
+            python.version,
+            python.host.to_string_lossy().into_owned(),
+            python.image.to_string_lossy().into_owned(),
+        ] {
+            hash.update(input.len().to_le_bytes());
+            hash.update(input.as_bytes());
+        }
+    }
+    layer::hex_encode(&hash.finalize())
 }
 
 fn synthesize_embedded_config_toml(
@@ -1279,6 +1293,35 @@ mod tests {
                 .collect(),
             platform: None,
         }
+    }
+
+    #[test]
+    fn python_relocation_fingerprint_covers_exact_inputs_and_not_order() {
+        let python_313 = PythonRelocation {
+            version: "3.13.9".into(),
+            host: "/host/python/3.13.9".into(),
+            image: "/mise/installs/python/3.13.9".into(),
+        };
+        let python_314 = PythonRelocation {
+            version: "3.14.3".into(),
+            host: "/host/python/3.14.3".into(),
+            image: "/mise/installs/python/3.14.3".into(),
+        };
+        let fingerprint = python_relocation_fingerprint(&[python_313.clone(), python_314.clone()]);
+        assert_eq!(
+            fingerprint,
+            python_relocation_fingerprint(&[python_314.clone(), python_313.clone()])
+        );
+        assert_ne!(fingerprint, python_relocation_fingerprint(&[python_314]));
+
+        let python_313_fingerprint =
+            python_relocation_fingerprint(std::slice::from_ref(&python_313));
+        let mut changed_target = python_313;
+        changed_target.image = "/opt/python/3.13.9".into();
+        assert_ne!(
+            python_313_fingerprint,
+            python_relocation_fingerprint(&[changed_target])
+        );
     }
 
     #[test]

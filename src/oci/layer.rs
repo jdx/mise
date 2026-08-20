@@ -11,7 +11,7 @@
 //! input tree, which is required for the "swap one tool → swap one layer"
 //! caching story.
 
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Cursor, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -35,19 +35,26 @@ use walkdir::WalkDir;
 #[derive(Debug, Clone, Default)]
 pub struct ToolRelocation {
     paths: Vec<(PathBuf, PathBuf)>,
-    external_python: Option<PathBuf>,
+    pythons: Vec<PythonRelocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PythonRelocation {
+    pub version: String,
+    pub host: PathBuf,
+    pub image: PathBuf,
 }
 
 impl ToolRelocation {
     pub fn new(paths: Vec<(PathBuf, PathBuf)>) -> Self {
         Self {
             paths,
-            external_python: None,
+            pythons: Vec::new(),
         }
     }
 
-    pub fn with_external_python(mut self, target: Option<PathBuf>) -> Self {
-        self.external_python = target;
+    pub fn with_pythons(mut self, pythons: Vec<PythonRelocation>) -> Self {
+        self.pythons = pythons;
         self
     }
 }
@@ -414,10 +421,10 @@ fn build_layer_from_entries(
                     header.set_mode(e.mode);
                     apply_owner(&mut header, e.owner);
                     header.set_mtime(0);
-                    if let Some(contents) = relocated_script_contents(e, relocation)? {
-                        header.set_size(contents.len() as u64);
+                    if let Some(mut contents) = relocated_file_contents(e, relocation)? {
+                        header.set_size(contents.size);
                         builder
-                            .append_data(&mut header, &path_in_tar, contents.as_slice())
+                            .append_data(&mut header, &path_in_tar, &mut contents.reader)
                             .wrap_err_with(|| format!("writing {path_in_tar}"))?;
                     } else {
                         header.set_size(e.size);
@@ -611,8 +618,9 @@ fn file_is_executable(path: &Path, _md: &std::fs::Metadata) -> bool {
 /// the layer extracts to a different prefix inside the container.
 ///
 /// Known cross-tool targets are rebased to their in-image install path. Pipx
-/// venv interpreter links may also use the configured in-image Python. Other
-/// absolute targets outside the tool tree are left alone with a warning.
+/// venv interpreter links may also use a compatible configured Python, as
+/// identified by the venv's pyvenv.cfg. Other absolute targets outside the
+/// tool tree are left alone with a warning.
 fn rebase_symlink_target(
     raw: &Path,
     link_abs_path: &Path,
@@ -637,9 +645,9 @@ fn rebase_symlink_target(
     } else if let Some(target) = relocate_absolute_path(&target_canon, relocation) {
         return target;
     } else if is_python_interpreter_link(link_abs_path)
-        && let Some(target) = relocation.and_then(|r| r.external_python.clone())
+        && let Some(target) = compatible_python(link_abs_path, relocation)
     {
-        return target;
+        return target.image.join("bin/python");
     } else {
         warn!(
             "oci layer: symlink {} → {} has an absolute target outside the tool's install dir; \
@@ -688,10 +696,29 @@ fn is_python_interpreter_link(path: &Path) -> bool {
         })
 }
 
+struct RelocatedFileContents {
+    size: u64,
+    reader: Box<dyn Read>,
+}
+
+fn relocated_file_contents(
+    entry: &Entry,
+    relocation: Option<&ToolRelocation>,
+) -> Result<Option<RelocatedFileContents>> {
+    if entry
+        .abs
+        .file_name()
+        .is_some_and(|name| name == "pyvenv.cfg")
+    {
+        return relocated_pyvenv_contents(entry, relocation);
+    }
+    relocated_script_contents(entry, relocation)
+}
+
 fn relocated_script_contents(
     entry: &Entry,
     relocation: Option<&ToolRelocation>,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<Option<RelocatedFileContents>> {
     if entry.mode & 0o111 == 0 {
         return Ok(None);
     }
@@ -729,10 +756,106 @@ fn relocated_script_contents(
         return Ok(None);
     }
 
-    let mut relocated = Vec::with_capacity(entry.size as usize + shebang.len() - original.len());
-    relocated.extend_from_slice(shebang.as_bytes());
-    reader.read_to_end(&mut relocated)?;
-    Ok(Some(relocated))
+    let size = entry.size - line.len() as u64 + shebang.len() as u64;
+    let contents = Cursor::new(shebang.into_bytes()).chain(reader);
+    Ok(Some(RelocatedFileContents {
+        size,
+        reader: Box::new(contents),
+    }))
+}
+
+fn relocated_pyvenv_contents(
+    entry: &Entry,
+    relocation: Option<&ToolRelocation>,
+) -> Result<Option<RelocatedFileContents>> {
+    let Some(python) = compatible_python(&entry.abs, relocation) else {
+        return Ok(None);
+    };
+    let original = std::fs::read_to_string(&entry.abs)
+        .wrap_err_with(|| format!("reading {}", entry.abs.display()))?;
+    let venv_image = entry
+        .abs
+        .parent()
+        .and_then(|path| relocate_absolute_path(path, relocation));
+    let mut changed = false;
+    let mut output = String::with_capacity(original.len());
+    for line in original.split_inclusive('\n') {
+        let newline = if line.ends_with('\n') { "\n" } else { "" };
+        let line = line.trim_end_matches('\n').trim_end_matches('\r');
+        let key = line.split_once('=').map(|(key, _)| key.trim());
+        let replacement = match key {
+            Some("home") => Some(format!("home = {}", python.image.join("bin").display())),
+            Some("executable") => Some(format!(
+                "executable = {}",
+                python.image.join("bin/python").display()
+            )),
+            Some("command") => venv_image.as_ref().map(|venv| {
+                format!(
+                    "command = {} -m venv {}",
+                    python.image.join("bin/python").display(),
+                    venv.display()
+                )
+            }),
+            _ => None,
+        };
+        if let Some(replacement) = replacement {
+            changed |= replacement != line;
+            output.push_str(&replacement);
+        } else {
+            output.push_str(line);
+        }
+        output.push_str(newline);
+    }
+    if !changed {
+        return Ok(None);
+    }
+    let bytes = output.into_bytes();
+    Ok(Some(RelocatedFileContents {
+        size: bytes.len() as u64,
+        reader: Box::new(Cursor::new(bytes)),
+    }))
+}
+
+fn compatible_python<'a>(
+    path: &Path,
+    relocation: Option<&'a ToolRelocation>,
+) -> Option<&'a PythonRelocation> {
+    let relocation = relocation?;
+    let version = pyvenv_version(path)?;
+    if let Some(exact) = relocation
+        .pythons
+        .iter()
+        .find(|python| python.version == version)
+    {
+        return Some(exact);
+    }
+    let requested = python_major_minor(&version)?;
+    let mut compatible = relocation
+        .pythons
+        .iter()
+        .filter(|python| python_major_minor(&python.version) == Some(requested));
+    let candidate = compatible.next()?;
+    compatible.next().is_none().then_some(candidate)
+}
+
+fn pyvenv_version(path: &Path) -> Option<String> {
+    let cfg = path.ancestors().find_map(|dir| {
+        let cfg = dir.join("pyvenv.cfg");
+        cfg.is_file().then_some(cfg)
+    })?;
+    let contents = std::fs::read_to_string(cfg).ok()?;
+    contents.lines().find_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        matches!(key.trim(), "version" | "version_info").then(|| value.trim().to_string())
+    })
+}
+
+fn python_major_minor(version: &str) -> Option<(&str, &str)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    (major.chars().all(|c| c.is_ascii_digit()) && minor.chars().all(|c| c.is_ascii_digit()))
+        .then_some((major, minor))
 }
 
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
@@ -1090,6 +1213,11 @@ mod tests {
         )
         .unwrap();
         symlink("/usr/sbin/python", pipx.join("gitlabcis/bin/python")).unwrap();
+        fs::write(
+            pipx.join("gitlabcis/pyvenv.cfg"),
+            "home = /usr/sbin\nimplementation = CPython\nversion_info = 3.14.3\nexecutable = /usr/sbin/python\ncommand = /usr/sbin/python -m venv /tmp/host-venv\n",
+        )
+        .unwrap();
 
         let launcher = pipx.join("bin/gitlabcis");
         fs::write(
@@ -1106,9 +1234,13 @@ mod tests {
         let image_python = PathBuf::from("/mise/installs/python/3.14.3");
         let relocation = ToolRelocation::new(vec![
             (pipx.clone(), image_pipx.clone()),
-            (python, image_python.clone()),
+            (python.clone(), image_python.clone()),
         ])
-        .with_external_python(Some(image_python.join("bin/python")));
+        .with_pythons(vec![PythonRelocation {
+            version: "3.14.3".to_string(),
+            host: python,
+            image: image_python.clone(),
+        }]);
         let blob = build_relocated_tool_layer_from_dir(
             &pipx,
             "mise/installs/pipx-gitlabcis/1.20.0",
@@ -1120,12 +1252,16 @@ mod tests {
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
         let mut archive = Archive::new(decoder);
         let mut launcher_contents = String::new();
+        let mut pyvenv_contents = String::new();
         let mut links = std::collections::BTreeMap::new();
         for entry in archive.entries().unwrap() {
             let mut entry = entry.unwrap();
             let path = entry.path().unwrap().to_string_lossy().into_owned();
             if path.ends_with("bin/gitlabcis") {
                 entry.read_to_string(&mut launcher_contents).unwrap();
+            }
+            if path.ends_with("gitlabcis/pyvenv.cfg") {
+                entry.read_to_string(&mut pyvenv_contents).unwrap();
             }
             if let Some(target) = entry.header().link_name() {
                 links.insert(path, target.into_owned());
@@ -1144,6 +1280,47 @@ mod tests {
             links["mise/installs/pipx-gitlabcis/1.20.0/gitlabcis/bin/python3"],
             image_python.join("bin/python")
         );
+        assert!(pyvenv_contents.contains("home = /mise/installs/python/3.14.3/bin\n"));
+        assert!(pyvenv_contents.contains("executable = /mise/installs/python/3.14.3/bin/python\n"));
+        assert!(pyvenv_contents.contains(
+            "command = /mise/installs/python/3.14.3/bin/python -m venv /mise/installs/pipx-gitlabcis/1.20.0/gitlabcis\n"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_relocate_pipx_to_an_incompatible_python() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let pipx = dir.path().join("pipx-tool/1.0.0");
+        fs::create_dir_all(pipx.join("venv/bin")).unwrap();
+        fs::write(
+            pipx.join("venv/pyvenv.cfg"),
+            "home = /usr/bin\nversion_info = 3.13.9\nexecutable = /usr/bin/python3.13\n",
+        )
+        .unwrap();
+        symlink("/usr/bin/python3.13", pipx.join("venv/bin/python")).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            pipx.clone(),
+            PathBuf::from("/mise/installs/pipx-tool/1.0.0"),
+        )])
+        .with_pythons(vec![PythonRelocation {
+            version: "3.14.3".to_string(),
+            host: PathBuf::from("/host/python/3.14.3"),
+            image: PathBuf::from("/mise/installs/python/3.14.3"),
+        }]);
+        let entries =
+            collect_sorted_entries(&pipx, false, LayerOwner::default(), Some(&relocation)).unwrap();
+        let python = entries
+            .iter()
+            .find(|entry| entry.rel == Path::new("venv/bin/python"))
+            .unwrap();
+        match &python.kind {
+            EntryKind::Symlink(target) => assert_eq!(target, Path::new("/usr/bin/python3.13")),
+            kind => panic!("expected symlink, got {kind:?}"),
+        }
     }
 
     #[cfg(unix)]
