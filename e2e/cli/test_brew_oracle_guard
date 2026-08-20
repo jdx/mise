@@ -8,7 +8,7 @@ runner_temp=$(realpath "$runner_temp")
 trap 'rm -rf "$runner_temp"' EXIT
 export MISE_BREW_ORACLE_RUNNER_TEMP=$runner_temp
 export MISE_BREW_ORACLE_MISE_SHA
-MISE_BREW_ORACLE_MISE_SHA=$(git -C "$ROOT" rev-parse HEAD)
+MISE_BREW_ORACLE_MISE_SHA=$(git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD)
 
 if brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew; then
   exit 1
