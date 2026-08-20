@@ -162,8 +162,10 @@ impl ToolRequest {
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => *o = options,
-            _ => Default::default(),
+            | Self::Ref { options: o, .. }
+            | Self::Sub { options: o, .. }
+            | Self::Path { options: o, .. }
+            | Self::System { options: o, .. } => *o = options,
         }
         Ok(tvr)
     }
