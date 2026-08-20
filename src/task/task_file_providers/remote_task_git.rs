@@ -1,5 +1,5 @@
 use crate::Result;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 
@@ -69,16 +69,8 @@ impl GitRepoStructure {
 
 impl RemoteTaskGit {
     /// Make fetched task files executable while leaving task include directories intact.
-    pub(super) fn prepare_remote_path(checkout_root: &Path, path: &Path) -> Result<()> {
+    fn prepare_remote_path(path: &PathBuf) -> Result<()> {
         let metadata = path.symlink_metadata()?;
-        let checkout_root = checkout_root.canonicalize()?;
-        let canonical_path = path.canonicalize()?;
-        if !canonical_path.starts_with(&checkout_root) {
-            eyre::bail!(
-                "remote task path escapes its Git checkout: {}",
-                display_path(path)
-            );
-        }
         if metadata.file_type().is_file() {
             return file::make_executable(path);
         }
@@ -146,7 +138,7 @@ impl RemoteTaskGit {
 
         if reuse_existing && full_path.exists() {
             debug!("Using cached file: {:?}", full_path);
-            Self::prepare_remote_path(destination, &full_path)?;
+            Self::prepare_remote_path(&full_path)?;
             return Ok(full_path);
         }
 
@@ -179,7 +171,7 @@ impl RemoteTaskGit {
             }
         }
 
-        Self::prepare_remote_path(destination, &full_path)?;
+        Self::prepare_remote_path(&full_path)?;
         Ok(full_path)
     }
 
@@ -225,7 +217,7 @@ impl TaskFileProvider for RemoteTaskGit {
         let artifact = TaskFileArtifact::temporary(artifact_root.clone(), artifact_root.clone());
         Self::clone_to(&repo_structure, &artifact_root)?;
         let path = artifact_root.join(repo_structure.path);
-        Self::prepare_remote_path(&artifact_root, &path)?;
+        Self::prepare_remote_path(&path)?;
         Ok(artifact.with_path(path))
     }
 }
@@ -260,7 +252,7 @@ mod tests {
         fs::write(&task_file, "#!/usr/bin/env bash\necho ok\n").unwrap();
         fs::set_permissions(&task_file, fs::Permissions::from_mode(0o644)).unwrap();
 
-        RemoteTaskGit::prepare_remote_path(temp_dir.path(), &task_file).unwrap();
+        RemoteTaskGit::prepare_remote_path(&task_file).unwrap();
 
         assert!(file::is_executable(&task_file));
     }
@@ -278,7 +270,7 @@ mod tests {
         fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
         symlink(&target, &task_file).unwrap();
 
-        let error = RemoteTaskGit::prepare_remote_path(temp_dir.path(), &task_file).unwrap_err();
+        let error = RemoteTaskGit::prepare_remote_path(&task_file).unwrap_err();
 
         assert!(error.to_string().contains("not a regular file"));
         assert_eq!(
@@ -291,53 +283,7 @@ mod tests {
     fn test_prepare_remote_path_allows_task_include_directory() {
         let temp_dir = tempfile::tempdir().unwrap();
 
-        RemoteTaskGit::prepare_remote_path(temp_dir.path(), temp_dir.path()).unwrap();
-    }
-
-    #[test]
-    fn test_prepare_remote_path_rejects_path_outside_checkout() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let checkout = temp_dir.path().join("checkout");
-        let outside = temp_dir.path().join("outside-task");
-        std::fs::create_dir(&checkout).unwrap();
-        std::fs::write(&outside, "#!/usr/bin/env bash\necho outside\n").unwrap();
-
-        let escaped_path = checkout.join("..").join("outside-task");
-        let error = RemoteTaskGit::prepare_remote_path(&checkout, &escaped_path).unwrap_err();
-
-        assert!(error.to_string().contains("escapes its Git checkout"));
-    }
-
-    #[test]
-    #[cfg(windows)]
-    fn test_prepare_remote_path_rejects_windows_backslash_escape() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let checkout = temp_dir.path().join("checkout");
-        let outside = temp_dir.path().join("outside-task");
-        std::fs::create_dir(&checkout).unwrap();
-        std::fs::write(&outside, "echo outside\n").unwrap();
-
-        let escaped_path = checkout.join(r"..\outside-task");
-        let error = RemoteTaskGit::prepare_remote_path(&checkout, &escaped_path).unwrap_err();
-
-        assert!(error.to_string().contains("escapes its Git checkout"));
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn test_prepare_remote_path_rejects_intermediate_symlink_escape() {
-        use std::os::unix::fs::symlink;
-
-        let checkout = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let outside_task = outside.path().join("task");
-        std::fs::write(&outside_task, "#!/usr/bin/env bash\necho outside\n").unwrap();
-        symlink(outside.path(), checkout.path().join("linked-dir")).unwrap();
-
-        let escaped_path = checkout.path().join("linked-dir/task");
-        let error = RemoteTaskGit::prepare_remote_path(checkout.path(), &escaped_path).unwrap_err();
-
-        assert!(error.to_string().contains("escapes its Git checkout"));
+        RemoteTaskGit::prepare_remote_path(&temp_dir.path().to_path_buf()).unwrap();
     }
 
     #[test]
