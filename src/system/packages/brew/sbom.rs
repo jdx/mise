@@ -123,7 +123,11 @@ fn registry_purl(source_url: &str) -> Option<String> {
                 captures.get(2)?.as_str(),
             )
         }
-        "repo1.maven.org" | "repo.maven.apache.org" => maven_purl(&segments),
+        "repo1.maven.org" | "repo.maven.apache.org"
+            if segments.first().is_some_and(|segment| segment == "maven2") =>
+        {
+            maven_purl(segments.get(1..)?)
+        }
         "search.maven.org" if url.path() == "/remotecontent" => {
             let filepath = url
                 .query_pairs()
@@ -233,24 +237,19 @@ fn cpan_author(segments: &[String]) -> Option<&str> {
 }
 
 fn maven_purl(segments: &[String]) -> Option<String> {
-    let start = segments
-        .iter()
-        .position(|segment| segment == "maven2")
-        .map_or(0, |index| index + 1);
-    let coordinates = segments.get(start..)?;
-    if coordinates.len() < 4 {
+    if segments.len() < 4 {
         return None;
     }
-    let artifact_index = coordinates.len() - 3;
-    let artifact = coordinates.get(artifact_index)?;
-    let version = coordinates.get(artifact_index + 1)?;
-    let filename = coordinates.get(artifact_index + 2)?;
+    let artifact_index = segments.len() - 3;
+    let artifact = segments.get(artifact_index)?;
+    let version = segments.get(artifact_index + 1)?;
+    let filename = segments.get(artifact_index + 2)?;
     let prefix = format!("{artifact}-{version}");
     let suffix = filename.strip_prefix(&prefix)?;
     if !matches!(suffix.as_bytes().first(), Some(b'.' | b'-')) {
         return None;
     }
-    let namespace = coordinates.get(..artifact_index)?.join(".");
+    let namespace = segments.get(..artifact_index)?.join(".");
     nonempty_purl("maven", Some(&namespace), artifact, version)
 }
 
@@ -380,6 +379,10 @@ mod tests {
                 "pkg:maven/org.gradle.profiler/gradle-profiler@0.24.0",
             ),
             (
+                "https://repo1.maven.org/maven2/org/gradle/profiler/gradle-profiler/0.24.0/gradle-profiler-0.24.0.zip",
+                "pkg:maven/org.gradle.profiler/gradle-profiler@0.24.0",
+            ),
+            (
                 "https://search.maven.org/remotecontent?filepath=org/gradle/profiler/gradle-profiler/0.24.0/gradle-profiler-0.24.0.zip",
                 "pkg:maven/org.gradle.profiler/gradle-profiler@0.24.0",
             ),
@@ -395,6 +398,8 @@ mod tests {
             "https://files.pythonhosted.org/packages/aa/bb/cc/foo-1.0-py3-none-any.whl",
             "https://registry.npmjs.org/foo/-/bar-1.0.tgz",
             "https://maven.fabricmc.net/net/fabricmc/tool/1.0/tool-1.0.jar",
+            "https://repo1.maven.org/arbitrary/org/example/tool/1.0/tool-1.0.jar",
+            "https://repo.maven.apache.org/arbitrary/maven2/org/example/tool/1.0/tool-1.0.jar",
         ] {
             assert_eq!(registry_purl(url), None, "{url}");
         }
