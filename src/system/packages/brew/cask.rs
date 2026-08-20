@@ -6633,15 +6633,31 @@ fn cask_target_record_matches(record: &CaskTargetRecord) -> Result<bool> {
 }
 
 /// Whether a receipt target still exists at the recorded path and kind.
-/// Unlike [`cask_target_record_matches`], this ignores content drift so status
-/// and apply stay cheap and do not reinstall apps that have updated themselves
-/// or written into their bundle.
+///
+/// Directory and file targets ignore content drift so status/apply stay cheap
+/// and do not reinstall app bundles (which resets macOS TCC grants). Symlink
+/// targets still compare the recorded link destination — that is a cheap
+/// `readlink` — and require the link to resolve, so dangling or retargeted
+/// binaries/completions stay repairable on apply.
 fn cask_target_present(record: &CaskTargetRecord) -> bool {
     let Ok(metadata) = record.path.symlink_metadata() else {
         return false;
     };
     match record.fingerprint.kind {
-        CaskTargetKind::Symlink => metadata.file_type().is_symlink(),
+        CaskTargetKind::Symlink => {
+            if !metadata.file_type().is_symlink() {
+                return false;
+            }
+            let Ok(target) = std::fs::read_link(&record.path) else {
+                return false;
+            };
+            let digest = hex::encode(Sha256::digest(target.as_os_str().as_encoded_bytes()));
+            if digest != record.fingerprint.digest {
+                return false;
+            }
+            // Follow the link so a dangling binary/completion is not "present".
+            std::fs::metadata(&record.path).is_ok()
+        }
         CaskTargetKind::File => metadata.is_file(),
         CaskTargetKind::Directory => metadata.is_dir(),
     }
@@ -7803,6 +7819,68 @@ mod tests {
         )?;
         file::remove_all(&app_target)?;
         assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dest = tmp.path().join("bin/tool");
+        file::create_dir_all(dest.parent().unwrap())?;
+        crate::file::write(&dest, "tool")?;
+        let link = tmp.path().join("prefix/bin/tool");
+        file::create_dir_all(link.parent().unwrap())?;
+        file::make_symlink(&dest, &link)?;
+        let record = CaskTargetRecord {
+            path: link.clone(),
+            fingerprint: cask_target_fingerprint(&link)?,
+            uninstall: None,
+        };
+        assert!(cask_target_present(&record));
+
+        file::remove_file(&dest)?;
+        assert!(
+            !cask_target_present(&record),
+            "dangling symlink must not count as present"
+        );
+
+        crate::file::write(&dest, "tool")?;
+        let other = tmp.path().join("bin/other");
+        crate::file::write(&other, "other")?;
+        file::remove_file(&link)?;
+        file::make_symlink(&other, &link)?;
+        assert!(
+            !cask_target_present(&record),
+            "retargeted symlink must not count as present"
+        );
+
+        file::remove_file(&link)?;
+        crate::file::write(&link, "not a symlink")?;
+        assert!(
+            !cask_target_present(&record),
+            "file replacing a symlink must not count as present"
+        );
+
+        let font = tmp.path().join("fonts/Example.ttf");
+        file::create_dir_all(font.parent().unwrap())?;
+        crate::file::write(&font, "font")?;
+        let file_record = CaskTargetRecord {
+            path: font.clone(),
+            fingerprint: cask_target_fingerprint(&font)?,
+            uninstall: None,
+        };
+        assert!(cask_target_present(&file_record));
+        crate::file::write(&font, "changed font bytes")?;
+        assert!(
+            cask_target_present(&file_record),
+            "file content drift is ignored for install health"
+        );
+        file::remove_file(&font)?;
+        file::create_dir_all(&font)?;
+        assert!(
+            !cask_target_present(&file_record),
+            "directory replacing a file must not count as present"
+        );
         Ok(())
     }
 
