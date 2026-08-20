@@ -3624,37 +3624,44 @@ async fn load_local_tasks_with_context(
             } else {
                 cascaded_task_config.as_ref()
             };
-        let mut dir_tasks = load_tasks_from_configs(
+        let at_user_global_root =
+            has_user_global_config && file::same_file(&d, &env::MISE_GLOBAL_CONFIG_ROOT);
+        let local_file_context = at_user_global_root
+            && (local_configs
+                .iter()
+                .any(|cf| task_config_has_file_context(cf.task_config()))
+                || effective_cascaded_task_config
+                    .is_some_and(|tc| task_config_has_file_context(&tc.task_config)));
+        let local_inline_task_names = if at_user_global_root {
+            local_configs
+                .iter()
+                .flat_map(|cf| cf.tasks())
+                .map(|task| task.name.clone())
+                .collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
+        };
+        // A user-global config owns the root include decision. When no local
+        // file-task context overrides it, do not even render incidental default
+        // files from the local hierarchy walk.
+        let load_file_tasks = !at_user_global_root || local_file_context;
+        let mut dir_tasks = load_task_sources_from_configs(
             config,
             &d,
             local_configs.clone(),
             templates,
             false,
             effective_cascaded_task_config,
+            None,
+            load_file_tasks,
         )
-        .await?;
+        .await?
+        .into_tasks();
 
-        let mut suppress_if_global_duplicate = !has_user_global_config;
-        let mut local_inline_task_names = HashSet::new();
-        if has_user_global_config && file::same_file(&d, &env::MISE_GLOBAL_CONFIG_ROOT) {
-            let local_file_context = local_configs
-                .iter()
-                .any(|cf| task_config_has_file_context(cf.task_config()))
-                || effective_cascaded_task_config
-                    .is_some_and(|tc| task_config_has_file_context(&tc.task_config));
-            suppress_if_global_duplicate = false;
-            if !local_file_context {
-                local_inline_task_names = local_configs
-                    .iter()
-                    .flat_map(|cf| cf.tasks())
-                    .map(|task| task.name.clone())
-                    .collect();
-                // A user-global config owns the HOME include decision, so
-                // omitted defaults must not be resurrected by the local
-                // hierarchy walk.
-                dir_tasks.retain(|task| local_inline_task_names.contains(&task.name));
-            }
-        }
+        // Preserve legacy global-wins source deduplication for ordinary local
+        // directories. Only explicit root-local ownership and inline task names
+        // should keep the local rendering of a source also loaded globally.
+        let suppress_if_global_duplicate = !local_file_context;
 
         if let Some(ref monorepo_root) = monorepo_root {
             prefix_monorepo_task_names(&mut dir_tasks, &d, monorepo_root);
@@ -3792,7 +3799,7 @@ async fn load_local_tasks_with_context(
         while let Some(result) = join_set.join_next().await {
             tasks.extend(result??.into_iter().map(|task| LoadedLocalTask {
                 task,
-                suppress_if_global_duplicate: !has_user_global_config,
+                suppress_if_global_duplicate: true,
             }));
         }
     }
@@ -4183,6 +4190,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             false,
             None,
             Some(&mut rendered_file_tasks),
+            true,
         )
         .await?;
         rendered_file_tasks.finish_config();
@@ -4952,6 +4960,7 @@ async fn load_tasks_from_configs(
         monorepo_context,
         cascaded_task_config,
         None,
+        true,
     )
     .await?
     .into_tasks())
@@ -4969,6 +4978,7 @@ async fn load_task_sources_from_configs(
     monorepo_context: bool,
     cascaded_task_config: Option<&CascadedTaskConfig>,
     mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    load_file_tasks: bool,
 ) -> Result<TaskSources> {
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
@@ -5050,43 +5060,45 @@ async fn load_task_sources_from_configs(
     } else {
         None
     };
-    for include in &includes {
-        let artifacts = if include.starts_with("git::") {
-            vec![resolve_git_url_to_path(include).await?]
-        } else {
-            expand_task_include(&resolve_dir, include)
-                .into_iter()
-                .map(TaskFileArtifact::persistent)
-                .collect()
-        };
-        for artifact in artifacts {
-            let p = artifact.path;
-            let mut loaded = load_tasks_includes(
-                config,
-                &p,
-                dir,
-                &task_config,
-                templates,
-                LoadTaskIncludesOptions {
-                    monorepo_cf,
-                    require_trust: require_task_include_trust,
-                    rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
-                },
-            )
-            .await?;
-            for task in &mut loaded {
-                if task.is_toml_include {
-                    task.config_precedence = include_config_precedence;
+    if load_file_tasks {
+        for include in &includes {
+            let artifacts = if include.starts_with("git::") {
+                vec![resolve_git_url_to_path(include).await?]
+            } else {
+                expand_task_include(&resolve_dir, include)
+                    .into_iter()
+                    .map(TaskFileArtifact::persistent)
+                    .collect()
+            };
+            for artifact in artifacts {
+                let p = artifact.path;
+                let mut loaded = load_tasks_includes(
+                    config,
+                    &p,
+                    dir,
+                    &task_config,
+                    templates,
+                    LoadTaskIncludesOptions {
+                        monorepo_cf,
+                        require_trust: require_task_include_trust,
+                        rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
+                    },
+                )
+                .await?;
+                for task in &mut loaded {
+                    if task.is_toml_include {
+                        task.config_precedence = include_config_precedence;
+                    }
+                    apply_task_config_inputs(task, config, &task_config.inputs).await?;
+                    apply_task_config_cache_default(task, &task_config.cache);
+                    apply_task_config_rust_cache_default(task, &task_config.rust_cache);
+                    task_config.environment.apply(task)?;
                 }
-                apply_task_config_inputs(task, config, &task_config.inputs).await?;
-                apply_task_config_cache_default(task, &task_config.cache);
-                apply_task_config_rust_cache_default(task, &task_config.rust_cache);
-                task_config.environment.apply(task)?;
+                if is_global || is_global_task_include_path(&p) {
+                    mark_tasks_as_global(&mut loaded);
+                }
+                file_tasks.extend(loaded);
             }
-            if is_global || is_global_task_include_path(&p) {
-                mark_tasks_as_global(&mut loaded);
-            }
-            file_tasks.extend(loaded);
         }
     }
 

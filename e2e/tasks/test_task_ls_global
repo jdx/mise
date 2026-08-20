@@ -99,6 +99,14 @@ cat <<'EOF' >~/.config/mise/tasks/omitted-only
 echo omitted-task
 EOF
 chmod +x ~/.config/mise/tasks/omitted-only
+omitted_render_marker="$MISE_TMP_DIR/omitted-task-render-count"
+: >"$omitted_render_marker"
+cat >~/.config/mise/tasks/omitted-effect <<EOF
+#!/usr/bin/env bash
+#MISE description="{{ exec(command='echo rendered >> $omitted_render_marker') }}"
+echo omitted-effect
+EOF
+chmod +x ~/.config/mise/tasks/omitted-effect
 cat <<'EOF' >~/dotfiles/tasks/collision
 #!/usr/bin/env bash
 echo custom-task
@@ -118,10 +126,26 @@ UNRELATED_HOME_CONFIG = "present"
 run = "echo home-inline"
 TOML
 
+mise tasks >/dev/null
+assert "wc -l < '$omitted_render_marker' | tr -d ' '" "0"
 assert "mise run collision" "custom-task"
 assert_fail "mise run omitted-only"
 assert_not_contains "mise tasks --global" "omitted-only"
 assert "mise run home-inline" "home-inline"
+
+# Inline HOME tasks are retained as definitions, not merged onto an omitted
+# default file task with the same name.
+cat >"$HOME/mise.toml" <<'TOML'
+[env]
+UNRELATED_HOME_CONFIG = "present"
+
+[tasks.home-inline]
+run = "echo home-inline"
+
+[tasks.collision]
+run = "echo home-inline-collision"
+TOML
+assert "mise run collision" "home-inline-collision"
 
 # Cascade control alone does not supply file-task context at the HOME root, so
 # it must not resurrect defaults omitted by the user-global config.
@@ -165,6 +189,20 @@ cat >"$HOME/.mise/conf.d/20-task-context.toml" <<EOF
 dir = "$HOME/local-task-dir"
 EOF
 assert "mise run local-dir-context" "$HOME/local-task-dir"
+
+# Explicit root-local context wins when the user-global scope loads the same
+# physical task source.
+cat >"$HOME/.config/mise/config.toml" <<'EOF'
+[task_config]
+includes = [".config/mise/tasks"]
+EOF
+assert "mise run local-dir-context" "$HOME/local-task-dir"
+cat >"$HOME/.config/mise/config.toml" <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+
+[task_config]
+includes = ["dotfiles/tasks"]
+TOML
 
 # Input defaults from a local conf.d fragment also establish explicit ownership
 # of HOME's default file-task scope.
