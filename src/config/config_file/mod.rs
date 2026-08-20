@@ -54,6 +54,13 @@ pub enum ConfigFileType {
     IdiomaticVersion(Vec<Arc<dyn Backend>>),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error(
+    "cannot update idiomatic version file {}; use mise.toml, .tool-versions, or --path to choose a writable config file",
+    display_path(.0)
+)]
+struct DisabledIdiomaticVersionFile(PathBuf);
+
 pub trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     fn min_version(&self) -> Option<&MinVersionSpec> {
@@ -830,13 +837,14 @@ fn path_matches_registry_idiomatic(path: &Path) -> bool {
 
 fn unsupported_config_file_error(path: &Path) -> eyre::Report {
     if path_matches_registry_idiomatic(path) {
-        eyre!(
-            "cannot update idiomatic version file {}; use mise.toml, .tool-versions, or --path to choose a writable config file",
-            display_path(path)
-        )
+        DisabledIdiomaticVersionFile(path.to_path_buf()).into()
     } else {
         eyre!("unknown config file type: {}", display_path(path))
     }
+}
+
+pub(super) fn is_disabled_idiomatic_version_file_error(err: &eyre::Report) -> bool {
+    err.downcast_ref::<DisabledIdiomaticVersionFile>().is_some()
 }
 
 async fn path_is_idiomatic(path: &Path) -> Option<Vec<Arc<dyn Backend>>> {
@@ -1122,10 +1130,9 @@ mod tests {
     #[tokio::test]
     async fn test_parse_or_init_rejects_disabled_idiomatic_file() {
         backend::load_tools().await.unwrap();
-        let err = parse_or_init(Path::new("package.json"))
-            .await
-            .unwrap_err()
-            .to_string();
+        let err = parse_or_init(Path::new("package.json")).await.unwrap_err();
+        assert!(is_disabled_idiomatic_version_file_error(&err));
+        let err = err.to_string();
         assert!(
             err.contains("cannot update idiomatic version file"),
             "unexpected error: {err}"

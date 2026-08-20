@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+
+mkdir project other
+cat <<'EOF' >project/package.json
+{
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "22.0.0"
+    }
+  }
+}
+EOF
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+EOF
+
+# Track package.json while its idiomatic parser is enabled.
+assert "mise -C project current node" "22.0.0"
+
+# A stale tracked entry is not a config for the current settings and should be
+# ignored without reporting a write error from an unrelated directory.
+cat <<'EOF' >"$MISE_CONFIG_DIR/config.toml"
+[settings]
+idiomatic_version_file_enable_tools = []
+EOF
+output=$(MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config"
+assert_not_contains "echo '$output'" "error loading tracked config file"
+assert_not_contains "echo '$output'" "cannot update idiomatic version file"
+
+# Genuine parse failures in tracked configs must still warn.
+mkdir broken
+cat <<'EOF' >broken/mise.toml
+[tools]
+dummy = "1"
+EOF
+mise -C broken ls >/dev/null
+printf '[tools\n' >broken/mise.toml
+output=$(mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "error loading tracked config file"
+assert_contains "echo '$output'" "broken/mise.toml"

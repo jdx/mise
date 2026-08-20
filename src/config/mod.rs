@@ -1076,6 +1076,12 @@ impl Config {
                 Ok(cf) => {
                     config_files.insert(path, cf);
                 }
+                Err(err) if config_file::is_disabled_idiomatic_version_file_error(&err) => {
+                    debug!(
+                        "skipping disabled idiomatic tracked config: {}",
+                        display_path(&path)
+                    );
+                }
                 Err(err) => {
                     warn!(
                         "error loading tracked config file {}: {err:#}",
