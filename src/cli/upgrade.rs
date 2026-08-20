@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::backend::pipx::PIPXBackend;
+use crate::backend::{ABackend, pipx::PIPXBackend};
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings, config_file};
 use crate::errors::split_install_result;
@@ -35,6 +35,7 @@ use jiff::{Span, Timestamp, civil::date};
 ///
 /// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, clap::Args)]
+#[cfg_attr(test, derive(Default))]
 #[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Upgrade {
     /// Tool(s) to upgrade
@@ -777,13 +778,26 @@ impl Upgrade {
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
+        self.latest_for_upgrade_with_backend(config, tv, opts, &backend)
+            .await
+    }
+
+    async fn latest_for_upgrade_with_backend(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        opts: &ResolveOptions,
+        backend: &ABackend,
+    ) -> Result<Option<String>> {
         if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             backend
-                .latest_version(
+                .latest_version_with_selection_options(
                     config,
                     prefixed_latest_query(&prefix, &prefix_version),
+                    &tv.request.options(),
                     opts.before_date,
+                    false,
                 )
                 .await
         } else {
@@ -798,13 +812,26 @@ impl Upgrade {
         opts: &ResolveOptions,
     ) -> Result<Option<String>> {
         let backend = tv.backend()?;
+        self.baseline_latest_for_upgrade_with_backend(config, tv, opts, &backend)
+            .await
+    }
+
+    async fn baseline_latest_for_upgrade_with_backend(
+        &self,
+        config: &Arc<Config>,
+        tv: &ToolVersion,
+        opts: &ResolveOptions,
+        backend: &ABackend,
+    ) -> Result<Option<String>> {
         let query = if self.bump || (opts.inactive && tv.request.source() == &ToolSource::Unknown) {
             let (prefix, prefix_version) = split_version_prefix(&tv.request.version());
             prefixed_latest_query(&prefix, &prefix_version)
         } else {
             Some(tv.request.version())
         };
-        backend.latest_version_unfiltered(config, query).await
+        backend
+            .latest_version_unfiltered_with_selection_options(config, query, &tv.request.options())
+            .await
     }
 }
 
@@ -977,10 +1004,69 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 #[cfg(test)]
 mod tests {
     use super::{
-        current_version_satisfies_hidden_release, format_hidden_release_details,
+        Upgrade, current_version_satisfies_hidden_release, format_hidden_release_details,
         release_is_eligible_at,
     };
+    use crate::backend::{
+        ABackend,
+        test_helpers::{RemoteVersionsBackend, prerelease_options, request_tool_version},
+    };
+    use crate::cli::args::BackendArg;
+    use crate::config::Config;
+    use crate::toolset::{ResolveOptions, ToolVersionOptions};
     use jiff::tz::TimeZone;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn upgrade_latest_uses_request_prerelease_option() {
+        let config = Config::get().await.unwrap();
+        let ba = Arc::new(BackendArg::from("upgrade-request-options-test"));
+        let backend: ABackend = Arc::new(RemoteVersionsBackend::stable_and_prerelease(ba.clone()));
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .clear()
+            .unwrap();
+        let upgrade = Upgrade {
+            bump: true,
+            dry_run: true,
+            ..Default::default()
+        };
+        let resolve_options = ResolveOptions::default();
+        let stable = request_tool_version(ba.clone(), ToolVersionOptions::default());
+        let prerelease = request_tool_version(ba, prerelease_options());
+
+        assert_eq!(
+            upgrade
+                .latest_for_upgrade_with_backend(&config, &stable, &resolve_options, &backend,)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.0.0")
+        );
+        assert_eq!(
+            upgrade
+                .latest_for_upgrade_with_backend(&config, &prerelease, &resolve_options, &backend,)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.1.0-rc.1")
+        );
+        assert_eq!(
+            upgrade
+                .baseline_latest_for_upgrade_with_backend(
+                    &config,
+                    &prerelease,
+                    &resolve_options,
+                    &backend,
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("1.1.0-rc.1")
+        );
+    }
 
     #[test]
     fn test_current_version_satisfies_hidden_release() {

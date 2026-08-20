@@ -1924,6 +1924,13 @@ pub trait Backend: Debug + Send + Sync {
         false
     }
 
+    /// Whether an installed version string should be treated as a prerelease.
+    /// This is separate from fuzzy query matching so opaque stable versions such
+    /// as `nightly` are not discarded while resolving the latest installed tool.
+    fn is_prerelease_version(&self, version: &str) -> bool {
+        VERSION_REGEX.is_match(version)
+    }
+
     /// Tool option keys whose non-registry overrides change the backend's
     /// remote version list. When any of these keys come from a backend alias,
     /// config, or inline backend arg, the versions host must be skipped because
@@ -1965,32 +1972,6 @@ pub trait Backend: Debug + Send + Sync {
             }
         }
         Ok(deps)
-    }
-
-    async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        Ok(self
-            .list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
-    }
-
-    /// Like `list_remote_versions` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list and re-fetch
-    /// upstream. Used by install-time resolution for selectors whose answer
-    /// depends on the freshest upstream entry (e.g. `latest`).
-    async fn list_remote_versions_with_refresh(
-        &self,
-        config: &Arc<Config>,
-        refresh: bool,
-    ) -> eyre::Result<Vec<String>> {
-        Ok(self
-            .list_remote_versions_with_info_with_refresh(config, refresh)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
     }
 
     /// List remote versions using the fully layered candidate-selection options
@@ -2573,41 +2554,18 @@ pub trait Backend: Debug + Send + Sync {
         }
         Ok(Some(link))
     }
-    fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
-        let versions = self.list_installed_versions();
-        // No async config lookup available here; fall back to inline/registry
-        // opts, which is the best we have for a sync path.
-        let filter = !self.include_prereleases(&self.ba().opts());
+    fn list_installed_versions_matching_with_selection_options(
+        &self,
+        query: &str,
+        selection_opts: &ToolVersionOptions,
+    ) -> Vec<String> {
+        let versions = self
+            .list_installed_versions()
+            .into_iter()
+            .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
+            .collect();
+        let filter = !self.include_prereleases(selection_opts);
         self.fuzzy_match_filter(versions, query, filter)
-    }
-    async fn list_versions_matching(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-    ) -> eyre::Result<Vec<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.list_versions_matching_with_selection_options(config, query, &opts, None, false)
-            .await
-    }
-
-    /// List versions matching a query, optionally filtered by release date.
-    /// Use this when you have a `before_date` from ResolveOptions.
-    async fn list_versions_matching_with_opts(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-        before_date: Option<Timestamp>,
-        refresh: bool,
-    ) -> eyre::Result<Vec<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.list_versions_matching_with_selection_options(
-            config,
-            query,
-            &opts,
-            before_date,
-            refresh,
-        )
-        .await
     }
     /// List versions matching a query using the active request's selection options.
     async fn list_versions_matching_with_selection_options(
@@ -2711,22 +2669,6 @@ pub trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
         self.latest_version_with_refresh(config, query, before_date, false)
-            .await
-    }
-
-    /// Get the latest version without applying release-date cutoffs.
-    ///
-    /// This is intended for diagnostics that compare a date-filtered result
-    /// with the absolute latest result. Normal resolution should use
-    /// `latest_version` so global, per-tool, and default release-age cutoffs are
-    /// honored.
-    async fn latest_version_unfiltered(
-        &self,
-        config: &Arc<Config>,
-        query: Option<String>,
-    ) -> eyre::Result<Option<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.latest_version_unfiltered_with_selection_options(config, query, &opts)
             .await
     }
 
@@ -2852,34 +2794,46 @@ pub trait Backend: Debug + Send + Sync {
         .await
     }
     fn latest_installed_version(&self, query: Option<String>) -> eyre::Result<Option<String>> {
-        match query {
-            Some(query) => {
-                let matches = self.list_installed_versions_matching(&query);
-                Ok(find_match_in_list(&matches, &query))
-            }
-            None => {
-                let installed_symlink = self.ba().installs_path.join("latest");
-                if installed_symlink.exists()
-                    && let Some(target) = file::resolve_symlink(&installed_symlink)?
-                {
-                    let version = target
-                        .file_name()
-                        .ok_or_else(|| eyre!("Invalid symlink target"))?
-                        .to_string_lossy()
-                        .to_string();
-                    return Ok(Some(version));
-                }
-                Ok(file::dir_subdirs(&self.ba().installs_path)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
-                    .filter(|v| v != "latest")
-                    .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
-                    .last())
+        self.latest_installed_version_with_selection_options(query, &self.ba().opts())
+    }
+    fn latest_installed_version_with_selection_options(
+        &self,
+        query: Option<String>,
+        selection_opts: &ToolVersionOptions,
+    ) -> eyre::Result<Option<String>> {
+        if let Some(query) = query {
+            let matches = self
+                .list_installed_versions_matching_with_selection_options(&query, selection_opts);
+            return Ok(find_match_in_list(&matches, &query));
+        }
+
+        let filter_prereleases = !self.include_prereleases(selection_opts);
+        let matches = file::dir_subdirs(&self.ba().installs_path)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|v| !v.starts_with('.'))
+            .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
+            .filter(|v| !install_state::incomplete_file_path(&self.ba().short, v).exists())
+            .filter(|v| v != "latest")
+            .filter(|v| !filter_prereleases || !self.is_prerelease_version(v))
+            .collect_vec();
+        let installed_symlink = self.ba().installs_path.join("latest");
+        if installed_symlink.exists()
+            && let Some(target) = file::resolve_symlink(&installed_symlink)?
+        {
+            let version = target
+                .file_name()
+                .ok_or_else(|| eyre!("Invalid symlink target"))?
+                .to_string_lossy()
+                .to_string();
+            if matches.contains(&version) {
+                return Ok(Some(version));
             }
         }
+        Ok(matches
+            .into_iter()
+            .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
+            .last())
     }
 
     /// Get version info for a specific version (including checksum for rolling releases)
@@ -4129,6 +4083,115 @@ pub trait Backend: Debug + Send + Sync {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod test_helpers {
+    use super::*;
+    use crate::install_context::InstallContext;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[derive(Debug)]
+    pub struct RemoteVersionsBackend {
+        ba: Arc<BackendArg>,
+        remote_versions: Vec<VersionInfo>,
+        stable_result: Option<String>,
+        list_calls: AtomicUsize,
+    }
+
+    impl RemoteVersionsBackend {
+        pub fn new(
+            ba: Arc<BackendArg>,
+            remote_versions: Vec<VersionInfo>,
+            stable_result: Option<&str>,
+        ) -> Self {
+            Self {
+                ba,
+                remote_versions,
+                stable_result: stable_result.map(str::to_string),
+                list_calls: AtomicUsize::new(0),
+            }
+        }
+
+        pub fn stable_and_prerelease(ba: Arc<BackendArg>) -> Self {
+            Self::new(
+                ba,
+                vec![
+                    VersionInfo {
+                        version: "1.0.0".to_string(),
+                        ..Default::default()
+                    },
+                    VersionInfo {
+                        version: "1.1.0-rc.1".to_string(),
+                        prerelease: true,
+                        ..Default::default()
+                    },
+                ],
+                Some("1.0.0"),
+            )
+        }
+
+        pub fn list_calls(&self) -> usize {
+            self.list_calls.load(Ordering::SeqCst)
+        }
+    }
+
+    pub fn prerelease_options() -> ToolVersionOptions {
+        let mut options = ToolVersionOptions::default();
+        options
+            .opts
+            .insert("prerelease".to_string(), toml::Value::Boolean(true));
+        options
+    }
+
+    pub fn request_tool_version(ba: Arc<BackendArg>, options: ToolVersionOptions) -> ToolVersion {
+        ToolVersion::new(
+            ToolRequest::Version {
+                backend: ba,
+                version: "1".to_string(),
+                options,
+                source: crate::toolset::ToolSource::Argument,
+            },
+            "1.0.0".to_string(),
+        )
+    }
+
+    #[async_trait]
+    impl Backend for RemoteVersionsBackend {
+        fn ba(&self) -> &Arc<BackendArg> {
+            &self.ba
+        }
+
+        fn list_installed_versions(&self) -> Vec<String> {
+            file::dir_subdirs(&self.ba.installs_path)
+                .unwrap_or_default()
+                .into_iter()
+                .collect()
+        }
+
+        async fn _list_remote_versions(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Vec<VersionInfo>> {
+            self.list_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(self.remote_versions.clone())
+        }
+
+        async fn latest_stable_version(
+            &self,
+            _config: &Arc<Config>,
+        ) -> eyre::Result<Option<String>> {
+            Ok(self.stable_result.clone())
+        }
+
+        async fn install_version_(
+            &self,
+            _ctx: &InstallContext,
+            tv: ToolVersion,
+        ) -> Result<ToolVersion> {
+            Ok(tv)
+        }
+    }
+}
+
 fn effective_latest_before_date<B: Backend + ?Sized>(
     backend: &B,
     opts: &ToolVersionOptions,
@@ -4604,7 +4667,11 @@ mod latest_version_tests {
 
         assert_eq!(
             backend
-                .latest_version_unfiltered(&config, Some("latest".to_string()))
+                .latest_version_unfiltered_with_selection_options(
+                    &config,
+                    Some("latest".to_string()),
+                    &ToolVersionOptions::default(),
+                )
                 .await
                 .unwrap()
                 .as_deref(),
@@ -4691,7 +4758,14 @@ mod latest_version_tests {
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
         Settings::reset(Some(partial));
-        let versions = backend.list_remote_versions(&config).await.unwrap();
+        let versions = backend
+            .list_remote_versions_with_selection_options(
+                &config,
+                &ToolVersionOptions::default(),
+                false,
+            )
+            .await
+            .unwrap();
         Settings::reset(None);
 
         assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
@@ -4755,18 +4829,30 @@ mod latest_version_tests {
         let _ = fs::remove_dir_all(&alpha.ba().cache_path);
 
         assert_eq!(
-            alpha.list_remote_versions(&config).await.unwrap(),
+            alpha
+                .list_remote_versions_with_selection_options(&config, &alpha.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
         // The defect: this read back the list `alpha` had cached under the shared key.
         assert_eq!(
-            beta.list_remote_versions(&config).await.unwrap(),
+            beta.list_remote_versions_with_selection_options(&config, &beta.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["2.0.0".to_string()]
         );
         // Same option value, same entry — which is what shows the key follows the value rather
         // than the instance, and that the fix did not trade staleness for a refetch every time.
         assert_eq!(
-            alpha_again.list_remote_versions(&config).await.unwrap(),
+            alpha_again
+                .list_remote_versions_with_selection_options(
+                    &config,
+                    &alpha_again.ba().opts(),
+                    false,
+                )
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
         assert_eq!(alpha_again.list_calls(), 0);
@@ -4793,7 +4879,10 @@ mod latest_version_tests {
             .unwrap();
 
         assert_eq!(
-            backend.list_remote_versions(&config).await.unwrap(),
+            backend
+                .list_remote_versions_with_selection_options(&config, &backend.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
 
@@ -4887,8 +4976,9 @@ mod latest_version_tests {
         assert_eq!(backend.list_calls(), 0);
     }
 
-    #[test]
-    fn test_latest_installed_version_ignores_real_latest_dir() {
+    #[tokio::test]
+    async fn test_latest_installed_version_ignores_real_latest_dir() {
+        let _config = Config::get().await.unwrap();
         let temp_dir = tempfile::tempdir().unwrap();
         let mut ba = BackendArg::new_raw(
             "latest-real-dir".into(),
@@ -4916,6 +5006,98 @@ mod latest_version_tests {
             backend.latest_installed_version(None).unwrap(),
             Some("2.0.0".into())
         );
+    }
+
+    #[tokio::test]
+    async fn test_latest_installed_version_keeps_opaque_stable_versions() {
+        let _config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "latest-opaque-version".into(),
+            None,
+            "latest-opaque-version".into(),
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir
+            .path()
+            .join("installs")
+            .join("latest-opaque-version");
+        fs::create_dir_all(ba.installs_path.join("nightly")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("2.0.0-rc1")).unwrap();
+        file::make_symlink_or_file(
+            &ba.installs_path.join("nightly"),
+            &ba.installs_path.join("latest"),
+        )
+        .unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_result: Some("9.9.9".to_string()),
+            stable_info: None,
+            remote_versions: vec![],
+            listing_keys: &[],
+            stable_calls: AtomicUsize::new(0),
+            stable_info_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("nightly".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_latest_installed_version_ignores_incomplete_installs() {
+        let _config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let name = format!(
+            "latest-incomplete-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let mut ba = BackendArg::new_raw(
+            name.clone(),
+            None,
+            name,
+            None,
+            BackendResolution::new(false),
+        );
+        ba.installs_path = temp_dir.path().join("installs");
+        fs::create_dir_all(ba.installs_path.join("1.0.0")).unwrap();
+        fs::create_dir_all(ba.installs_path.join("2.0.0")).unwrap();
+        let marker = install_state::incomplete_file_path(&ba.short, "2.0.0");
+        fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        fs::write(&marker, []).unwrap();
+
+        let backend = LatestBackend {
+            ba: Arc::new(ba),
+            stable_result: None,
+            stable_info: None,
+            remote_versions: vec![],
+            listing_keys: &[],
+            stable_calls: AtomicUsize::new(0),
+            stable_info_calls: AtomicUsize::new(0),
+            list_calls: AtomicUsize::new(0),
+        };
+
+        assert_eq!(
+            backend.latest_installed_version(None).unwrap(),
+            Some("1.0.0".into())
+        );
+        assert_eq!(
+            backend
+                .latest_installed_version_with_selection_options(
+                    Some("2".into()),
+                    &ToolVersionOptions::default(),
+                )
+                .unwrap(),
+            None
+        );
+        fs::remove_file(marker).unwrap();
     }
 
     #[tokio::test]

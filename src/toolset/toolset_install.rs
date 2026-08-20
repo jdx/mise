@@ -765,9 +765,9 @@ fn should_refresh_remote_versions(
     }
     match tr {
         ToolRequest::Version { version, .. } => version == "latest",
-        ToolRequest::Prefix { prefix, .. } => {
-            backend.list_installed_versions_matching(prefix).is_empty()
-        }
+        ToolRequest::Prefix { prefix, .. } => backend
+            .list_installed_versions_matching_with_selection_options(prefix, &tr.options())
+            .is_empty(),
         ToolRequest::Sub { orig_version, .. } => orig_version == "latest",
         ToolRequest::Ref { .. } | ToolRequest::Path { .. } | ToolRequest::System { .. } => false,
     }
