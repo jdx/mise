@@ -7,26 +7,22 @@ use strum::EnumString;
 #[command(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Completion {
     /// Shell type to generate completions for
-    #[arg(required_unless_present = "shell_type")]
+    #[arg(required_unless_present = "shell_type", value_enum)]
     shell: Option<Shell>,
 
     /// Shell type to generate completions for
-    #[arg(long = "shell", short = 's', hide = true)]
+    #[arg(long = "shell", short = 's', hide = true, value_enum)]
     shell_type: Option<Shell>,
 
-    /// Include the bash completion library in the bash completion script
+    /// Retained for compatibility with older completion generators.
     ///
-    /// This is required for completions to work in bash, but it is not included by default
-    /// you may source it separately or enable this flag to enable it in the script.
+    /// usage-rs's built-in bash script is self-contained, so this is now a no-op.
     #[arg(long, verbatim_doc_comment)]
     include_bash_completion_lib: bool,
 
-    /// Always use usage for completions.
-    /// Currently, usage is the default for fish and bash but not zsh since it has a few quirks
-    /// to work out first.
+    /// Retained for compatibility with older completion generators.
     ///
-    /// This requires the `usage` CLI to be installed.
-    /// https://usage.jdx.dev
+    /// Completions now always use usage-rs's built-in protocol, so this is a no-op.
     #[arg(long, verbatim_doc_comment, hide = true)]
     usage: bool,
 }

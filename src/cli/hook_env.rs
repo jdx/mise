@@ -38,7 +38,7 @@ pub struct HookEnv {
     quiet: bool,
 
     /// Shell type to generate script for
-    #[arg(long, short)]
+    #[arg(long, short, value_enum)]
     shell: Option<ShellType>,
 
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")

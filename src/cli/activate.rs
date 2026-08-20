@@ -32,7 +32,7 @@ use itertools::Itertools;
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Activate {
     /// Shell type to generate the script for
-    #[arg()]
+    #[arg(value_enum)]
     shell_type: Option<ShellType>,
 
     /// Suppress non-error messages
@@ -40,7 +40,7 @@ pub struct Activate {
     quiet: bool,
 
     /// Shell type to generate the script for
-    #[arg(long, short, hide = true)]
+    #[arg(long, short, hide = true, value_enum)]
     shell: Option<ShellType>,
 
     /// Do not automatically call hook-env
