@@ -152,7 +152,16 @@ killall Finder
 killall SystemUIServer
 ```
 
-mise deliberately does not kill applications itself.
+mise deliberately does not kill applications itself. After `mise bootstrap`
+writes defaults, the follow-up summary reminds you to relaunch; a common
+`post-defaults` hook is:
+
+```toml
+[bootstrap.hooks.post-defaults]
+run = "killall Dock || true"
+```
+
+Without a relaunch, Dock/Finder preferences can look unset until the next login.
 
 ## Finding keys
 

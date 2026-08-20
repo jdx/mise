@@ -140,6 +140,16 @@ run = "gh auth status || gh auth login"
 mise bootstrap --yes   # new laptop or container -> ready to work
 ```
 
+When taking over an existing Mac that already has Homebrew casks (or a
+nix-darwin brew integration), set `[bootstrap.brew] adopt = true` so mise
+records ownership without replacing `/Applications` bundles — replacing an
+`.app` can revoke macOS Privacy & Security grants. See
+[brew casks / TCC](/bootstrap/packages/brew.html#macos-privacy-security-tcc).
+
+After writing macOS defaults, relaunch Dock/Finder (or use a `post-defaults`
+hook) or prefs can look unset until restart — see
+[macOS Defaults](/bootstrap/macos-defaults.html#app-restarts).
+
 Everything is declarative and idempotent: re-running skips whatever is
 already in its desired state, `mise bootstrap packages status --missing` and
 `mise bootstrap dotfiles status --missing` make CI checks, and nothing is ever
