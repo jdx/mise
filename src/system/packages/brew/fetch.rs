@@ -434,15 +434,9 @@ mod tests {
             }]
         });
 
-        let error = oci_metadata_from_index(
-            "foo",
-            "1.0",
-            0,
-            "arm64_tahoe",
-            "expected-bottle",
-            &index,
-        )
-            .unwrap_err();
+        let error =
+            oci_metadata_from_index("foo", "1.0", 0, "arm64_tahoe", "expected-bottle", &index)
+                .unwrap_err();
         assert!(error.downcast_ref::<DescriptorIdentityMiss>().is_some());
     }
 
@@ -490,8 +484,7 @@ mod tests {
             }]
         });
 
-        let metadata =
-            oci_metadata_from_index("foo", "1.0", 0, "all", "abc123", &index).unwrap();
+        let metadata = oci_metadata_from_index("foo", "1.0", 0, "all", "abc123", &index).unwrap();
         assert_eq!(metadata.sbom_supplement, Some(expected));
     }
 }

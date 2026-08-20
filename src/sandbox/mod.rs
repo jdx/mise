@@ -79,19 +79,36 @@ pub(super) struct BoundSandboxPath {
 #[cfg(target_os = "linux")]
 impl BoundSandboxPath {
     fn from_fd(path: &std::path::Path, fd: std::os::fd::OwnedFd) -> eyre::Result<Self> {
-        let stat = nix::sys::stat::fstat(&fd)?;
-        let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+        use std::os::fd::AsRawFd;
+
+        let retained_stat = nix::sys::stat::fstat(&fd)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(retained_stat.st_mode);
         if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
             eyre::bail!(
                 "formula-execution sandbox descriptor is a symlink: {}",
                 path.display()
             )
         }
+        let authority = nix::fcntl::open(
+            format!("/proc/self/fd/{}", fd.as_raw_fd()).as_str(),
+            nix::fcntl::OFlag::O_PATH | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let authority_stat = nix::sys::stat::fstat(&authority)?;
+        let authority_kind = nix::sys::stat::SFlag::from_bits_truncate(authority_stat.st_mode);
+        if (authority_stat.st_dev, authority_stat.st_ino, authority_kind)
+            != (retained_stat.st_dev, retained_stat.st_ino, kind)
+        {
+            eyre::bail!(
+                "formula-execution sandbox authority changed while binding: {}",
+                path.display()
+            )
+        }
         Ok(Self {
             path: path.to_path_buf(),
-            fd: Arc::new(fd),
-            device: stat.st_dev,
-            inode: stat.st_ino,
+            fd: Arc::new(authority),
+            device: retained_stat.st_dev,
+            inode: retained_stat.st_ino,
             is_directory: kind.contains(nix::sys::stat::SFlag::S_IFDIR),
             validate_pathname: false,
         })

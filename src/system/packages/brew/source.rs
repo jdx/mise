@@ -331,7 +331,6 @@ struct SourceInstallHelper {
 struct MaterializedFormulaSource {
     #[cfg(target_os = "linux")]
     file: std::fs::File,
-    #[cfg(not(target_os = "linux"))]
     _directory: tempfile::TempDir,
     path: PathBuf,
     identity: SourceReadOnlyIdentity,
@@ -357,16 +356,30 @@ impl MaterializedFormulaSource {
     fn new(artifact: &super::fetch::VerifiedArtifact) -> Result<Self> {
         #[cfg(target_os = "linux")]
         {
-            use std::os::fd::AsRawFd;
+            use std::os::unix::fs::OpenOptionsExt;
 
-            let file = artifact.reader()?;
-            if unsafe { nix::libc::fchmod(file.as_raw_fd(), 0o400) } == -1 {
-                return Err(std::io::Error::last_os_error().into());
-            }
-            make_inherited(&file)?;
-            let path = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+            let directory = tempfile::Builder::new()
+                .prefix("mise-brew-formula-source-")
+                .tempdir()?;
+            let path = directory.path().join("formula.rb");
+            let mut source = artifact.reader()?;
+            let mut destination = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o400)
+                .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+                .open(&path)?;
+            std::io::copy(&mut source, &mut destination)?;
+            std::io::Write::flush(&mut destination)?;
+            destination.sync_all()?;
+            drop(destination);
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+                .open(&path)?;
             let identity = SourceReadOnlyIdentity::capture_file(&file, 0o400)?;
             Ok(Self {
+                _directory: directory,
                 file,
                 path,
                 identity,
@@ -407,7 +420,10 @@ impl MaterializedFormulaSource {
 
     fn validate(&self) -> Result<()> {
         #[cfg(target_os = "linux")]
-        return self.identity.validate_file(&self.file, 0o400);
+        {
+            self.identity.validate_file(&self.file, 0o400)?;
+            return self.identity.validate(&self.path);
+        }
 
         #[cfg(not(target_os = "linux"))]
         self.identity.validate(&self.path)
@@ -499,7 +515,6 @@ impl SourceReadOnlyIdentity {
         })
     }
 
-    #[cfg(not(target_os = "linux"))]
     fn validate(&self, path: &Path) -> Result<()> {
         let current = Self::capture(path)?;
         if current.device != self.device

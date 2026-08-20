@@ -3230,10 +3230,11 @@ async fn execute_run(
     #[cfg(unix)]
     let (execution_executable, audited_copy) = if let Some((_, _, identity)) = &audited_executable {
         let name = std::ffi::OsString::from("audited-post-install");
-        let mut copy = create_bound_run_file(&temp_guard.parent, &name)?;
-        copy_open_file_to(&identity.file, &mut copy)?;
-        copy_run_file_metadata(&identity.file, &copy)?;
-        copy.sync_all()?;
+        let mut copy_writer = create_bound_run_file(&temp_guard.parent, &name)?;
+        copy_open_file_to(&identity.file, &mut copy_writer)?;
+        copy_run_file_metadata(&identity.file, &copy_writer)?;
+        copy_writer.sync_all()?;
+        drop(copy_writer);
         temp_guard.parent.sync()?;
         let copy = open_bound_run_file(&temp_guard.parent, &name)?
             .ok_or_else(|| eyre!("private audited post-install helper copy is missing"))?;
@@ -3259,10 +3260,11 @@ async fn execute_run(
     #[cfg(unix)]
     let audited_input_copy = if let Some((_, _, identity)) = &audited_input {
         let name = std::ffi::OsString::from("audited-source-input");
-        let mut copy = create_bound_run_file(&temp_guard.parent, &name)?;
-        copy_open_file_to(&identity.file, &mut copy)?;
-        copy_run_file_metadata(&identity.file, &copy)?;
-        copy.sync_all()?;
+        let mut copy_writer = create_bound_run_file(&temp_guard.parent, &name)?;
+        copy_open_file_to(&identity.file, &mut copy_writer)?;
+        copy_run_file_metadata(&identity.file, &copy_writer)?;
+        copy_writer.sync_all()?;
+        drop(copy_writer);
         temp_guard.parent.sync()?;
         let copy = open_bound_run_file(&temp_guard.parent, &name)?
             .ok_or_else(|| eyre!("private audited post-install source copy is missing"))?;
@@ -5903,15 +5905,15 @@ fn log_tail_file(file: &mut File) -> Result<String> {
 
     #[cfg(not(unix))]
     {
-    use std::io::{Read, Seek};
+        use std::io::{Read, Seek};
 
-    let length = file.metadata()?.len();
-    file.seek(std::io::SeekFrom::Start(
-        length.saturating_sub(MAX_FAILURE_LOG_BYTES as u64),
-    ))?;
-    let mut output = Vec::with_capacity(MAX_FAILURE_LOG_BYTES);
-    file.take(MAX_FAILURE_LOG_BYTES as u64)
-        .read_to_end(&mut output)?;
+        let length = file.metadata()?.len();
+        file.seek(std::io::SeekFrom::Start(
+            length.saturating_sub(MAX_FAILURE_LOG_BYTES as u64),
+        ))?;
+        let mut output = Vec::with_capacity(MAX_FAILURE_LOG_BYTES);
+        file.take(MAX_FAILURE_LOG_BYTES as u64)
+            .read_to_end(&mut output)?;
         Ok(String::from_utf8_lossy(&output).into_owned())
     }
 }
@@ -6562,6 +6564,7 @@ mod tests {
         );
         assert!(!sandbox.allow_write.contains(&prepared.keg));
         assert!(sandbox.allow_read.contains(&prepared.keg));
+        assert!(sandbox.deny_local_sockets);
         Ok(())
     }
 
