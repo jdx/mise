@@ -799,9 +799,12 @@ impl Cli {
 
         let parsed_argv: Vec<&std::ffi::OsStr> =
             processed_args.iter().map(std::ffi::OsStr::new).collect();
-        let cli = measure!("parse_args", {
+        let mut cli = measure!("parse_args", {
             Cli::parse_from_argv(&parsed_argv).map_err(|err| usage_error(&parsed_argv[1..], err))
         })?;
+        if let Some(Commands::Bootstrap(bootstrap)) = &mut cli.command {
+            bootstrap.inherit_root_flags(cli.dry_run, cli.yes);
+        }
         config_file::set_implicitly_trust_active_config(
             cli.command
                 .as_ref()
@@ -1070,6 +1073,23 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    #[test]
+    fn bootstrap_inherits_root_yes_and_dry_run_flags() {
+        for args in [
+            ["mise", "--yes", "bootstrap"].as_slice(),
+            ["mise", "--dry-run", "bootstrap"].as_slice(),
+            ["mise", "--yes", "--dry-run", "bootstrap"].as_slice(),
+        ] {
+            let mut cli = parse_cli(args).unwrap();
+            let root_flags = (cli.dry_run, cli.yes);
+            let Some(Commands::Bootstrap(bootstrap)) = &mut cli.command else {
+                panic!("expected bootstrap for {args:?}")
+            };
+            bootstrap.inherit_root_flags(root_flags.0, root_flags.1);
+            assert_eq!(bootstrap.inherited_root_flags(), root_flags, "{args:?}");
+        }
     }
 
     #[test]

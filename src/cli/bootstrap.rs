@@ -1048,7 +1048,17 @@ struct BootstrapUserStatus {
 }
 
 impl Bootstrap {
-    pub(super) async fn run(self) -> Result<()> {
+    pub(super) fn inherit_root_flags(&mut self, dry_run: bool, yes: bool) {
+        self.dry_run |= dry_run;
+        self.yes |= yes;
+    }
+
+    #[cfg(test)]
+    pub(super) fn inherited_root_flags(&self) -> (bool, bool) {
+        (self.dry_run, self.yes)
+    }
+
+    pub async fn run(self) -> Result<()> {
         if let Some(command) = self.command {
             return command.run().await;
         }
