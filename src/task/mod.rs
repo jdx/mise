@@ -9,7 +9,7 @@ use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -37,6 +37,17 @@ pub(crate) fn reset() {
     TASK_VARS_CACHE.lock().unwrap().clear();
     TASK_ENV_CACHE.lock().unwrap().clear();
 }
+
+#[derive(Debug)]
+pub(crate) struct TaskNotFoundError(String);
+
+impl Display for TaskNotFoundError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TaskNotFoundError {}
 
 /// Type alias for tracking failed tasks with their exit codes
 pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
@@ -107,7 +118,7 @@ impl Task {
     }
 }
 
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{ConfigFile, trust_check};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
@@ -781,6 +792,15 @@ pub struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Config file that declared a remote task. The fetched task's local path
+    /// is not the trust authority for its metadata.
+    #[serde(skip)]
+    pub remote_config_source: Option<PathBuf>,
+
+    /// Whether the fetched remote header contributed tool requirements.
+    #[serde(skip)]
+    pub remote_metadata_has_tools: bool,
+
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -1052,6 +1072,16 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
     }
 }
 
+/// Check decoded remote script header values regardless of the fetched path's
+/// extension. A remote script may legitimately end in `.toml`.
+pub(crate) fn script_header_has_decoded_template(body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    scan_mise_header_entries(file::strip_utf8_bom(body))
+        .into_iter()
+        .filter_map(|entry| entry.parse_toml().ok())
+        .any(|value| toml_value_has_template(&value))
+}
+
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
@@ -1290,6 +1320,21 @@ impl Task {
     }
 
     pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
+        if self.remote_metadata_has_tools {
+            let remote_source = self.remote_file_source.as_deref().unwrap_or(&self.name);
+            let config_source = self.remote_config_source.as_deref().ok_or_else(|| {
+                eyre!(
+                    "remote task {remote_source} has tool metadata without defining config provenance"
+                )
+            })?;
+            trust_check(config_source).wrap_err_with(|| {
+                format!(
+                    "tool metadata from remote task {} requires its defining config {} to be trusted",
+                    remote_source,
+                    display_path(config_source)
+                )
+            })?;
+        }
         self.tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
@@ -1645,7 +1690,7 @@ impl Task {
         config: &Arc<Config>,
         tasks_to_run: &[Task],
     ) -> Result<ResolvedTaskDependencies> {
-        use crate::task::TaskLoadContext;
+        use crate::task::{TaskLoadContext, task_fetcher::TaskFetcher};
 
         if let Some(err) = &self.workspace_dependency_error {
             bail!("{err}");
@@ -1678,62 +1723,76 @@ impl Task {
         };
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-        let tasks = build_task_ref_map(all_tasks.iter());
-        // Skip deps with unresolved {{usage.*}} references — they'll be resolved
-        // later when render_depends_with_usage() is called with actual arg values.
-        let depends = self
-            .depends
-            .iter()
-            .filter(|td| !dep_has_usage_ref(td))
-            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
-            .flatten_ok()
-            .collect_vec();
-        let wait_for = self
-            .wait_for
-            .iter()
-            .filter(|td| !dep_has_usage_ref(td))
-            .map(|td| {
-                match_tasks_with_context(&tasks, td, Some(self))
-                    .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
+        let resolve = |all_tasks: &BTreeMap<String, Task>| -> Result<_> {
+            let tasks = build_task_ref_map(all_tasks.iter());
+            // Skip deps with unresolved {{usage.*}} references — they'll be resolved
+            // later when render_depends_with_usage() is called with actual arg values.
+            let depends = self
+                .depends
+                .iter()
+                .filter(|td| !dep_has_usage_ref(td))
+                .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
+                .flatten_ok()
+                .collect_vec();
+            let wait_for = self
+                .wait_for
+                .iter()
+                .filter(|td| !dep_has_usage_ref(td))
+                .map(|td| {
+                    match_tasks_with_context(&tasks, td, Some(self))
+                        .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
+                })
+                .flatten_ok()
+                .filter_map_ok(|(t, td)| {
+                    if td.env.is_empty() && td.args.is_empty() {
+                        // Name-based matching: wait for any running instance of this task
+                        // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
+                        // Return the actual task from tasks_to_run so the dependency graph
+                        // gets the correct env/args-variant node.
+                        tasks_to_run
+                            .iter()
+                            .find(|tr| tr.name == t.name)
+                            .map(|tr| (*tr).clone())
+                    } else {
+                        // Full identity matching: user explicitly wants a specific env/args variant
+                        tasks_to_run.contains(&t).then_some(t)
+                    }
+                })
+                .collect_vec();
+            let depends_post = self
+                .depends_post
+                .iter()
+                .filter(|td| !dep_has_usage_ref(td))
+                .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
+                .flatten_ok()
+                .filter_ok(|t| t.name != self.name)
+                .collect::<Result<Vec<_>>>()?;
+            let depends = depends
+                .into_iter()
+                .filter_ok(|t| t.name != self.name)
+                .collect::<Result<_>>()?;
+            let wait_for = wait_for
+                .into_iter()
+                .filter_ok(|t| t.name != self.name)
+                .collect::<Result<_>>()?;
+            Ok(ResolvedTaskDependencies {
+                depends,
+                wait_for,
+                depends_post,
             })
-            .flatten_ok()
-            .filter_map_ok(|(t, td)| {
-                if td.env.is_empty() && td.args.is_empty() {
-                    // Name-based matching: wait for any running instance of this task
-                    // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
-                    // Return the actual task from tasks_to_run so the dependency graph
-                    // gets the correct env/args-variant node.
-                    tasks_to_run
-                        .iter()
-                        .find(|tr| tr.name == t.name)
-                        .map(|tr| (*tr).clone())
-                } else {
-                    // Full identity matching: user explicitly wants a specific env/args variant
-                    tasks_to_run.contains(&t).then_some(t)
-                }
-            })
-            .collect_vec();
-        let depends_post = self
-            .depends_post
-            .iter()
-            .filter(|td| !dep_has_usage_ref(td))
-            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
-            .flatten_ok()
-            .filter_ok(|t| t.name != self.name)
-            .collect::<Result<Vec<_>>>()?;
-        let depends = depends
-            .into_iter()
-            .filter_ok(|t| t.name != self.name)
-            .collect::<Result<_>>()?;
-        let wait_for = wait_for
-            .into_iter()
-            .filter_ok(|t| t.name != self.name)
-            .collect::<Result<_>>()?;
-        Ok(ResolvedTaskDependencies {
-            depends,
-            wait_for,
-            depends_post,
-        })
+        };
+
+        match resolve(&all_tasks) {
+            Ok(dependencies) => Ok(dependencies),
+            Err(err) if err.downcast_ref::<TaskNotFoundError>().is_some() => {
+                let all_tasks = TaskFetcher::new(false)
+                    .require_trust_before_fetch()
+                    .fetch_task_map(config, &all_tasks)
+                    .await?;
+                resolve(&all_tasks)
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Expands `^task` dependencies to the matching task in every upstream workspace project.
@@ -2816,7 +2875,7 @@ impl Task {
         env_directives.extend(self.overlay_env.iter().cloned());
 
         // Resolve environment directives using the same system as global env
-        let env_results = EnvResults::resolve(
+        let env_results = EnvResults::resolve_with_trust_source(
             config,
             tera_ctx.clone(),
             &env,
@@ -2826,6 +2885,7 @@ impl Task {
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
             },
+            self.remote_config_source.as_deref(),
         )
         .await?;
         // Register task-specific redactions with the global redactor
@@ -3092,7 +3152,7 @@ fn match_tasks_with_context(
             }
         }
 
-        return Err(eyre!(err_msg));
+        return Err(TaskNotFoundError(err_msg).into());
     };
 
     Ok(matches)
@@ -3147,6 +3207,8 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            remote_config_source: None,
+            remote_metadata_has_tools: false,
             deny_all: false,
             deny_read: false,
             deny_write: false,

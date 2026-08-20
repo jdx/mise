@@ -1,9 +1,11 @@
+use crate::config::config_file::{trust_check, trust_check_remote_fetch};
 use crate::config::{Config, Settings};
-use crate::task::Task;
 use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::{Task, script_header_has_decoded_template};
 use dashmap::DashMap;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, LazyLock, Mutex},
 };
@@ -65,11 +67,21 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 /// Handles fetching remote task files and converting them to local paths
 pub struct TaskFetcher {
     no_cache: bool,
+    trust_before_fetch: bool,
 }
 
 impl TaskFetcher {
     pub fn new(no_cache: bool) -> Self {
-        Self { no_cache }
+        Self {
+            no_cache,
+            trust_before_fetch: false,
+        }
+    }
+
+    /// Require trust before a remote provider performs network or Git work.
+    pub fn require_trust_before_fetch(mut self) -> Self {
+        self.trust_before_fetch = true;
+        self
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
@@ -89,6 +101,24 @@ impl TaskFetcher {
                 }
 
                 let original = t.clone();
+                let defining_cf = original
+                    .cf
+                    .clone()
+                    .or_else(|| config.config_files.get(&original.config_source).cloned());
+                let defining_config_source = original
+                    .remote_config_source
+                    .clone()
+                    .or_else(|| defining_cf.as_ref().map(|cf| cf.get_path().to_path_buf()))
+                    .unwrap_or_else(|| original.config_source.clone());
+
+                if self.trust_before_fetch {
+                    trust_check_remote_fetch(&defining_config_source).wrap_err_with(|| {
+                        format!(
+                            "fetching remote task {source} requires its defining config to be trusted"
+                        )
+                    })?;
+                }
+
                 let provider = task_file_providers
                     .get_provider(&source)
                     .ok_or_else(|| eyre::eyre!("No provider found for file: {}", source))?;
@@ -123,12 +153,25 @@ impl TaskFetcher {
                 // Parse the downloaded script as a regular file task so all #MISE
                 // metadata is honored. The inline TOML task remains the higher-
                 // precedence overlay, matching local file-task behavior.
+                let body = crate::file::read_to_string(&local_path).wrap_err_with(|| {
+                    format!("failed to read remote task metadata from {source}")
+                })?;
+                let header_has_templates = script_header_has_decoded_template(&body);
                 let mut remote = Task::from_path_unrendered_with_cf(
                     &local_path,
                     prefix,
                     &config_root,
                     original.cf.clone(),
-                )?;
+                )
+                .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
+                if header_has_templates {
+                    trust_check(&defining_config_source).wrap_err_with(|| {
+                        format!(
+                            "remote task metadata from {source} requires its defining config to be trusted"
+                        )
+                    })?;
+                }
+                let remote_metadata_has_tools = !remote.tools.is_empty();
                 remote.name.clone_from(&original.name);
                 remote.display_name.clone_from(&original.display_name);
 
@@ -141,18 +184,40 @@ impl TaskFetcher {
                 remote.inherited_env.clone_from(&original.inherited_env);
                 remote.overlay_env.clone_from(&original.overlay_env);
                 remote.overlay_vars.clone_from(&original.overlay_vars);
-                remote.render(config, &config_root).await?;
+                remote
+                    .render(config, &config_root)
+                    .await
+                    .wrap_err_with(|| {
+                        format!("failed to render remote task metadata from {source}")
+                    })?;
                 remote.merge_toml_overlay(original.clone());
 
                 // Preserve runtime state that is not task metadata and therefore is
                 // intentionally not handled by merge_toml_overlay().
                 remote.global = original.global;
                 remote.remote_file_source = Some(source);
+                remote.remote_config_source = Some(defining_config_source);
+                remote.remote_metadata_has_tools = remote_metadata_has_tools;
                 *t = remote;
             }
         }
 
         Ok(())
+    }
+
+    /// Clone and resolve a task map so consumers can retry alias/dependency
+    /// matching against metadata that only exists in remote headers.
+    pub async fn fetch_task_map(
+        &self,
+        config: &Arc<Config>,
+        tasks: &BTreeMap<String, Task>,
+    ) -> Result<BTreeMap<String, Task>> {
+        let mut resolved = tasks.values().cloned().collect::<Vec<_>>();
+        self.fetch_tasks(config, &mut resolved).await?;
+        Ok(resolved
+            .into_iter()
+            .map(|task| (task.name.clone(), task))
+            .collect())
     }
 
     /// Check if a source path is a remote task file (git or http/https)

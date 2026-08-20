@@ -30,7 +30,9 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::task_file_providers::{
+    TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
+};
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
     RunEntry, Task, TaskCacheConfig, TaskRustCacheConfig, TaskTemplate, monorepo_scope,
@@ -1211,6 +1213,7 @@ impl Config {
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
+                trust_source: None,
             };
             let redact_keys = self
                 .redaction_keys()
@@ -4504,14 +4507,41 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
         .await?;
 
     let artifact = checkout.with_path(checkout.path.join(source.path));
-    let metadata = artifact.path.symlink_metadata()?;
-    if !metadata.file_type().is_file() && !metadata.file_type().is_dir() {
-        bail!(
-            "remote task path is not a regular file or directory: {}",
-            display_path(&artifact.path)
-        );
-    }
+    validate_remote_git_path(&checkout.path, &artifact.path)?;
     Ok(artifact)
+}
+
+fn trust_check_remote_task_include(owner: &Path, include: &str) -> Result<()> {
+    config_file::trust_check_remote_fetch(owner).wrap_err_with(|| {
+        format!(
+            "fetching remote task include {include} requires its defining config {} to be trusted",
+            display_path(owner)
+        )
+    })
+}
+
+fn trust_check_remote_task_includes(owner: &Path, includes: &[String]) -> Result<bool> {
+    let mut found_remote = false;
+    for include in includes
+        .iter()
+        .filter(|include| include.starts_with("git::"))
+    {
+        trust_check_remote_task_include(owner, include)?;
+        found_remote = true;
+    }
+    Ok(found_remote)
+}
+
+fn preserve_remote_task_trust_source(tasks: &mut [Task], source: &Path) {
+    for task in tasks {
+        if task.file.as_ref().is_some_and(|file| {
+            let file = file.to_string_lossy();
+            file.starts_with("git::") || file.starts_with("http://") || file.starts_with("https://")
+        }) {
+            task.remote_config_source
+                .get_or_insert_with(|| source.to_path_buf());
+        }
+    }
 }
 
 /// Check if a pattern contains glob metacharacters
@@ -4688,6 +4718,7 @@ struct TaskSources {
 struct CascadedTaskConfig {
     task_config: TaskConfig,
     includes_root: PathBuf,
+    includes_source: Option<PathBuf>,
 }
 
 fn merge_cascaded_task_config(
@@ -4721,10 +4752,14 @@ fn merge_cascaded_task_config(
     }) {
         cascaded.task_config.global_pass_through_env = global_pass_through_env;
     }
-    if let Some((includes, root)) = configs
+    if let Some((includes, root, source)) = configs
         .iter()
         .find_map(|cf| match cf.task_config_includes() {
-            Ok(Some(includes)) => Some(Ok((includes, cf.config_root()))),
+            Ok(Some(includes)) => Some(Ok((
+                includes,
+                cf.config_root(),
+                cf.get_path().to_path_buf(),
+            ))),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
         })
@@ -4732,6 +4767,7 @@ fn merge_cascaded_task_config(
     {
         cascaded.task_config.includes = Some(includes);
         cascaded.includes_root = root;
+        cascaded.includes_source = Some(source);
     }
     Ok(())
 }
@@ -4761,6 +4797,7 @@ fn cascaded_task_config_for_dir(
                 cascaded = Some(CascadedTaskConfig {
                     task_config: TaskConfig::default(),
                     includes_root: root,
+                    includes_source: None,
                 });
             }
             _ => {}
@@ -4863,27 +4900,63 @@ async fn load_task_sources_from_configs(
             cascaded_task_config
         };
     let is_global = configs.iter().any(|cf| is_global_config(cf.get_path()));
-    // a config can only vouch for task include files when it was actually
-    // trusted — safe configs load without trust and cannot vouch for anything
-    let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
-    let (includes, resolve_dir, include_config_precedence) = configs
+    let (includes, resolve_dir, include_config_precedence, include_owner) = configs
         .iter()
         .enumerate()
         .find_map(|(precedence, cf)| match cf.task_config_includes() {
-            Ok(Some(includes)) => Some(Ok((includes, cf.config_root(), precedence))),
+            Ok(Some(includes)) => Some(Ok((
+                includes,
+                cf.config_root(),
+                precedence,
+                Some(cf.get_path().to_path_buf()),
+            ))),
             Ok(None) => None,
             Err(err) => Some(Err(err)),
         })
         .transpose()?
         .or_else(|| {
             cascaded_task_config.and_then(|tc| {
-                tc.task_config
-                    .includes
-                    .clone()
-                    .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
+                tc.task_config.includes.clone().map(|includes| {
+                    (
+                        includes,
+                        tc.includes_root.clone(),
+                        configs.len(),
+                        tc.includes_source.clone(),
+                    )
+                })
             })
         })
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
+        .unwrap_or_else(|| {
+            (
+                default_task_includes(),
+                dir.to_path_buf(),
+                configs.len(),
+                None,
+            )
+        });
+
+    let remote_includes_authorized = match include_owner.as_deref() {
+        Some(owner) => trust_check_remote_task_includes(owner, &includes)?,
+        None if includes.iter().any(|include| include.starts_with("git::")) => {
+            bail!("remote task include has no defining config provenance")
+        }
+        None => false,
+    };
+
+    let vouching_config_source = include_owner
+        .as_ref()
+        .filter(|owner| remote_includes_authorized || is_path_trusted(owner))
+        .cloned()
+        .or_else(|| {
+            if include_owner.is_some() {
+                return None;
+            }
+            configs
+                .iter()
+                .find(|cf| is_path_trusted(cf.get_path()))
+                .map(|cf| cf.get_path().to_path_buf())
+        });
+    let require_task_include_trust = vouching_config_source.is_none();
 
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
@@ -4968,6 +5041,9 @@ async fn load_task_sources_from_configs(
                 apply_task_config_cache_default(task, &task_config.cache);
                 apply_task_config_rust_cache_default(task, &task_config.rust_cache);
                 task_config.environment.apply(task)?;
+            }
+            if let Some(source) = &vouching_config_source {
+                preserve_remote_task_trust_source(&mut loaded, source);
             }
             if is_global || is_global_task_include_path(&p) {
                 mark_tasks_as_global(&mut loaded);

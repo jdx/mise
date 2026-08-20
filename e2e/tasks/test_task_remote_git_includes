@@ -8,15 +8,17 @@ PORT_FILE="$TMPDIR/mise_git_http_port"
 READY_FILE="$TMPDIR/mise_git_http_ready"
 INFO_FILE="$TMPDIR/mise_git_http_info"
 UPLOAD_PACK_COUNT_FILE="$TMPDIR/mise_git_http_upload_pack_count"
+REQUEST_LOG="$TMPDIR/mise_git_http_requests"
 
 # Clean up any previous server files
-rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$UPLOAD_PACK_COUNT_FILE"
+rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$UPLOAD_PACK_COUNT_FILE" "$REQUEST_LOG"
 
 # Start local git HTTP server with OS-assigned port to avoid race conditions
 MISE_GIT_HTTP_PORT_FILE="$PORT_FILE" \
   MISE_GIT_HTTP_READY_FILE="$READY_FILE" \
   MISE_GIT_HTTP_INFO_FILE="$INFO_FILE" \
   MISE_GIT_HTTP_UPLOAD_PACK_COUNT_FILE="$UPLOAD_PACK_COUNT_FILE" \
+  MISE_GIT_HTTP_REQUEST_LOG="$REQUEST_LOG" \
   python3 "${TEST_ROOT}/helpers/scripts/git_http_backend_server.py" 0 &
 SERVER_PID=$!
 
@@ -52,7 +54,7 @@ git init
 # Ensure cleanup on exit
 cleanup() {
   kill "$SERVER_PID" 2>/dev/null || true
-  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$UPLOAD_PACK_COUNT_FILE"
+  rm -f "$PORT_FILE" "$READY_FILE" "$INFO_FILE" "$UPLOAD_PACK_COUNT_FILE" "$REQUEST_LOG"
 }
 trap cleanup EXIT
 
@@ -66,6 +68,11 @@ includes = [
     "git::${LOCAL_GIT_URL}//xtasks/lint"
 ]
 EOF
+
+# Safe-mode parsing must reject an untrusted remote include before cloning it.
+: >"$REQUEST_LOG"
+assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 mise tasks"
+assert_fail "test -s '$REQUEST_LOG'"
 
 # The xtasks/lint directory contains multiple task files
 # We should be able to see and run them
@@ -164,6 +171,18 @@ assert_contains "mise tasks" "toml_table_task"
 assert_contains "mise run toml_task" "toml_task executed"
 assert_contains "mise run toml_table_task" "toml_table_task executed"
 
+# A remote TOML include may declare another remote file task. Preserve the
+# local config as trust provenance through both remote layers.
+NESTED_ARTIFACT_TMPDIR="$TMPDIR/nested-remote-git-artifacts"
+mkdir -p "$NESTED_ARTIFACT_TMPDIR"
+assert_contains "TMPDIR=$NESTED_ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run nested_remote" "nested remote task executed"
+assert_directory_empty "$NESTED_ARTIFACT_TMPDIR"
+
+PROVENANCE_STATE_DIR="$TMPDIR/remote-git-provenance-state"
+mkdir -p "$PROVENANCE_STATE_DIR"
+assert_contains "MISE_STATE_DIR=$PROVENANCE_STATE_DIR MISE_TRUSTED_CONFIG_PATHS='' MISE_YES=1 mise run nested_remote" "nested remote task executed"
+assert "find '$PROVENANCE_STATE_DIR/trusted-configs' -mindepth 1 \\( -type f -o -type l \\) 2>/dev/null | wc -l | tr -d ' '" "1"
+
 mise cache clear # Clear cache to force redownload
 
 #################################################################################
@@ -179,6 +198,23 @@ EOF
 
 assert_contains "mise tasks" "standalone_task"
 assert_contains "mise run standalone_task" "standalone_task executed"
+
+#################################################################################
+# Test config-declared remote Git task metadata and tool installation
+#################################################################################
+
+cat <<EOF >mise.toml
+[tasks.remote_metadata_a]
+file = "git::${LOCAL_GIT_URL}//xtasks/remote/remote_metadata.toml"
+
+[tasks.remote_metadata_b]
+file = "git::${LOCAL_GIT_URL}//xtasks/remote/remote_metadata.toml"
+EOF
+
+mise trust
+assert_contains "mise tasks info remote_metadata_a" "remote git metadata"
+assert_contains "mise run remote_metadata_a" "This is Dummy 1.0.0!"
+assert_contains "mise run remote_metadata_a" "relative env loaded"
 
 #################################################################################
 # Test no-cache Git task snapshots

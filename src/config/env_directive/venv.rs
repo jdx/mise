@@ -1,7 +1,6 @@
 use crate::Result;
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
-use crate::config::config_file::trust_check;
 use crate::config::env_directive::{EnvDirectiveContext, EnvResults};
 use crate::config::{Config, Settings};
 use crate::env_diff::EnvMap;
@@ -257,7 +256,7 @@ impl EnvResults {
             debug!("python venv skipped: the python tool is disabled");
             return Ok(());
         }
-        trust_check(ctx.source)?;
+        ctx.trust_check_source()?;
         let venv = ctx.parse_template(&path)?;
         let venv = ctx.normalize_path(venv.into());
         let venv_lock = LockFile::new(&venv).lock()?;

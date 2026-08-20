@@ -12,8 +12,13 @@ mod remote_task_http;
 use crate::Result;
 use async_trait::async_trait;
 use local_task::LocalTask;
-use remote_task_git::RemoteTaskGitBuilder;
+use remote_task_git::{RemoteTaskGit, RemoteTaskGitBuilder};
 use remote_task_http::RemoteTaskHttpBuilder;
+
+pub(crate) fn validate_remote_git_path(checkout_root: &Path, path: &Path) -> Result<()> {
+    RemoteTaskGit::validate_remote_path(checkout_root, path)?;
+    Ok(())
+}
 
 #[async_trait]
 pub trait TaskFileProvider: Debug + Send + Sync {

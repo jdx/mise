@@ -1,5 +1,5 @@
 use crate::config::{Config, Settings, config_file};
-use crate::task::TaskOutput;
+use crate::task::{GetMatchingExt, TaskOutput};
 use crate::ui::{self, ctrlc};
 use crate::{Result, backend, request_exit};
 use crate::{cli::args::ToolArg, path::PathExt};
@@ -838,7 +838,25 @@ impl Cli {
                 } else {
                     config.tasks().await?
                 };
-                if tasks.iter().any(|(_, t)| t.is_match(&task)) {
+                let task_refs = crate::task::build_task_ref_map(tasks.iter());
+                let task_exists = if tasks.iter().any(|(_, candidate)| candidate.is_match(&task))
+                    || !task_refs.get_matching(&task)?.is_empty()
+                {
+                    true
+                } else {
+                    // Bare remote aliases exist only after parsing their headers.
+                    // Reuse is guaranteed by the command-scoped artifact map.
+                    let resolved_tasks = crate::task::task_fetcher::TaskFetcher::new(false)
+                        .require_trust_before_fetch()
+                        .fetch_task_map(&config, &tasks)
+                        .await?;
+                    let resolved_refs = crate::task::build_task_ref_map(resolved_tasks.iter());
+                    resolved_tasks
+                        .values()
+                        .any(|candidate| candidate.is_match(&task))
+                        || !resolved_refs.get_matching(&task)?.is_empty()
+                };
+                if task_exists {
                     return Ok(Commands::Run(Box::new(run::Run {
                         task: Some(task),
                         args: self.task_args.unwrap_or_default(),
