@@ -16,9 +16,9 @@ Check mise installation for possible problems
 
 - [`mise doctor path [-f --full]`](/cli/doctor/path.md)
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise doctor
+$ [1mmise doctor[22m
 [WARN] plugin node is not installed
 ```

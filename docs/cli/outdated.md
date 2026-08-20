@@ -53,27 +53,27 @@ Placeholder for future monorepo outdated checks; `mise outdated --monorepo` is n
 
 Don't show table header
 
-Deprecation:
+[1m[4mDeprecation:[22m[24m
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
 After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise outdated
+$ [1mmise outdated[22m
 Plugin  Requested  Current  Latest
 python  3.11       3.11.0   3.11.1
 node    20         20.0.0   20.1.0
 
-$ mise outdated node
+$ [1mmise outdated node[22m
 Plugin  Requested  Current  Latest
 node    20         20.0.0   20.1.0
 
-$ mise outdated --json
+$ [1mmise outdated --json[22m
 {"python": {"requested": "3.11", "current": "3.11.0", "latest": "3.11.1"}, ...}
 
-$ mise outdated --local
+$ [1mmise outdated --local[22m
 Plugin  Requested  Current  Latest
 node    20         20.0.0   20.1.0
 ```

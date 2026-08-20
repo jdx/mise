@@ -5,7 +5,10 @@
 - **Effect**: read-only
 - **Source code**: [`src/cli/token/forgejo.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/forgejo.rs)
 
-Forgejo token
+Display the Forgejo token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 
 ## Arguments
 
@@ -21,15 +24,15 @@ Forgejo hostname
 
 Show the full unmasked token
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise token forgejo
+$ [1mmise token forgejo[22m
 codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)
 
-$ mise token forgejo --unmask
+$ [1mmise token forgejo --unmask[22m
 codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
 
-$ mise token forgejo forgejo.mycompany.com
+$ [1mmise token forgejo forgejo.mycompany.com[22m
 forgejo.mycompany.com: (none)
 ```

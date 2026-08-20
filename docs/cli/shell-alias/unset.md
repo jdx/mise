@@ -16,8 +16,8 @@ This modifies the contents of ~/.config/mise/config.toml
 
 The alias to remove
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise shell-alias unset ll
+[1mmise shell-alias unset ll[22m
 ```

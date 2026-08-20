@@ -79,9 +79,3 @@ Sort order. Default is asc.
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
 - [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
 - [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.md)
-
-Examples:
-
-```
-mise tasks ls
-```

@@ -22,6 +22,9 @@ Force the operation
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Dry run, don't actually do anything
@@ -35,7 +38,11 @@ Suppress non\-error messages
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files
+e.g.: node@20 python@3.10
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-v, \-\-verbose\fR
 Show extra output (use \-vv for even more)
@@ -144,9 +151,6 @@ List all the active runtime bin paths
 .TP
 \fBbootstrap\fR
 Set up a machine for the current config in one command
-.RS
-\fIAliases: \fRbs
-.RE
 .TP
 \fBbootstrap accounts\fR
 Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
@@ -180,9 +184,6 @@ Edit a managed dotfile source
 .TP
 \fBbootstrap dotfiles status\fR
 Show the status of dotfiles from `[dotfiles]`
-.RS
-\fIAliases: \fRls
-.RE
 .TP
 \fBbootstrap dotfiles unapply\fR
 Remove dotfiles applied from `[dotfiles]`
@@ -583,7 +584,7 @@ Updates mise itself.
 Set environment variables in mise.toml
 .TP
 \fBsettings\fR
-Show current settings
+Manage settings
 .TP
 \fBsettings add\fR
 Adds a setting to the configuration file
@@ -694,13 +695,13 @@ Test a tool installs and executes
 Display git provider tokens mise will use
 .TP
 \fBtoken forgejo\fR
-Forgejo token
+Display the Forgejo token mise will use for a given host
 .TP
 \fBtoken github\fR
-GitHub token
+Display the GitHub token mise will use for a given host
 .TP
 \fBtoken gitlab\fR
-GitLab token
+Display the GitLab token mise will use for a given host
 .TP
 \fBtool\fR
 Gets information about a tool
@@ -787,7 +788,10 @@ Shell type to generate the script for
 \fB\-\-no\-hook\-env\fR
 Do not automatically call hook\-env
 
-This can be helpful for debugging mise. If you run `eval "$(mise activate \-\-no\-hook\-env)"`, then you can call `mise hook\-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook\-env \-\-trace` to get more information or just see the values that hook\-env is outputting.
+This can be helpful for debugging mise. If you run `eval "$(mise activate \-\-no\-hook\-env)"`, then
+you can call `mise hook\-env` manually which will output the env vars to stdout without actually
+modifying the environment. That way you can do things like `mise hook\-env \-\-trace` to get more
+information or just see the values that hook\-env is outputting.
 .TP
 \fB\-\-shims\fR
 Use shims instead of modifying PATH
@@ -975,7 +979,8 @@ Overwrite existing files that conflict with whole\-file dotfile entries
 \fB\-\-only\fR \fI<ONLY>\fR
 Run only one or more bootstrap parts
 
-Can be passed multiple times or as a comma\-separated list. Cannot be used with `\-\-skip`.
+Can be passed multiple times or as a comma\-separated list.
+Cannot be used with `\-\-skip`.
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
@@ -1354,7 +1359,8 @@ Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get
 .PP
 .TP
 \fB<PACKAGE>\fR
-Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+Packages in `manager:package` form; defaults to everything configured
+in [bootstrap.packages]
 .SH "MISE BOOTSTRAP PACKAGES BREW TAP"
 Add a Homebrew tap URL to [bootstrap.brew.taps]
 .PP
@@ -1419,7 +1425,7 @@ Write to the config file for this environment (mise.<ENV>.toml)
 Write to the global config (~/.config/mise/config.toml)
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only import packages for this manager. Currently only `brew` is supported
+Only import packages for this manager. Currently only `brew` is supported.
 .RS
 \fIDefault: \fRbrew
 .RE
@@ -1498,7 +1504,8 @@ Skip the confirmation prompt
 .PP
 .TP
 \fB<PACKAGE>\fR
-Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+Packages in `manager:package` form; defaults to everything configured
+in [bootstrap.packages]
 .SH "MISE BOOTSTRAP PACKAGES USE"
 Add bootstrap packages to [bootstrap.packages] and install them
 
@@ -1521,7 +1528,8 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 Write to the config file for this environment (mise.<ENV>.toml)
 .TP
 \fB\-g, \-\-global\fR
-Write to the global config (~/.config/mise/config.toml) instead of the local one
+Write to the global config (~/.config/mise/config.toml) instead of the
+local one
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without writing config or installing
@@ -1814,7 +1822,8 @@ Clear output cache entries for a task name or pattern
 .PP
 .TP
 \fB<TOOL>\fR
-Tool(s) to clear cache for e.g.: node, python
+Tool(s) to clear cache for
+e.g.: node, python
 .SH "MISE CACHE PRUNE"
 Removes stale mise cache files
 
@@ -1835,7 +1844,8 @@ Just show what would be pruned
 .PP
 .TP
 \fB<TOOL>\fR
-Tool(s) to prune cache for e.g.: node, python
+Tool(s) to prune cache for
+e.g.: node, python
 .SH "MISE CACHE TASK"
 Inspect output cache entries for a task
 .PP
@@ -1859,22 +1869,18 @@ Generate shell completions
 \fBOptions:\fR
 .PP
 .TP
-\fB\-s, \-\-shell\fR \fI<SHELL_TYPE>\fR
+\fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell type to generate completions for
 .TP
 \fB\-\-include\-bash\-completion\-lib\fR
-Include the bash completion library in the bash completion script
+Retained for compatibility with older completion generators.
 
-This is required for completions to work in bash, but it is not included by default
-you may source it separately or enable this flag to enable it in the script.
+usage\-rs's built\-in bash script is self\-contained, so this is now a no\-op.
 .TP
 \fB\-\-usage\fR
-Always use usage for completions.
-Currently, usage is the default for fish and bash but not zsh since it has a few quirks
-to work out first.
+Retained for compatibility with older completion generators.
 
-This requires the `usage` CLI to be installed.
-https://usage.jdx.dev
+Completions now always use usage\-rs's built\-in protocol, so this is a no\-op.
 \fBArguments:\fR
 .PP
 .TP
@@ -2050,13 +2056,16 @@ The "\-\-" separates runtimes from the commands to pass along to the subprocess.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-c, \-\-command\fR \fI<C>\fR
+\fB\-c, \-\-command\fR \fI<COMMAND>\fR
 Command string to execute
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
 Allow specific env var through (implies \-\-deny\-env for everything else)
@@ -2094,12 +2103,14 @@ Bypass the environment cache and recompute the environment
 Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool(s) to start e.g.: node@20 python@3.10
+Tool(s) to start
+e.g.: node@20 python@3.10
 .TP
 \fB<COMMAND>\fR
 Command string to execute (same as \-\-command)
@@ -2120,7 +2131,44 @@ Format all files from the current directory
 Check if the configs are formatted, no formatting is done
 .TP
 \fB\-s, \-\-stdin\fR
-Read config from stdin and write its formatted version into stdout
+Read config from stdin and write its formatted version into
+stdout
+.SH "MISE GENERATE BOOTSTRAP"
+Generate a script to download+execute mise
+
+This is designed to be used in a project where contributors may not have mise installed.
+.PP
+\fBUsage:\fR mise generate bootstrap [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-l, \-\-localize\fR
+Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+
+This is necessary if users may use a different version of mise outside the project.
+.TP
+\fB\-V, \-\-version\fR \fI<VERSION>\fR
+Specify mise version to fetch
+.TP
+\fB\-w, \-\-write\fR \fI<WRITE>\fR
+instead of outputting the script to stdout, write to a file and make it executable
+.TP
+\fB\-\-localized\-dir\fR \fI<LOCALIZED_DIR>\fR
+Directory to put localized data into
+.RS
+\fIDefault: \fR.mise
+.RE
+.TP
+\fB\-\-windows\fR
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `\-\-write`, since stdout cannot
+carry two files.
 .SH "MISE GENERATE CONFIG"
 Generate a mise.toml file
 .PP
@@ -2358,7 +2406,9 @@ Use this to pin to a specific version (e.g., "2025.1.0").
 \fB\-\-checksum\-algorithm\fR \fI<CHECKSUM_ALGORITHM>\fR
 Checksum algorithm to use when downloading artifacts
 
-Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `\-\-lock` or `\-\-skip\-download` because those modes do not calculate checksums.
+Accepts `blake3` or `sha256` and defaults to `blake3`.
+Cannot be used with `\-\-lock` or `\-\-skip\-download` because those modes do not
+calculate checksums.
 .RS
 \fIDefault: \fRblake3
 .RE
@@ -2366,7 +2416,8 @@ Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `\-\-
 \fB\-\-fetch\fR
 Fetch checksums and sizes for an existing tool stub file
 
-This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
+This reads an existing stub file and fills in any missing checksum/size fields
+by downloading the files. URLs must already be present in the stub.
 .TP
 \fB\-\-http\fR \fI<HTTP>\fR
 HTTP backend type to use
@@ -2375,7 +2426,8 @@ HTTP backend type to use
 .RE
 .TP
 \fB\-\-lock\fR
-Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
+Resolve and embed lockfile data (exact version + platform URLs/checksums)
+into an existing stub file for reproducible installs without runtime API calls
 .TP
 \fB\-\-platform\-bin\fR \fI<PLATFORM_BIN>\fR
 Platform\-specific binary paths in the format platform:path
@@ -2385,11 +2437,15 @@ Examples: \-\-platform\-bin windows\-x64:tool.exe \-\-platform\-bin linux\-x64:b
 \fB\-\-platform\-url\fR \fI<PLATFORM_URL>\fR
 Platform\-specific URLs in the format platform:url or just url (auto\-detect platform)
 
-When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
+When the output file already exists, new platforms will be appended to the existing
+platforms table. Existing platform URLs will be updated if specified again.
 
-If only a URL is provided (without platform:), the platform will be automatically detected from the URL filename.
+If only a URL is provided (without platform:), the platform will be automatically
+detected from the URL filename.
 
-Examples: \-\-platform\-url linux\-x64:https://... \-\-platform\-url https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-darwin\-arm64.tar.gz
+Examples:
+\-\-platform\-url linux\-x64:https://...
+\-\-platform\-url https://nodejs.org/dist/v22.17.1/node\-v22.17.1\-darwin\-arm64.tar.gz
 .TP
 \fB\-\-skip\-download\fR
 Skip downloading for checksum and binary path detection (faster but less informative)
@@ -2469,6 +2525,9 @@ With no tools specified, reinstall all configured tools
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would be installed without actually installing
@@ -2499,9 +2558,13 @@ Install tools from every [monorepo].config_roots config root
 
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies \-\-jobs=1
 .TP
 \fB\-\-shared\fR \fI<SHARED>\fR
 Install tool(s) to a shared directory
@@ -2523,7 +2586,8 @@ For binaries usable without mise, see `mise install\-into` or
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool(s) to install e.g.: node@20
+Tool(s) to install
+e.g.: node@20
 .SH "MISE INSTALL-INTO"
 Install a tool version to a specific path
 
@@ -2535,7 +2599,8 @@ Used for building a tool to a directory for use outside of mise
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool to install e.g.: node@20
+Tool to install
+e.g.: node@20
 .TP
 \fB<PATH>\fR
 Path to install the tool into
@@ -2564,7 +2629,9 @@ Overrides per\-tool `minimum_release_age` options and the global `minimum_releas
 Tool to get the latest version of
 .TP
 \fB<ASDF_VERSION>\fR
-The version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility
+The version prefix to use when querying the latest version
+same as the first argument after the "@"
+used for asdf compatibility
 .SH "MISE LINK"
 Symlinks a tool version into mise
 
@@ -2607,6 +2674,9 @@ By default, only the active project config root is locked
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would be updated without making changes
@@ -2686,7 +2756,8 @@ Only show tool versions currently specified in a mise.toml
 Only show tool versions currently specified in the global mise.toml
 .TP
 \fB\-i, \-\-installed\fR
-Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+Only show tool versions that are installed
+(Hides tools defined in mise.toml but not installed)
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
@@ -2700,7 +2771,7 @@ Display missing tool versions
 \fB\-o, \-\-offline\fR
 Don't fetch information such as outdated versions
 .TP
-\fB\-p, \-\-plugin\fR \fI<TOOL_FLAG>\fR
+\fB\-p, \-\-plugin\fR \fI<PLUGIN>\fR
 .TP
 \fB\-\-all\-sources\fR
 Display all tracked config sources for tools
@@ -2710,6 +2781,9 @@ List tools from every [monorepo].config_roots config root
 
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
@@ -2804,7 +2878,12 @@ Base image reference (overrides [oci].from and the oci.default_from setting)
 \fB\-\-include\-global\fR
 Also include tools from the global / system config (default: project\-only)
 
-By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at\-or\-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `\-\-include\-global` to revert to the old "merge all loaded configs" behavior.
+By default `mise oci build` only packages tools declared in the
+project's mise config (and any parent configs at\-or\-below the
+project root, e.g. a monorepo root config). Personal dev tools in
+`~/.config/mise/config.toml` are excluded so they don't bake into a
+project image. Pass `\-\-include\-global` to revert to the old
+"merge all loaded configs" behavior.
 .TP
 \fB\-t, \-\-tag\fR \fI<TAG>\fR
 Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
@@ -2818,7 +2897,9 @@ Do not embed the currently\-running mise binary at /usr/local/bin/mise
 \fB\-\-owner\fR \fI<UID[:GID]>\fR
 UID[:GID] to assign to every tar entry in generated layers
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+omitted, it defaults to UID. This affects file ownership only; [oci].user
+controls the image USER directive.
 .SH "MISE OCI PUSH"
 [experimental] Build an OCI image and push it to a registry
 
@@ -2848,7 +2929,9 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 \fB\-\-cache\-from\fR \fI<REF>\fR
 Reuse unchanged tool layers from this image instead of the destination ref
 
-Must live in the same repository as the destination. Useful when each push gets a unique tag (e.g. per\-commit tags in CI): `\-\-cache\-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+Must live in the same repository as the destination. Useful when each
+push gets a unique tag (e.g. per\-commit tags in CI):
+`\-\-cache\-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
 .TP
 \fB\-\-from\fR \fI<FROM>\fR
 Base image for the build (ignored with \-\-image\-dir)
@@ -2873,12 +2956,17 @@ Don't embed the mise binary (ignored with \-\-image\-dir)
 \fB\-\-owner\fR \fI<UID[:GID]>\fR
 UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+omitted, it defaults to UID. This affects file ownership only; [oci].user
+controls the image USER directive.
 .TP
 \fB\-\-update\-index\fR
 Maintain the tag as a multi\-arch image index
 
-Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push \-\-update\-index` from one runner per platform to assemble a multi\-arch tag.
+Pushes this build's manifest by digest and points the tag at an OCI
+image index containing one entry per platform, preserving entries
+other architectures pushed. Run `mise oci push \-\-update\-index` from
+one runner per platform to assemble a multi\-arch tag.
 \fBArguments:\fR
 .PP
 .TP
@@ -2920,7 +3008,11 @@ See `mise oci build \-\-help` for details.
 \fB\-\-keep\fR
 Keep the loaded image in the engine's storage after the run
 
-By default, both the container (`\-\-rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `\-\-keep` to retain the image under the tag mise used (`mise\-oci:run\-*` for docker; the pulled image ID for podman).
+By default, both the container (`\-\-rm`) and the loaded image are
+removed when the command exits, so repeated `mise oci run` calls
+don't accumulate images in podman / docker storage. Pass `\-\-keep`
+to retain the image under the tag mise used (`mise\-oci:run\-*` for
+docker; the pulled image ID for podman).
 .TP
 \fB\-\-mount\-point\fR \fI<MOUNT_POINT>\fR
 Override in\-image mount point (ignored with \-\-image\-dir)
@@ -2931,12 +3023,15 @@ Don't embed the mise binary (ignored with \-\-image\-dir)
 \fB\-\-owner\fR \fI<UID[:GID]>\fR
 UID[:GID] to assign to every tar entry when building (conflicts with \-\-image\-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+omitted, it defaults to UID. This affects file ownership only; [oci].user
+controls the image USER directive.
 .TP
 \fB\-\-volume\fR \fI<HOST:CONTAINER>\fR
 Bind\-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
 
-Note: unlike `docker run \-v`, there's no `\-v` short flag here because mise reserves `\-v` for \-\-verbose. Use `\-\-volume` or `\-\-mount`.
+Note: unlike `docker run \-v`, there's no `\-v` short flag here because
+mise reserves `\-v` for \-\-verbose. Use `\-\-volume` or `\-\-mount`.
 .TP
 \fB\-e, \-\-env\fR \fI<KEY=VAL>\fR
 Set environment variable in the container (repeatable, `KEY=VAL`)
@@ -3150,7 +3245,6 @@ The full list is here: https://github.com/jdx/mise/blob/main/registry/
 Examples:
 
     $ mise plugins ls\-remote
-
 .PP
 \fBUsage:\fR mise plugins ls\-remote [OPTIONS]
 .PP
@@ -3158,10 +3252,12 @@ Examples:
 .PP
 .TP
 \fB\-u, \-\-urls\fR
-Show the git url for each plugin e.g.: https://github.com/mise\-plugins/mise\-poetry.git
+Show the git url for each plugin
+e.g.: https://github.com/mise\-plugins/mise\-poetry.git
 .TP
 \fB\-\-only\-names\fR
-Only show the name of each plugin by default it will show a "*" next to installed plugins
+Only show the name of each plugin
+by default it will show a "*" next to installed plugins
 .SH "MISE PLUGINS UNINSTALL"
 Removes a plugin
 .PP
@@ -3232,6 +3328,9 @@ Install dependencies from every [monorepo].config_roots config root
 
 Requires monorepo_root = true plus explicit [monorepo].config_roots in
 the monorepo root config. Providers are named like //apps/api:uv.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run specific deps rule(s) only
@@ -3289,6 +3388,9 @@ Install dependencies from every [monorepo].config_roots config root
 
 Requires monorepo_root = true plus explicit [monorepo].config_roots in
 the monorepo root config. Providers are named like //apps/api:uv.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run specific deps rule(s) only
@@ -3379,7 +3481,9 @@ Output in JSON format
 \fB\-\-security\fR
 Include security features for each tool's backends in JSON output.
 
-Requires \-\-json. Security info is de\-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
+Requires \-\-json. Security info is de\-duplicated across
+all of a tool's backends. This can add noticeable time for large
+listings since each backend's security info is resolved individually.
 \fBArguments:\fR
 .PP
 .TP
@@ -3478,6 +3582,9 @@ Number of tasks to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Don't actually run the task(s), just print them in order of execution
@@ -3492,9 +3599,15 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_OUTPUT\fR
+.RE
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-r, \-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
@@ -3510,9 +3623,13 @@ Or it can be overridden with the `shell` property on a task.
 .TP
 \fB\-S, \-\-silent\fR
 Don't show any output except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_SILENT\fR
+.RE
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files
+e.g.: node@20 python@3.10
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
 Allow specific env var through (implies \-\-deny\-env for everything else)
@@ -3547,6 +3664,9 @@ Bypass the environment cache and recompute the environment
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_REMOTE_NO_CACHE\fR
+.RE
 .TP
 \fB\-\-no\-deps\fR
 Skip automatic dependency preparation
@@ -3558,6 +3678,9 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_SKIP_DEPENDS\fR
+.RE
 .TP
 \fB\-\-skip\-tools\fR
 Skip installing tools before running tasks
@@ -3575,6 +3698,9 @@ Set task output cache access for this run
 \- `local\-only` \- Read and write only the local cache; currently equivalent to `read\-write`
 .RS
 \fIDefault: \fRread\-write
+.RE
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_CACHE\fR
 .RE
 .TP
 \fB\-\-task\-cache\-explain\fR
@@ -3715,7 +3841,8 @@ Can be used multiple times.
 \fB\-\-stdin\fR
 Read the value from stdin (for multiline input)
 
-When using \-\-stdin, provide a single key without a value. The value will be read from stdin until EOF.
+When using \-\-stdin, provide a single key without a value.
+The value will be read from stdin until EOF.
 \fBArguments:\fR
 .PP
 .TP
@@ -3723,12 +3850,7 @@ When using \-\-stdin, provide a single key without a value. The value will be re
 Environment variable(s) to set
 e.g.: NODE_ENV=production
 .SH "MISE SETTINGS"
-Show current settings
-
-This is the contents of ~/.config/mise/config.toml
-
-Note that aliases are also stored in this file
-but managed separately with `mise tool\-alias`
+Manage settings
 .PP
 \fBUsage:\fR mise settings [OPTIONS] [<SETTING>] [<VALUE>] [COMMAND]
 .PP
@@ -3892,12 +4014,16 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-u, \-\-unset\fR
 Removes a previously set version
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -4310,6 +4436,9 @@ Number of tasks to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Don't actually run the task(s), just print them in order of execution
@@ -4324,9 +4453,15 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_OUTPUT\fR
+.RE
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-r, \-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
@@ -4342,9 +4477,13 @@ Or it can be overridden with the `shell` property on a task.
 .TP
 \fB\-S, \-\-silent\fR
 Don't show any output except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_SILENT\fR
+.RE
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files
+e.g.: node@20 python@3.10
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
 Allow specific env var through (implies \-\-deny\-env for everything else)
@@ -4379,6 +4518,9 @@ Bypass the environment cache and recompute the environment
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_REMOTE_NO_CACHE\fR
+.RE
 .TP
 \fB\-\-no\-deps\fR
 Skip automatic dependency preparation
@@ -4390,6 +4532,9 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_SKIP_DEPENDS\fR
+.RE
 .TP
 \fB\-\-skip\-tools\fR
 Skip installing tools before running tasks
@@ -4407,6 +4552,9 @@ Set task output cache access for this run
 \- `local\-only` \- Read and write only the local cache; currently equivalent to `read\-write`
 .RS
 \fIDefault: \fRread\-write
+.RE
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_CACHE\fR
 .RE
 .TP
 \fB\-\-task\-cache\-explain\fR
@@ -4436,10 +4584,10 @@ e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
 Defaults to `default` when omitted
 .TP
 \fB<ARGS>\fR
-Arguments to pass to the tasks. Use ":::" to separate tasks
+Arguments to pass to the tasks. Use ":::" to separate tasks.
 .TP
 \fB<ARGS_LAST>\fR
-Arguments to pass to the tasks. Use ":::" to separate tasks
+Arguments to pass to the tasks. Use ":::" to separate tasks.
 .SH "MISE TASKS VALIDATE"
 Validate tasks for common errors and issues
 .PP
@@ -4474,6 +4622,9 @@ Test every tool specified in registry/
 Number of tool tests to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_TEST_TOOL_JOBS\fR
+.RE
 .TP
 \fB\-\-all\-config\fR
 Test all tools specified in config files
@@ -4482,14 +4633,18 @@ Test all tools specified in config files
 Also test tools not defined in registry/, guessing how to test it
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
 \fB<TOOLS>\fR
 Tool(s) to test
 .SH "MISE TOKEN FORGEJO"
-Forgejo token
+Display the Forgejo token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 .PP
 \fBUsage:\fR mise token forgejo [OPTIONS] [<HOST>]
 .PP
@@ -4507,7 +4662,10 @@ Forgejo hostname
 \fIDefault: \fRcodeberg.org
 .RE
 .SH "MISE TOKEN GITHUB"
-GitHub token
+Display the GitHub token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 .PP
 \fBUsage:\fR mise token github [OPTIONS] [<HOST>]
 .PP
@@ -4515,13 +4673,17 @@ GitHub token
 .PP
 .TP
 \fB\-\-oauth\fR
-Resolve only via the native GitHub OAuth source (cache, refresh, or device\-code flow), bypassing other token sources
+Resolve only via the native GitHub OAuth source (cache,
+refresh, or device\-code flow), bypassing other token sources
 .TP
 \fB\-\-raw\fR
 Print only the token value
 .TP
 \fB\-\-refresh\fR
-Mint a fresh OAuth token even if the cached one has not expired, via the refresh\-token grant or a new device\-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
+Mint a fresh OAuth token even if the cached one has not
+expired, via the refresh\-token grant or a new device\-code flow.
+Use after changing the GitHub App's installations or permissions:
+cached tokens keep their original access until they expire
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token
@@ -4534,7 +4696,10 @@ GitHub hostname
 \fIDefault: \fRgithub.com
 .RE
 .SH "MISE TOKEN GITLAB"
-GitLab token
+Display the GitLab token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 .PP
 \fBUsage:\fR mise token gitlab [OPTIONS] [<HOST>]
 .PP
@@ -4590,15 +4755,30 @@ Tool name to get information about
 .SH "MISE TOOL-STUB"
 Execute a tool stub
 
-Tool stubs are executable files containing TOML configuration that specify which tool to run and how to run it. They provide a convenient way to create portable, self\-contained executables that automatically manage tool installation and execution.
+Tool stubs are executable files containing TOML configuration that specify
+which tool to run and how to run it. They provide a convenient way to create
+portable, self\-contained executables that automatically manage tool installation
+and execution.
 
-A tool stub consists of: \- A shebang line: #!/usr/bin/env \-S mise tool\-stub \- TOML configuration specifying the tool, version, and options \- Optional comments describing the tool's purpose
+A tool stub consists of:
 
-Example stub file: #!/usr/bin/env \-S mise tool\-stub # Node.js v20 development environment
+\- A shebang line: #!/usr/bin/env \-S mise tool\-stub
+\- TOML configuration specifying the tool, version, and options
+\- Optional comments describing the tool's purpose
 
-tool = "node" version = "20.0.0" bin = "node"
+Example stub file:
 
-The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
+```toml
+#!/usr/bin/env \-S mise tool\-stub
+# Node.js v20 development environment
+
+tool = "node"
+version = "20.0.0"
+bin = "node"
+```
+
+The stub will automatically install the specified tool version if missing
+and execute it with any arguments passed to the stub.
 
 For more information, see: https://mise.jdx.dev/dev\-tools/tool\-stubs.html
 .PP
@@ -4610,12 +4790,16 @@ For more information, see: https://mise.jdx.dev/dev\-tools/tool\-stubs.html
 \fB<FILE>\fR
 Path to the TOML tool stub file to execute
 
-The stub file must contain TOML configuration specifying the tool and version to run. At minimum, it should specify a 'version' field. Other common fields include 'tool', 'bin', and backend\-specific options.
+The stub file must contain TOML configuration specifying the tool
+and version to run. At minimum, it should specify a 'version' field.
+Other common fields include 'tool', 'bin', and backend\-specific options.
 .TP
 \fB<ARGS>\fR
 Arguments to pass to the tool
 
-All arguments after the stub file path will be forwarded to the underlying tool. Use '\-\-' to separate mise arguments from tool arguments if needed.
+All arguments after the stub file path will be forwarded to the
+underlying tool. Use '\-\-' to separate mise arguments from tool arguments
+if needed.
 .SH "MISE TRUST"
 Marks a config file as trusted
 
@@ -4703,7 +4887,8 @@ Specify a file to use instead of `mise.toml`
 
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
 
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
+Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 .TP
 \fB\-g, \-\-global\fR
 Use the global config file
@@ -4757,7 +4942,8 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 \fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following the rules above.
+If a directory is specified, it will look for a config file in that directory following
+the rules above.
 .TP
 \fB\-\-no\-prune\fR
 Do not also prune the installed version
@@ -4796,6 +4982,9 @@ Display multiselect menu to choose which tools to upgrade
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-l\fR
 Deprecated shorthand for \-\-bump
@@ -4849,7 +5038,8 @@ This is already the default. Use it to override `upgrade.auto_prune = false`
 for a single run.
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies \-\-jobs=1
 \fBArguments:\fR
 .PP
 .TP
@@ -4896,6 +5086,9 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Perform a dry run, showing what would be installed and modified without making changes
@@ -4903,7 +5096,8 @@ Perform a dry run, showing what would be installed and modified without making c
 \fB\-p, \-\-path\fR \fI<PATH>\fR
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following the rules above.
+If a directory is specified, it will look for a config file in that directory following
+the rules above.
 .TP
 \fB\-\-dry\-run\-code\fR
 Like \-\-dry\-run but exits with code 1 if there are changes to make
@@ -4933,7 +5127,8 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 https://mise.jdx.dev/configuration/settings.html#lockfile
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies `\-\-jobs=1`
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies `\-\-jobs=1`
 .TP
 \fB\-\-remove\fR \fI<TOOL>\fR
 Remove the tool(s) from config file
@@ -4992,13 +5187,17 @@ Watch a specific file or directory
 
 By default, Watchexec watches the current directory.
 
-When watching a single file, it's often better to watch the containing directory instead, and filter on the filename. Some editors may replace the file with a new one when saving, and some platforms may not detect that or further changes.
+When watching a single file, it's often better to watch the containing directory instead,
+and filter on the filename. Some editors may replace the file with a new one when saving,
+and some platforms may not detect that or further changes.
 
-Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help for '\-\-project\-origin' for more information.
+Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help
+for '\-\-project\-origin' for more information.
 
 This option can be specified multiple times to watch multiple files or directories.
 
-The special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used.
+The special value '/dev/null', provided as the only path watched, will cause Watchexec to
+not watch any paths. Other event sources (like signals or key events) may still be used.
 .TP
 \fB\-W, \-\-watch\-non\-recursive\fR \fI<PATH>\fR
 Watch a specific directory, non\-recursively
@@ -5012,7 +5211,8 @@ Watch files and directories from a file
 
 Each line in the file will be interpreted as if given to '\-w'.
 
-For more complex uses (like watching non\-recursively), use the argfile capability: build a file containing command\-line options and pass it to watchexec with `@path/to/argfile`.
+For more complex uses (like watching non\-recursively), use the argfile capability: build a
+file containing command\-line options and pass it to watchexec with `@path/to/argfile`.
 
 The special value '\-' will read from STDIN; this in incompatible with '\-\-stdin\-quit'.
 .TP
@@ -5024,7 +5224,12 @@ If this doesn't completely clear the screen, try '\-\-clear=reset'.
 \fB\-o, \-\-on\-busy\-update\fR \fI<MODE>\fR
 What to do when receiving events while the command is running
 
-Default is to 'do\-nothing', which ignores events while the command is running, so that changes that occur due to the command are ignored, like compilation outputs. You can also use 'queue' which will run the command once again when the current run has finished if any events occur while it's running, or 'restart', which terminates the running command and starts a new one. Finally, there's 'signal', which only sends a signal; this can be useful with programs that can reload their configuration without a full restart.
+Default is to 'do\-nothing', which ignores events while the command is running, so that
+changes that occur due to the command are ignored, like compilation outputs. You can also
+use 'queue' which will run the command once again when the current run has finished if any
+events occur while it's running, or 'restart', which terminates the running command and starts
+a new one. Finally, there's 'signal', which only sends a signal; this can be useful with
+programs that can reload their configuration without a full restart.
 
 The signal can be specified with the '\-\-signal' option.
 .RS
@@ -5039,33 +5244,47 @@ This is a shorthand for '\-\-on\-busy\-update=restart'.
 \fB\-s, \-\-signal\fR \fI<SIGNAL>\fR
 Send a signal to the process when it's still running
 
-Specify a signal to send to the process when it's still running. This implies '\-\-on\-busy\-update=signal'; otherwise the signal used when that mode is 'restart' is controlled by '\-\-stop\-signal'.
+Specify a signal to send to the process when it's still running. This implies
+\&'\-\-on\-busy\-update=signal'; otherwise the signal used when that mode is 'restart' is
+controlled by '\-\-stop\-signal'.
 
 See the long documentation for '\-\-stop\-signal' for syntax.
 
-Signals are not supported on Windows at the moment, and will always be overridden to 'kill'. See '\-\-stop\-signal' for more on Windows "signals".
+Signals are not supported on Windows at the moment, and will always be overridden to 'kill'.
+See '\-\-stop\-signal' for more on Windows "signals".
 .TP
 \fB\-\-stop\-signal\fR \fI<SIGNAL>\fR
 Signal to send to stop the command
 
-This is used by 'restart' and 'signal' modes of '\-\-on\-busy\-update' (unless '\-\-signal' is provided). The restart behaviour is to send the signal, wait for the command to exit, and if it hasn't exited after some time (see '\-\-timeout\-stop'), forcefully terminate it.
+This is used by 'restart' and 'signal' modes of '\-\-on\-busy\-update' (unless '\-\-signal' is
+provided). The restart behaviour is to send the signal, wait for the command to exit, and if
+it hasn't exited after some time (see '\-\-timeout\-stop'), forcefully terminate it.
 
 The default on unix is "SIGTERM".
 
-Input is parsed as a full signal name (like "SIGTERM"), a short signal name (like "TERM"), or a signal number (like "15"). All input is case\-insensitive.
+Input is parsed as a full signal name (like "SIGTERM"), a short signal name (like "TERM"),
+or a signal number (like "15"). All input is case\-insensitive.
 
-On Windows this option is technically supported but only supports the "KILL" event, as Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE" events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are respectively mapped to these.
+On Windows this option is technically supported but only supports the "KILL" event, as
+Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it
+has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE"
+events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are
+respectively mapped to these.
 .TP
 \fB\-\-stop\-timeout\fR \fI<TIMEOUT>\fR
 Time to wait for the command to exit gracefully
 
-This is used by the 'restart' mode of '\-\-on\-busy\-update'. After the graceful stop signal is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time, it is forcefully terminated.
+This is used by the 'restart' mode of '\-\-on\-busy\-update'. After the graceful stop signal
+is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time,
+it is forcefully terminated.
 
-Takes a unit\-less value in seconds, or a time span value such as "5min 20s". Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
+Takes a unit\-less value in seconds, or a time span value such as "5min 20s".
+Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
 
 The default is 10 seconds. Set to 0 to immediately force\-kill the command.
 
-This has no practical effect on Windows as the command is always forcefully terminated; see '\-\-stop\-signal' for why.
+This has no practical effect on Windows as the command is always forcefully terminated; see
+\&'\-\-stop\-signal' for why.
 .RS
 \fIDefault: \fR10s
 .RE
@@ -5073,22 +5292,38 @@ This has no practical effect on Windows as the command is always forcefully term
 \fB\-\-map\-signal\fR \fI<SIGNAL:SIGNAL>\fR
 Translate signals from the OS to signals to send to the command
 
-Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to SIGINT. The first signal is the one received by watchexec, and the second is the one sent to the command. The second can be omitted to discard the first signal, such as "TERM:" to not do anything on SIGTERM.
+Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to
+SIGINT. The first signal is the one received by watchexec, and the second is the one sent to
+the command. The second can be omitted to discard the first signal, such as "TERM:" to
+not do anything on SIGTERM.
 
-If SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard to quit Watchexec itself, this is useful to send pass a Ctrl\-C to the command without also terminating Watchexec and the underlying program with it, e.g. with "INT:INT".
+If SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard
+to quit Watchexec itself, this is useful to send pass a Ctrl\-C to the command without also
+terminating Watchexec and the underlying program with it, e.g. with "INT:INT".
 
 This option can be specified multiple times to map multiple signals.
 
-Signal syntax is case\-insensitive for short names (like "TERM", "USR2") and long names (like "SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot yet deliver other "signals" than a STOP.
+Signal syntax is case\-insensitive for short names (like "TERM", "USR2") and long names (like
+"SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the
+forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot
+yet deliver other "signals" than a STOP.
 .TP
 \fB\-d, \-\-debounce\fR \fI<TIMEOUT>\fR
 Time to wait for new events before taking action
 
-When an event is received, Watchexec will wait for up to this amount of time before handling it (such as running the command). This is essential as what you might perceive as a single change may actually emit many events, and without this behaviour, Watchexec would run much too often. Additionally, it's not infrequent that file writes are not atomic, and each write may emit an event, so this is a good way to avoid running a command while a file is partially written.
+When an event is received, Watchexec will wait for up to this amount of time before handling
+it (such as running the command). This is essential as what you might perceive as a single
+change may actually emit many events, and without this behaviour, Watchexec would run much
+too often. Additionally, it's not infrequent that file writes are not atomic, and each write
+may emit an event, so this is a good way to avoid running a command while a file is
+partially written.
 
-An alternative use is to set a high value (like "30min" or longer), to save power or bandwidth on intensive tasks, like an ad\-hoc backup script. In those use cases, note that every accumulated event will build up in memory.
+An alternative use is to set a high value (like "30min" or longer), to save power or
+bandwidth on intensive tasks, like an ad\-hoc backup script. In those use cases, note that
+every accumulated event will build up in memory.
 
-Takes a unit\-less value in milliseconds, or a time span value such as "5sec 20ms". Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
+Takes a unit\-less value in milliseconds, or a time span value such as "5sec 20ms".
+Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
 
 The default is 50 milliseconds. Setting to 0 is highly discouraged.
 .RS
@@ -5098,12 +5333,15 @@ The default is 50 milliseconds. Setting to 0 is highly discouraged.
 \fB\-\-stdin\-quit\fR
 Exit when stdin closes
 
-This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is closed. This is used by some process managers to avoid leaving zombie processes around.
+This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is
+closed. This is used by some process managers to avoid leaving zombie processes around.
 .TP
 \fB\-\-no\-vcs\-ignore\fR
 Don't load gitignores
 
-Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note that Watchexec will detect which of these is in use, if any, and only load the relevant files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
+Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note
+that Watchexec will detect which of these is in use, if any, and only load the relevant
+files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
 
 This option is useful if you want to watch files that are ignored by Git.
 .TP
@@ -5148,12 +5386,15 @@ VCS as used in the project.
 \fB\-\-no\-default\-ignore\fR
 Don't use internal default ignores
 
-Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`, `.DS_Store`, `.bzr`, `_darcs`, `.fossil\-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and Watchexec log files.
+Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
+`.DS_Store`, `.bzr`, `_darcs`, `.fossil\-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
+Watchexec log files.
 .TP
 \fB\-\-no\-discover\-ignore\fR
 Don't discover ignore files at all
 
-This is a shorthand for '\-\-no\-global\-ignore', '\-\-no\-vcs\-ignore', '\-\-no\-project\-ignore', but even more efficient as it will skip all the ignore discovery mechanisms from the get go.
+This is a shorthand for '\-\-no\-global\-ignore', '\-\-no\-vcs\-ignore', '\-\-no\-project\-ignore', but
+even more efficient as it will skip all the ignore discovery mechanisms from the get go.
 
 Note that default ignores are still loaded, see '\-\-no\-default\-ignore'.
 .TP
@@ -5162,65 +5403,84 @@ Don't ignore anything at all
 
 This is a shorthand for '\-\-no\-discover\-ignore', '\-\-no\-default\-ignore'.
 
-Note that ignores explicitly loaded via other command line options, such as '\-\-ignore' or '\-\-ignore\-file', will still be used.
+Note that ignores explicitly loaded via other command line options, such as '\-\-ignore' or
+\&'\-\-ignore\-file', will still be used.
 .TP
 \fB\-p, \-\-postpone\fR
 Wait until first change before running command
 
-By default, Watchexec will run the command once immediately. With this option, it will instead wait until an event is detected before running the command as normal.
+By default, Watchexec will run the command once immediately. With this option, it will
+instead wait until an event is detected before running the command as normal.
 .TP
 \fB\-\-delay\-run\fR \fI<DURATION>\fR
 Sleep before running the command
 
-This option will cause Watchexec to sleep for the specified amount of time before running the command, after an event is detected. This is like using "sleep 5 && command" in a shell, but portable and slightly more efficient.
+This option will cause Watchexec to sleep for the specified amount of time before running
+the command, after an event is detected. This is like using "sleep 5 && command" in a shell,
+but portable and slightly more efficient.
 
-Takes a unit\-less value in seconds, or a time span value such as "2min 5s". Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
+Takes a unit\-less value in seconds, or a time span value such as "2min 5s".
+Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
 .TP
 \fB\-\-poll\fR \fI<INTERVAL>\fR
 Poll for filesystem changes
 
-By default, and where available, Watchexec uses the operating system's native file system watching capabilities. This option disables that and instead uses a polling mechanism, which is less efficient but can work around issues with some file systems (like network shares) or edge cases.
+By default, and where available, Watchexec uses the operating system's native file system
+watching capabilities. This option disables that and instead uses a polling mechanism, which
+is less efficient but can work around issues with some file systems (like network shares) or
+edge cases.
 
-Optionally takes a unit\-less value in milliseconds, or a time span value such as "2s 500ms", to use as the polling interval. If not specified, the default is 30 seconds. Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
+Optionally takes a unit\-less value in milliseconds, or a time span value such as "2s 500ms",
+to use as the polling interval. If not specified, the default is 30 seconds.
+Providing a unit\-less value is deprecated and will warn; it will be an error in the future.
 
 Aliased as '\-\-force\-poll'.
 .TP
 \fB\-\-shell\fR \fI<SHELL>\fR
 Use a different shell
 
-By default, Watchexec will use '$SHELL' if it's defined or a default of 'sh' on Unix\-likes, and either 'pwsh', 'powershell', or 'cmd' (CMD.EXE) on Windows, depending on what Watchexec detects is the running shell.
+By default, Watchexec will use '$SHELL' if it's defined or a default of 'sh' on Unix\-likes,
+and either 'pwsh', 'powershell', or 'cmd' (CMD.EXE) on Windows, depending on what Watchexec
+detects is the running shell.
 
-With this option, you can override that and use a different shell, for example one with more features or one which has your custom aliases and functions.
+With this option, you can override that and use a different shell, for example one with more
+features or one which has your custom aliases and functions.
 
-If the value has spaces, it is parsed as a command line, and the first word used as the shell program, with the rest as arguments to the shell.
+If the value has spaces, it is parsed as a command line, and the first word used as the
+shell program, with the rest as arguments to the shell.
 
 The command is run with the '\-c' flag (except for 'cmd' on Windows, where it's '/C').
 
-The special value 'none' can be used to disable shell use entirely. In that case, the command provided to Watchexec will be parsed, with the first word being the executable and the rest being the arguments, and executed directly. Note that this parsing is rudimentary, and may not work as expected in all cases.
+The special value 'none' can be used to disable shell use entirely. In that case, the
+command provided to Watchexec will be parsed, with the first word being the executable and
+the rest being the arguments, and executed directly. Note that this parsing is rudimentary,
+and may not work as expected in all cases.
 
-Using 'none' is a little more efficient and can enable a stricter interpretation of the input, but it also means that you can't use shell features like globbing, redirection, control flow, logic, or pipes.
+Using 'none' is a little more efficient and can enable a stricter interpretation of the
+input, but it also means that you can't use shell features like globbing, redirection,
+control flow, logic, or pipes.
 
 Examples:
 
 Use without shell:
 
-$ watchexec \-n \-\- zsh \-x \-o shwordsplit scr
+  $ watchexec \-n \-\- zsh \-x \-o shwordsplit scr
 
 Use with powershell core:
 
-$ watchexec \-\-shell=pwsh \-\- Test\-Connection localhost
+  $ watchexec \-\-shell=pwsh \-\- Test\-Connection localhost
 
 Use with CMD.exe:
 
-$ watchexec \-\-shell=cmd \-\- dir
+  $ watchexec \-\-shell=cmd \-\- dir
 
 Use with a different unix shell:
 
-$ watchexec \-\-shell=bash \-\- 'echo $BASH_VERSION'
+  $ watchexec \-\-shell=bash \-\- 'echo $BASH_VERSION'
 
 Use with a unix shell and options:
 
-$ watchexec \-\-shell='zsh \-x \-o shwordsplit' \-\- scr
+  $ watchexec \-\-shell='zsh \-x \-o shwordsplit' \-\- scr
 .TP
 \fB\-n\fR
 Shorthand for '\-\-shell=none'
@@ -5333,30 +5593,38 @@ multiple confused queries that have landed in my inbox over the years.
 \fB\-\-only\-emit\-events\fR
 Only emit events to stdout, run no commands.
 
-This is a convenience option for using Watchexec as a file watcher, without running any commands. It is almost equivalent to using `cat` as the command, except that it will not spawn a new process for each event.
+This is a convenience option for using Watchexec as a file watcher, without running any
+commands. It is almost equivalent to using `cat` as the command, except that it will not
+spawn a new process for each event.
 
-This option requires `\-\-emit\-events\-to` to be set, and restricts the available modes to `stdio` and `json\-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
+This option requires `\-\-emit\-events\-to` to be set, and restricts the available modes to
+`stdio` and `json\-stdio`, modifying their behaviour to write to stdout instead of the stdin
+of the command.
 .TP
 \fB\-E, \-\-env\fR \fI<KEY=VALUE>\fR
 Add env vars to the command
 
-This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
+This is a convenience option for setting environment variables for the command, without
+setting them for the Watchexec process itself.
 
 Use key=value syntax. Multiple variables can be set by repeating the option.
 .TP
 \fB\-\-wrap\-process\fR \fI<MODE>\fR
 Configure how the process is wrapped
 
-By default, Watchexec will run the command in a session on macOS, in a process group on other Unix platforms, and in a Job Object in Windows.
+By default, Watchexec will run the command in a session on macOS, in a process group on
+other Unix platforms, and in a Job Object in Windows.
 
 Some Unix programs prefer running in a session, while others do not work in a process group.
 
-Use 'group' to use a process group, 'session' to use a process session, and 'none' to run the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
+Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
+the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
 .TP
 \fB\-N, \-\-notify\fR
 Alert when commands start and end
 
-With this, Watchexec will emit a desktop notification when a command starts and ends, on supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
+With this, Watchexec will emit a desktop notification when a command starts and ends, on
+supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
 .TP
 \fB\-\-color\fR \fI<MODE>\fR
 When to use terminal colours
@@ -5369,12 +5637,14 @@ Setting the environment variable `NO_COLOR` to any value is equivalent to `\-\-c
 \fB\-\-timings\fR
 Print how long the command took to run
 
-This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high\-precision timers, or benchmarking tools for more accurate results.
+This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use
+the `time` utility, high\-precision timers, or benchmarking tools for more accurate results.
 .TP
 \fB\-q, \-\-quiet\fR
 Don't print starting and stopping messages
 
-By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
+By default Watchexec will print a message when the command starts and stops. This option
+disables this behaviour, so only the command's output, warnings, and errors will be printed.
 .TP
 \fB\-\-bell\fR
 Ring the terminal bell on command completion
@@ -5382,99 +5652,136 @@ Ring the terminal bell on command completion
 \fB\-\-project\-origin\fR \fI<DIRECTORY>\fR
 Set the project origin
 
-Watchexec will attempt to discover the project's "origin" (or "root") by searching for a variety of markers, like files or directory patterns. It does its best but sometimes gets it it wrong, and you can override that with this option.
+Watchexec will attempt to discover the project's "origin" (or "root") by searching for a
+variety of markers, like files or directory patterns. It does its best but sometimes gets it
+it wrong, and you can override that with this option.
 
-The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
+The project origin is used to determine the path of certain ignore files, which VCS is being
+used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
 
 When set, Watchexec will also not bother searching, which can be significantly faster.
 .TP
 \fB\-\-workdir\fR \fI<DIRECTORY>\fR
 Set the working directory
 
-By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
+By default, the working directory of the command is the working directory of Watchexec. You
+can change that with this option. Note that paths may be less intuitive to use with this.
 .TP
 \fB\-e, \-\-exts\fR \fI<EXTENSIONS>\fR
 Filename extensions to filter to
 
-This is a quick filter to only emit events for files with the given extensions. Extensions can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can be given by repeating the option or by separating them with commas.
+This is a quick filter to only emit events for files with the given extensions. Extensions
+can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
+be given by repeating the option or by separating them with commas.
 .TP
 \fB\-f, \-\-filter\fR \fI<PATTERN>\fR
 Filename patterns to filter to
 
-Provide a glob\-like filter pattern, and only events for files matching the pattern will be emitted. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
+Provide a glob\-like filter pattern, and only events for files matching the pattern will be
+emitted. Multiple patterns can be given by repeating the option. Events that are not from
+files (e.g. signals, keyboard events) will pass through untouched.
 .TP
 \fB\-\-filter\-file\fR \fI<PATH>\fR
 Files to load filters from
 
-Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '\-\-filter' option.
+Provide a path to a file containing filters, one per line. Empty lines and lines starting
+with '#' are ignored. Uses the same pattern format as the '\-\-filter' option.
 
 This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
+.RS
+\fIEnvironment: \fR\fBWATCHEXEC_FILTER_FILES\fR
+.RE
 .TP
 \fB\-J, \-\-filter\-prog\fR \fI<EXPRESSION>\fR
 [experimental] Filter programs.
 
 /!\\ This option is EXPERIMENTAL and may change and/or vanish without notice.
 
-Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given an event in the same format as described in '\-\-emit\-events\-to' and must return a boolean. Invalid programs will make watchexec fail to start; use '\-v' to see program runtime errors.
+Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given
+an event in the same format as described in '\-\-emit\-events\-to' and must return a boolean.
+Invalid programs will make watchexec fail to start; use '\-v' to see program runtime errors.
 
 In addition to the jaq stdlib, watchexec adds some custom filter definitions:
 
-\- 'path | file_meta' returns file metadata or null if the file does not exist.
+  \- 'path | file_meta' returns file metadata or null if the file does not exist.
 
-\- 'path | file_size' returns the size of the file at path, or null if it does not exist.
+  \- 'path | file_size' returns the size of the file at path, or null if it does not exist.
 
-\- 'path | file_read(bytes)' returns a string with the first n bytes of the file at path. If the file is smaller than n bytes, the whole file is returned. There is no filter to read the whole file at once to encourage limiting the amount of data read and processed.
+  \- 'path | file_read(bytes)' returns a string with the first n bytes of the file at path.
+    If the file is smaller than n bytes, the whole file is returned. There is no filter to
+    read the whole file at once to encourage limiting the amount of data read and processed.
 
-\- 'string | hash', and 'path | file_hash' return the hash of the string or file at path. No guarantee is made about the algorithm used: treat it as an opaque value.
+  \- 'string | hash', and 'path | file_hash' return the hash of the string or file at path.
+    No guarantee is made about the algorithm used: treat it as an opaque value.
 
-\- 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key\-value store. Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
+  \- 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key\-value store.
+    Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
 
-\- 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
+  \- 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given
+    value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
+    pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
 
-All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
+All filtering done with such programs, and especially those using kv or filesystem access,
+is much slower than the other filtering methods. If filtering is too slow, events will back
+up and stall watchexec. Take care when designing your filters.
 
-If the argument to this option starts with an '@', the rest of the argument is taken to be the path to a file containing a jaq program.
+If the argument to this option starts with an '@', the rest of the argument is taken to be
+the path to a file containing a jaq program.
 
-Jaq programs are run in order, after all other filters, and short\-circuit: if a filter (jaq or not) rejects an event, execution stops there, and no other filters are run. Additionally, they stop after outputting the first value, so you'll want to use 'any' or 'all' when iterating, otherwise only the first item will be processed, which can be quite confusing!
+Jaq programs are run in order, after all other filters, and short\-circuit: if a filter (jaq
+or not) rejects an event, execution stops there, and no other filters are run. Additionally,
+they stop after outputting the first value, so you'll want to use 'any' or 'all' when
+iterating, otherwise only the first item will be processed, which can be quite confusing!
 
-Find user\-contributed programs or submit your own useful ones at <https://github.com/watchexec/watchexec/discussions/592>.
+Find user\-contributed programs or submit your own useful ones at
+<https://github.com/watchexec/watchexec/discussions/592>.
 
 ## Examples:
 
 Regexp ignore filter on paths:
 
-\&'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
+  'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
 
 Pass any event that creates a file:
 
-\&'any(.tags[] | select(.kind == "fs"); .simple == "create")'
+  'any(.tags[] | select(.kind == "fs"); .simple == "create")'
 
 Pass events that touch executable files:
 
-\&'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
+  'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
 
 Ignore files that start with shebangs:
 
-\&'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
+  'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
 .TP
 \fB\-i, \-\-ignore\fR \fI<PATTERN>\fR
 Filename patterns to filter out
 
-Provide a glob\-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
+Provide a glob\-like filter pattern, and events for files matching the pattern will be
+excluded. Multiple patterns can be given by repeating the option. Events that are not from
+files (e.g. signals, keyboard events) will pass through untouched.
 .TP
 \fB\-\-ignore\-file\fR \fI<PATH>\fR
 Files to load ignores from
 
-Provide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '\-\-ignore' option.
+Provide a path to a file containing ignores, one per line. Empty lines and lines starting
+with '#' are ignored. Uses the same pattern format as the '\-\-ignore' option.
 
 This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
+.RS
+\fIEnvironment: \fR\fBWATCHEXEC_IGNORE_FILES\fR
+.RE
 .TP
 \fB\-\-fs\-events\fR \fI<EVENTS>\fR
 Filesystem events to filter to
 
-This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
+This is a quick filter to only emit events for the given types of filesystem changes. Choose
+from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be
+given by repeating the option or by separating them with commas. By default, this is all
+types except for 'access'.
 
-This may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs.
+This may apply filtering at the kernel level when possible, which can be more efficient, but
+may be more confusing when reading the logs.
 .RS
 \fIDefault: \fRcreate,remove,rename,modify,metadata
 .RE
@@ -5482,19 +5789,23 @@ This may apply filtering at the kernel level when possible, which can be more ef
 \fB\-\-no\-meta\fR
 Don't emit fs events for metadata changes
 
-This is a shorthand for '\-\-fs\-events create,remove,rename,modify'. Using it alongside the '\-\-fs\-events' option is non\-sensical and not allowed.
+This is a shorthand for '\-\-fs\-events create,remove,rename,modify'. Using it alongside the
+\&'\-\-fs\-events' option is non\-sensical and not allowed.
 .TP
 \fB\-\-print\-events\fR
 Print events that trigger actions
 
-This prints the events that triggered the action when handling it (after debouncing), in a human readable form. This is useful for debugging filters.
+This prints the events that triggered the action when handling it (after debouncing), in a
+human readable form. This is useful for debugging filters.
 
 Use '\-vvv' instead when you need more diagnostic information.
 .TP
 \fB\-\-manual\fR
 Show the manual page
 
-This shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file).
+This shows the manual page for Watchexec, if the output is a terminal and the 'man' program
+is available. If not, the manual page is printed to stdout in ROFF format (suitable for
+writing to a watchexec.1 file).
 \fBArguments:\fR
 .PP
 .TP
@@ -5553,3 +5864,5 @@ Show the version instead of the path
 .TP
 \fB<BIN_NAME>\fR
 The bin to look up
+.SH AUTHOR
+Jeff Dickey <@jdx>

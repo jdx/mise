@@ -47,10 +47,10 @@ Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemen
 
 Prune only unused versions of tools
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise prune --dry-run
+$ [1mmise prune --dry-run[22m
 rm -rf ~/.local/share/mise/versions/node/20.0.0
 rm -rf ~/.local/share/mise/versions/node/20.0.1
 ```

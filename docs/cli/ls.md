@@ -32,7 +32,8 @@ Only show tool versions currently specified in the global mise.toml
 
 ### `-i --installed`
 
-Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+Only show tool versions that are installed
+(Hides tools defined in mise.toml but not installed)
 
 ### `-J --json`
 
@@ -57,6 +58,8 @@ List tools from every [monorepo].config_roots config root
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
 
+**Environment Variable:** `MISE_MONOREPO`
+
 ### `--no-header`
 
 Don't display headers
@@ -73,19 +76,19 @@ Display versions matching this prefix
 
 List only tools that can be pruned with `mise prune`
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise ls
+$ [1mmise ls[22m
 node    20.0.0 ~/src/myapp/.tool-versions latest
 python  3.11.0 ~/.tool-versions           3.10
 python  3.10.0
 
-$ mise ls --current
+$ [1mmise ls --current[22m
 node    20.0.0 ~/src/myapp/.tool-versions 20
 python  3.11.0 ~/.tool-versions           3.11.0
 
-$ mise ls --json
+$ [1mmise ls --json[22m
 {
   "node": [
     {
@@ -100,7 +103,7 @@ $ mise ls --json
   "python": [...]
 }
 
-$ mise ls --all-sources
+$ [1mmise ls --all-sources[22m
 node    20.0.0  ~/src/myapp/mise.toml  20
                 ~/.config/mise/config.toml  latest
 ```

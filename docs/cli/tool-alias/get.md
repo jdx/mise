@@ -19,9 +19,9 @@ The tool to show the alias for
 
 The alias to show
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise tool-alias get node lts-hydrogen
+$ [1mmise tool-alias get node lts-hydrogen[22m
 20.0.0
 ```

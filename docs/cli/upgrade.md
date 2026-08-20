@@ -44,6 +44,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Just print what would be done, don't actually do it
@@ -103,40 +105,41 @@ for a single run.
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies --jobs=1
 
-Deprecation:
+[1m[4mDeprecation:[22m[24m
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
 After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # Upgrades node to the latest version matching the range in mise.toml
-$ mise upgrade node
+$ [1mmise upgrade node[22m
 
 # Upgrades node to the latest version and bumps the version in mise.toml
-$ mise upgrade node --bump
+$ [1mmise upgrade node --bump[22m
 
 # Upgrades all tools to the latest versions
-$ mise upgrade
+$ [1mmise upgrade[22m
 
 # Upgrades all tools to the latest versions and bumps the version in mise.toml
-$ mise upgrade --bump
+$ [1mmise upgrade --bump[22m
 
 # Just print what would be done, don't actually do it
-$ mise upgrade --dry-run
+$ [1mmise upgrade --dry-run[22m
 
 # Upgrades node and python to the latest versions
-$ mise upgrade node python
+$ [1mmise upgrade node python[22m
 
 # Upgrade all tools except go
-$ mise upgrade --exclude go
+$ [1mmise upgrade --exclude go[22m
 
 # Show a multiselect menu to choose which tools to upgrade
-$ mise upgrade --interactive
+$ [1mmise upgrade --interactive[22m
 
 # Only upgrade tools defined in local mise.toml, not global ones
-$ mise upgrade --local
+$ [1mmise upgrade --local[22m
 ```

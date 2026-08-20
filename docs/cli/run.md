@@ -82,6 +82,8 @@ Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Don't actually run the task(s), just print them in order of execution
@@ -98,9 +100,13 @@ Change how tasks information is output when running tasks
 - `quiet` - Don't show extra output
 - `silent` - Don't show any output including stdout and stderr from the task except for errors
 
+**Environment Variable:** `MISE_TASK_OUTPUT`
+
 ### `-q --quiet`
 
 Don't show extra output
+
+**Environment Variable:** `MISE_QUIET`
 
 ### `-r --raw`
 
@@ -120,9 +126,12 @@ Or it can be overridden with the `shell` property on a task.
 
 Don't show any output except for errors
 
+**Environment Variable:** `MISE_SILENT`
+
 ### `-t --tool… <TOOL@VERSION>`
 
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files
+e.g.: node@20 python@3.10
 
 ### `--allow-env… <VAR>`
 
@@ -169,6 +178,8 @@ Bypass the environment cache and recompute the environment
 
 Do not use cache on remote tasks
 
+**Environment Variable:** `MISE_TASK_REMOTE_NO_CACHE`
+
 ### `--no-deps`
 
 Skip automatic dependency preparation
@@ -182,6 +193,8 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 ### `--skip-deps`
 
 Run only the specified tasks skipping all dependencies
+
+**Environment Variable:** `MISE_TASK_SKIP_DEPENDS`
 
 ### `--skip-tools`
 
@@ -210,6 +223,8 @@ Set task output cache access for this run
 
 **Default:** `read-write`
 
+**Environment Variable:** `MISE_TASK_CACHE`
+
 ### `--task-cache-explain`
 
 Explain the inputs that produced each task's output cache key
@@ -227,23 +242,23 @@ Report task output cache hits, restored bytes, and time saved
 Timeout for the task to complete
 e.g.: 30s, 5m
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # Runs the "lint" tasks. This needs to either be defined in mise.toml
 # or as a standalone script. See the project README for more information.
-$ mise run lint
+$ [1mmise run lint[22m
 
 # Forces the "build" tasks to run even if its sources are up-to-date.
-$ mise run --force build
+$ [1mmise run --force build[22m
 
 # Run "test" with stdin/stdout/stderr all connected to the current terminal.
 # This forces `--jobs=1` to prevent interleaving of output.
-$ mise run --raw test
+$ [1mmise run --raw test[22m
 
 # Runs the "lint", "test", and "check" tasks in parallel.
-$ mise run lint ::: test ::: check
+$ [1mmise run lint ::: test ::: check[22m
 
 # Execute multiple tasks each with their own arguments.
-$ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
+$ [1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2[22m
 ```

@@ -24,9 +24,9 @@ The setting to show
 
 Use the local config file instead of the global one
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise settings get idiomatic_version_file
+$ [1mmise settings get idiomatic_version_file[22m
 true
 ```

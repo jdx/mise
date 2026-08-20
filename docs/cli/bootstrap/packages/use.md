@@ -32,13 +32,14 @@ Write to the config file for this environment (mise.&lt;ENV>.toml)
 
 ### `-g --global`
 
-Write to the global config (~/.config/mise/config.toml) instead of the local one
+Write to the global config (~/.config/mise/config.toml) instead of the
+local one
 
 ### `-n --dry-run`
 
 Print the commands that would run without writing config or installing
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Write to this config file or directory
 
@@ -46,10 +47,10 @@ Write to this config file or directory
 
 Skip the confirmation prompt
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835
-mise bootstrap packages use -g brew:postgresql@17
-mise bootstrap packages use apt:curl@8.5.0-2
+[1mmise bootstrap packages use apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835[22m
+[1mmise bootstrap packages use -g brew:postgresql@17[22m
+[1mmise bootstrap packages use apt:curl@8.5.0-2[22m
 ```

@@ -24,12 +24,12 @@ Write to the local config instead of the global config
 
 Print the config change without writing it
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Write to this config file or directory
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap packages brew untap railwaycat/emacsmacport
+[1mmise bootstrap packages brew untap railwaycat/emacsmacport[22m
 ```

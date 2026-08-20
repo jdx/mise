@@ -25,10 +25,10 @@ Get tool versions from nodenv
 
 Get tool versions from nvm
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-brew install node@18 node@20
-mise sync node --brew
-mise use -g node@18 - uses Homebrew-provided node
+[1mbrew install node@18 node@20[22m
+[1mmise sync node --brew[22m
+[1mmise use -g node@18[22m - uses Homebrew-provided node
 ```

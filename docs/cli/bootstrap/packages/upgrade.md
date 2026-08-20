@@ -22,7 +22,8 @@ Packages can also be given explicitly in `manager:package` form.
 
 ### `[PACKAGE]…`
 
-Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+Packages in `manager:package` form; defaults to everything configured
+in [bootstrap.packages]
 
 ## Flags
 
@@ -38,13 +39,13 @@ Print the commands that would run without running them
 
 Skip the confirmation prompt
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap packages upgrade
-mise bootstrap packages upgrade brew:postgresql@17
-mise bootstrap packages upgrade --manager brew-cask
-mise bootstrap packages upgrade --manager mas
-mise bootstrap packages upgrade --manager apt --yes
-mise bootstrap packages upgrade --dry-run
+[1mmise bootstrap packages upgrade[22m
+[1mmise bootstrap packages upgrade brew:postgresql@17[22m
+[1mmise bootstrap packages upgrade --manager brew-cask[22m
+[1mmise bootstrap packages upgrade --manager mas[22m
+[1mmise bootstrap packages upgrade --manager apt --yes[22m
+[1mmise bootstrap packages upgrade --dry-run[22m
 ```

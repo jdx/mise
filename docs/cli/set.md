@@ -53,7 +53,7 @@ Can be used multiple times. Requires --age-encrypt.
 
 Can be used multiple times. Requires --age-encrypt.
 
-### `--file <FILE>`
+### `--file --path <FILE>`
 
 The TOML file to update
 
@@ -73,36 +73,37 @@ Prompt for environment variable values
 
 Read the value from stdin (for multiline input)
 
-When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
+When using --stdin, provide a single key without a value.
+The value will be read from stdin until EOF.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise set NODE_ENV=production
+$ [1mmise set NODE_ENV=production[22m
 
-$ mise set NODE_ENV
+$ [1mmise set NODE_ENV[22m
 production
 
-$ mise set -E staging NODE_ENV=staging
+$ [1mmise set -E staging NODE_ENV=staging[22m
 # creates or modifies mise.staging.toml
 
-$ mise set
+$ [1mmise set[22m
 key       value       source
 NODE_ENV  production  ~/.config/mise/config.toml
 
-$ mise set --prompt PASSWORD
+$ [1mmise set --prompt PASSWORD[22m
 Enter value for PASSWORD: [hidden input]
 
-Multiline Values (--stdin):
+[1m[4mMultiline Values (--stdin):[22m[24m
 
-$ cat private.key | mise set --stdin MY_KEY
+$ [1mcat private.key | mise set --stdin MY_KEY[22m
 
-$ printf "line1\nline2" | mise set --stdin MY_KEY
+$ [1mprintf "line1\nline2" | mise set --stdin MY_KEY[22m
 
-[experimental] Age Encryption:
+[1m[4m[experimental] Age Encryption:[22m[24m
 
-$ mise set --age-encrypt API_KEY=secret
+$ [1mmise set --age-encrypt API_KEY=secret[22m
 
-$ mise set --age-encrypt --prompt API_KEY
+$ [1mmise set --age-encrypt --prompt API_KEY[22m
 Enter value for API_KEY: [hidden input]
 ```

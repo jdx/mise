@@ -18,23 +18,22 @@ Shell type to generate completions for
 - `bash`
 - `fish`
 - `powershell`
-- `pwsh`
 - `zsh`
+- `pwsh`
 
 ## Flags
 
 ### `--include-bash-completion-lib`
 
-Include the bash completion library in the bash completion script
+Retained for compatibility with older completion generators.
 
-This is required for completions to work in bash, but it is not included by default
-you may source it separately or enable this flag to enable it in the script.
+usage-rs's built-in bash script is self-contained, so this is now a no-op.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
-mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
-mise completion fish > ~/.config/fish/completions/mise.fish
-mise completion powershell >> $PROFILE
+[1mmise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise[22m
+[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise[22m
+[1mmise completion fish > ~/.config/fish/completions/mise.fish[22m
+[1mmise completion powershell >> $PROFILE[22m
 ```

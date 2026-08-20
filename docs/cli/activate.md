@@ -41,7 +41,6 @@ Shell type to generate the script for
 - `xonsh`
 - `zsh`
 - `pwsh`
-- `powershell`
 
 ## Flags
 
@@ -53,7 +52,10 @@ Suppress non-error messages
 
 Do not automatically call hook-env
 
-This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
+This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
+you can call `mise hook-env` manually which will output the env vars to stdout without actually
+modifying the environment. That way you can do things like `mise hook-env --trace` to get more
+information or just see the values that hook-env is outputting.
 
 ### `--shims`
 
@@ -67,12 +69,12 @@ PATH="$HOME/.local/share/mise/shims:$PATH"
 `mise activate --shims` does not support all the features of `mise activate`.
 See <https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path> for more information
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-eval "$(mise activate bash)"
-eval "$(mise activate zsh)"
-mise activate fish | source
-execx($(mise activate xonsh))
-(&mise activate pwsh) | Out-String | Invoke-Expression
+[1meval "$(mise activate bash)"[22m
+[1meval "$(mise activate zsh)"[22m
+[1mmise activate fish | source[22m
+[1mexecx($(mise activate xonsh))[22m
+[1m(&mise activate pwsh) | Out-String | Invoke-Expression[22m
 ```

@@ -30,11 +30,11 @@ Tools available:
 Note: This is primarily intended for integration with AI assistants like Claude,
 Cursor, or other tools that support the Model Context Protocol.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # Start the MCP server (typically used by AI assistant tools)
-$ mise mcp
+$ [1mmise mcp[22m
 
 # Example integration with Claude Desktop (add to claude_desktop_config.json):
 {
@@ -48,19 +48,19 @@ $ mise mcp
 }
 
 # Interactive testing with JSON-RPC commands:
-$ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | mise mcp
+$ [1mecho '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | mise mcp[22m
 
 # Resources you can query:
-- mise://tools - List active tools
-- mise://tools?include_inactive=true - List all installed tools
-- mise://tasks - List all tasks
-- mise://env - List environment variables
-- mise://config - Show configuration info
+- [1mmise://tools[22m - List active tools
+- [1mmise://tools?include_inactive=true[22m - List all installed tools
+- [1mmise://tasks[22m - List all tasks
+- [1mmise://env[22m - List environment variables
+- [1mmise://config[22m - Show configuration info
 
 # Tools available:
-- list_commands - Every mise command and what running it does
+- [1mlist_commands[22m - Every mise command and what running it does
   Example: {"include_hidden": false}
-- install_tool - Install a tool (not yet implemented)
-- run_task - Execute a mise task with optional arguments
+- [1minstall_tool[22m - Install a tool (not yet implemented)
+- [1mrun_task[22m - Execute a mise task with optional arguments
   Example: {"task": "build", "args": ["--verbose"]}
 ```

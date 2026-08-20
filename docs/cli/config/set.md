@@ -19,7 +19,7 @@ The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags
 
-### `-f --file <FILE>`
+### `-f --file --path <FILE>`
 
 The path to the mise.toml file to edit
 
@@ -41,14 +41,14 @@ If not provided, the nearest mise.toml file will be used
 
 **Default:** `infer`
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise config set tools.python 3.12
-$ mise config set settings.always_keep_download true
-$ mise config set env.TEST_ENV_VAR ABC
-$ mise config set settings.disable_tools node,rust
+$ [1mmise config set tools.python 3.12[22m
+$ [1mmise config set settings.always_keep_download true[22m
+$ [1mmise config set env.TEST_ENV_VAR ABC[22m
+$ [1mmise config set settings.disable_tools node,rust[22m
 
 # Type for `settings` is inferred
-$ mise config set settings.jobs 4
+$ [1mmise config set settings.jobs 4[22m
 ```

@@ -5,7 +5,10 @@
 - **Effect**: read-only
 - **Source code**: [`src/cli/token/github.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/github.rs)
 
-GitHub token
+Display the GitHub token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 
 ## Arguments
 
@@ -19,7 +22,8 @@ GitHub hostname
 
 ### `--oauth`
 
-Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources
+Resolve only via the native GitHub OAuth source (cache,
+refresh, or device-code flow), bypassing other token sources
 
 ### `--raw`
 
@@ -27,24 +31,27 @@ Print only the token value
 
 ### `--refresh`
 
-Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire
+Mint a fresh OAuth token even if the cached one has not
+expired, via the refresh-token grant or a new device-code flow.
+Use after changing the GitHub App's installations or permissions:
+cached tokens keep their original access until they expire
 
 ### `--unmask`
 
 Show the full unmasked token
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise token github
+$ [1mmise token github[22m
 github.com: ghp_…xxxx (source: GITHUB_TOKEN)
 
-$ mise token github --unmask
+$ [1mmise token github --unmask[22m
 github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
 
-$ mise token github github.mycompany.com
+$ [1mmise token github github.mycompany.com[22m
 github.mycompany.com: (none)
 
-$ mise token github --oauth --refresh
+$ [1mmise token github --oauth --refresh[22m
 github.com: gho_…xxxx (source: GitHub OAuth)
 ```

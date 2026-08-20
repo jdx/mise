@@ -5,12 +5,7 @@
 - **Effect**: modifies state
 - **Source code**: [`src/cli/settings/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/mod.rs)
 
-Show current settings
-
-This is the contents of ~/.config/mise/config.toml
-
-Note that aliases are also stored in this file
-but managed separately with `mise tool-alias`
+Manage settings
 
 ## Arguments
 
@@ -54,17 +49,17 @@ Output in JSON format with sources
 - [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 
-Examples:
+[1m[4mExamples:[22m[24m
 ```
 # list all settings
-$ mise settings
+$ [1mmise settings[22m
 
 # get the value of the setting "always_keep_download"
-$ mise settings always_keep_download
+$ [1mmise settings always_keep_download[22m
 
 # set the value of the setting "always_keep_download" to "true"
-$ mise settings always_keep_download=true
+$ [1mmise settings always_keep_download=true[22m
 
 # set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/"
-$ mise settings node.mirror_url https://npmmirror.com/mirrors/node/
+$ [1mmise settings node.mirror_url https://npmmirror.com/mirrors/node/[22m
 ```

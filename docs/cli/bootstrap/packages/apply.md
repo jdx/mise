@@ -21,7 +21,8 @@ only. `install` is accepted as an alias for this command.
 
 ### `[PACKAGE]…`
 
-Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+Packages in `manager:package` form; defaults to everything configured
+in [bootstrap.packages]
 
 ## Flags
 
@@ -41,11 +42,11 @@ Skip the confirmation prompt
 
 Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap packages apply
-mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835
-mise bootstrap packages apply --dry-run
-mise bootstrap packages apply --manager apt --yes
+[1mmise bootstrap packages apply[22m
+[1mmise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835[22m
+[1mmise bootstrap packages apply --dry-run[22m
+[1mmise bootstrap packages apply --manager apt --yes[22m
 ```

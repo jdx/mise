@@ -96,7 +96,7 @@ pub(crate) enum LevelFilter {
 }
 
 #[derive(usage_rs::Cli)]
-#[command(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true)]
+#[command(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error")]
 pub struct Cli {
     #[arg(subcommand)]
     pub command: Option<Commands>,
@@ -1093,6 +1093,16 @@ mod tests {
     }
 
     #[test]
+    fn tool_stub_forwards_flag_like_arguments() {
+        let cli = parse_cli(&["mise", "tool-stub", "jqstub", "--version"]).unwrap();
+        let Some(Commands::ToolStub(tool_stub)) = cli.command else {
+            panic!("expected tool-stub command")
+        };
+        assert_eq!(tool_stub.file, PathBuf::from("jqstub"));
+        assert_eq!(tool_stub.args, ["--version"]);
+    }
+
+    #[test]
     fn test_commands_that_implicitly_trust_active_config() {
         let trusting = [
             vec!["mise", "run", "task"],
@@ -1342,6 +1352,36 @@ mod tests {
         assert_eq!(
             unescape_task_args(&escaped[separator_idx + 1..]),
             vec!["--".to_string(), "--help".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_run_parser_consumes_the_task_separator() {
+        let cmd = Cli::command();
+        let args = [
+            "mise",
+            "run",
+            "show-output-on-failure",
+            "--",
+            "mise",
+            "x",
+            "node@latest",
+            "--",
+            "npx",
+            "--version",
+        ]
+        .map(str::to_string);
+        let escaped = escape_task_args(cmd, &args);
+        let refs = escaped.iter().map(String::as_str).collect::<Vec<_>>();
+        let cli = parse_cli(&refs).expect("nested task invocation should parse");
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("show-output-on-failure"));
+        assert!(run.args.is_empty(), "ordinary args: {:?}", run.args);
+        assert_eq!(
+            unescape_task_args(&run.args_last),
+            ["mise", "x", "node@latest", "--", "npx", "--version"]
         );
     }
 

@@ -28,12 +28,12 @@ e.g.: ./vfox-cmake
 
 Overwrite existing plugin
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # essentially just `ln -s ./vfox-cmake ~/.local/share/mise/plugins/cmake`
-$ mise plugins link cmake ./vfox-cmake
+$ [1mmise plugins link cmake ./vfox-cmake[22m
 
 # infer plugin name as "cmake"
-$ mise plugins link ./vfox-cmake
+$ [1mmise plugins link ./vfox-cmake[22m
 ```

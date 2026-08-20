@@ -26,16 +26,16 @@ Shell to start
 
 Defaults to $SHELL
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-$ mise en .
-$ node -v
+$ [1mmise en .[22m
+$ [1mnode -v[22m
 v20.0.0
 
 Skip loading bashrc:
-$ mise en -s "bash --norc"
+$ [1mmise en -s "bash --norc"[22m
 
 Skip loading zshrc:
-$ mise en -s "zsh -f"
+$ [1mmise en -s "zsh -f"[22m
 ```

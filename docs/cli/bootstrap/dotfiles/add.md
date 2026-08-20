@@ -55,10 +55,10 @@ Source path to use for a single target
 
 Skip the confirmation prompt
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise bootstrap dotfiles add ~/.zshrc
-mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
-mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+[1mmise bootstrap dotfiles add ~/.zshrc[22m
+[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml[22m
+[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig[22m
 ```

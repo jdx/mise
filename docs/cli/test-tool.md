@@ -24,6 +24,8 @@ Number of tool tests to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_TEST_TOOL_JOBS`
+
 ### `--all-config`
 
 Test all tools specified in config files
@@ -34,10 +36,11 @@ Also test tools not defined in registry/, guessing how to test it
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies --jobs=1
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise test-tool ripgrep
+[1mmise test-tool ripgrep[22m
 ```

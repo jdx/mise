@@ -31,15 +31,15 @@ Like --dry-run but exits with code 1 if there are tools to uninstall
 
 This is useful for scripts to check if tools need to be uninstalled.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # will uninstall specific version
-$ mise uninstall node@18.0.0
+$ [1mmise uninstall node@18.0.0[22m
 
 # will uninstall the current node version (if only one version is installed)
-$ mise uninstall node
+$ [1mmise uninstall node[22m
 
 # will uninstall all installed versions of node
-$ mise uninstall --all node@18.0.0 # will uninstall all node versions
+$ [1mmise uninstall --all node@18.0.0[22m # will uninstall all node versions
 ```

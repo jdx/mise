@@ -35,7 +35,12 @@ Base image reference (overrides [oci].from and the oci.default_from setting)
 
 Also include tools from the global / system config (default: project-only)
 
-By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old "merge all loaded configs" behavior.
+By default `mise oci build` only packages tools declared in the
+project's mise config (and any parent configs at-or-below the
+project root, e.g. a monorepo root config). Personal dev tools in
+`~/.config/mise/config.toml` are excluded so they don't bake into a
+project image. Pass `--include-global` to revert to the old
+"merge all loaded configs" behavior.
 
 ### `-t --tag <TAG>`
 
@@ -53,25 +58,27 @@ Do not embed the currently-running mise binary at /usr/local/bin/mise
 
 UID[:GID] to assign to every tar entry in generated layers
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+omitted, it defaults to UID. This affects file ownership only; [oci].user
+controls the image USER directive.
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 Build with defaults (debian:bookworm-slim base):
-$ mise oci build
+$ [1mmise oci build[22m
 
 Build with a specific base image and tag:
-$ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
+$ [1mmise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img[22m
 
 Inspect the result with skopeo:
-$ skopeo inspect oci:./mise-oci
+$ [1mskopeo inspect oci:./mise-oci[22m
 
 Push to a registry:
-$ mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest
+$ [1mmise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest[22m
 ```
 
-Notes:
+[1m[4mNotes:[22m[24m
 
 ```
 - The image only contains tools from the project's mise config (and

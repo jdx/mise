@@ -52,7 +52,11 @@ See `mise oci build --help` for details.
 
 Keep the loaded image in the engine's storage after the run
 
-By default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman).
+By default, both the container (`--rm`) and the loaded image are
+removed when the command exits, so repeated `mise oci run` calls
+don't accumulate images in podman / docker storage. Pass `--keep`
+to retain the image under the tag mise used (`mise-oci:run-*` for
+docker; the pulled image ID for podman).
 
 ### `--mount-point <MOUNT_POINT>`
 
@@ -66,13 +70,16 @@ Don't embed the mise binary (ignored with --image-dir)
 
 UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
+omitted, it defaults to UID. This affects file ownership only; [oci].user
+controls the image USER directive.
 
 ### `--volume… <HOST:CONTAINER>`
 
 Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
 
-Note: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
+Note: unlike `docker run -v`, there's no `-v` short flag here because
+mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
 
 ### `-e --env… <KEY=VAL>`
 
@@ -90,23 +97,23 @@ Allocate a TTY (pass `-t` to the engine)
 
 Working directory inside the container
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 Build the current mise.toml and drop into bash:
-$ mise oci run -it -- bash
+$ [1mmise oci run -it -- bash[22m
 
 Run a one-shot command with env + volume (note: `-v` is reserved
 for --verbose, so use `--volume`):
-$ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test
+$ [1mmise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test[22m
 
 Re-use a previously built layout (skip the build step):
-$ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'
+$ [1mmise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'[22m
 ```
 
-Engines:
+[1m[4mEngines:[22m[24m
 
 ```
-Prefers podman (loads OCI layouts natively). Falls back to docker
-(loaded via docker load). Pass --engine podman or --engine docker to override.
+Prefers [1mpodman[22m (loads OCI layouts natively). Falls back to [1mdocker[22m
+(loaded via [1mdocker load[22m). Pass [1m--engine podman[22m or [1m--engine docker[22m to override.
 ```

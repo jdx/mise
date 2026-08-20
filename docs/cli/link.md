@@ -27,15 +27,15 @@ e.g.: ~/.nvm/versions/node/v20.0.0
 
 Overwrite an existing tool version if it exists
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
 # build node-20.0.0 with node-build and link it into mise
-$ node-build 20.0.0 ~/.nodes/20.0.0
-$ mise link node@20.0.0 ~/.nodes/20.0.0
+$ [1mnode-build 20.0.0 ~/.nodes/20.0.0[22m
+$ [1mmise link node@20.0.0 ~/.nodes/20.0.0[22m
 
 # have mise use the node version provided by Homebrew
-$ brew install node
-$ mise link node@brew $(brew --prefix node)
-$ mise use node@brew
+$ [1mbrew install node[22m
+$ [1mmise link node@brew $(brew --prefix node)[22m
+$ [1mmise use node@brew[22m
 ```

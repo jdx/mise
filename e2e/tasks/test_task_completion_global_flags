@@ -32,45 +32,45 @@ mise usage >./mise.usage.kdl
 
 # only the task's own flags are offered after the task name — not mise globals like
 # --cd/--env/--jobs/--quiet/--raw/--silent/--verbose/--yes
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --" "--bump
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --" "--bump
 --env
 --output-dir"
 
 # same over the `tasks run` path, which additionally used to leak the `tasks` flags
 # (--all, --extended, --global, --json, --local, --sort, …)
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise tasks run deploy --" "--bump
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise tasks run deploy --" "--bump
 --env
 --output-dir"
 
 # and over the naked path (`mise deploy` == `mise run deploy`)
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise deploy --" "--bump
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise deploy --" "--bump
 --env
 --output-dir"
 
 # --env collides with mise's global -E/--env: the task's choices must win (previously
 # fell through to file completion, which is why renaming it to --environment "fixed" it)
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --env ''" "dev
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --env ''" "dev
 stage
 prod"
 
 # a non-colliding task flag is unaffected
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --bump ''" "auto
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise run deploy --bump ''" "auto
 major
 minor
 patch"
 
 # mise's flags still complete *before* the task name
-assert_contains "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise run --" "--silent"
+assert_contains "usage complete-word --shell bash -f ./mise.usage.kdl -- mise run --" "--silent"
 
 # and a global before the task still parses, so the task's own flag values still
 # complete after it (jdx/mise#10069 behavior is preserved)
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise -C . run deploy --bump ''" "auto
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise -C . run deploy --bump ''" "auto
 major
 minor
 patch"
 
 # a global whose name the task also uses keeps parsing as the global before the task,
 # while the task's flag still owns the name after it
-assert "mise exec -- usage complete-word --shell bash -f ./mise.usage.kdl -- mise --env dev run deploy --env ''" "dev
+assert "usage complete-word --shell bash -f ./mise.usage.kdl -- mise --env dev run deploy --env ''" "dev
 stage
 prod"

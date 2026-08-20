@@ -22,8 +22,8 @@ The setting to remove
 
 Use the local config file instead of the global one
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise settings unset idiomatic_version_file
+[1mmise settings unset idiomatic_version_file[22m
 ```

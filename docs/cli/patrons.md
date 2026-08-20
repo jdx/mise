@@ -23,10 +23,10 @@ Output in JSON format
 
 Bypass the local cache and re-fetch
 
-Examples:
+[1m[4mExamples:[22m[24m
 
 ```
-mise patrons
-mise patrons -J
-mise patrons --refresh
+[1mmise patrons[22m
+[1mmise patrons -J[22m
+[1mmise patrons --refresh[22m
 ```
