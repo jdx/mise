@@ -513,7 +513,7 @@ impl Config {
         Ok(self
             .resolve_tool_opts_with_overrides(backend_arg)
             .await?
-            .into_options())
+            .into_effective())
     }
 
     pub(crate) async fn resolve_tool_opts_with_overrides(
@@ -6144,7 +6144,7 @@ mod tests {
         ));
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
         assert_eq!(opts.get("asset_pattern"), Some("config-pattern"));
@@ -6225,7 +6225,7 @@ mod tests {
         let config = Arc::new(config);
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("version_json_path"), Some(".current"));
         assert_eq!(
@@ -6311,7 +6311,7 @@ mod tests {
         let config = Arc::new(config);
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("version_prefix"), Some("current/"));
         assert_eq!(
@@ -6373,7 +6373,7 @@ mod tests {
             let ba = Arc::new(BackendArg::from("env-opts-test"));
 
             let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-            let opts = resolved.options();
+            let opts = resolved.effective();
 
             assert_eq!(ba.full(), "github:env/repo[foo=env]");
             assert_eq!(opts.get("foo"), Some("env"));

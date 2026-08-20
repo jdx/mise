@@ -3646,18 +3646,15 @@ mod tests {
             })
             .to_string();
         let short = tool_name.clone();
-        let request = crate::toolset::ToolRequest::Version {
-            backend: Arc::new(crate::cli::args::BackendArg::new_raw(
-                short,
-                Some(backend.to_string()),
-                tool_name,
-                None,
-                crate::cli::args::BackendResolution::new(true),
-            )),
-            version: version.to_string(),
-            options: crate::toolset::ToolVersionOptions::default().into(),
-            source: ToolSource::Unknown,
-        };
+        let backend = Arc::new(crate::cli::args::BackendArg::new_raw(
+            short,
+            Some(backend.to_string()),
+            tool_name,
+            None,
+            crate::cli::args::BackendResolution::new(true),
+        ));
+        let request =
+            crate::toolset::ToolRequest::new(backend, version, ToolSource::Unknown).unwrap();
         ToolVersion::new(request, version.to_string())
     }
 

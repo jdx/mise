@@ -160,15 +160,9 @@ impl ToolRequest {
         options: ToolVersionOptions,
         source: ToolSource,
     ) -> eyre::Result<Self> {
+        let resolved = backend.resolve_opts_with_config_and_request(None, Some(options));
         let mut tvr = Self::new(backend, s, source)?;
-        match &mut tvr {
-            Self::Version { options: o, .. }
-            | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => {
-                *o = ResolvedToolOptions::from_source(options, ToolOptionSource::Request)
-            }
-            _ => Default::default(),
-        }
+        *tvr.resolved_options_mut() = resolved;
         Ok(tvr)
     }
     pub(crate) fn set_source(&mut self, source: ToolSource) -> Self {
@@ -206,39 +200,25 @@ impl ToolRequest {
         }
     }
     pub(crate) fn os(&self) -> &Option<Vec<String>> {
-        match self {
-            Self::Version { options, .. }
-            | Self::Prefix { options, .. }
-            | Self::Ref { options, .. }
-            | Self::Path { options, .. }
-            | Self::Sub { options, .. }
-            | Self::System { options, .. } => &options.os,
-        }
+        &self.resolved_options().effective().os
     }
     pub(crate) fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
-        match self {
-            Self::Version { options: o, .. }
-            | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. }
-            | Self::Sub { options: o, .. }
-            | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => {
-                *o = ResolvedToolOptions::from_source(options, ToolOptionSource::Request)
-            }
-        }
+        let resolved = self
+            .ba()
+            .resolve_opts_with_config_and_request(None, Some(options));
+        *self.resolved_options_mut() = resolved;
         self
     }
 
-    pub(super) fn set_resolved_options(&mut self, options: ResolvedToolOptions) -> &mut Self {
+    fn resolved_options_mut(&mut self) -> &mut ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => *o = options,
+            | Self::System { options: o, .. } => o,
         }
-        self
     }
     pub(crate) fn version(&self) -> String {
         match self {
@@ -256,38 +236,60 @@ impl ToolRequest {
     }
 
     pub(crate) fn options(&self) -> ToolVersionOptions {
+        self.resolved_options().effective().clone()
+    }
+
+    fn resolved_options(&self) -> &ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => o.options().clone(),
+            | Self::System { options: o, .. } => o,
         }
     }
 
-    pub(super) fn request_options(&self) -> ToolVersionOptions {
-        match self {
-            Self::Version { options, .. }
-            | Self::Prefix { options, .. }
-            | Self::Ref { options, .. }
-            | Self::Sub { options, .. }
-            | Self::Path { options, .. }
-            | Self::System { options, .. } => {
-                options.options_from_sources(&[ToolOptionSource::Request])
-            }
+    /// Re-resolve this request through the canonical option precedence chain.
+    ///
+    /// Request provenance is retained internally, so an explicit value that
+    /// equals a backend default still overrides configuration.
+    pub(super) fn apply_option_layers(
+        &mut self,
+        config_options: Option<ToolVersionOptions>,
+    ) -> &mut Self {
+        let request_options = self
+            .resolved_options()
+            .options_from_sources(&[ToolOptionSource::Request]);
+        let resolved = self
+            .ba()
+            .resolve_opts_with_config_and_request(config_options, Some(request_options));
+        *self.resolved_options_mut() = resolved;
+        self
+    }
+
+    pub(super) fn to_ref(&self, ref_: String, ref_type: String) -> Self {
+        Self::Ref {
+            backend: self.ba().clone(),
+            ref_,
+            ref_type,
+            options: self.resolved_options().clone(),
+            source: self.source().clone(),
         }
     }
 
-    pub(super) fn resolved_options(&self) -> ResolvedToolOptions {
-        match self {
-            Self::Version { options, .. }
-            | Self::Prefix { options, .. }
-            | Self::Ref { options, .. }
-            | Self::Sub { options, .. }
-            | Self::Path { options, .. }
-            | Self::System { options, .. } => options.clone(),
+    pub(super) fn to_path(&self, path: PathBuf) -> Self {
+        Self::Path {
+            backend: self.ba().clone(),
+            path,
+            options: self.resolved_options().clone(),
+            source: self.source().clone(),
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn option_source(&self, key: &str) -> Option<ToolOptionSource> {
+        self.resolved_options().source_for_key(key)
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.
@@ -797,12 +799,7 @@ mod tests {
         // "prefix:0.8" could never starts_with-match a stored "0.8.1" (#5781).
         // Prefix requests also require separator-boundary matching so a stale
         // "0.81.0" entry cannot satisfy prefix:0.8.
-        let prefix = ToolRequest::Prefix {
-            backend: test_ba(),
-            prefix: "0.8".into(),
-            options: ToolVersionOptions::default().into(),
-            source: ToolSource::Argument,
-        };
+        let prefix = ToolRequest::new(test_ba(), "prefix:0.8", ToolSource::Argument).unwrap();
         let (query, boundary) = prefix.lockfile_version_query();
         assert_str_eq!(query, "0.8");
         assert!(boundary);
@@ -810,12 +807,7 @@ mod tests {
 
         // Every other variant keeps matching on its version() string, without
         // the boundary restriction (pre-existing fuzzy semantics).
-        let version = ToolRequest::Version {
-            backend: test_ba(),
-            version: "0.8".into(),
-            options: ToolVersionOptions::default().into(),
-            source: ToolSource::Argument,
-        };
+        let version = ToolRequest::new(test_ba(), "0.8", ToolSource::Argument).unwrap();
         let (query, boundary) = version.lockfile_version_query();
         assert_str_eq!(query, "0.8");
         assert!(!boundary);

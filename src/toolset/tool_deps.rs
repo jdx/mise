@@ -145,18 +145,8 @@ mod tests {
             Some("github:owner/repo".to_string()),
         ));
         let requests = vec![
-            ToolRequest::Version {
-                backend: backend1,
-                version: "1.0.0".to_string(),
-                options: ToolVersionOptions::default().into(),
-                source: source.clone(),
-            },
-            ToolRequest::Version {
-                backend: backend2,
-                version: "1.0.0".to_string(),
-                options: ToolVersionOptions::default().into(),
-                source,
-            },
+            ToolRequest::new(backend1, "1.0.0", source.clone()).unwrap(),
+            ToolRequest::new(backend2, "1.0.0", source).unwrap(),
         ];
 
         let mut deps = ToolDeps::new(requests).unwrap();
@@ -215,18 +205,14 @@ mod tests {
             ..Default::default()
         };
         let requests = vec![
-            ToolRequest::Version {
-                backend: backend.clone(),
-                version: "1.0.0".to_string(),
-                options: first_options.into(),
-                source: ToolSource::Argument,
-            },
-            ToolRequest::Version {
-                backend,
-                version: "1.0.0".to_string(),
-                options: second_options.into(),
-                source: ToolSource::Argument,
-            },
+            ToolRequest::new_opts(
+                backend.clone(),
+                "1.0.0",
+                first_options,
+                ToolSource::Argument,
+            )
+            .unwrap(),
+            ToolRequest::new_opts(backend, "1.0.0", second_options, ToolSource::Argument).unwrap(),
         ];
 
         let err = ToolDeps::new(requests).unwrap_err();

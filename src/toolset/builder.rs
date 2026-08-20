@@ -7,9 +7,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::toolset::tool_request_set::{
-    configured_options_for_runtime_request, resolved_options_for_runtime_request,
-};
+use crate::toolset::tool_request_set::configured_options_for_runtime_request;
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
@@ -138,8 +136,7 @@ impl ToolsetBuilder {
                 .unwrap_or_default();
             let apply_arg_options = |mut tvr: ToolRequest| {
                 let config_options = configured_options_for_runtime_request(&configured, &tvr);
-                let options = resolved_options_for_runtime_request(&tvr, config_options);
-                tvr.set_resolved_options(options);
+                tvr.apply_option_layers(config_options);
                 tvr
             };
             for arg in args {

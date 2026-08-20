@@ -542,7 +542,7 @@ impl BackendArg {
 
     pub(crate) fn opts(&self) -> ToolVersionOptions {
         self.resolve_opts_with_layers(self.backend_alias_opts_from_loaded_config(), None, None)
-            .into_options()
+            .into_effective()
     }
 
     pub(crate) fn registry_opts(&self) -> ToolVersionOptions {
@@ -1023,7 +1023,8 @@ mod tests {
         let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
         let config_opts = parse_tool_options("bin=config,bar=config");
 
-        let opts = ba.resolve_opts_with_config_and_request(Some(config_opts), None);
+        let resolved = ba.resolve_opts_with_config_and_request(Some(config_opts), None);
+        let opts = resolved.effective();
 
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("inline"));
@@ -1038,7 +1039,8 @@ mod tests {
         let alias_opts = parse_tool_options("bin=alias,alias_only=alias");
         let config_opts = parse_tool_options("bin=config,config_only=config");
 
-        let opts = ba.resolve_opts_with_layers(Some(alias_opts), Some(config_opts), None);
+        let resolved = ba.resolve_opts_with_layers(Some(alias_opts), Some(config_opts), None);
+        let opts = resolved.effective();
 
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("inline"));

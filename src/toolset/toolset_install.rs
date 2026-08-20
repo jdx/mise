@@ -141,17 +141,9 @@ impl Toolset {
                         tr,
                     )
                 {
-                    let options = super::tool_request_set::resolved_options_for_runtime_request(
-                        tr,
-                        Some(config_options),
-                    );
-                    if tr.options() != *options.options() {
-                        tr.set_resolved_options(options);
-                    }
+                    tr.apply_option_layers(Some(config_options));
                 } else if tr.options().is_empty() {
-                    tr.set_resolved_options(
-                        tr.ba().resolve_opts_with_config_and_request(None, None),
-                    );
+                    tr.apply_option_layers(None);
                 }
             }
         }
