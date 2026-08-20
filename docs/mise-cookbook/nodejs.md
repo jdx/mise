@@ -4,7 +4,7 @@ Here are some tips on managing [Node.js](/lang/node.html) projects with mise.
 
 ## Getting started with Node.js
 
-To install Node.JS, in a directory, you can use the following command:
+To install Node.js, in a directory, you can use the following command:
 
 ```shell
 mise use node
@@ -16,7 +16,7 @@ This will install the latest version of Node.js and create a `mise.toml` file wi
 node = "latest"
 ```
 
-If you want to install Node.JS globally instead (for example, node v26), you can use the following command:
+If you want to install Node.js globally instead (for example, node v26), you can use the following command:
 
 ```shell
 mise use -g node@26
@@ -112,14 +112,10 @@ This example uses `pnpm` as the package manager. This will skip installing depen
 [tools]
 node = '24'
 
-[hooks]
-# Enabling corepack will install the `pnpm` package manager specified in your package.json
-# alternatively, you can also install `pnpm` with mise
-postinstall = 'npx corepack enable'
-
 [settings]
-# This must be enabled to make the hooks work
-experimental = true
+# Use the pnpm version specified in package.json
+# https://mise.jdx.dev/configuration.html#idiomatic-version-files
+idiomatic_version_file_enable_tools = ['pnpm']
 
 [env]
 _.path = ['{{config_root}}/node_modules/.bin']
@@ -136,8 +132,8 @@ run = 'node --run dev'
 depends = ['pnpm-install']
 ```
 
-With this setup, getting started in a NodeJS project is as simple as running `mise dev`:
+With this setup, getting started in a Node.js project is as simple as running `mise dev`:
 
-- `mise` will install the correct version of NodeJS
-- `mise` will enable `corepack`
+- `mise` will install the correct version of Node.js
+- `mise` will install the pnpm version specified in `package.json`
 - `pnpm install` will be run before `node --run dev`
