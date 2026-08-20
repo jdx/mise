@@ -260,6 +260,10 @@ assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
 
 sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' monorepo-upgrade/mise.toml
+if ! grep -q 'dummy = "1"' monorepo-upgrade/mise.toml; then
+  echo "failed to loosen the root dummy request" >&2
+  exit 1
+fi
 rm monorepo-upgrade/mise.toml.bak
 assert "cd monorepo-upgrade && mise upgrade dummy"
 
