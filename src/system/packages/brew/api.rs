@@ -294,6 +294,20 @@ impl Formula {
 
 impl FormulaRequirement {
     fn is_satisfied(&self) -> bool {
+        if cfg!(target_os = "macos")
+            && self.name == "macos"
+            && self.version.is_none()
+            && self.cask.is_none()
+            && self.download.is_none()
+            && self.contexts.is_empty()
+            && !self.specs.is_empty()
+            && self
+                .specs
+                .iter()
+                .all(|spec| matches!(spec.as_str(), "stable" | "head"))
+        {
+            return true;
+        }
         if !cfg!(target_os = "macos")
             || self.name != "xcode"
             || self.version.is_some()
@@ -543,6 +557,18 @@ mod tests {
                 .to_string()
                 .contains("default_prefix")
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unversioned_macos_requirement_accepts_current_stable_or_head_platform() {
+        let formula = formula_with_policy(json!({
+            "requirements": [{
+                "name": "macos",
+                "specs": ["stable", "head"]
+            }]
+        }));
+        formula.validate_install_policy().unwrap();
     }
 
     #[test]
