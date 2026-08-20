@@ -18,6 +18,8 @@
 //! These are intentionally not part of `[tools]`: they're unversioned,
 //! machine-global settings and resources, not mise's per-project toolset.
 
+#[cfg(unix)]
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -73,6 +75,9 @@ pub mod systemd;
 /// `[bootstrap]` as parsed from a single mise.toml
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct BootstrapTomlConfig {
+    /// Independent configuration roots whose declarative files and dotfiles
+    /// participate in bootstrap composition.
+    pub config_roots: Option<Vec<String>>,
     /// Logical secret name -> environment input declaration.
     #[serde(default)]
     pub secrets: IndexMap<String, secrets::SecretTomlConfig>,
@@ -146,6 +151,9 @@ pub struct PackageOptionsTomlConfig {
     pub version: String,
     #[serde(default, deserialize_with = "deserialize_package_os")]
     pub os: Vec<String>,
+    /// Adopt an identical existing cask artifact instead of replacing it.
+    #[serde(default)]
+    pub adopt: Option<bool>,
 }
 
 impl PackageTomlConfig {
@@ -153,6 +161,13 @@ impl PackageTomlConfig {
         match self {
             Self::Version(version) => version,
             Self::Options(options) => &options.version,
+        }
+    }
+
+    fn adopt(&self) -> Option<bool> {
+        match self {
+            Self::Options(options) => options.adopt,
+            Self::Version(_) => None,
         }
     }
 
@@ -291,6 +306,10 @@ pub struct BootstrapLinuxSystemdTomlConfig {
 
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct SystemBrewTomlConfig {
+    /// Adopt identical existing app bundles for brew-cask entries by default.
+    #[cfg(unix)]
+    #[serde(default)]
+    pub adopt: Option<bool>,
     /// `[bootstrap.brew.taps]`: `owner/tap` -> GitHub git URL. Like
     /// `[plugins]`, this lets shared config name tap remotes while package
     /// entries stay focused on formulae/casks.
@@ -307,10 +326,26 @@ pub struct DotfilesTomlConfig(pub IndexMap<String, toml::Value>);
 pub struct ManagerPackages {
     pub manager: Arc<dyn SystemPackageManager>,
     pub requests: Vec<PackageRequest>,
+    pub options: ManagerPackageOptions,
     /// excluded by the `system_packages.managers` setting — surfaced by
     /// status/doctor (nothing is silently invisible), skipped by install
     /// and the missing-packages hint
     pub disabled: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum ManagerPackageOptions {
+    #[default]
+    None,
+    #[cfg(unix)]
+    BrewCask { adopt: BTreeSet<String> },
+}
+
+impl ManagerPackageOptions {
+    #[cfg(unix)]
+    pub(crate) fn brew_cask_adopt(&self, name: &str) -> bool {
+        matches!(self, Self::BrewCask { adopt } if adopt.contains(name))
+    }
 }
 
 /// Split a `"manager:package"` spec (config key or CLI argument). Only the
@@ -377,7 +412,7 @@ pub fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest)> {
 pub fn packages_from_requests(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
 ) -> eyre::Result<Vec<ManagerPackages>> {
-    resolve_managers(by_mgr, true)
+    resolve_managers(by_mgr, IndexMap::new(), true)
 }
 
 pub fn attach_brew_tap_urls(config: &Config, by_mgr: &mut IndexMap<String, Vec<PackageRequest>>) {
@@ -441,6 +476,7 @@ pub(crate) fn pending_plugin_packages_from_config_including_disabled(
         .map(|manager| manager.name().to_string())
         .collect::<std::collections::HashSet<_>>();
     package_requests_from_config_files(&config.config_files, &brew_taps)
+        .0
         .into_iter()
         .filter(|(name, _)| declared.contains_key(name) && !installed.contains(name))
         .collect()
@@ -471,9 +507,11 @@ fn packages_from_config_files_and_tracked_config_files(
     tracked_config_files: &ConfigMap,
 ) -> Result<Vec<ManagerPackages>> {
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    let mut manager_options = IndexMap::new();
     let current_brew_taps = brew_taps_from_config_files(current_config_files);
     merge_manager_packages(
         &mut by_mgr,
+        &mut manager_options,
         packages_from_config_files_with_brew_taps(current_config_files, &current_brew_taps),
     );
 
@@ -483,20 +521,24 @@ fn packages_from_config_files_and_tracked_config_files(
     }
     merge_manager_packages(
         &mut by_mgr,
+        &mut manager_options,
         packages_from_config_files_with_brew_taps(tracked_config_files, &tracked_brew_taps),
     );
 
-    resolve_managers(by_mgr, false)
+    resolve_managers(by_mgr, manager_options, false)
 }
 
 #[cfg(unix)]
 fn merge_manager_packages(
     by_mgr: &mut IndexMap<String, Vec<PackageRequest>>,
+    manager_options: &mut IndexMap<String, ManagerPackageOptions>,
     manager_packages: Vec<ManagerPackages>,
 ) {
     for mp in manager_packages {
-        let requests = by_mgr.entry(mp.manager.name().to_string()).or_default();
+        let manager_name = mp.manager.name().to_string();
+        let requests = by_mgr.entry(manager_name.clone()).or_default();
         for request in mp.requests {
+            let adopt = mp.options.brew_cask_adopt(&request.name);
             match requests.iter_mut().find(|existing| {
                 existing.name == request.name && existing.version == request.version
             }) {
@@ -504,7 +546,20 @@ fn merge_manager_packages(
                     existing.tap_url = request.tap_url;
                 }
                 Some(_) => {}
-                None => requests.push(request),
+                None => {
+                    if adopt {
+                        let options =
+                            manager_options
+                                .entry(manager_name.clone())
+                                .or_insert_with(|| ManagerPackageOptions::BrewCask {
+                                    adopt: BTreeSet::new(),
+                                });
+                        if let ManagerPackageOptions::BrewCask { adopt } = options {
+                            adopt.insert(request.name.clone());
+                        }
+                    }
+                    requests.push(request);
+                }
             }
         }
     }
@@ -519,19 +574,23 @@ fn packages_from_config_files_with_brew_taps(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
 ) -> Vec<ManagerPackages> {
-    resolve_managers(
-        package_requests_from_config_files(config_files, brew_taps),
-        false,
-    )
-    .expect("non-strict resolve is infallible")
+    let (requests, options) = package_requests_from_config_files(config_files, brew_taps);
+    resolve_managers(requests, options, false).expect("non-strict resolve is infallible")
 }
 
 fn package_requests_from_config_files(
     config_files: &ConfigMap,
     brew_taps: &IndexMap<String, String>,
-) -> IndexMap<String, Vec<PackageRequest>> {
+) -> (
+    IndexMap<String, Vec<PackageRequest>>,
+    IndexMap<String, ManagerPackageOptions>,
+) {
     let merged = package_configs_from_config_files(config_files);
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
+    #[cfg(unix)]
+    let brew_adopt = brew_adopt_from_config_files(config_files);
+    #[cfg(unix)]
+    let mut cask_adopt = BTreeSet::new();
     for (spec, package) in merged {
         if !package.is_os_supported() {
             debug!("[bootstrap.packages]: skipping '{spec}', not enabled for this platform");
@@ -550,6 +609,16 @@ fn package_requests_from_config_files(
                 } else {
                     None
                 };
+                let adopt_requested = package.adopt();
+                if adopt_requested.is_some() && mgr != "brew-cask" {
+                    warn!(
+                        "[bootstrap.packages]: adopt is only supported for brew-cask entries; ignoring it for '{spec}'"
+                    );
+                }
+                #[cfg(unix)]
+                if mgr == "brew-cask" && adopt_requested.unwrap_or(brew_adopt) {
+                    cask_adopt.insert(name.clone());
+                }
                 by_mgr.entry(mgr).or_default().push(PackageRequest {
                     name,
                     version,
@@ -559,7 +628,18 @@ fn package_requests_from_config_files(
             Err(err) => warn!("[bootstrap.packages]: {err}"),
         }
     }
-    by_mgr
+    #[cfg(unix)]
+    let options = if cask_adopt.is_empty() {
+        IndexMap::new()
+    } else {
+        IndexMap::from([(
+            "brew-cask".to_string(),
+            ManagerPackageOptions::BrewCask { adopt: cask_adopt },
+        )])
+    };
+    #[cfg(not(unix))]
+    let options = IndexMap::new();
+    (by_mgr, options)
 }
 
 fn package_configs_from_config_files(
@@ -1412,7 +1492,7 @@ pub fn packages_from_specs_with_config(
             requests.push(request);
         }
     }
-    resolve_managers(by_mgr, true)
+    resolve_managers(by_mgr, IndexMap::new(), true)
 }
 
 pub(crate) fn brew_tap_name(name: &str) -> Option<&str> {
@@ -1473,8 +1553,20 @@ fn brew_taps_from_config_files(config_files: &ConfigMap) -> IndexMap<String, Str
     brew_taps
 }
 
+#[cfg(unix)]
+fn brew_adopt_from_config_files(config_files: &ConfigMap) -> bool {
+    let mut adopt = false;
+    for cf in config_files.values().rev() {
+        if let Some(value) = cf.bootstrap_config().and_then(|system| system.brew.adopt) {
+            adopt = value;
+        }
+    }
+    adopt
+}
+
 fn resolve_managers(
     by_mgr: IndexMap<String, Vec<PackageRequest>>,
+    mut manager_options: IndexMap<String, ManagerPackageOptions>,
     strict: bool,
 ) -> eyre::Result<Vec<ManagerPackages>> {
     let enabled = crate::config::Settings::get()
@@ -1499,6 +1591,7 @@ fn resolve_managers(
             Some(manager) => out.push(ManagerPackages {
                 manager: manager.clone(),
                 requests,
+                options: manager_options.shift_remove(&name).unwrap_or_default(),
                 disabled,
             }),
             None => {
@@ -1641,6 +1734,32 @@ mod tests {
             Some(PackageTomlConfig::Options(options)) if options.os == ["macos"]
         ));
         assert!(!global_packages.contains_key("brew:jq"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_brew_cask_adopt_option_reaches_package_request() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.brew]
+                adopt = true
+
+                [bootstrap.packages]
+                "brew-cask:textmate" = "latest"
+                "brew-cask:replace-me" = { adopt = false }
+            "#,
+        )])?;
+
+        let packages = packages_from_config_files(&config_files);
+        let casks = packages
+            .into_iter()
+            .find(|packages| packages.manager.name() == "brew-cask")
+            .unwrap();
+        assert_eq!(casks.requests.len(), 2);
+        assert!(casks.options.brew_cask_adopt("textmate"));
+        assert!(!casks.options.brew_cask_adopt("replace-me"));
         Ok(())
     }
 

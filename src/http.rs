@@ -116,7 +116,7 @@ impl SendOnceOptions {
     }
 }
 
-const PARTIAL_DOWNLOAD_STATE_VERSION: u8 = 2;
+const PARTIAL_DOWNLOAD_STATE_VERSION: u8 = 3;
 const PARTIAL_DOWNLOAD_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +179,34 @@ struct PartialDownloadState {
     request_hash: String,
     validator: DownloadValidator,
     total_size: Option<u64>,
+    effective_filename: Option<String>,
+}
+
+/// Safe response metadata exposed to download callers.
+///
+/// This intentionally contains only the final URL's decoded path basename.
+/// Query strings, fragments, credentials, and the complete URL are never
+/// persisted in resumable download state.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DownloadFileMetadata {
+    pub(crate) effective_filename: Option<String>,
+}
+
+fn download_filename_hint(url: &Url) -> Option<String> {
+    let segment = url.path_segments()?.next_back()?;
+    let filename = urlencoding::decode(segment).ok()?.into_owned();
+    if filename.is_empty()
+        || filename == "."
+        || filename == ".."
+        || filename.ends_with([' ', '.'])
+        || filename.chars().any(|c| {
+            c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+        })
+    {
+        None
+    } else {
+        Some(filename)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -722,9 +750,20 @@ impl Client {
         path: &Path,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        self.download_file_with_metadata(url, path, pr)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn download_file_with_metadata<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
-        self.download_file_with_headers(url, path, &headers, pr)
+        self.download_file_with_headers_metadata(url, path, &headers, pr)
             .await
     }
 
@@ -735,6 +774,18 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
     ) -> Result<()> {
+        self.download_file_with_headers_metadata(url, path, headers, pr)
+            .await
+            .map(|_| ())
+    }
+
+    async fn download_file_with_headers_metadata<U: IntoUrl>(
+        &self,
+        url: U,
+        path: &Path,
+        headers: &HeaderMap,
+        pr: Option<&dyn SingleReport>,
+    ) -> Result<DownloadFileMetadata> {
         self.download_file_with_headers_timeout(
             url,
             path,
@@ -752,7 +803,7 @@ impl Client {
         headers: &HeaderMap,
         pr: Option<&dyn SingleReport>,
         total_timeout: Duration,
-    ) -> Result<()> {
+    ) -> Result<DownloadFileMetadata> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
         let url = url.into_url()?;
         debug!("GET Downloading {} to {}", &url, display_path(path));
@@ -786,7 +837,7 @@ impl Client {
             }
         });
 
-        match tokio::time::timeout(total_timeout, download).await {
+        let metadata = match tokio::time::timeout(total_timeout, download).await {
             Ok(result) => result?,
             Err(_) => {
                 // A timeout cancels the transfer future before its normal cleanup
@@ -803,7 +854,7 @@ impl Client {
                     bytes_received.load(Ordering::Relaxed),
                 )
             }
-        }
+        };
 
         // Complete the atomic rename after the cancellable transfer budget. A
         // blocking task cannot be cancelled once it starts, so keeping it out
@@ -811,7 +862,7 @@ impl Client {
         // install the destination in the background.
         let path = path.to_path_buf();
         tokio::task::spawn_blocking(move || partial.persist(&path)).await??;
-        Ok(())
+        Ok(metadata)
     }
 
     async fn download_file_attempt(
@@ -821,7 +872,7 @@ impl Client {
         partial: &PartialDownload,
         pr: Option<&dyn SingleReport>,
         bytes_received: &AtomicU64,
-    ) -> Result<()> {
+    ) -> Result<DownloadFileMetadata> {
         let mut restarted_without_resume = false;
         loop {
             let resume = if restarted_without_resume {
@@ -836,7 +887,9 @@ impl Client {
                     pr.set_length(*partial_size);
                     pr.set_position(*partial_size);
                 }
-                return Ok(());
+                return Ok(DownloadFileMetadata {
+                    effective_filename: state.effective_filename.clone(),
+                });
             }
 
             let offset = resume.as_ref().map(|(_, size)| *size).unwrap_or(0);
@@ -858,6 +911,7 @@ impl Client {
                     "GET",
                 )
                 .await?;
+            let response_filename = download_filename_hint(resp.url());
 
             if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 if let Some(ParsedContentRange::Unsatisfied { total }) = resp
@@ -876,64 +930,83 @@ impl Client {
                 resp.error_for_status_ref()?;
             }
 
-            let (write_offset, total_size, validator, resumable) = if resp.status()
-                == StatusCode::PARTIAL_CONTENT
-            {
-                let Some((state, _)) = resume else {
-                    partial.clear()?;
-                    if !restarted_without_resume {
+            let (write_offset, total_size, validator, resumable, effective_filename) =
+                if resp.status() == StatusCode::PARTIAL_CONTENT {
+                    let Some((state, _)) = resume else {
+                        partial.clear()?;
+                        if !restarted_without_resume {
+                            restarted_without_resume = true;
+                            continue;
+                        }
+                        bail!("server returned partial content without a resumable request");
+                    };
+                    let content_range = resp
+                        .headers()
+                        .get(CONTENT_RANGE)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(parse_content_range);
+                    let Some(ParsedContentRange::Bytes { start, end, total }) = content_range
+                    else {
+                        partial.clear()?;
+                        if restarted_without_resume {
+                            bail!("server returned an invalid Content-Range response");
+                        }
+                        restarted_without_resume = true;
+                        continue;
+                    };
+                    let validator = response_validator(resp.headers());
+                    let response_length_matches = resp
+                        .content_length()
+                        .is_none_or(|length| length == end - start + 1);
+                    if start != offset
+                        || end + 1 != total
+                        || !response_length_matches
+                        || state.total_size.is_some_and(|expected| expected != total)
+                        || validator
+                            .as_ref()
+                            .is_some_and(|value| !value.matches(&state.validator))
+                    {
+                        partial.clear()?;
+                        if restarted_without_resume {
+                            bail!("server returned inconsistent partial content");
+                        }
                         restarted_without_resume = true;
                         continue;
                     }
-                    bail!("server returned partial content without a resumable request");
-                };
-                let content_range = resp
-                    .headers()
-                    .get(CONTENT_RANGE)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(parse_content_range);
-                let Some(ParsedContentRange::Bytes { start, end, total }) = content_range else {
+                    // Keep the filename associated with the bytes already on disk.
+                    // A redirect target may change between requests even when the
+                    // server accepts the validator and Range header. Replacing the
+                    // stored hint could make the completed bytes use a different
+                    // archive format than the response that started the partial.
+                    let effective_filename = state.effective_filename;
+                    let validator = validator.unwrap_or(state.validator);
+                    (
+                        offset,
+                        Some(total),
+                        Some(validator),
+                        true,
+                        effective_filename,
+                    )
+                } else {
                     partial.clear()?;
-                    if restarted_without_resume {
-                        bail!("server returned an invalid Content-Range response");
-                    }
-                    restarted_without_resume = true;
-                    continue;
+                    let total_size = resp.content_length();
+                    let validator = response_validator(resp.headers());
+                    let resumable = total_size.is_some() && validator.is_some();
+                    (
+                        0,
+                        total_size,
+                        validator.filter(|_| resumable),
+                        resumable,
+                        response_filename,
+                    )
                 };
-                let validator = response_validator(resp.headers());
-                let response_length_matches = resp
-                    .content_length()
-                    .is_none_or(|length| length == end - start + 1);
-                if start != offset
-                    || end + 1 != total
-                    || !response_length_matches
-                    || state.total_size.is_some_and(|expected| expected != total)
-                    || validator
-                        .as_ref()
-                        .is_some_and(|value| !value.matches(&state.validator))
-                {
-                    partial.clear()?;
-                    if restarted_without_resume {
-                        bail!("server returned inconsistent partial content");
-                    }
-                    restarted_without_resume = true;
-                    continue;
-                }
-                let validator = validator.unwrap_or(state.validator);
-                (offset, Some(total), Some(validator), true)
-            } else {
-                partial.clear()?;
-                let total_size = resp.content_length();
-                let validator = response_validator(resp.headers());
-                let resumable = total_size.is_some() && validator.is_some();
-                (0, total_size, validator.filter(|_| resumable), resumable)
-            };
 
             let state = validator.map(|validator| PartialDownloadState {
                 version: PARTIAL_DOWNLOAD_STATE_VERSION,
                 request_hash: partial.request_hash.clone(),
                 validator,
                 total_size,
+                effective_filename: effective_filename.clone(),
             });
             if let Some(state) = &state {
                 partial.write_state(state)?;
@@ -988,7 +1061,7 @@ impl Client {
                     .into());
                 }
             }
-            return Ok(());
+            return Ok(DownloadFileMetadata { effective_filename });
         }
     }
 
@@ -1554,20 +1627,10 @@ fn host_auth_headers(url: &Url) -> Result<HeaderMap> {
         return crate::github::get_headers(url.as_str());
     }
 
-    let Some(host) = url.host_str() else {
-        return Ok(HeaderMap::new());
-    };
-
-    let is_gitlab = host == "gitlab.com" || crate::gitlab::is_gitlab_host(host);
-    if is_gitlab {
-        return Ok(crate::gitlab::get_headers(url.as_str()));
-    }
-
-    let is_forgejo = host == "codeberg.org" || crate::forgejo::is_forgejo_host(host);
-    if is_forgejo {
-        return Ok(crate::forgejo::get_headers(url.as_str()));
-    }
-
+    // A generic URL does not carry the configured GitLab or Forgejo API origin,
+    // so it cannot establish a safe trust boundary for those tokens. Their
+    // backend-specific callers must pass the request and API URLs directly to
+    // the corresponding `get_headers` function.
     Ok(HeaderMap::new())
 }
 
@@ -1614,7 +1677,7 @@ fn apply_netrc_credentials(
 }
 
 /// Get HTTP Basic authentication headers from netrc file for the given URL
-fn netrc_headers(url: &Url) -> HeaderMap {
+pub(crate) fn netrc_headers(url: &Url) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(host) = url.host_str()
         && let Some((login, password)) = netrc::get_credentials(host)
@@ -1908,8 +1971,13 @@ mod tests {
     where
         F: FnOnce() -> R,
     {
-        // Lock to prevent parallel tests from interfering with global settings
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        // `SettingsGuard` holds the lock and calls `Settings::reset(None)` in `Drop`, which runs
+        // while unwinding. Resetting after `test_fn` instead would leave the replacements behind
+        // for the next test whenever this one panics -- previously the lock's poison flag hid
+        // that by failing every later test outright.
+        let _guard = SettingsGuard {
+            _lock: crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK),
+        };
 
         // Create settings with custom URL replacements
         let mut settings = crate::config::settings::SettingsPartial::empty();
@@ -1918,13 +1986,7 @@ mod tests {
         // Set settings for this test
         crate::config::Settings::reset(Some(settings));
 
-        // Run test
-        let result = test_fn();
-
-        // Clean up after test
-        crate::config::Settings::reset(None);
-
-        result
+        test_fn()
     }
 
     #[test]
@@ -1989,6 +2051,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_download_metadata_uses_redirected_filename() {
+        let mut server = mockito::Server::new_async().await;
+        let location = format!("{}/releases/tool.tar.gz", server.url());
+        let redirect = server
+            .mock("GET", "/download")
+            .with_status(302)
+            .with_header("location", &location)
+            .expect(1)
+            .create_async()
+            .await;
+        let artifact = server
+            .mock("GET", "/releases/tool.tar.gz")
+            .with_status(200)
+            .with_header("content-length", "2")
+            .with_body("OK")
+            .expect(1)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("download");
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+
+        let metadata = client
+            .download_file_with_metadata(format!("{}/download", server.url()), &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(metadata.effective_filename.as_deref(), Some("tool.tar.gz"));
+        assert_eq!(std::fs::read(&destination).unwrap(), b"OK");
+        redirect.assert();
+        artifact.assert();
+    }
+
+    #[test]
+    fn test_download_filename_hint_excludes_unsafe_or_private_url_parts() {
+        let url: Url =
+            "https://user:pass@example.com/releases/tool%20name.tar.gz?token=secret#fragment"
+                .parse()
+                .unwrap();
+        assert_eq!(
+            download_filename_hint(&url).as_deref(),
+            Some("tool name.tar.gz")
+        );
+
+        let unsafe_url: Url = "https://example.com/releases/%2E%2E%2Fsecret.tar.gz"
+            .parse()
+            .unwrap();
+        assert_eq!(download_filename_hint(&unsafe_url), None);
+
+        for encoded_name in [
+            "tool%3Aname.tar.gz",
+            "tool%2Aname.tar.gz",
+            "tool%00name.tar.gz",
+        ] {
+            let url: Url = format!("https://example.com/releases/{encoded_name}")
+                .parse()
+                .unwrap();
+            assert_eq!(download_filename_hint(&url), None, "{encoded_name}");
+        }
+    }
+
+    #[tokio::test]
     async fn test_get_html_rejects_non_html_content_type() {
         let mut server = mockito::Server::new_async().await;
         let mock = server
@@ -2022,14 +2146,14 @@ mod tests {
         }
     }
     fn set_test_http_retries(retries: i64) -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.http_retries = Some(retries);
         crate::config::Settings::reset(Some(settings));
         SettingsGuard { _lock: lock }
     }
     fn set_test_prefer_offline(http_retries: i64) -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.prefer_offline = Some(true);
         settings.http_retries = Some(http_retries);
@@ -2037,7 +2161,7 @@ mod tests {
         SettingsGuard { _lock: lock }
     }
     fn set_test_offline() -> SettingsGuard {
-        let lock = TEST_SETTINGS_LOCK.lock().unwrap();
+        let lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         let mut settings = crate::config::settings::SettingsPartial::empty();
         settings.offline = Some(true);
         crate::config::Settings::reset(Some(settings));
@@ -2105,8 +2229,8 @@ mod tests {
     }
 
     fn set_test_github_oauth(server_url: &str, cache_path: PathBuf) -> GithubOauthSettingsGuard {
-        let settings_lock = TEST_SETTINGS_LOCK.lock().unwrap();
-        let github_env_lock = crate::github::TEST_ENV_LOCK.lock().unwrap();
+        let settings_lock = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
+        let github_env_lock = crate::test::lock_ignoring_poison(&crate::github::TEST_ENV_LOCK);
         let vars = vec![
             ("MISE_EXPERIMENTAL", std::env::var("MISE_EXPERIMENTAL").ok()),
             (
@@ -2249,6 +2373,12 @@ mod tests {
             "\r\n",
             "hello"
         )
+    }
+    fn redirect_to_tar_gz_response() -> &'static str {
+        "HTTP/1.1 302 Found\r\nLocation: /tool.tar.gz\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    }
+    fn redirect_to_zip_response() -> &'static str {
+        "HTTP/1.1 302 Found\r\nLocation: /tool.zip\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
     }
     fn resumed_download_response() -> &'static str {
         concat!(
@@ -3181,7 +3311,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
             resumed_download_response(),
         ])
         .await;
-        let url = format!("http://127.0.0.1:{port}/private?token=url-secret");
+        let url = format!("http://127.0.0.1:{port}/private/artifact.tar.gz?token=url-secret");
         let parsed_url: Url = url.parse().unwrap();
         let mut headers = HeaderMap::new();
         headers.insert(
@@ -3197,26 +3327,100 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
 
         let _err = client
-            .download_file_with_headers(&url, &destination, &headers, None)
+            .download_file_with_headers_metadata(&url, &destination, &headers, None)
             .await
             .unwrap_err();
         assert_eq!(std::fs::read(&partial.path).unwrap(), b"hello");
         let state = std::fs::read_to_string(&partial.state_path).unwrap();
         assert!(!state.contains("url-secret"));
         assert!(!state.contains("header-secret"));
+        assert!(state.contains("artifact.tar.gz"));
         assert_eq!(
             std::fs::read(&destination).unwrap(),
             b"existing destination"
         );
 
-        client
-            .download_file_with_headers(&url, &destination, &headers, None)
+        let metadata = client
+            .download_file_with_headers_metadata(&url, &destination, &headers, None)
             .await
             .unwrap();
+        assert_eq!(
+            metadata.effective_filename.as_deref(),
+            Some("artifact.tar.gz")
+        );
         assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
         assert_eq!(count.load(Ordering::SeqCst), 2);
         assert!(
             requests.lock().unwrap()[1]
+                .to_ascii_lowercase()
+                .contains("range: bytes=5-")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_resume_preserves_stored_filename_after_redirect_changes() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            redirect_to_tar_gz_response(),
+            truncated_download_response(),
+            redirect_to_zip_response(),
+            resumed_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/download");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _ = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap_err();
+
+        let metadata = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(metadata.effective_filename.as_deref(), Some("tool.tar.gz"));
+        assert_eq!(count.load(Ordering::SeqCst), 4);
+        assert!(
+            requests.lock().unwrap()[3]
+                .to_ascii_lowercase()
+                .contains("range: bytes=5-")
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_download_resume_does_not_adopt_filename_when_initial_hint_missing() {
+        let _guard = set_test_http_retries(0);
+        let (port, count, requests) = spawn_recording_server(vec![
+            truncated_download_response(),
+            redirect_to_zip_response(),
+            resumed_download_response(),
+        ])
+        .await;
+        let url = format!("http://127.0.0.1:{port}/");
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("artifact");
+        let client = Client::new(Duration::from_secs(2), ClientKind::Http).unwrap();
+
+        let _ = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap_err();
+
+        let metadata = client
+            .download_file_with_headers_metadata(&url, &destination, &HeaderMap::new(), None)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(&destination).unwrap(), b"helloworld");
+        assert_eq!(metadata.effective_filename, None);
+        assert_eq!(count.load(Ordering::SeqCst), 3);
+        assert!(
+            requests.lock().unwrap()[2]
                 .to_ascii_lowercase()
                 .contains("range: bytes=5-")
         );
@@ -3698,7 +3902,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
     #[test]
     fn test_no_settings_configured() {
         // Test the real apply_url_replacements function with no settings override
-        let _guard = TEST_SETTINGS_LOCK.lock().unwrap();
+        let _guard = crate::test::lock_ignoring_poison(&TEST_SETTINGS_LOCK);
         crate::config::Settings::reset(None);
 
         let mut url = Url::parse("https://github.com/owner/repo").unwrap();

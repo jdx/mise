@@ -8,8 +8,8 @@ use crate::task::task_cache_store::{
     compose_task_cache_stores,
 };
 use crate::task::task_source_checker::{
-    TaskCacheInputs, build_output_matcher, expand_glob_braces, is_output, output_glob_patterns,
-    task_cache_inputs, task_cwd,
+    TaskCacheInputs, build_output_matcher, expand_enumeration_patterns, is_output,
+    output_glob_patterns, task_cache_inputs, task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -1275,7 +1275,7 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
         ensure_safe_relative(Path::new(&output))?;
         if crate::task::task_source_checker::is_glob_pattern(&output) {
             let mut glob_matched = false;
-            for expanded in expand_glob_braces(&output)? {
+            for expanded in expand_enumeration_patterns(&output)? {
                 ensure_safe_relative(Path::new(&expanded))?;
                 for entry in glob(root.join(expanded).to_str().unwrap_or_default())? {
                     let path = entry?;
@@ -1810,7 +1810,19 @@ mod tests {
         assert!(output.contains("variable: password"));
         assert!(output.contains("sources: 2 files"));
         assert!(output.contains("source: input.txt"));
-        assert!(output.contains(r"source: src/\u{1b}[2J\nfile.rs"));
+        // `display_cache_path` settles separators for display and then `escape_debug`s the
+        // result, so on Windows the separator arrives doubled alongside the escaped control
+        // characters this assertion is really about.
+        #[cfg(windows)]
+        assert!(
+            output.contains(r"source: src\\\u{1b}[2J\nfile.rs"),
+            "{output}"
+        );
+        #[cfg(not(windows))]
+        assert!(
+            output.contains(r"source: src/\u{1b}[2J\nfile.rs"),
+            "{output}"
+        );
         assert!(output.contains("pattern: !dist/private/**"));
         assert!(output.contains("output: dist"));
         assert!(output.contains("dependencies: 1 artifact keys"));

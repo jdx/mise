@@ -718,7 +718,7 @@ Removes installed tool versions
 Remove environment variable(s) from the config file.
 .TP
 \fBuntrust\fR
-No longer trust a config, will prompt in the future
+Remove explicit trust for a config
 .TP
 \fBunuse\fR
 Removes installed tool versions from mise.toml
@@ -1588,6 +1588,12 @@ SSH connection timeout in seconds
 \fIDefault: \fR10
 .RE
 .TP
+\fB\-\-copy\-link\fR \fI<PATH>\fR
+Dereference one source\-relative symbolic link; repeat for multiple links
+.TP
+\fB\-\-copy\-links\fR
+Dereference every symbolic link in the source archive
+.TP
 \fB\-\-exclude\fR \fI<PATTERN>\fR
 Additional archive pattern to exclude; repeat for multiple patterns
 .TP
@@ -1620,6 +1626,9 @@ SSH port override
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing secret inputs on the remote host
+.TP
+\fB\-\-remote\-env\fR \fI<ENV>\fR
+Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
 .TP
 \fB\-\-remote\-mise\fR \fI<COMMAND>\fR
 Existing mise executable name or path; relative paths use the staged project
@@ -2130,6 +2139,16 @@ Directory to put localized data into
 .RS
 \fIDefault: \fR.mise
 .RE
+.TP
+\fB\-\-windows\fR
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `\-\-write`, since stdout cannot
+carry two files.
 .SH "MISE GENERATE CONFIG"
 Generate a mise.toml file
 .PP
@@ -2325,6 +2344,14 @@ Specify mise version for the bootstrap script
 By default, uses the latest version from the install script.
 Use this to pin to a specific version (e.g., "2025.1.0").
 .TP
+\fB\-\-checksum\-algorithm\fR \fI<CHECKSUM_ALGORITHM>\fR
+Checksum algorithm to use when downloading artifacts
+
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `\-\-lock` or `\-\-skip\-download` because those modes do not calculate checksums.
+.RS
+\fIDefault: \fRblake3
+.RE
+.TP
 \fB\-\-fetch\fR
 Fetch checksums and sizes for an existing tool stub file
 
@@ -2444,6 +2471,12 @@ This argument will print backend output such as download, configuration, and com
 Like \-\-dry\-run but exits with code 1 if there are tools to install
 
 This is useful for scripts to check if tools need to be installed.
+.TP
+\fB\-\-include\-task\-tools\fR
+Also install tools required by tasks in the current scope
+
+This prepares task tools without running task commands or dependencies.
+Combine with \-\-monorepo to include tasks from every configured root.
 .TP
 \fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
 Only install versions released before this date or older than this duration
@@ -4556,17 +4589,18 @@ All arguments after the stub file path will be forwarded to the underlying tool.
 Marks a config file as trusted
 
 This means mise is allowed to parse the file when it needs to read config
-that may execute code or affect the environment. mise checks trust before
-parsing `mise.toml`. Without trust, mise may prompt, skip the config in some
-discovery paths, fail with an untrusted\-config error when it cannot prompt,
-or assume trust in detected CI unless paranoid mode is enabled.
+that may execute code or affect the environment. Without trust, mise may
+prompt, skip the config in some discovery paths, or fail with an
+untrusted\-config error when it cannot prompt.
 
-Safe config files do not require trust: files that only contain
-`min_version`, `[tools]` entries with plain version strings (or arrays
-of them), and `[tasks]` (no templates and no tool options) are loaded
-without prompting, since nothing in them executes code at load time —
-tools install and tasks run only on explicit commands like `mise install`
-or `mise run`.
+In normal mode, commands that execute project\-defined behavior (`mise run`,
+naked task invocations such as `mise <TASK>`, `mise install`, `mise exec`,
+and `mise watch`) automatically trust their active config. Paranoid mode
+requires explicit, content\-bound trust for every non\-global config.
+
+In normal mode, safe config files do not require trust: files that only contain
+`min_version`, `[tools]` entries with plain version strings (or arrays of
+them), and `[tasks]` without templates or tool options.
 
 Trust is shared across git worktrees: a config file inside a linked
 worktree is trusted when the equivalent path in the repository's main
@@ -4592,7 +4626,7 @@ Show the trusted status of config files from the current directory and its paren
 Does not trust or untrust any files.
 .TP
 \fB\-\-untrust\fR
-No longer trust this config, will prompt in the future
+Remove explicit trust for this config
 \fBArguments:\fR
 .PP
 .TP
@@ -4649,7 +4683,7 @@ Use the global config file
 Environment variable(s) to remove
 e.g.: NODE_ENV
 .SH "MISE UNTRUST"
-No longer trust a config, will prompt in the future
+Remove explicit trust for a config
 .PP
 \fBUsage:\fR mise untrust [<CONFIG_FILE>]
 .PP

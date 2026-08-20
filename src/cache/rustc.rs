@@ -2,7 +2,7 @@ use super::session;
 use eyre::{Context, Result, bail};
 use mise_cache_core::{
     ActionPrediction, AgentRequest, AgentResponse, CacheDigest, CacheDirectory, CacheFileNode,
-    RemoteActionResult, RustcMetadata, canonical_json,
+    RemoteActionResult, RestoreStats, RustcMetadata, canonical_json,
 };
 use mise_cache_rustc::{
     ActionContext, CompilerIdentity, DiscoveredInputs, PathMapping, RustcAction, RustcDepInfo,
@@ -15,12 +15,13 @@ use std::ffi::{OsStr, OsString};
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, ExitStatus, Output};
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 struct CachedCompilation {
     stdout: Vec<u8>,
     stderr: Vec<u8>,
     outputs: Vec<CachedOutput>,
+    restore: RestoreStats,
 }
 
 struct CachedOutput {
@@ -89,7 +90,7 @@ pub(super) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
     let _ = replay_output(&output);
     if let Some(cached) = verification {
         let matched = cached_matches(&cached, &output);
-        record_verification(matched);
+        record_verification(matched, cached.restore);
         if !matched {
             eprintln!("mise rustc cache warning: shadow verification diverged from cached output");
         }
@@ -315,6 +316,10 @@ fn restore_result(
             mode: node.mode,
         })
         .collect();
+    let restored_output_files = files.len().try_into().unwrap_or(u64::MAX);
+    let restored_output_bytes = files.iter().fold(0_u64, |total, (node, _)| {
+        total.saturating_add(node.digest.size)
+    });
 
     let mut digests = vec![metadata.stdout.clone(), metadata.stderr.clone()];
     digests.extend(files.iter().map(|(node, _)| node.digest.clone()));
@@ -322,6 +327,7 @@ fn restore_result(
     let stdout = read_verified_blob(&blobs[0], &metadata.stdout, "stdout")?;
     let stderr = read_verified_blob(&blobs[1], &metadata.stderr, "stderr")?;
 
+    let materialization_started = Instant::now();
     std::fs::create_dir_all(&outputs.directory)?;
     let staging = tempfile::tempdir_in(&outputs.directory)?;
     let mut staged = Vec::with_capacity(files.len());
@@ -337,13 +343,23 @@ fn restore_result(
     discovered.verify()?;
     verify_environment(&discovered.environment)?;
     finalize_restored_outputs(staged, restore_outputs)?;
+    let restore = RestoreStats {
+        duration_ns: materialization_started
+            .elapsed()
+            .as_nanos()
+            .try_into()
+            .unwrap_or(u64::MAX),
+        output_files: restored_output_files,
+        output_bytes: restored_output_bytes,
+    };
     if restore_outputs {
-        record_action_hit(&action.digest);
+        record_action_hit(&action.digest, restore);
     }
     Ok(Some(CachedCompilation {
         stdout,
         stderr,
         outputs: cached_outputs,
+        restore,
     }))
 }
 
@@ -394,8 +410,9 @@ fn cached_matches(cached: &CachedCompilation, output: &Output) -> bool {
         })
 }
 
-fn record_verification(matched: bool) {
-    let responses = session::request_agent(&[AgentRequest::RecordActionVerification { matched }]);
+fn record_verification(matched: bool, restore: RestoreStats) {
+    let responses =
+        session::request_agent(&[AgentRequest::RecordActionVerification { matched, restore }]);
     match responses.map(|responses| responses.into_iter().next()) {
         Ok(Some(AgentResponse::ActionVerificationRecorded)) => {}
         Ok(Some(AgentResponse::Error { message })) => {
@@ -439,9 +456,10 @@ fn persist_outputs(staged: StagedOutputs) -> Result<()> {
     Ok(())
 }
 
-fn record_action_hit(action: &CacheDigest) {
+fn record_action_hit(action: &CacheDigest, restore: RestoreStats) {
     let responses = session::request_agent(&[AgentRequest::RecordActionHit {
         action: action.clone(),
+        restore,
     }]);
     match responses.map(|responses| responses.into_iter().next()) {
         Ok(Some(AgentResponse::ActionHitRecorded)) => {}

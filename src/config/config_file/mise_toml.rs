@@ -865,7 +865,7 @@ impl MiseToml {
             .is_none_or(|bootstrap| !bootstrap.packages.contains_key(spec));
         if is_missing
             && let Some(PackageTomlConfig::Options(options)) = fallback
-            && !options.os.is_empty()
+            && (!options.os.is_empty() || options.adopt.is_some())
         {
             let mut options = options.clone();
             options.version = version.to_string();
@@ -893,9 +893,14 @@ impl MiseToml {
                 .unwrap();
             let mut value = InlineTable::new();
             value.insert("version", Value::from(version));
-            let mut os = Array::new();
-            os.extend(options.os);
-            value.insert("os", Value::Array(os));
+            if !options.os.is_empty() {
+                let mut os = Array::new();
+                os.extend(options.os);
+                value.insert("os", Value::Array(os));
+            }
+            if let Some(adopt) = options.adopt {
+                value.insert("adopt", Value::from(adopt));
+            }
             packages.insert(spec, Item::Value(Value::InlineTable(value)));
             return Ok(());
         }
@@ -1415,7 +1420,7 @@ impl ConfigFile for MiseToml {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
-        file::write(&self.path, contents)?;
+        file::write_atomic(&self.path, contents)?;
         trust(&config_trust_root(&self.path))?;
         Ok(())
     }
@@ -3062,6 +3067,33 @@ mod tests {
         assert_snapshot!(replace_path(&format!("{:#?}", cf)));
     }
 
+    /// `save()` has to replace the config file, not rewrite it in place.
+    ///
+    /// An in-place `O_TRUNC` write is not atomic. A second mise process can read the
+    /// file while it is truncated and conclude no tools are configured, and because
+    /// `O_TRUNC` only shortens the file at open time, a shorter write landing on a
+    /// longer one leaves the previous tail attached — which is invalid TOML and breaks
+    /// every later mise command. Replacing through a rename makes the update
+    /// all-or-nothing for concurrent readers, so assert the file is genuinely swapped.
+    #[test]
+    fn save_replaces_the_config_file_rather_than_rewriting_in_place() {
+        use std::os::unix::fs::MetadataExt;
+
+        let temp = tempfile::tempdir().unwrap();
+        let p = temp.path().join("config.toml");
+        file::write(&p, "[tools]\nclaude = \"latest\"\n").unwrap();
+        let before = std::fs::metadata(&p).unwrap().ino();
+
+        let cf = MiseToml::from_file(&p).unwrap();
+        cf.save().unwrap();
+
+        let after = std::fs::metadata(&p).unwrap().ino();
+        assert_ne!(
+            before, after,
+            "save() rewrote the config in place, so a concurrent reader can observe a torn file"
+        );
+    }
+
     #[tokio::test]
     async fn test_env() {
         let _config = Config::get().await.unwrap();
@@ -3260,9 +3292,12 @@ mod tests {
         "apt:libssl-dev" = "latest"
         "apt:curl" = "8.5.0-2"
         "brew:postgresql@17" = "latest"
-        "brew-cask:1password" = { version = "latest", os = "macos" }
+        "brew-cask:1password" = { version = "latest", os = "macos", adopt = true }
         "brew-cask:font-example" = { os = ["linux", "macos"] }
         "future-manager:whatever" = "latest"
+
+        [bootstrap.brew]
+        adopt = true
 
         [bootstrap.brew.taps]
         "railwaycat/emacsmacport" = "https://github.com/railwaycat/homebrew-emacsmacport"
@@ -3284,6 +3319,10 @@ mod tests {
             system.packages.get("apt:libssl-dev").unwrap().version(),
             "latest"
         );
+        assert!(matches!(
+            system.packages.get("brew-cask:1password"),
+            Some(crate::system::PackageTomlConfig::Options(options)) if options.adopt == Some(true)
+        ));
         assert_eq!(
             system.packages.get("apt:curl").unwrap().version(),
             "8.5.0-2"
@@ -3312,6 +3351,7 @@ mod tests {
             system.brew.taps.get("railwaycat/emacsmacport").unwrap(),
             "https://github.com/railwaycat/homebrew-emacsmacport"
         );
+        assert_eq!(system.brew.adopt, Some(true));
         let repo = system.repos.get("~/src/dotfiles").unwrap();
         assert_eq!(
             repo.url.as_deref(),
@@ -3336,6 +3376,21 @@ mod tests {
         let cf = MiseToml::from_file(&p).unwrap();
         assert!(cf.bootstrap_config().is_none());
         file::remove_file(&p).unwrap();
+    }
+
+    #[test]
+    fn test_bootstrap_brew_adopt_is_not_reported_as_unknown() {
+        let des = toml::Deserializer::parse(
+            r#"
+            [bootstrap.brew]
+            adopt = true
+            "#,
+        )
+        .unwrap();
+        let mut ignored = Vec::new();
+        let _: MiseToml = serde_ignored::deserialize(des, |path| ignored.push(path.to_string()))
+            .expect("config should deserialize");
+        assert!(ignored.is_empty(), "unexpected ignored fields: {ignored:?}");
     }
 
     #[tokio::test]
@@ -3465,7 +3520,9 @@ mod tests {
         args = ["--watch"]
         run_at_load = true
         start_interval = 300
+        throttle_interval = 60
         start_calendar_interval = { hour = 2, minute = 0 }
+        queue_directories = ["~/Library/Queues/my-sync"]
         environment = { PATH = "/usr/bin:/bin" }
         working_directory = "~"
         stdout_path = "~/Library/Logs/my-sync.log"
@@ -3484,6 +3541,8 @@ mod tests {
         assert_eq!(agent.args, vec!["--watch"]);
         assert!(agent.run_at_load);
         assert_eq!(agent.start_interval, Some(300));
+        assert_eq!(agent.throttle_interval, Some(60));
+        assert_eq!(agent.queue_directories, vec!["~/Library/Queues/my-sync"]);
         let crate::system::launchd::LaunchdCalendarIntervals::Single(interval) =
             agent.start_calendar_interval.as_ref().unwrap()
         else {
@@ -3583,6 +3642,7 @@ mod tests {
                     PackageTomlConfig::Options(crate::system::PackageOptionsTomlConfig {
                         version: "1.0.0".to_string(),
                         os: vec![],
+                        adopt: None,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",

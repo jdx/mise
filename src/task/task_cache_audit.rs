@@ -1,20 +1,23 @@
-use crate::config::Config;
+use crate::config::{Config, Settings};
 #[cfg(target_os = "linux")]
 use crate::file;
 use crate::task::Task;
+use crate::task::task_source_checker::lexical_normalize;
 #[cfg(target_os = "linux")]
 use crate::task::task_source_checker::{
     build_output_matcher, build_source_matcher, task_cwd, task_source_match_root,
 };
 use eyre::Result;
 use ignore::overrides::Override;
+use serde::Serialize;
 use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::io::Write;
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tempfile::NamedTempFile;
 #[cfg(target_os = "linux")]
 use tokio::sync::OnceCell;
@@ -24,10 +27,31 @@ const MAX_REPORTED_PATHS: usize = 20;
 #[cfg(target_os = "linux")]
 static STRACE: OnceCell<Option<PathBuf>> = OnceCell::const_new();
 
+/// `true` once the report file has been truncated by this process: the first writer replaces a
+/// report left by an earlier run, every later writer appends to it. Audited tasks run in parallel
+/// and share one file, so each task's block is written under this lock to keep blocks intact.
+static REPORT_FILE: Mutex<bool> = Mutex::new(false);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum AccessKind {
     Read,
     Write,
+}
+
+impl AccessKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            AccessKind::Read => "read",
+            AccessKind::Write => "write",
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct ReportEntry<'a> {
+    task: &'a str,
+    kind: &'a str,
+    path: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,7 +92,13 @@ impl TaskCacheAudit {
             let Some(strace) = usable_strace().await else {
                 return Ok(None);
             };
+            // strace reports paths as the kernel resolved them, so the audit
+            // has to work in the directory the task actually ran in. `task_cwd`
+            // stays lexical because `Command::current_dir` resolves the symlink
+            // itself; resolving it here as well is what keeps the traced paths,
+            // the source matcher, and the reported paths in one namespace.
             let root = task_cwd(task, config).await?;
+            let root = root.canonicalize().unwrap_or(root);
             let source_root = task_source_match_root(&root, config);
             let sources = build_source_matcher(&source_root, &root, &task.sources);
             let outputs = build_output_matcher(&root, &task.outputs.patterns())?;
@@ -155,28 +185,42 @@ impl TaskCacheAudit {
                 {
                     continue;
                 }
-                let display_path = path.strip_prefix(&self.root).unwrap_or(relative);
-                undeclared.insert((access.kind, display_path.to_path_buf()));
+                undeclared.insert((access.kind, relative_to(&self.root, &path)));
             }
         }
         let total = undeclared.len();
-        for (kind, path) in undeclared.into_iter().take(MAX_REPORTED_PATHS) {
-            let kind = match kind {
-                AccessKind::Read => "read",
-                AccessKind::Write => "write",
-            };
+        let mut report = Settings::get().task.cache.audit_report.clone();
+        if let Some(path) = &report
+            && let Err(err) = write_report(path, task, &undeclared)
+        {
             warn!(
-                "task {} cache audit detected undeclared {kind}: {}",
+                "task {} cache audit could not write its report to {}: {err}",
                 task.name,
+                path.display()
+            );
+            report = None;
+        }
+        for (kind, path) in undeclared.into_iter().take(MAX_REPORTED_PATHS) {
+            warn!(
+                "task {} cache audit detected undeclared {}: {}",
+                task.name,
+                kind.as_str(),
                 path.display()
             );
         }
         if total > MAX_REPORTED_PATHS {
-            warn!(
-                "task {} cache audit omitted {} additional paths",
-                task.name,
-                total - MAX_REPORTED_PATHS
-            );
+            let omitted = total - MAX_REPORTED_PATHS;
+            match &report {
+                Some(path) => warn!(
+                    "task {} cache audit omitted {omitted} additional paths; full report written to {}",
+                    task.name,
+                    path.display()
+                ),
+                None => warn!(
+                    "task {} cache audit omitted {omitted} additional paths",
+                    task.name
+                ),
+            }
         }
     }
 
@@ -194,6 +238,40 @@ impl TaskCacheAudit {
                 .strip_prefix(&self.source_root)
                 .is_ok_and(|relative| matches_override(&self.sources, relative))
     }
+}
+
+fn write_report(
+    path: &Path,
+    task: &Task,
+    undeclared: &BTreeSet<(AccessKind, PathBuf)>,
+) -> Result<()> {
+    let mut block = String::new();
+    for (kind, undeclared_path) in undeclared {
+        let undeclared_path = undeclared_path.to_string_lossy();
+        let entry = ReportEntry {
+            task: &task.name,
+            kind: kind.as_str(),
+            path: &undeclared_path,
+        };
+        block.push_str(&serde_json::to_string(&entry)?);
+        block.push('\n');
+    }
+    let mut truncated = REPORT_FILE.lock().unwrap_or_else(|err| err.into_inner());
+    let mut file = if *truncated {
+        fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?
+    } else {
+        fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)?
+    };
+    file.write_all(block.as_bytes())?;
+    *truncated = true;
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
@@ -367,24 +445,50 @@ fn dirfd_base(input: &str) -> Option<PathBuf> {
     path.is_absolute().then(|| path.to_path_buf())
 }
 
-fn lexical_normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            component => normalized.push(component.as_os_str()),
-        }
+/// Render `path` relative to `base`, climbing with `..` when `path` is not
+/// beneath `base`. Both must be absolute and lexically normalized.
+///
+/// Reads are audited against the workspace root, so one can legitimately sit
+/// above the task directory. Rendering those against a different base than
+/// in-task reads makes two distinct files print the same string, and neither
+/// string is usable as a `sources` entry.
+fn relative_to(base: &Path, path: &Path) -> PathBuf {
+    let base: Vec<_> = base.components().collect();
+    let path: Vec<_> = path.components().collect();
+    let common = base.iter().zip(&path).take_while(|(b, p)| b == p).count();
+    let mut relative = PathBuf::new();
+    for _ in common..base.len() {
+        relative.push("..");
     }
-    normalized
+    relative.extend(&path[common..]);
+    relative
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AccessKind, TraceAccess, parse_trace_line, quoted_strings};
-    use std::path::PathBuf;
+    use super::{AccessKind, TraceAccess, parse_trace_line, quoted_strings, relative_to};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn renders_paths_relative_to_the_task_directory() {
+        let base = Path::new("/workspace/pkg");
+        assert_eq!(
+            relative_to(base, Path::new("/workspace/pkg/node_modules/dep.js")),
+            PathBuf::from("node_modules/dep.js")
+        );
+        assert_eq!(
+            relative_to(base, Path::new("/workspace/node_modules/dep.js")),
+            PathBuf::from("../node_modules/dep.js")
+        );
+        assert_eq!(
+            relative_to(base, Path::new("/node_modules/dep.js")),
+            PathBuf::from("../../node_modules/dep.js")
+        );
+        assert_eq!(
+            relative_to(base, Path::new("/workspace/other/dep.js")),
+            PathBuf::from("../other/dep.js")
+        );
+    }
 
     #[test]
     fn parses_strace_file_accesses() {

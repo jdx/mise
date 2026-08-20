@@ -27,6 +27,36 @@ impl AptManager {
         })
     }
 
+    /// Names in `args` that `apt-cache policy` reports with an install
+    /// candidate. Keyed by the bare name apt heads each stanza with, so callers
+    /// holding an arch-qualified name must query it alone.
+    async fn policy_installable(&self, args: &[&str]) -> Result<std::collections::HashSet<String>> {
+        debug!("$ apt-cache policy {}", args.join(" "));
+        let output = tokio::process::Command::new("apt-cache")
+            .arg("policy")
+            .args(args)
+            // apt translates the stanza labels this parses, so pin the locale
+            // rather than reading "Kandidat:" as an unavailable package
+            .env("LC_ALL", "C")
+            .env("LANGUAGE", "C")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await?;
+        // unknown names are reported on stderr and do not fail the command,
+        // so a nonzero status means apt-cache itself could not run
+        if !output.status.success() {
+            bail!(
+                "apt-cache policy failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        Ok(parse_apt_cache_policy(&String::from_utf8_lossy(
+            &output.stdout,
+        )))
+    }
+
     fn update(&self, opts: &InstallOpts) -> Result<()> {
         let args = vec!["update".to_string()];
         if opts.dry_run {
@@ -48,6 +78,28 @@ fn debian_frontend() -> Vec<(String, String)> {
 /// reports the bare package name
 fn dpkg_name(name: &str) -> &str {
     name.split(':').next().unwrap_or(name)
+}
+
+/// Names from `apt-cache policy` output that have an installable candidate.
+///
+/// Output is one stanza per known package: an unindented `<name>:` header
+/// followed by indented `Installed:`/`Candidate:` lines. Unknown packages get
+/// no stanza at all, and a package apt knows only as a dependency of something
+/// else has `Candidate: (none)` — neither is installable, so neither counts.
+fn parse_apt_cache_policy(output: &str) -> std::collections::HashSet<String> {
+    let mut installable = std::collections::HashSet::new();
+    let mut current: Option<&str> = None;
+    for line in output.lines() {
+        if !line.starts_with(char::is_whitespace) {
+            current = line.strip_suffix(':');
+        } else if let Some(candidate) = line.trim_start().strip_prefix("Candidate:")
+            && let Some(name) = current.take()
+            && candidate.trim() != "(none)"
+        {
+            installable.insert(name.to_string());
+        }
+    }
+    installable
 }
 
 fn parse_dpkg_query(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
@@ -147,6 +199,32 @@ impl SystemPackageManager for AptManager {
         Ok(parse_dpkg_query(&stdout, pkgs))
     }
 
+    async fn available(&self, names: &[String]) -> Result<Vec<bool>> {
+        if names.is_empty() {
+            return Ok(vec![]);
+        }
+        // apt-cache policy heads every stanza with the *bare* package name, so
+        // `bash:amd64` reports as `bash:` — an arch qualifier cannot be
+        // recovered from a batched result, and matching one by its bare name
+        // would call `bash:arm64` installable whenever any `bash` stanza is
+        // present. Bare names go in one batch; each qualified name gets its own
+        // query, where apt answers by emitting a stanza or nothing at all.
+        let (qualified, bare): (Vec<&String>, Vec<&String>) =
+            names.iter().partition(|n| n.contains(':'));
+        let mut installable = if bare.is_empty() {
+            Default::default()
+        } else {
+            self.policy_installable(&bare.iter().map(|n| n.as_str()).collect::<Vec<_>>())
+                .await?
+        };
+        for name in qualified {
+            if !self.policy_installable(&[name.as_str()]).await?.is_empty() {
+                installable.insert(name.clone());
+            }
+        }
+        Ok(names.iter().map(|n| installable.contains(n)).collect())
+    }
+
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         if opts.update || self.lists_missing() {
             self.update(opts)?;
@@ -211,6 +289,53 @@ mod tests {
     fn test_dpkg_name() {
         assert_eq!(dpkg_name("gcc"), "gcc");
         assert_eq!(dpkg_name("gcc:arm64"), "gcc");
+    }
+
+    /// Exercises the real `apt-cache` where there is one (Linux CI), so the
+    /// parser cannot drift from apt's actual output format.
+    #[tokio::test]
+    async fn test_available_against_real_apt_cache() {
+        let mgr = AptManager::new();
+        if !mgr.is_available() || crate::file::which("apt-cache").is_none() {
+            return;
+        }
+        let names = vec!["bash".to_string(), "mise-nonexistent-pkg-xyz".to_string()];
+        let available = mgr.available(&names).await.unwrap();
+        assert_eq!(available, vec![true, false]);
+
+        // An arch qualifier apt cannot satisfy must stay unavailable even when
+        // a bare candidate for the same package is installable in the same
+        // batch: apt heads both stanzas with the bare name, so a batched result
+        // cannot tell them apart.
+        let names = vec!["bash:mise-not-an-arch".to_string(), "bash".to_string()];
+        let available = mgr.available(&names).await.unwrap();
+        assert_eq!(available, vec![false, true]);
+    }
+
+    #[test]
+    fn test_parse_apt_cache_policy() {
+        // libaio1 is the pre-time_t name: apt still knows it as a virtual
+        // dependency but has nothing to install, so it is not available.
+        // "nonexistent" gets no stanza at all.
+        let output = indoc::indoc! {"
+            libaio1t64:
+              Installed: (none)
+              Candidate: 0.3.113-6build1
+              Version table:
+                 0.3.113-6build1 500
+            libaio1:
+              Installed: (none)
+              Candidate: (none)
+              Version table:
+            libncurses6:
+              Installed: 6.4+20240113-1
+              Candidate: 6.4+20240113-1
+        "};
+        let installable = parse_apt_cache_policy(output);
+        assert!(installable.contains("libaio1t64"));
+        assert!(installable.contains("libncurses6"));
+        assert!(!installable.contains("libaio1"));
+        assert!(!installable.contains("nonexistent"));
     }
 
     #[test]

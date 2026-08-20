@@ -10,10 +10,10 @@ use indexmap::IndexMap;
 use path_absolutize::Absolutize;
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
+use crate::config::{Config, ConfigMap};
+use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ManagedFileTomlConfig {
     pub source: Option<String>,
     pub content: Option<String>,
@@ -30,7 +30,7 @@ pub struct ManagedFileTomlConfig {
     pub notify: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ManagedDirectoryTomlConfig {
     pub owner: Option<String>,
     pub group: Option<String>,
@@ -63,6 +63,7 @@ pub struct ManagedFileRequest {
     pub state: ManagedState,
     pub replace: bool,
     pub notify: Vec<String>,
+    pub origin: ResourceOrigin,
     inspection: Option<PathInspection>,
 }
 
@@ -76,6 +77,7 @@ pub struct ManagedDirectoryRequest {
     pub recursive: bool,
     pub replace: bool,
     pub notify: Vec<String>,
+    pub origin: ResourceOrigin,
     inspection: Option<PathInspection>,
 }
 
@@ -200,9 +202,16 @@ pub fn status_requests_from_config(
         .iter()
         .map(|directory| (directory.path.as_path(), directory.state))
         .collect::<std::collections::HashMap<_, _>>();
-    for (path, (file, base)) in merged_files_from_config(config)? {
+    for (path, (file, base, origin)) in merged_files_from_config(config)? {
         let state = file.state;
-        match ManagedFileRequest::from_toml(config, path.clone(), file, &base, secrets) {
+        match ManagedFileRequest::from_toml(
+            config,
+            path.clone(),
+            file,
+            &base,
+            origin.clone(),
+            secrets,
+        ) {
             Ok(file) => files.push(file),
             Err(error) if super::secrets::is_unavailable(&error) => {
                 if directory_states.contains_key(path.as_path()) {
@@ -212,12 +221,15 @@ pub fn status_requests_from_config(
                     );
                 }
                 validate_present_ancestors(&path, state, &directory_states)?;
-                unavailable.push(ResourcePlan::new(
-                    ResourceId::new("file", path.to_string_lossy().into_owned()),
-                    "not inspected: required secret unavailable",
-                    "template rendered",
-                    ResourceAction::Unknown,
-                ));
+                unavailable.push(
+                    ResourcePlan::new(
+                        ResourceId::new("file", path.to_string_lossy().into_owned()),
+                        "not inspected: required secret unavailable",
+                        "template rendered",
+                        ResourceAction::Unknown,
+                    )
+                    .with_origin(origin),
+                );
             }
             Err(error) => return Err(error),
         }
@@ -322,20 +334,55 @@ fn files_from_config(
 ) -> Result<Vec<ManagedFileRequest>> {
     merged_files_from_config(config)?
         .into_iter()
-        .map(|(path, (file, base))| {
-            ManagedFileRequest::from_toml(config, path, file, &base, secrets)
+        .map(|(path, (file, base, origin))| {
+            ManagedFileRequest::from_toml(config, path, file, &base, origin, secrets)
         })
         .collect()
 }
 
 fn merged_files_from_config(
     config: &Config,
-) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf)>> {
-    let mut merged: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf)> = IndexMap::new();
+) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)>> {
+    let mut composed: IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)> =
+        IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (path, declaration) in merged_files_from_config_files(config_files)? {
+            if let Some(existing) = composed.get(&path) {
+                if managed_file_declarations_match(existing, &declaration) {
+                    continue;
+                }
+                bail!(
+                    "conflicting managed file declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    path.display(),
+                    existing.2.conflict_description(),
+                    declaration.2.conflict_description(),
+                );
+            }
+            composed.insert(path, declaration);
+        }
+    }
+    Ok(composed)
+}
+
+/// Returns whether sibling declarations produce the same managed file.
+fn managed_file_declarations_match(
+    first: &(ManagedFileTomlConfig, PathBuf, ResourceOrigin),
+    second: &(ManagedFileTomlConfig, PathBuf, ResourceOrigin),
+) -> bool {
+    first.0 == second.0
+        && first.2.source == second.2.source
+        && (!first.0.template || first.1 == second.1)
+}
+
+/// Merges managed files within one config hierarchy using normal precedence.
+fn merged_files_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<PathBuf, (ManagedFileTomlConfig, PathBuf, ResourceOrigin)>> {
+    let mut merged = IndexMap::new();
     // Config files are ordered from highest to lowest precedence. Preserve the
     // first declaration of a target so a parent or global layer cannot replace
     // the nearer project declaration.
-    for cf in config.config_files.values() {
+    for cf in config_files.values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
             let mut layer_paths = IndexMap::new();
             let base = cf
@@ -343,6 +390,12 @@ fn merged_files_from_config(
                 .parent()
                 .unwrap_or_else(|| Path::new("."))
                 .to_path_buf();
+            let origin = ResourceOrigin {
+                config: cf.get_path().to_path_buf(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(cf.get_path()),
+                source: None,
+            };
             for (path, file) in bootstrap.files {
                 let target = absolute_target(&path)?;
                 if let Some(previous) = layer_paths.insert(target.clone(), path.clone()) {
@@ -351,7 +404,14 @@ fn merged_files_from_config(
                         target.display()
                     );
                 }
-                merged.entry(target).or_insert_with(|| (file, base.clone()));
+                let mut file_origin = origin.clone();
+                file_origin.source = file
+                    .source
+                    .as_deref()
+                    .map(|source| resolve_source_path(&base, source));
+                merged
+                    .entry(target)
+                    .or_insert_with(|| (file, base.clone(), file_origin));
             }
         }
     }
@@ -359,9 +419,43 @@ fn merged_files_from_config(
 }
 
 fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryRequest>> {
-    let mut merged: IndexMap<PathBuf, ManagedDirectoryTomlConfig> = IndexMap::new();
-    for cf in config.config_files.values() {
+    let mut composed: IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)> =
+        IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (path, declaration) in directories_from_config_files(config_files)? {
+            if let Some(existing) = composed.get(&path) {
+                if existing.0 == declaration.0 {
+                    continue;
+                }
+                bail!(
+                    "conflicting managed directory declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    path.display(),
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
+                );
+            }
+            composed.insert(path, declaration);
+        }
+    }
+    composed
+        .into_iter()
+        .map(|(path, (config, origin))| ManagedDirectoryRequest::from_toml(path, config, origin))
+        .collect()
+}
+
+/// Merges managed directories within one config hierarchy using normal precedence.
+fn directories_from_config_files(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<PathBuf, (ManagedDirectoryTomlConfig, ResourceOrigin)>> {
+    let mut merged = IndexMap::new();
+    for cf in config_files.values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: cf.get_path().to_path_buf(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(cf.get_path()),
+                source: None,
+            };
             let mut layer_paths = IndexMap::new();
             for (path, directory) in bootstrap.directories {
                 let target = absolute_target(&path)?;
@@ -371,14 +465,13 @@ fn directories_from_config(config: &Config) -> Result<Vec<ManagedDirectoryReques
                         target.display()
                     );
                 }
-                merged.entry(target).or_insert(directory);
+                merged
+                    .entry(target)
+                    .or_insert_with(|| (directory, origin.clone()));
             }
         }
     }
-    merged
-        .into_iter()
-        .map(|(path, config)| ManagedDirectoryRequest::from_toml(path, config))
-        .collect()
+    Ok(merged)
 }
 
 fn validate_requests(
@@ -432,6 +525,7 @@ impl ManagedFileRequest {
         path: PathBuf,
         config: ManagedFileTomlConfig,
         base: &Path,
+        origin: ResourceOrigin,
         secrets: &super::secrets::SecretValues,
     ) -> Result<Self> {
         let owner = nonempty("owner", config.owner)?;
@@ -445,12 +539,7 @@ impl ManagedFileRequest {
                 )
             }
             (Some(source), None, ManagedState::Present) => {
-                let source = Path::new(&source);
-                let source = if source.is_absolute() {
-                    source.to_path_buf()
-                } else {
-                    base.join(source)
-                };
+                let source = resolve_source_path(base, &source);
                 Some(fs::read_to_string(&source).wrap_err_with(|| {
                     format!(
                         "[bootstrap.files].\"{}\": failed to read source {}",
@@ -492,12 +581,13 @@ impl ManagedFileRequest {
             state: config.state,
             replace: config.replace,
             notify: config.notify,
+            origin,
             inspection: None,
         })
     }
 
     pub fn plan(&self) -> Result<ResourcePlan> {
-        plan_file(self)
+        plan_file(self).map(|plan| plan.with_origin(self.origin.clone()))
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
@@ -529,8 +619,21 @@ impl ManagedFileRequest {
     }
 }
 
+fn resolve_source_path(base: &Path, source: &str) -> PathBuf {
+    let source = Path::new(source);
+    if source.is_absolute() {
+        source.to_path_buf()
+    } else {
+        base.join(source)
+    }
+}
+
 impl ManagedDirectoryRequest {
-    fn from_toml(path: PathBuf, config: ManagedDirectoryTomlConfig) -> Result<Self> {
+    fn from_toml(
+        path: PathBuf,
+        config: ManagedDirectoryTomlConfig,
+        origin: ResourceOrigin,
+    ) -> Result<Self> {
         if config.state == ManagedState::Present && config.recursive {
             bail!(
                 "[bootstrap.directories].\"{}\": recursive is only valid with state = \"absent\"",
@@ -546,12 +649,13 @@ impl ManagedDirectoryRequest {
             recursive: config.recursive,
             replace: config.replace,
             notify: config.notify,
+            origin,
             inspection: None,
         })
     }
 
     pub fn plan(&self) -> Result<ResourcePlan> {
-        plan_directory(self)
+        plan_directory(self).map(|plan| plan.with_origin(self.origin.clone()))
     }
 
     fn operation(&self) -> Result<Option<PrivilegedAction>> {
@@ -791,11 +895,14 @@ pub fn validate_principals(
 
 #[cfg(not(unix))]
 pub fn validate_principals(
-    _files: &[ManagedFileRequest],
-    _directories: &[ManagedDirectoryRequest],
+    files: &[ManagedFileRequest],
+    directories: &[ManagedDirectoryRequest],
     _accounts: Option<&super::accounts::AccountRequests>,
     _allow_pending_accounts: bool,
 ) -> Result<()> {
+    if files.is_empty() && directories.is_empty() {
+        return Ok(());
+    }
     bail!("managed system files are only supported on Unix")
 }
 
@@ -1409,18 +1516,204 @@ fn create_directory(
     replace: bool,
 ) -> Result<()> {
     match fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => fs::create_dir(path)?,
-        Err(error) => return Err(error.into()),
+        Err(error)
+            if matches!(
+                error.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+            ) => {}
+        Err(error) => {
+            return Err(error)
+                .wrap_err_with(|| format!("failed to inspect directory {}", path.display()));
+        }
         Ok(metadata) if metadata.file_type().is_dir() => {}
         Ok(_) if !replace => {
             bail!("refusing to replace non-directory path: {}", path.display())
         }
         Ok(_) => {
-            fs::remove_file(path)?;
-            fs::create_dir(path)?;
+            fs::remove_file(path).wrap_err_with(|| {
+                format!(
+                    "failed to remove existing path before creating directory {}",
+                    path.display()
+                )
+            })?;
         }
     }
-    set_metadata(path, owner, group, mode)
+
+    #[cfg(unix)]
+    {
+        let directory = open_or_create_directory_tree(path)
+            .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
+        set_directory_metadata(&directory, owner, group, mode)
+            .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
+    }
+
+    #[cfg(not(unix))]
+    {
+        fs::create_dir_all(path)
+            .wrap_err_with(|| format!("failed to create directory {}", path.display()))?;
+        set_metadata(path, owner, group, mode)
+            .wrap_err_with(|| format!("failed to set metadata on directory {}", path.display()))
+    }
+}
+
+/// Open an absolute directory path one component at a time without following
+/// symlinks, creating missing components with process-default metadata. The
+/// returned descriptor binds later metadata changes to the directory that was
+/// actually opened instead of resolving the path again.
+#[cfg(unix)]
+fn open_or_create_directory_tree(path: &Path) -> Result<std::os::fd::OwnedFd> {
+    open_or_create_directory_tree_inner(path, 0)
+}
+
+#[cfg(unix)]
+fn open_or_create_directory_tree_inner(
+    path: &Path,
+    followed_symlinks: usize,
+) -> Result<std::os::fd::OwnedFd> {
+    use nix::fcntl::{AtFlags, OFlag, open, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat, fstatat, mkdirat};
+
+    if followed_symlinks > 40 {
+        bail!(
+            "too many symbolic links in managed directory {}",
+            path.display()
+        );
+    }
+
+    let components = path
+        .strip_prefix(Path::new("/"))
+        .wrap_err_with(|| format!("managed directory must be absolute: {}", path.display()))?
+        .components()
+        .map(|component| match component {
+            std::path::Component::Normal(name) => Ok(name.to_os_string()),
+            _ => bail!("invalid managed directory path: {}", path.display()),
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
+    let mut directory = open(Path::new("/"), flags, Mode::empty())?;
+    let mut current = PathBuf::from("/");
+    for (index, name) in components.iter().enumerate() {
+        let component_path = current.join(name);
+        directory = match openat(&directory, name.as_os_str(), flags, Mode::empty()) {
+            Ok(directory) => directory,
+            Err(open_error) => {
+                let metadata = fstatat(&directory, name.as_os_str(), AtFlags::AT_SYMLINK_NOFOLLOW);
+                if metadata.is_ok_and(|metadata| {
+                    SFlag::from_bits_truncate(metadata.st_mode).contains(SFlag::S_IFLNK)
+                }) {
+                    let parent = fstat(&directory)?;
+                    if parent.st_uid != 0 || parent.st_mode & 0o022 != 0 {
+                        bail!(
+                            "refusing to follow symlink {} from an untrusted parent directory",
+                            component_path.display()
+                        );
+                    }
+                    let target = nix::fcntl::readlinkat(&directory, name.as_os_str())?;
+                    let mut resolved = if Path::new(&target).is_absolute() {
+                        PathBuf::from(target)
+                    } else {
+                        current.join(target)
+                    };
+                    resolved.extend(components.iter().skip(index + 1));
+                    let resolved = resolved.absolutize()?.to_path_buf();
+                    if resolved == Path::new("/") {
+                        bail!(
+                            "refusing to resolve managed directory {} to the filesystem root",
+                            path.display()
+                        );
+                    }
+                    return open_or_create_directory_tree_inner(&resolved, followed_symlinks + 1);
+                }
+                if open_error != nix::errno::Errno::ENOENT {
+                    return Err(open_error).wrap_err_with(|| {
+                        format!(
+                            "failed to open path component {} without following symlinks",
+                            component_path.display()
+                        )
+                    });
+                }
+                let created_by_us = match mkdirat(
+                    &directory,
+                    name.as_os_str(),
+                    Mode::from_bits_truncate(0o777),
+                ) {
+                    Ok(()) => true,
+                    Err(nix::errno::Errno::EEXIST) => false,
+                    Err(error) => {
+                        return Err(error).wrap_err_with(|| {
+                            format!(
+                                "failed to create path component {}",
+                                component_path.display()
+                            )
+                        });
+                    }
+                };
+                let created = openat(&directory, name.as_os_str(), flags, Mode::empty())
+                    .wrap_err_with(|| {
+                        format!(
+                            "failed to open newly available path component {} without following symlinks",
+                            component_path.display()
+                        )
+                    })?;
+                let stat = nix::sys::stat::fstat(&created)?;
+                if stat.st_uid != nix::unistd::geteuid().as_raw() {
+                    if created_by_us {
+                        bail!(
+                            "created path component {} was replaced before it could be opened",
+                            component_path.display()
+                        );
+                    } else {
+                        bail!(
+                            "path component {} was concurrently created by another user",
+                            component_path.display()
+                        );
+                    }
+                }
+                created
+            }
+        };
+        current.push(name);
+    }
+    Ok(directory)
+}
+
+#[cfg(unix)]
+fn set_directory_metadata(
+    directory: &std::os::fd::OwnedFd,
+    owner: Option<&str>,
+    group: Option<&str>,
+    mode: u32,
+) -> Result<()> {
+    let uid = owner
+        .map(resolve_user)
+        .transpose()?
+        .map(nix::unistd::Uid::from_raw);
+    let gid = group
+        .map(resolve_group)
+        .transpose()?
+        .map(nix::unistd::Gid::from_raw);
+    nix::unistd::fchown(directory, uid, gid)?;
+    // chown may clear setuid/setgid bits, so apply the requested mode last.
+    let platform_mode = [
+        (0o4000, nix::sys::stat::Mode::S_ISUID),
+        (0o2000, nix::sys::stat::Mode::S_ISGID),
+        (0o1000, nix::sys::stat::Mode::S_ISVTX),
+        (0o0400, nix::sys::stat::Mode::S_IRUSR),
+        (0o0200, nix::sys::stat::Mode::S_IWUSR),
+        (0o0100, nix::sys::stat::Mode::S_IXUSR),
+        (0o0040, nix::sys::stat::Mode::S_IRGRP),
+        (0o0020, nix::sys::stat::Mode::S_IWGRP),
+        (0o0010, nix::sys::stat::Mode::S_IXGRP),
+        (0o0004, nix::sys::stat::Mode::S_IROTH),
+        (0o0002, nix::sys::stat::Mode::S_IWOTH),
+        (0o0001, nix::sys::stat::Mode::S_IXOTH),
+    ]
+    .into_iter()
+    .filter_map(|(bit, flag)| (mode & bit != 0).then_some(flag))
+    .fold(nix::sys::stat::Mode::empty(), |mode, flag| mode | flag);
+    nix::sys::stat::fchmod(directory, platform_mode)?;
+    Ok(())
 }
 
 fn remove_directory(path: &Path, recursive: bool) -> Result<()> {
@@ -1449,6 +1742,12 @@ mod tests {
             state,
             replace: false,
             notify: vec![],
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: None,
+            },
             inspection: None,
         }
     }
@@ -1463,6 +1762,12 @@ mod tests {
             recursive: false,
             replace: false,
             notify: vec![],
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: None,
+            },
             inspection: None,
         }
     }
@@ -1704,7 +2009,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn replaces_wrong_types_without_creating_undeclared_parents() {
+    fn replaces_wrong_types_and_creates_missing_parents() {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("file");
         fs::create_dir(&file_path).unwrap();
@@ -1720,8 +2025,38 @@ mod tests {
 
         let undeclared_parent = temp.path().join("undeclared");
         let nested = undeclared_parent.join("nested");
-        assert!(create_directory(&nested, None, None, 0o755, false).is_err());
-        assert!(!undeclared_parent.exists());
+        create_directory(&nested, None, None, 0o700, false).unwrap();
+        assert!(undeclared_parent.is_dir());
+        assert!(nested.is_dir());
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(nested).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let blocking_file = temp.path().join("blocking-file");
+        fs::write(&blocking_file, "content").unwrap();
+        let blocked = blocking_file.join("nested");
+        let error = create_directory(&blocked, None, None, 0o755, false).unwrap_err();
+        assert!(
+            format!("{error:#}")
+                .contains(&format!("failed to create directory {}", blocked.display())),
+            "unexpected error: {error:#}"
+        );
+
+        // Root-owned parents are trusted, so symlink traversal is permitted.
+        if !nix::unistd::geteuid().is_root() {
+            let external = tempfile::tempdir().unwrap();
+            let symlink_parent = temp.path().join("symlink-parent");
+            std::os::unix::fs::symlink(external.path(), &symlink_parent).unwrap();
+            let escaped = symlink_parent.join("nested");
+            let error = create_directory(&escaped, None, None, 0o755, false).unwrap_err();
+            assert!(
+                format!("{error:#}").contains("refusing to follow symlink"),
+                "unexpected error: {error:#}"
+            );
+            assert!(!external.path().join("nested").exists());
+        }
     }
 
     #[test]

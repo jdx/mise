@@ -1,7 +1,4 @@
-backends = [
-  "aqua:bitnami-labs/sealed-secrets",
-  "asdf:stefansedich/asdf-kubeseal",
-]
+backends = ["aqua:bitnami/sealed-secrets", "asdf:stefansedich/asdf-kubeseal"]
 bins = ["kubeseal"]
 description = "A Kubernetes controller and tool for one-way encrypted Secrets"
 test = { cmd = "kubeseal --version", expected = "kubeseal version: {{version}}" }

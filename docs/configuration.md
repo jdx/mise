@@ -10,9 +10,10 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `mise.toml`
 - `mise/config.toml`
 - `.mise/config.toml`
+- `.mise/conf.d/*.toml` - non-hidden TOML fragments, loaded in alphabetical order; environment suffixes such as `tools.development.toml` load only when that environment is active
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
-- `.config/mise/conf.d/*.toml` - all files in this directory will be loaded in alphabetical order
+- `.config/mise/conf.d/*.toml` - the same fragment and environment-suffix behavior under the grouped config directory
 
 ::: tip
 Run [`mise cfg`](/cli/config.html) to figure out what order mise is loading files on your particular setup. This is often
@@ -64,6 +65,9 @@ When mise needs configuration, it follows this process:
         └── myproject/
             ├── mise.local.toml       # Local overrides (git-ignored)
             ├── mise.toml             # Project config
+            ├── .mise/
+            │   ├── config.toml       # Project config grouped under .mise
+            │   └── conf.d/*.toml     # Project fragments, loaded alphabetically
             ├── mise.<env>.toml       # Env-specific project config
             ├── mise.<env>.local.toml # Env-specific project local overrides
             └── backend/
@@ -217,6 +221,11 @@ root's tools to resolve and install from their lockfiles. See [mise.lock](/dev-t
 ### `[env]` - Arbitrary Environment Variables
 
 See [environments](/environments/).
+
+### `[vars]` - Configuration Variables
+
+Define values that can be reused in Tera-rendered configuration without exporting them to child
+processes. See [Variables](/configuration/vars).
 
 ### `[tasks.*]` - Run files or shell scripts
 
@@ -493,6 +502,12 @@ Some files declare a minimum compatible version or a configuration-format major 
 exact binary release. mise treats that value as a normal version request, so a value such as
 `3.25` selects the latest matching CMake 3.25 release and a GoReleaser config `version: 2` selects
 the latest GoReleaser 2.x release.
+
+For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn`):
+
+- Runtime tools (`node`, `deno`, and `bun`) read `devEngines.runtime` (both single object and array formats are supported).
+- Package managers (`npm`, `pnpm`, and `yarn`) read `devEngines.packageManager` or top-level `packageManager` (e.g. `pnpm@9.1.0` or `npm@10.0.0`).
+- For `bun`, mise checks `devEngines.runtime` first, falling back to `devEngines.packageManager` and top-level `packageManager` (e.g. `bun@1.2.0`).
 
 For `go.mod`, the `toolchain goX.Y.Z` directive (an exact toolchain pin) is used when present.
 Otherwise the `go X.Y` directive is used; because it declares only the _minimum_ required Go

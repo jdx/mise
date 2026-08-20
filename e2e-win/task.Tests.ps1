@@ -75,6 +75,45 @@ Write-Output "windows"
         mise run filetask.bat | Select -Last 1 | Should -Be 'mytask'
     }
 
+    It 'uses native separators in task path environment variables' {
+        @'
+[tasks.path_env]
+shell = "pwsh -NoProfile -Command"
+quiet = true
+run = '''
+[ordered]@{
+    original_cwd = $env:MISE_ORIGINAL_CWD
+    config_root = $env:MISE_CONFIG_ROOT
+    project_root = $env:MISE_PROJECT_ROOT
+    task_dir = $env:MISE_TASK_DIR
+    task_file = $env:MISE_TASK_FILE
+} | ConvertTo-Json -Compress
+'''
+'@ | Out-File -FilePath "$TestDrive\mise.task-path-env.toml" -Encoding utf8NoBOM
+
+        $oldConfig = $env:MISE_CONFIG_FILE
+        # Preserve the slash spelling that config discovery can produce when a global config is
+        # found through `.config/mise/config.toml` relative to the invocation directory (#12160).
+        $env:MISE_CONFIG_FILE = "$TestDrive/mise.task-path-env.toml"
+        try {
+            $paths = mise run path_env | ConvertFrom-Json
+            $LASTEXITCODE | Should -Be 0
+            foreach ($property in $paths.PSObject.Properties) {
+                $property.Value.Contains('/') | Should -BeFalse -Because (
+                    "$($property.Name) used mixed separators: $($property.Value)"
+                )
+            }
+        }
+        finally {
+            if ($null -eq $oldConfig) {
+                Remove-Item -Path Env:\MISE_CONFIG_FILE -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_CONFIG_FILE = $oldConfig
+            }
+            Remove-Item -Path "$TestDrive\mise.task-path-env.toml" -ErrorAction SilentlyContinue
+        }
+    }
+
     # `windows_executable_extensions` is what decides whether a file with no extension and no
     # shebang is a task at all -- there is no permission bit here for `is_executable` to consult.
     # Nothing else in this suite covers that boundary, and it is the reason the extensionless
@@ -103,6 +142,33 @@ Write-Output "windows"
 echo "from-bash"
 "@ | Out-File -FilePath "tasks\shebangtask" -Encoding utf8NoBOM -NoNewline
         mise run shebangtask | Select -Last 1 | Should -Be 'from-bash'
+    }
+
+    # File tasks cannot branch on platform -- `run_windows` is a TOML-task key and is rejected in a
+    # file-task header -- so writing the task twice, once per platform, is the only option. Both
+    # files reduce to the same task name, and mise used to keep both and run both.
+    #
+    # End to end because the unit tests can only check the preference in isolation: it is the chain
+    # of discovery (shebang admits the `.sh`), naming (the stem, so both become `platpair`) and
+    # preference that produces the collision.
+    It 'prefers the Windows script when a task exists in both forms' {
+        @"
+#!/usr/bin/env bash
+echo "from-posix"
+"@ | Out-File -FilePath "tasks\platpair.sh" -Encoding utf8NoBOM -NoNewline
+        "Write-Output 'from-windows'" | Out-File -FilePath "tasks\platpair.ps1" -Encoding utf8NoBOM -NoNewline
+
+        # One task, not two entries sharing a name.
+        (mise tasks --json | ConvertFrom-Json | Where-Object { $_.name -eq 'platpair' }).Count |
+            Should -Be 1
+
+        # And the POSIX half must not run. Asserting the absence as well as the presence: with both
+        # kept, this printed `from-posix` too and still ended on the Windows line.
+        $out = mise run platpair 2>&1 | Out-String
+        $out | Should -BeLike '*from-windows*'
+        $out | Should -Not -BeLike '*from-posix*'
+
+        Remove-Item "tasks\platpair.sh", "tasks\platpair.ps1" -ErrorAction Ignore
     }
 
     It 'executes a task in pwsh' {

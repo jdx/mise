@@ -309,8 +309,8 @@ pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell
     }
 }
 
-async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Hook)> {
-    static ALL_HOOKS: OnceCell<Vec<(PathBuf, Hook)>> = OnceCell::const_new();
+async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Option<PathBuf>, Hook)> {
+    static ALL_HOOKS: OnceCell<Vec<(PathBuf, Option<PathBuf>, Hook)>> = OnceCell::const_new();
     ALL_HOOKS
         .get_or_init(async || {
             let mut hooks = config.hooks().await.cloned().unwrap_or_default();
@@ -321,14 +321,18 @@ async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Hook)> {
                 if let Ok(cf) = config_file::parse(p).await
                     && let Ok(mut h) = cf.hooks()
                 {
-                    let is_global = cf.project_root().is_none();
+                    let project_root = cf.project_root();
+                    let is_global = project_root.is_none();
                     if is_global {
                         for hook in &mut h {
                             hook.global = true;
                         }
                     }
-                    let root = cf.project_root().unwrap_or_else(|| cf.config_root());
-                    hooks.extend(h.into_iter().map(|h| (root.clone(), h)));
+                    let config_root = cf.config_root();
+                    hooks.extend(
+                        h.into_iter()
+                            .map(|h| (config_root.clone(), project_root.clone(), h)),
+                    );
                 }
             }
             hooks
@@ -344,7 +348,7 @@ pub async fn run_one_hook(
     shell: Option<&dyn Shell>,
     dry_run: bool,
 ) {
-    run_one_hook_with_context(config, ts, hook, shell, None, dry_run).await
+    run_one_hook_with_context(config, ts, hook, shell, None, dry_run, false).await
 }
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
@@ -356,6 +360,7 @@ pub async fn run_one_hook_with_context(
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
     dry_run: bool,
+    global_only: bool,
 ) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) {
         return;
@@ -370,10 +375,14 @@ pub async fn run_one_hook_with_context(
         return;
     }
     let shell_name = shell.map(|s| s.to_string()).unwrap_or_default();
-    for (root, h) in all_hooks(config).await {
+    for (config_root, hook_project_root, h) in all_hooks(config).await {
         if hook != h.hook || !matches_shell(h, &shell_name) {
             continue;
         }
+        if global_only && !h.global {
+            continue;
+        }
+        let root = hook_project_root.as_ref().unwrap_or(config_root);
         trace!("processing hook {hook} in {root:?}");
         // Global hooks skip directory matching — they fire for all projects
         if !h.global {
@@ -408,7 +417,24 @@ pub async fn run_one_hook_with_context(
                 _ => {}
             }
         }
-        run_matched_hook(config, ts, root, h, shell, installed_tools, dry_run).await;
+        let project_root = if h.global && !global_only {
+            config.project_root.as_deref().unwrap_or(config_root)
+        } else {
+            root
+        };
+        run_matched_hook(
+            config,
+            ts,
+            HookRoots {
+                config: config_root,
+                project: project_root,
+            },
+            h,
+            shell,
+            installed_tools,
+            dry_run,
+        )
+        .await;
     }
 }
 
@@ -437,35 +463,54 @@ pub async fn run_enter_hooks_for_newly_loaded_configs(
         return;
     }
     let shell_name = shell.to_string();
-    for (root, h) in config.hooks().await.cloned().unwrap_or_default() {
-        if h.hook != Hooks::Enter || h.global || !cwd.starts_with(&root) {
+    for (config_root, project_root, h) in config.hooks().await.cloned().unwrap_or_default() {
+        let root = project_root.as_ref().unwrap_or(&config_root);
+        if h.hook != Hooks::Enter || h.global || !cwd.starts_with(root) {
             continue;
         }
         if !matches_shell(&h, &shell_name) {
             continue;
         }
-        if !newly_loaded_roots.contains(&root) {
+        if !newly_loaded_roots.contains(root.as_path()) {
             continue;
         }
-        run_matched_hook(config, ts, &root, &h, Some(shell), None, false).await;
+        run_matched_hook(
+            config,
+            ts,
+            HookRoots {
+                config: &config_root,
+                project: root,
+            },
+            &h,
+            Some(shell),
+            None,
+            false,
+        )
+        .await;
     }
+}
+
+#[derive(Clone, Copy)]
+struct HookRoots<'a> {
+    config: &'a Path,
+    project: &'a Path,
 }
 
 async fn run_matched_hook(
     config: &Arc<Config>,
     ts: &Toolset,
-    root: &Path,
+    roots: HookRoots<'_>,
     hook: &Hook,
     shell: Option<&dyn Shell>,
     installed_tools: Option<&[InstalledToolInfo]>,
     dry_run: bool,
 ) {
     if dry_run {
-        if let Err(e) = preview_matched_hook(root, hook) {
+        if let Err(e) = preview_matched_hook(roots.project, hook) {
             warn!(
                 "failed to preview {} hook in {}: {e}",
                 hook.hook,
-                root.display()
+                roots.project.display()
             );
         }
         return;
@@ -473,8 +518,21 @@ async fn run_matched_hook(
     let hook_type = hook.hook;
     match &hook.action {
         HookAction::Task { task_name } => {
-            if let Err(e) = execute_task(config, ts, root, hook, task_name, installed_tools).await {
-                warn!("{hook_type} hook in {} failed: {e}", root.display());
+            if let Err(e) = execute_task(
+                config,
+                ts,
+                roots.config,
+                roots.project,
+                hook,
+                task_name,
+                installed_tools,
+            )
+            .await
+            {
+                warn!(
+                    "{hook_type} hook in {} failed: {e}",
+                    roots.project.display()
+                );
             }
         }
         HookAction::CurrentShell { script, .. } => {
@@ -482,11 +540,11 @@ async fn run_matched_hook(
                 // Set hook environment variables so shell hooks can access them
                 println!(
                     "{}",
-                    shell.set_env("MISE_PROJECT_ROOT", &root.to_string_lossy())
+                    shell.set_env("MISE_PROJECT_ROOT", &roots.project.to_string_lossy())
                 );
                 println!(
                     "{}",
-                    shell.set_env("MISE_CONFIG_ROOT", &root.to_string_lossy())
+                    shell.set_env("MISE_CONFIG_ROOT", &roots.config.to_string_lossy())
                 );
                 if let Some(cwd) = dirs::CWD.as_ref() {
                     println!(
@@ -509,9 +567,21 @@ async fn run_matched_hook(
             println!("{script}");
         }
         HookAction::Run { .. } => {
-            if let Err(e) = execute(config, ts, root, hook, installed_tools).await {
+            if let Err(e) = execute(
+                config,
+                ts,
+                roots.config,
+                roots.project,
+                hook,
+                installed_tools,
+            )
+            .await
+            {
                 // Warn but continue running remaining hooks of this type
-                warn!("{hook_type} hook in {} failed: {e}", root.display());
+                warn!(
+                    "{hook_type} hook in {} failed: {e}",
+                    roots.project.display()
+                );
             }
         }
     }
@@ -561,7 +631,8 @@ fn matches_shell(hook: &Hook, shell_name: &str) -> bool {
 async fn execute(
     config: &Arc<Config>,
     ts: &Toolset,
-    root: &Path,
+    config_root: &Path,
+    project_root: &Path,
     hook: &Hook,
     installed_tools: Option<&[InstalledToolInfo]>,
 ) -> Result<()> {
@@ -621,7 +692,7 @@ async fn execute(
         (ctx, env)
     };
     let rendered_script = if let Some(tera_ctx) = tera_ctx {
-        let mut tera = get_tera(Some(root));
+        let mut tera = get_tera(Some(project_root));
         render_str(&mut tera, run, &tera_ctx)?
     } else {
         run.to_string()
@@ -641,7 +712,7 @@ async fn execute(
     }
     env.insert(
         "MISE_PROJECT_ROOT".to_string(),
-        root.to_string_lossy().to_string(),
+        project_root.to_string_lossy().to_string(),
     );
     if let Some((Some(old), _new)) = hook_env::dir_change() {
         env.insert(
@@ -657,7 +728,7 @@ async fn execute(
     }
     env.insert(
         "MISE_CONFIG_ROOT".to_string(),
-        root.to_string_lossy().to_string(),
+        config_root.to_string_lossy().to_string(),
     );
     // Prevent recursive hook execution (e.g. hook runs `mise run` which spawns
     // a shell that activates mise and re-triggers hooks)
@@ -689,7 +760,7 @@ async fn execute(
             c.env_clear();
             c.envs(env.iter());
             if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
-                c.current_dir(root);
+                c.current_dir(project_root);
             }
             // Send the hook's stdout to mise's stderr (matching the duct
             // `stdout_to_stderr()` the non-cmd path uses) by handing the child a
@@ -708,7 +779,7 @@ async fn execute(
 
     let command = cmd(&shell[0], args).stdout_to_stderr().full_env(env);
     let command = if matches!(hook.hook, Hooks::Preinstall | Hooks::Postinstall) {
-        command.dir(root)
+        command.dir(project_root)
     } else {
         command
     };
@@ -719,7 +790,8 @@ async fn execute(
 async fn execute_task(
     config: &Arc<Config>,
     ts: &Toolset,
-    root: &Path,
+    config_root: &Path,
+    project_root: &Path,
     hook: &Hook,
     task_name: &str,
     installed_tools: Option<&[InstalledToolInfo]>,
@@ -739,11 +811,11 @@ async fn execute_task(
     }
     env.insert(
         "MISE_PROJECT_ROOT".to_string(),
-        root.to_string_lossy().to_string(),
+        project_root.to_string_lossy().to_string(),
     );
     env.insert(
         "MISE_CONFIG_ROOT".to_string(),
-        root.to_string_lossy().to_string(),
+        config_root.to_string_lossy().to_string(),
     );
     if let Some((Some(old), _new)) = hook_env::dir_change() {
         env.insert(
@@ -758,7 +830,7 @@ async fn execute_task(
     }
     env.insert("MISE_NO_HOOKS".to_string(), "1".to_string());
 
-    cmd(mise_bin, task_hook_args(root, hook.hook, task_name))
+    cmd(mise_bin, task_hook_args(project_root, hook.hook, task_name))
         .stdout_to_stderr()
         .full_env(env)
         .run()?;

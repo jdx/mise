@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use indexmap::IndexMap;
 use mlua::prelude::LuaError;
 use mlua::{FromLua, Lua, Table, Value};
 
@@ -9,8 +10,17 @@ use crate::runtime::Runtime;
 
 impl Plugin {
     pub async fn pre_install(&self, version: &str) -> Result<PreInstall> {
+        self.pre_install_with_options(version, Default::default())
+            .await
+    }
+
+    pub async fn pre_install_with_options(
+        &self,
+        version: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<PreInstall> {
         debug!("[vfox:{}] pre_install", self.name);
-        let ctx = self.context(Some(version.to_string()))?;
+        let ctx = self.context(Some(version.to_string()), options)?;
         let pre_install = self
             .eval_async(chunk! {
                 require "hooks/pre_install"
@@ -27,11 +37,22 @@ impl Plugin {
         os: &str,
         arch: &str,
     ) -> Result<PreInstall> {
+        self.pre_install_for_platform_with_options(version, os, arch, Default::default())
+            .await
+    }
+
+    pub async fn pre_install_for_platform_with_options(
+        &self,
+        version: &str,
+        os: &str,
+        arch: &str,
+        options: IndexMap<String, toml::Value>,
+    ) -> Result<PreInstall> {
         debug!(
             "[vfox:{}] pre_install_for_platform os={} arch={}",
             self.name, os, arch
         );
-        let ctx = self.context(Some(version.to_string()))?;
+        let ctx = self.context(Some(version.to_string()), options)?;
         let target_os = os.to_string();
         let target_arch = arch.to_string();
         let target_runtime = Runtime::with_platform(self.dir.clone(), os, arch);

@@ -17,7 +17,7 @@ echo 'tools.dummy = "latest"' >mise.toml
 cat <<EOF >mise.lock
 [[tools.dummy]]
 version = "3.0.0"
-backend = "core:dummy"
+backend = "asdf:dummy"
 EOF
 assert "mise i"
 assert "mise where dummy" "$MISE_DATA_DIR/installs/dummy/3.0.0"

@@ -37,9 +37,23 @@ assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-24.04"'
 assert_not_contains "cat mise.lock" 'precompiled = '
 assert_contains "cat mise.lock" "\"platforms.$CURRENT_PLATFORM\""
 assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-24\.04/OTP-28\.3\.tar\.gz"'
+assert_contains "awk '/\[tools.erlang.\"platforms.$CURRENT_PLATFORM\"\]/{f=1;next}/^\[/{f=0}f' mise.lock" 'checksum = "sha256:'
 assert_not_contains "cat mise.lock" 'install = "source"'
 
-assert "mise install --locked --dry-run"
+assert "mise install --locked"
+assert "mise exec erlang@28.3 -- erl -noshell -eval 'io:format(\"~s\", [erlang:system_info(otp_release)]).' -s init stop" "28"
+
+echo "=== corrupted precompiled checksum fails before extraction ==="
+mise uninstall erlang@28.3
+awk '
+    /^checksum = "sha256:/ {
+        print "checksum = \"sha256:0000000000000000000000000000000000000000000000000000000000000000\""
+        next
+    }
+    { print }
+' mise.lock >mise.lock.tmp && mv mise.lock.tmp mise.lock
+
+assert_fail "mise install --locked" "Checksum mismatch"
 
 echo "=== default fallback records the source artifact ==="
 rm -f mise.lock

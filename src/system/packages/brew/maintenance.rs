@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn linked_formulae_default_keeps_only_requested_formulae() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         write_keg(
@@ -407,7 +407,7 @@ mod tests {
 
     #[test]
     fn linked_formulae_infers_tapped_config_entries() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         write_keg(
@@ -441,7 +441,7 @@ mod tests {
 
     #[test]
     fn prune_plan_removes_unconfigured_linked_formulae() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         write_keg(
@@ -473,7 +473,7 @@ mod tests {
 
     #[test]
     fn prune_plan_uses_tap_qualified_keep_keys() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let keep = HashSet::from(["acme/tools/widget".to_string()]);
 
         {
@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn prune_plan_removes_formulae_only_needed_by_unconfigured_roots() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let readline = write_keg(
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn unlink_and_remove_keg_removes_links_and_keg() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let keg = write_keg(
@@ -605,7 +605,7 @@ mod tests {
     /// symlink chain and must still be removed, not left dangling
     #[test]
     fn unlink_and_remove_keg_removes_dylib_alias_links() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let keg = write_keg(
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn apply_prune_plan_dry_run_removes_nothing() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let keg = write_keg(

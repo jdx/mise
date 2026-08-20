@@ -32,6 +32,7 @@ use crate::dirs;
 use crate::file;
 use crate::hash::hash_to_str;
 use crate::path::PathExt;
+use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +115,7 @@ pub struct FileRequest {
     /// directory of the declaring config file — base dir for template
     /// functions like `exec` and `read_file`
     pub base: PathBuf,
+    pub origin: ResourceOrigin,
 }
 
 const SYMLINK_EACH_STATE_VERSION: u8 = 1;
@@ -150,8 +152,42 @@ pub enum FileState {
 /// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
 /// Keys union global -> local; a more local config overrides an entry for the
 /// same target. Malformed entries and unknown modes warn and are skipped.
-pub fn files_from_config(config: &Config) -> Vec<FileRequest> {
-    files_from_config_files(&config.config_files)
+pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+    let mut composed: IndexMap<PathBuf, FileRequest> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for request in files_from_config_files(config_files) {
+            if let Some(existing) = composed.get(&request.target) {
+                if file_requests_match(config, existing, &request) {
+                    continue;
+                }
+                bail!(
+                    "conflicting dotfile declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    request.target.display(),
+                    existing.origin.conflict_description(),
+                    request.origin.conflict_description(),
+                );
+            }
+            composed.insert(request.target.clone(), request);
+        }
+    }
+    Ok(composed.into_values().collect())
+}
+
+/// Returns whether sibling declarations produce the same whole-file resource.
+fn file_requests_match(config: &Config, first: &FileRequest, second: &FileRequest) -> bool {
+    first.target == second.target
+        && first.source == second.source
+        && first.content == second.content
+        && first.mode == second.mode
+        && first
+            .exclude
+            .iter()
+            .map(glob::Pattern::as_str)
+            .eq(second.exclude.iter().map(glob::Pattern::as_str))
+        && (first.mode != FileMode::Template
+            || first.base == second.base
+                && config.bootstrap_tera_ctx(&first.origin.config)
+                    == config.bootstrap_tera_ctx(&second.origin.config))
 }
 
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
@@ -164,6 +200,12 @@ pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
     // config_files is ordered local -> global; reverse for global -> local
     for (path, cf) in config_files.iter().rev() {
         let base = path.parent().unwrap_or(Path::new(".")).to_path_buf();
+        let origin = ResourceOrigin {
+            config: path.clone(),
+            config_root: cf.config_root(),
+            environment: crate::config::environments_for_config_path(path),
+            source: None,
+        };
         let Some(dotfiles) = cf.dotfiles_config() else {
             continue;
         };
@@ -171,7 +213,7 @@ pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
             let Some(entry) = file_entry_from_toml(&target_raw, value) else {
                 continue;
             };
-            merge_file_entry(target_raw, entry, &base, &mut merged);
+            merge_file_entry(target_raw, entry, &base, &origin, &mut merged);
         }
     }
     merged.into_values().collect()
@@ -208,6 +250,7 @@ fn merge_file_entry(
     target_raw: String,
     entry: FileTomlEntry,
     base: &Path,
+    origin: &ResourceOrigin,
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
     let (source, content, mode, exclude) = match entry {
@@ -272,6 +315,7 @@ fn merge_file_entry(
                 mode: FileMode::Content,
                 exclude: vec![],
                 base: base.to_path_buf(),
+                origin: origin.clone(),
             },
         );
         return;
@@ -293,6 +337,8 @@ fn merge_file_entry(
             }
         },
     };
+    let mut origin = origin.clone();
+    origin.source = Some(source.clone());
     for req in expand_request(
         target_raw,
         target,
@@ -300,6 +346,7 @@ fn merge_file_entry(
         mode,
         exclude,
         base.to_path_buf(),
+        origin,
     ) {
         merged.insert(req.target.clone(), req);
     }
@@ -399,6 +446,7 @@ fn expand_request(
     mode: FileMode,
     exclude: Vec<glob::Pattern>,
     base: PathBuf,
+    origin: ResourceOrigin,
 ) -> Vec<FileRequest> {
     if !is_glob_pattern(&source) {
         return vec![FileRequest {
@@ -409,6 +457,7 @@ fn expand_request(
             mode,
             exclude,
             base,
+            origin,
         }];
     }
 
@@ -452,6 +501,10 @@ fn expand_request(
             mode,
             exclude,
             base,
+            origin: ResourceOrigin {
+                source: Some(matches[0].clone()),
+                ..origin
+            },
         }];
     }
 
@@ -475,11 +528,15 @@ fn expand_request(
             Some(FileRequest {
                 target_raw: target_path.display_user().to_string(),
                 target: target_path,
-                source: matched_source,
+                source: matched_source.clone(),
                 content: None,
                 mode,
                 exclude: exclude.clone(),
                 base: base.clone(),
+                origin: ResourceOrigin {
+                    source: Some(matched_source.clone()),
+                    ..origin.clone()
+                },
             })
         })
         .collect()
@@ -663,8 +720,10 @@ fn check_rendered(req: &FileRequest, rendered: Option<&str>) -> Result<FileState
 }
 
 fn check_symlink(source: &Path, target: &Path) -> Result<FileState> {
-    // on Windows file "symlinks" are copies (see `link_file`)
-    if cfg!(windows) && source.is_file() {
+    // On Windows a file link is a real symlink when the privilege was available and a copy
+    // otherwise (see `link_path`), so which one is on disk decides how to read it. Only fall
+    // through to the copy comparison when it is not a symlink.
+    if cfg!(windows) && source.is_file() && !target.is_symlink() {
         return check_copy(source, target);
     }
     if target.is_symlink() {
@@ -793,7 +852,12 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
 pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
     let mut tera = crate::tera::get_tera(Some(&req.base));
-    let rendered = crate::tera::render_str(&mut tera, &raw, &config.tera_ctx).map_err(|err| {
+    let rendered = crate::tera::render_str(
+        &mut tera,
+        &raw,
+        config.bootstrap_tera_ctx(&req.origin.config),
+    )
+    .map_err(|err| {
         eyre::eyre!(
             "[dotfiles].\"{}\": failed to render template {}: {err}",
             req.target_raw,
@@ -1392,7 +1456,13 @@ fn plan_unapply_one<'a>(
     let mut conditional = false;
     let mut clear_symlink_each_state = false;
     match req.mode {
-        FileMode::Symlink if !(cfg!(windows) && req.source.is_file()) => {
+        // A Windows file link that came out as a copy is planned by content further down; one
+        // that is a real symlink belongs here, where the link target is what identifies it as
+        // ours. `plan_expected_content` requires a non-symlink, so routing a symlink there
+        // would make unapply demand `--force`.
+        FileMode::Symlink
+            if !(cfg!(windows) && req.source.is_file() && !req.target.is_symlink()) =>
+        {
             if req.target.is_symlink() {
                 let dest = std::fs::read_link(&req.target)?;
                 if opts.force || dest == req.source || points_at_same_file(&req.target, &req.source)
@@ -1832,7 +1902,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
     match req.mode {
         FileMode::Symlink => {
             remove_existing(&req.target)?;
-            link_path(&req.source, &req.target)?;
+            link_path(&req.source, &req.target, true)?;
         }
         FileMode::SymlinkEach => {
             // conflicts were vetted (or --force given): clear anything
@@ -1853,7 +1923,7 @@ fn apply_one(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                     file::create_dir_all(parent)?;
                 }
                 remove_existing(&target)?;
-                link_path(&source, &target)?;
+                link_path(&source, &target, false)?;
             }
             prune_stale_links(req)?;
         }
@@ -1951,14 +2021,26 @@ fn remove_existing(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn link_path(source: &Path, target: &Path) -> Result<()> {
-    if cfg!(windows) && source.is_file() {
-        // Windows file symlinks require elevation; junctions only work for
-        // directories — fall back to a copy like make_symlink_or_copy does
+/// `allow_windows_symlink` is false for `symlink-each`, which stays on the Windows copy path:
+/// its unapply planner is `#[cfg(not(windows))]`-guarded and falls through to the content
+/// comparison, which rejects a symlink — creating one there would make unapply demand `--force`.
+fn link_path(source: &Path, target: &Path, allow_windows_symlink: bool) -> Result<()> {
+    #[cfg(windows)]
+    if source.is_file() {
+        // Windows grants SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE when Developer Mode is
+        // on, so a file symlink is often creatable without elevation -- `windows_shim_mode`
+        // already relies on that. Try it rather than assume it fails. Junctions only cover
+        // directories, so a copy stays the fallback: it is what this did unconditionally
+        // before, and it keeps working where the privilege really is absent.
+        if allow_windows_symlink && std::os::windows::fs::symlink_file(source, target).is_ok() {
+            return Ok(());
+        }
         file::copy(source, target)?;
-    } else {
-        file::make_symlink(source, target)?;
+        return Ok(());
     }
+    #[cfg(not(windows))]
+    let _ = allow_windows_symlink;
+    file::make_symlink(source, target)?;
     Ok(())
 }
 
@@ -2111,9 +2193,18 @@ mod tests {
             target_raw: target.to_string_lossy().to_string(),
             target: target.to_path_buf(),
             source: source.to_path_buf(),
+            // These tests are about link and copy modes, which read the file at `source`. Inline
+            // content is the other kind of entry and has nothing to do with what they assert.
+            content: None,
             mode,
             exclude: vec![],
             base: source.parent().expect("source parent").to_path_buf(),
+            origin: ResourceOrigin {
+                config: PathBuf::from("/mise.toml"),
+                config_root: PathBuf::from("/"),
+                environment: vec![],
+                source: Some(source.to_path_buf()),
+            },
         }
     }
 
@@ -2205,6 +2296,66 @@ mod tests {
             find_conflicts(&symlink_req(&source, &target))?,
             vec![target]
         );
+        Ok(())
+    }
+
+    /// `link_path` produces either a symlink or a copy on Windows depending on a privilege the
+    /// test runner may or may not have, so these assert the property that has to hold for both:
+    /// whichever form lands, `check_symlink` reads it as Applied. Branching on what actually
+    /// happened rather than on an assumed privilege keeps this meaningful on a runner without
+    /// Developer Mode, where only the copy path is exercised.
+    #[test]
+    fn link_path_result_is_recognised_whichever_form_it_takes() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("linked");
+        file::write(&source, "contents")?;
+
+        link_path(&source, &target, true)?;
+
+        assert!(
+            target.exists() || target.is_symlink(),
+            "link_path produced nothing"
+        );
+        assert_eq!(check_symlink(&source, &target)?, FileState::Applied);
+        Ok(())
+    }
+
+    /// `symlink-each` opts out of the Windows symlink attempt, so it keeps producing a copy
+    /// there. Pinned because the two modes share `link_path`: making it symlink for everyone
+    /// would route `symlink-each` unapply through a planner that rejects symlinks.
+    #[cfg(windows)]
+    #[test]
+    fn symlink_each_still_copies_on_windows() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("copied");
+        file::write(&source, "contents")?;
+
+        link_path(&source, &target, false)?;
+
+        assert!(
+            !target.is_symlink(),
+            "symlink-each must not create a symlink"
+        );
+        assert_eq!(file::read_to_string(&target)?, "contents");
+        Ok(())
+    }
+
+    /// The control for the test above: a target that is neither a copy of the source nor a link
+    /// to it must not read as Applied, or the assertion there would hold for the wrong reason.
+    #[test]
+    fn check_symlink_rejects_an_unrelated_file() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("dotfile");
+        let target = dir.path().join("unrelated");
+        file::write(&source, "contents")?;
+        file::write(&target, "something else")?;
+
+        assert!(!matches!(
+            check_symlink(&source, &target)?,
+            FileState::Applied
+        ));
         Ok(())
     }
 }

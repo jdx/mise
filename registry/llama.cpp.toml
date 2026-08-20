@@ -1,5 +1,5 @@
 description = "LLM inference in C/C++"
-test = { cmd = "llama-cli --version", expected = "version: {{version}}" }
+test = { cmd = "llama-cli --version", expected = "build {{version}}" }
 version_order = "source"
 
 bins = [

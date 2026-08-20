@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+mkdir -p .mise/conf.d
+
+cat >.mise/conf.d/01-base.toml <<'EOF'
+[env]
+CONFD_ORDER = "base"
+CONFD_FROM_VAR = "{{ vars.fragment }}"
+
+[vars]
+fragment = "loaded"
+
+[tools]
+dummy = "1.0.0"
+
+[tasks.confd]
+description = "base fragment"
+run = 'echo "$CONFD_ORDER:$CONFD_FROM_VAR"'
+EOF
+
+cat >.mise/conf.d/02-override.toml <<'EOF'
+[env]
+CONFD_ORDER = "override"
+
+[tasks.confd]
+description = "override fragment"
+run = 'echo "$CONFD_ORDER:$CONFD_FROM_VAR"'
+EOF
+
+cat >.mise/conf.d/.hidden.toml <<'EOF'
+[env]
+HIDDEN_FRAGMENT = "unexpected"
+EOF
+
+assert_contains "mise env -s bash" "CONFD_ORDER=override"
+assert_contains "mise env -s bash" "CONFD_FROM_VAR=loaded"
+assert_contains "mise config ls" ".mise/conf.d/01-base.toml"
+assert_contains "mise config ls" ".mise/conf.d/02-override.toml"
+assert_not_contains "mise config ls" ".mise/conf.d/.hidden.toml"
+assert_not_contains "mise env -s bash" "HIDDEN_FRAGMENT"
+assert_contains "mise config ls --tracked-configs" ".mise/conf.d/01-base.toml"
+assert_contains "mise config ls" "dummy"
+assert_contains "mise tasks" "confd  override fragment"
+assert "mise run --skip-tools confd" "override:loaded"
+
+# The regular .mise config has higher precedence than every fragment.
+cat >.mise/config.toml <<'EOF'
+[env]
+CONFD_ORDER = "config"
+EOF
+assert_contains "mise env -s bash" "CONFD_ORDER=config"
+assert "mise run --skip-tools confd" "config:loaded"
+
+# All fragments in .mise/conf.d share the .mise/mise.lock destination.
+export MISE_LOCKFILE=1
+output=$(mise lock --platform linux-x64 --dry-run 2>&1)
+assert_contains "echo '$output'" ".mise/mise.lock"
+assert_not_contains "echo '$output'" ".mise/conf.d/mise.lock"
+
+# Drop-ins are never implicit write targets.
+mkdir -p write-target/.mise/conf.d
+cat >write-target/.mise/conf.d/10-drop-in.toml <<'EOF'
+[env]
+DROP_IN_ONLY = "yes"
+EOF
+mise use --path write-target dummy@system
+assert_contains "cat write-target/mise.toml" 'dummy = "system"'
+assert_not_contains "cat write-target/.mise/conf.d/10-drop-in.toml" 'dummy = "system"'
+
+# Explicit monorepo roots recognize projects whose only config is a fragment.
+mkdir -p monorepo/packages/app/.mise/conf.d
+cat >monorepo/mise.toml <<'EOF'
+min_version = "2026.1.0"
+monorepo_root = true
+
+[monorepo]
+config_roots = ["packages/*"]
+EOF
+cat >monorepo/packages/app/.mise/conf.d/tasks.toml <<'EOF'
+[tasks.hello]
+run = "echo fragment-root"
+EOF
+assert_contains "cd monorepo && mise tasks --all" "app:hello"
+
+# Deprecated automatic discovery uses the same glob-aware root detection.
+cat >monorepo/mise.toml <<'EOF'
+min_version = "2026.1.0"
+monorepo_root = true
+EOF
+assert_contains "cd monorepo && mise tasks --all" "app:hello"

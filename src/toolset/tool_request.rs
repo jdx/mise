@@ -20,7 +20,10 @@ use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
 use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
 use crate::{backend, lockfile};
-use crate::{backend::ABackend, config::Config};
+use crate::{
+    backend::ABackend,
+    config::{Config, Settings},
+};
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub enum ToolRequest {
@@ -256,6 +259,27 @@ impl ToolRequest {
             | Self::Path { options: o, .. }
             | Self::System { options: o, .. } => o.rolling,
         }
+    }
+
+    /// Rejects install options that can execute configuration-provided code in safe mode.
+    pub fn ensure_safe_install_options(&self) -> Result<()> {
+        if !Settings::safe_mode() {
+            return Ok(());
+        }
+        let options = self.options();
+        if options.get("postinstall").is_some() {
+            Settings::ensure_not_safe(&format!(
+                "running tool-level postinstall hooks for {}",
+                self.ba().short
+            ))?;
+        }
+        if !options.core.install_env.is_empty() {
+            Settings::ensure_not_safe(&format!(
+                "using tool-level install_env for {}",
+                self.ba().short
+            ))?;
+        }
+        Ok(())
     }
 
     pub async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {

@@ -6,7 +6,7 @@ use crate::{dirs, env, file};
 #[allow(unused_imports)]
 use confique::env::parse::{list_by_colon, list_by_comma};
 use confique::{Config, Layer};
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use indexmap::{IndexMap, indexmap};
 use itertools::Itertools;
 use path_absolutize::Absolutize;
@@ -592,6 +592,70 @@ fn resolve_aqua_registry_paths(settings: &mut toml::Table, path: &Path) {
     }
 }
 
+/// Resolve age identity paths while the settings file that declared them is
+/// still known. Once settings layers are merged, a relative `PathBuf` no
+/// longer carries enough information to distinguish two config roots.
+fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
+    let Some(age) = settings.get_mut("age").and_then(toml::Value::as_table_mut) else {
+        return Ok(());
+    };
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let mut tera = crate::tera::get_miserc_tera();
+    let mut context = tera::Context::new();
+    context.insert("env", &*env::PRISTINE_ENV);
+    context.insert("config_root", &config_root);
+    if let Ok(cwd) = std::env::current_dir() {
+        context.insert("cwd", &cwd);
+    }
+    context.insert("xdg_cache_home", &*env::XDG_CACHE_HOME);
+    context.insert("xdg_config_home", &*env::XDG_CONFIG_HOME);
+    context.insert("xdg_data_home", &*env::XDG_DATA_HOME);
+    context.insert("xdg_state_home", &*env::XDG_STATE_HOME);
+
+    let mut resolve = |setting: &str, target: &mut toml::Value| -> Result<()> {
+        let Some(value) = target.as_str() else {
+            return Ok(());
+        };
+        let rendered = if crate::tera::contains_template_syntax(value) {
+            crate::tera::render_str(&mut tera, value, &context).map_err(|err| {
+                eyre!(
+                    "failed to render settings.age.{setting} in {}: {err}",
+                    file::display_path(path)
+                )
+            })?
+        } else {
+            value.to_string()
+        };
+        let rendered_path = Path::new(&rendered);
+        let resolved = if rendered_path.is_absolute()
+            || rendered_path == Path::new("~")
+            || rendered_path.starts_with("~/")
+        {
+            rendered_path.to_path_buf()
+        } else {
+            let joined = config_root.join(rendered_path);
+            joined
+                .absolutize()
+                .map(|p| p.into_owned())
+                .unwrap_or(joined)
+        };
+        *target = toml::Value::String(resolved.to_string_lossy().into_owned());
+        Ok(())
+    };
+
+    if let Some(key_file) = age.get_mut("key_file") {
+        resolve("key_file", key_file)?;
+    }
+    for setting in ["identity_files", "ssh_identity_files"] {
+        if let Some(values) = age.get_mut(setting).and_then(toml::Value::as_array_mut) {
+            for value in values {
+                resolve(setting, value)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 impl Settings {
     const UNIX_DEFAULT_FILE_SHELL_ARGS: &'static str = "sh";
     const UNIX_DEFAULT_INLINE_SHELL_ARGS: &'static str = "sh -c -o errexit";
@@ -966,6 +1030,7 @@ impl Settings {
             // After the strips, so a setting that will not survive them is
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
+            resolve_age_paths(settings, path)?;
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -2102,6 +2167,87 @@ mod tests {
         let mut settings = toml::from_str::<toml::Table>("offline = true").unwrap();
         resolve_aqua_registry_paths(&mut settings, &dir.path().join(".mise.toml"));
         assert_eq!(settings["offline"].as_bool(), Some(true));
+    }
+
+    #[test]
+    fn age_paths_resolve_against_the_declaring_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [age]
+            key_file = "keys/age.txt"
+            identity_files = ["identities/first.txt", "{{ config_root }}/second.txt"]
+            ssh_identity_files = ["ssh/id_ed25519"]
+            "#,
+        )
+        .unwrap();
+
+        resolve_age_paths(&mut settings, &config_path).unwrap();
+
+        assert_eq!(
+            settings["age"]["key_file"].as_str(),
+            Some(dir.path().join("keys/age.txt").to_str().unwrap())
+        );
+        assert_eq!(
+            settings["age"]["identity_files"][0].as_str(),
+            Some(dir.path().join("identities/first.txt").to_str().unwrap())
+        );
+        assert_eq!(
+            Path::new(settings["age"]["identity_files"][1].as_str().unwrap()),
+            dir.path().join("second.txt")
+        );
+        assert_eq!(
+            settings["age"]["ssh_identity_files"][0].as_str(),
+            Some(dir.path().join("ssh/id_ed25519").to_str().unwrap())
+        );
+    }
+
+    #[test]
+    fn age_paths_preserve_absolute_and_home_relative_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let absolute = dir.path().join("absolute.txt");
+        let mut age = toml::Table::new();
+        age.insert(
+            "key_file".into(),
+            toml::Value::String(absolute.to_string_lossy().into_owned()),
+        );
+        age.insert(
+            "identity_files".into(),
+            toml::Value::Array(vec![toml::Value::String("~/identity.txt".into())]),
+        );
+        let mut settings = toml::Table::new();
+        settings.insert("age".into(), toml::Value::Table(age));
+
+        resolve_age_paths(&mut settings, &dir.path().join("mise.toml")).unwrap();
+
+        assert_eq!(
+            settings["age"]["key_file"].as_str(),
+            Some(absolute.to_str().unwrap())
+        );
+        assert_eq!(
+            settings["age"]["identity_files"][0].as_str(),
+            Some("~/identity.txt")
+        );
+    }
+
+    #[test]
+    fn invalid_age_path_template_names_the_setting_and_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("mise.toml");
+        let mut settings = toml::from_str::<toml::Table>(
+            r#"
+            [age]
+            key_file = "{{ missing_variable }}"
+            "#,
+        )
+        .unwrap();
+
+        let err = resolve_age_paths(&mut settings, &config_path)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("settings.age.key_file"), "{err}");
+        assert!(err.contains("mise.toml"), "{err}");
     }
 
     /// A drive-letter path parses as a URL whose scheme is one character, so it

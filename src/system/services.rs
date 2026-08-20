@@ -5,8 +5,8 @@ use eyre::{Result, bail, eyre};
 use indexmap::{IndexMap, IndexSet};
 use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
+use crate::config::{Config, ConfigMap};
+use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -26,7 +26,7 @@ pub enum ServiceChangeAction {
     None,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct ServiceTomlConfig {
     #[serde(default)]
     pub state: ServiceState,
@@ -57,6 +57,7 @@ pub struct ServiceRequest {
     pub enabled: bool,
     pub masked: bool,
     pub on_change: ServiceChangeAction,
+    pub origin: Option<ResourceOrigin>,
     inspection: Option<ServiceInspection>,
 }
 
@@ -139,18 +140,50 @@ struct ServicePlan {
 }
 
 pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+    let mut composed: IndexMap<String, (ServiceTomlConfig, ResourceOrigin)> = IndexMap::new();
+    for config_files in config.bootstrap_config_maps() {
+        for (name, declaration) in services_from_config_files(config_files) {
+            if let Some(existing) = composed.get(&name) {
+                if existing.0 == declaration.0 {
+                    continue;
+                }
+                bail!(
+                    "conflicting bootstrap service declarations for {name}\n\n  first:\n    {}\n\n  second:\n    {}",
+                    existing.1.conflict_description(),
+                    declaration.1.conflict_description(),
+                );
+            }
+            composed.insert(name, declaration);
+        }
+    }
+    composed
+        .into_iter()
+        .map(|(name, (config, origin))| {
+            ServiceRequest::from_toml_with_origin(name, config, Some(origin))
+        })
+        .collect()
+}
+
+fn services_from_config_files(
+    config_files: &ConfigMap,
+) -> IndexMap<String, (ServiceTomlConfig, ResourceOrigin)> {
     let mut merged = IndexMap::new();
-    for cf in config.config_files.values() {
+    for (path, cf) in config_files {
         if let Some(bootstrap) = cf.bootstrap_config() {
+            let origin = ResourceOrigin {
+                config: path.clone(),
+                config_root: cf.config_root(),
+                environment: crate::config::environments_for_config_path(path),
+                source: None,
+            };
             for (name, service) in bootstrap.services {
-                merged.entry(name).or_insert(service);
+                merged
+                    .entry(name)
+                    .or_insert_with(|| (service, origin.clone()));
             }
         }
     }
     merged
-        .into_iter()
-        .map(|(name, config)| ServiceRequest::from_toml(name, config))
-        .collect()
 }
 
 pub fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
@@ -181,7 +214,16 @@ pub fn inspect_requests(requests: &mut [ServiceRequest]) {
 }
 
 impl ServiceRequest {
+    #[cfg(test)]
     fn from_toml(name: String, config: ServiceTomlConfig) -> Result<Self> {
+        Self::from_toml_with_origin(name, config, None)
+    }
+
+    fn from_toml_with_origin(
+        name: String,
+        config: ServiceTomlConfig,
+        origin: Option<ResourceOrigin>,
+    ) -> Result<Self> {
         let unit = normalize_unit_name(&name)?;
         if config.masked && config.state == ServiceState::Running {
             bail!("bootstrap service '{name}' cannot be both masked and running");
@@ -196,6 +238,7 @@ impl ServiceRequest {
             enabled: config.enabled,
             masked: config.masked,
             on_change: config.on_change,
+            origin,
             inspection: None,
         })
     }
@@ -204,9 +247,14 @@ impl ServiceRequest {
         let id = ResourceId::new("service", &self.name);
         let desired = self.desired();
         let Some(inspection) = &self.inspection else {
-            return ResourcePlan::new(id, "not inspected", desired, ResourceAction::Unknown);
+            return self.with_origin(ResourcePlan::new(
+                id,
+                "not inspected",
+                desired,
+                ResourceAction::Unknown,
+            ));
         };
-        match inspection {
+        let plan = match inspection {
             ServiceInspection::Missing => {
                 ResourcePlan::new(id, "unit not found", desired, ResourceAction::Unknown)
             }
@@ -247,6 +295,14 @@ impl ServiceRequest {
                     },
                 )
             }
+        };
+        self.with_origin(plan)
+    }
+
+    fn with_origin(&self, plan: ResourcePlan) -> ResourcePlan {
+        match &self.origin {
+            Some(origin) => plan.with_origin(origin.clone()),
+            None => plan,
         }
     }
 
@@ -335,6 +391,7 @@ impl ServiceRequest {
             enabled: action.enabled,
             masked: action.masked,
             on_change: action.on_change,
+            origin: None,
             inspection: None,
         }
     }

@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# A plugin may list several candidate package names for one manager, because
+# the same capability is packaged under different names across distro releases
+# (apt renamed libaio1 to libaio1t64 in the 64-bit time_t transition). mise
+# resolves to the name the manager actually has, so plugins never probe the
+# host while their metadata loads.
+#
+# apt is the manager with an availability query, so the resolution assertions
+# only run where apt-cache exists. Everywhere else the first candidate is used,
+# which is the behavior from before candidate lists.
+if ! command -v apt-cache >/dev/null 2>&1; then
+  echo "skipping: no apt-cache on this host"
+  exit 0
+fi
+
+PLUGIN_DIR="$MISE_DATA_DIR/plugins/candidatetest"
+mkdir -p "$PLUGIN_DIR/hooks"
+
+cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
+PLUGIN = {}
+PLUGIN.name = "candidatetest"
+PLUGIN.version = "0.1.0"
+PLUGIN.description = "package candidate test plugin"
+PLUGIN.systemDependencies = {
+	-- The stale name is listed FIRST: picking it would prove resolution did
+	-- not happen. `bash` is the candidate apt actually has.
+	{ bin = "definitely-missing-binary-xyz",
+	  packages = { apt = { "mise-nonexistent-pkg-xyz", "bash" } } },
+}
+LUA
+
+cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
+function PLUGIN:Available(ctx)
+	return { { version = "1.0.0" } }
+end
+LUA
+
+cat >"$PLUGIN_DIR/hooks/pre_install.lua" <<'LUA'
+function PLUGIN:PreInstall(ctx)
+	-- fails offline and deterministically, after the pre-flight has run
+	return { version = ctx.version, url = "file:///nonexistent/candidatetest.tar.gz" }
+end
+LUA
+
+out="$(MISE_SYSTEM_DEPS=warn mise install candidatetest@1.0.0 2>&1 || true)"
+assert_contains_text "$out" "install with: sudo apt-get install -y bash"
+assert_not_contains_text "$out" "mise-nonexistent-pkg-xyz"

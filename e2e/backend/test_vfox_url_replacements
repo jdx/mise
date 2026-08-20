@@ -5,6 +5,7 @@ set -euo pipefail
 PLUGIN_DIR="$PWD/vfox-url-replacements"
 SERVER_ROOT="$PWD/server"
 PORT_FILE="$PWD/server-port"
+NETRC_FILE="$PWD/netrc"
 mkdir -p "$PLUGIN_DIR/hooks" "$SERVER_ROOT/archive/bin"
 
 cat >"$PLUGIN_DIR/metadata.lua" <<'LUA'
@@ -76,8 +77,26 @@ import sys
 
 root, port_file = sys.argv[1:]
 os.chdir(root)
+
+class AuthenticatedHandler(http.server.SimpleHTTPRequestHandler):
+    def authenticate(self):
+        if self.headers.get("Authorization") == "Basic bWlycm9yOnNlY3JldA==":
+            return True
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="vfox-test"')
+        self.end_headers()
+        return False
+
+    def do_GET(self):
+        if self.authenticate():
+            super().do_GET()
+
+    def do_HEAD(self):
+        if self.authenticate():
+            super().do_HEAD()
+
 socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler) as httpd:
+with socketserver.TCPServer(("127.0.0.1", 0), AuthenticatedHandler) as httpd:
     with open(port_file, "w") as file:
         file.write(str(httpd.server_address[1]))
     httpd.serve_forever()
@@ -89,7 +108,17 @@ trap cleanup EXIT
 wait_for_file "$PORT_FILE" "vfox URL replacement server port" 30 "$SERVER_PID"
 SERVER_PORT=$(cat "$PORT_FILE")
 
+cat >"$NETRC_FILE" <<'EOF'
+machine 127.0.0.1
+  login mirror
+  password secret
+EOF
+chmod 600 "$NETRC_FILE"
+
 cat >mise.toml <<EOF
+[settings]
+netrc_file = "$NETRC_FILE"
+
 [settings.url_replacements]
 "https://upstream.invalid/tool.tar.gz" = "http://127.0.0.1:$SERVER_PORT/mirrored-artifact"
 "https://upstream.invalid/" = "http://127.0.0.1:$SERVER_PORT/"

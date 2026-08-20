@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::config::Config;
 use crate::file;
+use crate::file::display_path;
 use crate::task::Task;
 use clap::ValueHint;
 use eyre::bail;
@@ -8,7 +9,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use xx::file::display_path;
 
 /// Generates shims to run mise tasks
 ///
@@ -46,6 +46,7 @@ impl TaskStubs {
                     path,
                     output: self.generate(task)?,
                     legacy_output: self.generate_legacy(task)?,
+                    launcher: self.generate_launcher(task),
                 })
             })
             .collect::<Result<Vec<_>>>()?;
@@ -53,19 +54,44 @@ impl TaskStubs {
 
         for migration in migrations {
             match migration {
-                StubMigration::File(path) => file::remove_file(path)?,
+                StubMigration::File(path) => {
+                    // The launcher goes with the stub it belongs to, or it keeps running a task
+                    // that no longer has a stub here. Only one mise wrote is removed, so a
+                    // hand-written .cmd is left alone.
+                    remove_generated_launcher(&path)?;
+                    file::remove_file(path)?
+                }
                 StubMigration::Directory(path) => file::remove_all(path)?,
             }
         }
-        for stub in stubs {
+        for stub in &stubs {
             if let Some(parent) = stub.path.parent() {
                 file::create_dir_all(parent)?;
             }
             file::write(&stub.path, &stub.output)?;
             file::make_executable(&stub.path)?;
+            // Windows will not execute the `#!/bin/sh` stub, so it needs something it can launch.
+            // Written on every host: stubs are committed, and the contributor who runs one on
+            // Windows is not the person who generated it.
+            if let Some(launcher_path) = super::windows_launcher_path(&stub.path) {
+                file::write(&launcher_path, &stub.launcher)?;
+            }
             miseprintln!("Wrote to {}", display_path(&stub.path));
         }
         Ok(())
+    }
+
+    /// The Windows launcher body for `task`, mirroring what the stub itself runs.
+    ///
+    /// `mise_bin` is embedded as given: with the default `mise` it resolves off PATH, and a
+    /// `--mise-bin` pointing at a `mise generate bootstrap` script will start working here as soon
+    /// as that script gains a Windows form of its own.
+    fn generate_launcher(&self, task: &Task) -> String {
+        let mise_bin = super::cmd_quote(&self.mise_bin.to_string_lossy());
+        // The task name goes through the same quoting: it is interpolated into the same cmd line,
+        // so a `&` or `%` in it breaks the launcher exactly the way one in the path does.
+        let display_name = super::cmd_quote(&task.display_name);
+        super::windows_launcher_body(&format!("{mise_bin} run {display_name}"))
     }
 
     fn generate(&self, task: &Task) -> Result<String> {
@@ -102,6 +128,27 @@ struct TaskStub<'a> {
     path: PathBuf,
     output: String,
     legacy_output: String,
+    launcher: String,
+}
+
+/// Remove the Windows launcher beside a stub that is being migrated away.
+///
+/// Recognised by [`super::is_generated_launcher`] rather than by comparing against the launchers
+/// this run would produce. Those bodies embed `--mise-bin` and the task name, so a run that changes
+/// either would not recognise the launcher it wrote last time and would leave `<task>.cmd` behind,
+/// still runnable and still pointing at the old mise. Anything mise did not write stays put, and a
+/// missing file is fine: most stubs never had one.
+fn remove_generated_launcher(stub_path: &Path) -> Result<()> {
+    let Some(launcher) = super::windows_launcher_path(stub_path) else {
+        return Ok(());
+    };
+    let Ok(existing) = file::read_to_string(&launcher) else {
+        return Ok(());
+    };
+    if super::is_generated_launcher(&existing) {
+        file::remove_file(&launcher)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -193,6 +240,7 @@ fn validate_stub_paths(dir: &Path, stubs: &[TaskStub<'_>]) -> Result<Vec<StubMig
             Err(err) if matches!(err.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {}
             Err(err) => return Err(err.into()),
         }
+        validate_launcher_path(stub)?;
         for parent in stub.path.ancestors().skip(1) {
             match fs::symlink_metadata(parent) {
                 Ok(metadata)
@@ -212,6 +260,35 @@ fn validate_stub_paths(dir: &Path, stubs: &[TaskStub<'_>]) -> Result<Vec<StubMig
         }
     }
     Ok(migrations.into_iter().collect())
+}
+
+/// Refuse to replace a `.cmd` beside a stub that mise did not write.
+///
+/// The stub path is the user's choice, so `bin/<task>.cmd` is a name a project may already be
+/// using for a script of its own — and unlike the stub itself, nothing about the name says mise
+/// owns it. Checked during validation rather than at the write, so a launcher that is not ours
+/// stops the whole run instead of leaving a half-generated `bin/`.
+fn validate_launcher_path(stub: &TaskStub<'_>) -> Result<()> {
+    let Some(launcher) = super::windows_launcher_path(&stub.path) else {
+        return Ok(());
+    };
+    match fs::symlink_metadata(&launcher) {
+        Ok(metadata) if metadata.file_type().is_file() => {
+            if !super::is_generated_launcher(&file::read_to_string(&launcher)?) {
+                bail!(
+                    "cannot write Windows launcher because {} is not a generated launcher",
+                    display_path(&launcher)
+                );
+            }
+        }
+        Ok(_) => bail!(
+            "cannot write Windows launcher because {} is not a regular file",
+            display_path(&launcher)
+        ),
+        Err(err) if matches!(err.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {}
+        Err(err) => return Err(err.into()),
+    }
+    Ok(())
 }
 
 fn validate_generated_stub_directory(path: &Path, expected: &str, task: &Task) -> Result<()> {
@@ -249,6 +326,11 @@ fn validate_generated_stub_tree(path: &Path) -> Result<usize> {
             && is_generated_task_stub(&file::read_to_string(&entry_path)?)
         {
             files += 1;
+        } else if metadata.file_type().is_file()
+            && super::is_generated_launcher(&file::read_to_string(&entry_path)?)
+        {
+            // Our own Windows launcher. Not counted towards `files`: a directory holding nothing
+            // but launchers has no stubs left and should still be reported as empty.
         } else {
             bail!(
                 "cannot replace task stub directory because {} is not a generated task stub",

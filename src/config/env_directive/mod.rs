@@ -322,6 +322,11 @@ pub struct EnvResults {
     pub env_scripts: Vec<PathBuf>,
     pub redactions: Vec<String>,
     pub redaction_exclusions: BTreeSet<String>,
+    /// Keys whose effective value comes from the caller's environment rather than from
+    /// [`Self::env`]: `required` directives validate without assigning, and `default`
+    /// directives yield to a value the caller already set. Redaction resolves these keys
+    /// against the caller environment; only names are recorded, never values.
+    pub caller_env_keys: BTreeSet<String>,
     pub tool_add_paths: Vec<PathBuf>,
     /// Files to watch for cache invalidation (from modules and _.source directives)
     pub watch_files: Vec<PathBuf>,
@@ -387,6 +392,23 @@ impl EnvResults {
                 self.redaction_exclusions.remove(key);
             }
         }
+    }
+
+    /// Value map for [`crate::config::Config::add_redactions_excluding`]: the values this
+    /// resolution assigned, plus caller-supplied values for [`Self::caller_env_keys`], which
+    /// are absent from [`Self::env`] because those directives never assign.
+    pub fn redactable_env(&self, caller_env: &EnvMap) -> EnvMap {
+        let mut out: EnvMap = self
+            .env
+            .iter()
+            .map(|(k, (v, _))| (k.clone(), v.clone()))
+            .collect();
+        for k in &self.caller_env_keys {
+            if let Some(v) = caller_env.get(k) {
+                out.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+        }
+        out
     }
 
     pub async fn resolve(
@@ -547,6 +569,7 @@ impl EnvResults {
                         if redact.unwrap_or(false) {
                             r.redactions.push(k.clone());
                         }
+                        r.caller_env_keys.insert(k.clone());
                         continue;
                     }
 
@@ -569,21 +592,32 @@ impl EnvResults {
                 EnvDirective::Rm(k, _opts) => {
                     env.shift_remove(&k);
                     r.redaction_exclusions.remove(&k);
+                    // The key is gone from the environment, so its caller value is no longer
+                    // reachable by the task. Leaving it here would let `redactable_env` resolve
+                    // it anyway and register a pattern that rewrites unrelated output.
+                    r.caller_env_keys.remove(&k);
                     r.env_remove.insert(k);
                 }
                 EnvDirective::Required(k, _opts) => {
-                    // Env required directives only validate. Var required directives also surface
-                    // process environment values so `{{vars.KEY}}` can render.
-                    if resolve_opts.vars {
-                        if redact.unwrap_or(false) {
-                            r.redactions.push(k.clone());
-                        }
-                        if !vars.contains_key(&k)
-                            && let Some(v) = required_env.get(&k)
-                        {
-                            r.track_redaction_override(&k, redact);
-                            r.vars.insert(k, (v.clone(), source.clone()));
-                        }
+                    // Required directives only validate; they never assign. Record the key so
+                    // redaction can resolve it against the caller environment.
+                    r.caller_env_keys.insert(k.clone());
+                    // A directive that assigns nothing expresses no redaction opinion unless
+                    // `redact` is set explicitly, so an exclusion from an earlier assignment
+                    // survives a later bare `required = true`.
+                    if redact.is_some() {
+                        r.track_redaction_override(&k, redact);
+                    }
+                    if redact == Some(true) {
+                        r.redactions.push(k.clone());
+                    }
+                    // Var required directives also surface process environment values so
+                    // `{{vars.KEY}}` can render.
+                    if resolve_opts.vars
+                        && !vars.contains_key(&k)
+                        && let Some(v) = required_env.get(&k)
+                    {
+                        r.vars.insert(k, (v.clone(), source.clone()));
                     }
                 }
                 EnvDirective::Age {
@@ -1324,5 +1358,247 @@ mod tests {
         .await
         .unwrap();
         assert!(!removed.redaction_exclusions.contains("TOKEN"));
+    }
+
+    /// A `required` directive validates that the caller set a key but must never assign it
+    /// into `env` — otherwise the value would leak into anything that reads `EnvResults::env`
+    /// directly. Redaction instead resolves the value from the caller environment via
+    /// `caller_env_keys` and `redactable_env`.
+    #[tokio::test]
+    async fn test_required_records_caller_key_without_assigning() {
+        let initial = EnvMap::from_iter([("ASC_KEY_ID".to_string(), "caller_key".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(true),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![(
+                EnvDirective::Required("ASC_KEY_ID".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.env.contains_key("ASC_KEY_ID"));
+        assert!(results.caller_env_keys.contains("ASC_KEY_ID"));
+        assert!(results.redactions.contains(&"ASC_KEY_ID".to_string()));
+        assert_eq!(
+            results.redactable_env(&initial).get("ASC_KEY_ID"),
+            Some(&"caller_key".to_string())
+        );
+    }
+
+    /// A key removed by `_.rm` is unreachable by the task, so its caller value must stop being
+    /// resolvable for redaction. Otherwise `redactable_env` would keep supplying it and register
+    /// a pattern for a variable the config explicitly removed — over-redaction that rewrites
+    /// unrelated output when the value is short.
+    #[tokio::test]
+    async fn test_rm_clears_a_recorded_caller_key() {
+        let initial = EnvMap::from_iter([
+            ("ASC_KEY_ID".to_string(), "caller_key".to_string()),
+            ("DEF_TOKEN".to_string(), "caller_default".to_string()),
+        ]);
+        let config = Config::get().await.unwrap();
+        let redacted = EnvDirectiveOptions {
+            redact: Some(true),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![
+                (
+                    EnvDirective::Required("ASC_KEY_ID".into(), redacted.clone()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Default(
+                        "DEF_TOKEN".into(),
+                        "fallback".into(),
+                        EnvDirectiveOptions {
+                            redact: Some(true),
+                            ..Default::default()
+                        },
+                    ),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Rm("ASC_KEY_ID".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+                (
+                    EnvDirective::Rm("DEF_TOKEN".into(), Default::default()),
+                    PathBuf::from("/config"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.caller_env_keys.contains("ASC_KEY_ID"));
+        assert!(!results.caller_env_keys.contains("DEF_TOKEN"));
+        let redactable = results.redactable_env(&initial);
+        assert!(!redactable.contains_key("ASC_KEY_ID"));
+        assert!(!redactable.contains_key("DEF_TOKEN"));
+    }
+
+    /// `required = true, redact = false` on a directive that assigns nothing must still record
+    /// an exclusion, or a global `redactions` pattern would redact the caller's value anyway.
+    #[tokio::test]
+    async fn test_required_redact_false_excludes_key() {
+        let initial = EnvMap::from_iter([("ASC_KEY_ID".to_string(), "caller_key".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(false),
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![(
+                EnvDirective::Required("ASC_KEY_ID".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(results.redaction_exclusions.contains("ASC_KEY_ID"));
+        assert!(!results.redactions.contains(&"ASC_KEY_ID".to_string()));
+    }
+
+    /// A bare `required = true` with no `redact` of its own assigns nothing, so it expresses no
+    /// redaction opinion and must not clear an exclusion an earlier directive set. Contrast
+    /// `test_reassignment_and_remove_clear_redaction_exclusion`, where a later *assignment*
+    /// (`Val`) does clear it.
+    #[tokio::test]
+    async fn test_bare_required_preserves_earlier_redaction_exclusion() {
+        let config = Config::get().await.unwrap();
+        let initial = EnvMap::new();
+        let excluded = EnvDirectiveOptions {
+            redact: Some(false),
+            ..Default::default()
+        };
+        let required = EnvDirectiveOptions {
+            required: RequiredValue::True,
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![
+                (
+                    EnvDirective::Val("TOKEN".into(), "value".into(), excluded),
+                    PathBuf::from("/global"),
+                ),
+                (
+                    EnvDirective::Required("TOKEN".into(), required),
+                    PathBuf::from("/local"),
+                ),
+            ],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(results.redaction_exclusions.contains("TOKEN"));
+    }
+
+    /// `redactable_env` must prefer an assigned value over a caller-supplied one for a key
+    /// present in both `env` and `caller_env_keys`, and must skip caller keys the caller never
+    /// actually set (no `ABSENT` in the caller environment).
+    #[test]
+    fn test_redactable_env_prefers_assigned_value() {
+        let mut results = EnvResults {
+            caller_env_keys: BTreeSet::from([
+                "K".to_string(),
+                "ONLY_CALLER".to_string(),
+                "ABSENT".to_string(),
+            ]),
+            ..Default::default()
+        };
+        results.env.insert(
+            "K".to_string(),
+            ("assigned".to_string(), PathBuf::from("/config")),
+        );
+
+        let caller_env = EnvMap::from_iter([
+            ("K".to_string(), "caller".to_string()),
+            ("ONLY_CALLER".to_string(), "caller_only".to_string()),
+        ]);
+
+        let redactable = results.redactable_env(&caller_env);
+        assert_eq!(redactable.get("K"), Some(&"assigned".to_string()));
+        assert_eq!(
+            redactable.get("ONLY_CALLER"),
+            Some(&"caller_only".to_string())
+        );
+        assert!(!redactable.contains_key("ABSENT"));
+    }
+
+    /// `Default`'s caller-wins branch assigns nothing (the directive's own value is unused), so
+    /// it must record `caller_env_keys` the same way `Required` does, or the caller's value
+    /// would escape redaction.
+    #[tokio::test]
+    async fn test_default_records_caller_key_when_caller_wins() {
+        let initial = EnvMap::from_iter([("DEF_TOKEN".to_string(), "caller_default".to_string())]);
+        let config = Config::get().await.unwrap();
+        let options = EnvDirectiveOptions {
+            redact: Some(true),
+            ..Default::default()
+        };
+        let results = EnvResults::resolve(
+            &config,
+            BASE_CONTEXT.clone(),
+            &initial,
+            vec![(
+                EnvDirective::Default("DEF_TOKEN".into(), "fallback".into(), options),
+                PathBuf::from("/config"),
+            )],
+            EnvResolveOptions {
+                vars: false,
+                tools: ToolsFilter::Both,
+                warn_on_missing_required: false,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert!(!results.env.contains_key("DEF_TOKEN"));
+        assert!(results.caller_env_keys.contains("DEF_TOKEN"));
+        assert_eq!(
+            results.redactable_env(&initial).get("DEF_TOKEN"),
+            Some(&"caller_default".to_string())
+        );
     }
 }

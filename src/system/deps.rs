@@ -33,8 +33,12 @@ pub struct SystemDep {
     /// might be wanted (e.g. "observer GUI"). Missing optional deps never
     /// prompt or fail — they surface as a single informational line.
     pub optional: Option<String>,
-    /// manager name -> package name, used only for remediation hints.
-    pub packages: IndexMap<String, String>,
+    /// manager name -> candidate package names, used only for remediation
+    /// hints. More than one candidate means the same capability is packaged
+    /// under different names across distro releases (apt's `libaio1` became
+    /// `libaio1t64` in the 64-bit time_t transition); the first candidate the
+    /// manager actually has wins, resolved lazily at remediation time.
+    pub packages: IndexMap<String, Vec<String>>,
 }
 
 /// How to detect whether a [`SystemDep`] is satisfied.
@@ -215,11 +219,28 @@ impl TryFrom<vfox::SystemDependency> for SystemDep {
                 None
             }
         };
+        // Normalize candidate names here so nothing downstream can pass a
+        // package manager a padded or empty operand, and a hint left with no
+        // usable name at all reports as unremediable rather than as a nameless
+        // install.
+        let packages = d
+            .packages
+            .into_iter()
+            .map(|(mgr, candidates)| {
+                let candidates: Vec<String> = candidates
+                    .into_iter()
+                    .map(|c| c.trim().to_string())
+                    .filter(|c| !c.is_empty())
+                    .collect();
+                (mgr, candidates)
+            })
+            .filter(|(_, candidates)| !candidates.is_empty())
+            .collect();
         Ok(SystemDep {
             check,
             version,
             optional: d.optional.clone(),
-            packages: d.packages.into_iter().collect(),
+            packages,
         })
     }
 }
@@ -286,13 +307,13 @@ async fn check_bin(
     name: &str,
     constraint: Option<&VersionConstraint>,
 ) -> (bool, Option<String>, Option<String>) {
-    let Some(path) = crate::file::which(name) else {
+    let Some(path) = crate::file::which_spawnable(name) else {
         return (false, None, Some(format!("`{name}` not found on PATH")));
     };
     let Some(constraint) = constraint else {
         return (true, None, None);
     };
-    match run_capture(&path.to_string_lossy(), &["--version"]).await {
+    match run_capture(&path, &["--version"]).await {
         Some((_, output)) => match extract_version(&output) {
             Some(v) => {
                 let versioning = Versioning::new(&v);
@@ -328,14 +349,14 @@ async fn check_pkgconfig(
     name: &str,
     constraint: Option<&VersionConstraint>,
 ) -> (bool, Option<String>, Option<String>) {
-    if crate::file::which("pkg-config").is_none() {
+    let Some(path) = crate::file::which_spawnable("pkg-config") else {
         return (
             false,
             None,
             Some("pkg-config is not installed (needed to detect this library)".to_string()),
         );
-    }
-    match run_capture("pkg-config", &["--exists", name]).await {
+    };
+    match run_capture(&path, &["--exists", name]).await {
         Some((true, _)) => {}
         Some((false, _)) => {
             return (
@@ -356,7 +377,7 @@ async fn check_pkgconfig(
     let Some(constraint) = constraint else {
         return (true, None, None);
     };
-    match run_capture("pkg-config", &["--modversion", name]).await {
+    match run_capture(&path, &["--modversion", name]).await {
         Some((true, output)) => {
             let v = output.trim().to_string();
             match Versioning::new(&v) {
@@ -435,7 +456,11 @@ async fn check_command(cmd: &str) -> (bool, Option<String>, Option<String>) {
 /// Silent and side-effect free — never elevates. A 5s wall-clock timeout keeps
 /// a hanging binary (e.g. one that blocks on `--version`) from stalling the
 /// whole install.
-async fn run_capture(program: &str, args: &[&str]) -> Option<(bool, String)> {
+async fn run_capture(
+    program: impl AsRef<std::ffi::OsStr>,
+    args: &[&str],
+) -> Option<(bool, String)> {
+    let program = program.as_ref();
     let fut = tokio::process::Command::new(program)
         .args(args)
         .stdin(std::process::Stdio::null())
@@ -444,7 +469,10 @@ async fn run_capture(program: &str, args: &[&str]) -> Option<(bool, String)> {
         Ok(Ok(output)) => output,
         Ok(Err(_)) => return None,
         Err(_) => {
-            debug!("system dep: `{program}` timed out, treating check as inconclusive");
+            debug!(
+                "system dep: `{}` timed out, treating check as inconclusive",
+                program.to_string_lossy()
+            );
             return None;
         }
     };
@@ -476,11 +504,47 @@ pub async fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManage
         if m.unavailable_reason_async().await.is_some() {
             continue;
         }
-        if dep.packages.contains_key(name) {
+        // An empty candidate list names no package, so this manager cannot
+        // remediate the dep even though it has an entry.
+        if dep.packages.get(name).is_some_and(|c| !c.is_empty()) {
             return Some(m);
         }
     }
     None
+}
+
+/// Resolve `dep`'s hint for `m` to a single package name.
+///
+/// With one candidate this is just that name — no query, so the common case
+/// costs nothing. With several, ask the manager which ones it actually has and
+/// take the first; managers that cannot answer (the default `available`
+/// implementation) fall back to the first candidate, which is the behavior
+/// before candidate lists existed. Reached only for deps that already failed
+/// detection, i.e. when mise is about to install packages anyway.
+async fn resolve_package(m: &Arc<dyn SystemPackageManager>, dep: &SystemDep) -> Option<String> {
+    let candidates = dep.packages.get(m.name())?;
+    match candidates.split_first()? {
+        (first, []) => Some(first.clone()),
+        (first, _) => match m.available(candidates).await {
+            Ok(available) => Some(
+                candidates
+                    .iter()
+                    .zip(available)
+                    .find(|(_, exists)| *exists)
+                    .map(|(name, _)| name)
+                    .unwrap_or(first)
+                    .clone(),
+            ),
+            Err(err) => {
+                debug!(
+                    "could not query {} for {}, using {first}: {err:#}",
+                    m.name(),
+                    dep.label()
+                );
+                Some(first.clone())
+            }
+        },
+    }
 }
 
 /// Group missing deps into per-manager [`PackageRequest`]s for remediation.
@@ -492,9 +556,14 @@ pub async fn build_requests(
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
     let mut unremediable = vec![];
     for dep in missing {
-        match pick_manager(dep).await {
-            Some(m) => {
-                let pkg = dep.packages.get(m.name()).cloned().unwrap_or_default();
+        // A dep with no manager, or whose hint names no package, is reported as
+        // unremediable rather than sent to a manager as an empty operand.
+        let resolved = match pick_manager(dep).await {
+            Some(m) => resolve_package(&m, dep).await.map(|pkg| (m, pkg)),
+            None => None,
+        };
+        match resolved {
+            Some((m, pkg)) => {
                 let requests = by_mgr.entry(m.name().to_string()).or_default();
                 if !requests.iter().any(|r| r.name == pkg) {
                     requests.push(PackageRequest {
@@ -599,6 +668,208 @@ mod tests {
         assert_eq!(extract_version("no version here").as_deref(), None);
     }
 
+    /// Reports only the names in `stock` as available, and records every query
+    /// so a single-candidate hint can be shown to query nothing at all.
+    struct StubManager {
+        stock: Vec<String>,
+        queries: Mutex<usize>,
+    }
+
+    #[async_trait::async_trait(?Send)]
+    impl SystemPackageManager for StubManager {
+        fn name(&self) -> &str {
+            "stub"
+        }
+        fn is_available(&self) -> bool {
+            true
+        }
+        fn unavailable_reason(&self) -> String {
+            unreachable!()
+        }
+        async fn installed(
+            &self,
+            _pkgs: &[PackageRequest],
+        ) -> crate::result::Result<Vec<crate::system::packages::PackageStatus>> {
+            Ok(vec![])
+        }
+        async fn available(&self, names: &[String]) -> crate::result::Result<Vec<bool>> {
+            *self.queries.lock().unwrap() += 1;
+            Ok(names.iter().map(|n| self.stock.contains(n)).collect())
+        }
+        async fn install(
+            &self,
+            _pkgs: &[PackageRequest],
+            _opts: &crate::system::packages::InstallOpts,
+        ) -> crate::result::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn dep_with_packages(candidates: Vec<&str>) -> SystemDep {
+        SystemDep {
+            check: SystemDepCheck::SharedLib("libaio.so.1".into()),
+            version: None,
+            optional: None,
+            packages: [(
+                "stub".to_string(),
+                candidates.into_iter().map(str::to_string).collect(),
+            )]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_resolve_package_picks_first_available_candidate() {
+        let m: Arc<dyn SystemPackageManager> = Arc::new(StubManager {
+            stock: vec!["libaio1".to_string()],
+            queries: Mutex::new(0),
+        });
+        // the first candidate does not exist here, so the fallback wins
+        let dep = dep_with_packages(vec!["libaio1t64", "libaio1"]);
+        assert_eq!(resolve_package(&m, &dep).await.as_deref(), Some("libaio1"));
+
+        // no candidate exists: keep the first so the user still sees a name
+        let dep = dep_with_packages(vec!["nonexistent", "also-nonexistent"]);
+        assert_eq!(
+            resolve_package(&m, &dep).await.as_deref(),
+            Some("nonexistent")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resolve_package_does_not_query_for_a_single_candidate() {
+        let m = Arc::new(StubManager {
+            stock: vec![],
+            queries: Mutex::new(0),
+        });
+        let dyn_m: Arc<dyn SystemPackageManager> = m.clone();
+        let dep = dep_with_packages(vec!["libaio1"]);
+        // resolves to the only candidate even though the stub does not stock it
+        assert_eq!(
+            resolve_package(&dyn_m, &dep).await.as_deref(),
+            Some("libaio1")
+        );
+        assert_eq!(*m.queries.lock().unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_package_returns_none_for_empty_candidates() {
+        // `packages = { apt = {} }` names no package, so there is nothing to
+        // install — resolution must yield None rather than an empty name.
+        let m: Arc<dyn SystemPackageManager> = Arc::new(StubManager {
+            stock: vec![],
+            queries: Mutex::new(0),
+        });
+        let dep = dep_with_packages(vec![]);
+        assert_eq!(resolve_package(&m, &dep).await, None);
+    }
+
+    /// Name of a package manager that can actually run here, or None. Tests
+    /// that exercise `pick_manager` need one: it only ever considers managers
+    /// from `all_managers()`, so a dep keyed on a fictional name is skipped for
+    /// the wrong reason and proves nothing.
+    async fn available_manager_name() -> Option<String> {
+        for m in packages::all_managers() {
+            if m.unavailable_reason_async().await.is_none() {
+                return Some(m.name().to_string());
+            }
+        }
+        None
+    }
+
+    fn dep_under_manager(mgr: &str, candidates: Vec<&str>) -> SystemDep {
+        SystemDep {
+            check: SystemDepCheck::SharedLib("libaio.so.1".into()),
+            version: None,
+            optional: None,
+            packages: [(
+                mgr.to_string(),
+                candidates.into_iter().map(str::to_string).collect(),
+            )]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pick_manager_skips_empty_candidate_list() {
+        let Some(mgr) = available_manager_name().await else {
+            return; // no usable package manager on this host
+        };
+        // a real, available manager with a usable name is picked...
+        let usable = dep_under_manager(&mgr, vec!["some-package"]);
+        assert!(pick_manager(&usable).await.is_some());
+        // ...but the same manager naming no package cannot remediate
+        let empty = dep_under_manager(&mgr, vec![]);
+        assert!(pick_manager(&empty).await.is_none());
+        let (by_mgr, unremediable) = build_requests(&[&empty]).await;
+        assert!(by_mgr.is_empty());
+        assert_eq!(unremediable.len(), 1);
+    }
+
+    #[test]
+    fn test_blank_candidate_names_are_dropped() {
+        // A hint of only blank names must not survive as a nameless install,
+        // and a padded name must reach the package manager trimmed rather than
+        // as the invalid operand "  libaio  ".
+        let d = vfox::SystemDependency {
+            sharedlib: Some("libaio.so.1".into()),
+            packages: [
+                ("apt".to_string(), vec!["".to_string(), "  ".to_string()]),
+                (
+                    "dnf".to_string(),
+                    vec!["".to_string(), "  libaio  ".to_string()],
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        let dep = SystemDep::try_from(d).unwrap();
+        assert!(!dep.packages.contains_key("apt"));
+        assert_eq!(dep.packages.get("dnf"), Some(&vec!["libaio".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn test_resolve_package_falls_back_when_manager_cannot_answer() {
+        struct CannotAnswer;
+        #[async_trait::async_trait(?Send)]
+        impl SystemPackageManager for CannotAnswer {
+            fn name(&self) -> &str {
+                "stub"
+            }
+            fn is_available(&self) -> bool {
+                true
+            }
+            fn unavailable_reason(&self) -> String {
+                unreachable!()
+            }
+            async fn installed(
+                &self,
+                _pkgs: &[PackageRequest],
+            ) -> crate::result::Result<Vec<crate::system::packages::PackageStatus>> {
+                Ok(vec![])
+            }
+            async fn available(&self, _names: &[String]) -> crate::result::Result<Vec<bool>> {
+                eyre::bail!("apt-cache not found")
+            }
+            async fn install(
+                &self,
+                _pkgs: &[PackageRequest],
+                _opts: &crate::system::packages::InstallOpts,
+            ) -> crate::result::Result<()> {
+                Ok(())
+            }
+        }
+        let m: Arc<dyn SystemPackageManager> = Arc::new(CannotAnswer);
+        let dep = dep_with_packages(vec!["libaio1t64", "libaio1"]);
+        assert_eq!(
+            resolve_package(&m, &dep).await.as_deref(),
+            Some("libaio1t64")
+        );
+    }
+
     #[test]
     fn test_label() {
         let dep = SystemDep {
@@ -620,9 +891,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_bin_present_and_missing() {
-        // `file::which` does no PATHEXT resolution, so on Windows the name must
-        // carry the `.exe` extension (cmd.exe lives in System32, on PATH on CI).
-        let present = if cfg!(windows) { "cmd.exe" } else { "sh" };
+        // The bare name resolves through configured executable extensions on Windows.
+        let present = if cfg!(windows) { "cmd" } else { "sh" };
         let (ok, _, _) = check_bin(present, None).await;
         assert!(ok);
 

@@ -14,24 +14,33 @@ All commit messages and PR titles MUST follow conventional commit format:
 
 ### Types
 - `feat:` - New features
-- `fix:` - Bug fixes  
+- `fix:` - Bug fixes that affect CLI behavior (not CI, docs, or infrastructure)
 - `refactor:` - Code refactoring
-- `docs:` - Documentation
-- `style:` - Code style/formatting
+- `docs:` - Documentation changes
+- `style:` - Code style/formatting (no logic changes)
 - `perf:` - Performance improvements
 - `test:` - Testing changes
-- `chore:` - Maintenance tasks
-- `chore(deps):` - Dependency updates
+- `chore:` - Maintenance tasks, releases, dependency updates, CI/infrastructure
+- `security:` - Security-related changes
+- `registry:` - Any changes to `registry/` (no extra scope)
 
 ### Examples
 ```
 feat(cli): add new command for tool management
 fix(config): resolve parsing issue with nested tables
 refactor(backend): simplify plugin loading logic
-doc(api): update configuration examples
+docs(contributing): update installation instructions
 test(e2e): add tests for tool installation
-chore(deps): update Rust dependencies
+chore(ci): improve cursor cloud agent environment
+registry: add miller
 ```
 
 ### Common Scopes
-`registry`, `aqua`, `cli`, `config`, `backend`, `tool`, `env`, `task`, `api`, `ui`, `core`, `deps`, `schema`, `doctor`, `shim`, `security`
+Command names (`install`, `activate`, `use`, `exec`, …) or subsystems:
+`config`, `backend`, `env`, `task`, `vfox`, `python`, `github`, `release`,
+`completions`, `http`, `schema`, `doctor`, `shim`, `core`, `deps`, `ci`.
+
+Use `task` (not `run`) for task-related changes, even if the code lives in
+`src/cli/run.rs` or `src/cmd.rs`.
+
+Description: lowercase after the colon, imperative mood, concise.

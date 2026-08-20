@@ -1,7 +1,8 @@
 use crate::Plugin;
 use crate::error::Result;
 use crate::sdk_info::SdkInfo;
-use mlua::{IntoLua, Lua, Value};
+use indexmap::IndexMap;
+use mlua::{IntoLua, Lua, LuaSerdeExt, Value};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -20,6 +21,7 @@ pub struct PostInstallContext {
     pub root_path: PathBuf,
     pub runtime_version: String,
     pub sdk_info: BTreeMap<String, SdkInfo>,
+    pub options: IndexMap<String, toml::Value>,
 }
 
 impl IntoLua for PostInstallContext {
@@ -28,13 +30,14 @@ impl IntoLua for PostInstallContext {
         table.set("rootPath", self.root_path.to_string_lossy().to_string())?;
         table.set("runtimeVersion", self.runtime_version)?;
         table.set("sdkInfo", self.sdk_info)?;
+        table.set("options", lua.to_value(&self.options)?)?;
         Ok(Value::Table(table))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::Plugin;
+    use crate::{Plugin, embedded_plugins};
     use tokio::test;
 
     use super::*;
@@ -53,6 +56,7 @@ mod tests {
             root_path: root.clone(),
             runtime_version: "runtime_version".to_string(),
             sdk_info: BTreeMap::new(),
+            options: Default::default(),
         };
         p.post_install(ctx).await.unwrap();
         assert_eq!(
@@ -60,5 +64,39 @@ mod tests {
             "runtime_version"
         );
         assert!(root.join("bin").join("dummy").exists());
+    }
+
+    #[test]
+    async fn embedded_chromedriver() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("O'Brien");
+        std::fs::create_dir_all(&root).unwrap();
+        let binary_name = if cfg!(windows) {
+            "chromedriver.exe"
+        } else {
+            "chromedriver"
+        };
+        std::fs::write(root.join(binary_name), "chromedriver").unwrap();
+
+        let embedded = embedded_plugins::get_embedded_plugin("chromedriver").unwrap();
+        let plugin = Plugin::from_embedded("chromedriver", embedded).unwrap();
+        let sdk_info = SdkInfo::new(
+            "chromedriver".to_string(),
+            "153.0.8009.0".to_string(),
+            root.clone(),
+        );
+        let ctx = PostInstallContext {
+            root_path: root.clone(),
+            runtime_version: "153.0.8009.0".to_string(),
+            sdk_info: BTreeMap::from([("chromedriver".to_string(), sdk_info)]),
+            options: Default::default(),
+        };
+
+        plugin.post_install(ctx).await.unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("bin").join(binary_name)).unwrap(),
+            "chromedriver"
+        );
     }
 }

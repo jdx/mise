@@ -35,6 +35,12 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 "brew-cask:font-jetbrains-mono" = { os = ["linux", "macos"] }
 ```
 
+`brew-cask` entries additionally accept `adopt = true` to adopt an identical
+app already installed at the cask destination. Set `bootstrap.brew.adopt = true`
+to make adoption the default for all casks, with per-cask `adopt = false`
+overrides. See the
+[brew cask documentation](/bootstrap/packages/brew.html#casks).
+
 Host packages are intentionally separate from [`[tools]`](/configuration.html):
 they are not version-pinned per-project, do not get shims, and are managed
 outside the project by the platform's package manager — or, for `brew` and

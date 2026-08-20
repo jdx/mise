@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# A trailing `**` must enumerate files, not just directories. The `glob` crate
+# matches it against directories only, while the matcher built from the same
+# entry matches the files underneath, so enumeration silently skipped every file.
+#
+# The two halves are separate tasks on purpose: each one uses the plain spelling
+# for the field it is not testing, so either defect fails this test on its own
+# rather than being shadowed by the other.
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+# sources under test; outputs kept plain
+[tasks.src_build]
+run = '''
+cat $(find src -type f | sort) > bundle.txt
+printf 'ran\n' >> src_runs.txt
+'''
+sources = ["src/**"]
+outputs = ["bundle.txt"]
+cache = { enabled = true }
+
+# outputs under test; sources kept plain
+[tasks.out_build]
+run = '''
+mkdir -p dist/nested
+printf 'top\n' > dist/top.txt
+printf 'nested\n' > dist/nested/n.txt
+printf 'ran\n' >> out_runs.txt
+'''
+sources = ["input.txt"]
+outputs = ["dist/**"]
+cache = { enabled = true }
+EOF
+
+mkdir -p src/sub
+printf 'v1\n' >src/a.txt
+printf 'sub\n' >src/sub/b.txt
+printf 'one\n' >input.txt
+
+# --- sources ------------------------------------------------------------
+# Enumerating only the subdirectories yields a directory mtime, which does not
+# move when a tracked file's contents change, so the task stayed fresh forever.
+assert_contains "mise run src_build 2>&1" "cache miss"
+assert "wc -l < src_runs.txt | tr -d ' '" "1"
+
+printf 'v2\n' >src/a.txt
+mise run src_build
+assert "wc -l < src_runs.txt | tr -d ' '" "2"
+assert "cat bundle.txt" "v2
+sub"
+
+# nothing changed, so it must skip rather than re-run
+assert_contains "mise run src_build 2>&1" "sources up-to-date, skipping"
+assert "wc -l < src_runs.txt | tr -d ' '" "2"
+
+# --- outputs ------------------------------------------------------------
+# `dist/**` enumerated only `dist/nested`, so the archiver was handed a root
+# list that never reached `dist/top.txt`. The restore then reported success
+# over a tree missing a file the task had just produced.
+assert_contains "mise run out_build 2>&1" "cache miss"
+assert "wc -l < out_runs.txt | tr -d ' '" "1"
+
+rm -rf dist
+assert_contains "mise run out_build 2>&1" "restored outputs from cache"
+assert "wc -l < out_runs.txt | tr -d ' '" "1"
+assert "cat dist/top.txt" "top"
+assert "cat dist/nested/n.txt" "nested"

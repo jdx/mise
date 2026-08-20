@@ -24,11 +24,11 @@ function mise {
     }
 
     if ($arguments.count -eq 0) {
-        & "/some/dir/mise"
+        & '/some/dir/mise'
         _reset_output_encoding
         return
     } elseif ($arguments -contains '-h' -or $arguments -contains '--help') {
-        & "/some/dir/mise" @arguments
+        & '/some/dir/mise' @arguments
         _reset_output_encoding
         return
     }
@@ -42,11 +42,11 @@ function mise {
 
     switch ($command) {
         { $_ -in 'deactivate', 'shell', 'sh' } {
-            & "/some/dir/mise" $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
+            & '/some/dir/mise' $command @remainingArgs | Out-String | Invoke-Expression -ErrorAction SilentlyContinue
             _reset_output_encoding
         }
         default {
-            & "/some/dir/mise" $command @remainingArgs
+            & '/some/dir/mise' $command @remainingArgs
             if ($(Test-Path -Path Function:\_mise_hook)){
                 _mise_hook
             }
@@ -58,7 +58,7 @@ function mise {
 function Global:_mise_hook {
     if ($env:MISE_SHELL -eq "pwsh"){
         $status = $global:LASTEXITCODE
-        $output = & "/some/dir/mise" hook-env --status $args -s pwsh | Out-String
+        $output = & '/some/dir/mise' hook-env --status $args -s pwsh | Out-String
         if ($output -and $output.Trim()) {
             $output | Invoke-Expression
         }
@@ -66,6 +66,10 @@ function Global:_mise_hook {
         $global:LASTEXITCODE = $status
     }
 }
+
+# Declared up front because the prompt reads it before any directory change
+# has set it, and Set-StrictMode makes reading an unset variable an error.
+$Global:__mise_pwsh_chpwd_handled = $null
 
 function __enable_mise_chpwd{
     if ($PSVersionTable.PSVersion.Major -lt 7) {
@@ -80,6 +84,20 @@ function __enable_mise_chpwd{
             param([object] $source, [System.Management.Automation.LocationChangedEventArgs] $eventArgs)
             end {
                 _mise_hook
+                # The prompt fires immediately after this handler, and its own
+                # hook-env would find the directory unchanged and early-exit. On
+                # Windows that costs a whole process (~22ms, almost entirely
+                # CreateProcess) to learn nothing. Record the directory and MISE_*
+                # state already handled so the prompt can skip it. $PWD is the new
+                # location by the time this handler runs.
+                $Global:__mise_pwsh_chpwd_handled = [PSCustomObject]@{
+                    Path = $PWD.Path
+                    MiseEnv = [string]::Join("`0", [string[]]@(
+                        Get-ChildItem Env:MISE_* |
+                            Sort-Object Name |
+                            ForEach-Object { "$($_.Name)`0$($_.Value)" }
+                    ))
+                }
             }
         };
         $__mise_pwsh_previous_chpwd_function=$ExecutionContext.SessionState.InvokeCommand.LocationChangedAction;
@@ -100,7 +118,27 @@ function __enable_mise_prompt {
         $Global:__mise_pwsh_previous_prompt_function=$function:prompt
         function global:prompt {
             if (Test-Path -Path Function:\_mise_hook){
-                _mise_hook
+                # Skip only when the chpwd handler already ran hook-env for this
+                # exact directory and the MISE_* state has not changed since.
+                $handled = if (Test-Path variable:global:__mise_pwsh_chpwd_handled) {
+                    $Global:__mise_pwsh_chpwd_handled
+                } else {
+                    $null
+                }
+                if (Test-Path variable:global:__mise_pwsh_chpwd_handled) {
+                    $Global:__mise_pwsh_chpwd_handled = $null
+                }
+                if (
+                    $null -eq $handled -or
+                    $handled.Path -ne $PWD.Path -or
+                    $handled.MiseEnv -ne [string]::Join("`0", [string[]]@(
+                        Get-ChildItem Env:MISE_* |
+                            Sort-Object Name |
+                            ForEach-Object { "$($_.Name)`0$($_.Value)" }
+                    ))
+                ) {
+                    _mise_hook
+                }
             }
             & $__mise_pwsh_previous_prompt_function
         }
@@ -116,6 +154,13 @@ if (-not (Test-Path variable:global:__mise_pwsh_command_not_found)){
         $_mise_pwsh_cmd_not_found_hook = [EventHandler[System.Management.Automation.CommandLookupEventArgs]] {
             param([object] $Name, [System.Management.Automation.CommandLookupEventArgs] $eventArgs)
             end {
+                # mise's own commands are not tools: `mise-foo` must not be
+                # looked up as something to install, and `deactivate` removes
+                # the wrapper function while leaving this handler registered,
+                # so `mise` itself reaches here too. bash, zsh and fish all
+                # skip these names before calling hook-not-found. `-like`
+                # rather than a prefix match: `mise2` is somebody else's tool.
+                if ($Name -eq 'mise' -or $Name -like 'mise-*') { return }
                 # Only auto-install when the missing command is what the
                 # user actually typed. PSReadLine is absent in
                 # non-interactive sessions, and even when its module is
@@ -135,8 +180,38 @@ if (-not (Test-Path variable:global:__mise_pwsh_command_not_found)){
                 # `mise` when the user typed `premise`, while matching only
                 # the first token would miss `... | some-missing-tool`
                 if ($lastCommand -and (($lastCommand -split '\s+') -contains $Name)) {
-                    if (& "/some/dir/mise" hook-not-found -s pwsh -- $Name){
-                        _mise_hook
+                    # `hook-not-found` answers with an exit code and writes nothing to
+                    # stdout, and `if (& ...)` in PowerShell tests the *output* rather
+                    # than the code: it was false even when a tool had been installed,
+                    # and would have been true for a failure that happened to print.
+                    # bash, zsh and fish put the command straight into the condition
+                    # and get its status; this is the same thing spelled for pwsh.
+                    & '/some/dir/mise' hook-not-found -s pwsh -- $Name | Out-Null
+                    if ($LASTEXITCODE -eq 0){
+                        # Refresh inline rather than through `_mise_hook`:
+                        # `--no-hook-env` omits that definition while still emitting
+                        # this block, an unresolved name inside a
+                        # CommandNotFoundAction throws out of the handler, and
+                        # skipping the refresh leaves the tool just installed off
+                        # PATH for the handoff below. fish inlines `hook-env` here
+                        # for the same reason.
+                        #
+                        # The MISE_SHELL check is the one `_mise_hook` carries.
+                        # `deactivate` unsets the variable but leaves this handler
+                        # registered, and a CommandNotFoundAction runs in-process:
+                        # without the gate, a deactivated session would get mise's
+                        # PATH and `__MISE_SESSION` re-applied for good.
+                        #
+                        # `--force` because an install just happened: with
+                        # `hook_env.cache_ttl` set and an inherited `__MISE_SESSION`,
+                        # the TTL fast path returns before the check that would
+                        # notice it, and the handoff below would find nothing.
+                        if ($env:MISE_SHELL -eq "pwsh"){
+                            $output = & '/some/dir/mise' hook-env --status --force -s pwsh | Out-String
+                            if ($output -and $output.Trim()) {
+                                $output | Invoke-Expression
+                            }
+                        }
                         if (Get-Command $Name -ErrorAction SilentlyContinue){
                             $EventArgs.Command = Get-Command $Name
                             $EventArgs.StopSearch = $true

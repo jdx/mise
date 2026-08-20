@@ -1,6 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path, PathBuf};
-use std::process::Stdio;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -22,6 +23,7 @@ use crate::git::{CloneOptions, Git};
 use crate::hash;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::result::Result;
+use crate::system::ManagerPackageOptions;
 use crate::system::packages::{
     InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager,
 };
@@ -32,6 +34,12 @@ use crate::ui::progress_report::{ProgressIcon, SingleReport};
 const API_BASE: &str = "https://formulae.brew.sh/api";
 const HOMEBREW_CASK_RAW: &str = "https://raw.githubusercontent.com/Homebrew/homebrew-cask";
 const CASK_SHIM_RB: &str = include_str!("cask_shim.rb");
+/// where `app` artifacts are linked when [`APP_DIR_ENV`] is unset
+const DEFAULT_APP_DIR: &str = "/Applications";
+/// user-facing override for the `app` artifact destination, mirroring
+/// `brew install --appdir`; see [`target_app_dir`] and
+/// docs/bootstrap/packages/brew.md
+const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 
 pub struct BrewCaskManager {}
 
@@ -51,6 +59,8 @@ struct Cask {
     #[serde(default)]
     old_tokens: Vec<String>,
     version: String,
+    #[serde(default)]
+    auto_updates: bool,
     url: String,
     #[serde(default)]
     url_specs: CaskUrlSpecs,
@@ -58,6 +68,10 @@ struct Cask {
     sha256: Option<String>,
     #[serde(default)]
     artifacts: Vec<Value>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    depends_on: CaskDependencies,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    conflicts_with: CaskConflicts,
     #[serde(default)]
     ruby_source_path: Option<String>,
     #[serde(default)]
@@ -66,6 +80,28 @@ struct Cask {
     tap_git_head: Option<String>,
     #[serde(skip)]
     raw_base: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskDependencies {
+    #[serde(default)]
+    formula: Vec<String>,
+    #[serde(default)]
+    cask: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+struct CaskConflicts {
+    #[serde(default)]
+    cask: Vec<String>,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> std::result::Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,6 +129,18 @@ struct CommandWrapperArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PkgArtifact {
     source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InstallerArtifact {
+    executable: String,
+    args: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GenericArtifact {
+    source: String,
+    target: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,6 +184,23 @@ enum FlightStep {
         paths: Vec<FlightPath>,
         recursive: bool,
     },
+    Copy {
+        source: FlightPath,
+        target: FlightPath,
+        recursive: bool,
+        overwrite: bool,
+        source_glob: bool,
+        guards: Vec<FlightGuard>,
+    },
+    Symlink {
+        source: FlightPath,
+        target: FlightPath,
+        force: bool,
+        uninstall: bool,
+        source_glob: bool,
+        sudo: FlightSudo,
+        guards: Vec<FlightGuard>,
+    },
     Run {
         command: FlightPath,
         args: Vec<String>,
@@ -165,7 +230,14 @@ enum FlightPathBase {
     StagedPath,
     AppDir,
     HomebrewPrefix,
-    Absolute,
+    Literal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FlightSudo {
+    Never,
+    Always,
+    IfNeeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,6 +260,8 @@ struct CaskArtifacts {
     binaries: Vec<BinaryArtifact>,
     command_wrappers: Vec<CommandWrapperArtifact>,
     pkgs: Vec<PkgArtifact>,
+    installers: Vec<InstallerArtifact>,
+    generic: Vec<GenericArtifact>,
     fonts: Vec<FontArtifact>,
     completions: Vec<CompletionArtifact>,
     generated_completions: Vec<GeneratedCompletionArtifact>,
@@ -201,6 +275,15 @@ struct CaskReceipt {
     #[serde(default)]
     schema_version: u8,
     version: String,
+    /// Self-updating apps are allowed to drift from the downloaded cask. For
+    /// these casks the receipt, rather than a stale Caskroom app copy, is the
+    /// durable ownership record.
+    #[serde(default)]
+    auto_updates: bool,
+    /// App bundles owned through metadata only, without a duplicate in the
+    /// versioned Caskroom directory (self-updating or adopted apps).
+    #[serde(default)]
+    metadata_only_apps: Vec<PathBuf>,
     #[serde(default)]
     apps: Vec<PathBuf>,
     #[serde(default)]
@@ -209,6 +292,10 @@ struct CaskReceipt {
     fonts: Vec<PathBuf>,
     #[serde(default)]
     completions: Vec<PathBuf>,
+    #[serde(default)]
+    flight_directories: Vec<PathBuf>,
+    #[serde(default)]
+    generic: Vec<PathBuf>,
     #[serde(default)]
     pkg_ids: Vec<String>,
     #[serde(default)]
@@ -223,6 +310,8 @@ struct CaskReceipt {
 struct CaskTargetRecord {
     path: PathBuf,
     fingerprint: CaskTargetFingerprint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    uninstall: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -278,13 +367,70 @@ impl BrewCaskManager {
         Self {}
     }
 
+    async fn install_with_manager_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
+            bail!("brew casks are installed at their current version ('{p}')");
+        }
+        if opts.dry_run {
+            prefix::bootstrap(true)?;
+            for pkg in pkgs {
+                self.install_one(pkg, opts, None, manager_options).await?;
+            }
+            return Ok(());
+        }
+        let mpr = MultiProgressReport::get();
+        mpr.init_footer(false, "install", pkgs.len());
+        for pkg in pkgs {
+            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
+            match self
+                .install_one(pkg, opts, Some(&*pr), manager_options)
+                .await
+            {
+                Ok(version) => {
+                    pr.finish_with_message(version);
+                    mpr.footer_inc(1);
+                }
+                Err(err) => {
+                    pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                    mpr.footer_finish();
+                    return Err(err);
+                }
+            }
+        }
+        mpr.footer_finish();
+        Ok(())
+    }
+
     async fn install_one(
         &self,
         req: &PackageRequest,
         opts: &InstallOpts,
         pr: Option<&dyn SingleReport>,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<String> {
+        self.install_one_with_ancestors(req, opts, pr, &BTreeSet::new(), manager_options)
+            .await
+    }
+
+    async fn install_one_with_ancestors(
+        &self,
+        req: &PackageRequest,
+        opts: &InstallOpts,
+        pr: Option<&dyn SingleReport>,
+        ancestors: &BTreeSet<String>,
+        manager_options: &ManagerPackageOptions,
     ) -> Result<String> {
         let cask = fetch_cask(req).await?;
+        if ancestors.contains(&cask.token) {
+            bail!("brew-cask:{}: dependency cycle detected", cask.token);
+        }
+        let mut ancestors = ancestors.clone();
+        ancestors.insert(cask.token.clone());
         let artifacts = cask_artifacts(&cask)?;
         validate_platform_support(&cask, &artifacts)?;
         if homebrew_metadata_present(&cask.token) {
@@ -293,9 +439,51 @@ impl BrewCaskManager {
                 cask.token
             );
         }
-        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+        let installed_version = installed_cask_version(&cask, &artifacts)?;
+        if let Some(version) = installed_version.as_ref()
+            && (cask.auto_updates || version == &cask.version)
+        {
             info!("brew-cask:{}: already installed", cask.token);
-            return Ok(cask.version);
+            return Ok(version.clone());
+        }
+        for conflict in &cask.conflicts_with.cask {
+            if !installed_versions(conflict).is_empty() {
+                bail!(
+                    "brew-cask:{}: conflicts with installed cask {}",
+                    cask.token,
+                    conflict
+                );
+            }
+        }
+        if !cask.depends_on.formula.is_empty() {
+            let dependencies = cask
+                .depends_on
+                .formula
+                .iter()
+                .map(|name| PackageRequest {
+                    name: name.clone(),
+                    version: None,
+                    tap_url: None,
+                })
+                .collect::<Vec<_>>();
+            super::BrewManager::new()
+                .install(&dependencies, opts)
+                .await?;
+        }
+        for dependency in &cask.depends_on.cask {
+            let request = PackageRequest {
+                name: dependency.clone(),
+                version: None,
+                tap_url: None,
+            };
+            Box::pin(self.install_one_with_ancestors(
+                &request,
+                opts,
+                None,
+                &ancestors,
+                manager_options,
+            ))
+            .await?;
         }
         if opts.dry_run {
             miseprintln!("install cask {}/{}", cask.token, cask.version);
@@ -310,6 +498,12 @@ impl BrewCaskManager {
             }
             for pkg in &artifacts.pkgs {
                 miseprintln!("install pkg {}", pkg.source);
+            }
+            for installer in &artifacts.installers {
+                miseprintln!("run installer {}", installer.executable);
+            }
+            for artifact in &artifacts.generic {
+                miseprintln!("install artifact {}", artifact.target);
             }
             for font in &artifacts.fonts {
                 miseprintln!("install font {}", font.source);
@@ -328,7 +522,12 @@ impl BrewCaskManager {
         }
         prefix::bootstrap(false)?;
         let stage = fetch_and_stage(&cask, pr).await?;
+        let adopt = manager_options.brew_cask_adopt(&cask.token) && installed_version.is_none();
+        if adopt && !cask.auto_updates {
+            validate_adoptable_apps(&stage, &artifacts.apps)?;
+        }
         let _caskroom_lock = lock_caskroom()?;
+        recover_flight_backups()?;
         if homebrew_metadata_present(&cask.token) {
             file::remove_all(&stage)?;
             bail!(
@@ -336,13 +535,18 @@ impl BrewCaskManager {
                 cask.token
             );
         }
-        if installed_cask_version(&cask, &artifacts)?.as_deref() == Some(cask.version.as_str()) {
+        if let Some(version) = installed_cask_version(&cask, &artifacts)?
+            && (cask.auto_updates || version == cask.version)
+        {
             file::remove_all(stage)?;
-            return Ok(cask.version);
+            return Ok(version);
         }
         let previous_binaries = previous_binary_targets(&cask)?;
         let previous_fonts = previous_font_targets(&cask)?;
         let previous_completions = previous_completion_targets(&cask)?;
+        let previous_flight_symlinks = previous_flight_symlink_targets(&cask)?;
+        let previous_flight_directories = previous_flight_directory_targets(&cask)?;
+        let previous_generic = previous_generic_targets(&cask)?;
         let caskroom_token = caskroom_token_dir(&cask.token);
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         let tmp_caskroom = caskroom_tmp_dir(&cask);
@@ -355,6 +559,10 @@ impl BrewCaskManager {
             version: &cask.version,
             completed: Vec::new(),
         };
+        let mut flight_targets = FlightTargetTransaction::default();
+        flight_targets.receipt_caskroom = Some(caskroom.clone());
+        flight_targets.previous_symlinks = previous_flight_symlinks.iter().cloned().collect();
+        flight_targets.previous_directories = previous_flight_directories.into_iter().collect();
         write_cask_journal(&journal)?;
         let current_completions = completion_target_paths(&cask, &artifacts)?;
         for target in &current_completions {
@@ -369,13 +577,38 @@ impl BrewCaskManager {
             &appdir,
             "preflight_steps",
             &mut journal,
+            &mut flight_targets,
         )?;
         execute_lifecycle_hook(&cask, &stage, &appdir, "preflight", pr).await?;
         if has_lifecycle_hook(&cask, "preflight") {
             record_cask_action(&mut journal, "preflight_hook")?;
         }
+        // Homebrew leaves artifacts from the installed version available to
+        // preflight. Back them up only after preflight so guards and commands
+        // can observe those links during an upgrade. A structured preflight
+        // step that replaces one has already protected it transactionally.
+        for target in &previous_flight_symlinks {
+            flight_targets.protect(target)?;
+        }
+        run_installers_before_durabilizing(
+            &stage,
+            &tmp_caskroom,
+            &artifacts.installers,
+            &mut flight_targets,
+            |index| record_cask_action(&mut journal, &format!("installer[{index}]")),
+        )?;
+        let mut metadata_only_apps = Vec::new();
         for (index, app) in artifacts.apps.iter().enumerate() {
-            install_app(&stage, &tmp_caskroom, app)?;
+            if install_app(
+                &stage,
+                &tmp_caskroom,
+                app,
+                !cask.auto_updates,
+                adopt,
+                !cask.auto_updates,
+            )? {
+                metadata_only_apps.push(app_target_path(app.target_name())?);
+            }
             record_cask_action(&mut journal, &format!("app[{index}]"))?;
         }
         for (index, pkg) in artifacts.pkgs.iter().enumerate() {
@@ -390,6 +623,10 @@ impl BrewCaskManager {
             stage_command_wrapper(&tmp_caskroom, &appdir, &cask, wrapper)?;
             record_cask_action(&mut journal, &format!("command_wrapper[{index}]"))?;
         }
+        for (index, artifact) in artifacts.generic.iter().enumerate() {
+            install_generic_artifact(&stage, &tmp_caskroom, artifact, &mut flight_targets)?;
+            record_cask_action(&mut journal, &format!("artifact[{index}]"))?;
+        }
         execute_flight_steps_recording(
             &cask,
             &artifacts.postflight_steps,
@@ -397,6 +634,7 @@ impl BrewCaskManager {
             &appdir,
             "postflight_steps",
             &mut journal,
+            &mut flight_targets,
         )?;
         execute_lifecycle_hook(&cask, &tmp_caskroom, &appdir, "postflight", pr).await?;
         if has_lifecycle_hook(&cask, "postflight") {
@@ -421,6 +659,7 @@ impl BrewCaskManager {
         current_targets.extend(current_fonts.iter().cloned());
         let mut link_transaction = ArtifactLinkTransaction::begin(current_targets)?;
         let activation = replace_caskroom(&cask, &tmp_caskroom, &caskroom, || {
+            retarget_transient_symlinks(&tmp_caskroom, &caskroom, &caskroom, &flight_targets)?;
             for binary in &artifacts.binaries {
                 link_binary(&caskroom, &appdir, binary)?;
             }
@@ -433,7 +672,15 @@ impl BrewCaskManager {
             for font in &artifacts.fonts {
                 link_font(&caskroom, font)?;
             }
-            write_receipt(&caskroom, &cask, &artifacts)?;
+            write_receipt_with_flight_targets(
+                &caskroom,
+                &cask,
+                &artifacts,
+                flight_targets.installed_targets(),
+                flight_targets.uninstall_targets(),
+                flight_targets.installed_directories(),
+                &metadata_only_apps,
+            )?;
             Ok(())
         });
         if let Err(err) = activation {
@@ -444,11 +691,24 @@ impl BrewCaskManager {
             }
             return Err(err);
         }
-        link_transaction.commit()?;
+        if let Err(err) = flight_targets.commit() {
+            warn!("brew-cask: failed to remove flight target backups: {err:#}");
+        }
+        if let Err(err) = link_transaction.commit() {
+            warn!("brew-cask: failed to remove artifact link backups: {err:#}");
+        }
         record_cask_action(&mut journal, "activated")?;
         remove_obsolete_binary_links(&cask, &previous_binaries, &current_binaries)?;
         remove_obsolete_completions(&cask, &previous_completions, &current_completions)?;
         remove_obsolete_fonts(&cask, &previous_fonts, &current_fonts)?;
+        remove_obsolete_generic_artifacts(
+            &previous_generic,
+            &generic_artifact_targets(&artifacts)?,
+        )?;
+        remove_obsolete_flight_directories(
+            &flight_targets.previous_directories,
+            flight_targets.installed_directories(),
+        )?;
         remove_stale_versions(&caskroom_token, &cask.version)?;
         remove_cask_journals(&cask.token)?;
         file::remove_all(stage)?;
@@ -488,7 +748,7 @@ impl CommandWrapperArtifact {
     }
 
     fn target_path(&self) -> Result<PathBuf> {
-        binary_target_path(&self.target_name()?, Path::new("/Applications"))
+        binary_target_path(&self.target_name()?, &target_app_dir()?)
     }
 
     fn caskroom_path(&self, caskroom: &Path) -> PathBuf {
@@ -602,6 +862,7 @@ impl SystemPackageManager for BrewCaskManager {
                     Some(requested) if version != *requested => {
                         PackageState::VersionMismatch { installed: version }
                     }
+                    _ if cask.auto_updates => PackageState::InstalledAutoUpdates { version },
                     _ => PackageState::Installed { version },
                 },
                 None => PackageState::Missing,
@@ -615,34 +876,18 @@ impl SystemPackageManager for BrewCaskManager {
     }
 
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        if let Some(p) = pkgs.iter().find(|p| p.version.is_some()) {
-            bail!("brew casks are installed at their current version ('{p}')");
-        }
-        if opts.dry_run {
-            prefix::bootstrap(true)?;
-            for pkg in pkgs {
-                self.install_one(pkg, opts, None).await?;
-            }
-            return Ok(());
-        }
-        let mpr = MultiProgressReport::get();
-        mpr.init_footer(false, "install", pkgs.len());
-        for pkg in pkgs {
-            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew-cask:{}", pkg.name));
-            match self.install_one(pkg, opts, Some(&*pr)).await {
-                Ok(version) => {
-                    pr.finish_with_message(version);
-                    mpr.footer_inc(1);
-                }
-                Err(err) => {
-                    pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
-                    mpr.footer_finish();
-                    return Err(err);
-                }
-            }
-        }
-        mpr.footer_finish();
-        Ok(())
+        self.install_with_manager_options(pkgs, opts, &ManagerPackageOptions::None)
+            .await
+    }
+
+    async fn install_with_options(
+        &self,
+        pkgs: &[PackageRequest],
+        opts: &InstallOpts,
+        manager_options: &ManagerPackageOptions,
+    ) -> Result<()> {
+        self.install_with_manager_options(pkgs, opts, manager_options)
+            .await
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
@@ -1007,73 +1252,202 @@ fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> 
     Ok(None)
 }
 
-fn install_app(stage: &Path, caskroom: &Path, app: &AppArtifact) -> Result<()> {
+fn install_app(
+    stage: &Path,
+    caskroom: &Path,
+    app: &AppArtifact,
+    keep_caskroom_copy: bool,
+    adopt: bool,
+    verify_adopt: bool,
+) -> Result<bool> {
     let source = find_app(stage, &app.source)
         .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
     let caskroom_app = caskroom.join(app_bundle_name(app.target_name())?);
     file::remove_all(&caskroom_app)?;
-    ditto(&source, &caskroom_app)?;
-    let target = app_target_path(app.target_name())?;
-    if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
+    let logical_target = app_target_path(app.target_name())?;
+    // Hold the verified appdir open for the whole mutation and address the app
+    // only by name relative to that descriptor. Nothing below resolves a
+    // pathname for the application directory, so a post-validation replacement
+    // of any appdir component — even by the same uid — cannot redirect the
+    // copy, rename, removal, permission repair, or quarantine steps.
+    let parent = ensure_trusted_appdir(
+        logical_target
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: app target has no parent directory"))?,
+    )?;
+    let name = logical_target
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: app target has no filename"))?
+        .to_owned();
+    if adopt && exists_at(&parent.fd, &name)? {
+        if verify_adopt {
+            let source_fingerprint = cask_target_fingerprint(&source)?;
+            let target_fingerprint = cask_target_fingerprint(&logical_target)?;
+            if source_fingerprint != target_fingerprint {
+                bail!(
+                    "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                    logical_target.display()
+                );
+            }
+        }
+        return Ok(true);
     }
-    let tmp_target = target.with_extension(format!(
-        "mise-tmp-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
-    ));
-    file::remove_all(&tmp_target)?;
-    ditto(&caskroom_app, &tmp_target)?;
-    swap_app(&target, &tmp_target)?;
+
+    ditto(&source, &caskroom_app)?;
+    // Suffix hashes stay derived from the logical path so temporary and backup
+    // names are stable across runs.
+    let name_hash = crate::hash::hash_to_str(&logical_target.display().to_string());
+    let tmp_name = replace_bundle_extension(&name, &format!("mise-tmp-{name_hash}"));
+    let old_name = replace_bundle_extension(&name, &format!("mise-old-{name_hash}"));
+    remove_all_at(&parent.fd, &tmp_name)?;
+    ditto_into(&caskroom_app, &parent.fd, &tmp_name)?;
+    activate_app_at(
+        &parent,
+        &name,
+        &tmp_name,
+        &old_name,
+        &caskroom_app,
+        &logical_target,
+    )?;
     // Remove macOS quarantine attribute so Gatekeeper doesn't block the app.
-    let _ = std::process::Command::new("xattr")
-        .args(["-r", "-d", "com.apple.quarantine"])
-        .arg(&target)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+    let relative = Path::new(".").join(&name);
+    let _ = run_in_trusted_dir(
+        "xattr",
+        &[
+            std::ffi::OsStr::new("-r"),
+            std::ffi::OsStr::new("-d"),
+            std::ffi::OsStr::new("com.apple.quarantine"),
+            relative.as_os_str(),
+        ],
+        &parent.fd,
+    );
+    Ok(!keep_caskroom_copy)
+}
+
+fn validate_adoptable_apps(stage: &Path, apps: &[AppArtifact]) -> Result<()> {
+    for app in apps {
+        let target = app_target_path(app.target_name())?;
+        if target.symlink_metadata().is_err() {
+            continue;
+        }
+        let source = find_app(stage, &app.source)
+            .ok_or_else(|| eyre!("brew-cask: app artifact '{}' was not found", app.source))?;
+        if cask_target_fingerprint(&source)? != cask_target_fingerprint(&target)? {
+            bail!(
+                "brew-cask: cannot adopt '{}': existing artifact is not identical to the cask artifact",
+                target.display()
+            );
+        }
+    }
     Ok(())
 }
 
-/// Atomically replace an app, restoring the previous bundle if activation fails.
-fn swap_app(target: &Path, tmp_target: &Path) -> Result<()> {
-    // Atomic swap: rename existing target aside before putting the new one in place so that
-    // a failure during rename leaves the old app intact rather than leaving nothing.
-    let old_target = target.with_extension(format!(
-        "mise-old-{}",
-        crate::hash::hash_to_str(&target.display().to_string())
-    ));
-    remove_app(&old_target)?;
-    if target.exists() {
-        file::rename(target, &old_target)?;
+/// Replace an app bundle's extension for a bare file name
+/// (`Firefox.app` + `mise-tmp-ab12` -> `Firefox.mise-tmp-ab12`).
+fn replace_bundle_extension(name: &std::ffi::OsStr, extension: &str) -> std::ffi::OsString {
+    Path::new(name).with_extension(extension).into_os_string()
+}
+
+/// Activate the staged app before replacing its Caskroom copy with a symlink.
+/// A failed app swap therefore leaves the durable staged copy available for
+/// recovery instead of exposing a symlink to the previous app installation.
+#[cfg(unix)]
+fn activate_app_at(
+    parent: &TrustedOperationParent,
+    name: &std::ffi::OsStr,
+    tmp_name: &std::ffi::OsStr,
+    old_name: &std::ffi::OsStr,
+    caskroom_app: &Path,
+    logical_target: &Path,
+) -> Result<()> {
+    swap_app_at(parent, name, tmp_name, old_name)?;
+    replace_caskroom_app_with_symlink(caskroom_app, logical_target)
+}
+
+#[cfg(unix)]
+fn replace_caskroom_app_with_symlink(caskroom_app: &Path, target: &Path) -> Result<()> {
+    let suffix = crate::hash::hash_to_str(&caskroom_app.display().to_string());
+    let staged_link = caskroom_app.with_extension(format!("mise-link-{suffix}"));
+    let staged_copy = caskroom_app.with_extension(format!("mise-copy-{suffix}"));
+    file::remove_all(&staged_link)?;
+    file::remove_all(&staged_copy)?;
+    file::make_symlink(target, &staged_link)?;
+    file::rename(caskroom_app, &staged_copy)?;
+    if let Err(err) = file::rename(&staged_link, caskroom_app) {
+        let _ = file::rename(&staged_copy, caskroom_app);
+        let _ = file::remove_all(&staged_link);
+        return Err(err).wrap_err("failed to replace Caskroom app copy with symlink");
     }
-    if let Err(e) = file::rename(tmp_target, target) {
-        // Restore the old app if the swap failed.
-        if old_target.exists() {
-            let _ = file::rename(&old_target, target);
-        }
-        return Err(e);
-    }
-    // The replacement is already live. A cleanup failure must not report the
-    // install as failed or prevent install_app from removing quarantine.
-    if let Err(err) = remove_app(&old_target) {
+    if let Err(err) = file::remove_all(&staged_copy) {
         warn!(
-            "brew-cask: failed to remove old app backup {}: {err:#}",
-            old_target.display()
+            "brew-cask: failed to remove staged app copy {}: {err:#}",
+            staged_copy.display()
         );
     }
     Ok(())
 }
 
-/// Remove an app bundle, repairing protected contents before escalating ownership.
-fn remove_app(path: &Path) -> Result<()> {
-    match file::remove_all(path) {
+/// Atomically replace an app inside `parent`, restoring the previous bundle if
+/// activation fails. All operations are `*at`-relative to the verified
+/// descriptor, so no application directory pathname is ever re-resolved.
+#[cfg(unix)]
+fn swap_app_at(
+    parent: &TrustedOperationParent,
+    name: &std::ffi::OsStr,
+    tmp_name: &std::ffi::OsStr,
+    old_name: &std::ffi::OsStr,
+) -> Result<()> {
+    // Atomic swap: rename the existing target aside before putting the new one
+    // in place so a failure leaves the old app intact rather than nothing.
+    remove_app_at(parent, old_name)?;
+    if exists_at(&parent.fd, name)? {
+        nix::fcntl::renameat(&parent.fd, name, &parent.fd, old_name)?;
+    }
+    if let Err(e) = nix::fcntl::renameat(&parent.fd, tmp_name, &parent.fd, name) {
+        // Restore the old app if the swap failed.
+        if exists_at(&parent.fd, old_name)? {
+            let _ = nix::fcntl::renameat(&parent.fd, old_name, &parent.fd, name);
+        }
+        return Err(e).wrap_err_with(|| {
+            format!(
+                "brew-cask: failed to activate {}",
+                Path::new(name).display()
+            )
+        });
+    }
+    // The replacement is already live. A cleanup failure must not report the
+    // install as failed or prevent removing quarantine.
+    if let Err(err) = remove_app_at(parent, old_name) {
+        warn!(
+            "brew-cask: failed to remove old app backup {}: {err:#}",
+            Path::new(old_name).display()
+        );
+    }
+    Ok(())
+}
+
+/// Whether `name` exists in `dir`, without following a final symlink.
+#[cfg(unix)]
+fn exists_at<Fd: std::os::fd::AsFd>(dir: Fd, name: &std::ffi::OsStr) -> Result<bool> {
+    match nix::sys::stat::fstatat(dir, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(_) => Ok(true),
+        Err(nix::errno::Errno::ENOENT) => Ok(false),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Remove an app bundle inside `parent`, repairing protected contents before
+/// escalating ownership. Removal and repair are bound to the descriptor.
+#[cfg(unix)]
+fn remove_app_at(parent: &TrustedOperationParent, name: &std::ffi::OsStr) -> Result<()> {
+    match remove_all_at(&parent.fd, name) {
         Ok(()) => return Ok(()),
         Err(err) if !is_permission_denied(&err) => return Err(err),
         Err(_) => {}
     }
 
-    repair_app_permissions(path);
-    match file::remove_all(path) {
+    repair_app_permissions_at(parent, name);
+    match remove_all_at(&parent.fd, name) {
         Ok(()) => return Ok(()),
         Err(err) if !is_permission_denied(&err) => return Err(err),
         Err(_) => {}
@@ -1082,42 +1456,83 @@ fn remove_app(path: &Path) -> Result<()> {
     let user = nix::unistd::User::from_uid(nix::unistd::geteuid())?
         .map(|user| user.name)
         .ok_or_else(|| eyre!("brew-cask: could not determine current user"))?;
-    // Match Homebrew's final ownership-recovery step. sudo::run applies the
-    // system_packages.sudo setting and refuses to prompt without a TTY.
-    sudo::run(
+    // Match Homebrew's final ownership-recovery step. Both the unprivileged and
+    // the elevated attempt run with their working directory bound to the
+    // verified appdir descriptor and address the bundle by a relative name, so
+    // the recursive chown cannot be redirected outside the validated directory
+    // by a replacement of any appdir component. sudo::run_in_dir applies the
+    // same system_packages.sudo policy as sudo::run and refuses to prompt
+    // without a TTY.
+    //
+    // `-h -P` keep the recursion inside the bundle: cask bundles legitimately
+    // contain symlinks, and without these the walk would dereference one that
+    // points outward and change ownership of the referent outside the verified
+    // application directory.
+    let relative = Path::new(".").join(name);
+    let status = run_in_trusted_dir(
         "chown",
         &[
-            "-R".to_string(),
-            "--".to_string(),
-            user,
-            path.display().to_string(),
+            std::ffi::OsStr::new("-R"),
+            std::ffi::OsStr::new("-h"),
+            std::ffi::OsStr::new("-P"),
+            std::ffi::OsStr::new("--"),
+            std::ffi::OsStr::new(&user),
+            relative.as_os_str(),
         ],
-        &[],
-    )?;
-    repair_app_permissions(path);
-    file::remove_all(path)
+        &parent.fd,
+    );
+    if !matches!(status, Ok(status) if status.success()) {
+        sudo::run_in_dir(
+            "chown",
+            &[
+                "-R".to_string(),
+                "-h".to_string(),
+                "-P".to_string(),
+                "--".to_string(),
+                user,
+                relative.display().to_string(),
+            ],
+            &parent.fd,
+        )?;
+    }
+    repair_app_permissions_at(parent, name);
+    remove_all_at(&parent.fd, name)
 }
 
-/// Clear flags, restore owner permissions, and remove ACLs from an app bundle.
-fn repair_app_permissions(path: &Path) {
+/// Clear flags, restore owner permissions, and remove ACLs from an app bundle,
+/// resolving it relative to the verified descriptor.
+///
+/// Every command is recursive, so `-P` is mandatory: cask bundles legitimately
+/// contain symlinks, and without it a bundle symlink pointing outside the
+/// application directory would have the flags or permissions of its referent
+/// changed instead. macOS `chmod`/`chflags` reject `-R` together with `-h`, but
+/// `-P` alone keeps the recursion from dereferencing symlink entries (verified:
+/// an outward symlink's referent keeps its original mode and flags).
+#[cfg(unix)]
+fn repair_app_permissions_at(parent: &TrustedOperationParent, name: &std::ffi::OsStr) {
+    let relative = Path::new(".").join(name);
     let run = |program: &str, args: &[&str]| {
-        let _ = std::process::Command::new(program)
-            .args(args)
-            .arg(path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+        let mut argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
+        argv.push(relative.as_os_str());
+        let _ = run_in_trusted_dir(program, &argv, &parent.fd);
     };
-    run("/usr/bin/chflags", &["-R", "--", "000"]);
-    run("/bin/chmod", &["-R", "--", "u+rwx"]);
-    run("/bin/chmod", &["-R", "-N"]);
+    run("/usr/bin/chflags", &["-R", "-P", "--", "000"]);
+    run("/bin/chmod", &["-R", "-P", "--", "u+rwx"]);
+    run("/bin/chmod", &["-R", "-P", "-N"]);
 }
 
 /// Return whether an eyre chain originated from an I/O permission error.
 fn is_permission_denied(err: &eyre::Report) -> bool {
-    err.downcast_ref::<std::io::Error>()
-        .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|err| err.kind() == std::io::ErrorKind::PermissionDenied)
+            || cause
+                .downcast_ref::<nix::errno::Errno>()
+                .is_some_and(|err| {
+                    matches!(err, nix::errno::Errno::EACCES | nix::errno::Errno::EPERM)
+                })
+    })
 }
 
 /// Retry a failed artifact-target mutation with sudo on permission errors.
@@ -1147,15 +1562,23 @@ fn make_symlink_elevating(source: &Path, link: &Path) -> Result<()> {
     with_sudo_fallback(
         file::make_symlink(source, link).map(|_| ()),
         "ln",
-        &[
-            "-s".into(),
-            "-f".into(),
-            "-h".into(),
-            "--".into(),
-            source.display().to_string(),
-            link.display().to_string(),
-        ],
+        &symlink_command_args(source, link),
     )
+}
+
+fn symlink_command_args(source: &Path, link: &Path) -> Vec<String> {
+    let mut args = vec!["-s".into(), "-f".into()];
+    if cfg!(target_os = "macos") {
+        args.push("-h".into());
+    } else {
+        args.push("-n".into());
+    }
+    args.extend([
+        "--".into(),
+        source.display().to_string(),
+        link.display().to_string(),
+    ]);
+    args
 }
 
 fn rename_elevating(from: &Path, to: &Path) -> Result<()> {
@@ -1194,6 +1617,26 @@ fn remove_artifact_target_elevating(path: &Path) -> Result<()> {
     with_sudo_fallback(result, "rm", &args)
 }
 
+fn remove_empty_directory_elevating(path: &Path) -> Result<()> {
+    let Ok(metadata) = path.symlink_metadata() else {
+        return Ok(());
+    };
+    if !metadata.is_dir() {
+        return Ok(());
+    }
+    if path
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_some())
+    {
+        return Ok(());
+    }
+    with_sudo_fallback(
+        file::remove_dir(path),
+        "rmdir",
+        &["--".into(), path.display().to_string()],
+    )
+}
+
 /// Copy a cask artifact while preserving macOS metadata where it matters.
 ///
 /// Linux cask support currently covers font files, which do not need the
@@ -1205,7 +1648,964 @@ fn copy_cask_artifact(from: &Path, to: &Path) -> Result<()> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        file::copy(from, to)
+        if from.is_dir() {
+            file::create_dir_all(to)?;
+            file::copy_dir_all_preserve_symlinks(from, to)
+        } else {
+            file::copy(from, to)
+        }
+    }
+}
+
+fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path) -> Result<()> {
+    let stage = lexically_normalized_path(stage);
+    let mut pending = vec![lexically_normalized_path(source)];
+    let mut visited = BTreeSet::new();
+    while let Some(source) = pending.pop() {
+        let relative = staged_relative_path(&stage, &source).ok_or_else(|| {
+            eyre!(
+                "brew-cask: staged symlink target escaped extraction root: {}",
+                source.display()
+            )
+        })?;
+        if relative.components().next().is_some()
+            && !source
+                .parent()
+                .is_some_and(|parent| path_starts_with_resolved_root(parent, &stage))
+        {
+            bail!(
+                "brew-cask: staged symlink path escaped extraction root: {}",
+                source.display()
+            );
+        }
+        if !visited.insert(relative.to_path_buf()) {
+            continue;
+        }
+        let destination = owned_stage.join(&relative);
+        let metadata = source.symlink_metadata()?;
+        if destination.symlink_metadata().is_err() {
+            if let Some(parent) = destination.parent() {
+                file::create_dir_all(parent)?;
+            }
+            if metadata.file_type().is_symlink() {
+                file::make_symlink(&std::fs::read_link(&source)?, &destination)?;
+            } else {
+                copy_cask_artifact(&source, &destination)?;
+            }
+        } else if metadata.is_dir() && destination.is_dir() {
+            copy_cask_artifact(&source, &destination)?;
+        }
+
+        let symlinks = WalkDir::new(&destination)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
+                Ok(_) => None,
+                Err(err) => Some(Err(err)),
+            })
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for link in symlinks {
+            let link_relative = link.strip_prefix(owned_stage)?;
+            let original_link = stage.join(link_relative);
+            let link_source = std::fs::read_link(&link)?;
+            let original_target = lexically_normalized_path(&resolve_symlink_target(
+                &original_link,
+                link_source.clone(),
+            ));
+            let Some(target_relative) = staged_relative_path(&stage, &original_target) else {
+                continue;
+            };
+            let owned_target = owned_stage.join(&target_relative);
+            pending.push(original_target);
+            if link_source.is_absolute() {
+                file::remove_file(&link)?;
+                file::make_symlink(&owned_target, &link)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn durabilize_staged_symlink_targets(
+    stage: &Path,
+    temporary_caskroom: &Path,
+    targets: &mut FlightTargetTransaction,
+) -> Result<()> {
+    let owned_stage = temporary_caskroom.join(".homebrew-staged");
+    for target in targets.installed.clone() {
+        if staged_relative_path(stage, &target).is_some() {
+            continue;
+        }
+        let Ok(metadata) = target.symlink_metadata() else {
+            continue;
+        };
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let source = std::fs::read_link(&target)?;
+        let staged_source = lexically_normalized_path(&resolve_symlink_target(&target, source));
+        let Some(relative) = staged_relative_path(stage, &staged_source) else {
+            continue;
+        };
+        let temporary_source = owned_stage.join(relative);
+        copy_staged_artifact_closure(stage, &owned_stage, &staged_source)?;
+        remove_artifact_target_elevating(&target)?;
+        create_flight_symlink(&temporary_source, &target, FlightSudo::IfNeeded)?;
+    }
+    Ok(())
+}
+
+fn retarget_transient_symlinks(
+    temporary_caskroom: &Path,
+    installed_caskroom: &Path,
+    final_caskroom: &Path,
+    targets: &FlightTargetTransaction,
+) -> Result<()> {
+    for target in &targets.installed {
+        let Ok(metadata) = target.symlink_metadata() else {
+            continue;
+        };
+        if !metadata.file_type().is_symlink() {
+            continue;
+        }
+        let source = std::fs::read_link(target)?;
+        let resolved = resolve_symlink_target(target, source);
+        let Ok(relative) = resolved.strip_prefix(temporary_caskroom) else {
+            continue;
+        };
+        remove_artifact_target_elevating(target)?;
+        create_flight_symlink(&final_caskroom.join(relative), target, FlightSudo::IfNeeded)?;
+    }
+    let internal_symlinks = WalkDir::new(installed_caskroom)
+        .follow_links(false)
+        .min_depth(1)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
+            Ok(_) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for target in internal_symlinks {
+        let source = std::fs::read_link(&target)?;
+        // Relative links retain the same relationship when the whole caskroom is
+        // renamed. Only absolute links embed the temporary caskroom path.
+        if !source.is_absolute() {
+            continue;
+        }
+        let Ok(relative) = source.strip_prefix(temporary_caskroom) else {
+            continue;
+        };
+        file::remove_file(&target)?;
+        create_flight_symlink(&final_caskroom.join(relative), &target, FlightSudo::Never)?;
+    }
+    Ok(())
+}
+
+fn install_generic_artifact(
+    stage: &Path,
+    temporary_caskroom: &Path,
+    artifact: &GenericArtifact,
+    targets: &mut FlightTargetTransaction,
+) -> Result<()> {
+    let source = find_artifact_matching(stage, &artifact.source, |_| true)
+        .ok_or_else(|| eyre!("brew-cask: artifact '{}' was not found", artifact.source))?;
+    if !path_starts_with_resolved_root(&source, stage) {
+        bail!(
+            "brew-cask: refusing generic artifact source outside the extraction root: {}",
+            source.display()
+        );
+    }
+    let target = generic_artifact_target_path(&artifact.target)?;
+    let relative_source = source.strip_prefix(stage)?;
+    let caskroom_source = temporary_caskroom.join(relative_source);
+    if !path_starts_with_resolved_root(&caskroom_source, temporary_caskroom) {
+        bail!(
+            "brew-cask: refusing to stage generic artifact through a path outside the caskroom: {}",
+            caskroom_source.display()
+        );
+    }
+    #[cfg(not(unix))]
+    if let Some(parent) = target.parent() {
+        file::create_dir_all(parent)?;
+    }
+    let elevated_target = targets.protect_generic(&target)?;
+    copy_generic_artifact(&source, &target, elevated_target.as_deref())?;
+    if let Some(parent) = caskroom_source.parent() {
+        file::create_dir_all(parent)?;
+    }
+    file::make_symlink(&target, &caskroom_source)?;
+    targets.record_installed(target);
+    Ok(())
+}
+
+fn copy_generic_artifact(from: &Path, to: &Path, elevated_target: Option<&Path>) -> Result<()> {
+    validate_generic_copy_target(to)?;
+    #[cfg(unix)]
+    {
+        if let Some(target) = elevated_target {
+            copy_generic_artifact_elevated(from, target)
+        } else {
+            copy_generic_artifact_unprivileged(from, to)
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = elevated_target;
+        copy_cask_artifact(from, to)
+    }
+}
+
+#[cfg(unix)]
+fn copy_generic_artifact_unprivileged(from: &Path, to: &Path) -> Result<()> {
+    let parent = open_trusted_operation_parent(to, true, true)?;
+    let name = to
+        .file_name()
+        .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
+    let staging_name = format!(".mise-copy-{}", crate::rand::random_string(16));
+    nix::sys::stat::mkdirat(
+        &parent.fd,
+        staging_name.as_str(),
+        nix::sys::stat::Mode::S_IRWXU,
+    )?;
+    let flags = nix::fcntl::OFlag::O_RDONLY
+        | nix::fcntl::OFlag::O_DIRECTORY
+        | nix::fcntl::OFlag::O_NOFOLLOW;
+    let staging_fd = nix::fcntl::openat(
+        &parent.fd,
+        staging_name.as_str(),
+        flags,
+        nix::sys::stat::Mode::empty(),
+    )?;
+    let staging_stat = nix::sys::stat::fstat(&staging_fd)?;
+    if staging_stat.st_uid != nix::unistd::geteuid().as_raw() || staging_stat.st_mode & 0o077 != 0 {
+        bail!("brew-cask: temporary artifact directory is not private");
+    }
+    let staging = TrustedOperationParent { fd: staging_fd };
+    let temporary_name = std::ffi::OsStr::new("payload");
+    match copy_cask_artifact_at(from, &staging.fd, temporary_name) {
+        Ok(()) => {
+            match nix::fcntl::renameat(&staging.fd, temporary_name, &parent.fd, name)
+                .wrap_err_with(|| format!("failed to install {}", to.display()))
+            {
+                Ok(()) => {
+                    remove_private_staging_dir(&parent, &staging, staging_name.as_ref())?;
+                    Ok(())
+                }
+                Err(err) => {
+                    remove_all_at(&staging.fd, temporary_name).wrap_err_with(|| {
+                            format!(
+                                "failed to clean up temporary generic artifact after rename failed: {err:#}"
+                            )
+                        })?;
+                    remove_private_staging_dir(&parent, &staging, staging_name.as_ref())?;
+                    Err(err)
+                }
+            }
+        }
+        Err(err) => {
+            let _ = remove_all_at(&staging.fd, temporary_name);
+            let _ = remove_private_staging_dir(&parent, &staging, staging_name.as_ref());
+            Err(err)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn copy_generic_artifact_elevated(from: &Path, to: &Path) -> Result<()> {
+    ensure_target_absent(to)?;
+    let staging = tempfile::Builder::new()
+        .prefix("mise-cask-copy-")
+        .tempdir()?;
+    let payload = staging.path().join("payload");
+    copy_cask_artifact(from, &payload)?;
+    sudo::run(
+        "mv",
+        &[
+            "--".into(),
+            payload.display().to_string(),
+            to.display().to_string(),
+        ],
+        &[],
+    )
+}
+
+#[cfg(unix)]
+fn ensure_strict_elevated_target(target: &Path) -> Result<PathBuf> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: generic artifact target has no parent"))?;
+    let mut existing = parent;
+    loop {
+        match existing.symlink_metadata() {
+            Ok(_) => break,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                existing = existing.parent().ok_or_else(|| {
+                    eyre!("brew-cask: generic artifact parent has no existing ancestor")
+                })?;
+            }
+            Err(err) => return Err(err.into()),
+        }
+    }
+    let trusted = open_trusted_operation_parent(&existing.join(".mise-validation"), false, false)?;
+    let stable_existing = trusted.stable_path()?;
+    validate_strict_elevated_ancestors(&stable_existing)?;
+    let missing = parent.strip_prefix(existing)?;
+    let stable_parent = stable_existing.join(missing);
+    if existing != parent {
+        sudo::run(
+            "mkdir",
+            &[
+                "-p".into(),
+                "--".into(),
+                stable_parent.display().to_string(),
+            ],
+            &[],
+        )?;
+    }
+    let stable_parent = std::fs::canonicalize(&stable_parent)?;
+    validate_strict_elevated_ancestors(&stable_parent)?;
+    Ok(stable_parent.join(
+        target
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?,
+    ))
+}
+
+#[cfg(unix)]
+fn validate_strict_elevated_ancestors(path: &Path) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+    let stable_prefix = file::desymlink_path(&prefix::prefix());
+    for directory in path.ancestors() {
+        let metadata = directory.symlink_metadata()?;
+        if !strict_elevated_directory_is_trusted(
+            directory,
+            &stable_prefix,
+            metadata.uid(),
+            metadata.mode(),
+        ) {
+            bail!(
+                "brew-cask: refusing elevated operation through mutable directory {}",
+                directory.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn strict_elevated_directory_is_trusted(
+    directory: &Path,
+    stable_prefix: &Path,
+    uid: u32,
+    mode: u32,
+) -> bool {
+    uid == 0
+        && mode & 0o002 == 0
+        // Intel Homebrew conventionally uses root:admin 0775 for /usr/local.
+        // Permit that exact prefix, but require every descendant and every
+        // other ancestor used by the elevated operation to be non-writable.
+        && (mode & 0o020 == 0 || directory == stable_prefix)
+}
+
+#[cfg(unix)]
+fn ensure_target_absent(target: &Path) -> Result<()> {
+    match target.symlink_metadata() {
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => bail!(
+            "brew-cask: refusing elevated operation because target appeared: {}",
+            target.display()
+        ),
+        Err(err) => Err(err.into()),
+    }
+}
+
+#[cfg(unix)]
+fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
+    from: &Path,
+    parent: Fd,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let metadata = from.symlink_metadata()?;
+    let mode = nix::sys::stat::Mode::from_bits_truncate(
+        metadata.permissions().mode() as nix::libc::mode_t
+    );
+    if metadata.file_type().is_symlink() {
+        nix::unistd::symlinkat(&std::fs::read_link(from)?, parent, name)?;
+    } else if metadata.is_dir() {
+        nix::sys::stat::mkdirat(&parent, name, nix::sys::stat::Mode::S_IRWXU)?;
+        let fd = nix::fcntl::openat(
+            &parent,
+            name,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_cask_artifact_at(&entry.path(), &fd, &entry.file_name())?;
+        }
+        nix::sys::stat::fchmod(&fd, mode)?;
+    } else if metadata.is_file() {
+        let destination = nix::fcntl::openat(
+            parent,
+            name,
+            nix::fcntl::OFlag::O_WRONLY
+                | nix::fcntl::OFlag::O_CREAT
+                | nix::fcntl::OFlag::O_EXCL
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::S_IRUSR | nix::sys::stat::Mode::S_IWUSR,
+        )?;
+        let mut source = std::fs::File::open(from)?;
+        let mut destination = std::fs::File::from(destination);
+        copy_file_contents(&mut source, &mut destination)?;
+        nix::sys::stat::fchmod(&destination, mode)?;
+    } else {
+        bail!(
+            "brew-cask: unsupported generic artifact type: {}",
+            from.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(all(unix, target_os = "macos"))]
+fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Result<()> {
+    use std::os::fd::AsRawFd;
+
+    // SAFETY: both descriptors remain open for the call and fcopyfile does not
+    // retain them. A null state requests the default copyfile state.
+    let result = unsafe {
+        nix::libc::fcopyfile(
+            from.as_raw_fd(),
+            to.as_raw_fd(),
+            std::ptr::null_mut(),
+            nix::libc::COPYFILE_DATA | nix::libc::COPYFILE_METADATA,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error().into())
+    }
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn copy_file_contents(from: &mut std::fs::File, to: &mut std::fs::File) -> Result<()> {
+    std::io::copy(from, to)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> Result<()> {
+    let stat =
+        match nix::sys::stat::fstatat(&parent, name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(nix::errno::Errno::ENOENT) => return Ok(()),
+            Err(err) => return Err(err.into()),
+        };
+    let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+    if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+        let fd = nix::fcntl::openat(
+            &parent,
+            name,
+            nix::fcntl::OFlag::O_RDONLY
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let mut directory = nix::dir::Dir::from_fd(fd)?;
+        let entries = directory
+            .iter()
+            .map(|entry| entry.map(|entry| entry.file_name().to_owned()))
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for entry in entries {
+            if entry.as_bytes() != b"." && entry.as_bytes() != b".." {
+                remove_all_at(&directory, std::ffi::OsStr::from_bytes(entry.to_bytes()))?;
+            }
+        }
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::RemoveDir)?;
+    } else {
+        nix::unistd::unlinkat(parent, name, nix::unistd::UnlinkatFlags::NoRemoveDir)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_private_staging_dir(
+    parent: &TrustedOperationParent,
+    staging: &TrustedOperationParent,
+    staging_name: &std::ffi::OsStr,
+) -> Result<()> {
+    let bound = nix::sys::stat::fstat(&staging.fd)?;
+    let linked = nix::sys::stat::fstatat(
+        &parent.fd,
+        staging_name,
+        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+    )?;
+    if bound.st_dev != linked.st_dev || bound.st_ino != linked.st_ino {
+        bail!("brew-cask: temporary artifact directory was replaced");
+    }
+    nix::unistd::unlinkat(
+        &parent.fd,
+        staging_name,
+        nix::unistd::UnlinkatFlags::RemoveDir,
+    )?;
+    Ok(())
+}
+
+fn validate_generic_copy_target(target: &Path) -> Result<()> {
+    let prefix = prefix::prefix();
+    if !target.starts_with(&prefix)
+        || target.strip_prefix(&prefix)?.components().next().is_none()
+        || !path_starts_with_resolved_root(target, &prefix)
+    {
+        bail!(
+            "brew-cask: refusing generic artifact copy outside Homebrew prefix: {}",
+            target.display()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+struct TrustedOperationParent {
+    fd: std::os::fd::OwnedFd,
+}
+
+#[cfg(unix)]
+impl TrustedOperationParent {
+    fn path(&self) -> Result<PathBuf> {
+        #[cfg(target_os = "linux")]
+        return Ok(
+            Path::new("/proc/self/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string())
+        );
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        {
+            let mut path = PathBuf::new();
+            nix::fcntl::fcntl(&self.fd, nix::fcntl::FcntlArg::F_GETPATH(&mut path))?;
+            Ok(path)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "ios")))]
+        Ok(Path::new("/dev/fd").join(std::os::fd::AsRawFd::as_raw_fd(&self.fd).to_string()))
+    }
+
+    fn stable_path(&self) -> Result<PathBuf> {
+        Ok(std::fs::canonicalize(self.path()?)?)
+    }
+}
+
+#[cfg(unix)]
+fn trusted_parent_is_writable(parent: &TrustedOperationParent) -> Result<bool> {
+    let stat = nix::sys::stat::fstat(&parent.fd)?;
+    let uid = nix::unistd::geteuid().as_raw();
+    if uid == 0 {
+        return Ok(true);
+    }
+    if stat.st_uid == uid {
+        return Ok(stat.st_mode & 0o200 != 0);
+    }
+    let gid = nix::unistd::getegid().as_raw();
+    if stat.st_gid == gid || current_process_groups()?.contains(&stat.st_gid) {
+        return Ok(stat.st_mode & 0o020 != 0);
+    }
+    Ok(stat.st_mode & 0o002 != 0)
+}
+
+#[cfg(unix)]
+fn current_process_groups() -> Result<Vec<nix::libc::gid_t>> {
+    // SAFETY: A null buffer with size zero is the documented way to query the
+    // number of supplementary groups and does not dereference the pointer.
+    let count = unsafe { nix::libc::getgroups(0, std::ptr::null_mut()) };
+    if count < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut groups = vec![0; count as usize];
+    // SAFETY: `groups` has capacity for exactly `count` gid_t values;
+    // getgroups returns an error instead of writing when that is insufficient.
+    let count = unsafe { nix::libc::getgroups(count, groups.as_mut_ptr()) };
+    if count < 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    groups.truncate(count as usize);
+    Ok(groups)
+}
+
+#[cfg(unix)]
+fn sudo_invoking_id(effective_uid: u32, variable: &str) -> Option<u32> {
+    sudo_invoking_id_from(effective_uid, crate::env::var(variable).ok().as_deref())
+}
+
+#[cfg(unix)]
+fn sudo_invoking_id_from(effective_uid: u32, value: Option<&str>) -> Option<u32> {
+    if effective_uid != 0 {
+        return None;
+    }
+    value
+        .and_then(|value| value.parse().ok())
+        .filter(|id| *id != 0)
+}
+
+#[cfg(unix)]
+fn open_trusted_operation_parent(
+    target: &Path,
+    allow_current_user: bool,
+    create_missing: bool,
+) -> Result<TrustedOperationParent> {
+    let prefix = prefix::prefix();
+    let parent = target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: generic artifact target has no parent"))?;
+    let relative_parent = parent.strip_prefix(&prefix)?;
+    let resolved_prefix = file::desymlink_path(&prefix);
+    open_trusted_directory(
+        &resolved_prefix,
+        relative_parent,
+        allow_current_user,
+        create_missing,
+    )
+}
+
+/// Open (and optionally create) `resolved_root`/`relative` one component at a
+/// time with `O_NOFOLLOW`, verifying at every step that the component is a real
+/// directory owned by root or the current user and not writable by an untrusted
+/// party. `resolved_root` must already be a real (symlink-free) absolute path.
+///
+/// Walking component-by-component with `O_NOFOLLOW` binds the operation to the
+/// exact directory chain that existed when the walk ran: a symlink cannot be
+/// interposed for any component, and because every ancestor is verified as
+/// non-untrusted-writable an unprivileged attacker cannot plant one to begin
+/// with. Callers then mutate relative to the returned directory fd.
+#[cfg(unix)]
+fn open_trusted_directory(
+    resolved_root: &Path,
+    relative: &Path,
+    allow_current_user: bool,
+    create_missing: bool,
+) -> Result<TrustedOperationParent> {
+    use nix::fcntl::{OFlag, open, openat};
+    use nix::sys::stat::{Mode, SFlag, fstat};
+
+    let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW;
+    let mut fd = open(resolved_root, flags, Mode::empty()).wrap_err_with(|| {
+        format!(
+            "brew-cask: cannot open operation directory {}",
+            resolved_root.display()
+        )
+    })?;
+    let current_uid = nix::unistd::geteuid().as_raw();
+    let current_gid = nix::unistd::getegid().as_raw();
+    let current_groups = current_process_groups()?;
+    let sudo_uid = sudo_invoking_id(current_uid, "SUDO_UID");
+    let sudo_gid = sudo_invoking_id(current_uid, "SUDO_GID");
+    let verify = |fd: &std::os::fd::OwnedFd, directory: &Path| -> Result<()> {
+        let stat = fstat(fd)?;
+        let owner_is_user = stat.st_uid == current_uid || Some(stat.st_uid) == sudo_uid;
+        let trusted_owner = stat.st_uid == 0 || (allow_current_user && owner_is_user);
+        let trusted_group = stat.st_gid == current_gid
+            || Some(stat.st_gid) == sudo_gid
+            || current_groups.contains(&stat.st_gid);
+        let writable_by_untrusted = stat.st_mode & 0o002 != 0
+            || (stat.st_mode & 0o020 != 0 && (!allow_current_user || !trusted_group));
+        if !SFlag::from_bits_truncate(stat.st_mode).contains(SFlag::S_IFDIR)
+            || !trusted_owner
+            || writable_by_untrusted
+        {
+            bail!(
+                "brew-cask: refusing operation through untrusted directory {}",
+                directory.display()
+            );
+        }
+        Ok(())
+    };
+    let mut directory = resolved_root.to_path_buf();
+    verify(&fd, &directory)?;
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            bail!("brew-cask: invalid generic artifact parent");
+        };
+        directory.push(name);
+        fd = match openat(&fd, name, flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(nix::errno::Errno::ENOENT) if create_missing => {
+                match nix::sys::stat::mkdirat(
+                    &fd,
+                    name,
+                    Mode::S_IRWXU | Mode::S_IRGRP | Mode::S_IXGRP | Mode::S_IROTH | Mode::S_IXOTH,
+                ) {
+                    Ok(()) | Err(nix::errno::Errno::EEXIST) => {}
+                    Err(err) => {
+                        return Err(err).wrap_err_with(|| {
+                            format!(
+                                "brew-cask: cannot create operation directory {}",
+                                directory.display()
+                            )
+                        });
+                    }
+                }
+                openat(&fd, name, flags, Mode::empty()).wrap_err_with(|| {
+                    format!(
+                        "brew-cask: cannot open operation directory {}",
+                        directory.display()
+                    )
+                })?
+            }
+            Err(err) => {
+                return Err(err).wrap_err_with(|| {
+                    format!(
+                        "brew-cask: cannot open operation directory {}",
+                        directory.display()
+                    )
+                });
+            }
+        };
+        verify(&fd, &directory)?;
+    }
+    Ok(TrustedOperationParent { fd })
+}
+
+/// Create the appdir (if missing) using symlink-safe, trust-verified directory
+/// operations and return the bound descriptor.
+///
+/// Every component is opened with `openat`/`O_NOFOLLOW` and trust-checked, and
+/// missing components are created with `mkdirat`, so a symlink interposed on any
+/// component — including a not-yet-existing tail — is rejected rather than
+/// followed.
+///
+/// The descriptor is returned rather than dropped so the caller can address the
+/// app through it. Releasing it here would reintroduce the race: a replacement
+/// of an accepted (user-owned) component between validation and mutation would
+/// otherwise redirect the subsequent copy, rename, removal, and ownership
+/// recovery, all of which resolve pathnames again.
+#[cfg(unix)]
+fn ensure_trusted_appdir(appdir: &Path) -> Result<TrustedOperationParent> {
+    // Anchor the walk at `/` and verify every component from there. `/` is the
+    // only directory that cannot be renamed or replaced, so it is the one safe
+    // pathname to open; each component below it is opened with `openat` and
+    // `O_NOFOLLOW` and trust-checked before descending.
+    //
+    // Scanning for the deepest existing ancestor and re-opening *that* by
+    // pathname would reintroduce a race: between the scan and the open, a
+    // same-uid process could replace the scanned directory with another
+    // same-uid-owned real directory, which would pass the ownership checks and
+    // become the retained descriptor. Starting from an unreplaceable root and
+    // descending only through verified descriptors removes that window.
+    // The path is walked exactly as given — it is NOT canonicalized here.
+    // Canonicalizing would follow a symlink planted on the appdir or its tail,
+    // which is precisely the substitution this walk must reject. Configured
+    // overrides are already resolved by `target_app_dir`, so production paths
+    // are symlink-free and the walk succeeds; a planted symlink hits
+    // `O_NOFOLLOW` and fails.
+    let relative = appdir.strip_prefix(Path::new("/")).map_err(|_| {
+        eyre!(
+            "brew-cask: app directory '{}' must be an absolute path",
+            appdir.display()
+        )
+    })?;
+    // `allow_current_user` is true because a per-user appdir such as
+    // `~/Applications` is legitimately owned by the invoking user.
+    open_trusted_directory(Path::new("/"), relative, true, true)
+}
+
+fn run_installer_artifact(
+    stage: &Path,
+    installer: &InstallerArtifact,
+    copied_files: &BTreeSet<PathBuf>,
+) -> Result<()> {
+    let executable = stage.join(&installer.executable);
+    if staged_relative_path(stage, &executable).is_none() {
+        bail!(
+            "brew-cask: refusing installer executable outside trusted installer roots: {}",
+            executable.display()
+        );
+    }
+    if !executable.is_file() {
+        bail!(
+            "brew-cask: installer executable '{}' was not found",
+            installer.executable
+        );
+    }
+    let executable = file::desymlink_path(&executable);
+    if !executable.starts_with(file::desymlink_path(stage)) && !copied_files.contains(&executable) {
+        bail!(
+            "brew-cask: refusing installer executable outside trusted installer roots: {}",
+            executable.display()
+        );
+    }
+    file::make_executable(&executable)?;
+    let prefix = prefix::prefix();
+    let mut paths = vec![prefix.join("bin"), prefix.join("sbin")];
+    if let Some(path) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&path));
+    }
+    let path = std::env::join_paths(paths)?;
+    CmdLineRunner::new(executable)
+        .env("PATH", path)
+        .args(&installer.args)
+        .raw(true)
+        .execute()
+}
+
+fn run_installers_before_durabilizing(
+    stage: &Path,
+    temporary_caskroom: &Path,
+    installers: &[InstallerArtifact],
+    targets: &mut FlightTargetTransaction,
+    mut completed: impl FnMut(usize) -> Result<()>,
+) -> Result<()> {
+    for (index, installer) in installers.iter().enumerate() {
+        run_installer_artifact(stage, installer, targets.copied_files())?;
+        completed(index)?;
+    }
+    durabilize_staged_symlink_targets(stage, temporary_caskroom, targets)
+}
+
+fn generic_artifact_target_path(target: &str) -> Result<PathBuf> {
+    let prefix = prefix::prefix();
+    let expanded = target.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
+    let target = PathBuf::from(expanded);
+    if !target.is_absolute()
+        || !target.starts_with(&prefix)
+        || target.strip_prefix(&prefix)?.components().next().is_none()
+        || target
+            .components()
+            .any(|component| matches!(component, Component::ParentDir))
+        || !path_starts_with_resolved_root(&target, &prefix)
+    {
+        bail!(
+            "brew-cask: generic artifact target '{}' must stay below {}",
+            target.display(),
+            prefix.display()
+        );
+    }
+    Ok(target)
+}
+
+fn generic_artifact_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .generic
+        .iter()
+        .map(|artifact| generic_artifact_target_path(&artifact.target))
+        .collect()
+}
+
+fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(Vec::new());
+    };
+    Ok(receipt
+        .targets
+        .into_iter()
+        .filter(|record| receipt.generic.contains(&record.path))
+        .collect())
+}
+
+fn remove_obsolete_generic_artifacts(
+    previous_targets: &[CaskTargetRecord],
+    current_targets: &[PathBuf],
+) -> Result<()> {
+    let prefix = prefix::prefix();
+    for record in previous_targets {
+        if current_targets.contains(&record.path) || !cask_target_record_matches(record)? {
+            continue;
+        }
+        if !path_starts_with_resolved_root(&record.path, &prefix) {
+            bail!(
+                "brew-cask: refusing to remove generic artifact outside {}: {}",
+                prefix.display(),
+                record.path.display()
+            );
+        }
+        if let Err(err) = remove_trusted_generic_target(&record.path) {
+            warn!(
+                "brew-cask: leaving obsolete generic artifact {} because its parent directories are mutable: {err:#}",
+                record.path.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn remove_trusted_generic_target(target: &Path) -> Result<()> {
+    let expected_parent = resolved_parent(target)?;
+    match remove_trusted_generic_target_from(target, &expected_parent) {
+        Ok(()) => Ok(()),
+        Err(err) if is_permission_denied(&err) => {
+            #[cfg(unix)]
+            let operation_target = ensure_strict_elevated_target(target)?;
+            #[cfg(not(unix))]
+            let operation_target = target.to_path_buf();
+            remove_artifact_target_elevating(&operation_target).wrap_err_with(|| {
+                format!(
+                    "failed to remove generic artifact after unprivileged removal failed: {err:#}"
+                )
+            })
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn remove_trusted_generic_target_from(target: &Path, expected_parent: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        let parent = open_trusted_operation_parent(target, true, false)?;
+        validate_trusted_operation_parent(&parent, expected_parent)?;
+        let name = target
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
+        remove_all_at(&parent.fd, name)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = expected_parent;
+        file::remove_all(target)
+    }
+}
+
+#[cfg(unix)]
+fn validate_trusted_operation_parent(
+    parent: &TrustedOperationParent,
+    expected_parent: &Path,
+) -> Result<()> {
+    let actual_parent = std::fs::canonicalize(parent.path()?)?;
+    if actual_parent != expected_parent {
+        bail!(
+            "brew-cask: refusing operation through a changed generic artifact parent: {}",
+            expected_parent.display()
+        );
+    }
+    Ok(())
+}
+
+fn rename_trusted_generic_target(from: &Path, to: &Path, expected_parent: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        if from.parent() != to.parent() {
+            bail!("brew-cask: generic artifact backup changed directories");
+        }
+        let parent = open_trusted_operation_parent(from, true, false)?;
+        validate_trusted_operation_parent(&parent, expected_parent)?;
+        let from_name = from
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact source has no filename"))?;
+        let to_name = to
+            .file_name()
+            .ok_or_else(|| eyre!("brew-cask: generic artifact target has no filename"))?;
+        nix::fcntl::renameat(&parent.fd, from_name, &parent.fd, to_name)?;
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = expected_parent;
+        file::rename(from, to)
     }
 }
 
@@ -1221,6 +2621,104 @@ fn ditto(from: &Path, to: &Path) -> Result<()> {
             from.display(),
             to.display()
         );
+    }
+    Ok(())
+}
+
+/// Run a helper with its working directory bound to `dir` via `fchdir`, so
+/// relative arguments resolve from that exact directory inode.
+///
+/// Passing a pathname to a subprocess would let it re-resolve every component,
+/// which a same-uid replacement can redirect. `fchdir` in the child pins
+/// resolution to the descriptor mise already verified, so relative names cannot
+/// escape the validated application directory.
+#[cfg(unix)]
+fn run_in_trusted_dir<Fd: std::os::fd::AsFd>(
+    program: &str,
+    args: &[&std::ffi::OsStr],
+    dir: Fd,
+) -> Result<std::process::ExitStatus> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+
+    let raw = dir.as_fd().as_raw_fd();
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
+    // SAFETY: `fchdir` is async-signal-safe and only alters the child's working
+    // directory. `raw` stays open in the parent for the duration of the spawn,
+    // and CLOEXEC (if set) only takes effect at exec, after pre_exec runs.
+    unsafe {
+        cmd.pre_exec(move || {
+            if nix::libc::fchdir(raw) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    cmd.status()
+        .wrap_err_with(|| format!("failed to run {program}"))
+}
+
+/// Copy the bundle `from` into a freshly created directory `name` inside `dir`,
+/// without ever letting the copy resolve `name` as a pathname.
+///
+/// `name` is created with `mkdirat` and then opened with `openat`/`O_NOFOLLOW`,
+/// so the destination is guaranteed to be a real directory this call created.
+/// `ditto` is then pointed at that descriptor's working directory, so it writes
+/// into the bound inode rather than resolving a relative name. Without this, a
+/// same-uid process could create the predictable temporary name as a symlink
+/// after the preceding removal and `ditto` would follow it, copying the
+/// application outside the verified application directory.
+///
+/// A racing creation of `name` surfaces as `EEXIST` and fails closed rather than
+/// being followed.
+#[cfg(unix)]
+fn ditto_into<Fd: std::os::fd::AsFd>(from: &Path, dir: Fd, name: &std::ffi::OsStr) -> Result<()> {
+    nix::sys::stat::mkdirat(&dir, name, nix::sys::stat::Mode::S_IRWXU).wrap_err_with(|| {
+        format!(
+            "brew-cask: cannot create staging directory {}",
+            Path::new(name).display()
+        )
+    })?;
+    let destination = nix::fcntl::openat(
+        &dir,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW,
+        nix::sys::stat::Mode::empty(),
+    )
+    .wrap_err_with(|| {
+        format!(
+            "brew-cask: cannot open staging directory {}",
+            Path::new(name).display()
+        )
+    })?;
+    let stat = nix::sys::stat::fstat(&destination)?;
+    if stat.st_uid != nix::unistd::geteuid().as_raw() {
+        bail!("brew-cask: staging directory is not owned by the current user");
+    }
+    // `ditto src dst` copies the *contents* of src into dst, so pointing it at
+    // the bound directory reproduces the bundle in place.
+    let status = run_in_trusted_dir(
+        "ditto",
+        &[from.as_os_str(), std::ffi::OsStr::new(".")],
+        &destination,
+    )?;
+    if !status.success() {
+        bail!(
+            "ditto failed copying {} to {}",
+            from.display(),
+            Path::new(name).display()
+        );
+    }
+    // Restore the bundle's own permissions, which the private staging mode hid.
+    if let Ok(metadata) = from.symlink_metadata() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = nix::sys::stat::Mode::from_bits_truncate(
+            metadata.permissions().mode() as nix::libc::mode_t
+        );
+        nix::sys::stat::fchmod(&destination, mode)?;
     }
     Ok(())
 }
@@ -1402,7 +2900,17 @@ fn execute_flight_steps(
     appdir: &Path,
     kind: &str,
 ) -> Result<()> {
-    execute_flight_steps_with_completion(cask, steps, staged_path, appdir, kind, |_, _| Ok(()))
+    let mut targets = FlightTargetTransaction::default();
+    execute_flight_steps_with_completion(
+        cask,
+        steps,
+        staged_path,
+        appdir,
+        kind,
+        &mut targets,
+        |_, _| Ok(()),
+    )?;
+    targets.commit()
 }
 
 fn execute_flight_steps_recording(
@@ -1412,10 +2920,17 @@ fn execute_flight_steps_recording(
     appdir: &Path,
     kind: &str,
     journal: &mut CaskTransactionJournal<'_>,
+    targets: &mut FlightTargetTransaction,
 ) -> Result<()> {
-    execute_flight_steps_with_completion(cask, steps, staged_path, appdir, kind, |index, step| {
-        record_cask_action(journal, &format!("{kind}[{index}]:{}", step.kind()))
-    })
+    execute_flight_steps_with_completion(
+        cask,
+        steps,
+        staged_path,
+        appdir,
+        kind,
+        targets,
+        |index, step| record_cask_action(journal, &format!("{kind}[{index}]:{}", step.kind())),
+    )
 }
 
 fn execute_flight_steps_with_completion(
@@ -1424,10 +2939,11 @@ fn execute_flight_steps_with_completion(
     staged_path: &Path,
     appdir: &Path,
     kind: &str,
+    targets: &mut FlightTargetTransaction,
     mut completed: impl FnMut(usize, &FlightStep) -> Result<()>,
 ) -> Result<()> {
     for (index, step) in steps.iter().enumerate() {
-        execute_flight_step(cask, step, staged_path, appdir).wrap_err_with(|| {
+        execute_flight_step(cask, step, staged_path, appdir, targets).wrap_err_with(|| {
             format!("brew-cask:{}: failed to run structured {kind}", cask.token)
         })?;
         completed(index, step)?;
@@ -1435,11 +2951,517 @@ fn execute_flight_steps_with_completion(
     Ok(())
 }
 
+#[derive(Debug, Default)]
+struct FlightTargetTransaction {
+    backups: Vec<ArtifactLinkBackup>,
+    receipt_caskroom: Option<PathBuf>,
+    installed: Vec<PathBuf>,
+    uninstall: BTreeMap<PathBuf, bool>,
+    previous_symlinks: BTreeSet<PathBuf>,
+    copied_files: BTreeSet<PathBuf>,
+    previous_directories: BTreeSet<PathBuf>,
+    installed_directories: Vec<PathBuf>,
+    committed: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct FlightRecoveryRecord {
+    target: PathBuf,
+    #[serde(default)]
+    backup: Option<PathBuf>,
+    target_parent: PathBuf,
+    #[serde(default)]
+    backup_parent: Option<PathBuf>,
+    #[serde(default)]
+    receipt_caskroom: Option<PathBuf>,
+    #[serde(default = "default_elevate_recovery")]
+    elevate: bool,
+}
+
+fn default_elevate_recovery() -> bool {
+    true
+}
+
+impl FlightTargetTransaction {
+    fn protect(&mut self, target: &Path) -> Result<()> {
+        self.protect_with_elevation(target, true)
+    }
+
+    fn protect_unprivileged(&mut self, target: &Path) -> Result<()> {
+        self.protect_with_elevation(target, false)
+    }
+
+    fn protect_generic(&mut self, target: &Path) -> Result<Option<PathBuf>> {
+        #[cfg(unix)]
+        {
+            match open_trusted_operation_parent(target, true, true) {
+                Ok(parent) if trusted_parent_is_writable(&parent)? => {
+                    self.protect_unprivileged(target)?;
+                    Ok(None)
+                }
+                Ok(_) => {
+                    let target = ensure_strict_elevated_target(target)?;
+                    self.protect(&target)?;
+                    Ok(Some(target))
+                }
+                Err(err) if is_permission_denied(&err) => {
+                    let target = ensure_strict_elevated_target(target)?;
+                    self.protect(&target)?;
+                    Ok(Some(target))
+                }
+                Err(err) => Err(err),
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            self.protect(target)?;
+            Ok(None)
+        }
+    }
+
+    fn protect_with_elevation(&mut self, target: &Path, elevate: bool) -> Result<()> {
+        if self.backups.iter().any(|entry| entry.target == target) {
+            return Ok(());
+        }
+        ensure_no_unresolved_flight_recovery(target)?;
+        let target_parent = resolved_parent(target)?;
+        let backup = if target.symlink_metadata().is_ok() {
+            let parent = flight_backup_parent(target)?;
+            let backup = unused_flight_backup_path(parent, target)?;
+            let recovery = flight_backup_recovery_path(&backup);
+            let record = FlightRecoveryRecord {
+                target: target.to_path_buf(),
+                backup: Some(backup.clone()),
+                target_parent: target_parent.clone(),
+                backup_parent: Some(resolved_parent(&backup)?),
+                receipt_caskroom: self.receipt_caskroom.clone(),
+                elevate,
+            };
+            write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+            let rename = if elevate {
+                rename_elevating(target, &backup)
+            } else {
+                rename_trusted_generic_target(target, &backup, &target_parent)
+            };
+            if let Err(err) = rename {
+                let _ = file::remove_all(&recovery);
+                return Err(err);
+            }
+            Some(backup)
+        } else {
+            let recovery = flight_absent_recovery_path(target);
+            let record = FlightRecoveryRecord {
+                target: target.to_path_buf(),
+                backup: None,
+                target_parent: target_parent.clone(),
+                backup_parent: None,
+                receipt_caskroom: self.receipt_caskroom.clone(),
+                elevate,
+            };
+            write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+            None
+        };
+        let backup_parent = backup.as_deref().map(resolved_parent).transpose()?;
+        self.backups.push(ArtifactLinkBackup {
+            target: target.to_path_buf(),
+            backup,
+            target_parent,
+            backup_parent,
+            elevate,
+        });
+        Ok(())
+    }
+
+    fn record_installed(&mut self, target: PathBuf) {
+        if !self.installed.contains(&target) {
+            self.installed.push(target);
+        }
+    }
+
+    fn record_installed_flight(&mut self, target: PathBuf, uninstall: bool) {
+        self.record_installed(target.clone());
+        self.uninstall.insert(target, uninstall);
+    }
+
+    fn installed_targets(&self) -> &[PathBuf] {
+        &self.installed
+    }
+
+    fn uninstall_targets(&self) -> &BTreeMap<PathBuf, bool> {
+        &self.uninstall
+    }
+
+    fn record_copied_files(&mut self, source: &Path, target: &Path) -> Result<()> {
+        let metadata = source.symlink_metadata()?;
+        if metadata.is_file() {
+            self.copied_files.insert(file::desymlink_path(target));
+            return Ok(());
+        }
+        for entry in WalkDir::new(source).follow_links(false) {
+            let entry = entry?;
+            if entry.file_type().is_file() {
+                let relative = entry.path().strip_prefix(source)?;
+                self.copied_files
+                    .insert(file::desymlink_path(&target.join(relative)));
+            }
+        }
+        Ok(())
+    }
+
+    fn copied_files(&self) -> &BTreeSet<PathBuf> {
+        &self.copied_files
+    }
+
+    fn record_installed_directory(&mut self, target: PathBuf) {
+        if !self.installed_directories.contains(&target) {
+            self.installed_directories.push(target);
+        }
+    }
+
+    fn installed_directories(&self) -> &[PathBuf] {
+        &self.installed_directories
+    }
+
+    fn rollback(&mut self) -> Result<()> {
+        let mut first_error = None;
+        let mut failed = Vec::new();
+        for entry in std::mem::take(&mut self.backups).into_iter().rev() {
+            if let Err(err) = validate_backup_parents(&entry) {
+                first_error.get_or_insert(err);
+                failed.push(entry);
+                continue;
+            }
+            let remove = if entry.elevate {
+                remove_artifact_target_elevating(&entry.target)
+            } else {
+                remove_trusted_generic_target_from(&entry.target, &entry.target_parent)
+            };
+            if let Err(err) = remove {
+                first_error.get_or_insert(err);
+                failed.push(entry);
+                continue;
+            }
+            if let Some(backup) = &entry.backup {
+                let rename = if entry.elevate {
+                    rename_elevating(backup, &entry.target)
+                } else {
+                    rename_trusted_generic_target(backup, &entry.target, &entry.target_parent)
+                };
+                if let Err(err) = rename {
+                    first_error.get_or_insert(err);
+                    failed.push(entry);
+                    continue;
+                }
+            }
+            if let Err(err) = file::remove_all(flight_target_recovery_path(&entry)) {
+                warn!("brew-cask: failed to remove flight recovery record: {err:#}");
+            }
+        }
+        failed.reverse();
+        self.backups = failed;
+        self.installed.clear();
+        self.uninstall.clear();
+        self.copied_files.clear();
+        self.installed_directories.clear();
+        if let Some(err) = first_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn commit(&mut self) -> Result<()> {
+        self.committed = true;
+        let backups = std::mem::take(&mut self.backups);
+        let mut first_error = None;
+        for entry in backups {
+            if let Err(err) = file::remove_all(flight_target_recovery_path(&entry)) {
+                first_error.get_or_insert(err);
+            }
+            if let Some(backup) = &entry.backup {
+                // Attempt both removals independently. Either a missing record
+                // or a missing backup is enough to prevent stale recovery from
+                // restoring pre-install data over a later target.
+                let remove = if entry.elevate {
+                    remove_artifact_target_elevating(backup)
+                } else {
+                    remove_trusted_generic_target_from(
+                        backup,
+                        entry.backup_parent.as_ref().unwrap(),
+                    )
+                };
+                if let Err(err) = remove {
+                    first_error.get_or_insert(err);
+                }
+            }
+        }
+        if let Some(err) = first_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn unused_flight_backup_path(parent: &Path, target: &Path) -> Result<PathBuf> {
+    let stem = format!(
+        ".mise-flight-backup-{}-{}",
+        hash::hash_to_str(&target.display().to_string()),
+        std::process::id()
+    );
+    for attempt in 0_u64.. {
+        let backup = parent.join(format!("{stem}-{attempt}"));
+        let recovery = flight_backup_recovery_path(&backup);
+        let backup_missing = match backup.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Ok(_) => false,
+            Err(err) => return Err(err.into()),
+        };
+        let recovery_missing = match recovery.symlink_metadata() {
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+            Ok(_) => false,
+            Err(err) => return Err(err.into()),
+        };
+        if backup_missing && recovery_missing {
+            return Ok(backup);
+        }
+    }
+    unreachable!("the flight backup suffix space is exhausted")
+}
+
+fn flight_backup_recovery_path(backup: &Path) -> PathBuf {
+    flight_recovery_root().join(format!(
+        "{}.recovery",
+        hash::hash_to_str(&backup.display().to_string())
+    ))
+}
+
+fn flight_absent_recovery_path(target: &Path) -> PathBuf {
+    flight_recovery_root().join(format!(
+        "absent-{}.recovery",
+        hash::hash_to_str(&target.display().to_string())
+    ))
+}
+
+fn flight_target_recovery_path(entry: &ArtifactLinkBackup) -> PathBuf {
+    entry
+        .backup
+        .as_deref()
+        .map(flight_backup_recovery_path)
+        .unwrap_or_else(|| flight_absent_recovery_path(&entry.target))
+}
+
+fn flight_recovery_root() -> PathBuf {
+    crate::dirs::STATE.join("brew-cask").join("flight-recovery")
+}
+
+fn ensure_no_unresolved_flight_recovery(target: &Path) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(flight_recovery_root()) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path
+            .extension()
+            .is_none_or(|extension| extension != "recovery")
+        {
+            continue;
+        }
+        let Ok(body) = file::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(record) = serde_json::from_str::<FlightRecoveryRecord>(&body) else {
+            continue;
+        };
+        if record.target == target {
+            if let Some(backup) = record.backup {
+                bail!(
+                    "brew-cask: unresolved recovery for {} still preserves its original at {}",
+                    target.display(),
+                    backup.display()
+                );
+            }
+            bail!(
+                "brew-cask: unresolved recovery for newly created target {}",
+                target.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn recover_flight_backups() -> Result<()> {
+    let root = flight_recovery_root();
+    recover_flight_backups_in(&root)
+}
+
+fn recover_flight_backups_in(root: &Path) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Ok(());
+    };
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) => {
+                warn!(
+                    "brew-cask: failed to inspect a flight recovery entry in {}: {err:#}",
+                    root.display()
+                );
+                continue;
+            }
+        };
+        match path.extension().and_then(|extension| extension.to_str()) {
+            Some("recovery") => recover_flight_backup_or_warn(&path),
+            // Atomic record writes may leave their temporary file behind if
+            // the process dies before rename. It is not a recovery record.
+            Some("tmp") => {
+                if let Err(err) = file::remove_all(&path) {
+                    warn!(
+                        "brew-cask: failed to remove stale flight recovery file {}: {err:#}",
+                        path.display()
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn recover_flight_backup_or_warn(path: &Path) {
+    if let Err(err) = recover_flight_backup(path) {
+        warn!(
+            "brew-cask: leaving flight recovery record {} for a later retry: {err:#}",
+            path.display()
+        );
+    }
+}
+
+fn recover_flight_backup(path: &Path) -> Result<()> {
+    let body = file::read_to_string(path)
+        .wrap_err_with(|| format!("failed to read flight recovery record {}", path.display()))?;
+    let record: FlightRecoveryRecord = serde_json::from_str(&body)
+        .wrap_err_with(|| format!("invalid flight recovery record {}", path.display()))?;
+    let backup = ArtifactLinkBackup {
+        target: record.target,
+        backup: record.backup,
+        target_parent: record.target_parent,
+        backup_parent: record.backup_parent,
+        elevate: record.elevate,
+    };
+    validate_backup_parents(&backup)?;
+    if let Some(backup_path) = &backup.backup {
+        if backup_path.symlink_metadata().is_ok() {
+            if backup.target.symlink_metadata().is_ok() {
+                // A target created after the interrupted transaction may be user
+                // data, a successfully activated replacement, or a replacement
+                // that rollback failed to remove. Without enough information to
+                // distinguish those cases, preserve both entries and leave the
+                // original backup available for manual recovery.
+                warn!(
+                    "brew-cask: preserving interrupted flight target {} and its original backup {}",
+                    backup.target.display(),
+                    backup_path.display()
+                );
+                return Ok(());
+            } else if backup.elevate {
+                rename_elevating(backup_path, &backup.target)?;
+            } else {
+                rename_trusted_generic_target(backup_path, &backup.target, &backup.target_parent)?;
+            }
+        }
+    } else if backup.target.symlink_metadata().is_ok()
+        && !flight_target_claimed_by_receipt(&backup.target, record.receipt_caskroom.as_deref())?
+    {
+        if backup.elevate {
+            remove_artifact_target_elevating(&backup.target)?;
+        } else {
+            remove_trusted_generic_target_from(&backup.target, &backup.target_parent)?;
+        }
+    }
+    file::remove_all(path)?;
+    Ok(())
+}
+
+fn flight_target_claimed_by_receipt(target: &Path, caskroom: Option<&Path>) -> Result<bool> {
+    let Some(caskroom) = caskroom else {
+        return Ok(false);
+    };
+    let Some(receipt) = read_receipt(caskroom)? else {
+        return Ok(false);
+    };
+    if receipt.flight_directories.iter().any(|path| path == target) && target.is_dir() {
+        return Ok(true);
+    }
+    for record in receipt
+        .targets
+        .iter()
+        .filter(|record| record.path == target)
+    {
+        if cask_target_record_matches(record)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn resolved_parent(path: &Path) -> Result<PathBuf> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: flight target has no parent"))?;
+    Ok(path_with_resolved_existing_ancestor(parent))
+}
+
+fn validate_backup_parents(entry: &ArtifactLinkBackup) -> Result<()> {
+    if resolved_parent(&entry.target)? != entry.target_parent
+        || entry
+            .backup
+            .as_deref()
+            .zip(entry.backup_parent.as_ref())
+            .is_some_and(|(backup, expected)| {
+                !resolved_parent(backup).is_ok_and(|current| current == *expected)
+            })
+    {
+        bail!(
+            "brew-cask: refusing to restore flight target through a changed parent: {}",
+            entry.target.display()
+        );
+    }
+    Ok(())
+}
+
+fn flight_backup_parent(target: &Path) -> Result<&Path> {
+    if let Some(app) = target.ancestors().find(|ancestor| {
+        ancestor
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
+    }) {
+        return app
+            .parent()
+            .ok_or_else(|| eyre!("brew-cask: app flight target has no parent"));
+    }
+    target
+        .parent()
+        .ok_or_else(|| eyre!("brew-cask: flight target has no parent"))
+}
+
+impl Drop for FlightTargetTransaction {
+    fn drop(&mut self) {
+        if !self.committed
+            && let Err(err) = self.rollback()
+        {
+            warn!("brew-cask: failed to roll back flight targets: {err:#}");
+        }
+    }
+}
+
 impl FlightStep {
     fn kind(&self) -> &'static str {
         match self {
             Self::Move { .. } => "move",
             Self::Remove { .. } => "remove",
+            Self::Copy { .. } => "copy",
+            Self::Symlink { .. } => "symlink",
             Self::Run { .. } => "run",
             Self::TerminateProcess { .. } => "terminate_process",
         }
@@ -1451,6 +3473,7 @@ fn execute_flight_step(
     step: &FlightStep,
     staged_path: &Path,
     appdir: &Path,
+    targets: &mut FlightTargetTransaction,
 ) -> Result<()> {
     match step {
         FlightStep::Move {
@@ -1496,6 +3519,172 @@ fn execute_flight_step(
                 }
             }
         }
+        FlightStep::Copy {
+            source,
+            target,
+            recursive,
+            overwrite,
+            source_glob,
+            guards,
+        } => {
+            if !guards
+                .iter()
+                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .all(|matches| matches)
+            {
+                return Ok(());
+            }
+            let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
+            let [source] = sources.as_slice() else {
+                bail!("brew-cask: structured copy source must resolve to exactly one path");
+            };
+            if !source.exists() {
+                bail!(
+                    "brew-cask: structured copy source '{}' was not found",
+                    source.display()
+                );
+            }
+            if source.is_dir() && !recursive {
+                bail!("brew-cask: structured directory copy requires recursive=true");
+            }
+            let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
+            let external = !target.starts_with(staged_path);
+            let target_metadata = target.symlink_metadata().ok();
+            if target_metadata.is_some() {
+                if !overwrite {
+                    bail!(
+                        "brew-cask: structured copy target '{}' already exists",
+                        target.display()
+                    );
+                }
+                if external {
+                    targets.protect(&target)?;
+                } else {
+                    file::remove_all(&target)?;
+                }
+            }
+            if let Some(parent) = target.parent() {
+                create_dir_all_elevating(parent)?;
+            }
+            if external && target_metadata.is_none() {
+                // Bind an absent target to its resolved parent only after
+                // creating that parent so rollback can validate its identity.
+                targets.protect(&target)?;
+            }
+            copy_cask_artifact(source, &target)?;
+            if external {
+                targets.record_copied_files(source, &target)?;
+            }
+            // External copy trees may be modified during normal use. The
+            // transaction backup is sufficient for rollback; recording them
+            // would fingerprint their contents and force later reinstalls.
+        }
+        FlightStep::Symlink {
+            source,
+            target,
+            force,
+            uninstall,
+            source_glob,
+            sudo,
+            guards,
+        } => {
+            if !guards
+                .iter()
+                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .all(|matches| matches)
+            {
+                return Ok(());
+            }
+            let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
+            let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
+            if sources.is_empty() {
+                bail!(
+                    "brew-cask: structured symlink source '{}' did not match any paths",
+                    source.path
+                );
+            }
+            let target_metadata = target.symlink_metadata().ok();
+            let target_is_real_dir = target_metadata
+                .as_ref()
+                .is_some_and(|metadata| metadata.is_dir());
+            let target_is_dir = target_is_real_dir || sources.len() > 1;
+            if sources.len() > 1 {
+                let created_external_directory =
+                    target_metadata.is_none() && !target.starts_with(staged_path);
+                if target_metadata.is_some() && !target_is_real_dir {
+                    if target.exists() && !force && !targets.previous_symlinks.contains(&target) {
+                        bail!(
+                            "brew-cask: structured symlink target '{}' already exists",
+                            target.display()
+                        );
+                    }
+                    targets.protect(&target)?;
+                } else if created_external_directory {
+                    // Record the absent directory itself so rollback removes
+                    // the container after removing the links created below.
+                    if let Some(parent) = target.parent() {
+                        create_flight_dir_all(parent, *sudo)?;
+                    }
+                    targets.protect(&target)?;
+                }
+                create_flight_dir_all(&target, *sudo)?;
+                if created_external_directory || targets.previous_directories.contains(&target) {
+                    targets.record_installed_directory(target.clone());
+                }
+            }
+            for source in sources {
+                let link = if target_is_dir {
+                    let source_name = Path::new(&source).file_name().ok_or_else(|| {
+                        eyre!("brew-cask: structured symlink source has no file name")
+                    })?;
+                    target.join(source_name)
+                } else {
+                    target.clone()
+                };
+                let external = !link.starts_with(staged_path);
+                let link_metadata = link.symlink_metadata().ok();
+                if let Some(metadata) = &link_metadata {
+                    if metadata.is_dir() {
+                        bail!(
+                            "brew-cask: refusing to replace structured symlink directory '{}'",
+                            link.display()
+                        );
+                    }
+                    if link.exists() && !force && !targets.previous_symlinks.contains(&link) {
+                        bail!(
+                            "brew-cask: structured symlink target '{}' already exists",
+                            link.display()
+                        );
+                    }
+                    if external {
+                        targets.protect(&link)?;
+                    } else if metadata.file_type().is_symlink() {
+                        file::remove_file(&link)?;
+                    } else {
+                        file::remove_all(&link)?;
+                    }
+                }
+                if let Some(parent) = link.parent() {
+                    create_flight_dir_all(parent, *sudo)?;
+                }
+                if external && link_metadata.is_none() {
+                    // Bind an absent target to its resolved parent only after
+                    // creating that parent; otherwise rollback observes a
+                    // different path identity and leaves the new link behind.
+                    targets.protect(&link)?;
+                }
+                let source =
+                    durable_internal_symlink_source(staged_path, &source, &link).unwrap_or(source);
+                create_flight_symlink(&source, &link, *sudo)?;
+                if external {
+                    targets.record_installed_flight(link, *uninstall);
+                }
+            }
+        }
         FlightStep::Run {
             command,
             args,
@@ -1505,30 +3694,26 @@ fn execute_flight_step(
         } => {
             if !guards
                 .iter()
-                .map(|guard| flight_guard_matches(guard, staged_path, appdir))
+                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
                 .all(|matches| matches)
             {
                 return Ok(());
             }
-            let command = resolve_flight_path_with_context(command, staged_path, appdir)?;
-            let command = expand_cask_template(
-                &command.to_string_lossy(),
-                staged_path,
-                appdir,
-                Some(&cask.version),
-            );
+            let command = resolve_flight_path_with_context(cask, command, staged_path, appdir)?;
+            let command =
+                expand_flight_template(cask, &command.to_string_lossy(), staged_path, appdir);
             let args = args
                 .iter()
-                .map(|arg| expand_cask_template(arg, staged_path, appdir, Some(&cask.version)))
+                .map(|arg| expand_flight_template(cask, arg, staged_path, appdir))
                 .collect::<Vec<_>>();
             let env = env
                 .iter()
                 .map(|(key, value)| {
                     (
                         key.clone(),
-                        expand_cask_template(value, staged_path, appdir, Some(&cask.version)),
+                        expand_flight_template(cask, value, staged_path, appdir),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -1617,16 +3802,63 @@ fn execute_terminate_process(
     Ok(())
 }
 
-fn flight_guard_matches(guard: &FlightGuard, staged_path: &Path, appdir: &Path) -> Result<bool> {
+fn flight_guard_matches(
+    cask: &Cask,
+    guard: &FlightGuard,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<bool> {
     match guard {
         FlightGuard::OnMacos => Ok(cfg!(target_os = "macos")),
         FlightGuard::OnLinux => Ok(cfg!(target_os = "linux")),
         FlightGuard::IfExists(path) => {
-            Ok(resolve_flight_path_with_context(path, staged_path, appdir)?.exists())
+            Ok(resolve_flight_path_with_context(cask, path, staged_path, appdir)?.exists())
         }
         FlightGuard::UnlessExists(path) => {
-            Ok(!resolve_flight_path_with_context(path, staged_path, appdir)?.exists())
+            Ok(!resolve_flight_path_with_context(cask, path, staged_path, appdir)?.exists())
         }
+    }
+}
+
+fn flight_symlink_sources(
+    cask: &Cask,
+    source: &FlightPath,
+    source_glob: bool,
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<Vec<PathBuf>> {
+    if source_glob {
+        if source.base != FlightPathBase::StagedPath {
+            bail!("brew-cask: structured symlink globs must use staged_path");
+        }
+        let pattern = expand_flight_template(cask, &source.path, staged_path, appdir);
+        return expand_staged_glob(staged_path, &pattern);
+    }
+    Ok(vec![resolve_flight_path_with_context(
+        cask,
+        source,
+        staged_path,
+        appdir,
+    )?])
+}
+
+fn create_flight_symlink(source: &Path, target: &Path, sudo: FlightSudo) -> Result<()> {
+    match sudo {
+        FlightSudo::Never => file::make_symlink(source, target).map(|_| ()),
+        FlightSudo::IfNeeded => make_symlink_elevating(source, target),
+        FlightSudo::Always => sudo::run("/bin/ln", &symlink_command_args(source, target), &[]),
+    }
+}
+
+fn create_flight_dir_all(target: &Path, sudo: FlightSudo) -> Result<()> {
+    match sudo {
+        FlightSudo::Never => file::create_dir_all(target),
+        FlightSudo::IfNeeded => create_dir_all_elevating(target),
+        FlightSudo::Always => sudo::run(
+            "/bin/mkdir",
+            &["-p".into(), "--".into(), target.display().to_string()],
+            &[],
+        ),
     }
 }
 
@@ -1715,17 +3947,40 @@ fn resolve_flight_path(staged_path: &Path, path: &FlightPath) -> Result<PathBuf>
 }
 
 fn resolve_flight_path_with_context(
+    cask: &Cask,
     path: &FlightPath,
     staged_path: &Path,
     appdir: &Path,
 ) -> Result<PathBuf> {
-    let expanded = expand_cask_template(&path.path, staged_path, appdir, None);
+    let expanded = expand_flight_template(cask, &path.path, staged_path, appdir);
     match path.base {
-        FlightPathBase::StagedPath => Ok(staged_path.join(expanded)),
-        FlightPathBase::AppDir => Ok(appdir.join(expanded)),
-        FlightPathBase::HomebrewPrefix => Ok(prefix::prefix().join(expanded)),
-        FlightPathBase::Absolute => Ok(PathBuf::from(expanded)),
+        FlightPathBase::StagedPath => {
+            validate_flight_relative_path(&expanded)?;
+            Ok(staged_path.join(expanded))
+        }
+        FlightPathBase::AppDir => {
+            validate_flight_relative_path(&expanded)?;
+            Ok(appdir.join(expanded))
+        }
+        FlightPathBase::HomebrewPrefix => {
+            validate_flight_relative_path(&expanded)?;
+            Ok(prefix::prefix().join(expanded))
+        }
+        FlightPathBase::Literal => Ok(PathBuf::from(expanded)),
     }
+}
+
+fn expand_flight_template(cask: &Cask, value: &str, staged_path: &Path, appdir: &Path) -> String {
+    let caskroom_path = caskroom_token_dir(&cask.token);
+    let version_major = cask
+        .version
+        .split(['.', ','])
+        .next()
+        .unwrap_or(&cask.version);
+    let value = value
+        .replace("{{version.major}}", version_major)
+        .replace("{{caskroom_path}}", &caskroom_path.to_string_lossy());
+    expand_cask_template(&value, staged_path, appdir, Some(&cask.version))
 }
 
 fn expand_cask_template(
@@ -2459,6 +4714,72 @@ fn resolve_symlink_target(link: &Path, target: PathBuf) -> PathBuf {
     }
 }
 
+fn durable_internal_symlink_source(stage: &Path, source: &Path, link: &Path) -> Option<PathBuf> {
+    if !source.is_absolute()
+        || staged_relative_path(stage, source).is_none()
+        || staged_relative_path(stage, link).is_none()
+    {
+        return None;
+    }
+    relative_path_between(link.parent()?, source)
+}
+
+fn relative_path_between(from: &Path, to: &Path) -> Option<PathBuf> {
+    let from = lexically_normalized_path(from);
+    let to = lexically_normalized_path(to);
+    let from_components = from.components().collect::<Vec<_>>();
+    let to_components = to.components().collect::<Vec<_>>();
+    let common = from_components
+        .iter()
+        .zip(&to_components)
+        .take_while(|(from, to)| from == to)
+        .count();
+    let mut relative = PathBuf::new();
+    for component in &from_components[common..] {
+        match component {
+            Component::Normal(_) => relative.push(".."),
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    for component in &to_components[common..] {
+        match component {
+            Component::Normal(_) | Component::CurDir => relative.push(component.as_os_str()),
+            _ => return None,
+        }
+    }
+    Some(if relative.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        relative
+    })
+}
+
+fn lexically_normalized_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !normalized.pop() {
+                    normalized.push(component);
+                }
+            }
+            _ => normalized.push(component),
+        }
+    }
+    normalized
+}
+
+fn staged_relative_path(stage: &Path, path: &Path) -> Option<PathBuf> {
+    let stage = lexically_normalized_path(stage);
+    let path = lexically_normalized_path(path);
+    path.strip_prefix(&stage)
+        .or_else(|_| path.strip_prefix(file::desymlink_path(&stage)))
+        .ok()
+        .map(Path::to_path_buf)
+}
+
 fn path_starts_with_resolved_root(path: &Path, root: &Path) -> bool {
     path_with_resolved_existing_ancestor(path).starts_with(file::desymlink_path(root))
 }
@@ -2488,7 +4809,7 @@ fn cask_appdir(apps: &[AppArtifact]) -> Result<PathBuf> {
             return Ok(prefix_app_dir);
         }
     }
-    Ok(PathBuf::from("/Applications"))
+    target_app_dir()
 }
 
 fn link_binary(caskroom: &Path, appdir: &Path, binary: &BinaryArtifact) -> Result<()> {
@@ -2541,7 +4862,7 @@ fn caskroom_binary_path(
 ) -> Result<PathBuf> {
     let target = binary.target_path(appdir)?;
     let roots = if is_appdir_binary_target(&binary.target_name()?) {
-        let mut roots = allowed_appdir_roots();
+        let mut roots = allowed_appdir_roots()?;
         roots.extend(allowed_binary_target_roots());
         roots
     } else {
@@ -2598,6 +4919,14 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
             artifacts.pkgs.push(pkg);
             continue;
         }
+        if let Some(installer) = parse_installer_artifact(artifact)? {
+            artifacts.installers.push(installer);
+            continue;
+        }
+        if let Some(artifact) = parse_generic_artifact(artifact)? {
+            artifacts.generic.push(artifact);
+            continue;
+        }
         if let Some(font) = parse_font_artifact(artifact) {
             artifacts.fonts.push(font);
             continue;
@@ -2620,12 +4949,14 @@ fn cask_artifacts(cask: &Cask) -> Result<CaskArtifacts> {
         && artifacts.binaries.is_empty()
         && artifacts.command_wrappers.is_empty()
         && artifacts.pkgs.is_empty()
+        && artifacts.installers.is_empty()
+        && artifacts.generic.is_empty()
         && artifacts.fonts.is_empty()
         && artifacts.completions.is_empty()
         && artifacts.generated_completions.is_empty()
     {
         bail!(
-            "brew-cask:{}: no app, binary, command wrapper, pkg, font, or completion artifact found; only app-bundle, binary, command-wrapper, pkg, font, and completion casks are supported",
+            "brew-cask:{}: no supported install artifact found",
             cask.token
         );
     }
@@ -2650,6 +4981,8 @@ fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<(
             && artifacts.binaries.is_empty()
             && artifacts.command_wrappers.is_empty()
             && artifacts.pkgs.is_empty()
+            && artifacts.installers.is_empty()
+            && artifacts.generic.is_empty()
             && artifacts.completions.is_empty()
             && artifacts.generated_completions.is_empty()
             && artifacts.preflight_steps.is_empty()
@@ -2840,6 +5173,83 @@ fn parse_pkg_artifact(value: &Value) -> Result<Option<PkgArtifact>> {
         }
         _ => Ok(None),
     }
+}
+
+fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> {
+    let Some(installer) = value.as_object().and_then(|object| object.get("installer")) else {
+        return Ok(None);
+    };
+    let values = installer
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: installer metadata must be an array"))?;
+    let script = values
+        .first()
+        .and_then(Value::as_object)
+        .and_then(|value| value.get("script"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| eyre!("brew-cask: only script installers are supported"))?;
+    reject_unsupported_artifact_fields("installer script", script, &["executable", "args"])?;
+    let executable = script
+        .get("executable")
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask: installer script requires an executable"))?;
+    let args = script
+        .get("args")
+        .map(|args| {
+            args.as_array()
+                .ok_or_else(|| eyre!("brew-cask: installer script args must be an array"))?
+                .iter()
+                .map(|arg| {
+                    arg.as_str()
+                        .map(str::to_string)
+                        .ok_or_else(|| eyre!("brew-cask: installer script args must be strings"))
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    Ok(Some(InstallerArtifact {
+        executable: executable.to_string(),
+        args,
+    }))
+}
+
+fn reject_unsupported_artifact_fields(
+    context: &str,
+    object: &serde_json::Map<String, Value>,
+    allowed: &[&str],
+) -> Result<()> {
+    let unsupported = object
+        .keys()
+        .filter(|key| !allowed.contains(&key.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unsupported.is_empty() {
+        bail!(
+            "brew-cask: unsupported {context} field {}",
+            unsupported.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn parse_generic_artifact(value: &Value) -> Result<Option<GenericArtifact>> {
+    let Some(artifact) = value.as_object().and_then(|object| object.get("artifact")) else {
+        return Ok(None);
+    };
+    let values = artifact
+        .as_array()
+        .ok_or_else(|| eyre!("brew-cask: artifact metadata must be an array"))?;
+    let source = values
+        .first()
+        .and_then(Value::as_str)
+        .ok_or_else(|| eyre!("brew-cask: artifact requires a source"))?;
+    let target = artifact_target(value, values)
+        .ok_or_else(|| eyre!("brew-cask: artifact requires a target"))?;
+    Ok(Some(GenericArtifact {
+        source: source.to_string(),
+        target,
+    }))
 }
 
 fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
@@ -3084,13 +5494,93 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                     .unwrap_or(false),
             })
         }
+        "copy" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "copy step",
+                object,
+                &[
+                    "type",
+                    "source",
+                    "target",
+                    "recursive",
+                    "overwrite",
+                    "source_glob",
+                    "guards",
+                ],
+            )?;
+            Ok(FlightStep::Copy {
+                source: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "copy source",
+                    object.get("source"),
+                )?,
+                target: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "copy target",
+                    object.get("target"),
+                )?,
+                recursive: parse_optional_flight_bool(cask, kind, object, "recursive", false)?,
+                overwrite: parse_optional_flight_bool(cask, kind, object, "overwrite", true)?,
+                source_glob: parse_optional_flight_bool(cask, kind, object, "source_glob", false)?,
+                guards: parse_flight_guards(cask, kind, object.get("guards"))?,
+            })
+        }
+        "symlink" => {
+            reject_unsupported_flight_fields(
+                cask,
+                kind,
+                "symlink step",
+                object,
+                &[
+                    "type",
+                    "source",
+                    "target",
+                    "force",
+                    "uninstall",
+                    "source_glob",
+                    "sudo",
+                    "guards",
+                ],
+            )?;
+            Ok(FlightStep::Symlink {
+                source: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "symlink source",
+                    object.get("source"),
+                )?,
+                target: parse_context_flight_path_value(
+                    cask,
+                    kind,
+                    "symlink target",
+                    object.get("target"),
+                )?,
+                force: parse_optional_flight_bool(cask, kind, object, "force", false)?,
+                uninstall: parse_optional_flight_bool(cask, kind, object, "uninstall", false)?,
+                source_glob: parse_optional_flight_bool(cask, kind, object, "source_glob", false)?,
+                sudo: parse_flight_sudo(cask, kind, object.get("sudo"))?,
+                guards: parse_flight_guards(cask, kind, object.get("guards"))?,
+            })
+        }
         "run" => {
             reject_unsupported_flight_fields(
                 cask,
                 kind,
                 "run step",
                 object,
-                &["type", "command", "args", "env", "sudo", "guards"],
+                &[
+                    "type",
+                    "command",
+                    "args",
+                    "env",
+                    "sudo",
+                    "guards",
+                    "network_access",
+                ],
             )?;
             let args = object
                 .get("args")
@@ -3141,23 +5631,7 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
                 })
                 .transpose()?
                 .unwrap_or_default();
-            let guards = object
-                .get("guards")
-                .map(|guards| {
-                    guards
-                        .as_array()
-                        .ok_or_else(|| {
-                            eyre!(
-                                "brew-cask:{}: unsupported {kind} run guards metadata format",
-                                cask.token
-                            )
-                        })?
-                        .iter()
-                        .map(|guard| parse_flight_guard(cask, kind, guard))
-                        .collect::<Result<Vec<_>>>()
-                })
-                .transpose()?
-                .unwrap_or_default();
+            let guards = parse_flight_guards(cask, kind, object.get("guards"))?;
             Ok(FlightStep::Run {
                 command: parse_run_command(cask, kind, object.get("command"))?,
                 args,
@@ -3264,6 +5738,34 @@ fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Result<FlightSte
     }
 }
 
+fn parse_flight_sudo(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<FlightSudo> {
+    match value {
+        None | Some(Value::Bool(false)) => Ok(FlightSudo::Never),
+        Some(Value::Bool(true)) => Ok(FlightSudo::Always),
+        Some(Value::String(value)) if value == "if_needed" => Ok(FlightSudo::IfNeeded),
+        _ => bail!("brew-cask:{}: unsupported {kind} sudo setting", cask.token),
+    }
+}
+
+fn parse_flight_guards(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<Vec<FlightGuard>> {
+    value
+        .map(|guards| {
+            guards
+                .as_array()
+                .ok_or_else(|| {
+                    eyre!(
+                        "brew-cask:{}: unsupported {kind} guards metadata format",
+                        cask.token
+                    )
+                })?
+                .iter()
+                .map(|guard| parse_flight_guard(cask, kind, guard))
+                .collect::<Result<Vec<_>>>()
+        })
+        .transpose()
+        .map(|guards| guards.unwrap_or_default())
+}
+
 fn parse_optional_flight_bool(
     cask: &Cask,
     kind: &str,
@@ -3304,10 +5806,10 @@ fn parse_run_command(cask: &Cask, kind: &str, value: Option<&Value>) -> Result<F
             cask.token,
             base
         ),
-        None => FlightPathBase::Absolute,
+        None => FlightPathBase::Literal,
     };
     let path_value = Path::new(path);
-    let invalid_absolute_path = base == FlightPathBase::Absolute
+    let invalid_absolute_path = base == FlightPathBase::Literal
         && !path_value.is_absolute()
         && path_value.components().count() > 1;
     let invalid_based_path = matches!(
@@ -3392,17 +5894,34 @@ fn parse_context_flight_path(
         Some("staged_path") => FlightPathBase::StagedPath,
         Some("appdir") => FlightPathBase::AppDir,
         Some("homebrew_prefix") => FlightPathBase::HomebrewPrefix,
+        Some("relative") => FlightPathBase::Literal,
         Some(base) => bail!(
             "brew-cask:{}: unsupported {kind} {field} base {}",
             cask.token,
             base
         ),
-        None => FlightPathBase::Absolute,
+        None => FlightPathBase::Literal,
     };
     Ok(FlightPath {
         base,
         path: path.to_string(),
     })
+}
+
+fn parse_context_flight_path_value(
+    cask: &Cask,
+    kind: &str,
+    field: &str,
+    value: Option<&Value>,
+) -> Result<FlightPath> {
+    let object = value.and_then(Value::as_object).ok_or_else(|| {
+        eyre!(
+            "brew-cask:{}: unsupported {kind} {field} metadata format",
+            cask.token
+        )
+    })?;
+    reject_unsupported_flight_fields(cask, kind, field, object, &["base", "path"])?;
+    parse_context_flight_path(cask, kind, field, object)
 }
 
 fn reject_unsupported_flight_fields(
@@ -3560,6 +6079,7 @@ fn path_ends_with_ignore_ascii_case(path: &Path, suffix: &Path) -> bool {
 }
 
 fn app_target_path(target_name: &str) -> Result<PathBuf> {
+    let app_dir = target_app_dir()?;
     if target_name.contains('\0') {
         bail!("brew-cask: app target contains NUL");
     }
@@ -3574,14 +6094,94 @@ fn app_target_path(target_name: &str) -> Result<PathBuf> {
         }
         if path.is_absolute() {
             let prefix_app_dir = prefix::prefix().join("Applications");
-            if path.starts_with("/Applications") || path.starts_with(&prefix_app_dir) {
+            if path.starts_with(&app_dir) || path.starts_with(&prefix_app_dir) {
                 return Ok(path);
             }
-            bail!("brew-cask: app target '{target_name}' must be under /Applications");
+            // Casks routinely hardcode an absolute `/Applications/Foo.app`
+            // target. When an override appdir is configured, relocate such a
+            // target into it (preserving any subdirectories) rather than
+            // rejecting it. `$HOMEBREW_PREFIX`-anchored targets are handled by
+            // the check above and are never relocated.
+            if app_dir != Path::new(DEFAULT_APP_DIR)
+                && let Ok(rest) = path.strip_prefix(DEFAULT_APP_DIR)
+            {
+                return Ok(app_dir.join(rest));
+            }
+            bail!(
+                "brew-cask: app target '{target_name}' must be under {}",
+                app_dir.display()
+            );
         }
         bail!("brew-cask: app target '{target_name}' must be an absolute path");
     }
-    Ok(PathBuf::from("/Applications").join(target_name))
+    Ok(app_dir.join(target_name))
+}
+
+/// The directory `app` artifacts are linked into: `/Applications` unless
+/// [`APP_DIR_ENV`] overrides it.
+///
+/// The override is validated here rather than at the point of use because
+/// `app_target_path` treats the result as a containment boundary for symlinks
+/// that may be created with elevated privileges. An empty value falls back to
+/// the default so that exporting `MISE_BREW_CASK_OPT_APPDIR=` cannot disable
+/// that boundary: `Path::starts_with("")` is true for every path.
+fn target_app_dir() -> Result<PathBuf> {
+    let Ok(dir) = crate::env::var(APP_DIR_ENV) else {
+        return Ok(PathBuf::from(DEFAULT_APP_DIR));
+    };
+    if dir.is_empty() {
+        return Ok(PathBuf::from(DEFAULT_APP_DIR));
+    }
+    let dir = PathBuf::from(dir);
+    if !dir.is_absolute() {
+        bail!(
+            "brew-cask: {APP_DIR_ENV} '{}' must be an absolute path",
+            dir.display()
+        );
+    }
+    if dir
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        bail!(
+            "brew-cask: {APP_DIR_ENV} '{}' must not contain '..'",
+            dir.display()
+        );
+    }
+    // Resolve the override to a real absolute path: canonicalize its longest
+    // existing prefix and re-append the components that do not exist yet. This
+    // makes the appdir a symlink-free containment boundary — privileged cask
+    // mutations then operate on resolved paths and cannot be redirected through
+    // a symlinked component — and it collapses every spelling of the filesystem
+    // root (`/`, `//`, `/.`, a symlink to `/`, ...) to `/` so they can all be
+    // rejected together.
+    let resolved = resolve_appdir(&dir);
+    if !resolved
+        .components()
+        .any(|component| matches!(component, Component::Normal(_)))
+    {
+        bail!(
+            "brew-cask: {APP_DIR_ENV} '{}' must not resolve to the filesystem root",
+            dir.display()
+        );
+    }
+    Ok(resolved)
+}
+
+/// Resolve `dir` by canonicalizing its longest existing ancestor and
+/// re-appending the not-yet-existing tail. Symlinks in the existing portion are
+/// followed, so the result is a real path the caller can safely use as a
+/// containment boundary. Falls back to `dir` unchanged if nothing along the
+/// path can be canonicalized (not expected for an absolute path, where `/`
+/// always resolves).
+fn resolve_appdir(dir: &Path) -> PathBuf {
+    for ancestor in dir.ancestors() {
+        if let Ok(real) = ancestor.canonicalize() {
+            let tail = dir.strip_prefix(ancestor).unwrap_or(Path::new(""));
+            return real.join(tail);
+        }
+    }
+    dir.to_path_buf()
 }
 
 fn app_bundle_name(target_name: &str) -> Result<&str> {
@@ -3608,11 +6208,14 @@ fn allowed_binary_target_roots() -> Vec<PathBuf> {
     roots
 }
 
-fn allowed_appdir_roots() -> Vec<PathBuf> {
-    vec![
-        PathBuf::from("/Applications"),
-        prefix::prefix().join("Applications"),
-    ]
+fn allowed_appdir_roots() -> Result<Vec<PathBuf>> {
+    let mut roots = vec![PathBuf::from(DEFAULT_APP_DIR)];
+    for root in [target_app_dir()?, prefix::prefix().join("Applications")] {
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+    Ok(roots)
 }
 
 fn is_appdir_binary_target(target_name: &str) -> bool {
@@ -3640,7 +6243,7 @@ fn binary_target_path(target_name: &str, appdir: &Path) -> Result<PathBuf> {
         {
             bail!("brew-cask: binary $APPDIR target '{target_name}' must stay below Applications");
         }
-        if !allowed_appdir_roots().iter().any(|root| root == appdir) {
+        if !allowed_appdir_roots()?.iter().any(|root| root == appdir) {
             bail!("brew-cask: invalid appdir '{}'", appdir.display());
         }
         return Ok(appdir.join(relative));
@@ -3680,9 +6283,23 @@ fn binary_target_path(target_name: &str, appdir: &Path) -> Result<PathBuf> {
 }
 
 fn installed_version(token: &str) -> Option<String> {
+    let versions = installed_versions(token);
+    match versions.as_slice() {
+        [version] => Some(version.clone()),
+        [] => None,
+        _ => {
+            warn!("brew-cask:{token}: multiple Caskroom versions found; reinstall to reconcile");
+            None
+        }
+    }
+}
+
+fn installed_versions(token: &str) -> Vec<String> {
     let dir = caskroom_token_dir(token);
-    let entries = std::fs::read_dir(dir).ok()?;
-    let versions = entries
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
@@ -3692,15 +6309,7 @@ fn installed_version(token: &str) -> Option<String> {
                 .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
                 .map(|_| name)
         })
-        .collect::<Vec<_>>();
-    match versions.as_slice() {
-        [version] => Some(version.clone()),
-        [] => None,
-        _ => {
-            warn!("brew-cask:{token}: multiple Caskroom versions found; reinstall to reconcile");
-            None
-        }
-    }
+        .collect()
 }
 
 fn homebrew_metadata_present(token: &str) -> bool {
@@ -3758,6 +6367,61 @@ fn previous_binary_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
     Ok(read_receipt(&version_dir)?
         .map(|receipt| receipt.binaries)
         .unwrap_or_default())
+}
+
+fn previous_flight_symlink_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(Vec::new());
+    };
+    receipt_flight_symlink_targets(&receipt)
+}
+
+fn previous_flight_directory_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
+    let Some(version) = installed_version(&cask.token) else {
+        return Ok(Vec::new());
+    };
+    let version_dir = caskroom_version_dir(&cask.token, &version);
+    let Some(receipt) = read_receipt(&version_dir)? else {
+        return Ok(Vec::new());
+    };
+    Ok(receipt.flight_directories)
+}
+
+fn remove_obsolete_flight_directories(
+    previous: &BTreeSet<PathBuf>,
+    current: &[PathBuf],
+) -> Result<()> {
+    for directory in previous {
+        if !current.contains(directory) {
+            remove_empty_directory_elevating(directory)?;
+        }
+    }
+    Ok(())
+}
+
+fn receipt_flight_symlink_targets(receipt: &CaskReceipt) -> Result<Vec<PathBuf>> {
+    let standard_targets = receipt
+        .apps
+        .iter()
+        .chain(&receipt.binaries)
+        .chain(&receipt.fonts)
+        .chain(&receipt.completions)
+        .collect::<BTreeSet<_>>();
+    let mut targets = Vec::new();
+    for record in &receipt.targets {
+        if record.fingerprint.kind == CaskTargetKind::Symlink
+            && !standard_targets.contains(&record.path)
+            && record.uninstall.unwrap_or(true)
+            && cask_target_record_matches(record)?
+        {
+            targets.push(record.path.clone());
+        }
+    }
+    Ok(targets)
 }
 
 fn remove_obsolete_binary_links(
@@ -3825,7 +6489,15 @@ fn installed_cask_version_in(
                 let targets_match = receipt
                     .targets
                     .iter()
-                    .map(cask_target_record_matches)
+                    .map(|record| {
+                        if (cask.auto_updates || receipt.auto_updates)
+                            && receipt.apps.contains(&record.path)
+                        {
+                            Ok(record.path.is_dir())
+                        } else {
+                            cask_target_record_matches(record)
+                        }
+                    })
                     .collect::<Result<Vec<_>>>()?
                     .into_iter()
                     .all(|matches| matches);
@@ -3853,8 +6525,14 @@ fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> 
     if !artifacts.pkgs.is_empty() {
         return Some("pkg artifacts require uninstall support".to_string());
     }
+    if !artifacts.installers.is_empty() {
+        return Some("installer artifacts may have untracked side effects".to_string());
+    }
     if !artifacts.command_wrappers.is_empty() {
         return Some("command wrapper artifacts are not supported for pruning".to_string());
+    }
+    if !artifacts.generic.is_empty() {
+        return Some("generic artifacts may install external trees".to_string());
     }
     if !artifacts.preflight_steps.is_empty()
         || !artifacts.postflight_steps.is_empty()
@@ -3878,7 +6556,15 @@ fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> 
     None
 }
 
-fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Result<()> {
+fn write_receipt_with_flight_targets(
+    caskroom: &Path,
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    flight_targets: &[PathBuf],
+    flight_uninstall_targets: &BTreeMap<PathBuf, bool>,
+    flight_directories: &[PathBuf],
+    metadata_only_apps: &[PathBuf],
+) -> Result<()> {
     let mut target_paths = artifacts
         .apps
         .iter()
@@ -3893,6 +6579,7 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .collect::<Result<Vec<_>>>()?,
     );
     target_paths.extend(completion_target_paths(cask, artifacts)?);
+    target_paths.extend(flight_targets.iter().cloned());
     target_paths.sort();
     target_paths.dedup();
     let targets = target_paths
@@ -3901,13 +6588,29 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             Ok(CaskTargetRecord {
                 path: path.clone(),
                 fingerprint: cask_target_fingerprint(path)?,
+                uninstall: flight_uninstall_targets.get(path).copied(),
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let prune_blocker = cask_prune_blocker(cask, artifacts);
+    let metadata_only_apps = if cask.auto_updates {
+        artifacts
+            .apps
+            .iter()
+            .map(|app| app_target_path(app.target_name()))
+            .collect::<Result<Vec<_>>>()?
+    } else {
+        metadata_only_apps.to_vec()
+    };
+    let prune_blocker = cask_prune_blocker(cask, artifacts).or_else(|| {
+        (!metadata_only_apps.is_empty()).then(|| {
+            "metadata-only app ownership cannot be proven safely during pruning".to_string()
+        })
+    });
     let receipt = CaskReceipt {
         schema_version: 3,
         version: cask.version.clone(),
+        auto_updates: cask.auto_updates,
+        metadata_only_apps,
         apps: artifacts
             .apps
             .iter()
@@ -3920,6 +6623,8 @@ fn write_receipt(caskroom: &Path, cask: &Cask, artifacts: &CaskArtifacts) -> Res
             .map(font_target_path)
             .collect::<Result<Vec<_>>>()?,
         completions: completion_target_paths(cask, artifacts)?,
+        flight_directories: flight_directories.to_vec(),
+        generic: generic_artifact_targets(artifacts)?,
         pkg_ids: artifacts.pkg_ids.clone(),
         targets,
         prune_safe: prune_blocker.is_none(),
@@ -4435,6 +7140,9 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     if receipt.schema_version != 3 || !receipt.prune_safe || !receipt.pkg_ids.is_empty() {
         bail!("receipt is not marked safe for direct-artifact pruning");
     }
+    if !receipt.metadata_only_apps.is_empty() {
+        bail!("metadata-only app ownership cannot be proven safely during pruning");
+    }
     let records = receipt
         .targets
         .iter()
@@ -4451,6 +7159,10 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
     if expected.is_empty()
         || records.len() != receipt.targets.len()
         || records.len() != expected.len()
+        || receipt
+            .metadata_only_apps
+            .iter()
+            .any(|path| !receipt.apps.contains(path))
     {
         bail!("receipt target inventory is incomplete or duplicated");
     }
@@ -4463,11 +7175,11 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
             .get(path)
             .ok_or_else(|| eyre!("missing app target record"))?;
         if record.fingerprint.kind != CaskTargetKind::Directory
-            || !allowed_appdir_roots()
+            || !allowed_appdir_roots()?
                 .iter()
                 .any(|root| path_is_below(path, root))
             || !path.file_name().is_some_and(|name| {
-                staged_target_matches(record, &candidate.version_dir.join(name))
+                staged_app_matches_target(record, &candidate.version_dir.join(name))
             })
         {
             bail!(
@@ -4549,6 +7261,20 @@ fn staged_target_matches(record: &CaskTargetRecord, staged: &Path) -> bool {
     cask_target_fingerprint(staged).is_ok_and(|fingerprint| fingerprint == record.fingerprint)
 }
 
+fn staged_app_matches_target(record: &CaskTargetRecord, staged: &Path) -> bool {
+    let Ok(metadata) = staged.symlink_metadata() else {
+        return false;
+    };
+    if !metadata.file_type().is_symlink() {
+        // Preserve pruning support for casks installed before app artifacts
+        // switched from retained copies to Homebrew-compatible symlinks.
+        return staged_target_matches(record, staged);
+    }
+    std::fs::read_link(staged)
+        .map(|target| resolve_symlink_target(staged, target) == record.path)
+        .unwrap_or(false)
+}
+
 fn symlink_resolves_below(path: &Path, root: &Path) -> bool {
     let Ok(target) = std::fs::read_link(path) else {
         return false;
@@ -4583,6 +7309,9 @@ fn caskroom_backup_dir(cask: &Cask) -> PathBuf {
 struct ArtifactLinkBackup {
     target: PathBuf,
     backup: Option<PathBuf>,
+    target_parent: PathBuf,
+    backup_parent: Option<PathBuf>,
+    elevate: bool,
 }
 
 #[derive(Debug)]
@@ -4613,7 +7342,15 @@ impl ArtifactLinkTransaction {
                 } else {
                     None
                 };
-                Ok(ArtifactLinkBackup { target, backup })
+                let target_parent = resolved_parent(&target)?;
+                let backup_parent = backup.as_deref().map(resolved_parent).transpose()?;
+                Ok(ArtifactLinkBackup {
+                    target,
+                    backup,
+                    target_parent,
+                    backup_parent,
+                    elevate: true,
+                })
             })();
             match entry {
                 Ok(entry) => transaction.backups.push(entry),
@@ -4766,6 +7503,8 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Mutex;
 
+    use crate::test::EnvVarGuard;
+
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     struct BrewPrefixGuard {
@@ -4787,6 +7526,22 @@ mod tests {
                 None => crate::env::remove_var("MISE_SYSTEM_BREW_PREFIX"),
             }
         }
+    }
+
+    /// A temporary directory whose ancestors pass `ensure_trusted_appdir`'s
+    /// trust checks.
+    ///
+    /// The system temp directory is unusable for these tests on Linux because
+    /// `/tmp` is world-writable (mode 1777) and the trusted walk correctly
+    /// refuses to operate through it. Real application directories
+    /// (`/Applications`, `~/Applications`) are never world-writable, so anchor
+    /// the fixture under the test home instead.
+    fn trusted_tempdir() -> Result<tempfile::TempDir> {
+        let base = &*crate::env::HOME;
+        file::create_dir_all(base)?;
+        Ok(tempfile::Builder::new()
+            .prefix(".mise-cask-appdir-")
+            .tempdir_in(base)?)
     }
 
     fn run_cask_shim(
@@ -4826,10 +7581,13 @@ mod tests {
             aliases: Vec::new(),
             old_tokens: Vec::new(),
             version: version.to_string(),
+            auto_updates: false,
             url: "https://example.com/example.zip".to_string(),
             url_specs: CaskUrlSpecs::default(),
             sha256: Some("no_check".to_string()),
             artifacts: Vec::new(),
+            depends_on: CaskDependencies::default(),
+            conflicts_with: CaskConflicts::default(),
             ruby_source_path: None,
             ruby_source_checksum: None,
             tap_git_head: None,
@@ -4848,13 +7606,17 @@ mod tests {
         let version_dir = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(version_dir.join(app_name))?;
         file::write(version_dir.join(app_name).join("version"), "1.0.0")?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &version_dir,
             cask,
             &CaskArtifacts {
                 apps: vec![app],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
         )?;
         Ok(target)
     }
@@ -4883,7 +7645,7 @@ mod tests {
 
     #[test]
     fn detects_any_foreign_homebrew_metadata_object() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let metadata = tmp.path().join("Caskroom/example/.metadata");
@@ -4930,8 +7692,36 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn staged_app_accepts_target_symlink_and_legacy_copy() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("Applications/Example.app");
+        file::create_dir_all(target.join("Contents"))?;
+        file::write(target.join("Contents/app"), "content")?;
+        let record = CaskTargetRecord {
+            path: target.clone(),
+            fingerprint: cask_target_fingerprint(&target)?,
+            uninstall: None,
+        };
+
+        let staged_link = tmp.path().join("Caskroom/example/1.0.0/Example.app");
+        file::create_dir_all(staged_link.parent().unwrap())?;
+        file::make_symlink(&target, &staged_link)?;
+        assert!(staged_app_matches_target(&record, &staged_link));
+
+        file::remove_file(&staged_link)?;
+        file::copy_dir_all_preserve_symlinks(&target, &staged_link)?;
+        assert!(staged_app_matches_target(&record, &staged_link));
+
+        file::remove_all(&staged_link)?;
+        file::make_symlink(&tmp.path().join("Applications/Other.app"), &staged_link)?;
+        assert!(!staged_app_matches_target(&record, &staged_link));
+        Ok(())
+    }
+
+    #[test]
     fn completed_receipt_detects_app_bundle_drift() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("example", "1.0.0");
@@ -4948,13 +7738,145 @@ mod tests {
         crate::file::write(app_target.join("Contents/app"), "original")?;
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(&caskroom)?;
-        write_receipt(&caskroom, &cask, &artifacts)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
+        )?;
         assert_eq!(
             installed_cask_version(&cask, &artifacts)?,
             Some(cask.version.clone())
         );
         crate::file::write(app_target.join("Contents/app"), "changed")?;
         assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("self-updating", "1.0.0");
+        cask.auto_updates = true;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let artifacts = CaskArtifacts {
+            apps: vec![app.clone()],
+            ..Default::default()
+        };
+        let app_target = app_target_path(app.target_name())?;
+        file::create_dir_all(app_target.join("Contents"))?;
+        crate::file::write(app_target.join("Contents/app"), "downloaded")?;
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
+        )?;
+
+        crate::file::write(app_target.join("Contents/app"), "updated by app")?;
+        cask.version = "2.0.0".to_string();
+        assert_eq!(
+            installed_cask_version(&cask, &artifacts)?,
+            Some("1.0.0".to_string())
+        );
+        let receipt = read_receipt(&caskroom)?.unwrap();
+        assert!(receipt.auto_updates);
+        assert!(!receipt.prune_safe);
+        assert!(
+            receipt
+                .prune_blocker
+                .as_deref()
+                .is_some_and(|reason| reason.contains("metadata-only app ownership"))
+        );
+        assert!(!caskroom.join("Example.app").exists());
+
+        // Fail closed for schema-3 receipts written before metadata-only apps
+        // were marked non-prunable. A replacement bundle at the same path
+        // must never become removable merely because it is a directory.
+        let mut legacy_receipt = receipt;
+        legacy_receipt.prune_safe = true;
+        legacy_receipt.prune_blocker = None;
+        file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&legacy_receipt)?,
+        )?;
+        let plan = cask_prune_plan_from_tokens(
+            &BTreeSet::new(),
+            &prefix::prefix().join(".mise-test-state"),
+        )?;
+        assert!(plan.remove.is_empty());
+        assert!(plan.skipped.iter().any(|skip| {
+            skip.token == "self-updating" && skip.reason.contains("metadata-only app ownership")
+        }));
+        Ok(())
+    }
+
+    #[test]
+    fn adopts_only_an_identical_existing_app() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = trusted_tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let _guard = BrewPrefixGuard::set(&root);
+        let stage = root.join("stage");
+        let caskroom = root.join("Caskroom/example/1.0.0");
+        let source = stage.join("Example.app/Contents");
+        let target = root.join("Applications/Example.app/Contents");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        crate::file::write(source.join("app"), "identical")?;
+        crate::file::write(target.join("app"), "identical")?;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+
+        assert!(install_app(&stage, &caskroom, &app, true, true, true)?);
+        assert!(!caskroom.join("Example.app").exists());
+
+        crate::file::write(target.join("app"), "different")?;
+        let error = install_app(&stage, &caskroom, &app, true, true, true).unwrap_err();
+        assert!(error.to_string().contains("is not identical"));
+        Ok(())
+    }
+
+    #[test]
+    fn self_updating_cask_adopts_a_different_existing_app() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = trusted_tempdir()?;
+        let root = tmp.path().canonicalize()?;
+        let _guard = BrewPrefixGuard::set(&root);
+        let stage = root.join("stage");
+        let caskroom = root.join("Caskroom/example/1.0.0");
+        let source = stage.join("Example.app/Contents");
+        let target = root.join("Applications/Example.app/Contents");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&target)?;
+        crate::file::write(source.join("app"), "downloaded version")?;
+        crate::file::write(target.join("app"), "self-updated version")?;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+
+        assert!(install_app(&stage, &caskroom, &app, false, true, false)?);
+        assert_eq!(
+            std::fs::read_to_string(target.join("app"))?,
+            "self-updated version"
+        );
+        assert!(!caskroom.join("Example.app").exists());
         Ok(())
     }
 
@@ -5011,7 +7933,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn stages_command_wrapper_with_args_env_and_expanded_paths() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -5058,7 +7980,7 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn stages_command_wrapper_with_literal_content() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -5200,6 +8122,1549 @@ mod tests {
     }
 
     #[test]
+    fn parses_structured_symlink_steps() -> Result<()> {
+        let mut cask = test_cask("docker-desktop", "4.86.0,236216");
+        cask.artifacts = vec![
+            serde_json::json!({"app": "Docker.app"}),
+            serde_json::json!({
+                "postflight_steps": [{
+                    "steps": [{
+                        "type": "symlink",
+                        "source": {"path": "{{appdir}}/Docker.app/Contents/Resources/bin/kubectl"},
+                        "target": {"path": "/usr/local/bin/kubectl"},
+                        "force": true,
+                        "uninstall": true,
+                        "sudo": "if_needed",
+                        "guards": [{
+                            "condition": "unless_exists",
+                            "path": "/usr/local/bin/kubectl",
+                            "id": "1"
+                        }]
+                    }]
+                }]
+            }),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert!(matches!(
+            artifacts.postflight_steps.as_slice(),
+            [FlightStep::Symlink {
+                force: true,
+                uninstall: true,
+                sudo: FlightSudo::IfNeeded,
+                guards,
+                ..
+            }] if guards.len() == 1
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn parses_gcloud_copy_installer_and_run_metadata() -> Result<()> {
+        let mut cask = test_cask("gcloud-cli", "580.0.0");
+        cask.artifacts = vec![
+            serde_json::json!({
+                "preflight_steps": [{"steps": [{
+                    "type": "copy",
+                    "source": {"base": "staged_path", "path": "google-cloud-sdk/."},
+                    "target": {"base": "homebrew_prefix", "path": "share/google-cloud-sdk"},
+                    "recursive": true
+                }]}]
+            }),
+            serde_json::json!({
+                "installer": [{"script": {
+                    "executable": "google-cloud-sdk/install.sh",
+                    "args": ["--quiet", "--install-python", "false"]
+                }}]
+            }),
+            serde_json::json!({"binary": "google-cloud-sdk/bin/gcloud"}),
+            serde_json::json!({
+                "postflight_steps": [{"steps": [{
+                    "type": "run",
+                    "command": {"base": "homebrew_prefix", "path": "share/google-cloud-sdk/bin/gcloud"},
+                    "args": ["version"],
+                    "network_access": true
+                }]}]
+            }),
+        ];
+
+        let artifacts = cask_artifacts(&cask)?;
+        assert!(matches!(
+            artifacts.preflight_steps.as_slice(),
+            [FlightStep::Copy {
+                recursive: true,
+                overwrite: true,
+                ..
+            }]
+        ));
+        assert_eq!(
+            artifacts.installers,
+            [InstallerArtifact {
+                executable: "google-cloud-sdk/install.sh".to_string(),
+                args: vec![
+                    "--quiet".to_string(),
+                    "--install-python".to_string(),
+                    "false".to_string()
+                ],
+            }]
+        );
+        assert!(matches!(
+            artifacts.postflight_steps.as_slice(),
+            [FlightStep::Run { .. }]
+        ));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_is_made_executable_before_running() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        file::create_dir_all(prefix.join("bin"))?;
+        file::create_dir_all(prefix.join("sbin"))?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let script = stage.join("install.sh");
+        let marker = tmp.path().join("installed");
+        file::write(&script, "#!/bin/sh\nprintf '%s' \"$PATH\" > \"$1\"\n")?;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o644))?;
+        let installer = InstallerArtifact {
+            executable: "install.sh".to_string(),
+            args: vec![marker.display().to_string()],
+        };
+
+        run_installer_artifact(&stage, &installer, &BTreeSet::new())?;
+
+        let installed_path = file::read_to_string(marker)?;
+        let installed_paths = std::env::split_paths(std::ffi::OsStr::new(&installed_path))
+            .take(2)
+            .collect::<Vec<_>>();
+        assert_eq!(installed_paths, [prefix.join("bin"), prefix.join("sbin")]);
+        assert_ne!(script.metadata()?.permissions().mode() & 0o111, 0);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_rejects_paths_outside_stage() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let outside = tmp.path().join("outside.sh");
+        file::write(&outside, "#!/bin/sh\nexit 0\n")?;
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644))?;
+        file::make_symlink(&outside, &stage.join("linked.sh"))?;
+
+        for executable in [
+            outside.display().to_string(),
+            "../outside.sh".to_string(),
+            "linked.sh".to_string(),
+        ] {
+            let err = run_installer_artifact(
+                &stage,
+                &InstallerArtifact {
+                    executable,
+                    args: Vec::new(),
+                },
+                &BTreeSet::new(),
+            )
+            .unwrap_err()
+            .to_string();
+
+            assert!(err.contains("outside trusted installer roots"));
+            assert_eq!(outside.metadata()?.permissions().mode() & 0o111, 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_accepts_preflight_copied_root() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        file::create_dir_all(prefix.join("bin"))?;
+        file::create_dir_all(prefix.join("sbin"))?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let copied = prefix.join("share/example");
+        file::create_dir_all(&copied)?;
+        let marker = tmp.path().join("installed");
+        file::write(
+            copied.join("install.sh"),
+            "#!/bin/sh\nprintf installed > \"$1\"\n",
+        )?;
+        file::make_symlink(&copied, &stage.join("payload"))?;
+
+        let copied_files = BTreeSet::from([file::desymlink_path(&copied.join("install.sh"))]);
+        run_installer_artifact(
+            &stage,
+            &InstallerArtifact {
+                executable: "payload/install.sh".to_string(),
+                args: vec![marker.display().to_string()],
+            },
+            &copied_files,
+        )?;
+
+        assert_eq!(file::read_to_string(marker)?, "installed");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_script_rejects_unrecorded_file_beneath_copied_target() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        let broad_target = tmp.path().join("prefix");
+        file::create_dir_all(broad_target.join("bin"))?;
+        let outside = broad_target.join("bin/existing.sh");
+        file::write(&outside, "#!/bin/sh\nexit 0\n")?;
+        std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o644))?;
+        file::make_symlink(&broad_target, &stage.join("payload"))?;
+        let copied_files = BTreeSet::from([broad_target.join("copied.txt")]);
+
+        let err = run_installer_artifact(
+            &stage,
+            &InstallerArtifact {
+                executable: "payload/bin/existing.sh".to_string(),
+                args: Vec::new(),
+            },
+            &copied_files,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("outside trusted installer roots"));
+        assert_eq!(outside.metadata()?.permissions().mode() & 0o111, 0);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn installer_mutations_are_included_in_durable_symlink_sources() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        file::create_dir_all(prefix.join("bin"))?;
+        file::create_dir_all(prefix.join("sbin"))?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("payload");
+        file::create_dir_all(&source)?;
+        let script = stage.join("install.sh");
+        file::write(&script, "#!/bin/sh\nprintf mutated > \"$1\"\n")?;
+        let installer = InstallerArtifact {
+            executable: "install.sh".to_string(),
+            args: vec![source.join("generated").display().to_string()],
+        };
+        let target = tmp.path().join("share/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&source, &target)?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.record_installed(target);
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+
+        run_installers_before_durabilizing(
+            &stage,
+            &temporary_caskroom,
+            &[installer],
+            &mut targets,
+            |_| Ok(()),
+        )?;
+
+        assert_eq!(
+            file::read_to_string(temporary_caskroom.join(".homebrew-staged/payload/generated"))?,
+            "mutated"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn structured_copy_restores_external_target_without_status_tracking() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let stage = tmp.path().join("stage");
+        let source = stage.join("google-cloud-sdk");
+        file::create_dir_all(&source)?;
+        file::write(source.join("gcloud"), "sdk")?;
+        let target = prefix.join("share/google-cloud-sdk");
+        file::create_dir_all(&target)?;
+        file::write(target.join("old"), "old")?;
+        let step = FlightStep::Copy {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "google-cloud-sdk/.".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::HomebrewPrefix,
+                path: "share/google-cloud-sdk".to_string(),
+            },
+            recursive: true,
+            overwrite: true,
+            source_glob: false,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+        execute_flight_steps_with_completion(
+            &test_cask("gcloud-cli", "580.0.0"),
+            &[step],
+            &stage,
+            Path::new("/Applications"),
+            "preflight_steps",
+            &mut targets,
+            |_, _| Ok(()),
+        )?;
+        assert!(target.join("gcloud").is_file());
+        assert!(!target.join("old").exists());
+        assert!(targets.installed_targets().is_empty());
+        assert_eq!(
+            targets.copied_files(),
+            &BTreeSet::from([file::desymlink_path(&target.join("gcloud"))])
+        );
+        targets.rollback()?;
+        assert_eq!(file::read_to_string(target.join("old"))?, "old");
+        Ok(())
+    }
+
+    #[test]
+    fn structured_copy_rollback_removes_target_with_created_parent() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let stage = tmp.path().join("stage");
+        let source = stage.join("payload");
+        file::create_dir_all(&source)?;
+        file::write(source.join("installed"), "content")?;
+        let target = prefix.join("share/new-parent/payload");
+        let copy = FlightStep::Copy {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "payload/.".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::HomebrewPrefix,
+                path: "share/new-parent/payload".to_string(),
+            },
+            recursive: true,
+            overwrite: true,
+            source_glob: false,
+            guards: Vec::new(),
+        };
+        let fail = FlightStep::Copy {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "missing".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::HomebrewPrefix,
+                path: "share/unused".to_string(),
+            },
+            recursive: false,
+            overwrite: true,
+            source_glob: false,
+            guards: Vec::new(),
+        };
+
+        let err = execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[copy, fail],
+            &stage,
+            Path::new("/Applications"),
+            "preflight_steps",
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("was not found"));
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn cask_metadata_accepts_null_dependencies_and_conflicts() -> Result<()> {
+        let cask: Cask = serde_json::from_value(serde_json::json!({
+            "token": "example",
+            "version": "1.0.0",
+            "url": "https://example.com/example.zip",
+            "auto_updates": true,
+            "depends_on": null,
+            "conflicts_with": null
+        }))?;
+        assert!(cask.depends_on.formula.is_empty());
+        assert!(cask.conflicts_with.cask.is_empty());
+        assert!(cask.auto_updates);
+        Ok(())
+    }
+
+    #[test]
+    fn structured_symlink_preserves_relative_source() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let appdir = tmp.path().join("Applications");
+        let target = appdir.join("MeshLab2025.07.app/Contents/MacOS/MeshLab");
+        file::create_dir_all(
+            target
+                .parent()
+                .ok_or_else(|| eyre!("missing target parent"))?,
+        )?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: "meshlab".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::AppDir,
+                path: "MeshLab{{version}}.app/Contents/MacOS/MeshLab".to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: vec![FlightGuard::UnlessExists(FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            })],
+        };
+
+        execute_flight_steps(
+            &test_cask("meshlab", "2025.07"),
+            &[step],
+            tmp.path(),
+            &appdir,
+            "postflight_steps",
+        )?;
+
+        assert_eq!(std::fs::read_link(target)?, PathBuf::from("meshlab"));
+        Ok(())
+    }
+
+    #[test]
+    fn based_flight_paths_reject_root_escapes() {
+        let cask = test_cask("example", "1.0.0");
+        let staged = Path::new("/tmp/staged");
+        let appdir = Path::new("/Applications");
+        for base in [
+            FlightPathBase::StagedPath,
+            FlightPathBase::AppDir,
+            FlightPathBase::HomebrewPrefix,
+        ] {
+            for path in ["../outside", "/absolute/outside"] {
+                let err = resolve_flight_path_with_context(
+                    &cask,
+                    &FlightPath {
+                        base,
+                        path: path.to_string(),
+                    },
+                    staged,
+                    appdir,
+                )
+                .unwrap_err()
+                .to_string();
+                assert!(err.contains("invalid structured flight path"));
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_expands_versioned_glob() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source_dir = tmp.path().join("tool-2/bin");
+        file::create_dir_all(&source_dir)?;
+        file::write(source_dir.join("tool"), "binary")?;
+        let target_dir = tmp.path().join("links");
+        file::create_dir_all(&target_dir)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "tool-{{version.major}}/bin/*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target_dir.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("tool", "2.3.4"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        let link = target_dir.join("tool");
+        assert_eq!(
+            lexically_normalized_path(&resolve_symlink_target(&link, std::fs::read_link(&link)?)),
+            source_dir.join("tool")
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_glob_rollback_removes_created_directory() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let staged = tmp.path().join("stage");
+        file::create_dir_all(&staged)?;
+        file::write(staged.join("one"), "one")?;
+        file::write(staged.join("two"), "two")?;
+        let target = tmp.path().join("links");
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        execute_flight_step(
+            &test_cask("example", "1.0.0"),
+            &step,
+            &staged,
+            Path::new("/Applications"),
+            &mut targets,
+        )?;
+        assert!(target.is_dir());
+        assert_eq!(
+            targets.installed_directories(),
+            std::slice::from_ref(&target)
+        );
+        assert!(!targets.installed_targets().contains(&target));
+        assert_eq!(
+            targets.uninstall_targets(),
+            &BTreeMap::from([(target.join("one"), false), (target.join("two"), false),])
+        );
+
+        targets.rollback()?;
+
+        assert!(target.symlink_metadata().is_err());
+
+        file::create_dir_all(&target)?;
+        let mut upgrade_targets = FlightTargetTransaction::default();
+        upgrade_targets.previous_directories.insert(target.clone());
+        execute_flight_step(
+            &test_cask("example", "2.0.0"),
+            &step,
+            &staged,
+            Path::new("/Applications"),
+            &mut upgrade_targets,
+        )?;
+        assert_eq!(upgrade_targets.installed_directories(), [target]);
+        upgrade_targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn obsolete_flight_directories_remove_only_empty_unclaimed_directories() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let empty = tmp.path().join("empty");
+        let occupied = tmp.path().join("occupied");
+        let current = tmp.path().join("current");
+        for directory in [&empty, &occupied, &current] {
+            file::create_dir_all(directory)?;
+        }
+        file::write(occupied.join("user-file"), "keep")?;
+        let previous = BTreeSet::from([empty.clone(), occupied.clone(), current.clone()]);
+
+        remove_obsolete_flight_directories(&previous, std::slice::from_ref(&current))?;
+
+        assert!(empty.symlink_metadata().is_err());
+        assert!(occupied.join("user-file").is_file());
+        assert!(current.is_dir());
+        Ok(())
+    }
+
+    #[test]
+    fn structured_symlink_rejects_empty_glob() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("links");
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "missing/*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        let err = execute_flight_steps(
+            &test_cask("tool", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )
+        .unwrap_err();
+        let err = format!("{err:#}");
+
+        assert!(err.contains("did not match any paths"));
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_glob_replaces_dangling_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source_dir = tmp.path().join("bin");
+        file::create_dir_all(&source_dir)?;
+        file::write(source_dir.join("one"), "one")?;
+        file::write(source_dir.join("two"), "two")?;
+        let target = tmp.path().join("links");
+        file::make_symlink(Path::new("missing"), &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "bin/*".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: true,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("tool", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        assert!(target.is_dir());
+        for name in ["one", "two"] {
+            let link = target.join(name);
+            assert_eq!(
+                lexically_normalized_path(&resolve_symlink_target(
+                    &link,
+                    std::fs::read_link(&link)?
+                )),
+                source_dir.join(name)
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_replaces_directory_symlink_without_following_it() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let unrelated = tmp.path().join("unrelated");
+        let target = tmp.path().join("target");
+        file::write(&source, "source")?;
+        file::create_dir_all(&unrelated)?;
+        file::make_symlink(&unrelated, &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: source.to_string_lossy().to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: true,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("tool", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        assert_eq!(
+            lexically_normalized_path(&resolve_symlink_target(
+                &target,
+                std::fs::read_link(&target)?
+            )),
+            source
+        );
+        assert!(std::fs::read_dir(unrelated)?.next().is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn forced_symlink_command_uses_replacement_flags() {
+        let no_dereference = if cfg!(target_os = "macos") {
+            "-h"
+        } else {
+            "-n"
+        };
+        assert_eq!(
+            symlink_command_args(Path::new("source"), Path::new("target")),
+            ["-s", "-f", no_dereference, "--", "source", "target"]
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn flight_guards_match_homebrew_for_dangling_symlinks() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dangling = tmp.path().join("dangling");
+        std::os::unix::fs::symlink("missing", &dangling)?;
+        let cask = test_cask("example", "1.0.0");
+        let path = FlightPath {
+            base: FlightPathBase::Literal,
+            path: dangling.to_string_lossy().to_string(),
+        };
+
+        assert!(!flight_guard_matches(
+            &cask,
+            &FlightGuard::IfExists(path.clone()),
+            tmp.path(),
+            Path::new("/Applications"),
+        )?);
+        assert!(flight_guard_matches(
+            &cask,
+            &FlightGuard::UnlessExists(path),
+            tmp.path(),
+            Path::new("/Applications"),
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_replaces_dangling_target_without_force() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        file::write(&source, "source")?;
+        file::make_symlink(Path::new("missing"), &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: source.to_string_lossy().to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: vec![FlightGuard::UnlessExists(FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            })],
+        };
+
+        execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )?;
+
+        assert_eq!(
+            lexically_normalized_path(&resolve_symlink_target(
+                &target,
+                std::fs::read_link(&target)?
+            )),
+            source
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_replaces_previous_owned_target_without_force() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let old_source = tmp.path().join("old");
+        let new_source = stage.join("new");
+        let target = tmp.path().join("target");
+        file::create_dir_all(&stage)?;
+        file::write(&old_source, "old")?;
+        file::write(&new_source, "new")?;
+        file::make_symlink(&old_source, &target)?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "new".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+        targets.previous_symlinks.insert(target.clone());
+
+        execute_flight_step(
+            &test_cask("example", "2.0.0"),
+            &step,
+            &stage,
+            Path::new("/Applications"),
+            &mut targets,
+        )?;
+        assert_eq!(std::fs::read_link(&target)?, new_source);
+
+        targets.rollback()?;
+        assert_eq!(std::fs::read_link(target)?, old_source);
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_rollback_removes_link_with_created_parent() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("source");
+        let target = tmp.path().join("external/nested/target");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(tmp.path().join("external"))?;
+        file::write(&source, "source")?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "source".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        execute_flight_step(
+            &test_cask("example", "1.0.0"),
+            &step,
+            &stage,
+            Path::new("/Applications"),
+            &mut targets,
+        )?;
+        assert!(target.symlink_metadata()?.file_type().is_symlink());
+
+        targets.rollback()?;
+        assert!(target.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_force_refuses_to_replace_directory() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("source");
+        let target = tmp.path().join("target");
+        let link = target.join("source");
+        file::write(&source, "source")?;
+        file::create_dir_all(&link)?;
+        file::write(link.join("keep"), "keep")?;
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::Literal,
+                path: source.to_string_lossy().to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::Literal,
+                path: target.to_string_lossy().to_string(),
+            },
+            force: true,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        let err = execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[step],
+            tmp.path(),
+            Path::new("/Applications"),
+            "postflight_steps",
+        )
+        .unwrap_err();
+
+        assert!(format!("{err:#}").contains("refusing to replace structured symlink directory"));
+        assert_eq!(file::read_to_string(link.join("keep"))?, "keep");
+        Ok(())
+    }
+
+    #[test]
+    fn flight_target_transaction_restores_replaced_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        file::write(&target, "original")?;
+        {
+            let mut transaction = FlightTargetTransaction::default();
+            transaction.protect(&target)?;
+            let backup = transaction.backups[0].backup.as_ref().unwrap();
+            let recovery = flight_backup_recovery_path(backup);
+            assert!(recovery.is_file());
+            assert_ne!(recovery.parent(), backup.parent());
+            file::write(&target, "replacement")?;
+        }
+        assert_eq!(file::read_to_string(target)?, "original");
+        Ok(())
+    }
+
+    #[test]
+    fn flight_target_transaction_retries_failed_restore() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("missing/target");
+        let backup = tmp.path().join("backup");
+        file::write(&backup, "original")?;
+        let recovery = flight_backup_recovery_path(&backup);
+        let target_parent = resolved_parent(&target)?;
+        let backup_parent = Some(resolved_parent(&backup)?);
+        let record = FlightRecoveryRecord {
+            target: target.clone(),
+            backup: Some(backup.clone()),
+            target_parent: target_parent.clone(),
+            backup_parent: backup_parent.clone(),
+            receipt_caskroom: None,
+            elevate: true,
+        };
+        write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+        let mut transaction = FlightTargetTransaction {
+            backups: vec![ArtifactLinkBackup {
+                target: target.clone(),
+                backup: Some(backup.clone()),
+                target_parent,
+                backup_parent,
+                elevate: true,
+            }],
+            receipt_caskroom: None,
+            installed: Vec::new(),
+            uninstall: BTreeMap::new(),
+            previous_symlinks: BTreeSet::new(),
+            copied_files: BTreeSet::new(),
+            previous_directories: BTreeSet::new(),
+            installed_directories: Vec::new(),
+            committed: false,
+        };
+
+        assert!(transaction.rollback().is_err());
+        assert_eq!(transaction.backups.len(), 1);
+        assert!(backup.is_file());
+        assert!(recovery.is_file());
+
+        file::create_dir_all(target.parent().unwrap())?;
+        transaction.rollback()?;
+        assert!(transaction.backups.is_empty());
+        assert_eq!(file::read_to_string(target)?, "original");
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn recovers_interrupted_flight_target_transaction() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        file::write(&target, "original")?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+        let backup = transaction.backups[0].backup.as_ref().unwrap();
+        let recovery = flight_backup_recovery_path(backup);
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert_eq!(file::read_to_string(&target)?, "original");
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn recovers_interrupted_new_flight_target() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+        let recovery = flight_absent_recovery_path(&target);
+        assert!(recovery.is_file());
+        file::make_symlink(Path::new("source"), &target)?;
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert!(target.symlink_metadata().is_err());
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn interrupted_new_flight_target_preserves_completed_receipt() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        let caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.receipt_caskroom = Some(caskroom.clone());
+        transaction.protect(&target)?;
+        let recovery = flight_absent_recovery_path(&target);
+        file::make_symlink(Path::new("source"), &target)?;
+        let receipt = CaskReceipt {
+            schema_version: 3,
+            version: "1.0.0".to_string(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
+            apps: Vec::new(),
+            binaries: Vec::new(),
+            fonts: Vec::new(),
+            completions: Vec::new(),
+            flight_directories: Vec::new(),
+            generic: Vec::new(),
+            pkg_ids: Vec::new(),
+            targets: vec![CaskTargetRecord {
+                path: target.clone(),
+                fingerprint: cask_target_fingerprint(&target)?,
+                uninstall: Some(true),
+            }],
+            prune_safe: false,
+            prune_blocker: None,
+        };
+        file::write(
+            caskroom.join(".mise-cask.toml"),
+            toml::to_string_pretty(&receipt)?,
+        )?;
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert!(target.is_symlink());
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn interrupted_flight_recovery_preserves_recreated_target_and_backup() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("target");
+        file::write(&target, "original")?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+        let backup = transaction.backups[0].backup.as_ref().unwrap().clone();
+        let recovery = flight_backup_recovery_path(&backup);
+        file::write(&target, "recreated")?;
+        std::mem::forget(transaction);
+
+        recover_flight_backup(&recovery)?;
+
+        assert_eq!(file::read_to_string(&target)?, "recreated");
+        assert_eq!(file::read_to_string(&backup)?, "original");
+        assert!(recovery.is_file());
+
+        let mut retry = FlightTargetTransaction::default();
+        let err = retry.protect(&target).unwrap_err().to_string();
+        assert!(err.contains("unresolved recovery"));
+        assert_eq!(file::read_to_string(&backup)?, "original");
+
+        file::remove_all(&target)?;
+        recover_flight_backup(&recovery)?;
+        assert_eq!(file::read_to_string(&target)?, "original");
+        assert!(backup.symlink_metadata().is_err());
+        assert!(recovery.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_flight_recovery_does_not_block_later_installs() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let target = tmp.path().join("missing/target");
+        let backup = tmp.path().join("backup");
+        file::write(&backup, "original")?;
+        let recovery = flight_backup_recovery_path(&backup);
+        let record = FlightRecoveryRecord {
+            target,
+            backup: Some(backup.clone()),
+            target_parent: tmp.path().join("unexpected-target-parent"),
+            backup_parent: Some(resolved_parent(&backup)?),
+            receipt_caskroom: None,
+            elevate: true,
+        };
+        write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+
+        recover_flight_backup_or_warn(&recovery);
+
+        assert!(recovery.is_file());
+        assert_eq!(file::read_to_string(backup)?, "original");
+        file::remove_all(recovery)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stale_flight_recovery_temp_file_does_not_block_recovery() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let recovery_root = tmp.path().join("recovery");
+        let stale = recovery_root.join("stale.tmp");
+        file::create_dir_all(&stale)?;
+        file::write(stale.join("locked"), "content")?;
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o000))?;
+
+        let target = tmp.path().join("target");
+        let backup = tmp.path().join("backup");
+        file::write(&backup, "original")?;
+        let recovery = recovery_root.join("valid.recovery");
+        let record = FlightRecoveryRecord {
+            target: target.clone(),
+            backup: Some(backup.clone()),
+            target_parent: resolved_parent(&target)?,
+            backup_parent: Some(resolved_parent(&backup)?),
+            receipt_caskroom: None,
+            elevate: true,
+        };
+        write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+
+        recover_flight_backups_in(&recovery_root)?;
+
+        assert_eq!(file::read_to_string(target)?, "original");
+        assert!(recovery.symlink_metadata().is_err());
+        assert!(stale.symlink_metadata().is_ok());
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o700))?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn flight_target_rollback_rejects_swapped_parent() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("prefix");
+        let target = prefix.join("bin/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::write(&target, "original")?;
+        let mut transaction = FlightTargetTransaction::default();
+        transaction.protect(&target)?;
+
+        let saved_prefix = tmp.path().join("saved-prefix");
+        file::rename(&prefix, &saved_prefix)?;
+        let external = tmp.path().join("external");
+        file::create_dir_all(external.join("bin"))?;
+        let external_target = external.join("bin/example");
+        file::write(&external_target, "external")?;
+        file::make_symlink(&external, &prefix)?;
+
+        assert!(transaction.rollback().is_err());
+        assert_eq!(file::read_to_string(&external_target)?, "external");
+        assert_eq!(transaction.backups.len(), 1);
+
+        file::remove_file(&prefix)?;
+        file::rename(&saved_prefix, &prefix)?;
+        transaction.rollback()?;
+        assert_eq!(file::read_to_string(&target)?, "original");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn flight_target_backup_survives_app_replacement() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let app = tmp.path().join("Example.app");
+        let target = app.join("Contents/MacOS/example-link");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(Path::new("original"), &target)?;
+        let mut transaction = FlightTargetTransaction::default();
+
+        transaction.protect(&target)?;
+        let backup = transaction.backups[0].backup.as_ref().unwrap().clone();
+        assert_eq!(backup.parent(), app.parent());
+        file::remove_all(&app)?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(Path::new("replacement"), &target)?;
+
+        transaction.rollback()?;
+        assert_eq!(std::fs::read_link(target)?, PathBuf::from("original"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn receipt_flight_symlinks_exclude_standard_and_drifted_targets() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let binary = tmp.path().join("bin/example");
+        let flight = tmp.path().join("share/example");
+        let retained = tmp.path().join("share/retained");
+        let drifted = tmp.path().join("share/drifted");
+        file::create_dir_all(binary.parent().unwrap())?;
+        file::create_dir_all(flight.parent().unwrap())?;
+        file::make_symlink(Path::new("binary-source"), &binary)?;
+        file::make_symlink(Path::new("flight-source"), &flight)?;
+        file::make_symlink(Path::new("retained-source"), &retained)?;
+        file::make_symlink(Path::new("original-source"), &drifted)?;
+        let records = [&binary, &flight, &retained, &drifted]
+            .into_iter()
+            .map(|path| {
+                Ok(CaskTargetRecord {
+                    path: path.clone(),
+                    fingerprint: cask_target_fingerprint(path)?,
+                    uninstall: if path == &retained {
+                        Some(false)
+                    } else if path == &binary {
+                        None
+                    } else {
+                        Some(true)
+                    },
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        file::remove_file(&drifted)?;
+        file::make_symlink(Path::new("changed-source"), &drifted)?;
+        let receipt = CaskReceipt {
+            schema_version: 3,
+            version: "1.0.0".to_string(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
+            apps: Vec::new(),
+            binaries: vec![binary],
+            fonts: Vec::new(),
+            completions: Vec::new(),
+            flight_directories: Vec::new(),
+            generic: Vec::new(),
+            pkg_ids: Vec::new(),
+            targets: records,
+            prune_safe: false,
+            prune_blocker: None,
+        };
+
+        assert_eq!(receipt_flight_symlink_targets(&receipt)?, vec![flight]);
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_sources_become_caskroom_owned() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("AndroidNDK.app/Contents/NDK");
+        file::create_dir_all(&source)?;
+        file::write(source.join("ndk-build"), "binary")?;
+        let temporary_caskroom = tmp.path().join("Caskroom/android-ndk/.mise-tmp");
+        let target = tmp.path().join("share/android-ndk");
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::create_dir_all(
+            target
+                .parent()
+                .ok_or_else(|| eyre!("missing target parent"))?,
+        )?;
+        file::make_symlink(&source, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        assert_eq!(
+            std::fs::read_link(&target)?,
+            temporary_caskroom.join(".homebrew-staged/AndroidNDK.app/Contents/NDK")
+        );
+        assert!(
+            temporary_caskroom
+                .join(".homebrew-staged/AndroidNDK.app/Contents/NDK/ndk-build")
+                .is_file()
+        );
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_source_copies_reachable_internal_links() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("pkg/bin");
+        let shared = stage.join("shared/data");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(&shared)?;
+        file::write(shared.join("value"), "content")?;
+        file::make_symlink(&shared, &source.join("absolute"))?;
+        file::make_symlink(Path::new("../../shared/data"), &source.join("relative"))?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let target = tmp.path().join("share/example");
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&source, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        let owned_stage = temporary_caskroom.join(".homebrew-staged");
+        assert_eq!(
+            std::fs::read_link(owned_stage.join("pkg/bin/absolute"))?,
+            owned_stage.join("shared/data")
+        );
+        assert_eq!(
+            std::fs::read_link(owned_stage.join("pkg/bin/relative"))?,
+            PathBuf::from("../../shared/data")
+        );
+        assert_eq!(
+            file::read_to_string(owned_stage.join("pkg/bin/absolute/value"))?,
+            "content"
+        );
+        assert_eq!(
+            file::read_to_string(owned_stage.join("pkg/bin/relative/value"))?,
+            "content"
+        );
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_source_preserves_link_to_external_referent() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let external = tmp.path().join("external");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&external)?;
+        file::write(external.join("value"), "content")?;
+        let staged_link = stage.join("external-link");
+        file::make_symlink(&external, &staged_link)?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let target = tmp.path().join("share/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::make_symlink(&staged_link, &target)?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::make_symlink(&staged_link, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        let durable = temporary_caskroom.join(".homebrew-staged/external-link");
+        assert_eq!(std::fs::read_link(&target)?, durable);
+        assert_eq!(std::fs::read_link(&durable)?, external);
+        file::remove_all(&stage)?;
+        assert_eq!(file::read_to_string(target.join("value"))?, "content");
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_symlink_source_accepts_canonical_stage_spelling() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let real_parent = tmp.path().join("real");
+        let real_stage = real_parent.join("stage");
+        file::create_dir_all(&real_stage)?;
+        file::write(real_stage.join("value"), "content")?;
+        let alias_parent = tmp.path().join("alias");
+        file::make_symlink(&real_parent, &alias_parent)?;
+        let stage = alias_parent.join("stage");
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let target = tmp.path().join("share/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::make_symlink(&real_stage, &target)?;
+        targets.record_installed(target.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        assert_eq!(file::read_to_string(target.join("value"))?, "content");
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn staged_artifact_closure_merges_a_parent_after_its_child() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let parent = stage.join("parent");
+        file::create_dir_all(&parent)?;
+        file::write(parent.join("first"), "first")?;
+        file::write(parent.join("second"), "second")?;
+        let owned = tmp.path().join("owned");
+
+        copy_staged_artifact_closure(&stage, &owned, &parent.join("first"))?;
+        copy_staged_artifact_closure(&stage, &owned, &parent)?;
+
+        assert_eq!(file::read_to_string(owned.join("parent/first"))?, "first");
+        assert_eq!(file::read_to_string(owned.join("parent/second"))?, "second");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn staged_artifact_closure_rejects_intermediate_symlink_escape() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let outside = tmp.path().join("outside");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&outside)?;
+        file::write(outside.join("secret"), "secret")?;
+        file::make_symlink(&outside, &stage.join("link"))?;
+        let owned = tmp.path().join("owned");
+
+        let err = copy_staged_artifact_closure(&stage, &owned, &stage.join("link/secret"))
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("escaped extraction root"));
+        assert!(owned.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn structured_symlink_inside_stage_uses_relative_source() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(stage.join("source"))?;
+        let link = stage.join("nested/link");
+        let step = FlightStep::Symlink {
+            source: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "source".to_string(),
+            },
+            target: FlightPath {
+                base: FlightPathBase::StagedPath,
+                path: "nested/link".to_string(),
+            },
+            force: false,
+            uninstall: false,
+            source_glob: false,
+            sudo: FlightSudo::Never,
+            guards: Vec::new(),
+        };
+
+        execute_flight_steps(
+            &test_cask("example", "1.0.0"),
+            &[step],
+            &stage,
+            Path::new("/Applications"),
+            "preflight_steps",
+        )?;
+
+        assert_eq!(std::fs::read_link(link)?, PathBuf::from("../source"));
+        Ok(())
+    }
+
+    #[test]
+    fn internal_staged_symlinks_remain_relative_and_untracked() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let source = stage.join("Example.app/Contents/Resources/data");
+        let link = stage.join("Example.app/Contents/data");
+        file::create_dir_all(&source)?;
+        file::create_dir_all(link.parent().unwrap())?;
+        file::make_symlink(Path::new("Resources/data"), &link)?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let mut targets = FlightTargetTransaction::default();
+        targets.record_installed(link.clone());
+
+        durabilize_staged_symlink_targets(&stage, &temporary_caskroom, &mut targets)?;
+
+        assert_eq!(std::fs::read_link(&link)?, PathBuf::from("Resources/data"));
+        assert!(temporary_caskroom.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn temporary_caskroom_symlink_sources_follow_activation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let final_caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let source = temporary_caskroom.join("bin/example");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "binary")?;
+        let target = tmp.path().join("bin/example");
+        file::create_dir_all(target.parent().unwrap())?;
+        let mut targets = FlightTargetTransaction::default();
+        targets.protect(&target)?;
+        file::make_symlink(&source, &target)?;
+        targets.record_installed(target.clone());
+        file::rename(&temporary_caskroom, &final_caskroom)?;
+
+        retarget_transient_symlinks(
+            &temporary_caskroom,
+            &final_caskroom,
+            &final_caskroom,
+            &targets,
+        )?;
+
+        assert_eq!(
+            std::fs::read_link(target)?,
+            final_caskroom.join("bin/example")
+        );
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    fn internal_temporary_caskroom_symlinks_follow_activation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let final_caskroom = tmp.path().join("Caskroom/example/1.0.0");
+        let source = temporary_caskroom.join("share/example/source");
+        let target = temporary_caskroom.join("share/example/target");
+        file::create_dir_all(source.parent().unwrap())?;
+        file::write(&source, "content")?;
+        file::make_symlink(&source, &target)?;
+        file::rename(&temporary_caskroom, &final_caskroom)?;
+        let installed_target = final_caskroom.join("share/example/target");
+
+        retarget_transient_symlinks(
+            &temporary_caskroom,
+            &final_caskroom,
+            &final_caskroom,
+            &FlightTargetTransaction::default(),
+        )?;
+
+        assert_eq!(
+            std::fs::read_link(installed_target)?,
+            final_caskroom.join("share/example/source")
+        );
+        Ok(())
+    }
+
+    #[test]
     fn parses_zoom_terminate_process_step() -> Result<()> {
         let mut cask = test_cask("zoom", "7.1.5.84650");
         cask.artifacts = vec![
@@ -5255,6 +9720,7 @@ mod tests {
             recursive: false,
         }];
         let mut completed = Vec::new();
+        let mut targets = FlightTargetTransaction::default();
 
         execute_flight_steps_with_completion(
             &cask,
@@ -5262,6 +9728,7 @@ mod tests {
             stage.path(),
             Path::new("/Applications"),
             "postflight_steps",
+            &mut targets,
             |index, step| {
                 completed.push(format!("postflight_steps[{index}]:{}", step.kind()));
                 Ok(())
@@ -5424,7 +9891,7 @@ mod tests {
 
     #[test]
     fn structured_run_expands_paths_args_and_env() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -5438,7 +9905,7 @@ mod tests {
             &test_cask("example", "1.2.3"),
             &[FlightStep::Run {
                 command: FlightPath {
-                    base: FlightPathBase::Absolute,
+                    base: FlightPathBase::Literal,
                     path: "/bin/sh".to_string(),
                 },
                 args: vec![
@@ -5602,7 +10069,7 @@ mod tests {
             assert_eq!(
                 parse_run_command(&cask, "preflight_steps", Some(&value))?,
                 FlightPath {
-                    base: FlightPathBase::Absolute,
+                    base: FlightPathBase::Literal,
                     path: path.to_string(),
                 }
             );
@@ -6016,7 +10483,7 @@ end
         // VLC: preflight writes `#{staged_path}/vlc.wrapper.sh` while preflight
         // staged_path is the extract stage, not the temp Caskroom. API binary
         // source is `$HOMEBREW_PREFIX/Caskroom/vlc/<ver>/vlc.wrapper.sh`.
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -6042,7 +10509,7 @@ end
 
     #[test]
     fn prefers_temp_caskroom_wrapper_over_extract_stage() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -6201,7 +10668,7 @@ end
 
     #[test]
     fn completion_target_paths_match_homebrew_names() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -6227,7 +10694,7 @@ end
 
     #[test]
     fn stages_and_links_declared_completion() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6264,7 +10731,7 @@ end
 
     #[test]
     fn declared_completion_source_maps_caskroom_path_to_temp_caskroom() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6290,7 +10757,7 @@ end
 
     #[test]
     fn declared_completion_source_maps_caskroom_path_to_extract_stage() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6317,7 +10784,7 @@ end
     #[cfg(unix)]
     #[test]
     fn link_completion_adopts_homebrew_app_symlink() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("docker-desktop", "2.0.0");
@@ -6358,7 +10825,7 @@ end
     #[cfg(unix)]
     #[test]
     fn link_completion_rejects_other_file_in_declared_app() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
@@ -6398,7 +10865,7 @@ end
     #[cfg(unix)]
     #[test]
     fn link_completion_rejects_target_owned_by_another_cask() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
@@ -6425,7 +10892,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_generated_completion_output() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6457,7 +10924,7 @@ end
 
     #[test]
     fn generated_completion_executable_expands_appdir() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6489,7 +10956,7 @@ end
 
     #[test]
     fn appdir_artifact_source_matches_app_case_insensitively() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let prefix_appdir = tmp.path().join("Applications");
@@ -6516,7 +10983,7 @@ end
 
     #[test]
     fn generated_completion_executable_prefers_staged_prefix_binary() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6543,7 +11010,7 @@ end
 
     #[test]
     fn rejects_ambiguous_generated_completion_bare_executable() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -6602,7 +11069,7 @@ end
 
     #[test]
     fn remove_obsolete_completions_removes_only_caskroom_symlinks() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("foo", "2.0.0");
@@ -6647,7 +11114,7 @@ end
     #[cfg(unix)]
     #[test]
     fn remove_obsolete_completions_removes_dangling_symlinks_with_symlinked_prefix() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let real_prefix = tmp.path().join("homebrew-real");
         let prefix = tmp.path().join("homebrew");
@@ -6711,7 +11178,7 @@ end
 
     #[test]
     fn maps_generated_caskroom_binary_to_temp_caskroom() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -6732,7 +11199,7 @@ end
 
     #[test]
     fn rejects_generated_caskroom_binary_parent_dirs() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let prefix = tmp.path().join("homebrew");
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -6756,6 +11223,449 @@ end
                 source: "OpenJDK.pkg".to_string()
             })
         );
+    }
+
+    #[test]
+    fn parses_and_installs_generic_artifact() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let source = stage.join("libcblite-4.1.0/include/cbl");
+        file::create_dir_all(&source)?;
+        file::write(source.join("CouchbaseLite.h"), "header")?;
+        let value = serde_json::json!({
+            "artifact": [
+                "libcblite-4.1.0/include/cbl",
+                {"target": "$HOMEBREW_PREFIX/include/cbl"}
+            ],
+            "target": "$HOMEBREW_PREFIX/include/cbl"
+        });
+        let artifact = parse_generic_artifact(&value)?.ok_or_else(|| eyre!("missing artifact"))?;
+        assert_eq!(
+            artifact,
+            GenericArtifact {
+                source: "libcblite-4.1.0/include/cbl".to_string(),
+                target: "$HOMEBREW_PREFIX/include/cbl".to_string(),
+            }
+        );
+
+        let mut targets = FlightTargetTransaction::default();
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        install_generic_artifact(&stage, &temporary_caskroom, &artifact, &mut targets)?;
+        assert_eq!(
+            file::read_to_string(tmp.path().join("include/cbl/CouchbaseLite.h"))?,
+            "header"
+        );
+        assert_eq!(
+            file::read_to_string(
+                temporary_caskroom.join("libcblite-4.1.0/include/cbl/CouchbaseLite.h")
+            )?,
+            "header"
+        );
+        assert_eq!(
+            std::fs::read_link(temporary_caskroom.join("libcblite-4.1.0/include/cbl"))?,
+            tmp.path().join("include/cbl")
+        );
+        assert_eq!(
+            targets.installed_targets(),
+            [tmp.path().join("include/cbl")]
+        );
+        assert_eq!(targets.backups.len(), 1);
+        assert!(!targets.backups[0].elevate);
+        targets.commit()?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn generic_artifact_rejects_extraction_source_symlink_escape() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let outside = tmp.path().join("outside");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(&outside)?;
+        file::write(outside.join("secret"), "external")?;
+        file::make_symlink(&outside, &stage.join("payload"))?;
+        let artifact = GenericArtifact {
+            source: "payload".to_string(),
+            target: "$HOMEBREW_PREFIX/share/example".to_string(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        let err = install_generic_artifact(
+            &stage,
+            &tmp.path().join("Caskroom/example/.mise-tmp"),
+            &artifact,
+            &mut targets,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.contains("outside the extraction root"));
+        assert!(tmp.path().join("share/example").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn generic_artifact_rejects_caskroom_source_symlink_escape() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let source = stage.join("payload/include/example");
+        file::create_dir_all(&source)?;
+        file::write(source.join("example.h"), "header")?;
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        let outside = tmp.path().join("outside");
+        file::create_dir_all(&temporary_caskroom)?;
+        file::create_dir_all(&outside)?;
+        file::make_symlink(&outside, &temporary_caskroom.join("payload"))?;
+        let artifact = GenericArtifact {
+            source: "payload/include/example".to_string(),
+            target: "$HOMEBREW_PREFIX/include/example".to_string(),
+        };
+        let mut targets = FlightTargetTransaction::default();
+
+        let err = install_generic_artifact(&stage, &temporary_caskroom, &artifact, &mut targets)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("outside the caskroom"));
+        assert!(
+            tmp.path()
+                .join("include/example")
+                .symlink_metadata()
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_generic_artifact_target_through_external_symlink() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let external = tmp.path().join("external");
+        file::create_dir_all(&prefix)?;
+        file::create_dir_all(&external)?;
+        std::os::unix::fs::symlink(&external, prefix.join("lib"))?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+
+        let err = generic_artifact_target_path("$HOMEBREW_PREFIX/lib/example")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must stay below"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn generic_copy_revalidates_target_after_symlink_swap() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let external = tmp.path().join("external");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        file::create_dir_all(&external)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = generic_artifact_target_path("$HOMEBREW_PREFIX/lib/example")?;
+
+        std::fs::remove_dir(&library)?;
+        std::os::unix::fs::symlink(&external, &library)?;
+
+        let err = validate_generic_copy_target(&target)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("refusing generic artifact copy outside Homebrew prefix"));
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_operation_parent_stays_bound_after_ancestor_swap() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        let external = tmp.path().join("external");
+        file::create_dir_all(external.join("lib"))?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = library.join("example");
+        let parent = open_trusted_operation_parent(&target, true, false)?;
+        let source = tmp.path().join("source");
+        file::create_dir_all(&source)?;
+        file::write(source.join("payload"), "installed")?;
+
+        let saved_prefix = tmp.path().join("saved-homebrew");
+        file::rename(&prefix, &saved_prefix)?;
+        file::make_symlink(&external, &prefix)?;
+        copy_cask_artifact_at(&source, &parent.fd, std::ffi::OsStr::new("example"))?;
+
+        assert_eq!(
+            file::read_to_string(saved_prefix.join("lib/example/payload"))?,
+            "installed"
+        );
+        assert!(external.join("lib/example").symlink_metadata().is_err());
+        remove_all_at(&parent.fd, std::ffi::OsStr::new("example"))?;
+        assert!(saved_prefix.join("lib/example").symlink_metadata().is_err());
+
+        file::remove_file(&prefix)?;
+        file::rename(&saved_prefix, &prefix)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_operation_parent_accepts_symlinked_prefix() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let real_prefix = tmp.path().join("real-homebrew");
+        file::create_dir_all(real_prefix.join("lib"))?;
+        let configured_prefix = tmp.path().join("homebrew");
+        file::make_symlink(&real_prefix, &configured_prefix)?;
+        let _guard = BrewPrefixGuard::set(&configured_prefix);
+        let target = configured_prefix.join("lib/example");
+
+        let parent = open_trusted_operation_parent(&target, true, false)?;
+        assert_eq!(
+            parent.stable_path()?,
+            std::fs::canonicalize(real_prefix.join("lib"))?
+        );
+        file::write(parent.path()?.join("example"), "installed")?;
+
+        assert_eq!(
+            file::read_to_string(real_prefix.join("lib/example"))?,
+            "installed"
+        );
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_operation_parent_creates_missing_directories() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        file::create_dir_all(&prefix)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = prefix.join("share/example/include/example.h");
+
+        let parent = open_trusted_operation_parent(&target, true, true)?;
+
+        file::write(parent.path()?.join("example.h"), "header")?;
+        assert_eq!(file::read_to_string(&target)?, "header");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sudo_invoking_ids_are_trusted_only_for_effective_root() {
+        assert_eq!(sudo_invoking_id_from(0, Some("501")), Some(501));
+        assert_eq!(sudo_invoking_id_from(1000, Some("501")), None);
+        assert_eq!(sudo_invoking_id_from(0, Some("0")), None);
+        assert_eq!(sudo_invoking_id_from(0, Some("invalid")), None);
+    }
+
+    #[test]
+    fn permission_detection_follows_wrapped_error_sources() {
+        let err = eyre::Report::from(nix::errno::Errno::EACCES)
+            .wrap_err("cannot create operation directory");
+
+        assert!(is_permission_denied(&err));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn elevated_generic_target_allows_only_group_writable_prefix() {
+        let prefix = Path::new("/usr/local");
+
+        assert!(strict_elevated_directory_is_trusted(
+            prefix, prefix, 0, 0o775
+        ));
+        assert!(!strict_elevated_directory_is_trusted(
+            Path::new("/usr/local/include"),
+            prefix,
+            0,
+            0o775,
+        ));
+        assert!(!strict_elevated_directory_is_trusted(
+            prefix, prefix, 0, 0o777
+        ));
+        assert!(!strict_elevated_directory_is_trusted(
+            prefix, prefix, 501, 0o755
+        ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn unprivileged_generic_rollback_restores_backup_when_target_is_absent() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let target = prefix.join("include/example.h");
+        file::create_dir_all(target.parent().unwrap())?;
+        file::write(&target, "original")?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let mut transaction = FlightTargetTransaction::default();
+
+        transaction.protect_generic(&target)?;
+        assert!(target.symlink_metadata().is_err());
+        transaction.rollback()?;
+
+        assert_eq!(file::read_to_string(&target)?, "original");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn trusted_generic_rename_rejects_swapped_prefix() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let target = library.join("example");
+        let backup = library.join("example.backup");
+        let expected_parent = resolved_parent(&target)?;
+        file::write(&backup, "original")?;
+
+        let saved_prefix = tmp.path().join("saved-homebrew");
+        file::rename(&prefix, &saved_prefix)?;
+        let external = tmp.path().join("external");
+        file::create_dir_all(external.join("lib"))?;
+        file::write(external.join("lib/example"), "external")?;
+        file::write(external.join("lib/example.backup"), "attacker")?;
+        file::make_symlink(&external, &prefix)?;
+
+        let err = rename_trusted_generic_target(&backup, &target, &expected_parent)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("changed generic artifact parent"));
+        assert_eq!(
+            file::read_to_string(external.join("lib/example"))?,
+            "external"
+        );
+        assert_eq!(
+            file::read_to_string(external.join("lib/example.backup"))?,
+            "attacker"
+        );
+        file::remove_file(&prefix)?;
+        file::rename(&saved_prefix, &prefix)?;
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn private_staging_cleanup_rejects_replaced_directory() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let parent = open_trusted_operation_parent(&library.join("target"), true, false)?;
+        let staging_name = std::ffi::OsStr::new(".mise-copy-test");
+        let staging_path = library.join(staging_name);
+        file::create_dir_all(&staging_path)?;
+        std::fs::set_permissions(&staging_path, std::fs::Permissions::from_mode(0o700))?;
+        let staging = TrustedOperationParent {
+            fd: nix::fcntl::openat(
+                &parent.fd,
+                staging_name,
+                nix::fcntl::OFlag::O_RDONLY
+                    | nix::fcntl::OFlag::O_DIRECTORY
+                    | nix::fcntl::OFlag::O_NOFOLLOW,
+                nix::sys::stat::Mode::empty(),
+            )?,
+        };
+        let saved = library.join("saved-staging");
+        file::rename(&staging_path, &saved)?;
+        file::create_dir_all(&staging_path)?;
+
+        let err = remove_private_staging_dir(&parent, &staging, staging_name)
+            .unwrap_err()
+            .to_string();
+
+        assert!(err.contains("was replaced"));
+        assert!(staging_path.is_dir());
+        assert!(saved.is_dir());
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn obsolete_generic_cleanup_skips_mutable_parent_directories() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let obsolete = tmp.path().join("lib/obsolete");
+        let modified = tmp.path().join("lib/modified");
+        file::create_dir_all(obsolete.parent().unwrap())?;
+        std::fs::set_permissions(
+            obsolete.parent().unwrap(),
+            std::fs::Permissions::from_mode(0o777),
+        )?;
+        file::write(&obsolete, "owned")?;
+        file::write(&modified, "owned")?;
+        let records = vec![
+            CaskTargetRecord {
+                path: obsolete.clone(),
+                fingerprint: cask_target_fingerprint(&obsolete)?,
+                uninstall: None,
+            },
+            CaskTargetRecord {
+                path: modified.clone(),
+                fingerprint: cask_target_fingerprint(&modified)?,
+                uninstall: None,
+            },
+        ];
+        file::write(&modified, "user change")?;
+
+        remove_obsolete_generic_artifacts(&records, &[])?;
+
+        assert_eq!(file::read_to_string(obsolete)?, "owned");
+        assert_eq!(file::read_to_string(modified)?, "user change");
+        Ok(())
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn obsolete_generic_cleanup_allows_owner_group_writable_prefix() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let library = prefix.join("lib");
+        file::create_dir_all(&library)?;
+        std::fs::set_permissions(&prefix, std::fs::Permissions::from_mode(0o775))?;
+        std::fs::set_permissions(&library, std::fs::Permissions::from_mode(0o775))?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let obsolete = library.join("obsolete");
+        file::write(&obsolete, "owned")?;
+        let records = vec![CaskTargetRecord {
+            path: obsolete.clone(),
+            fingerprint: cask_target_fingerprint(&obsolete)?,
+            uninstall: None,
+        }];
+
+        remove_obsolete_generic_artifacts(&records, &[])?;
+
+        assert!(obsolete.symlink_metadata().is_err());
+        Ok(())
     }
 
     #[test]
@@ -7092,7 +12002,7 @@ end
 
     #[test]
     fn binary_targets_default_to_prefix_bin() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -7113,7 +12023,7 @@ end
 
     #[test]
     fn binary_targets_must_stay_under_an_allowed_root() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -7131,7 +12041,7 @@ end
 
     #[test]
     fn binary_targets_allow_absolute_usr_local() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
 
@@ -7153,7 +12063,7 @@ end
 
     #[test]
     fn appdir_binary_targets_are_contained() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         assert_eq!(
@@ -7181,7 +12091,7 @@ end
 
     #[test]
     fn caskroom_binary_paths_support_contained_appdir_targets() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let caskroom = tmp.path().join("Caskroom/surge/1.0.0");
@@ -7199,7 +12109,7 @@ end
 
     #[test]
     fn caskroom_binary_paths_preserve_prefix_relative_target() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let caskroom = tmp.path().join("Caskroom/example/1.0.0");
@@ -7217,7 +12127,7 @@ end
 
     #[test]
     fn caskroom_binary_paths_strip_usr_local_root() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let caskroom = tmp.path().join("Caskroom/docker-desktop/1.0.0");
@@ -7235,7 +12145,7 @@ end
 
     #[test]
     fn installed_cask_version_uses_only_recorded_legacy_targets() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("app-only", "1.0.0");
@@ -7249,10 +12159,14 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![app_target_path(app.target_name())?],
             binaries: vec![],
             fonts: vec![],
             completions: vec![],
+            flight_directories: vec![],
+            generic: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
             prune_safe: false,
@@ -7278,7 +12192,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_unknown_receipt_schema() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("future", "1.0.0");
@@ -7287,10 +12201,14 @@ end
         let receipt = CaskReceipt {
             schema_version: 4,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: Vec::new(),
             binaries: Vec::new(),
             fonts: Vec::new(),
             completions: Vec::new(),
+            flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -7310,7 +12228,7 @@ end
 
     #[test]
     fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7325,13 +12243,17 @@ end
         let version_dir = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(version_dir.join("Example.app"))?;
         file::write(version_dir.join("Example.app/version"), "1.0.0")?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &version_dir,
             &cask,
             &CaskArtifacts {
                 apps: vec![app],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
         )?;
 
         let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
@@ -7349,7 +12271,7 @@ end
 
     #[test]
     fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7359,7 +12281,7 @@ end
         let configured_target = tmp.path().join("Applications/Configured.app");
         file::create_dir_all(&configured_target)?;
         file::create_dir_all(configured_dir.join("Configured.app"))?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &configured_dir,
             &configured,
             &CaskArtifacts {
@@ -7369,6 +12291,10 @@ end
                 }],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
         )?;
 
         let drifted = test_cask("drifted", "1.0.0");
@@ -7376,7 +12302,7 @@ end
         let drifted_target = tmp.path().join("Applications/Drifted.app");
         file::create_dir_all(&drifted_target)?;
         file::create_dir_all(drifted_dir.join("Drifted.app"))?;
-        write_receipt(
+        write_receipt_with_flight_targets(
             &drifted_dir,
             &drifted,
             &CaskArtifacts {
@@ -7386,6 +12312,10 @@ end
                 }],
                 ..Default::default()
             },
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
         )?;
         file::write(drifted_target.join("changed"), "changed")?;
 
@@ -7397,10 +12327,14 @@ end
             toml::to_string_pretty(&CaskReceipt {
                 schema_version: 2,
                 version: legacy.version.clone(),
+                auto_updates: false,
+                metadata_only_apps: Vec::new(),
                 apps: Vec::new(),
                 binaries: Vec::new(),
                 fonts: Vec::new(),
                 completions: Vec::new(),
+                flight_directories: Vec::new(),
+                generic: Vec::new(),
                 pkg_ids: Vec::new(),
                 targets: Vec::new(),
                 prune_safe: false,
@@ -7423,7 +12357,7 @@ end
 
     #[test]
     fn cask_prune_skips_shared_targets_and_pending_transactions() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7465,7 +12399,7 @@ end
 
     #[test]
     fn cask_prune_rechecks_shared_targets_before_removal() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7483,7 +12417,7 @@ end
 
     #[test]
     fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7501,7 +12435,7 @@ end
 
     #[test]
     fn cask_prune_fails_closed_when_a_receipt_is_corrupt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7527,7 +12461,7 @@ end
     fn cask_prune_fails_closed_when_a_token_directory_is_unreadable() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
 
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let state_dir = tmp.path().join("state");
@@ -7610,7 +12544,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_binary_state_without_receipt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("binary-only", "1.0.0");
@@ -7650,7 +12584,7 @@ end
 
     #[test]
     fn installed_cask_version_does_not_invent_wrapper_from_current_api() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("firefox", "153.0.1");
@@ -7673,10 +12607,14 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![app_target],
             binaries: Vec::new(),
             fonts: Vec::new(),
             completions: Vec::new(),
+            flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -7710,7 +12648,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_and_links_binary_artifact() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -7736,7 +12674,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_same_basename_binaries_without_collision() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -7775,7 +12713,7 @@ end
     #[cfg(unix)]
     #[test]
     fn binary_source_prefers_hook_generated_caskroom_file() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -7802,7 +12740,7 @@ end
     #[cfg(unix)]
     #[test]
     fn stages_absolute_binary_source_from_pkg_install() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -7836,7 +12774,7 @@ end
     #[cfg(unix)]
     #[test]
     fn reports_missing_target_for_dangling_staged_binary_symlink() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let stage = tmp.path().join("stage");
@@ -7869,7 +12807,7 @@ end
 
     #[test]
     fn cask_appdir_uses_prefix_for_prefix_targeted_apps() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let app = AppArtifact {
@@ -7881,11 +12819,560 @@ end
         Ok(())
     }
 
+    #[test]
+    fn app_target_path_defaults_to_applications() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.remove(APP_DIR_ENV);
+        assert_eq!(
+            app_target_path("Firefox.app")?,
+            PathBuf::from("/Applications/Firefox.app")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn parse_app_artifact_target_without_slash_is_preserved() {
+        // The Homebrew API commonly renders `app` targets as a bare bundle
+        // name. Parsing must keep it verbatim and must not consult the override.
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "/tmp/should-not-be-used");
+        let value: Value =
+            serde_json::json!({"app": ["Firefox.app", {"target": "Firefox Nightly.app"}]});
+        assert_eq!(
+            parse_app_artifact(&value),
+            Some(AppArtifact {
+                source: "Firefox.app".to_string(),
+                target: Some("Firefox Nightly.app".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn parse_app_artifact_preserves_prefix_target() {
+        // A `$HOMEBREW_PREFIX`-anchored target must survive parsing so that
+        // `cask_appdir`/`app_target_path` can route it into the prefix.
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "/tmp/should-not-be-used");
+        let value: Value = serde_json::json!({
+            "app": ["Example.app", {"target": "$HOMEBREW_PREFIX/Applications/Example.app"}]
+        });
+        assert_eq!(
+            parse_app_artifact(&value),
+            Some(AppArtifact {
+                source: "Example.app".to_string(),
+                target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+            })
+        );
+    }
+
+    #[test]
+    fn app_target_path_honours_appdir_override() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        // target_app_dir canonicalizes the override, so compare against the
+        // resolved base (macOS tempdirs live under the `/var` symlink).
+        let base = tmp.path().canonicalize()?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &base);
+        assert_eq!(app_target_path("Firefox.app")?, base.join("Firefox.app"));
+        Ok(())
+    }
+
+    #[test]
+    fn app_target_path_accepts_absolute_target_under_override() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &base);
+        let target = base.join("Firefox.app");
+        assert_eq!(app_target_path(&target.to_string_lossy())?, target);
+        Ok(())
+    }
+
+    #[test]
+    fn app_target_path_relocates_default_applications_target() -> Result<()> {
+        // The Homebrew API frequently hardcodes an absolute
+        // `/Applications/Foo.app` target (e.g. the firefox cask). With an
+        // override configured this must be relocated into it.
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &base);
+        assert_eq!(
+            app_target_path("/Applications/Firefox.app")?,
+            base.join("Firefox.app")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn app_target_path_relocation_preserves_subdirectories() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &base);
+        assert_eq!(
+            app_target_path("/Applications/JetBrains/IDEA.app")?,
+            base.join("JetBrains/IDEA.app")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn app_target_path_defaults_keep_absolute_applications_target() -> Result<()> {
+        // Without an override, an absolute `/Applications` target is accepted
+        // as-is (no relocation).
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.remove(APP_DIR_ENV);
+        assert_eq!(
+            app_target_path("/Applications/Firefox.app")?,
+            PathBuf::from("/Applications/Firefox.app")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn app_target_path_rejects_target_outside_override() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &base);
+        let err = app_target_path("/Users/someone/Evil.app")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains(&base.to_string_lossy().to_string()), "{err}");
+        assert!(!err.contains("/Applications"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn cask_appdir_uses_override() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let _prefix = BrewPrefixGuard::set(&base.join("prefix"));
+        let appdir = base.join("appdir");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &appdir);
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: None,
+        };
+        assert_eq!(cask_appdir(&[app])?, appdir);
+        Ok(())
+    }
+
+    #[test]
+    fn command_wrapper_target_path_uses_override() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("appdir");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &appdir);
+        // Only `$APPDIR`-anchored targets resolve into the appdir; a bare name
+        // lands under the prefix's bin, so anchor the target to exercise the
+        // override path.
+        let wrapper = CommandWrapperArtifact {
+            name: "gimp".to_string(),
+            target: Some("$APPDIR/GIMP.app/Contents/MacOS/gimp".to_string()),
+            content: None,
+            executable: None,
+            args: Vec::new(),
+            env: BTreeMap::new(),
+        };
+        assert_eq!(
+            wrapper.target_path()?,
+            appdir.join("GIMP.app/Contents/MacOS/gimp"),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn allowed_appdir_roots_has_no_duplicates() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let _prefix = BrewPrefixGuard::set(&base.join("prefix"));
+
+        let mut _guard = EnvVarGuard::new();
+        _guard.remove(APP_DIR_ENV);
+        let roots = allowed_appdir_roots()?;
+        let unique: BTreeSet<_> = roots.iter().collect();
+        assert_eq!(unique.len(), roots.len(), "{roots:?}");
+        assert!(roots.contains(&PathBuf::from("/Applications")));
+
+        let appdir = base.join("appdir");
+        _guard.set(APP_DIR_ENV, &appdir);
+        let roots = allowed_appdir_roots()?;
+        let unique: BTreeSet<_> = roots.iter().collect();
+        assert_eq!(unique.len(), roots.len(), "{roots:?}");
+        assert!(roots.contains(&appdir));
+        Ok(())
+    }
+
+    #[test]
+    fn binary_target_path_accepts_override_appdir() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("appdir");
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &appdir);
+        assert_eq!(
+            binary_target_path("$APPDIR/Foo.app/Contents/MacOS/foo", &appdir)?,
+            appdir.join("Foo.app/Contents/MacOS/foo"),
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_refuses_world_writable_ancestor() -> Result<()> {
+        // Regression guard for the CI failure: a world-writable ancestor (as
+        // `/tmp` is, mode 1777) must be refused, because any local user could
+        // substitute components beneath it. Real application directories are
+        // never world-writable.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let shared = base.join("shared");
+        file::create_dir_all(&shared)?;
+        let mode = std::fs::Permissions::from_mode(0o1777);
+        std::fs::set_permissions(&shared, mode)?;
+        let err = match ensure_trusted_appdir(&shared.join("Applications")) {
+            Ok(_) => panic!("expected world-writable ancestor to be refused"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("untrusted directory"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_creates_missing_tail() -> Result<()> {
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        ensure_trusted_appdir(&appdir)?;
+        assert!(appdir.symlink_metadata()?.file_type().is_dir());
+        // Idempotent when the directory already exists.
+        ensure_trusted_appdir(&appdir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_rejects_symlinked_tail() -> Result<()> {
+        // Simulate a symlink planted on the not-yet-existing appdir tail
+        // between validation and mutation: it must be rejected, not followed.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let elsewhere = base.join("elsewhere");
+        file::create_dir_all(&elsewhere)?;
+        let appdir = base.join("Applications");
+        std::os::unix::fs::symlink(&elsewhere, &appdir)?;
+        let err = match ensure_trusted_appdir(&appdir) {
+            Ok(_) => panic!("expected symlinked appdir tail to be rejected"),
+            Err(err) => err.to_string(),
+        };
+        // Must fail because the tail is a symlink, not because an ancestor was
+        // untrusted (which is a different guard).
+        assert!(err.contains("cannot open operation directory"), "{err}");
+        assert!(!err.contains("untrusted directory"), "{err}");
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_stays_bound_after_same_uid_replacement() -> Result<()> {
+        // The reviewer's scenario: after validation, a same-uid process swaps
+        // the accepted appdir for a different directory (or symlink). Because
+        // the descriptor is retained and mutations are addressed through it,
+        // writes still land in the originally validated directory.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+
+        // Swap the validated directory aside and put an attacker-controlled
+        // path in its place.
+        let stashed = base.join("stashed");
+        std::fs::rename(&appdir, &stashed)?;
+        let attacker = base.join("attacker");
+        file::create_dir_all(&attacker)?;
+        std::os::unix::fs::symlink(&attacker, &appdir)?;
+
+        // Writing through the bound descriptor path must reach the original
+        // directory (now at `stashed`), never the attacker's directory.
+        let bound = parent.path()?;
+        crate::file::write(bound.join("canary"), "bound")?;
+        assert!(stashed.join("canary").is_file());
+        assert!(!attacker.join("canary").exists());
+        Ok(())
+    }
+
+    // `ditto` only exists on macOS, and app artifacts are macOS-only in
+    // practice (Linux cask support is font-only).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn ditto_into_stays_bound_after_directory_replacement() -> Result<()> {
+        // Bind the appdir, then have a same-uid replacement swap the directory
+        // pathname for an attacker-controlled one. The fd-bound copy must still
+        // land in the originally validated directory.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+
+        let source = base.join("payload");
+        file::create_dir_all(&source)?;
+        crate::file::write(source.join("marker"), "payload")?;
+
+        let stashed = base.join("stashed");
+        std::fs::rename(&appdir, &stashed)?;
+        let attacker = base.join("attacker");
+        file::create_dir_all(&attacker)?;
+        std::os::unix::fs::symlink(&attacker, &appdir)?;
+
+        ditto_into(&source, &parent.fd, std::ffi::OsStr::new("Copied.app"))?;
+        assert!(stashed.join("Copied.app/marker").is_file());
+        assert!(!attacker.join("Copied.app").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn ensure_trusted_appdir_walks_from_unreplaceable_root() -> Result<()> {
+        // The appdir is never re-opened via a scanned ancestor pathname: the
+        // walk starts at `/` and descends only through verified descriptors.
+        // Swapping an intermediate component for another same-uid-owned real
+        // directory before the call therefore cannot be reached through a
+        // previously-resolved root, and a symlink swap is rejected outright.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let middle = base.join("middle");
+        file::create_dir_all(&middle)?;
+        let appdir = middle.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+        assert!(appdir.symlink_metadata()?.file_type().is_dir());
+
+        // Replace the intermediate component with a same-uid symlink: the next
+        // walk must refuse it rather than following it.
+        let attacker = base.join("attacker");
+        file::create_dir_all(&attacker)?;
+        std::fs::remove_dir_all(&middle)?;
+        std::os::unix::fs::symlink(&attacker, &middle)?;
+        assert!(ensure_trusted_appdir(&appdir).is_err());
+        // Nothing was created inside the attacker's directory.
+        assert!(!attacker.join("Applications").exists());
+        drop(parent);
+        Ok(())
+    }
+
+    #[test]
+    fn ditto_into_rejects_preplanted_symlink_destination() -> Result<()> {
+        // A same-uid process creates the predictable temporary name as a
+        // symlink before the copy. The copy must fail closed rather than follow
+        // it, so nothing is written outside the verified directory.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+
+        let source = base.join("payload");
+        file::create_dir_all(&source)?;
+        crate::file::write(source.join("marker"), "payload")?;
+
+        let attacker = base.join("attacker");
+        file::create_dir_all(&attacker)?;
+        let tmp_name = std::ffi::OsStr::new("Foo.mise-tmp-abc");
+        std::os::unix::fs::symlink(&attacker, appdir.join(tmp_name))?;
+
+        // Fails at `mkdirat` (EEXIST) before `ditto` is ever spawned, so this
+        // holds on platforms without `ditto` too.
+        let err = match ditto_into(&source, &parent.fd, tmp_name) {
+            Ok(()) => panic!("expected pre-planted symlink destination to be refused"),
+            Err(err) => err.to_string(),
+        };
+        assert!(err.contains("cannot create staging directory"), "{err}");
+        assert!(!attacker.join("marker").exists());
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn repair_app_permissions_does_not_traverse_bundle_symlinks() -> Result<()> {
+        // A cask bundle may contain a symlink pointing outside the application
+        // directory. The recursive flag/permission repair must not follow it and
+        // change the referent.
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+
+        let outside = base.join("outside.txt");
+        crate::file::write(&outside, "keep")?;
+        let status = std::process::Command::new("/bin/chmod")
+            .args(["644"])
+            .arg(&outside)
+            .status()?;
+        assert!(status.success());
+
+        let bundle = appdir.join("Victim.app");
+        file::create_dir_all(&bundle)?;
+        std::os::unix::fs::symlink(&outside, bundle.join("link"))?;
+
+        repair_app_permissions_at(&parent, std::ffi::OsStr::new("Victim.app"));
+
+        // The referent keeps its mode and gains no flags.
+        let mode = std::process::Command::new("/usr/bin/stat")
+            .args(["-f", "%Sp"])
+            .arg(&outside)
+            .output()?;
+        let mode = String::from_utf8_lossy(&mode.stdout).trim().to_string();
+        assert_eq!(mode, "-rw-r--r--", "referent mode changed: {mode}");
+        let flags = std::process::Command::new("/usr/bin/stat")
+            .args(["-f", "%Sf"])
+            .arg(&outside)
+            .output()?;
+        let flags = String::from_utf8_lossy(&flags.stdout).trim().to_string();
+        assert!(
+            flags.is_empty() || flags == "-",
+            "referent flags set: {flags}"
+        );
+        assert_eq!(crate::file::read_to_string(&outside)?, "keep");
+        Ok(())
+    }
+
+    #[test]
+    fn empty_appdir_override_falls_back_to_applications() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "");
+        assert_eq!(
+            app_target_path("Firefox.app")?,
+            PathBuf::from("/Applications/Firefox.app")
+        );
+        assert!(app_target_path("/etc/passwd").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn relative_appdir_override_is_rejected() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "relative/apps");
+        assert!(app_target_path("Firefox.app").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_override_with_parent_dir_is_rejected() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, "/Applications/../etc");
+        assert!(app_target_path("Firefox.app").is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_override_root_alias_is_rejected() -> Result<()> {
+        // Alternate spellings of the filesystem root must not become the
+        // containment boundary.
+        let _lock = ENV_LOCK.lock().unwrap();
+        for alias in ["/.", "//", "/./."] {
+            let mut _guard = EnvVarGuard::new();
+            _guard.set(APP_DIR_ENV, alias);
+            assert!(
+                app_target_path("Firefox.app").is_err(),
+                "expected {alias} to be rejected"
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_override_with_symlink_to_root_is_rejected() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        // An override that resolves to the filesystem root would make `/` the
+        // containment boundary for privileged mutations, so it must be
+        // rejected — including when reached through a symlink.
+        let link = tmp.path().join("link-to-root");
+        std::os::unix::fs::symlink("/", &link)?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &link);
+        let err = app_target_path("Firefox.app").unwrap_err().to_string();
+        assert!(
+            err.contains("must not resolve to the filesystem root"),
+            "{err}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn appdir_override_with_benign_symlink_is_resolved() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        // A symlink whose target is an ordinary directory (not root) is
+        // accepted, but the boundary is the resolved real path so privileged
+        // mutations cannot be redirected through the link.
+        let real = tmp.path().join("real");
+        file::create_dir_all(&real)?;
+        let real = real.canonicalize()?;
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link)?;
+        let mut _guard = EnvVarGuard::new();
+        _guard.set(APP_DIR_ENV, &link);
+        assert_eq!(app_target_path("Firefox.app")?, real.join("Firefox.app"));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_app_activation_preserves_caskroom_copy() -> Result<()> {
+        let tmp = trusted_tempdir()?;
+        let base = tmp.path().canonicalize()?;
+        let appdir = base.join("Applications");
+        let parent = ensure_trusted_appdir(&appdir)?;
+        let target = appdir.join("Example.app");
+        file::create_dir_all(&target)?;
+        file::write(target.join("version"), "old")?;
+
+        let caskroom_app = base.join("Caskroom/example/2.0.0/Example.app");
+        file::create_dir_all(&caskroom_app)?;
+        file::write(caskroom_app.join("version"), "staged")?;
+
+        let result = activate_app_at(
+            &parent,
+            std::ffi::OsStr::new("Example.app"),
+            std::ffi::OsStr::new("missing.mise-tmp"),
+            std::ffi::OsStr::new("Example.mise-old-test"),
+            &caskroom_app,
+            &target,
+        );
+
+        assert!(result.is_err());
+        assert!(!caskroom_app.symlink_metadata()?.file_type().is_symlink());
+        assert_eq!(
+            file::read_to_string(caskroom_app.join("version"))?,
+            "staged"
+        );
+        assert_eq!(file::read_to_string(target.join("version"))?, "old");
+        Ok(())
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn upgrades_app_with_protected_existing_contents() -> Result<()> {
-        let tmp = tempfile::tempdir()?;
-        let target = tmp.path().join("Docker.app");
+        let tmp = trusted_tempdir()?;
+        // ensure_trusted_appdir walks the appdir with O_NOFOLLOW, so use a
+        // canonical base (macOS tempdirs sit under the `/var` symlink).
+        let base = tmp.path().canonicalize()?;
+        let target = base.join("Docker.app");
         let protected_dir = target.join("Contents/Resources");
         file::create_dir_all(&protected_dir)?;
         crate::file::write(protected_dir.join("docker"), "old")?;
@@ -7895,17 +13382,23 @@ end
             .status()?;
         assert!(status.success());
 
-        let tmp_target = tmp.path().join("Docker.mise-tmp-test");
+        let tmp_target = base.join("Docker.mise-tmp-test");
         file::create_dir_all(&tmp_target)?;
         crate::file::write(tmp_target.join("version"), "new")?;
 
-        let result = swap_app(&target, &tmp_target);
+        // swap_app_at addresses entries by name relative to the verified appdir
+        // descriptor, so open the containing directory and use bare names.
+        let parent = ensure_trusted_appdir(&base)?;
+        let old_name = std::ffi::OsString::from("Docker.mise-old-test");
+        let old_target = base.join(&old_name);
+        let result = swap_app_at(
+            &parent,
+            std::ffi::OsStr::new("Docker.app"),
+            std::ffi::OsStr::new("Docker.mise-tmp-test"),
+            &old_name,
+        );
 
         // Remove the ACL so tempfile can clean up even when the repro fails.
-        let old_target = target.with_extension(format!(
-            "mise-old-{}",
-            crate::hash::hash_to_str(&target.display().to_string())
-        ));
         if old_target.exists() {
             let status = std::process::Command::new("/bin/chmod")
                 .arg("-RN")
@@ -7923,7 +13416,7 @@ end
     #[cfg(unix)]
     #[test]
     fn remove_obsolete_binary_links_removes_only_caskroom_symlinks() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("binary-only", "2.0.0");
@@ -7953,7 +13446,7 @@ end
 
     #[test]
     fn installed_cask_version_does_not_invent_pkg_ids_from_current_api() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("pkg-only", "1.0.0");
@@ -7962,10 +13455,14 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![],
             binaries: vec![],
             fonts: vec![],
             completions: vec![],
+            flight_directories: vec![],
+            generic: vec![],
             pkg_ids: vec![],
             targets: Vec::new(),
             prune_safe: false,
@@ -7994,7 +13491,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_app_state_without_receipt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("actual-token", "1.0.0");
@@ -8031,7 +13528,7 @@ end
 
     #[test]
     fn installed_cask_version_rejects_completion_state_without_receipt() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("completion-only", "1.0.0");
@@ -8057,7 +13554,7 @@ end
 
     #[test]
     fn installed_cask_version_uses_metadata_token() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("metadata-token", "2.0.0");
@@ -8084,12 +13581,16 @@ end
         let receipt = CaskReceipt {
             schema_version: 0,
             version: cask.version.clone(),
+            auto_updates: false,
+            metadata_only_apps: Vec::new(),
             apps: vec![app_target_path(
                 "$HOMEBREW_PREFIX/Applications/Example.app",
             )?],
             binaries: Vec::new(),
             fonts: Vec::new(),
             completions: Vec::new(),
+            flight_directories: Vec::new(),
+            generic: Vec::new(),
             pkg_ids: Vec::new(),
             targets: Vec::new(),
             prune_safe: false,
@@ -8117,7 +13618,7 @@ end
 
     #[test]
     fn installed_version_ignores_homebrew_metadata() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("actual-token");
@@ -8129,10 +13630,24 @@ end
         Ok(())
     }
 
+    #[test]
+    fn installed_versions_preserve_conflict_presence_with_multiple_versions() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("conflicting-cask");
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        file::create_dir_all(token_dir.join("2.0.0"))?;
+
+        assert_eq!(installed_version("conflicting-cask"), None);
+        assert_eq!(installed_versions("conflicting-cask").len(), 2);
+        Ok(())
+    }
+
     #[cfg(unix)]
     #[test]
     fn failed_activation_restores_caskroom_and_external_links() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let cask = test_cask("completion-only", "1.0.0");
@@ -8168,7 +13683,7 @@ end
 
     #[test]
     fn remove_stale_versions_keeps_current_version_and_homebrew_metadata() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let token_dir = caskroom_token_dir("actual-token");
@@ -8191,7 +13706,7 @@ end
 
     #[test]
     fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
 
         // Create a local git repo to clone from
@@ -8266,6 +13781,7 @@ end
             aliases: vec![],
             old_tokens: vec![],
             version: "latest".to_string(),
+            auto_updates: false,
             url,
             url_specs: CaskUrlSpecs {
                 branch: Some("fonts-v2".to_string()),
@@ -8273,6 +13789,8 @@ end
             },
             sha256: Some("no_check".to_string()),
             artifacts: vec![],
+            depends_on: CaskDependencies::default(),
+            conflicts_with: CaskConflicts::default(),
             ruby_source_path: None,
             ruby_source_checksum: None,
             tap_git_head: None,

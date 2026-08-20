@@ -1,18 +1,38 @@
 use std::collections::HashSet;
 
-use eyre::Result;
+use eyre::{Result, bail};
 use tokio::sync::mpsc;
 
 use crate::cli::args::BackendArg;
 use crate::deps_graph::DepsGraph;
 use crate::toolset::tool_request::ToolRequest;
 
-/// Unique key for a tool request (tool short name + version)
+/// Unique key for a tool request (tool short name + version).
 pub type ToolKey = String;
 
 /// Creates a unique key for a ToolRequest
 pub(crate) fn tool_key(tr: &ToolRequest) -> ToolKey {
     format!("{}@{}", tr.ba().short, tr.version())
+}
+
+/// Multiple option variants cannot safely share one install destination.
+/// Reject them before any install job starts instead of letting one variant
+/// silently satisfy (or race with) another.
+pub(crate) fn ensure_compatible_install_requests(requests: &[ToolRequest]) -> Result<()> {
+    let mut options_by_destination = std::collections::HashMap::new();
+    for request in requests {
+        let key = tool_key(request);
+        let options = request.options();
+        if let Some(existing) = options_by_destination.get(&key)
+            && existing != &options
+        {
+            bail!(
+                "conflicting options for {key}: multiple requests share the same install destination"
+            );
+        }
+        options_by_destination.insert(key, options);
+    }
+    Ok(())
 }
 
 /// Manages a dependency graph of tools for installation scheduling.
@@ -28,8 +48,10 @@ impl ToolDeps {
     /// Builds the dependency graph based on each tool's dependencies.
     /// Duplicate tool requests (same tool short name and version) are deduplicated.
     /// Distinct aliases may resolve to the same backend/version but still need separate
-    /// install jobs because they can have different options and install directories.
+    /// install jobs because they have distinct short names and install directories.
     pub fn new(requests: Vec<ToolRequest>) -> Result<Self> {
+        ensure_compatible_install_requests(&requests)?;
+
         // Build nodes
         let nodes: Vec<(ToolKey, ToolRequest)> = requests
             .iter()
@@ -124,7 +146,7 @@ mod tests {
     use std::sync::Arc;
 
     use crate::config::Config;
-    use crate::toolset::{ToolSource, ToolVersionOptions};
+    use crate::toolset::{CoreToolOptions, ToolSource, ToolVersionOptions, parse_tool_options};
 
     #[test]
     fn test_empty_deps() {
@@ -167,5 +189,71 @@ mod tests {
 
         emitted.sort();
         assert_eq!(emitted, vec!["bar".to_string(), "foo".to_string()]);
+    }
+
+    #[test]
+    fn test_same_tool_and_version_with_different_options_are_rejected() {
+        let backend = Arc::new(BackendArg::from("tiny"));
+        let requests = vec![
+            ToolRequest::new_opts(
+                backend.clone(),
+                "1.0.0",
+                parse_tool_options("flavor=one"),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+            ToolRequest::new_opts(
+                backend,
+                "1.0.0",
+                parse_tool_options("flavor=two"),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+
+        let err = ToolDeps::new(requests).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("conflicting options for tiny@1.0.0")
+        );
+    }
+
+    #[test]
+    fn test_same_tool_and_version_with_different_core_options_are_rejected() {
+        let backend = Arc::new(BackendArg::from("tiny"));
+        let first_options = ToolVersionOptions {
+            core: CoreToolOptions {
+                depends: Some(vec!["node".to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let second_options = ToolVersionOptions {
+            core: CoreToolOptions {
+                depends: Some(vec!["python".to_string()]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let requests = vec![
+            ToolRequest::Version {
+                backend: backend.clone(),
+                version: "1.0.0".to_string(),
+                options: first_options,
+                source: ToolSource::Argument,
+            },
+            ToolRequest::Version {
+                backend,
+                version: "1.0.0".to_string(),
+                options: second_options,
+                source: ToolSource::Argument,
+            },
+        ];
+
+        let err = ToolDeps::new(requests).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("conflicting options for tiny@1.0.0")
+        );
     }
 }

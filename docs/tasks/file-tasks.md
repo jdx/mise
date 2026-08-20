@@ -8,7 +8,7 @@ In addition to defining tasks through the configuration, they can also be define
 - `.mise/tasks/:task_name`
 - `.config/mise/tasks/:task_name`
 
-These are the default file-task directories. If [`task_config.includes`](/tasks/task-configuration.html#task-config-includes)
+These are the default file-task directories. If [`task_config.includes`](/tasks/task-configuration.html#task_config.includes)
 is set for the current config scope, mise searches only the paths listed there instead.
 
 Here is an example of a file task that builds a Rust CLI:
@@ -26,6 +26,8 @@ Ensure that the file is executable, otherwise mise will not be able to detect it
 chmod +x mise-tasks/build
 ```
 
+On Windows there is no permission bit to set, and `chmod` is not the answer there — see
+[Windows](#windows) for what makes a file task detectable instead.
 :::
 
 Having the code in a bash file and not TOML helps make it work
@@ -127,6 +129,80 @@ Write-Host "Hello from PowerShell, current directory is $current_directory"
 ```
 
 :::
+
+## Windows
+
+Windows has no execute permission for mise to look at, so it decides whether a file is a task a
+different way. A file is a task if **either** holds:
+
+- its extension is one of [`windows_executable_extensions`](/configuration/settings.html#windows_executable_extensions)
+  — by default `exe`, `bat`, `cmd`, `com`, `ps1`, `vbs`
+- it starts with a **shebang**
+
+The two answer different questions. The extension means Windows itself can run the file; the shebang
+means mise can work out an interpreter for it. Windows does not implement shebangs — mise reads the
+line and starts the interpreter itself — which is why a `.sh` script, or a file with no extension at
+all, is still a task there as long as it has one.
+
+The practical consequence is that a file with **neither** is invisible on Windows even though it
+works on Linux and macOS:
+
+```bash [mise-tasks/build]
+# no shebang, no extension -> not a task on Windows
+cargo build
+```
+
+Adding `#!/usr/bin/env bash` is usually all it takes, and it costs nothing on the other platforms.
+
+### Writing one task for both platforms
+
+File tasks have no equivalent of a TOML task's
+[`run_windows`](/tasks/task-configuration.html#run-windows) — the script _is_ the command, so there
+is nowhere to put a second one. Write the two scripts side by side instead, giving the Windows one an
+executable extension:
+
+```
+mise-tasks/
+  build.sh       # #!/usr/bin/env bash
+  build.ps1      # the Windows version
+```
+
+The two have to share a directory and a stem — that pairing is what makes them one task rather than
+two that happen to be named alike.
+
+On Windows mise prefers the native script: `build.ps1` answers to `build`, and the POSIX one is
+dropped. On Linux and macOS the `.ps1` has no execute permission, so only `build.sh` is found.
+`mise run build` does the right thing on each.
+
+The POSIX half is anything _without_ one of the
+[`windows_executable_extensions`](/configuration/settings.html#windows_executable_extensions), so a
+file with no extension at all works the same way:
+
+```
+mise-tasks/
+  build          # #!/usr/bin/env bash
+  build.ps1      # the Windows version
+```
+
+Marking the `.ps1` executable on Linux or macOS does not break that — it simply appears there as a
+separate task called `build.ps1`, since the rename to `build` only happens on Windows.
+
+If you would rather name the two files something unrelated, or say which is which explicitly, use a
+[TOML task](/tasks/toml-tasks.html) that calls them:
+
+```toml
+[tasks.build]
+run = "./scripts/build.sh"
+run_windows = "pwsh -File ./scripts/windows-build.ps1"
+```
+
+Spelled out rather than `./scripts/windows-build.ps1`, because
+[`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
+defaults to `cmd /c`, and cmd will not start a `.ps1` on its own.
+
+If there is more than one Windows candidate — say `build.ps1` _and_ `build.cmd` — mise cannot choose
+between them, so it leaves everything alone: all three files stay, listed as `build.sh`, `build.ps1`
+and `build.cmd`.
 
 ## Editing tasks
 

@@ -16,6 +16,34 @@ ready, but that do not belong in `[tools]`: native libraries, Homebrew
 formulae, dotfile repositories, shell rc files, editor config, macOS
 preferences, user services, and one-time machine setup.
 
+## Composing configuration roots
+
+`[bootstrap].config_roots` composes declarative resources from independent
+configuration roots into the current bootstrap operation:
+
+```toml
+[bootstrap]
+config_roots = ["bundles/*"]
+```
+
+Entries are relative to the declaring config root and may use single-level `*`
+globs. Each matched directory is loaded with the normal active configuration
+environments. Relative resource sources and template `config_root` values remain
+relative to the config that declared them. Variables declared by a selected root
+are available to that root's dotfile templates without leaking into sibling
+roots.
+
+Composition includes `[dotfiles]`, `[bootstrap.files]`,
+`[bootstrap.directories]`, `[bootstrap.services]`, and `[bootstrap.compose]`.
+Equivalent declarations are deduplicated. Different declarations for the same
+dotfile target, edit `(path, id)`, managed file, managed directory, service, or
+Compose project are errors that identify both declaring configs. Independent
+roots never acquire precedence from their order in `config_roots`.
+
+Other configuration such as tools, tasks, packages, hooks, and repos is not
+collected from these roots. Use their existing explicit workflows when those
+resources need aggregate behavior.
+
 ## How it runs
 
 `mise bootstrap` runs these steps in order:
