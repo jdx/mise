@@ -6474,7 +6474,7 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=468a8fa7)",
+ "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=01a1c8735998769a946f6a7bf95250717e94c6e9)",
  "usage-rs",
  "versions",
  "vfox",
@@ -11101,12 +11101,12 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 [[package]]
 name = "usage-argv"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+source = "git+https://github.com/jdx/usage?rev=01a1c8735998769a946f6a7bf95250717e94c6e9#01a1c8735998769a946f6a7bf95250717e94c6e9"
 
 [[package]]
 name = "usage-derive"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+source = "git+https://github.com/jdx/usage?rev=01a1c8735998769a946f6a7bf95250717e94c6e9#01a1c8735998769a946f6a7bf95250717e94c6e9"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -11141,7 +11141,7 @@ dependencies = [
 [[package]]
 name = "usage-lib"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+source = "git+https://github.com/jdx/usage?rev=01a1c8735998769a946f6a7bf95250717e94c6e9#01a1c8735998769a946f6a7bf95250717e94c6e9"
 dependencies = [
  "heck",
  "indexmap 2.14.0",
@@ -11163,7 +11163,7 @@ dependencies = [
 [[package]]
 name = "usage-rs"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+source = "git+https://github.com/jdx/usage?rev=01a1c8735998769a946f6a7bf95250717e94c6e9#01a1c8735998769a946f6a7bf95250717e94c6e9"
 dependencies = [
  "usage-argv",
  "usage-derive",
@@ -11173,7 +11173,7 @@ dependencies = [
 [[package]]
 name = "usage-validation"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=468a8fa7#468a8fa778b22e6afcc0e94eb860f49ed287d4a7"
+source = "git+https://github.com/jdx/usage?rev=01a1c8735998769a946f6a7bf95250717e94c6e9#01a1c8735998769a946f6a7bf95250717e94c6e9"
 dependencies = [
  "expr-lang",
 ]

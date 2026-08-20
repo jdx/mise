@@ -15,7 +15,7 @@ pub struct HookNotFound {
     bin: String,
 
     /// Shell type to generate script for
-    #[arg(long, short)]
+    #[arg(long, short, value_enum)]
     shell: Option<ShellType>,
 }
 

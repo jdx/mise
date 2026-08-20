@@ -43,7 +43,7 @@ include = [
   "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
-rust-version = "1.93"
+rust-version = "1.95"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -97,7 +97,7 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "468a8fa7", features = ["completions", "diagnostics", "validation"] }
+usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "01a1c8735998769a946f6a7bf95250717e94c6e9", features = ["completions", "diagnostics", "validation"] }
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "8"
@@ -228,7 +228,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.10", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "5", git = "https://github.com/jdx/usage", rev = "468a8fa7", features = ["docs"] }
+usage-lib = { git = "https://github.com/jdx/usage", rev = "01a1c8735998769a946f6a7bf95250717e94c6e9", features = ["docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }

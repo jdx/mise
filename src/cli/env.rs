@@ -29,7 +29,7 @@ pub struct Env {
     json: bool,
 
     /// Shell type to generate environment variables for
-    #[arg(long, short, overrides_with = "json")]
+    #[arg(long, short, overrides_with = "json", value_enum)]
     shell: Option<ShellType>,
 
     /// Output in JSON format with additional information (source, tool)
