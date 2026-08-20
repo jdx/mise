@@ -1055,32 +1055,63 @@ impl Config {
 
     pub async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
+        let (default_idiomatic_settings, enable_tools_locked, disable_files_locked) =
+            tracked_idiomatic_default_settings();
+        let mut idiomatic_settings_by_root =
+            BTreeMap::<PathBuf, config_file::IdiomaticVersionFileSettings>::new();
         for path in Tracker::list_all()?.into_iter() {
             if config_path_is_ignored(&path, false) {
                 debug!("skipping ignored tracked config: {}", display_path(&path));
                 continue;
             }
-            // Pre-check trust for config files that require it so tracked
-            // config loading (e.g., during `mise upgrade`) never prompts.
-            // Plain .tool-versions and idiomatic version files are safe to
-            // parse without trust and must still protect their tool versions.
             let trust_root = config_file::config_trust_root(&path);
-            if config_file::path_requires_trust(&path).await
+            if Settings::get().paranoid
                 && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
             {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }
-            match config_file::parse(&path).await {
+            let config_root = config_file::config_root::config_root(&path);
+            let idiomatic_settings = idiomatic_settings_by_root
+                .entry(config_root.clone())
+                .or_insert_with(|| {
+                    idiomatic_version_file_settings_for_root(
+                        &config_root,
+                        &default_idiomatic_settings,
+                        true,
+                        enable_tools_locked,
+                        disable_files_locked,
+                    )
+                    .0
+                })
+                .clone();
+            let detection =
+                config_file::detect_config_file_with_settings(&path, &idiomatic_settings).await;
+            // Pre-check trust for config files that require it so tracked
+            // config loading (e.g., during `mise upgrade`) never prompts.
+            // Plain .tool-versions and idiomatic version files are safe to
+            // parse without trust and must still protect their tool versions.
+            if config_file::detection_requires_trust(&path, &detection)
+                && !is_global_config(&path)
+                && !config_file::is_trusted(&trust_root)
+            {
+                debug!("skipping untrusted tracked config: {}", display_path(&path));
+                continue;
+            }
+            if matches!(
+                &detection,
+                config_file::ConfigFileDetection::DisabledRegistryIdiomatic
+            ) {
+                debug!(
+                    "skipping disabled idiomatic tracked config: {}",
+                    display_path(&path)
+                );
+                continue;
+            }
+            match config_file::parse_detected(&path, detection).await {
                 Ok(cf) => {
                     config_files.insert(path, cf);
-                }
-                Err(err) if config_file::is_disabled_idiomatic_version_file_error(&err) => {
-                    debug!(
-                        "skipping disabled idiomatic tracked config: {}",
-                        display_path(&path)
-                    );
                 }
                 Err(err) => {
                     warn!(
@@ -1617,6 +1648,111 @@ fn idiomatic_version_file_disabled(
     })
 }
 
+fn idiomatic_settings_env_locks() -> (bool, bool) {
+    (
+        std::env::var_os("MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS").is_some(),
+        std::env::var_os("MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES").is_some(),
+    )
+}
+
+/// Resolve command-wide idiomatic defaults without inheriting settings from the
+/// invocation directory's project hierarchy.
+fn tracked_idiomatic_default_settings() -> (config_file::IdiomaticVersionFileSettings, bool, bool) {
+    let current = config_file::IdiomaticVersionFileSettings::current();
+    let (enable_tools_locked, disable_files_locked) = idiomatic_settings_env_locks();
+    let mut settings = config_file::IdiomaticVersionFileSettings::default();
+    if enable_tools_locked {
+        settings.enable_tools = current.enable_tools;
+    }
+    if disable_files_locked {
+        settings.disable_files = current.disable_files;
+    }
+    if Settings::no_config() {
+        return (settings, enable_tools_locked, disable_files_locked);
+    }
+    let mut enable_tools_resolved = enable_tools_locked;
+    let mut disable_files_resolved = disable_files_locked;
+    for path in global_config_files()
+        .into_iter()
+        .rev()
+        .chain(system_config_files().into_iter().rev())
+        .filter(|path| !config_path_is_ignored(path, false))
+    {
+        if let Ok(partial) = Settings::parse_settings_file(&path) {
+            if !enable_tools_resolved
+                && let Some(tools) = partial.idiomatic_version_file_enable_tools
+            {
+                settings.enable_tools = tools;
+                enable_tools_resolved = true;
+            }
+            if !disable_files_resolved
+                && let Some(files) = partial.idiomatic_version_file_disable_files
+            {
+                settings.disable_files = files;
+                disable_files_resolved = true;
+            }
+        }
+    }
+    (settings, enable_tools_locked, disable_files_locked)
+}
+
+/// Resolve explicit idiomatic settings from a config root's ancestor hierarchy over
+/// invocation defaults.
+///
+/// Tracked loading can require trusted settings only; monorepo discovery preserves its
+/// existing behavior by passing `trusted_only = false`.
+fn idiomatic_version_file_settings_for_root(
+    root: &Path,
+    defaults: &config_file::IdiomaticVersionFileSettings,
+    trusted_only: bool,
+    enable_tools_locked: bool,
+    disable_files_locked: bool,
+) -> (config_file::IdiomaticVersionFileSettings, bool) {
+    let mut settings = defaults.clone();
+    if Settings::no_config() {
+        return (settings, false);
+    }
+    let mut enable_tools_resolved = enable_tools_locked;
+    let mut disable_files_resolved = disable_files_locked;
+    let mut overridden = false;
+    let safe_mode = Settings::safe_mode();
+    let config_dirs = all_dirs_from(root).unwrap_or_else(|_| vec![root.to_path_buf()]);
+    for path in config_dirs
+        .into_iter()
+        .filter(|dir| !config_dir_is_ignored(dir, false))
+        .flat_map(|dir| config_paths_in_dir_with_filenames(&dir, &DEFAULT_CONFIG_FILENAMES))
+    {
+        if safe_mode && !is_global_config(&path) {
+            // Match all_settings_files()'s safe-mode boundary: an untrusted repo's own
+            // [settings] block must not influence resolution, including here.
+            continue;
+        }
+        if trusted_only && config_path_is_ignored(&path, false) {
+            continue;
+        }
+        if trusted_only && !is_global_config(&path) && !is_path_trusted(&path) {
+            continue;
+        }
+        if let Ok(partial) = Settings::parse_settings_file(&path) {
+            if !enable_tools_resolved
+                && let Some(tools) = partial.idiomatic_version_file_enable_tools
+            {
+                settings.enable_tools = tools;
+                enable_tools_resolved = true;
+                overridden = true;
+            }
+            if !disable_files_resolved
+                && let Some(files) = partial.idiomatic_version_file_disable_files
+            {
+                settings.disable_files = files;
+                disable_files_resolved = true;
+                overridden = true;
+            }
+        }
+    }
+    (settings, overridden)
+}
+
 /// Resolves idiomatic version filenames for a single monorepo config root, honoring that
 /// root's own `[settings].idiomatic_version_file_enable_tools`/`idiomatic_version_file_disable_files`
 /// if it sets either.
@@ -1630,32 +1766,19 @@ async fn idiomatic_filenames_for_root(
     root: &Path,
     default_idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> BTreeMap<String, Vec<String>> {
-    let settings = Settings::get();
-    let mut enable_tools = settings.idiomatic_version_file_enable_tools.clone();
-    let mut disable_files = settings.idiomatic_version_file_disable_files.clone();
-    let mut overridden = false;
-    let safe_mode = Settings::safe_mode();
-    for path in config_paths_in_dir_with_filenames(root, &DEFAULT_CONFIG_FILENAMES) {
-        if safe_mode && !is_global_config(&path) {
-            // Match all_settings_files()'s safe-mode boundary: an untrusted repo's own
-            // [settings] block must not influence resolution, including here.
-            continue;
-        }
-        if let Ok(partial) = Settings::parse_settings_file(&path) {
-            if let Some(tools) = partial.idiomatic_version_file_enable_tools {
-                enable_tools = tools;
-                overridden = true;
-            }
-            if let Some(files) = partial.idiomatic_version_file_disable_files {
-                disable_files = files;
-                overridden = true;
-            }
-        }
-    }
+    let defaults = config_file::IdiomaticVersionFileSettings::current();
+    let (enable_tools_locked, disable_files_locked) = idiomatic_settings_env_locks();
+    let (settings, overridden) = idiomatic_version_file_settings_for_root(
+        root,
+        &defaults,
+        false,
+        enable_tools_locked,
+        disable_files_locked,
+    );
     if !overridden {
         return default_idiomatic_filenames.clone();
     }
-    load_idiomatic_filenames_for_tools(&enable_tools, &disable_files).await
+    load_idiomatic_filenames_for_tools(&settings.enable_tools, &settings.disable_files).await
 }
 
 static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
