@@ -4478,7 +4478,7 @@ Show the trusted status of config files from the current directory and its paren
 Does not trust or untrust any files.
 """#
     flag --untrust help="Remove explicit trust for this config"
-    arg "[CONFIG_FILE]" help="The config file to trust" required=#false
+    arg "[CONFIG_FILE]" help="The config file whose trust status to change" required=#false
 }
 cmd uninstall help="Removes installed tool versions" effect=destructive {
     long_help #"""
