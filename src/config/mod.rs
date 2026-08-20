@@ -6021,7 +6021,7 @@ mod tests {
             crate::toolset::parse_tool_options("api_url=https://config.example/api/v3,foo=config");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(
+            crate::toolset::ToolRequest::new_with_options(
                 resolved_ba,
                 "1.0.0",
                 config_opts,
@@ -6100,7 +6100,12 @@ mod tests {
             crate::toolset::parse_tool_options("asset_pattern=config-pattern,bar=config");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6175,7 +6180,12 @@ mod tests {
             crate::toolset::parse_tool_options("version_json_path=.current,config_only=true");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6257,7 +6267,12 @@ mod tests {
         );
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 

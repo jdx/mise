@@ -715,7 +715,7 @@ mod tests {
     use crate::toolset::parse_tool_options;
 
     fn request(version: &str, options: &str, source: ToolSource) -> ToolRequest {
-        ToolRequest::new_opts(
+        ToolRequest::new_with_options(
             Arc::new(BackendArg::new(
                 "tiny".to_string(),
                 Some("asdf:mise-plugins/mise-tiny".to_string()),

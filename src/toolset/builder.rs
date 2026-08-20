@@ -196,10 +196,14 @@ mod tests {
         };
         let mut inactive_options = parse_tool_options(r#"selected="inactive""#);
         inactive_options.core.os = Some(vec![inactive_os.to_string()]);
-        let inactive =
-            ToolRequest::new_opts(ba.clone(), "1.0.0", inactive_options, ToolSource::Unknown)
-                .unwrap();
-        let active = ToolRequest::new_opts(
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
             ba.clone(),
             "2.0.0",
             parse_tool_options(r#"selected="active""#),
@@ -227,7 +231,7 @@ mod tests {
     async fn test_runtime_arg_preserves_request_options_with_matching_config() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
-        let configured = ToolRequest::new_opts(
+        let configured = ToolRequest::new_with_options(
             ba.clone(),
             "1.0.0",
             parse_tool_options(r#"selected="config""#),
@@ -241,7 +245,7 @@ mod tests {
             .parse::<ToolArg>()
             .unwrap();
         arg.tvr = Some(
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 arg.ba.clone(),
                 "1.0.0",
                 parse_tool_options(r#"request_only="request""#),

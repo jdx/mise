@@ -164,14 +164,14 @@ mod tests {
     fn test_same_tool_and_version_with_different_options_are_rejected() {
         let backend = Arc::new(BackendArg::from("tiny"));
         let requests = vec![
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 backend.clone(),
                 "1.0.0",
                 parse_tool_options("flavor=one"),
                 ToolSource::Argument,
             )
             .unwrap(),
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 backend,
                 "1.0.0",
                 parse_tool_options("flavor=two"),
@@ -205,14 +205,15 @@ mod tests {
             ..Default::default()
         };
         let requests = vec![
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 backend.clone(),
                 "1.0.0",
                 first_options,
                 ToolSource::Argument,
             )
             .unwrap(),
-            ToolRequest::new_opts(backend, "1.0.0", second_options, ToolSource::Argument).unwrap(),
+            ToolRequest::new_with_options(backend, "1.0.0", second_options, ToolSource::Argument)
+                .unwrap(),
         ];
 
         let err = ToolDeps::new(requests).unwrap_err();
@@ -223,7 +224,7 @@ mod tests {
     }
 
     fn request(tool: &str, options: &str) -> ToolRequest {
-        ToolRequest::new_opts(
+        ToolRequest::new_with_options(
             Arc::new(BackendArg::from(tool)),
             "1.0.0",
             parse_tool_options(options),

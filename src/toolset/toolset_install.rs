@@ -795,7 +795,7 @@ mod tests {
         let mut toolset = Toolset::new(ToolSource::Unknown);
         for version in ["1.0.0", "2.0.0"] {
             toolset.add_version(
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     ba.clone(),
                     version,
                     parse_tool_options(&format!(r#"postinstall="echo configured {version}""#)),
@@ -806,7 +806,7 @@ mod tests {
         }
 
         let mut requests = vec![
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 ba.clone(),
                 "3.0.0",
                 parse_tool_options(r#"postinstall="echo carried""#),
@@ -827,10 +827,14 @@ mod tests {
             _ => "linux",
         };
         inactive_options.core.os = Some(vec![inactive_os.to_string()]);
-        let inactive =
-            ToolRequest::new_opts(ba.clone(), "4.0.0", inactive_options, ToolSource::Unknown)
-                .unwrap();
-        let active = ToolRequest::new_opts(
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "4.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
             ba,
             "4.0.0",
             parse_tool_options(r#"postinstall="echo active""#),
@@ -850,7 +854,7 @@ mod tests {
     async fn test_init_request_options_preserves_matching_request_options() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy[inline_only=inline]"));
-        let configured = ToolRequest::new_opts(
+        let configured = ToolRequest::new_with_options(
             ba.clone(),
             "1.0.0",
             parse_tool_options(r#"selected="config""#),
@@ -860,7 +864,7 @@ mod tests {
         let mut toolset = Toolset::new(ToolSource::Unknown);
         toolset.add_version(configured);
         let mut requests = vec![
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 ba,
                 "1.0.0",
                 parse_tool_options(r#"request_only="request""#),
