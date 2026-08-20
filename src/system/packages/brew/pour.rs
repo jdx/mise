@@ -752,6 +752,44 @@ fn validate_topology_previous(path: &Path, previous: &TopologyPrevious) -> Resul
 enum TopologyOperation {
     Directory,
     Link(PathBuf),
+    InfoLink {
+        target: PathBuf,
+        installer: PathBuf,
+        index: PathBuf,
+        previous_index: Option<Vec<u8>>,
+    },
+}
+
+fn install_info_executable() -> Result<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
+    for candidate in [
+        PathBuf::from("/usr/bin/install-info"),
+        prefix::prefix().join("opt/texinfo/bin/install-info"),
+    ] {
+        let Ok(path) = candidate.canonicalize() else {
+            continue;
+        };
+        let metadata = path.symlink_metadata()?;
+        if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
+            return Ok(path);
+        }
+    }
+    bail!("Homebrew install-info lifecycle requires an exact install-info executable")
+}
+
+fn info_index_before(path: &Path) -> Result<Option<Vec<u8>>> {
+    match path.symlink_metadata() {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Ok(metadata) if metadata.is_file() && !metadata.file_type().is_symlink() => {
+            Ok(Some(std::fs::read(path)?))
+        }
+        Err(error) => Err(error.into()),
+        Ok(_) => bail!(
+            "Homebrew info index is not a real regular file: {}",
+            path.display()
+        ),
+    }
 }
 
 fn topology_repair_link(
@@ -1244,12 +1282,20 @@ impl PublicTopologyPlanner<'_> {
             {
                 continue;
             }
-            if policy == KegLinkPolicy::Info {
-                bail!(
-                    "brew:{name}: install-info lifecycle is unsupported for {}",
-                    source_entry.display()
-                );
-            }
+            let operation = if policy == KegLinkPolicy::Info {
+                if self.native_observation {
+                    continue;
+                }
+                let index = destination_entry.parent().unwrap().join("dir");
+                TopologyOperation::InfoLink {
+                    target: source_entry.clone(),
+                    installer: install_info_executable()?,
+                    previous_index: info_index_before(&index)?,
+                    index,
+                }
+            } else {
+                TopologyOperation::Link(source_entry.clone())
+            };
             let matches_owned_ancestor = match brew_owned_ancestor(&destination_entry)? {
                 Some(ancestor) => path_matches_through_brew_owned_ancestor(
                     &destination_entry,
@@ -1284,7 +1330,7 @@ impl PublicTopologyPlanner<'_> {
             self.repairs.push(topology_repair_link(
                 destination_entry,
                 previous,
-                TopologyOperation::Link(source_entry),
+                operation,
             )?);
         }
         Ok(())
@@ -1335,36 +1381,25 @@ fn apply_topology_repair(repairs: &[TopologyRepairLink]) -> Result<()> {
                     }
                 },
                 TopologyOperation::Link(target) => {
-                    materialize_brew_dirs(&repair.destination)?;
-                    crate::file::create_dir_all(repair.destination.parent().unwrap())?;
-                    match &repair.previous {
-                        TopologyPrevious::Absent => {
-                            crate::file::make_symlink(
-                                &relative_target(target, &repair.destination),
-                                &repair.destination,
-                            )?;
-                        }
-                        TopologyPrevious::Symlink(_) => {
-                            let staging = repair
-                                .destination
-                                .parent()
-                                .unwrap()
-                                .join(format!(".mise-link-{}", crate::rand::random_string(16)));
-                            crate::file::make_symlink(
-                                &relative_target(target, &repair.destination),
-                                &staging,
-                            )?;
-                            if let Err(error) = crate::file::rename(&staging, &repair.destination) {
-                                let _ = crate::file::remove_file(&staging);
-                                return Err(error);
-                            }
-                        }
-                        TopologyPrevious::ExistingDirectory => {
-                            bail!(
-                                "refusing to replace existing topology directory: {}",
-                                repair.destination.display()
-                            );
-                        }
+                    apply_topology_link(repair, target)?;
+                }
+                TopologyOperation::InfoLink {
+                    target,
+                    installer,
+                    index,
+                    previous_index,
+                } => {
+                    apply_topology_link(repair, target)?;
+                    let result = update_info_index(
+                        installer,
+                        &repair.destination,
+                        index,
+                        previous_index.as_deref(),
+                    );
+                    if let Err(error) = result {
+                        let _ = crate::file::remove_file(&repair.destination);
+                        restore_info_index(index, previous_index.as_deref());
+                        return Err(error);
                     }
                 }
             }
@@ -1393,6 +1428,14 @@ fn apply_topology_repair(repairs: &[TopologyRepairLink]) -> Result<()> {
                             let _ = crate::file::remove_file(&completed_repair.destination);
                         }
                     }
+                    TopologyOperation::InfoLink {
+                        ref index,
+                        ref previous_index,
+                        ..
+                    } => {
+                        let _ = crate::file::remove_file(&completed_repair.destination);
+                        restore_info_index(index, previous_index.as_deref());
+                    }
                 }
                 if let TopologyPrevious::Symlink(previous) = &completed_repair.previous
                     && completed_repair.destination.symlink_metadata().is_err()
@@ -1405,6 +1448,74 @@ fn apply_topology_repair(repairs: &[TopologyRepairLink]) -> Result<()> {
         completed.push(repair);
     }
     Ok(())
+}
+
+fn apply_topology_link(repair: &TopologyRepairLink, target: &Path) -> Result<()> {
+    materialize_brew_dirs(&repair.destination)?;
+    crate::file::create_dir_all(repair.destination.parent().unwrap())?;
+    match &repair.previous {
+        TopologyPrevious::Absent => crate::file::make_symlink(
+            &relative_target(target, &repair.destination),
+            &repair.destination,
+        )
+        .map(|_| ()),
+        TopologyPrevious::Symlink(_) => {
+            let staging = repair
+                .destination
+                .parent()
+                .unwrap()
+                .join(format!(".mise-link-{}", crate::rand::random_string(16)));
+            crate::file::make_symlink(&relative_target(target, &repair.destination), &staging)?;
+            if let Err(error) = crate::file::rename(&staging, &repair.destination) {
+                let _ = crate::file::remove_file(&staging);
+                return Err(error);
+            }
+            Ok(())
+        }
+        TopologyPrevious::ExistingDirectory => bail!(
+            "refusing to replace existing topology directory: {}",
+            repair.destination.display()
+        ),
+    }
+}
+
+fn update_info_index(
+    installer: &Path,
+    info: &Path,
+    index: &Path,
+    previous: Option<&[u8]>,
+) -> Result<()> {
+    use std::io::Write;
+
+    let mut staged = tempfile::NamedTempFile::new_in(index.parent().unwrap())?;
+    if let Some(previous) = previous {
+        staged.write_all(previous)?;
+        staged.flush()?;
+    }
+    let output = std::process::Command::new(installer)
+        .arg("--quiet")
+        .arg(info)
+        .arg(staged.path())
+        .output()?;
+    if !output.status.success() {
+        bail!(
+            "install-info failed for {}: {}",
+            info.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    crate::file::write_atomic(index, std::fs::read(staged.path())?)
+}
+
+fn restore_info_index(index: &Path, previous: Option<&[u8]>) {
+    match previous {
+        Some(contents) => {
+            let _ = crate::file::write_atomic(index, contents);
+        }
+        None => {
+            let _ = crate::file::remove_file(index);
+        }
+    }
 }
 
 /// Restore one missing or dangling mise-owned active-keg record without relinking the keg.
@@ -4201,6 +4312,48 @@ mod tests {
         )?;
         link_keg(name, version, false)?;
         Ok(keg)
+    }
+
+    #[test]
+    fn native_install_info_is_not_mise_repair_work() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_installed_formula(&prefix, "foo", "1.0", false, &[])?;
+        crate::file::create_dir_all(keg.join("share/info"))?;
+        crate::file::write(keg.join("share/info/foo.info"), "native info")?;
+        crate::file::create_dir_all(prefix.join("share/info"))?;
+        crate::file::write(prefix.join("share/info/dir"), "native index")?;
+
+        let health = installed_formula_health("foo", "1.0");
+        assert_eq!(
+            health.kind,
+            FormulaHealthKind::Healthy,
+            "{:?}",
+            health.reasons
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn install_info_index_is_staged_and_restorable() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmp = tempfile::tempdir()?;
+        let installer = tmp.path().join("install-info");
+        crate::file::write(&installer, "#!/bin/sh\nprintf 'entry\\n' >>\"$3\"\n")?;
+        std::fs::set_permissions(&installer, std::fs::Permissions::from_mode(0o755))?;
+        let info = tmp.path().join("foo.info");
+        crate::file::write(&info, "info")?;
+        let index = tmp.path().join("dir");
+        let previous = b"prior\n";
+        crate::file::write(&index, previous)?;
+
+        update_info_index(&installer, &info, &index, Some(previous))?;
+        assert_eq!(std::fs::read(&index)?, b"prior\nentry\n");
+        restore_info_index(&index, Some(previous));
+        assert_eq!(std::fs::read(&index)?, previous);
+        Ok(())
     }
 
     #[test]
