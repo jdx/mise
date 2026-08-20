@@ -7,6 +7,12 @@ Current exact-head confirmation (2026-08-20): prerequisite head
 `7d422518ed1674c8cb5f819411af9bee4d4b6ce6` passed all 14 jobs in
 [run 32352460903](https://github.com/jdx/mise/actions/runs/32352460903),
 including the real source-build provenance oracle and marker verification.
+
+Homebrew 6.0.18 drift closure: code head `afd6fd420` carries canonical resolved
+tap identity into source-only SBOM generation and emits exact brew plus
+recognized upstream registry PURLs for every Homebrew-supported URL family.
+Bottle SBOM provenance is untouched. Unit, source receipt, topology, ShellCheck,
+445 formula brew tests, and full workspace/all-feature/all-target Clippy pass.
 Effort: L
 Planned against: #11910 `05ccd7ab8`, #11915 `b94b6b1c1`
 Depends on: 010

@@ -16,6 +16,11 @@ authenticated macOS, Linux bottle, and isolated Linux source oracles. The
 earlier `7c5374c0a` failures are retained below as diagnostic history, not the
 current verdict.
 
+Homebrew 6.0.18 drift closure: code head `afd6fd420` adds Homebrew's
+`/^pwsh/` Mkpath policy with a real-directory/leaf-symlink topology regression.
+It preserves confinement and fails no policy open; all 445 formula brew tests
+and full workspace/all-feature/all-target Clippy pass locally.
+
 Acceptance extension (2026-08-16): direct resolution of all 31 downstream
 formula roots reaches current `python@3.14`, whose typed lifecycle requires
 `set_permissions` with `u+w` over guarded framework/lib glob paths. The prior
