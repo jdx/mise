@@ -41,8 +41,8 @@ use crate::task::{
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
-    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder, ToolSource,
+    ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -534,26 +534,7 @@ impl Config {
         });
         let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
-        let mut resolved = ResolvedToolOptions::default();
-        resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
-        if let Some(manifest_opts) = backend_arg.install_manifest_opts() {
-            resolved.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
-        }
-        if alias_opts.is_none()
-            && let Some(full_opts) = backend_arg.resolved_full_opts()
-        {
-            resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
-        }
-        if let Some(alias_opts) = alias_opts {
-            resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
-        }
-        if let Some(config_opts) = config_opts {
-            resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
-        }
-        if let Some(inline_opts) = backend_arg.explicit_opts() {
-            resolved.apply_overrides(inline_opts, ToolOptionSource::InlineBackendArg);
-        }
-        Ok(resolved)
+        Ok(backend_arg.resolve_opts_with_layers(alias_opts, config_opts, None))
     }
 
     fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {

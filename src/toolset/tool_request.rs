@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::{
     fmt::{Display, Formatter},
@@ -20,109 +18,53 @@ use crate::lockfile::LockfileTool;
 use crate::path::PathExt;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
+use crate::toolset::{
+    ResolvedToolOptions, ToolOptionSource, ToolSource, ToolVersion, ToolVersionOptions,
+};
 use crate::{backend, lockfile};
 use crate::{
     backend::ABackend,
     config::{Config, Settings},
 };
 
-#[derive(Clone, Default)]
-pub(crate) struct ToolRequestOptions {
-    effective: ToolVersionOptions,
-    request_overlay: Option<ToolVersionOptions>,
-}
-
-impl std::fmt::Debug for ToolRequestOptions {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        self.effective.fmt(formatter)
-    }
-}
-
-impl ToolRequestOptions {
-    fn inherited(effective: ToolVersionOptions) -> Self {
-        Self {
-            effective,
-            request_overlay: None,
-        }
-    }
-
-    fn explicit(options: ToolVersionOptions) -> Self {
-        Self {
-            effective: options.clone(),
-            request_overlay: Some(options),
-        }
-    }
-}
-
-impl Deref for ToolRequestOptions {
-    type Target = ToolVersionOptions;
-
-    fn deref(&self) -> &Self::Target {
-        &self.effective
-    }
-}
-
-// Request option provenance affects future layering, but the effective options
-// remain the request's equality and deduplication identity.
-impl PartialEq for ToolRequestOptions {
-    fn eq(&self, other: &Self) -> bool {
-        self.effective == other.effective
-    }
-}
-
-impl Eq for ToolRequestOptions {}
-
-impl Hash for ToolRequestOptions {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.effective.hash(state);
-    }
-}
-
-impl From<ToolVersionOptions> for ToolRequestOptions {
-    fn from(options: ToolVersionOptions) -> Self {
-        Self::inherited(options)
-    }
-}
-
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub(crate) enum ToolRequest {
     Version {
         backend: Arc<BackendArg>,
         version: String,
-        options: ToolRequestOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Prefix {
         backend: Arc<BackendArg>,
         prefix: String,
-        options: ToolRequestOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Ref {
         backend: Arc<BackendArg>,
         ref_: String,
         ref_type: String,
-        options: ToolRequestOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Sub {
         backend: Arc<BackendArg>,
         sub: String,
         orig_version: String,
-        options: ToolRequestOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Path {
         backend: Arc<BackendArg>,
         path: PathBuf,
-        options: ToolRequestOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     System {
         backend: Arc<BackendArg>,
         source: ToolSource,
-        options: ToolRequestOptions,
+        options: ResolvedToolOptions,
     },
 }
 
@@ -155,7 +97,7 @@ impl ToolRequest {
                 Self::Ref {
                     ref_: r.to_string(),
                     ref_type: ref_type.to_string(),
-                    options: backend.opts().into(),
+                    options: backend.resolve_opts_with_config_and_request(None, None),
                     backend,
                     source,
                 }
@@ -164,7 +106,7 @@ impl ToolRequest {
                 validate_version_string(p)?;
                 Self::Prefix {
                     prefix: p.to_string(),
-                    options: backend.opts().into(),
+                    options: backend.resolve_opts_with_config_and_request(None, None),
                     backend,
                     source,
                 }
@@ -175,7 +117,7 @@ impl ToolRequest {
                 let path = resolve_path(&p, &source);
                 Self::Path {
                     path,
-                    options: backend.opts().into(),
+                    options: backend.resolve_opts_with_config_and_request(None, None),
                     backend,
                     source,
                 }
@@ -186,7 +128,7 @@ impl ToolRequest {
                 validate_version_string(v)?;
                 Self::Sub {
                     sub: sub.to_string(),
-                    options: backend.opts().into(),
+                    options: backend.resolve_opts_with_config_and_request(None, None),
                     orig_version: v.to_string(),
                     backend,
                     source,
@@ -195,7 +137,7 @@ impl ToolRequest {
             None => {
                 if s == "system" {
                     Self::System {
-                        options: backend.opts().into(),
+                        options: backend.resolve_opts_with_config_and_request(None, None),
                         backend,
                         source,
                     }
@@ -203,7 +145,7 @@ impl ToolRequest {
                     validate_version_string(&s)?;
                     Self::Version {
                         version: s,
-                        options: backend.opts().into(),
+                        options: backend.resolve_opts_with_config_and_request(None, None),
                         backend,
                         source,
                     }
@@ -222,7 +164,9 @@ impl ToolRequest {
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => *o = ToolRequestOptions::explicit(options),
+            | Self::Ref { options: o, .. } => {
+                *o = ResolvedToolOptions::from_source(options, ToolOptionSource::Request)
+            }
             _ => Default::default(),
         }
         Ok(tvr)
@@ -278,7 +222,21 @@ impl ToolRequest {
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => o.effective = options,
+            | Self::System { options: o, .. } => {
+                *o = ResolvedToolOptions::from_source(options, ToolOptionSource::Request)
+            }
+        }
+        self
+    }
+
+    pub(super) fn set_resolved_options(&mut self, options: ResolvedToolOptions) -> &mut Self {
+        match self {
+            Self::Version { options: o, .. }
+            | Self::Prefix { options: o, .. }
+            | Self::Ref { options: o, .. }
+            | Self::Sub { options: o, .. }
+            | Self::Path { options: o, .. }
+            | Self::System { options: o, .. } => *o = options,
         }
         self
     }
@@ -304,22 +262,24 @@ impl ToolRequest {
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => o.effective.clone(),
+            | Self::System { options: o, .. } => o.options().clone(),
         }
     }
 
-    pub(super) fn request_options(&self) -> Option<&ToolVersionOptions> {
+    pub(super) fn request_options(&self) -> ToolVersionOptions {
         match self {
             Self::Version { options, .. }
             | Self::Prefix { options, .. }
             | Self::Ref { options, .. }
             | Self::Sub { options, .. }
             | Self::Path { options, .. }
-            | Self::System { options, .. } => options.request_overlay.as_ref(),
+            | Self::System { options, .. } => {
+                options.options_from_sources(&[ToolOptionSource::Request])
+            }
         }
     }
 
-    pub(super) fn option_state(&self) -> ToolRequestOptions {
+    pub(super) fn resolved_options(&self) -> ResolvedToolOptions {
         match self {
             Self::Version { options, .. }
             | Self::Prefix { options, .. }

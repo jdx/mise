@@ -1,4 +1,6 @@
 use indexmap::IndexMap;
+use std::fmt::Formatter;
+use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 
 use crate::config::env_directive::EnvValue;
@@ -136,16 +138,62 @@ pub(crate) enum ToolOptionSource {
     InstallManifest,
     BackendAlias,
     Config,
+    Request,
     InlineBackendArg,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub(crate) struct ResolvedToolOptions {
     options: ToolVersionOptions,
     sources: IndexMap<String, ToolOptionSource>,
 }
 
+impl std::fmt::Debug for ResolvedToolOptions {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        self.options.fmt(formatter)
+    }
+}
+
+impl Deref for ResolvedToolOptions {
+    type Target = ToolVersionOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.options
+    }
+}
+
+// Provenance affects future resolution, but effective options remain the
+// request's equality and deduplication identity.
+impl PartialEq for ResolvedToolOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.options == other.options
+    }
+}
+
+impl Eq for ResolvedToolOptions {}
+
+impl Hash for ResolvedToolOptions {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.options.hash(state);
+    }
+}
+
+impl From<ToolVersionOptions> for ResolvedToolOptions {
+    fn from(options: ToolVersionOptions) -> Self {
+        Self {
+            options,
+            sources: IndexMap::new(),
+        }
+    }
+}
+
 impl ResolvedToolOptions {
+    pub(crate) fn from_source(options: ToolVersionOptions, source: ToolOptionSource) -> Self {
+        let mut resolved = Self::default();
+        resolved.apply_overrides(&options, source);
+        resolved
+    }
+
     pub(crate) fn options(&self) -> &ToolVersionOptions {
         &self.options
     }
@@ -180,6 +228,39 @@ impl ResolvedToolOptions {
     ) -> bool {
         keys.iter()
             .any(|key| self.has_key_from_sources(key, sources))
+    }
+
+    pub(crate) fn options_from_sources(&self, sources: &[ToolOptionSource]) -> ToolVersionOptions {
+        let mut options = ToolVersionOptions::default();
+        for (key, value) in &self.options.opts {
+            if self
+                .source_for_key(key)
+                .is_some_and(|source| sources.contains(&source))
+            {
+                options.opts.insert(key.clone(), value.clone());
+            }
+        }
+        if self
+            .source_for_key("os")
+            .is_some_and(|source| sources.contains(&source))
+        {
+            options.os.clone_from(&self.options.os);
+        }
+        if self
+            .source_for_key("depends")
+            .is_some_and(|source| sources.contains(&source))
+        {
+            options.depends.clone_from(&self.options.depends);
+        }
+        for (key, value) in &self.options.install_env {
+            if self
+                .source_for_key(&format!("install_env.{key}"))
+                .is_some_and(|source| sources.contains(&source))
+            {
+                options.install_env.insert(key.clone(), value.clone());
+            }
+        }
+        options
     }
 
     pub(crate) fn apply_overrides(
@@ -1166,14 +1247,29 @@ mod tests {
             },
             ..Default::default()
         };
+        let request_opts = ToolVersionOptions {
+            core: CoreToolOptions {
+                os: Some(vec!["macos".to_string()]),
+                install_env: [("REQUEST_ONLY".to_string(), EnvValue::from("3"))]
+                    .iter()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            },
+            opts: [("bin".to_string(), toml::Value::String("solc".to_string()))]
+                .into_iter()
+                .collect::<IndexMap<_, _>>()
+                .into(),
+        };
 
         let mut resolved = ResolvedToolOptions::default();
         resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
+        resolved.apply_overrides(&request_opts, ToolOptionSource::Request);
         resolved.apply_overrides(&inline_opts, ToolOptionSource::InlineBackendArg);
 
         assert_eq!(
             resolved.source_for_key("os"),
-            Some(ToolOptionSource::Config)
+            Some(ToolOptionSource::Request)
         );
         assert_eq!(
             resolved.source_for_key("install_env.CONFIG_ONLY"),
@@ -1185,6 +1281,16 @@ mod tests {
         );
         assert!(resolved.has_key_from_sources("install_env", &[ToolOptionSource::Config]));
         assert!(resolved.has_key_from_sources("depends", &[ToolOptionSource::InlineBackendArg]));
+
+        let request = resolved.options_from_sources(&[ToolOptionSource::Request]);
+        assert_eq!(request.os, Some(vec!["macos".to_string()]));
+        assert_eq!(request.get("bin"), Some("solc"));
+        assert_eq!(
+            request.install_env.get("REQUEST_ONLY"),
+            Some(&EnvValue::from("3"))
+        );
+        assert!(!request.install_env.contains_key("CONFIG_ONLY"));
+        assert_eq!(request.depends, None);
     }
 
     #[test]
