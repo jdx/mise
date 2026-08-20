@@ -643,7 +643,7 @@ fn probe_strict_formula_execution() -> eyre::Result<()> {
     let (stage_reader, stage_writer) = nix::unistd::pipe2(nix::fcntl::OFlag::O_CLOEXEC)
         .map_err(|error| eyre::eyre!("could not create strict sandbox probe pipe: {error}"))?;
     let stage_writer_fd = stage_writer.as_raw_fd();
-    let report_stage = move |stage: &'static [u8]| unsafe {
+    let report_stage = move |stage: &[u8]| unsafe {
         nix::libc::write(
             stage_writer_fd,
             stage.as_ptr().cast(),
@@ -664,11 +664,13 @@ fn probe_strict_formula_execution() -> eyre::Result<()> {
                 return Err(std::io::Error::last_os_error());
             }
             if let Err(error) = landlock::apply_landlock(&config) {
-                report_stage(b"landlock");
+                let detail = format!("landlock ({error})");
+                report_stage(detail.as_bytes());
                 return Err(std::io::Error::other(error.to_string()));
             }
             if let Err(error) = seccomp::apply_seccomp_net_filter(true, true, true) {
-                report_stage(b"seccomp");
+                let detail = format!("seccomp ({error})");
+                report_stage(detail.as_bytes());
                 return Err(std::io::Error::other(error.to_string()));
             }
             Ok(())
