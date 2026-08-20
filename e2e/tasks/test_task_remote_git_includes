@@ -194,7 +194,7 @@ EOF
 
 ARTIFACT_TMPDIR="$TMPDIR/remote-git-artifacts"
 mkdir -p "$ARTIFACT_TMPDIR"
-output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_git_a ::: remote_git_b")
+output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_GIX=0 MISE_TASK_REMOTE_NO_CACHE=true mise run remote_git_a ::: remote_git_b")
 path_count=$(grep -o 'snapshot child checkout: .*' <<<"$output" | sort -u | wc -l)
 [[ $path_count -eq 2 ]] || fail "no-cache Git tasks did not retain two distinct snapshots"
 assert_directory_empty "$ARTIFACT_TMPDIR"
@@ -220,7 +220,7 @@ upload_packs_after=$(wc -l <"$UPLOAD_PACK_COUNT_FILE")
 assert_contains_text "$output" "snapshot parent checkout:"
 assert_contains_text "$output" "snapshot child checkout:"
 snapshot_checkout_count=$(
-  grep -o 'snapshot \(parent\|child\) checkout: .*' <<<"$output" |
+  grep -Eo 'snapshot (parent|child) checkout: .*' <<<"$output" |
     sed 's/snapshot [^ ]* checkout: //' |
     sort -u |
     wc -l

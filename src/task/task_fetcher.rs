@@ -21,24 +21,45 @@ static REMOTE_TASK_ARTIFACTS: LazyLock<RemoteTaskArtifacts> = LazyLock::new(Dash
 static REMOTE_TASK_ARTIFACT_SCOPES: Mutex<usize> = Mutex::new(0);
 
 /// Keeps no-cache remote task snapshots alive for one command or direct caller.
-pub(crate) struct RemoteTaskArtifactsGuard;
+pub(crate) struct RemoteTaskArtifactsGuard(());
 
 impl RemoteTaskArtifactsGuard {
     pub(crate) fn new() -> Self {
         *REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap() += 1;
-        Self
+        Self(())
     }
 }
 
 impl Drop for RemoteTaskArtifactsGuard {
     fn drop(&mut self) {
-        let mut scopes = REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap();
-        *scopes -= 1;
-        if *scopes == 0 {
-            crate::config::clear_remote_task_include_artifacts();
-            REMOTE_TASK_ARTIFACTS.clear();
-        }
+        let (include_artifacts, task_artifacts) = {
+            let mut scopes = REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap();
+            *scopes -= 1;
+            if *scopes != 0 {
+                return;
+            }
+            (
+                crate::config::take_remote_task_include_artifacts(),
+                take_remote_task_artifacts(),
+            )
+        };
+        drop(include_artifacts);
+        drop(task_artifacts);
     }
+}
+
+fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
+    let keys = REMOTE_TASK_ARTIFACTS
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect::<Vec<_>>();
+    keys.into_iter()
+        .filter_map(|key| {
+            REMOTE_TASK_ARTIFACTS
+                .remove(&key)
+                .map(|(_, artifact)| artifact)
+        })
+        .collect()
 }
 
 /// Handles fetching remote task files and converting them to local paths

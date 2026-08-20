@@ -30,7 +30,9 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::task_file_providers::{
+    TaskFileArtifact, TaskFileProvidersBuilder, prepare_remote_git_path,
+};
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
     RunEntry, Task, TaskCacheConfig, TaskRustCacheConfig, TaskTemplate, monorepo_scope,
@@ -67,8 +69,23 @@ type RemoteTaskIncludeKey = (String, Option<String>);
 type RemoteTaskIncludeArtifacts = DashMap<RemoteTaskIncludeKey, Arc<OnceCell<TaskFileArtifact>>>;
 static REMOTE_TASK_INCLUDE_ARTIFACTS: Lazy<RemoteTaskIncludeArtifacts> = Lazy::new(DashMap::new);
 
+#[cfg(test)]
 pub(crate) fn clear_remote_task_include_artifacts() {
-    REMOTE_TASK_INCLUDE_ARTIFACTS.clear();
+    drop(take_remote_task_include_artifacts());
+}
+
+pub(crate) fn take_remote_task_include_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
+    let keys = REMOTE_TASK_INCLUDE_ARTIFACTS
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect_vec();
+    keys.into_iter()
+        .filter_map(|key| {
+            REMOTE_TASK_INCLUDE_ARTIFACTS
+                .remove(&key)
+                .map(|(_, artifact)| artifact)
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -4488,15 +4505,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
         .await?;
 
     let artifact = checkout.with_path(checkout.path.join(source.path));
-    let metadata = artifact.path.symlink_metadata()?;
-    if metadata.file_type().is_file() {
-        file::make_executable(&artifact.path)?;
-    } else if !metadata.file_type().is_dir() {
-        bail!(
-            "remote task path is not a regular file or directory: {}",
-            display_path(&artifact.path)
-        );
-    }
+    prepare_remote_git_path(&checkout.path, &artifact.path)?;
     Ok(artifact)
 }
 
