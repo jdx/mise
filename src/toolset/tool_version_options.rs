@@ -327,6 +327,9 @@ impl ToolOptions {
         if overrides.depends.is_some() {
             self.depends = overrides.depends.clone();
         }
+        if overrides.rolling.is_some() {
+            self.rolling = overrides.rolling;
+        }
     }
 
     pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {

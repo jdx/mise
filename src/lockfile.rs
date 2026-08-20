@@ -2947,8 +2947,17 @@ where
                 // checksum with the existing one.
                 // Don't auto-mark when the tool is explicitly pinned (`rolling =
                 // false`) — there, a changed checksum is an integrity concern the
-                // backend surfaces as a warning, not a rolling update.
-                if entry.rolling != Some(false) {
+                // backend surfaces as a warning, not a rolling update. Check the
+                // existing on-disk entry, not the fresh one: a resolve that skips
+                // the lockfile (e.g. `mise lock --bump`) produces a fresh entry
+                // with `rolling: None`, which would otherwise promote a pinned
+                // tool to rolling on the first checksum drift.
+                if existing_tool.rolling == Some(false) {
+                    // The pin is sticky too: a fresh, lockfile-unaware resolve
+                    // (same `rolling: None` case as above) must not silently
+                    // drop it.
+                    entry.rolling = Some(false);
+                } else {
                     for (platform, existing_info) in &existing_tool.platforms {
                         if let (Some(new_info), Some(old_ck)) =
                             (entry.platforms.get(platform), &existing_info.checksum)
@@ -6270,6 +6279,22 @@ backend = "conda:jq"
         let url = "https://github.com/cli/cli/releases/download/v2.62.0/gh.tar.gz";
         let mut new = tool_with_checksum("2.62.0", url, "sha256:NEW");
         new.rolling = Some(false);
+        let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:OLD");
+        existing_tool.rolling = Some(false);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(false));
+    }
+
+    #[test]
+    fn test_merge_respects_explicit_rolling_false_when_fresh_entry_has_no_rolling_state() {
+        // `mise lock --bump` resolves without reading the lockfile, so the fresh
+        // entry naturally has `rolling: None` even though the on-disk entry is
+        // explicitly pinned. The pin must still be respected: the guard must key
+        // off the existing entry's `rolling`, not the fresh one's.
+        let url = "https://github.com/cli/cli/releases/download/v2.62.0/gh.tar.gz";
+        let new = tool_with_checksum("2.62.0", url, "sha256:NEW");
         let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:OLD");
         existing_tool.rolling = Some(false);
 

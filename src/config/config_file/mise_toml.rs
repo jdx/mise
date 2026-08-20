@@ -1341,17 +1341,13 @@ impl ConfigFile for MiseToml {
                 *table.decor_mut() = decor;
                 table.set_position(position);
             }
-            // `ba.explicit_opts()` only covers bracketed inline options
-            // (`tool[key=val]`); the `--rolling`/`--no-rolling` CLI flags set
-            // `rolling` directly on the request, so fold it in explicitly here
-            // or a table-form entry would silently drop the override.
-            let mut explicit_options = ba.explicit_opts().cloned();
-            if let Some(rolling) = versions[0].rolling() {
-                explicit_options
-                    .get_or_insert_with(ToolVersionOptions::default)
-                    .rolling = Some(rolling);
-            }
-            update_standard_tool_table(&mut table, &versions[0], explicit_options.as_ref());
+            // `ToolRequest::set_rolling` records an explicit `--rolling`/
+            // `--no-rolling` override on the request's embedded `BackendArg`
+            // (marked `InlineBackendArg`-sourced), so `ba.explicit_opts()`
+            // already reflects a CLI override here — and stays `None` (leaving
+            // this table entry untouched) when no override was given, rather
+            // than picking up an inherited registry/alias/config value.
+            update_standard_tool_table(&mut table, &versions[0], ba.explicit_opts());
             replace_tool_entries_preserving_position(tools, &keys, key, Item::Table(table));
             if is_tools_sorted {
                 tools.sort_values();
