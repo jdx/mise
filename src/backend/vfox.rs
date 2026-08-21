@@ -293,7 +293,7 @@ impl Backend for VfoxBackend {
         // the strict install dependency environment. (#10282, follow-up to #10432)
         {
             let base: EnvMap = cmd_env.clone().into_iter().collect();
-            let dependencies = self.install_dependency_context(ctx, &tv).await?;
+            let dependencies = ctx.dependency_context(&tv.request).await?;
             let tool_vals = dependencies.toolset.tool_val_env(&ctx.config, &base).await;
             match tool_vals {
                 Ok(vals) => {

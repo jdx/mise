@@ -3298,7 +3298,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // succeeded. Validate configured dependencies before replacing the target or
         // creating any of its install directories, then reuse the stored context in
         // backend and tool-level hooks.
-        self.install_dependency_context(&ctx, &tv).await?;
+        ctx.dependency_context(&tv.request).await?;
 
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
@@ -3400,7 +3400,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
             }
         }
-        let dependencies = self.install_dependency_context(ctx, &tv_exact).await?;
+        let dependencies = ctx.dependency_context(&tv_exact.request).await?;
 
         // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
@@ -3745,14 +3745,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(ts)
     }
 
-    async fn install_dependency_context<'a>(
-        &self,
-        ctx: &'a InstallContext,
-        tv: &ToolVersion,
-    ) -> eyre::Result<&'a crate::install_context::InstallDependencyContext> {
-        ctx.dependency_context(&tv.request).await
-    }
-
     async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
         if let Some(bin) = which_non_pristine_executable(bin) {
             return Some(bin);
@@ -3931,7 +3923,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         ctx: &InstallContext,
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
-        let dependencies = self.install_dependency_context(ctx, tv).await?;
+        let dependencies = ctx.dependency_context(&tv.request).await?;
         let mut env = dependencies
             .toolset
             .full_env_without_tools_with_paths(&ctx.config, &dependencies.paths)

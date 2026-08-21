@@ -433,11 +433,7 @@ impl Backend for AsdfBackend {
         // declared dependencies separately so asdf install scripts can execute them
         // on the first install (#4384). Keep the existing active-tool paths after the
         // dependencies for compatibility, and preserve each toolset's path order.
-        let dependency_paths = self
-            .install_dependency_context(ctx, &tv)
-            .await?
-            .paths
-            .clone();
+        let dependency_paths = ctx.dependency_context(&tv.request).await?.paths.clone();
         let active_paths = ctx.ts.list_paths(&ctx.config).await;
         let mut seen = HashSet::new();
         let paths: Vec<_> = dependency_paths
