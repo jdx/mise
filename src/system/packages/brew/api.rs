@@ -831,7 +831,7 @@ fn formula_from_internal(
         ruby_source_path: Some(format!("Formula/{first}/{name}.rb")),
         ruby_source_checksum: ruby_checksum,
         tap_git_head: Some(index.formula_tap_git_head.clone()),
-        post_install_defined: !signed.post_install_steps.is_empty(),
+        post_install_defined: false,
         post_install_steps: signed.post_install_steps.clone(),
         install_policy: FormulaInstallPolicy {
             disabled: disable.is_some(),
