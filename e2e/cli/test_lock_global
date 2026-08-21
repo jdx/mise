@@ -74,8 +74,31 @@ ln -sf "$PWD/dotfiles/mise.toml" "$MISE_CONFIG_DIR/config.toml"
   assert_contains "cat mise.lock" "mikefarah/yq"
 )
 
-echo "=== Testing mise lock with nothing configured anywhere ==="
+echo "=== Testing the hint honors tool selectors ==="
+# Drop the symlink before its target, so the global config path is a real file again
 rm -f "$MISE_CONFIG_DIR/config.toml"
+rm -rf dotfiles
+# Global declares jq; a project config with no tools keeps project scope empty.
+cat >"$MISE_CONFIG_DIR/config.toml" <<EOF
+[tools]
+"aqua:jqlang/jq" = "1.7.1"
+EOF
+cat >mise.toml <<EOF
+[env]
+FOO = "bar"
+EOF
+
+# A selector naming a tool that is not in global config must not point at --global
+output=$(mise lock "aqua:mikefarah/yq" 2>&1)
+assert_contains "echo '$output'" "No tools configured to lock"
+assert_not_contains "echo '$output'" "mise lock --global"
+
+# A selector naming a tool that *is* in global config should
+output=$(mise lock "aqua:jqlang/jq" 2>&1)
+assert_contains "echo '$output'" "mise lock --global"
+
+echo "=== Testing mise lock with nothing configured anywhere ==="
+rm -f "$MISE_CONFIG_DIR/config.toml" mise.toml
 rm -rf dotfiles
 
 output=$(mise lock 2>&1)

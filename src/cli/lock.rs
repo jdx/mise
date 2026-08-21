@@ -406,7 +406,7 @@ impl Lock {
         }
 
         if !has_lock_targets && !self.json {
-            if !self.global && Self::global_config_declares_tools(ts) {
+            if !self.global && self.global_config_declares_tools(ts) {
                 miseprintln!(
                     "{} No tools configured to lock in this project, but global config declares tools. Run {} to lock those.",
                     style("!").yellow(),
@@ -856,14 +856,25 @@ impl Lock {
         })
     }
 
-    /// Whether any resolved tool comes from a global mise.toml, meaning `--global`
-    /// would have something to lock even though the project scope is empty.
+    /// Whether any tool this run asked for comes from a global mise.toml, meaning
+    /// `--global` would have something to lock even though the project scope is empty.
     ///
     /// This also covers a config reached through two paths, such as a dotfiles repo
     /// that symlinks ~/.config/mise/config.toml to its own mise.toml: the single
     /// merged config counts as global, so plain `mise lock` finds nothing.
-    fn global_config_declares_tools(toolset: &Toolset) -> bool {
-        toolset.list_current_versions().iter().any(|(_, tv)| {
+    ///
+    /// Tool selectors are honored so `mise lock node` never points at `--global`
+    /// for some unrelated tool that happens to live in the global config.
+    fn global_config_declares_tools(&self, toolset: &Toolset) -> bool {
+        toolset.list_current_versions().iter().any(|(backend, tv)| {
+            if !self.tool.is_empty()
+                && !self
+                    .tool
+                    .iter()
+                    .any(|requested| requested.ba.short == backend.ba().short)
+            {
+                return false;
+            }
             matches!(tv.request.source(), ToolSource::MiseToml(path) if crate::config::is_global_config(path))
         })
     }
