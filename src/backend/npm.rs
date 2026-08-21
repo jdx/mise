@@ -37,10 +37,6 @@ use tokio::sync::Mutex as TokioMutex;
 const BEFORE_DATE_TOLERANCE_SECS: u64 = 60;
 const NPM_ALLOW_SCRIPTS_VERSION: &str = "11.16.0";
 const NPM_MIN_RELEASE_AGE_VERSION: &str = "11.10.0";
-// npm is normally a .cmd shim on Windows, where cmd.exe limits the entire
-// command line to 8,191 characters. Keep this argument well below that limit
-// to leave room for the executable, fields, prefix, quoting, and expansion.
-const NPM_DEPRECATED_QUERY_MAX_LEN: usize = 4096;
 const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
 const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
@@ -884,14 +880,13 @@ impl NPMBackend {
         versions: &[VersionInfo],
     ) -> eyre::Result<HashSet<String>> {
         let package = self.tool_name();
-        let mut deprecated_versions = HashSet::new();
-        for query in npm_deprecated_queries(&package, versions) {
-            let raw = self
-                .npm_view(config, query, &["version", "deprecated"], false)
-                .await?;
-            deprecated_versions.extend(npm_view_deprecated_versions(&package, &raw));
-        }
-        Ok(deprecated_versions)
+        let Some(query) = npm_deprecated_query(&package, versions) else {
+            return Ok(HashSet::new());
+        };
+        let raw = self
+            .npm_view(config, query, &["version", "deprecated"], false)
+            .await?;
+        Ok(npm_view_deprecated_versions(&package, &raw))
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -1601,13 +1596,12 @@ fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> 
         .collect()
 }
 
-/// Build bounded npm ranges that collectively cover every stable release plus
-/// every prerelease core returned by the versions query. npm ranges exclude
-/// prereleases unless a comparator in the same set names their
-/// major/minor/patch tuple.
-fn npm_deprecated_queries(package: &str, versions: &[VersionInfo]) -> Vec<String> {
+/// Build one npm range that covers every stable release plus every prerelease
+/// core returned by the versions query. npm ranges exclude prereleases unless
+/// a comparator in the same set names their major/minor/patch tuple.
+fn npm_deprecated_query(package: &str, versions: &[VersionInfo]) -> Option<String> {
     if versions.is_empty() {
-        return Vec::new();
+        return None;
     }
 
     let prerelease_cores = versions
@@ -1616,26 +1610,13 @@ fn npm_deprecated_queries(package: &str, versions: &[VersionInfo]) -> Vec<String
         .filter_map(|version| semver::Version::parse(&version.version).ok())
         .map(|version| (version.major, version.minor, version.patch))
         .collect::<BTreeSet<_>>();
-    let ranges = std::iter::once(">=0.0.0-0".to_string()).chain(prerelease_cores.into_iter().map(
-        |(major, minor, patch)| format!(">={major}.{minor}.{patch}-0 <{major}.{minor}.{patch}"),
-    ));
-    let prefix = format!("{package}@");
-    let mut queries = Vec::new();
-    let mut query = prefix.clone();
-    for range in ranges {
-        let separator = if query == prefix { "" } else { " || " };
-        if query != prefix
-            && query.len() + separator.len() + range.len() > NPM_DEPRECATED_QUERY_MAX_LEN
-        {
-            queries.push(query);
-            query = format!("{prefix}{range}");
-        } else {
-            query.push_str(separator);
-            query.push_str(&range);
-        }
-    }
-    queries.push(query);
-    queries
+    let ranges = std::iter::once(">=0.0.0-0".to_string())
+        .chain(prerelease_cores.into_iter().map(|(major, minor, patch)| {
+            format!(">={major}.{minor}.{patch}-0 <{major}.{minor}.{patch}")
+        }))
+        .collect::<Vec<_>>()
+        .join(" || ");
+    Some(format!("{package}@{ranges}"))
 }
 
 /// Exclude individually deprecated releases while retaining a package whose
@@ -2184,7 +2165,7 @@ pkg@1.2.0 '1.2.0'
     }
 
     #[test]
-    fn test_npm_deprecated_queries_and_filter_include_prereleases() {
+    fn test_npm_deprecated_query_and_filter_include_prereleases() {
         let versions = [
             ("1.0.0", false),
             ("2.0.0-beta.1", true),
@@ -2198,8 +2179,8 @@ pkg@1.2.0 '1.2.0'
         });
 
         assert_eq!(
-            npm_deprecated_queries("pkg", &versions),
-            ["pkg@>=0.0.0-0 || >=2.0.0-0 <2.0.0 || >=3.1.4-0 <3.1.4"]
+            npm_deprecated_query("pkg", &versions),
+            Some("pkg@>=0.0.0-0 || >=2.0.0-0 <2.0.0 || >=3.1.4-0 <3.1.4".into())
         );
 
         let deprecated_versions = npm_view_deprecated_versions(
@@ -2218,45 +2199,8 @@ pkg@1.2.0 '1.2.0'
     }
 
     #[test]
-    fn test_npm_deprecated_queries_skip_empty_version_history() {
-        assert!(npm_deprecated_queries("pkg", &[]).is_empty());
-    }
-
-    #[test]
-    fn test_npm_deprecated_queries_bound_large_prerelease_histories() {
-        let versions = (0..300)
-            .map(|patch| VersionInfo {
-                version: format!("1.0.{patch}-beta.1"),
-                prerelease: true,
-                ..Default::default()
-            })
-            .collect::<Vec<_>>();
-
-        let queries = npm_deprecated_queries("pkg", &versions);
-
-        assert!(queries.len() > 1);
-        assert!(
-            queries
-                .iter()
-                .all(|query| query.len() <= NPM_DEPRECATED_QUERY_MAX_LEN)
-        );
-        assert_eq!(
-            queries
-                .iter()
-                .filter(|query| query.contains(">=0.0.0-0"))
-                .count(),
-            1
-        );
-        for patch in 0..300 {
-            let comparator = format!(">=1.0.{patch}-0 <1.0.{patch}");
-            assert_eq!(
-                queries
-                    .iter()
-                    .filter(|query| query.contains(&comparator))
-                    .count(),
-                1
-            );
-        }
+    fn test_npm_deprecated_query_skips_empty_version_history() {
+        assert_eq!(npm_deprecated_query("pkg", &[]), None);
     }
 
     #[test]
