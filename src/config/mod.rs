@@ -4002,13 +4002,9 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     let mut tasks: IndexMap<String, Task> = IndexMap::new();
     let mut rendered_file_tasks = RenderedTaskCache::default();
     for configs in config_groups {
-        let config_root = configs
-            .first()
-            .expect("global config group should not be empty")
-            .config_root();
         let sources = load_task_sources_from_configs(
             config,
-            &config_root,
+            &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
             templates,
             false,
