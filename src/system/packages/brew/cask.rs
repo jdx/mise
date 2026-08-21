@@ -1010,6 +1010,7 @@ impl BrewCaskManager {
             &mut flight_targets,
         )
         .await?;
+        file::remove_all(cask_step_home(&cask))?;
         if !artifacts.postflight_steps.is_empty() {
             set_cask_phase(&mut journal, CaskTransactionPhase::Staging)?;
         }
@@ -5140,15 +5141,7 @@ async fn execute_confined_flight_run(request: FlightRunRequest<'_>) -> Result<()
             request.cask.token
         );
     }
-    let temp = crate::dirs::CACHE
-        .join("system-brew")
-        .join("cask-steps")
-        .join(hash::hash_to_str(&(
-            &request.cask.token,
-            &request.cask.version,
-            request.command,
-            request.args,
-        )));
+    let temp = cask_step_home(request.cask);
     file::create_dir_all(&temp)?;
     let shared = prefix::prefix();
     let mut allow_write = vec![
@@ -5200,6 +5193,10 @@ async fn execute_confined_flight_run(request: FlightRunRequest<'_>) -> Result<()
         .raw(true)
         .execute_async()
         .await
+}
+
+fn cask_step_home(cask: &Cask) -> PathBuf {
+    caskroom_tmp_dir(cask).join(".mise-step-home")
 }
 
 fn execute_terminate_process(
@@ -16940,6 +16937,17 @@ mod tests {
             )
         );
         Ok(())
+    }
+
+    #[test]
+    fn structured_runs_share_transaction_home() {
+        let first = test_cask("example", "1.2.3");
+        let same_transaction = test_cask("example", "1.2.3");
+        let next_version = test_cask("example", "1.2.4");
+
+        assert_eq!(cask_step_home(&first), cask_step_home(&same_transaction));
+        assert_ne!(cask_step_home(&first), cask_step_home(&next_version));
+        assert!(cask_step_home(&first).starts_with(caskroom_tmp_dir(&first)));
     }
 
     #[test]
