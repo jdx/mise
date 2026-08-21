@@ -479,12 +479,17 @@ pub fn get_tool(short: &str) -> Option<InstallStateTool> {
         }
     }
     let tool = load_tool(short);
-    INSTALL_STATE_TOOL_MEMO
+    // A concurrent add_tool_version may have recorded a fresh install while the
+    // (lock-free) disk read above was in flight. It saw the install and this
+    // read did not, so it wins — inserting unconditionally here would hide the
+    // new version from the rest of the process.
+    let mut memo = INSTALL_STATE_TOOL_MEMO
         .lock()
-        .expect("INSTALL_STATE_TOOL_MEMO lock failed")
-        .get_or_insert_with(Default::default)
-        .insert(short.to_string(), tool.clone());
-    tool
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+    memo.get_or_insert_with(Default::default)
+        .entry(short.to_string())
+        .or_insert(tool)
+        .clone()
 }
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
@@ -594,8 +599,21 @@ pub fn get_plugin_type(short: &str) -> Option<PluginType> {
 /// Every installed tool. This enumerates the whole installs dir (a readdir per
 /// tool plus stats per version) — reach for [`get_tool`] instead when only
 /// specific tools matter.
+///
+/// A failed scan is reported as an error rather than as an empty set: callers
+/// that *remove* things treat "no tools installed" as authoritative (shim
+/// rebuilding deletes every shim it cannot account for), so an unreadable
+/// installs dir must not be indistinguishable from an empty one. Note a
+/// missing installs dir is not an error — that reads as genuinely empty.
+pub fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
+    full_scan_tools()
+}
+
+/// [`try_list_tools`] for callers that only display or enumerate, where a
+/// warning is a better outcome than aborting. Never use this to decide what to
+/// delete.
 pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
-    full_scan_tools().unwrap_or_else(|err| {
+    try_list_tools().unwrap_or_else(|err| {
         warn!("failed to scan installed tools: {err:#}");
         Arc::new(Default::default())
     })
@@ -689,14 +707,26 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     *INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = Some(Arc::new(plugins));
-    // A plugin can supply this tool's identity, so a memoized per-tool lookup
-    // from before the plugin existed is stale.
+    // A plugin can supply this tool's identity, so state captured before the
+    // plugin existed is stale. get_tool serves a completed full scan ahead of
+    // the per-tool memo, so both layers have to learn about it.
     if let Some(memo) = INSTALL_STATE_TOOL_MEMO
         .lock()
         .expect("INSTALL_STATE_TOOL_MEMO lock failed")
         .as_mut()
     {
         memo.remove(short);
+    }
+    let mut tools = INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed");
+    if let Some(existing) = tools.as_ref() {
+        let mut next = existing.deref().clone();
+        merge_plugin_tools(
+            &mut next,
+            &BTreeMap::from([(short.to_string(), plugin_type)]),
+        );
+        *tools = Some(Arc::new(next));
     }
     Ok(())
 }

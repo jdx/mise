@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -383,6 +383,11 @@ static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 /// happens when a caller genuinely needs the full list ([`list`]).
 static TOOLS_INCLUDE_INSTALLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
+/// Shorts seeded by [`load_tools`] (core tools and registry entries with
+/// idiomatic files). An installed tool takes precedence over these — it carries
+/// the recorded install identity — but must not displace an entry [`get`]
+/// resolved later, which may carry command-scoped options.
+static TOOLS_SEEDED_SHORTS: Mutex<Option<Arc<HashSet<String>>>> = Mutex::new(None);
 
 pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
@@ -417,9 +422,22 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
     let tools = Arc::new(tools);
+    *TOOLS_SEEDED_SHORTS.lock().unwrap() = Some(Arc::new(tools.keys().cloned().collect()));
     *TOOLS.lock().unwrap() = Some(tools.clone());
     time!("load_tools done");
     Ok(tools)
+}
+
+/// Whether an installed tool should displace the TOOLS entry for `short`.
+///
+/// `load_tools` collected core tools, then registry entries with idiomatic
+/// files, then installed tools into one map — so an installed tool sharing a
+/// short with a core/registry entry won, keeping its recorded install identity
+/// (e.g. an asdf/vfox `node` install over core node). Now that installed tools
+/// are added later, preserve that precedence over seeds while leaving entries
+/// [`get`] resolved afterwards alone: those can carry command-scoped options.
+fn installed_replaces(seeded: &HashSet<String>, short: &str) -> bool {
+    seeded.contains(short)
 }
 
 /// Extend TOOLS with a backend for every installed tool. Installed tools are
@@ -439,6 +457,11 @@ fn ensure_installed_tools_loaded() {
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
+    let seeded = TOOLS_SEEDED_SHORTS
+        .lock()
+        .unwrap()
+        .clone()
+        .unwrap_or_default();
     let mut next = current.deref().clone();
     for backend in install_state::list_tools()
         .values()
@@ -453,7 +476,12 @@ fn ensure_installed_tools_loaded() {
         {
             continue;
         }
-        next.entry(backend.ba().short.clone()).or_insert(backend);
+        let short = backend.ba().short.clone();
+        if installed_replaces(&seeded, &short) {
+            next.insert(short, backend);
+        } else {
+            next.entry(short).or_insert(backend);
+        }
     }
     *tools = Some(Arc::new(next));
 }
@@ -810,6 +838,16 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn test_installed_replaces_seed_but_not_later_entry() {
+        let seeded: HashSet<String> = ["node".to_string()].into_iter().collect();
+        // A core/registry seed yields to the installed tool's recorded identity.
+        assert!(installed_replaces(&seeded, "node"));
+        // An entry `get` resolved after load_tools may carry command-scoped
+        // options, so it is left alone.
+        assert!(!installed_replaces(&seeded, "mytool"));
+    }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
         Arc::new(BackendArg::new_raw(
@@ -5231,6 +5269,7 @@ pub async fn reset() -> Result<()> {
     {
         let mut tools = TOOLS.lock().unwrap();
         *tools = None;
+        *TOOLS_SEEDED_SHORTS.lock().unwrap() = None;
         TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
     }
     load_tools().await?;
