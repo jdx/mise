@@ -9177,9 +9177,6 @@ fn recorded_flight_symlink_is_owned(
     target: &Path,
     recorded_targets: Option<&[CaskTargetRecord]>,
 ) -> Result<bool> {
-    let Some(records) = recorded_targets else {
-        return Ok(false);
-    };
     let declared_source = version_dir.join(&binary.source);
     let backlink_is_current = artifacts
         .preflight_steps
@@ -9196,11 +9193,14 @@ fn recorded_flight_symlink_is_owned(
         .any(|(declared_target, declared_link_source)| {
             declared_source.starts_with(&declared_target)
                 && symlink_declares_target(&declared_target, &declared_link_source)
-                && records.iter().any(|record| {
-                    record.path == declared_target
-                        && record.fingerprint.kind == CaskTargetKind::Symlink
-                        && cask_target_present(record)
-                })
+                && (declared_target.starts_with(version_dir)
+                    || recorded_targets.is_some_and(|records| {
+                        records.iter().any(|record| {
+                            record.path == declared_target
+                                && record.fingerprint.kind == CaskTargetKind::Symlink
+                                && cask_target_present(record)
+                        })
+                    }))
         });
     if !backlink_is_current {
         return Ok(false);
@@ -17197,7 +17197,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        assert!(!recorded_flight_symlink_is_owned(
+        assert!(recorded_flight_symlink_is_owned(
             &cask,
             &artifacts,
             Path::new("/Applications"),
@@ -17211,7 +17211,7 @@ mod tests {
             fingerprint: cask_target_fingerprint(&unrelated_backlink)?,
             uninstall: Some(true),
         }];
-        let mut unrelated_artifacts = artifacts.clone();
+        let mut unrelated_artifacts = CaskArtifacts::default();
         unrelated_artifacts
             .postflight_steps
             .push(FlightStep::Symlink {
