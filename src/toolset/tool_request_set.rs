@@ -14,6 +14,8 @@ use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
+// The Debug output is pinned by the mise_toml `test_fixture` insta snapshots;
+// adding a field here requires updating them.
 #[derive(Debug, Default, Clone)]
 pub struct ToolRequestSet {
     pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
@@ -356,6 +358,8 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     a.sources.retain(|ba, _| !b.sources.contains_key(ba));
     b.tools.extend(a.tools);
     b.sources.extend(a.sources);
+    // These may accumulate duplicate BackendArgs across a config hierarchy;
+    // consumers are expected to dedup (`.unique()` or collecting into a set).
     b.unknown_tools.extend(a.unknown_tools);
     b.filtered_tools.extend(a.filtered_tools);
     b
@@ -734,6 +738,9 @@ mod tests {
         crate::toolset::install_state::init().await.unwrap();
         // This test intentionally follows registry OS metadata because the builder
         // reads the gate from BackendArg; keep these examples platform-exclusive.
+        // The same predicate in `Toolset::is_disabled` excludes this short from
+        // the active update, so this recording cannot change a lockfile; it
+        // exists so the union's omission set stays complete.
         let short = if crate::cli::version::OS.as_str() == "macos" {
             "systemctl-tui"
         } else {
@@ -755,6 +762,9 @@ mod tests {
     #[tokio::test]
     async fn test_filter_disabled_tools_records_settings_exclusion() {
         crate::toolset::install_state::init().await.unwrap();
+        // The same settings check in `Toolset::is_disabled` excludes this short
+        // from the active update, so this recording cannot change a lockfile;
+        // it exists so the union's omission set stays complete.
         let ba = Arc::new(BackendArg::from("node"));
         let request = ToolRequest::new(ba.clone(), "22", ToolSource::Unknown).unwrap();
         let mut trs = ToolRequestSet::new();

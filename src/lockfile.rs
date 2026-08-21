@@ -3065,11 +3065,13 @@ fn absent_entry_policy_for_update<'a>(
     if !is_monorepo_root_lockfile {
         AbsentEntryPolicy::Drop
     } else if omitted_shorts.is_some_and(|omitted| omitted.contains(short)) {
-        // OS/settings filters normally exclude the same short from the active
-        // update too, and unknown backends produce no active resolved entry;
-        // Windows asdf is the filtered-tool exception. Resolution failures widen
-        // this path: a sibling can fail while the active project successfully
-        // contributes the same short, so preserve that short only.
+        // Registry OS gates and settings filters exclude the same short from
+        // the active update too, and unknown backends produce no active
+        // resolved entry; Windows asdf is the filtered-tool exception.
+        // Request-level `os = [...]` gating and resolution failures widen this
+        // path: `Toolset::is_disabled` checks only the registry gate, so a
+        // sibling can be gated or fail while the active project still
+        // contributes the same short — preserve that short only.
         AbsentEntryPolicy::PreserveAll
     } else if let Some(monorepo_versions) = monorepo_versions {
         // "Complete" means complete for the config roots currently matched
@@ -3114,6 +3116,12 @@ fn preserve_absent_tool_entries(
     consumed_keys: &HashSet<LockfileToolKey>,
     policy: AbsentEntryPolicy<'_>,
 ) {
+    // Drop preserves nothing; skip the per-entry key-set build and re-sort on
+    // the ordinary (non-monorepo) path. The match below remains the policy's
+    // authoritative definition.
+    if matches!(policy, AbsentEntryPolicy::Drop) {
+        return;
+    }
     let Some(existing_tools) = existing_tools else {
         return;
     };
