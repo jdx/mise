@@ -86,4 +86,6 @@ python = "3.12"
 ```
 
 This allows an asdf plugin to invoke an executable supplied by another mise-managed tool during
-the same `mise install`.
+the same `mise install`. Other active mise tools are not added implicitly; declare every
+mise-managed install requirement with `depends`. Executables already available on the ambient
+system or configuration `PATH` remain available.

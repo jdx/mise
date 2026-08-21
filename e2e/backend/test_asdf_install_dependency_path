@@ -53,8 +53,8 @@ mkdir -p "$ASDF_INSTALL_PATH/bin"
 cp "$ASDF_DOWNLOAD_PATH/dependency-path" "$ASDF_INSTALL_PATH/download-dependency-path"
 command -v node >"$ASDF_INSTALL_PATH/install-dependency-path"
 node install >/dev/null
-if command -v legacy-active >/dev/null 2>&1; then
-  legacy-active >"$ASDF_INSTALL_PATH/legacy-active-output"
+if command -v undeclared-active >/dev/null 2>&1; then
+  undeclared-active >"$ASDF_INSTALL_PATH/undeclared-active-output"
 fi
 printf '%s\n' "$PATH" >"$ASDF_INSTALL_PATH/install-path"
 cat >"$ASDF_INSTALL_PATH/bin/asdf-path-dependent" <<'SCRIPT'
@@ -86,36 +86,35 @@ assert "cat '$DEPENDENT_PATH/install-dependency-path'" "$DEPENDENCY_BIN"
 assert "tr ':' '\n' <'$DEPENDENT_PATH/install-path' | grep -Fxc '$(dirname "$DEPENDENCY_BIN")'" "1"
 assert "mise exec -- asdf-path-dependent" "installed"
 
-# Keep the asdf-only compatibility fallback for an already-installed active
-# tool that was not declared as a dependency.
-LEGACY_PLUGIN_DIR="$MISE_DATA_DIR/plugins/asdf-legacy-active"
-mkdir -p "$LEGACY_PLUGIN_DIR/bin"
-cat >"$LEGACY_PLUGIN_DIR/bin/list-all" <<'EOF'
+# An already-installed active tool is not exposed unless it is declared as an
+# install dependency or is already present on the ambient PATH.
+UNDECLARED_PLUGIN_DIR="$MISE_DATA_DIR/plugins/asdf-undeclared-active"
+mkdir -p "$UNDECLARED_PLUGIN_DIR/bin"
+cat >"$UNDECLARED_PLUGIN_DIR/bin/list-all" <<'EOF'
 #!/usr/bin/env bash
 echo 1.0.0
 EOF
-cat >"$LEGACY_PLUGIN_DIR/bin/install" <<'EOF'
+cat >"$UNDECLARED_PLUGIN_DIR/bin/install" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 mkdir -p "$ASDF_INSTALL_PATH/bin"
-cat >"$ASDF_INSTALL_PATH/bin/legacy-active" <<'SCRIPT'
+cat >"$ASDF_INSTALL_PATH/bin/undeclared-active" <<'SCRIPT'
 #!/usr/bin/env bash
-echo legacy-active
+echo undeclared-active
 SCRIPT
-chmod +x "$ASDF_INSTALL_PATH/bin/legacy-active"
+chmod +x "$ASDF_INSTALL_PATH/bin/undeclared-active"
 EOF
-chmod +x "$LEGACY_PLUGIN_DIR/bin/list-all" "$LEGACY_PLUGIN_DIR/bin/install"
+chmod +x "$UNDECLARED_PLUGIN_DIR/bin/list-all" "$UNDECLARED_PLUGIN_DIR/bin/install"
 
-mise install asdf:legacy-active@1.0.0
+mise install asdf:undeclared-active@1.0.0
 cat >mise.toml <<'EOF'
 [tools]
 "asdf:asdf-path-dependent" = { version = "1.0.0", depends = ["nodejs"] }
 node = "1.0.0"
-"asdf:legacy-active" = "1.0.0"
+"asdf:undeclared-active" = "1.0.0"
 EOF
 rm -rf "$DEPENDENT_PATH"
-legacy_output="$(mise exec -- mise install asdf:asdf-path-dependent 2>&1)"
-assert_not_contains_text "$legacy_output" "deprecated"
+mise install asdf:asdf-path-dependent
 
 DEPENDENT_PATH="$(mise where asdf:asdf-path-dependent)"
-assert "cat '$DEPENDENT_PATH/legacy-active-output'" "legacy-active"
+assert_fail "test -f '$DEPENDENT_PATH/undeclared-active-output'"
