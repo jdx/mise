@@ -238,15 +238,22 @@ fn remove_all_atomically_validated_inner(
     if (quarantined_identity.st_dev, quarantined_identity.st_ino)
         != (detached_identity.st_dev, detached_identity.st_ino)
     {
-        atomic_rename_noreplace(&parent, quarantine_name.as_ref(), file_name).wrap_err_with(
-            || {
-                format!(
-                    "cleanup target changed while quarantining {}; foreign replacement remains at {}",
-                    display_path(path),
-                    quarantine.display()
-                )
-            },
-        )?;
+        if let Err(error) = atomic_rename_noreplace(&parent, quarantine_name.as_ref(), file_name) {
+            if error != nix::errno::Errno::EEXIST {
+                return Err(error.into());
+            }
+            let preserved_name = format!(
+                "{}.mise-preserved-{}",
+                file_name.to_string_lossy(),
+                crate::rand::random_string(32)
+            );
+            atomic_rename_noreplace(&parent, quarantine_name.as_ref(), preserved_name.as_ref())?;
+            bail!(
+                "cleanup target changed while quarantining {}; a newer occupant owns the public path and the displaced foreign directory was preserved visibly at {}",
+                display_path(path),
+                path.with_file_name(preserved_name).display()
+            );
+        }
         bail!(
             "cleanup target changed while quarantining {}",
             display_path(path)
