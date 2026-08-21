@@ -4,7 +4,7 @@ Here are some tips on managing [Node.js](/lang/node.html) projects with mise.
 
 ## Getting started with Node.js
 
-To install Node.JS, in a directory, you can use the following command:
+To install Node.js, in a directory, you can use the following command:
 
 ```shell
 mise use node
@@ -16,7 +16,7 @@ This will install the latest version of Node.js and create a `mise.toml` file wi
 node = "latest"
 ```
 
-If you want to install Node.JS globally instead (for example, node v26), you can use the following command:
+If you want to install Node.js globally instead (for example, node v26), you can use the following command:
 
 ```shell
 mise use -g node@26
@@ -106,14 +106,29 @@ echo "NODE_ENV: $NODE_ENV"
 
 ## Example with `pnpm`
 
-This example uses `pnpm` as the package manager. This will skip installing dependencies if the lock file hasn't changed.
+This example uses `pnpm` as the package manager. It expects
+`devEngines.packageManager` in `package.json` to pin the pnpm version:
+
+```json [package.json]
+{
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "10.15.0"
+    }
+  }
+}
+```
+
+The install task is skipped when `package.json`, `pnpm-lock.yaml`, and
+`mise.toml` have not changed.
 
 ```toml [mise.toml]
 [tools]
 node = '24'
 
 [settings]
-# Read the pnpm version from package.json's packageManager field
+# Read the pnpm version from package.json
 idiomatic_version_file_enable_tools = ['pnpm']
 
 [env]
@@ -131,9 +146,9 @@ run = 'node --run dev'
 depends = ['pnpm-install']
 ```
 
-With this setup, getting started in a NodeJS project is as simple as running `mise dev`:
+With this setup, getting started in a Node.js project is as simple as running `mise dev`:
 
-- `mise` will install the correct version of NodeJS
+- `mise` will install the correct version of Node.js
 - `mise` will install the `pnpm` version declared in `package.json`
 - `pnpm install` will be run before `node --run dev`
 

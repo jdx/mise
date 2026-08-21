@@ -78,6 +78,12 @@ fn package_manager_checksum_backend(
     options.opts.insert("checksum".to_string(), checksum);
 
     let full = match backend.short.as_str() {
+        "bun" => {
+            options
+                .opts
+                .insert("allow_builds".to_string(), toml::Value::Boolean(true));
+            "npm:bun"
+        }
         "npm" => "npm:npm",
         "pnpm" => "npm:pnpm",
         "yarn" => {
@@ -266,6 +272,7 @@ mod tests {
     fn test_package_manager_checksums_use_matching_corepack_artifacts() {
         let path = Path::new("package.json");
         for (tool, version, expected) in [
+            ("bun", "1.3.14", "npm:bun"),
             ("npm", "11.0.0", "npm:npm"),
             ("pnpm", "10.0.0", "npm:pnpm"),
             ("yarn", "1.22.22", "npm:yarn"),
@@ -280,6 +287,12 @@ mod tests {
             let backend =
                 package_manager_checksum_backend(&backend, version, &mut options, path).unwrap();
             assert_eq!(backend.full(), expected);
+            if tool == "bun" {
+                assert_eq!(
+                    options.opts.get("allow_builds"),
+                    Some(&toml::Value::Boolean(true))
+                );
+            }
             if expected == "http:yarn" {
                 assert_eq!(
                     options.opts.get("url").and_then(toml::Value::as_str),

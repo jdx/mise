@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mise settings set idiomatic_version_file_enable_tools "pnpm,yarn"
+mise settings set idiomatic_version_file_enable_tools "bun,pnpm,yarn"
 
 cat >mise.toml <<'EOF'
 [tools]
@@ -49,3 +49,31 @@ cat >package.json <<'EOF'
 EOF
 
 assert "mise x -- yarn --version" "4.14.1"
+
+cat >package.json <<'EOF'
+{
+  "devEngines": {
+    "runtime": {
+      "name": "bun",
+      "version": "1.3.14"
+    }
+  },
+  "packageManager": "bun@1.3.14+sha224.00000000000000000000000000000000000000000000000000000000"
+}
+EOF
+
+assert_fail mise install
+
+cat >package.json <<'EOF'
+{
+  "devEngines": {
+    "runtime": {
+      "name": "bun",
+      "version": "1.3.14"
+    }
+  },
+  "packageManager": "bun@1.3.14+sha224.f9bc5e43d5833c794213050a0e428787c253a62a8be1ba47d0a03bf0"
+}
+EOF
+
+assert "mise x -- bun --version" "1.3.14"

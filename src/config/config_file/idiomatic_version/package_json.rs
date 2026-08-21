@@ -126,7 +126,16 @@ pub fn parse_with_options(
             .map(|version| (version, None)),
         "bun" => pkg
             .runtime_version(tool_name)
-            .map(|version| (version, None))
+            .map(|version| {
+                let checksum = pkg.package_manager_spec(tool_name).and_then(
+                    |(package_manager_version, checksum)| {
+                        (package_manager_version == version)
+                            .then_some(checksum)
+                            .flatten()
+                    },
+                );
+                (version, checksum)
+            })
             .or_else(|| pkg.package_manager_spec(tool_name)),
         "npm" | "yarn" | "pnpm" => pkg.package_manager_spec(tool_name),
         _ => None,
@@ -268,6 +277,60 @@ mod tests {
 
         let parsed = parse_with_options(&path, "pnpm").unwrap();
         assert_eq!(parsed, vec![("10.0.0".to_string(), None)]);
+    }
+
+    #[test]
+    fn test_bun_runtime_uses_matching_package_manager_checksum() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "bun",
+                        "version": "1.3.14"
+                    }
+                },
+                "packageManager": "bun@1.3.14+sha224.abcdef"
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = parse_with_options(&path, "bun").unwrap();
+        assert_eq!(parsed[0].0, "1.3.14");
+        assert_eq!(
+            parsed[0]
+                .1
+                .as_ref()
+                .and_then(|options| options.opts.get("package_manager_checksum"))
+                .and_then(toml::Value::as_str),
+            Some("sha224:abcdef")
+        );
+    }
+
+    #[test]
+    fn test_bun_runtime_ignores_different_package_manager_checksum() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "bun",
+                        "version": "1.3.14"
+                    }
+                },
+                "packageManager": "bun@1.3.13+sha224.unrelated"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            parse_with_options(&path, "bun").unwrap(),
+            vec![("1.3.14".to_string(), None)]
+        );
     }
 
     #[test]

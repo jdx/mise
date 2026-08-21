@@ -985,7 +985,7 @@ impl HttpBackend {
 }
 
 #[cfg(any(windows, test))]
-fn windows_script_launcher(interpreter: &str) -> Result<String> {
+fn windows_script_launcher(script: &Path, interpreter: &str) -> Result<(PathBuf, String)> {
     ensure_plain_bin_name("windows_script_interpreter", interpreter)?;
     if interpreter.is_empty()
         || !interpreter
@@ -994,15 +994,27 @@ fn windows_script_launcher(interpreter: &str) -> Result<String> {
     {
         eyre::bail!("windows_script_interpreter: {interpreter:?} must be a plain executable name");
     }
-    Ok(format!("@echo off\r\n{interpreter} \"%~dpn0\" %*\r\n"))
+    let filename = script
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .ok_or_else(|| eyre::eyre!("Windows script launcher requires a UTF-8 file name"))?;
+    ensure_plain_bin_name("windows script", filename)?;
+    if filename.is_empty()
+        || !filename
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    {
+        eyre::bail!("Windows script file name {filename:?} contains unsupported characters");
+    }
+    let launcher = script.with_file_name(format!("{filename}.cmd"));
+    let body = format!("@echo off\r\n{interpreter} \"%~dp0{filename}\" %*\r\n");
+    Ok((launcher, body))
 }
 
 #[cfg(windows)]
 fn write_windows_script_launcher(script: &Path, interpreter: &str) -> Result<()> {
-    file::write(
-        script.with_extension("cmd"),
-        windows_script_launcher(interpreter)?,
-    )
+    let (launcher, body) = windows_script_launcher(script, interpreter)?;
+    file::write(launcher, body)
 }
 
 /// Returns install-time-only option keys for HTTP backend.
@@ -1328,12 +1340,18 @@ mod tests {
     use crate::toolset::{ToolRequest, ToolSource};
 
     #[test]
-    fn windows_script_launcher_invokes_extensionless_script() {
-        assert_eq!(
-            windows_script_launcher("node").unwrap(),
-            "@echo off\r\nnode \"%~dpn0\" %*\r\n"
-        );
-        assert!(windows_script_launcher("node & echo injected").is_err());
+    fn windows_script_launcher_preserves_script_filename() {
+        for filename in ["tool", "tool.js", "tool.cmd"] {
+            let script = Path::new("C:/tools").join(filename);
+            let (launcher, body) = windows_script_launcher(&script, "node").unwrap();
+            assert_eq!(launcher, script.with_file_name(format!("{filename}.cmd")));
+            assert_eq!(
+                body,
+                format!("@echo off\r\nnode \"%~dp0{filename}\" %*\r\n")
+            );
+            assert_ne!(launcher, script);
+        }
+        assert!(windows_script_launcher(Path::new("tool.js"), "node & echo injected").is_err());
     }
 
     fn http_test_tv(version: &str) -> ToolVersion {
