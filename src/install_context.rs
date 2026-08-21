@@ -135,17 +135,16 @@ impl InstallDependencyContext {
         }
         for (backend, dependency) in toolset.list_current_versions() {
             if !backend.is_version_installed(config, &dependency, true) {
-                let unresolved = match &dependency.request {
-                    ToolRequest::Prefix { .. }
-                    | ToolRequest::Sub { .. }
-                    | ToolRequest::Version { .. } => {
-                        dependency.version.matches('.').count() < 2
-                            && !backend.is_exact_version(&dependency.version)
-                    }
-                    ToolRequest::Ref { .. }
-                    | ToolRequest::Path { .. }
-                    | ToolRequest::System { .. } => false,
-                };
+                let unresolved = !dependency.resolved_from_lockfile()
+                    && match &dependency.request {
+                        ToolRequest::Prefix { .. } | ToolRequest::Sub { .. } => true,
+                        ToolRequest::Version { version, .. } => {
+                            version == "latest" || backend.is_rolling_channel(version)
+                        }
+                        ToolRequest::Ref { .. }
+                        | ToolRequest::Path { .. }
+                        | ToolRequest::System { .. } => false,
+                    };
                 if unresolved {
                     bail!(
                         "failed to resolve configured install dependency '{}' for '{}' while offline",
