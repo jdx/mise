@@ -93,10 +93,25 @@ impl ToolRequestSet {
                 tools.extend(rt.backends().iter().map(|s| s.to_string()));
             }
         }
-        self.iter()
-            .filter(|(ba, ..)| tools.contains(&ba.short) || tools.contains(&ba.full()))
+        let matches = |ba: &BackendArg| tools.contains(&ba.short) || tools.contains(&ba.full());
+        let mut filtered = self
+            .iter()
+            .filter(|(ba, ..)| matches(ba))
             .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
-            .collect::<ToolRequestSet>()
+            .collect::<ToolRequestSet>();
+        filtered.unknown_tools = self
+            .unknown_tools
+            .iter()
+            .filter(|ba| matches(ba))
+            .cloned()
+            .collect();
+        filtered.filtered_tools = self
+            .filtered_tools
+            .iter()
+            .filter(|ba| matches(ba))
+            .cloned()
+            .collect();
+        filtered
     }
 
     pub fn into_toolset(self) -> Toolset {
@@ -116,6 +131,7 @@ impl Display for ToolRequestSet {
     }
 }
 
+/// Builds a request set from request triples, which do not carry omission metadata.
 impl FromIterator<(Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
     fn from_iter<T>(iter: T) -> Self
     where
@@ -340,6 +356,8 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     a.sources.retain(|ba, _| !b.sources.contains_key(ba));
     b.tools.extend(a.tools);
     b.sources.extend(a.sources);
+    b.unknown_tools.extend(a.unknown_tools);
+    b.filtered_tools.extend(a.filtered_tools);
     b
 }
 
@@ -391,6 +409,39 @@ mod tests {
             tool_from_env_var_name("MISE_NODEJS_VERSION").as_deref(),
             Some("node")
         );
+    }
+
+    #[test]
+    fn test_merge_preserves_omission_metadata() {
+        let first = Arc::new(BackendArg::from("dummy"));
+        let second = Arc::new(BackendArg::from("tiny"));
+        let mut a = ToolRequestSet::new();
+        a.unknown_tools.push(first.clone());
+        a.filtered_tools.push(first.clone());
+        let mut b = ToolRequestSet::new();
+        b.unknown_tools.push(second.clone());
+        b.filtered_tools.push(second.clone());
+
+        let merged = merge(a, b);
+
+        assert_eq!(merged.unknown_tools, vec![second.clone(), first.clone()]);
+        assert_eq!(merged.filtered_tools, vec![second, first]);
+    }
+
+    #[tokio::test]
+    async fn test_filter_by_tool_preserves_matching_omission_metadata() {
+        crate::toolset::install_state::init().await.unwrap();
+        let selected = Arc::new(BackendArg::from("selected-missing-tool"));
+        let excluded = Arc::new(BackendArg::from("excluded-missing-tool"));
+        let mut requests = ToolRequestSet::new();
+        requests.unknown_tools = vec![selected.clone(), excluded.clone()];
+        requests.filtered_tools = vec![selected.clone(), excluded];
+
+        let filtered =
+            requests.filter_by_tool(HashSet::from(["selected-missing-tool".to_string()]));
+
+        assert_eq!(filtered.unknown_tools, vec![selected.clone()]);
+        assert_eq!(filtered.filtered_tools, vec![selected]);
     }
 
     #[test]
@@ -681,6 +732,8 @@ mod tests {
     #[tokio::test]
     async fn test_filter_disabled_tools_records_registry_os_gate() {
         crate::toolset::install_state::init().await.unwrap();
+        // This test intentionally follows registry OS metadata because the builder
+        // reads the gate from BackendArg; keep these examples platform-exclusive.
         let short = if crate::cli::version::OS.as_str() == "macos" {
             "systemctl-tui"
         } else {
