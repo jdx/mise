@@ -1,0 +1,5 @@
+backends = ["aqua:gohugoio/hugo/hugo-extended-withdeploy"]
+bins = ["hugo"]
+description = "The world’s fastest framework for building websites"
+test = { cmd = "hugo version | sed -E 's/-[0-9a-f]+//'", expected = "hugo v{{version}}+extended+withdeploy" }
+version_order = "source"
