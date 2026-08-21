@@ -3924,10 +3924,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         tv: &ToolVersion,
     ) -> eyre::Result<BTreeMap<String, String>> {
         let dependencies = ctx.dependency_context(&tv.request).await?;
-        let mut env = dependencies
-            .toolset
-            .full_env_without_tools_with_paths(&ctx.config, &dependencies.paths)
-            .await?;
+        let mut env = dependencies.base_env_for_install(&ctx.config).await?;
         self.remove_dependency_shims(&mut env)?;
         Ok(env)
     }
