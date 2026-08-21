@@ -275,7 +275,7 @@ pub(crate) fn seccomp_apply() -> eyre::Result<()> {
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub async fn macos_generate_profile(config: &SandboxConfig) -> String {
+pub(crate) async fn macos_generate_profile(config: &SandboxConfig) -> String {
     macos::generate_seatbelt_profile(config).await
 }
 

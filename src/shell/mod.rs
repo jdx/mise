@@ -170,7 +170,7 @@ pub(crate) fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
 /// The old messages said `zsh` on every platform, which on Windows points at something the reader
 /// almost certainly does not have.
 #[cfg(windows)]
-pub const EXAMPLE_SHELL: &str = "pwsh";
+pub(crate) const EXAMPLE_SHELL: &str = "pwsh";
 #[cfg(not(windows))]
 pub(crate) const EXAMPLE_SHELL: &str = "zsh";
 

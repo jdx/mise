@@ -79,7 +79,7 @@ impl ServiceNotifications {
     }
 
     #[cfg(test)]
-    pub fn contains(&self, service: &str) -> bool {
+    pub(crate) fn contains(&self, service: &str) -> bool {
         self.sources.contains_key(service)
     }
 

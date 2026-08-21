@@ -85,7 +85,7 @@ impl<'a> TrackingTomlParser<'a> {
     }
 
     #[cfg(test)]
-    pub fn parsed_keys(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn parsed_keys(&self) -> impl Iterator<Item = &str> {
         self.parsed_keys.iter().map(|s| s.as_str())
     }
 

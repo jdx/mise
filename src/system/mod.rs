@@ -43,7 +43,7 @@ use crate::system::systemd::{SystemdRequest, SystemdTomlConfig};
 pub(crate) mod accounts;
 #[cfg(not(target_os = "linux"))]
 #[path = "accounts_non_linux.rs"]
-pub mod accounts;
+pub(crate) mod accounts;
 pub(crate) mod compose;
 pub(crate) mod defaults;
 pub(crate) mod deps;
@@ -53,7 +53,7 @@ pub(crate) mod files;
 pub(crate) mod firewall;
 #[cfg(not(target_os = "linux"))]
 #[path = "firewall_non_linux.rs"]
-pub mod firewall;
+pub(crate) mod firewall;
 pub(crate) mod hooks;
 pub(crate) mod launchd;
 pub(crate) mod login_shell;
@@ -67,7 +67,7 @@ pub(crate) mod secrets;
 pub(crate) mod services;
 #[cfg(not(target_os = "linux"))]
 #[path = "services_non_linux.rs"]
-pub mod services;
+pub(crate) mod services;
 pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;

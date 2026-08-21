@@ -341,7 +341,7 @@ async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Option<PathBu
 }
 
 #[async_backtrace::framed]
-pub async fn run_one_hook(
+pub(crate) async fn run_one_hook(
     config: &Arc<Config>,
     ts: &Toolset,
     hook: Hooks,
@@ -353,7 +353,7 @@ pub async fn run_one_hook(
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
 #[async_backtrace::framed]
-pub async fn run_one_hook_with_context(
+pub(crate) async fn run_one_hook_with_context(
     config: &Arc<Config>,
     ts: &Toolset,
     hook: Hooks,

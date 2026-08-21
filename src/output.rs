@@ -197,9 +197,9 @@ macro_rules! deprecated_at {
 }
 
 #[cfg(test)]
-pub mod tests {
+pub(crate) mod tests {
     use std::sync::Mutex;
 
-    pub static STDOUT: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    pub static STDERR: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub(crate) static STDOUT: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub(crate) static STDERR: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }

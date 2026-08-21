@@ -19,7 +19,7 @@ pub(crate) struct IdiomaticVersionFile {
 impl IdiomaticVersionFile {
     #[allow(dead_code)]
     #[cfg(test)]
-    pub fn init(path: PathBuf) -> Self {
+    pub(crate) fn init(path: PathBuf) -> Self {
         Self {
             path,
             tools: ToolRequestSet::new(),

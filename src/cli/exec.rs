@@ -438,7 +438,7 @@ async fn err_cannot_find_binary_path(program_name: &str) -> eyre::Report {
 }
 
 #[cfg(all(windows, not(test)))]
-pub async fn exec_program<T, U>(
+pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
@@ -558,7 +558,7 @@ where
 }
 
 #[cfg(test)]
-pub async fn exec_program<T, U>(
+pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,

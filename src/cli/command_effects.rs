@@ -290,7 +290,7 @@ pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
 // Only the coverage test reads this; it exists so the reason a command is
 // left unclassified lives next to the decision rather than in a commit message.
 #[cfg(test)]
-pub const UNCLASSIFIED: &[(&str, &str)] = &[
+pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
         "bootstrap repos exec",

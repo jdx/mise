@@ -815,7 +815,7 @@ pub(crate) fn sync_dir<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn sync_dir<P: AsRef<Path>>(_path: P) -> Result<()> {
+pub(crate) fn sync_dir<P: AsRef<Path>>(_path: P) -> Result<()> {
     // Not implemented on Windows
     Ok(())
 }
@@ -926,7 +926,7 @@ pub(crate) fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
+pub(crate) fn make_symlink_or_copy(target: &Path, link: &Path) -> Result<()> {
     copy(target, link)?;
     Ok(())
 }
@@ -969,7 +969,7 @@ fn create_windows_dir_link(target: &Path, link: &Path) -> std::io::Result<()> {
 }
 
 #[cfg(windows)]
-pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
+pub(crate) fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
     if let Err(err) = create_windows_dir_link(target, link) {
         if err.kind() == std::io::ErrorKind::AlreadyExists {
             remove_symlink_or_junction(link)?;
@@ -985,7 +985,7 @@ pub fn make_symlink(target: &Path, link: &Path) -> Result<(PathBuf, PathBuf)> {
 }
 
 #[cfg(windows)]
-pub fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
+pub(crate) fn make_symlink_or_file(target: &Path, link: &Path) -> Result<()> {
     trace!("ln -sf {} {}", target.display(), link.display());
     if link.is_file() || link.is_symlink() {
         // remove existing file if exists
@@ -1017,7 +1017,7 @@ pub(crate) fn is_symlink_or_junction(path: &Path) -> bool {
 }
 
 #[cfg(windows)]
-pub fn is_symlink_or_junction(path: &Path) -> bool {
+pub(crate) fn is_symlink_or_junction(path: &Path) -> bool {
     path.is_symlink() || junction::get_target(path).is_ok()
 }
 
@@ -1223,7 +1223,7 @@ pub(crate) fn remove_symlink_or_junction(link: &Path) -> Result<()> {
 }
 
 #[cfg(windows)]
-pub fn remove_symlink_or_junction(link: &Path) -> Result<()> {
+pub(crate) fn remove_symlink_or_junction(link: &Path) -> Result<()> {
     let link_handle = open_link_for_removal(link)?;
     remove_open_link(link_handle)
         .wrap_err_with(|| format!("failed to remove link or junction: {}", display_path(link)))
@@ -1300,7 +1300,7 @@ pub(crate) fn is_executable(path: &Path) -> bool {
 }
 
 #[cfg(windows)]
-pub fn is_executable(path: &Path) -> bool {
+pub(crate) fn is_executable(path: &Path) -> bool {
     if !path.is_file() {
         return false;
     }
@@ -1321,7 +1321,7 @@ pub(crate) fn make_executable_hint(path: &Path) -> String {
 }
 
 #[cfg(windows)]
-pub fn make_executable_hint(path: &Path) -> String {
+pub(crate) fn make_executable_hint(path: &Path) -> String {
     format!(
         "Add a shebang line to {}, or give it one of these extensions: {}",
         display_path(path),
@@ -1333,7 +1333,7 @@ pub fn make_executable_hint(path: &Path) -> String {
 }
 
 #[cfg(windows)]
-pub fn has_known_executable_extension(path: &Path) -> bool {
+pub(crate) fn has_known_executable_extension(path: &Path) -> bool {
     path.extension().map_or(
         Settings::get()
             .windows_executable_extensions
@@ -1362,7 +1362,7 @@ pub fn has_known_executable_extension(path: &Path) -> bool {
 /// to can run a UTF-16 script, so treating one as a task would only trade silence for a
 /// confusing failure at exec time.
 #[cfg(windows)]
-pub fn has_shebang(path: &Path) -> bool {
+pub(crate) fn has_shebang(path: &Path) -> bool {
     std::fs::File::open(path)
         .and_then(|f| {
             use std::io::Read;
@@ -1464,7 +1464,7 @@ fn executable_mode(mode: u32) -> u32 {
 }
 
 #[cfg(windows)]
-pub fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
+pub(crate) fn make_executable<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 
@@ -1480,7 +1480,7 @@ pub(crate) async fn make_executable_async<P: AsRef<Path>>(path: P) -> Result<()>
 }
 
 #[cfg(windows)]
-pub async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
+pub(crate) async fn make_executable_async<P: AsRef<Path>>(_path: P) -> Result<()> {
     Ok(())
 }
 

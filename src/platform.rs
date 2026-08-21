@@ -298,7 +298,7 @@ pub(crate) fn detect_libc() -> Option<&'static str> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn detect_libc() -> Option<&'static str> {
+pub(crate) fn detect_libc() -> Option<&'static str> {
     None
 }
 

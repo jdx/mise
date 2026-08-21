@@ -894,7 +894,7 @@ pub(crate) fn validate_principals(
 }
 
 #[cfg(not(unix))]
-pub fn validate_principals(
+pub(crate) fn validate_principals(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
     _accounts: Option<&super::accounts::AccountRequests>,

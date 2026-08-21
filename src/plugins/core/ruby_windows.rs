@@ -24,12 +24,12 @@ use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct RubyPlugin {
+pub(crate) struct RubyPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl RubyPlugin {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("ruby").into(),
         }

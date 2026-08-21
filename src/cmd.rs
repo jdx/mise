@@ -286,7 +286,7 @@ fn kill_pids_immediately(pids: &HashSet<u32>) {
 /// while the PID registry was locked; a deadlocked panic hook would prevent the
 /// process from ever reaching abort.
 #[cfg(panic = "abort")]
-pub fn kill_all_on_panic() {
+pub(crate) fn kill_all_on_panic() {
     let pids = match RUNNING_PIDS.try_lock() {
         Ok(pids) => pids,
         Err(TryLockError::Poisoned(err)) => err.into_inner(),

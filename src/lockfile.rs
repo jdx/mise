@@ -91,7 +91,7 @@ type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
 /// `VerifiedAttestation` in `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
-pub enum ProvenanceType {
+pub(crate) enum ProvenanceType {
     Minisign,
     Cosign,
     #[strum(serialize = "slsa")]
@@ -236,7 +236,7 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum GithubAttestationsStatus {
+pub(crate) enum GithubAttestationsStatus {
     Unavailable,
 }
 
@@ -264,7 +264,7 @@ fn merge_provenance_state(
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ArtifactInfo {
+pub(crate) struct ArtifactInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
@@ -281,7 +281,7 @@ pub struct ArtifactInfo {
 }
 
 impl ArtifactInfo {
-    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+    pub(crate) fn has_checksum_and_verified_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
     }
 
@@ -336,7 +336,7 @@ fn merge_additional_artifacts(
 }
 
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct PlatformInfo {
+pub(crate) struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -390,7 +390,7 @@ impl<'de> Deserialize<'de> for PlatformInfo {
 
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.install.is_none()
             && self.checksum.is_none()
             && self.url.is_none()
@@ -408,7 +408,7 @@ impl PlatformInfo {
     /// the fields that describe how the tool is built or what it depends on.
     /// Used when an entry is known to be for the right tool version but not
     /// necessarily the right artifact.
-    pub fn without_artifact_data(&self) -> Self {
+    pub(crate) fn without_artifact_data(&self) -> Self {
         PlatformInfo {
             install: self.install.clone(),
             conda_deps: self.conda_deps.clone(),
@@ -427,7 +427,7 @@ impl PlatformInfo {
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
-    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+    pub(crate) fn has_checksum_and_verified_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
     }
 
@@ -438,7 +438,7 @@ impl PlatformInfo {
     /// - Drops the other side's checksum/size/url_api when URLs disagree, since
     ///   those fields describe a specific artifact and become stale if the URL
     ///   changes.
-    pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
+    pub(crate) fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
         let install_changed = self.install.is_some() && self.install != other.install;
         let artifact_changed = url_changed

@@ -3376,7 +3376,7 @@ fn is_global_task_include_path(path: &Path) -> bool {
 }
 
 #[async_backtrace::framed]
-pub async fn rebuild_shims_and_runtime_symlinks(
+pub(crate) async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
     ts: &Toolset,
     new_versions: &[ToolVersion],

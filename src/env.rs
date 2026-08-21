@@ -29,7 +29,8 @@ pub(crate) const NON_TOOL_VERSION_ENV_VARS: &[&str] =
 #[cfg(unix)]
 pub(crate) static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
-pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
+pub(crate) static SHELL: Lazy<String> =
+    Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
 pub(crate) static MISE_SHELL: Lazy<Option<ShellType>> =
     Lazy::new(|| detect_shell(var("MISE_SHELL").ok(), var("SHELL").ok(), &SHELL));
 
@@ -65,11 +66,11 @@ fn detect_shell(
 #[cfg(unix)]
 pub(crate) static SHELL_COMMAND_FLAG: &str = "-c";
 #[cfg(windows)]
-pub static SHELL_COMMAND_FLAG: &str = "/c";
+pub(crate) static SHELL_COMMAND_FLAG: &str = "/c";
 
 // paths and directories
 #[cfg(test)]
-pub static HOME: Lazy<PathBuf> =
+pub(crate) static HOME: Lazy<PathBuf> =
     Lazy::new(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
 #[cfg(not(test))]
 pub(crate) static HOME: Lazy<PathBuf> = Lazy::new(|| {
@@ -83,10 +84,10 @@ pub(crate) static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
 #[cfg(macos)]
-pub static XDG_CACHE_HOME: Lazy<PathBuf> =
+pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join("Library/Caches")));
 #[cfg(windows)]
-pub static XDG_CACHE_HOME: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> = Lazy::new(|| {
     var_path("XDG_CACHE_HOME")
         .or_else(|| var_path("TEMP"))
         .unwrap_or_else(temp_dir)
@@ -100,7 +101,7 @@ pub(crate) static XDG_CONFIG_HOME: Lazy<PathBuf> =
 pub(crate) static XDG_DATA_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local").join("share")));
 #[cfg(windows)]
-pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
     var_path("XDG_DATA_HOME")
         .or(var_path("LOCALAPPDATA"))
         .unwrap_or_else(|| HOME.join("AppData").join("Local"))
@@ -119,7 +120,7 @@ pub(crate) static XDG_STATE_HOME: Lazy<PathBuf> =
 /// An empty `%LOCALAPPDATA%` falls back rather than resolving to an empty path — see
 /// [`var_path`] — which is also what `adrg/xdg` does (`dir != "" && filepath.IsAbs(dir)`).
 #[cfg(windows)]
-pub static LOCAL_APPDATA: Lazy<PathBuf> =
+pub(crate) static LOCAL_APPDATA: Lazy<PathBuf> =
     Lazy::new(|| var_path("LOCALAPPDATA").unwrap_or_else(|| HOME.join("AppData").join("Local")));
 
 /// control display of "friendly" errors - defaults to release mode behavior unless overridden
@@ -618,7 +619,7 @@ fn is_self_replace_random_segment(s: &str) -> bool {
 /// from whatever spawned it, and the process asking is mise. Everything around the stem is still
 /// required: a leading `.`, then some stem, then the generated random segment and the suffix.
 #[cfg(windows)]
-pub fn invoked_as_self_replace_helper() -> bool {
+pub(crate) fn invoked_as_self_replace_helper() -> bool {
     let Some(invoked) = std::env::args_os().next() else {
         return false;
     };
@@ -643,7 +644,7 @@ pub fn invoked_as_self_replace_helper() -> bool {
 /// Gated to `None` under `#[cfg(test)]` (like `TERM_WIDTH`) so unit tests that
 /// build a table don't pick up a stray `COLUMNS`/`MISE_TERM_WIDTH` from the env.
 #[cfg(test)]
-pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| None);
+pub(crate) static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| None);
 
 #[cfg(not(test))]
 pub(crate) static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
@@ -667,7 +668,7 @@ pub(crate) static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
+pub(crate) static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
 #[cfg(not(test))]
 pub(crate) static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
@@ -796,7 +797,7 @@ pub(crate) static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
 #[cfg(unix)]
 pub(crate) const PATH_ENV_SEP: char = ':';
 #[cfg(windows)]
-pub const PATH_ENV_SEP: char = ';';
+pub(crate) const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
     let env = vars_safe().collect::<HashMap<_, _>>();

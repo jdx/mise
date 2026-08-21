@@ -27,7 +27,7 @@ pub(crate) struct CoreToolOptions {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
-pub struct RawBackendOptions {
+pub(crate) struct RawBackendOptions {
     #[serde(flatten, default)]
     pub values: IndexMap<String, toml::Value>,
 }
@@ -35,11 +35,11 @@ pub struct RawBackendOptions {
 impl Eq for RawBackendOptions {}
 
 impl RawBackendOptions {
-    pub fn as_map(&self) -> &IndexMap<String, toml::Value> {
+    pub(crate) fn as_map(&self) -> &IndexMap<String, toml::Value> {
         &self.values
     }
 
-    pub fn into_map(self) -> IndexMap<String, toml::Value> {
+    pub(crate) fn into_map(self) -> IndexMap<String, toml::Value> {
         self.values
     }
 }

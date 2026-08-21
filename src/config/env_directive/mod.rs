@@ -119,14 +119,14 @@ pub(crate) struct EnvDirectiveOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
-pub enum EnvValue {
+pub(crate) enum EnvValue {
     String(String),
     Integer(i64),
     Boolean(bool),
 }
 
 impl EnvValue {
-    pub fn into_string(self) -> Option<String> {
+    pub(crate) fn into_string(self) -> Option<String> {
         match self {
             Self::String(value) => Some(value),
             Self::Integer(value) => Some(value.to_string()),
@@ -135,7 +135,7 @@ impl EnvValue {
         }
     }
 
-    pub fn into_default_string(self) -> Option<String> {
+    pub(crate) fn into_default_string(self) -> Option<String> {
         match self {
             Self::String(value) => Some(value),
             Self::Integer(value) => Some(value.to_string()),

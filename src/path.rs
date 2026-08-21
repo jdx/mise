@@ -393,7 +393,7 @@ pub(crate) fn quote_arg_for_cmd_body(arg: &str) -> String {
 /// `TaskExecutor::get_cmd_program_and_args` and the hook path in
 /// `hooks::execute`, extended to the other `cmd /c` call sites. See #9355.
 #[cfg(windows)]
-pub fn cmd_verbatim_command(
+pub(crate) fn cmd_verbatim_command(
     program: &str,
     flags: &[String],
     body: &str,
@@ -587,7 +587,7 @@ pub(crate) fn unix_path_to_windows(entry: &str) -> Option<String> {
 /// gate: an explicit override is honored even when the env's PATH is missing
 /// or already Unix-form.
 #[cfg(windows)]
-pub fn resolve_posix_shell_program_path(
+pub(crate) fn resolve_posix_shell_program_path(
     program: &std::ffi::OsStr,
     env: &std::collections::BTreeMap<String, String>,
 ) -> Option<std::ffi::OsString> {
@@ -711,7 +711,7 @@ fn bash_candidates(env: &std::collections::BTreeMap<String, String>) -> Vec<Path
 /// place to run a command that uses mise-managed Windows tools or `C:\...`
 /// script paths.
 #[cfg(windows)]
-pub fn is_wsl_launcher_bash(path: &Path) -> bool {
+pub(crate) fn is_wsl_launcher_bash(path: &Path) -> bool {
     let Some(s) = path.to_str() else {
         return false;
     };

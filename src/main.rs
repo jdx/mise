@@ -270,7 +270,7 @@ fn stop_multi_progress() {
 
 static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
-pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
+fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
     panic::set_hook(Box::new(move |panic_info| {
         // Serious release builds abort after this hook returns, so destructors
         // and catch_unwind cleanup will not run. Terminate registered child

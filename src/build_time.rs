@@ -1,6 +1,10 @@
 use chrono::{DateTime, FixedOffset};
 use std::sync::LazyLock as Lazy;
 
+// `built` emits public constants because it also supports library crates. This
+// module is private to the mise binary, so those generated visibilities cannot
+// be narrowed at the source.
+#[allow(unreachable_pub)]
 pub(crate) mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
