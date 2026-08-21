@@ -1,0 +1,5 @@
+backends = ["aqua:skim-rs/skim"]
+bins = ["sk"]
+description = "Fuzzy Finder in rust"
+test = { cmd = "sk --version", expected = "sk {{version}}" }
+version_order = "semver"
