@@ -200,7 +200,6 @@ fn remove_all_atomically_validated_inner(
     use nix::fcntl::{OFlag, renameat};
     use nix::sys::stat::Mode;
     use nix::sys::stat::fstat;
-    use nix::unistd::{UnlinkatFlags, unlinkat};
 
     let parent = path
         .parent()
@@ -233,14 +232,9 @@ fn remove_all_atomically_validated_inner(
     }
     after_validate(&quarantine)?;
     remove_dir_contents(&mut detached)?;
-    match unlinkat(&parent, quarantine_name.as_str(), UnlinkatFlags::RemoveDir) {
-        Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
-        Err(nix::errno::Errno::ENOTEMPTY | nix::errno::Errno::EEXIST) => {
-            // A concurrent replacement is not our object. It remains untouched and is hidden
-            // from formula version discovery by the `.mise-delete-` prefix.
-        }
-        Err(error) => return Err(error.into()),
-    }
+    // Never resolve the quarantine name again after validation. It may now denote a concurrent
+    // replacement. Empty `.mise-delete-` tombstones are deliberately left excluded from formula
+    // version discovery; reclaiming one by pathname would recreate the validation/delete race.
     Ok(())
 }
 
@@ -250,7 +244,7 @@ pub fn restore_dir_atomically_validated(
     to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
 ) -> Result<()> {
-    restore_dir_atomically_validated_inner(from, to, validate, |_| Ok(()))
+    restore_dir_atomically_validated_inner(from, to, validate, |_| Ok(()), |_| Ok(()))
 }
 
 #[cfg(unix)]
@@ -259,12 +253,12 @@ fn restore_dir_atomically_validated_inner(
     to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
     after_validate: impl FnOnce(&Path) -> Result<()>,
+    before_cleanup: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag, renameat};
     use nix::sys::stat::{Mode, fstat, fstatat};
-    use nix::unistd::{UnlinkatFlags, unlinkat};
 
     let parent = from
         .parent()
@@ -277,9 +271,12 @@ fn restore_dir_atomically_validated_inner(
         .file_name()
         .ok_or_else(|| eyre::eyre!("unnamed destination"))?;
     let parent = File::open(parent)?;
+    let source_tombstone_name = format!(".mise-restore-source-{}", crate::rand::random_string(32));
+    renameat(&parent, from_name, &parent, source_tombstone_name.as_str())?;
+    let source_tombstone = from.with_file_name(&source_tombstone_name);
     let retained = Dir::openat(
         &parent,
-        from_name,
+        source_tombstone_name.as_str(),
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
@@ -316,16 +313,17 @@ fn restore_dir_atomically_validated_inner(
         bail!("staged restore identity changed during commit");
     }
 
-    // Reclaim contents through the retained descriptor. Remove the public backup name only when
-    // it still denotes that same object; a concurrent foreign replacement remains untouched.
+    // Publication completed the restore transaction. Reclamation is best effort and can no
+    // longer make a retry consume a partially deleted predecessor: its public backup name was
+    // detached before validation and the excluded tombstone is never used as recovery input.
     let mut retained = retained;
-    remove_dir_contents(&mut retained)?;
-    match fstatat(&parent, from_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-        Ok(current) if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino) => {
-            unlinkat(&parent, from_name, UnlinkatFlags::RemoveDir)?;
-        }
-        Ok(_) | Err(Errno::ENOENT) => {}
-        Err(error) => return Err(error.into()),
+    if let Err(error) =
+        before_cleanup(&source_tombstone).and_then(|_| remove_dir_contents(&mut retained))
+    {
+        warn!(
+            "failed to reclaim restored recovery backup {}: {error:#}",
+            source_tombstone.display()
+        );
     }
     Ok(())
 }
@@ -3402,7 +3400,6 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("backup");
         let destination = root.path().join("keg");
-        let displaced = root.path().join("displaced-backup");
         let replacement = root.path().join("replacement");
         fs::create_dir(&source).unwrap();
         fs::write(source.join("expected"), "expected").unwrap();
@@ -3418,10 +3415,10 @@ mod tests {
                 Ok(())
             },
             |source| {
-                fs::rename(source, &displaced)?;
                 fs::rename(&replacement, source)?;
                 Ok(())
             },
+            |_| Ok(()),
         )
         .unwrap();
 
@@ -3433,7 +3430,92 @@ mod tests {
             fs::read_to_string(source.join("must-survive")).unwrap(),
             "foreign"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomically_validated_removal_never_unlinks_replacement_root() {
+        use std::os::unix::fs::MetadataExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("backup");
+        let displaced = root.path().join("displaced");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("expected"), "expected").unwrap();
+        let expected = fs::metadata(&source).unwrap();
+
+        remove_all_atomically_validated_inner(
+            &source,
+            |device, inode| {
+                assert_eq!((device, inode), (expected.dev(), expected.ino()));
+                Ok(())
+            },
+            |quarantine| {
+                fs::rename(quarantine, &displaced)?;
+                fs::create_dir(quarantine)?;
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(
+            root.path()
+                .read_dir()
+                .unwrap()
+                .filter_map(Result::ok)
+                .any(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".mise-delete-"))
+        );
         assert!(displaced.read_dir().unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restored_keg_survives_reclamation_failure() {
+        use std::os::unix::fs::MetadataExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("backup");
+        let destination = root.path().join("keg");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("expected"), "expected").unwrap();
+        let expected = fs::metadata(&source).unwrap();
+
+        restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |device, inode| {
+                assert_eq!((device, inode), (expected.dev(), expected.ino()));
+                Ok(())
+            },
+            |_| Ok(()),
+            |_| bail!("injected mid-cleanup failure"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(destination.join("expected")).unwrap(),
+            "expected"
+        );
+        assert!(source.symlink_metadata().is_err());
+        let tombstone = root
+            .path()
+            .read_dir()
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".mise-restore-source-")
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(tombstone.path().join("expected")).unwrap(),
+            "expected"
+        );
     }
 
     #[cfg(unix)]
