@@ -2258,15 +2258,20 @@ fn recovery_backup_path(keg: &Path) -> Result<PathBuf> {
 
 pub(super) fn restore_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()> {
     if let Some(backup) = backup {
-        metadata_if_exists(backup)?.ok_or_else(|| {
-            eyre::eyre!("formula recovery backup disappeared: {}", backup.display())
-        })?;
-        let expected = capture_path_identity(backup)?;
+        let expected = metadata_if_exists(backup)?
+            .map(|_| capture_path_identity(backup))
+            .transpose()?;
+        if expected.is_none() && !crate::file::formula_restore_pending(keg) {
+            bail!("formula recovery backup disappeared: {}", backup.display());
+        }
         // Portable POSIX cannot atomically publish a directory by retained descriptor. Validate
         // and fail before touching the live keg; the complete predecessor remains available for
         // explicit manual recovery rather than risking a pathname-substitution restore.
         return crate::file::restore_dir_atomically_validated(backup, keg, |device, inode| {
-            if (device, inode) != (expected.device, expected.inode) {
+            if expected
+                .as_ref()
+                .is_some_and(|expected| (device, inode) != (expected.device, expected.inode))
+            {
                 bail!("formula recovery backup identity changed before restore");
             }
             Ok(())
@@ -2287,7 +2292,9 @@ pub(super) fn restore_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()
 fn restore_bound_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()> {
     let state = read_finalization_state(keg)?
         .ok_or_else(|| eyre::eyre!("refusing formula rollback without finalization state"))?;
-    validate_finalization_identity(keg, &state)?;
+    if !crate::file::formula_restore_pending(keg) {
+        validate_finalization_identity(keg, &state)?;
+    }
     restore_keg_backup(keg, backup)?;
     restore_quiesced_links(&state)
 }

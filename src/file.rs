@@ -291,6 +291,30 @@ pub fn restore_dir_atomically_validated(
 }
 
 #[cfg(unix)]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FormulaRestoreJournal {
+    published_device: u64,
+    published_inode: u64,
+    tombstone_device: u64,
+    tombstone_inode: u64,
+    tombstone_name: String,
+}
+
+#[cfg(unix)]
+fn formula_restore_journal_path(to: &Path) -> Result<PathBuf> {
+    let name = to.file_name().ok_or_else(|| eyre::eyre!("unnamed keg"))?;
+    Ok(to.with_file_name(format!(".mise-restore-{}.json", name.to_string_lossy())))
+}
+
+#[cfg(unix)]
+pub fn formula_restore_pending(to: &Path) -> bool {
+    formula_restore_journal_path(to).is_ok_and(|path| {
+        path.symlink_metadata()
+            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+    })
+}
+
+#[cfg(unix)]
 fn restore_dir_atomically_validated_inner(
     from: &Path,
     to: &Path,
@@ -313,6 +337,49 @@ fn restore_dir_atomically_validated_inner(
     let parent = File::open(parent_path)?;
     validate_trusted_formula_rack(from, &parent)?;
     let _lock = lock_formula_rack(from)?;
+    let journal_path = formula_restore_journal_path(to)?;
+    if let Ok(metadata) = journal_path.symlink_metadata() {
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            bail!("formula restore journal is not a regular file");
+        }
+        let journal: FormulaRestoreJournal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+        let published = Dir::openat(
+            &parent,
+            to_name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )?;
+        let published_identity = fstat(&published)?;
+        if (
+            published_identity.st_dev as u64,
+            published_identity.st_ino as u64,
+        ) != (journal.published_device, journal.published_inode)
+        {
+            bail!("published formula predecessor does not match recovery journal");
+        }
+        let mut tombstone = Dir::openat(
+            &parent,
+            journal.tombstone_name.as_str(),
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )?;
+        let tombstone_identity = fstat(&tombstone)?;
+        if (
+            tombstone_identity.st_dev as u64,
+            tombstone_identity.st_ino as u64,
+        ) != (journal.tombstone_device, journal.tombstone_inode)
+        {
+            bail!("displaced formula keg does not match recovery journal");
+        }
+        remove_dir_contents(&mut tombstone)?;
+        nix::unistd::unlinkat(
+            &parent,
+            journal.tombstone_name.as_str(),
+            nix::unistd::UnlinkatFlags::RemoveDir,
+        )?;
+        fs::remove_file(&journal_path)?;
+        return Ok(());
+    }
     let retained = Dir::openat(
         &parent,
         from_name,
@@ -321,11 +388,7 @@ fn restore_dir_atomically_validated_inner(
     )?;
     let identity = fstat(&retained)?;
     validate(identity.st_dev as u64, identity.st_ino as u64)?;
-    let quarantine_name = format!(
-        ".mise-rollback-{}-{}",
-        to_name.to_string_lossy(),
-        crate::rand::random_string(32)
-    );
+    let quarantine_name = format!(".mise-rollback-{}", to_name.to_string_lossy());
     let mut displaced = match Dir::openat(
         &parent,
         to_name,
@@ -372,6 +435,16 @@ fn restore_dir_atomically_validated_inner(
     if (installed.st_dev, installed.st_ino) != (identity.st_dev, identity.st_ino) {
         bail!("formula restore identity changed while package lock was held");
     }
+    if let Some((_, current_identity)) = displaced.as_ref() {
+        let journal = FormulaRestoreJournal {
+            published_device: identity.st_dev as u64,
+            published_inode: identity.st_ino as u64,
+            tombstone_device: current_identity.st_dev as u64,
+            tombstone_inode: current_identity.st_ino,
+            tombstone_name: quarantine_name.clone(),
+        };
+        write_atomic(&journal_path, serde_json::to_vec(&journal)?)?;
+    }
     after_publish(&parent_path.join(&quarantine_name))?;
     // The shared Homebrew/mise formula lock is the cooperative namespace boundary. POSIX cannot
     // defend against a malicious same-UID process that deliberately ignores that lock; cleanup
@@ -399,6 +472,7 @@ fn restore_dir_atomically_validated_inner(
         .wrap_err(
             "formula predecessor is active, but displaced-keg cleanup failed; retry cleanup of the identity-bound .mise-rollback tombstone",
         )?;
+        fs::remove_file(&journal_path)?;
     }
     Ok(())
 }
@@ -3651,6 +3725,47 @@ mod tests {
                 .unwrap()
                 .filter_map(Result::ok)
                 .any(|entry| { entry.path().join("foreign").is_file() })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_retries_journaled_post_publish_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |_| bail!("injected cleanup interruption"),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("injected cleanup interruption"));
+        assert!(!source.exists());
+        assert!(formula_restore_pending(&destination));
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+
+        restore_dir_atomically_validated(&source, &destination, |_, _| {
+            bail!("consumed backup must not be revalidated")
+        })
+        .unwrap();
+
+        assert!(!formula_restore_pending(&destination));
+        assert!(!rack.join(".mise-rollback-1.0").exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
         );
     }
 
