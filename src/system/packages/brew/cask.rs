@@ -4582,7 +4582,16 @@ fn stage_binary(
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_binary_source(stage, caskroom, cask, binary)?;
-        if source.starts_with(stage) || source.starts_with(caskroom) {
+        // Ephemeral stage content has to be copied into the caskroom before the
+        // stage is torn down; a durable location is linked instead, so a CLI
+        // that derives its own root from the resolved path of `$0` still finds
+        // its tree. Resolve both sides: gcloud-cli's preflight leaves
+        // `staged_path/google-cloud-sdk` as a link to the SDK it installed under
+        // the prefix, and a lexical comparison would read that as stage content
+        // and copy the launcher out of the tree it needs.
+        if path_starts_with_resolved_root(&source, stage)
+            || path_starts_with_resolved_root(&source, caskroom)
+        {
             file::copy(&source, &caskroom_binary)?;
             file::make_executable(&caskroom_binary)?;
         } else {
@@ -6069,25 +6078,41 @@ fn find_artifact_matching(
     // descends into a symlink a flight step created: gcloud-cli's last
     // preflight step links `staged_path/google-cloud-sdk` at the SDK it copied
     // into the prefix, and every `binary` beneath it was unreachable. Resolving
-    // `name` as an exact path under `root` traverses the link. Kept as a
-    // fallback rather than a fast path so the walk's exact-then-case-insensitive
-    // precedence is unchanged on case-insensitive filesystems.
-    relative_artifact_path(root, name_path).filter(|path| pred(path))
+    // `name` as an exact path under `root` traverses the link.
+    //
+    // This only ever fires for that symlinked case. When `root/name` is
+    // reachable without traversing a link, its own relative path ends with
+    // `name`, so the walk already returned it — which is also why the result is
+    // desymlinked: the artifact's real location is what callers need to tell
+    // ephemeral stage content apart from a durable directory that outlives the
+    // install. Kept as a fallback rather than a fast path so the walk's
+    // exact-then-case-insensitive precedence is unchanged on case-insensitive
+    // filesystems.
+    relative_artifact_path(root, name_path)
+        .filter(|path| pred(path))
+        .map(|path| file::desymlink_path(&path))
 }
 
 /// `name` resolved against `root`, or `None` when `name` cannot be interpreted
 /// as a path contained by `root`.
 fn relative_artifact_path(root: &Path, name: &Path) -> Option<PathBuf> {
-    if name.as_os_str().is_empty() || name.is_absolute() {
+    if name.is_absolute() {
         return None;
     }
-    if name
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return None;
+    let mut named = false;
+    for component in name.components() {
+        match component {
+            // `.` alone would resolve to `root` itself, and `install_app` would
+            // then take the whole extraction root as the bundle.
+            Component::Normal(component) if component != "__MACOSX" => named = true,
+            // The walk skips `__MACOSX` resource-fork copies; an exact-path hit
+            // must not reintroduce them.
+            Component::Normal(_) => return None,
+            Component::CurDir => {}
+            _ => return None,
+        }
     }
-    Some(root.join(name))
+    named.then(|| root.join(name))
 }
 
 /// True when `path`'s trailing components match `suffix` with ASCII
@@ -10521,9 +10546,14 @@ end
         )?;
         std::os::unix::fs::symlink(&installed, stage.join("google-cloud-sdk"))?;
 
+        // The artifact's real location, not the path through the link: callers
+        // decide copy-vs-symlink from it, and the stage does not outlive the
+        // install.
         assert_eq!(
             find_file_artifact(&stage, "google-cloud-sdk/bin/git-credential-gcloud.sh"),
-            Some(stage.join("google-cloud-sdk/bin/git-credential-gcloud.sh"))
+            Some(file::desymlink_path(
+                &installed.join("bin/git-credential-gcloud.sh")
+            ))
         );
         Ok(())
     }
@@ -10551,14 +10581,31 @@ end
             relative_artifact_path(root, Path::new("bin/op")),
             Some(PathBuf::from("/stage/bin/op"))
         );
-        // An empty name would otherwise resolve to `root` itself.
+        assert_eq!(
+            relative_artifact_path(root, Path::new("./bin/op")),
+            Some(PathBuf::from("/stage/./bin/op"))
+        );
+        // Names that would resolve to `root` itself, which `find_app`'s
+        // directory predicate would accept as the bundle.
         assert_eq!(relative_artifact_path(root, Path::new("")), None);
+        assert_eq!(relative_artifact_path(root, Path::new(".")), None);
+        assert_eq!(relative_artifact_path(root, Path::new("./")), None);
+        // Escapes.
         assert_eq!(relative_artifact_path(root, Path::new("../op")), None);
         assert_eq!(
             relative_artifact_path(root, Path::new("bin/../../op")),
             None
         );
         assert_eq!(relative_artifact_path(root, Path::new("/etc/passwd")), None);
+        // Resource-fork copies the walk skips.
+        assert_eq!(
+            relative_artifact_path(root, Path::new("__MACOSX/Yaak.app")),
+            None
+        );
+        assert_eq!(
+            relative_artifact_path(root, Path::new("payload/__MACOSX/op")),
+            None
+        );
     }
 
     #[test]
@@ -12841,6 +12888,87 @@ end
             crate::file::read_to_string(caskroom.join("bin/op"))?,
             "hook"
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_rather_than_copies_a_binary_behind_a_flight_symlink() -> Result<()> {
+        // gcloud-cli's preflight installs the SDK under the prefix and leaves
+        // `staged_path/google-cloud-sdk` as a link to it. The launcher derives
+        // CLOUDSDK_ROOT_DIR from the resolved path of `$0`, so copying it into
+        // the caskroom — out of the tree holding `lib/` — would stage a broken
+        // binary. It has to be linked, like Homebrew does.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let installed = tmp.path().join("share/google-cloud-sdk");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(installed.join("bin"))?;
+        file::create_dir_all(installed.join("lib"))?;
+        crate::file::write(installed.join("bin/gcloud"), "launcher")?;
+        std::os::unix::fs::symlink(&installed, stage.join("google-cloud-sdk"))?;
+        let caskroom = caskroom_version_dir("gcloud-cli", "531.0.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("gcloud-cli", "531.0.0");
+        let binary = BinaryArtifact {
+            source: "google-cloud-sdk/bin/gcloud".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/gcloud".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+
+        let staged = caskroom.join("bin/gcloud");
+        assert_eq!(
+            std::fs::read_link(&staged)?,
+            file::desymlink_path(&installed.join("bin/gcloud")),
+            "must link into the SDK tree, not copy the launcher out of it"
+        );
+        // Still resolves, and `lib/` is a sibling of the link target.
+        assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
+        assert!(
+            std::fs::read_link(&staged)?
+                .parent()
+                .and_then(Path::parent)
+                .is_some_and(|root| root.join("lib").is_dir())
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copies_a_binary_whose_link_stays_inside_a_symlinked_stage() -> Result<()> {
+        // Mirror of the case above with the link pointing back into the stage,
+        // reached through a stage path that is itself a symlink (a symlinked
+        // `~/Library/Caches`). The resolved source then differs lexically from
+        // `stage`, and treating that as a durable location would leave a
+        // dangling binary once the stage is torn down.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let real_stage = tmp.path().join("real-stage");
+        file::create_dir_all(real_stage.join("payload/bin"))?;
+        crate::file::write(real_stage.join("payload/bin/tool"), "tool")?;
+        std::os::unix::fs::symlink(real_stage.join("payload"), real_stage.join("link"))?;
+        let stage = tmp.path().join("stage");
+        std::os::unix::fs::symlink(&real_stage, &stage)?;
+        let caskroom = caskroom_version_dir("linked-stage", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("linked-stage", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "link/bin/tool".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/tool".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+
+        let staged = caskroom.join("bin/tool");
+        assert!(
+            !staged.is_symlink(),
+            "stage content must be copied, not linked"
+        );
+        assert_eq!(crate::file::read_to_string(&staged)?, "tool");
         Ok(())
     }
 
