@@ -57,39 +57,39 @@ use versions::Versioning;
 
 use self::options::VersionOrder;
 
-pub mod aqua;
-pub mod asdf;
-pub mod asset_matcher;
-pub mod aube_host;
-pub mod backend_type;
-pub mod cargo;
-pub mod conda;
-pub mod dotnet;
+pub(crate) mod aqua;
+pub(crate) mod asdf;
+pub(crate) mod asset_matcher;
+pub(crate) mod aube_host;
+pub(crate) mod backend_type;
+pub(crate) mod cargo;
+pub(crate) mod conda;
+pub(crate) mod dotnet;
 mod external_plugin_cache;
-pub mod gem;
-pub mod github;
-pub mod go;
-pub mod http;
-pub mod jq;
-pub mod npm;
-pub mod npm_registry;
+pub(crate) mod gem;
+pub(crate) mod github;
+pub(crate) mod go;
+pub(crate) mod http;
+pub(crate) mod jq;
+pub(crate) mod npm;
+pub(crate) mod npm_registry;
 pub(crate) mod options;
-pub mod pipx;
-pub mod pkgx;
-pub mod platform_target;
+pub(crate) mod pipx;
+pub(crate) mod pkgx;
+pub(crate) mod platform_target;
 mod platform_tokens;
-pub mod s3;
-pub mod spm;
-pub mod static_helpers;
-pub mod ubi;
-pub mod version_list;
-pub mod vfox;
+pub(crate) mod s3;
+pub(crate) mod spm;
+pub(crate) mod static_helpers;
+pub(crate) mod ubi;
+pub(crate) mod version_list;
+pub(crate) mod vfox;
 
-pub type ABackend = Arc<dyn Backend>;
-pub type BackendMap = BTreeMap<String, ABackend>;
-pub type BackendList = Vec<ABackend>;
-pub type IdiomaticVersion = (String, Option<ToolVersionOptions>);
-pub type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
+pub(crate) type ABackend = Arc<dyn Backend>;
+pub(crate) type BackendMap = BTreeMap<String, ABackend>;
+pub(crate) type BackendList = Vec<ABackend>;
+pub(crate) type IdiomaticVersion = (String, Option<ToolVersionOptions>);
+pub(crate) type VersionCacheManager = CacheManager<Vec<VersionInfo>>;
 
 pub(crate) const MISE_BINS_DIR: &str = ".mise-bins";
 
@@ -114,7 +114,7 @@ static VERSION_LISTING_FAILURES: Lazy<std::sync::Mutex<HashMap<String, String>>>
     Lazy::new(Default::default);
 
 /// Remember that listing remote versions for `ba` failed.
-pub fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
+pub(crate) fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
@@ -122,7 +122,7 @@ pub fn record_version_listing_failure(ba: &BackendArg, err: &eyre::Report) {
 }
 
 /// The cause of the failed remote version listing for `ba`, if one was recorded.
-pub fn version_listing_failure(ba: &BackendArg) -> Option<String> {
+pub(crate) fn version_listing_failure(ba: &BackendArg) -> Option<String> {
     VERSION_LISTING_FAILURES
         .lock()
         .unwrap()
@@ -274,24 +274,24 @@ pub(crate) fn runtime_path_for_install_path(tv: &ToolVersion, path: PathBuf) -> 
 
 static STRICT_METADATA: AtomicBool = AtomicBool::new(false);
 
-pub fn set_strict_metadata(strict: bool) {
+pub(crate) fn set_strict_metadata(strict: bool) {
     STRICT_METADATA.store(strict, Ordering::Relaxed);
 }
 
-pub fn strict_metadata() -> bool {
+pub(crate) fn strict_metadata() -> bool {
     STRICT_METADATA.load(Ordering::Relaxed)
 }
 
 /// Information about a GitHub/GitLab release for platform-specific tools
 #[derive(Debug, Clone)]
-pub struct GitHubReleaseInfo {
+pub(crate) struct GitHubReleaseInfo {
     pub asset_pattern: Option<String>,
     pub api_url: Option<String>,
 }
 
 /// Information about a tool version including optional metadata like creation time
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct VersionInfo {
+pub(crate) struct VersionInfo {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub created_at: Option<String>,
@@ -318,7 +318,7 @@ fn is_false(v: &bool) -> bool {
 }
 
 impl VersionInfo {
-    pub fn created_at_timestamp(&self) -> Option<Timestamp> {
+    pub(crate) fn created_at_timestamp(&self) -> Option<Timestamp> {
         match &self.created_at {
             Some(ts) => {
                 let created = parse_into_timestamp(ts);
@@ -331,18 +331,18 @@ impl VersionInfo {
         }
     }
 
-    pub fn hidden_by_date(&self, before: Timestamp) -> bool {
+    pub(crate) fn hidden_by_date(&self, before: Timestamp) -> bool {
         self.created_at_timestamp()
             .is_some_and(|created| created >= before)
     }
 
-    pub fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
+    pub(crate) fn count_hidden_by_date(versions: &[Self], before: Timestamp) -> usize {
         versions.iter().filter(|v| v.hidden_by_date(before)).count()
     }
 
     /// Filter versions to only include those released before the given timestamp.
     /// Versions without a created_at timestamp are included by default.
-    pub fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
+    pub(crate) fn filter_by_date(versions: Vec<Self>, before: Timestamp) -> Vec<Self> {
         versions
             .into_iter()
             .filter(|v| {
@@ -356,7 +356,7 @@ impl VersionInfo {
 /// Security feature information for a tool
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum SecurityFeature {
+pub(crate) enum SecurityFeature {
     Checksum {
         #[serde(skip_serializing_if = "Option::is_none")]
         algorithm: Option<String>,
@@ -379,7 +379,7 @@ pub enum SecurityFeature {
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
-pub async fn load_tools() -> Result<Arc<BackendMap>> {
+pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
         return Ok(memo_tools);
     }
@@ -424,7 +424,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     Ok(tools)
 }
 
-pub fn list() -> BackendList {
+pub(crate) fn list() -> BackendList {
     TOOLS
         .lock()
         .unwrap()
@@ -435,7 +435,7 @@ pub fn list() -> BackendList {
         .collect()
 }
 
-pub fn get(ba: &BackendArg) -> Option<ABackend> {
+pub(crate) fn get(ba: &BackendArg) -> Option<ABackend> {
     // Inline opts are command-scoped, so a short-name cache hit must not drop
     // the caller's BackendArg options.
     if (ba.explicit_opts().is_some() || ba.has_explicit_backend())
@@ -458,7 +458,7 @@ pub fn get(ba: &BackendArg) -> Option<ABackend> {
     }
 }
 
-pub fn remove(short: &str) {
+pub(crate) fn remove(short: &str) {
     let mut tools = TOOLS.lock().unwrap();
     if let Some(current) = tools.as_ref() {
         let mut tools_ = current.deref().clone();
@@ -467,13 +467,13 @@ pub fn remove(short: &str) {
     }
 }
 
-pub fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
+pub(crate) fn is_disabled_backend_type(backend_type: &BackendType) -> bool {
     backend_type
         .disable_key()
         .is_some_and(is_disabled_backend_name)
 }
 
-pub fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
+pub(crate) fn ensure_backend_enabled(backend_type: &BackendType) -> Result<()> {
     if is_disabled_backend_type(backend_type) {
         bail!("backend {backend_type} is disabled by disable_backends");
     }
@@ -487,7 +487,7 @@ fn is_disabled_backend_name(backend: &str) -> bool {
         .any(|disabled| disabled == backend)
 }
 
-pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
+pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
     match ba.backend_type() {
         BackendType::Core => {
             CORE_PLUGINS
@@ -531,7 +531,7 @@ pub fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
 /// Most keys affect installation/download identity, but backend-specific lists may also
 /// include layout options that are stored in the install manifest and should not be
 /// reused from stale cached options when config provides its own options.
-pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
+pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<String> {
     match backend_type {
         BackendType::Http => http::install_time_option_keys(),
         BackendType::S3 => s3::install_time_option_keys(),
@@ -551,7 +551,7 @@ pub fn install_time_option_keys_for_type(backend_type: &BackendType) -> Vec<Stri
 }
 
 /// Returns true if a backend option's cached value should be replaced by current config.
-pub fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
+pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, key: &str) -> bool {
     if matches!(backend_type, BackendType::Aqua) {
         return aqua::is_install_time_option_key(key);
     }
@@ -1806,7 +1806,7 @@ mod tests {
 }
 
 #[async_trait]
-pub trait Backend: Debug + Send + Sync {
+pub(crate) trait Backend: Debug + Send + Sync {
     fn id(&self) -> &str {
         &self.ba().short
     }
@@ -4893,7 +4893,7 @@ mod latest_version_tests {
 
 /// Helper function for calculating install operation count in HTTP/S3-style backends.
 /// Used by HttpBackend and S3Backend to avoid code duplication.
-pub fn http_install_operation_count(
+pub(crate) fn http_install_operation_count(
     has_checksum_opt: bool,
     platform_key: &str,
     tv: &ToolVersion,
@@ -4918,7 +4918,7 @@ pub fn http_install_operation_count(
 /// Check that the provenance type recorded in the lockfile is still enabled in settings.
 /// `is_disabled` receives the provenance type and returns `Ok(true)` when the corresponding
 /// setting is off, or `Err` for provenance types unexpected in the calling backend.
-pub fn ensure_provenance_setting_enabled(
+pub(crate) fn ensure_provenance_setting_enabled(
     tv: &ToolVersion,
     platform_key: &str,
     is_disabled: impl FnOnce(&ProvenanceType) -> Result<bool>,
@@ -5074,7 +5074,7 @@ pub(crate) fn fuzzy_match_versions(
         .collect()
 }
 
-pub fn unalias_backend(backend: &str) -> &str {
+pub(crate) fn unalias_backend(backend: &str) -> &str {
     match backend {
         "dotnet-core" => "dotnet",
         "nodejs" => "node",
@@ -5124,7 +5124,7 @@ impl Ord for dyn Backend {
     }
 }
 
-pub async fn reset() -> Result<()> {
+pub(crate) async fn reset() -> Result<()> {
     install_state::reset();
     *TOOLS.lock().unwrap() = None;
     load_tools().await?;

@@ -31,7 +31,7 @@ use console::style;
 use heck::ToKebabCase;
 
 /// This represents a plugin installed to ~/.local/share/mise/plugins
-pub struct AsdfBackend {
+pub(crate) struct AsdfBackend {
     pub ba: Arc<BackendArg>,
     pub name: String,
     pub plugin_path: PathBuf,
@@ -46,7 +46,7 @@ pub struct AsdfBackend {
 }
 
 impl AsdfBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         let name = ba.tool_name.clone();
         let plugin_path = dirs::PLUGINS.join(ba.short.to_kebab_case());
         let plugin = AsdfPlugin::new(name.clone(), plugin_path.clone());

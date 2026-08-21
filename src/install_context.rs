@@ -158,7 +158,7 @@ impl InstallDependencyContext {
     }
 }
 
-pub struct InstallContext {
+pub(crate) struct InstallContext {
     pub config: Arc<Config>,
     pub ts: Arc<Toolset>,
     pub pr: Box<dyn SingleReport>,

@@ -27,7 +27,7 @@ struct DevEngine {
     version: Option<String>,
 }
 
-pub fn is_package_json(path: &Path) -> bool {
+pub(crate) fn is_package_json(path: &Path) -> bool {
     path.file_name()
         .is_some_and(|file_name| file_name == "package.json")
 }
@@ -135,7 +135,7 @@ fn checksum_from_version(raw: &str) -> Option<String> {
     Some(checksum.to_string())
 }
 
-pub fn parse_with_options(
+pub(crate) fn parse_with_options(
     path: &Path,
     tool_name: &str,
 ) -> Result<Vec<(String, Option<ToolVersionOptions>)>> {
@@ -170,7 +170,7 @@ pub fn parse_with_options(
     Ok(vec![(version, options)])
 }
 
-pub fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
+pub(crate) fn parse(path: &Path, tool_name: &str) -> Result<Vec<String>> {
     Ok(parse_with_options(path, tool_name)?
         .into_iter()
         .map(|(version, _)| version)

@@ -10,7 +10,7 @@ use crate::result::Result;
 use crate::system::packages::PackageRequest;
 
 #[derive(Debug, Clone)]
-pub struct ResolvedFormula {
+pub(super) struct ResolvedFormula {
     pub formula: Formula,
     pub tap_raw_base: Option<String>,
     /// directly requested in config (vs pulled in as a dependency)
@@ -39,7 +39,7 @@ impl FormulaKey {
 /// host's own tag for formulae that will be built from source. Shared with
 /// source.rs so the build environment walks the same dependency lists this
 /// resolution installed.
-pub fn dep_tag(formula: &Formula, host_tag: &str) -> String {
+pub(super) fn dep_tag(formula: &Formula, host_tag: &str) -> String {
     if super::source::has_bottle(formula)
         && let Some((tag, _)) = formula.bottle_files().and_then(tag::select)
     {
@@ -58,7 +58,9 @@ fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
     deps
 }
 
-pub async fn resolve_closure_with_taps(roots: &[PackageRequest]) -> Result<Vec<ResolvedFormula>> {
+pub(super) async fn resolve_closure_with_taps(
+    roots: &[PackageRequest],
+) -> Result<Vec<ResolvedFormula>> {
     let roots = roots
         .iter()
         .map(|req| {

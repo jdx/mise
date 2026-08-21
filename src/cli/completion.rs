@@ -9,7 +9,7 @@ use strum::EnumString;
 /// Generate shell completions
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Completion {
+pub(crate) struct Completion {
     /// Shell type to generate completions for
     #[clap(required_unless_present = "shell_type")]
     shell: Option<Shell>,
@@ -36,7 +36,7 @@ pub struct Completion {
 }
 
 impl Completion {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
 
         let script = match self.call_usage(shell).await {

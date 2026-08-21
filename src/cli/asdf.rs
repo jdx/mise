@@ -12,14 +12,14 @@ use crate::toolset::ToolsetBuilder;
 /// [internal] simulates asdf for plugins that call "asdf" internally
 #[derive(Debug, clap::Args)]
 #[clap(hide = true, verbatim_doc_comment)]
-pub struct Asdf {
+pub(crate) struct Asdf {
     /// all arguments
     #[clap(allow_hyphen_values = true, value_hint = CommandWithArguments, trailing_var_arg = true)]
     args: Vec<String>,
 }
 
 impl Asdf {
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         let config = Config::get().await?;
         let mut args = vec![String::from("mise")];
         args.append(&mut self.args);

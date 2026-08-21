@@ -12,7 +12,7 @@ const GO_WORK: &str = "go.work";
 
 /// Discovers Go modules listed by a workspace file.
 #[derive(Debug, Default)]
-pub struct GoWorkspaceProvider;
+pub(crate) struct GoWorkspaceProvider;
 
 impl WorkspaceProvider for GoWorkspaceProvider {
     fn id(&self) -> &str {

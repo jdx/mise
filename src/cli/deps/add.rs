@@ -14,7 +14,7 @@ use super::parse_package_spec;
 /// Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct DepsAdd {
+pub(super) struct DepsAdd {
     /// Package(s) to add (e.g., npm:react, npm:@types/react@19)
     #[clap(required = true)]
     pub packages: Vec<String>,
@@ -25,7 +25,7 @@ pub struct DepsAdd {
 }
 
 impl DepsAdd {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("deps")?;
 
         let mut config = Config::get().await?;

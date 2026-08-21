@@ -1,7 +1,7 @@
 use mlua::Table;
 use mlua::prelude::*;
 
-pub fn mod_env(lua: &Lua) -> LuaResult<()> {
+pub(crate) fn mod_env(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     let env = lua.create_table_from(vec![("setenv", lua.create_function(setenv)?)])?;

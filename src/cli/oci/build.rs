@@ -19,7 +19,7 @@ use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Build {
+pub(super) struct Build {
     /// Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
     #[clap(long, value_name = "HOST_PATH:IMAGE_PATH")]
     copy: Vec<OciCopy>,
@@ -65,7 +65,7 @@ pub struct Build {
 }
 
 impl Build {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise oci build")?;
 
         let opts = BuildOptions {

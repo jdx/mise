@@ -12,7 +12,7 @@ use std::sync::Arc;
 use toml::Value;
 
 impl EnvResults {
-    pub async fn module(
+    pub(crate) async fn module(
         r: &mut EnvResults,
         config: &Arc<Config>,
         source: PathBuf,

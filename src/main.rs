@@ -1,4 +1,5 @@
 #![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
 // eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
 #![allow(semicolon_in_expressions_from_macros)]
 
@@ -269,7 +270,7 @@ fn stop_multi_progress() {
 
 static ASYNC_PANIC_OCCURRED: AtomicBool = AtomicBool::new(false);
 
-pub fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
+fn install_panic_hook(panic_hook: color_eyre::config::PanicHook) {
     panic::set_hook(Box::new(move |panic_info| {
         // Serious release builds abort after this hook returns, so destructors
         // and catch_unwind cleanup will not run. Terminate registered child

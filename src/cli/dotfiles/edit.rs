@@ -12,7 +12,7 @@ use crate::ui::prompt;
 /// Edit a managed dotfile source
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesEdit {
+pub(crate) struct DotfilesEdit {
     /// Target to edit
     #[clap(value_name = "TARGET")]
     target: String,
@@ -35,7 +35,7 @@ pub struct DotfilesEdit {
 }
 
 impl DotfilesEdit {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
 

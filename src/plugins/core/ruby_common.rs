@@ -11,7 +11,7 @@ const FALLBACK_BUILD_REVISION: u32 = 1;
 
 /// Check if a Ruby version string is a standard MRI version (starts with a digit).
 /// Non-MRI engines like jruby, truffleruby, etc. have prefixed version strings.
-pub fn is_mri_version(version: &str) -> bool {
+pub(super) fn is_mri_version(version: &str) -> bool {
     version.chars().next().is_some_and(|c| c.is_ascii_digit())
 }
 
@@ -22,18 +22,18 @@ fn rubyinstaller_tag_prefix(version: &str) -> String {
 }
 
 /// Build the RubyInstaller2 release tag for a version and build revision.
-pub fn rubyinstaller_tag(version: &str, revision: u32) -> String {
+pub(super) fn rubyinstaller_tag(version: &str, revision: u32) -> String {
     format!("{}-{revision}", rubyinstaller_tag_prefix(version))
 }
 
 /// Build the RubyInstaller2 asset filename for a version and build revision.
-pub fn rubyinstaller_asset_name(version: &str, revision: u32) -> String {
+pub(super) fn rubyinstaller_asset_name(version: &str, revision: u32) -> String {
     // RubyInstaller2 publishes arm and x86 archives too, but mise only installs x64.
     format!("rubyinstaller-{version}-{revision}-x64.7z")
 }
 
 /// Build the RubyInstaller2 download URL for a version and build revision.
-pub fn rubyinstaller_url(version: &str, revision: u32) -> String {
+pub(super) fn rubyinstaller_url(version: &str, revision: u32) -> String {
     let tag = rubyinstaller_tag(version, revision);
     let asset = rubyinstaller_asset_name(version, revision);
     format!("https://github.com/{RUBYINSTALLER_REPO}/releases/download/{tag}/{asset}")
@@ -41,7 +41,7 @@ pub fn rubyinstaller_url(version: &str, revision: u32) -> String {
 
 /// A resolved RubyInstaller2 download.
 #[derive(Debug, Clone)]
-pub struct RubyInstallerArtifact {
+pub(super) struct RubyInstallerArtifact {
     pub url: String,
     pub checksum: Option<String>,
     /// e.g. `rubyinstaller-3.4.4-2-x64.7z`. Only the Windows installer downloads
@@ -56,7 +56,7 @@ pub struct RubyInstallerArtifact {
 /// `-2`, `-3`, … and leaves the superseded `-1` release in place. Pinning `-1`
 /// therefore always installs the build that was corrected, so pick the highest
 /// build revision instead. See discussion #5227.
-pub async fn resolve_rubyinstaller_artifact(version: &str) -> RubyInstallerArtifact {
+pub(super) async fn resolve_rubyinstaller_artifact(version: &str) -> RubyInstallerArtifact {
     if let Some(artifact) = resolve_from_releases(version).await {
         return artifact;
     }
@@ -94,7 +94,7 @@ async fn resolve_from_releases(version: &str) -> Option<RubyInstallerArtifact> {
 /// Returns `Ok(PlatformInfo::default())` for non-MRI versions since
 /// RubyInstaller2 only distributes standard MRI Ruby.
 #[cfg_attr(windows, allow(dead_code))]
-pub async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformInfo> {
+pub(super) async fn resolve_rubyinstaller_lock_info(version: &str) -> Result<PlatformInfo> {
     if !is_mri_version(version) {
         return Ok(PlatformInfo::default());
     }

@@ -26,7 +26,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub enum ToolRequest {
+pub(crate) enum ToolRequest {
     Version {
         backend: Arc<BackendArg>,
         version: String,
@@ -67,7 +67,7 @@ pub enum ToolRequest {
 }
 
 impl ToolRequest {
-    pub fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
+    pub(crate) fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
@@ -152,7 +152,7 @@ impl ToolRequest {
             _ => bail!("invalid tool version request: {s}"),
         })
     }
-    pub fn new_opts(
+    pub(crate) fn new_opts(
         backend: Arc<BackendArg>,
         s: &str,
         options: ToolVersionOptions,
@@ -167,7 +167,7 @@ impl ToolRequest {
         }
         Ok(tvr)
     }
-    pub fn set_source(&mut self, source: ToolSource) -> Self {
+    pub(crate) fn set_source(&mut self, source: ToolSource) -> Self {
         match self {
             Self::Version { source: s, .. }
             | Self::Prefix { source: s, .. }
@@ -178,7 +178,7 @@ impl ToolRequest {
         }
         self.clone()
     }
-    pub fn ba(&self) -> &Arc<BackendArg> {
+    pub(crate) fn ba(&self) -> &Arc<BackendArg> {
         match self {
             Self::Version { backend, .. }
             | Self::Prefix { backend, .. }
@@ -188,10 +188,10 @@ impl ToolRequest {
             | Self::System { backend, .. } => backend,
         }
     }
-    pub fn backend(&self) -> Result<ABackend> {
+    pub(crate) fn backend(&self) -> Result<ABackend> {
         self.ba().backend()
     }
-    pub fn source(&self) -> &ToolSource {
+    pub(crate) fn source(&self) -> &ToolSource {
         match self {
             Self::Version { source, .. }
             | Self::Prefix { source, .. }
@@ -201,7 +201,7 @@ impl ToolRequest {
             | Self::System { source, .. } => source,
         }
     }
-    pub fn os(&self) -> &Option<Vec<String>> {
+    pub(crate) fn os(&self) -> &Option<Vec<String>> {
         match self {
             Self::Version { options, .. }
             | Self::Prefix { options, .. }
@@ -211,7 +211,7 @@ impl ToolRequest {
             | Self::System { options, .. } => &options.os,
         }
     }
-    pub fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
+    pub(crate) fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
         match self {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
@@ -222,7 +222,7 @@ impl ToolRequest {
         }
         self
     }
-    pub fn version(&self) -> String {
+    pub(crate) fn version(&self) -> String {
         match self {
             Self::Version { version: v, .. } => v.clone(),
             Self::Prefix { prefix: p, .. } => format!("prefix:{p}"),
@@ -237,7 +237,7 @@ impl ToolRequest {
         }
     }
 
-    pub fn options(&self) -> ToolVersionOptions {
+    pub(crate) fn options(&self) -> ToolVersionOptions {
         match self {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
@@ -249,7 +249,7 @@ impl ToolRequest {
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.
-    pub fn ensure_safe_install_options(&self) -> Result<()> {
+    pub(crate) fn ensure_safe_install_options(&self) -> Result<()> {
         if !Settings::safe_mode() {
             return Ok(());
         }
@@ -269,7 +269,7 @@ impl ToolRequest {
         Ok(())
     }
 
-    pub async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
+    pub(crate) async fn is_install_satisfied(&self, config: &Arc<Config>) -> bool {
         if let Some(backend) = backend::get(self.ba()) {
             match self.resolve(config, &Default::default()).await {
                 Ok(tv) => match backend.is_install_satisfied(config, &tv, false).await {
@@ -289,7 +289,7 @@ impl ToolRequest {
         }
     }
 
-    pub fn install_path(&self, config: &Config) -> Option<PathBuf> {
+    pub(crate) fn install_path(&self, config: &Config) -> Option<PathBuf> {
         match self {
             Self::Version {
                 backend, version, ..
@@ -373,7 +373,7 @@ impl ToolRequest {
         }
     }
 
-    pub fn lockfile_resolve(&self, config: &Config) -> Result<Option<LockfileTool>> {
+    pub(crate) fn lockfile_resolve(&self, config: &Config) -> Result<Option<LockfileTool>> {
         let (query, prefix_boundary) = self.lockfile_version_query();
         self.lockfile_resolve_with_prefix(config, &query, prefix_boundary)
     }
@@ -403,7 +403,7 @@ impl ToolRequest {
     /// prefix match can find entries like "24.13.0".starts_with("24").
     /// `require_prefix_boundary` additionally restricts matches to version-
     /// separator boundaries (used for `prefix:` selectors).
-    pub fn lockfile_resolve_with_prefix(
+    pub(crate) fn lockfile_resolve_with_prefix(
         &self,
         config: &Config,
         prefix: &str,
@@ -433,7 +433,7 @@ impl ToolRequest {
         )
     }
 
-    pub fn local_resolve(&self, config: &Config, v: &str) -> eyre::Result<Option<String>> {
+    pub(crate) fn local_resolve(&self, config: &Config, v: &str) -> eyre::Result<Option<String>> {
         if let Some(lt) = self.lockfile_resolve(config)? {
             return Ok(Some(lt.version));
         }
@@ -449,7 +449,7 @@ impl ToolRequest {
         Ok(None)
     }
 
-    pub async fn resolve(
+    pub(crate) async fn resolve(
         &self,
         config: &Arc<Config>,
         opts: &ResolveOptions,
@@ -457,14 +457,14 @@ impl ToolRequest {
         ToolVersion::resolve(config, self.clone(), opts).await
     }
 
-    pub fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
+    pub(crate) fn resolve_options(&self, opts: &ResolveOptions) -> Result<ResolveOptions> {
         let minimum_release_age = self.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
         opts.apply_before_date_for_tool(self.ba(), minimum_release_age.as_deref())?;
         Ok(opts)
     }
 
-    pub fn is_os_supported(&self) -> bool {
+    pub(crate) fn is_os_supported(&self) -> bool {
         if let Some(os_list) = self.os() {
             let current_os = &crate::cli::version::OS;
             let current_arch = &crate::cli::version::ARCH;
@@ -686,7 +686,7 @@ fn normalize_arch(arch: &str) -> &str {
 /// `orig` must already be a concrete version. `latest` and aliases like `lts` have to be
 /// resolved by the caller first — there is nothing here to subtract from — which is what
 /// `tool_version::resolve_sub_base` exists for.
-pub fn version_sub(orig: &str, sub: &str) -> Result<String> {
+pub(crate) fn version_sub(orig: &str, sub: &str) -> Result<String> {
     fn not_numeric(orig: &str, sub: &str) -> eyre::Report {
         eyre!("cannot subtract {sub} from {orig}: {orig} is not a numeric version")
     }

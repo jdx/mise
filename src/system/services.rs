@@ -10,7 +10,7 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, Resou
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ServiceState {
+pub(crate) enum ServiceState {
     #[default]
     Running,
     Stopped,
@@ -18,7 +18,7 @@ pub enum ServiceState {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ServiceChangeAction {
+pub(crate) enum ServiceChangeAction {
     Reload,
     Restart,
     #[default]
@@ -27,7 +27,7 @@ pub enum ServiceChangeAction {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ServiceTomlConfig {
+pub(crate) struct ServiceTomlConfig {
     #[serde(default)]
     pub state: ServiceState,
     #[serde(default = "default_true")]
@@ -50,7 +50,7 @@ impl Default for ServiceTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ServiceRequest {
+pub(crate) struct ServiceRequest {
     pub name: String,
     pub unit: String,
     pub state: ServiceState,
@@ -62,16 +62,16 @@ pub struct ServiceRequest {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct ServiceNotifications {
+pub(crate) struct ServiceNotifications {
     sources: IndexMap<String, IndexSet<ResourceId>>,
 }
 
 impl ServiceNotifications {
-    pub fn notify_file(&mut self, path: &Path, services: &[String]) {
+    pub(crate) fn notify_file(&mut self, path: &Path, services: &[String]) {
         self.notify(ResourceId::new("file", path.to_string_lossy()), services);
     }
 
-    pub fn notify_directory(&mut self, path: &Path, services: &[String]) {
+    pub(crate) fn notify_directory(&mut self, path: &Path, services: &[String]) {
         self.notify(
             ResourceId::new("directory", path.to_string_lossy()),
             services,
@@ -79,7 +79,7 @@ impl ServiceNotifications {
     }
 
     #[cfg(test)]
-    pub fn contains(&self, service: &str) -> bool {
+    pub(crate) fn contains(&self, service: &str) -> bool {
         self.sources.contains_key(service)
     }
 
@@ -139,7 +139,7 @@ struct ServicePlan {
     actions: Vec<ServiceAction>,
 }
 
-pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     let mut composed: IndexMap<String, (ServiceTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for (name, declaration) in services_from_config_files(config_files) {
@@ -186,17 +186,17 @@ fn services_from_config_files(
     merged
 }
 
-pub fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     let mut requests = prepare_requests_from_config(config)?;
     inspect_requests(&mut requests);
     Ok(requests)
 }
 
-pub fn status_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
+pub(crate) fn status_requests_from_config(config: &Config) -> Result<Vec<ServiceRequest>> {
     requests_from_config(config)
 }
 
-pub fn inspect_requests(requests: &mut [ServiceRequest]) {
+pub(crate) fn inspect_requests(requests: &mut [ServiceRequest]) {
     if requests.is_empty() {
         return;
     }
@@ -243,7 +243,7 @@ impl ServiceRequest {
         })
     }
 
-    pub fn plan(&self) -> ResourcePlan {
+    pub(crate) fn plan(&self) -> ResourcePlan {
         let id = ResourceId::new("service", &self.name);
         let desired = self.desired();
         let Some(inspection) = &self.inspection else {
@@ -476,7 +476,7 @@ fn instantiated_unit_template(unit: &str) -> Option<String> {
     (!instance.starts_with('.')).then(|| format!("{prefix}@{suffix}"))
 }
 
-pub fn validate_notifications(
+pub(crate) fn validate_notifications(
     files: &[super::managed_files::ManagedFileRequest],
     directories: &[super::managed_files::ManagedDirectoryRequest],
     services: &[ServiceRequest],
@@ -510,7 +510,7 @@ pub fn validate_notifications(
     Ok(())
 }
 
-pub fn plans_with_notifications(
+pub(crate) fn plans_with_notifications(
     requests: &[ServiceRequest],
     notifications: &ServiceNotifications,
 ) -> Vec<ResourcePlan> {
@@ -520,11 +520,11 @@ pub fn plans_with_notifications(
         .collect()
 }
 
-pub fn apply(requests: &[ServiceRequest], dry_run: bool, yes: bool) -> Result<()> {
+pub(crate) fn apply(requests: &[ServiceRequest], dry_run: bool, yes: bool) -> Result<()> {
     apply_with_notifications(requests, &ServiceNotifications::default(), dry_run, yes)
 }
 
-pub fn apply_with_notifications(
+pub(crate) fn apply_with_notifications(
     requests: &[ServiceRequest],
     notifications: &ServiceNotifications,
     dry_run: bool,
@@ -603,7 +603,7 @@ pub fn apply_with_notifications(
     Ok(())
 }
 
-pub fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
     let plan: ServicePlan = serde_json::from_reader(std::io::stdin().lock())?;
     if plan.actions.is_empty() {
         return Ok(());

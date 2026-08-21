@@ -23,7 +23,7 @@ use walkdir::WalkDir;
 
 /// Remove mise's automatic output before rerunning a task so an earlier
 /// success cannot make a failed attempt look fresh.
-pub async fn remove_auto_output(task: &Task, config: &Arc<Config>) -> Result<()> {
+pub(crate) async fn remove_auto_output(task: &Task, config: &Arc<Config>) -> Result<()> {
     if !task.outputs.is_auto() {
         return Ok(());
     }
@@ -39,7 +39,7 @@ pub async fn remove_auto_output(task: &Task, config: &Arc<Config>) -> Result<()>
 }
 
 /// Check if a path is a glob pattern
-pub fn is_glob_pattern(path: &str) -> bool {
+pub(crate) fn is_glob_pattern(path: &str) -> bool {
     // This is the character set used for glob detection by glob
     let glob_chars = ['*', '{', '}'];
     path.chars().any(|c| glob_chars.contains(&c))
@@ -531,7 +531,7 @@ fn normalize_task_cwd(path: PathBuf) -> PathBuf {
 }
 
 /// Get the working directory for a task
-pub async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
+pub(crate) async fn task_cwd(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
     if let Some(d) = task.dir(config).await? {
         Ok(normalize_task_cwd(d))
     } else {
@@ -626,14 +626,14 @@ async fn compute_source_hash(
     Ok(Some((source_hash, source_hash_path)))
 }
 
-pub struct TaskCacheInputs {
+pub(crate) struct TaskCacheInputs {
     pub source_hash: String,
     pub source_paths: Vec<PathBuf>,
     pub root_identity: PathBuf,
 }
 
 /// Compute stable paths and content hashes for artifact-cache inputs in one source scan.
-pub async fn task_cache_inputs(
+pub(crate) async fn task_cache_inputs(
     task: &Task,
     config: &Arc<Config>,
     persist_content_hash_cache: bool,
@@ -684,7 +684,7 @@ pub async fn task_cache_inputs(
 }
 
 /// Check if task sources are up to date (fresher than outputs)
-pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool> {
+pub(crate) async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool> {
     if task.sources.is_empty() {
         return Ok(false);
     }
@@ -800,7 +800,7 @@ pub async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Result<bool
 }
 
 /// Save a checksum file after a task completes successfully
-pub async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
+pub(crate) async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<()> {
     if task.sources.is_empty() {
         return Ok(());
     }

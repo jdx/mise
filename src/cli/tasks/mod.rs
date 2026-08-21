@@ -14,7 +14,7 @@ mod validate;
 /// Manage tasks
 #[derive(clap::Args)]
 #[clap(visible_alias = "t", alias = "task", verbatim_doc_comment)]
-pub struct Tasks {
+pub(crate) struct Tasks {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -38,7 +38,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => (*cmd).run().await,
             Self::Deps(cmd) => cmd.run().await,
@@ -53,7 +53,7 @@ impl Commands {
 }
 
 impl Tasks {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let Self { command, task, ls } = self;
         let cmd = match command {
             Some(Commands::Ls(cmd)) => Commands::Ls(ls.merge(cmd)?),

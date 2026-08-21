@@ -17,7 +17,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 /// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct Registry {
+pub(crate) struct Registry {
     /// Show only the specified tool's full name
     name: Option<String>,
 
@@ -66,7 +66,7 @@ struct RegistryToolOutputArgs {
 }
 
 impl Registry {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if let Some(name) = &self.name {
             if let Some(rt) = REGISTRY.get(name.as_str()) {
                 if self.json {

@@ -16,16 +16,16 @@ use crate::install_context::InstallContext;
 use crate::toolset::ToolVersion;
 use crate::ui::progress_report::SingleReport;
 
-pub const WARN_AT: &str = "2027.1.0";
-pub const DEFAULT_AT: &str = "2027.7.0";
+pub(super) const WARN_AT: &str = "2027.1.0";
+pub(super) const DEFAULT_AT: &str = "2027.7.0";
 
 #[derive(Debug, Clone, Copy)]
-pub enum NativeBinstallAction {
+pub(super) enum NativeBinstallAction {
     Install,
     WarnOnly,
 }
 
-pub async fn install(
+pub(super) async fn install(
     ctx: &InstallContext,
     tv: &ToolVersion,
     tool_name: &str,
@@ -945,7 +945,7 @@ fn template_contains_var(template: &str, key: &str) -> bool {
     template.contains(&format!("{{ {key} }}")) || template.contains(&format!("{{{key}}}"))
 }
 
-pub fn rollout_warning_active() -> bool {
+pub(super) fn rollout_warning_active() -> bool {
     rollout_warning_active_for(&crate::cli::version::V)
 }
 

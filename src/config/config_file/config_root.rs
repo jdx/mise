@@ -11,11 +11,11 @@ use crate::env;
 static CONFIG_ROOT_CACHE: Lazy<Mutex<HashMap<PathBuf, PathBuf>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-pub fn reset() {
+pub(crate) fn reset() {
     CONFIG_ROOT_CACHE.lock().unwrap().clear();
 }
 
-pub fn config_root(path: &Path) -> PathBuf {
+pub(crate) fn config_root(path: &Path) -> PathBuf {
     let path = path
         .absolutize()
         .map(|p| p.to_path_buf())

@@ -7,7 +7,7 @@ use indoc::formatdoc;
 use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
-pub struct Xonsh {}
+pub(super) struct Xonsh {}
 
 fn xonsh_escape_sq(input: &str) -> Cow<'_, str> {
     for (i, ch) in input.char_indices() {

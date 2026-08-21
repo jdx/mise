@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for git submodules (.gitmodules)
 #[derive(Debug)]
-pub struct GitSubmoduleDepsProvider {
+pub(crate) struct GitSubmoduleDepsProvider {
     base: ProviderBase,
 }
 
 impl GitSubmoduleDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("git-submodule", project_root, config),
         }

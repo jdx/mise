@@ -32,7 +32,7 @@
 //! region = "us-east-1"
 //! ```
 
-pub const EXPERIMENTAL: bool = false;
+pub(crate) const EXPERIMENTAL: bool = false;
 
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
@@ -94,7 +94,7 @@ impl S3Url {
 
 /// S3 backend for downloading tools from Amazon S3 or S3-compatible storage
 #[derive(Debug)]
-pub struct S3Backend {
+pub(crate) struct S3Backend {
     ba: Arc<BackendArg>,
     /// Cached S3 client, lazily initialized
     client: OnceCell<S3Client>,
@@ -168,7 +168,7 @@ impl<'a> S3Options<'a> {
 }
 
 impl S3Backend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
             ba: Arc::new(ba),
             client: OnceCell::new(),
@@ -425,7 +425,7 @@ impl S3Backend {
 }
 
 /// Returns install-time-only option keys for S3 backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "url".into(),
         "checksum".into(),

@@ -48,7 +48,7 @@ use std::sync::Arc;
 /// Cursor, or other tools that support the Model Context Protocol.
 #[derive(Debug, Parser)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Mcp {}
+pub(crate) struct Mcp {}
 
 #[derive(Clone)]
 struct MiseServer {
@@ -498,7 +498,7 @@ impl ServerHandler for MiseServer {
 }
 
 impl Mcp {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         eprintln!("Starting mise MCP server...");
 
         let server = MiseServer::new();

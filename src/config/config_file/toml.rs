@@ -7,16 +7,16 @@ use serde::{Deserialize, de};
 
 use crate::config::config_file::mise_toml::EnvList;
 
-pub struct TomlParser<'a> {
+pub(crate) struct TomlParser<'a> {
     table: &'a toml::Value,
 }
 
 impl<'a> TomlParser<'a> {
-    pub fn new(table: &'a toml::Value) -> Self {
+    pub(crate) fn new(table: &'a toml::Value) -> Self {
         Self { table }
     }
 
-    pub fn parse_str<T>(&self, key: &str) -> Option<T>
+    pub(crate) fn parse_str<T>(&self, key: &str) -> Option<T>
     where
         T: From<String>,
     {
@@ -25,10 +25,10 @@ impl<'a> TomlParser<'a> {
             .and_then(|value| value.as_str())
             .map(|value| value.to_string().into())
     }
-    pub fn parse_bool(&self, key: &str) -> Option<bool> {
+    pub(crate) fn parse_bool(&self, key: &str) -> Option<bool> {
         self.table.get(key).and_then(|value| value.as_bool())
     }
-    pub fn parse_array<T>(&self, key: &str) -> Option<Vec<T>>
+    pub(crate) fn parse_array<T>(&self, key: &str) -> Option<Vec<T>>
     where
         T: From<String>,
     {
@@ -42,7 +42,7 @@ impl<'a> TomlParser<'a> {
                     .collect::<Vec<T>>()
             })
     }
-    pub fn parse_table(&self, key: &str) -> Option<BTreeMap<String, toml::Value>> {
+    pub(crate) fn parse_table(&self, key: &str) -> Option<BTreeMap<String, toml::Value>> {
         self.table
             .get(key)
             .and_then(|value| value.as_table())
@@ -54,7 +54,7 @@ impl<'a> TomlParser<'a> {
             })
     }
 
-    pub fn parse_env(&self, key: &str) -> Result<Option<EnvList>> {
+    pub(crate) fn parse_env(&self, key: &str) -> Result<Option<EnvList>> {
         self.table
             .get(key)
             .map(|value| {
@@ -65,14 +65,14 @@ impl<'a> TomlParser<'a> {
     }
 }
 
-pub struct TrackingTomlParser<'a> {
+pub(crate) struct TrackingTomlParser<'a> {
     inner: TomlParser<'a>,
     table: &'a toml::Value,
     parsed_keys: std::collections::BTreeSet<String>,
 }
 
 impl<'a> TrackingTomlParser<'a> {
-    pub fn new(table: &'a toml::Value) -> Self {
+    pub(crate) fn new(table: &'a toml::Value) -> Self {
         Self {
             inner: TomlParser::new(table),
             table,
@@ -85,11 +85,11 @@ impl<'a> TrackingTomlParser<'a> {
     }
 
     #[cfg(test)]
-    pub fn parsed_keys(&self) -> impl Iterator<Item = &str> {
+    pub(crate) fn parsed_keys(&self) -> impl Iterator<Item = &str> {
         self.parsed_keys.iter().map(|s| s.as_str())
     }
 
-    pub fn unparsed_keys(&self) -> Vec<String> {
+    pub(crate) fn unparsed_keys(&self) -> Vec<String> {
         if let Some(table) = self.table.as_table() {
             table
                 .keys()
@@ -101,7 +101,7 @@ impl<'a> TrackingTomlParser<'a> {
         }
     }
 
-    pub fn parse_str<T>(&mut self, key: &str) -> Option<T>
+    pub(crate) fn parse_str<T>(&mut self, key: &str) -> Option<T>
     where
         T: From<String>,
     {
@@ -109,12 +109,12 @@ impl<'a> TrackingTomlParser<'a> {
         self.inner.parse_str::<T>(key)
     }
 
-    pub fn parse_bool(&mut self, key: &str) -> Option<bool> {
+    pub(crate) fn parse_bool(&mut self, key: &str) -> Option<bool> {
         self.record(key);
         self.inner.parse_bool(key)
     }
 
-    pub fn parse_array<T>(&mut self, key: &str) -> Option<Vec<T>>
+    pub(crate) fn parse_array<T>(&mut self, key: &str) -> Option<Vec<T>>
     where
         T: From<String>,
     {
@@ -122,23 +122,23 @@ impl<'a> TrackingTomlParser<'a> {
         self.inner.parse_array::<T>(key)
     }
 
-    pub fn parse_table(&mut self, key: &str) -> Option<BTreeMap<String, toml::Value>> {
+    pub(crate) fn parse_table(&mut self, key: &str) -> Option<BTreeMap<String, toml::Value>> {
         self.record(key);
         self.inner.parse_table(key)
     }
 
-    pub fn parse_env(&mut self, key: &str) -> Result<Option<EnvList>> {
+    pub(crate) fn parse_env(&mut self, key: &str) -> Result<Option<EnvList>> {
         self.record(key);
         self.inner.parse_env(key)
     }
 
-    pub fn get_raw(&mut self, key: &str) -> Option<&'a toml::Value> {
+    pub(crate) fn get_raw(&mut self, key: &str) -> Option<&'a toml::Value> {
         self.record(key);
         self.table.get(key)
     }
 }
 
-pub fn deserialize_arr<'de, D, C, T>(deserializer: D) -> std::result::Result<C, D::Error>
+pub(crate) fn deserialize_arr<'de, D, C, T>(deserializer: D) -> std::result::Result<C, D::Error>
 where
     D: de::Deserializer<'de>,
     C: FromIterator<T> + Deserialize<'de>,

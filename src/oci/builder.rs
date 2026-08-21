@@ -27,17 +27,17 @@ use crate::toolset::{ToolVersion, Toolset};
 /// Annotations mise writes on tool layer descriptors. Together they form the
 /// cache key for reusing a layer from a previously pushed image: same tool,
 /// same version, same in-image prefix, same file ownership.
-pub const ANNOTATION_TOOL_SHORT: &str = "dev.mise.tool.short";
-pub const ANNOTATION_TOOL_VERSION: &str = "dev.mise.tool.version";
-pub const ANNOTATION_LAYER_PREFIX: &str = "dev.mise.layer.prefix";
-pub const ANNOTATION_LAYER_OWNER: &str = "dev.mise.layer.owner";
-pub const ANNOTATION_LAYER_RELOCATION: &str = "dev.mise.layer.relocation";
+pub(crate) const ANNOTATION_TOOL_SHORT: &str = "dev.mise.tool.short";
+pub(crate) const ANNOTATION_TOOL_VERSION: &str = "dev.mise.tool.version";
+pub(crate) const ANNOTATION_LAYER_PREFIX: &str = "dev.mise.layer.prefix";
+pub(crate) const ANNOTATION_LAYER_OWNER: &str = "dev.mise.layer.owner";
+pub(crate) const ANNOTATION_LAYER_RELOCATION: &str = "dev.mise.layer.relocation";
 
 const TOOL_LAYER_RELOCATION_VERSION: &str = "2";
 
 /// Options passed to the builder from the CLI.
 #[derive(Debug, Clone)]
-pub struct BuildOptions {
+pub(crate) struct BuildOptions {
     /// Output directory for the OCI image layout.
     pub out_dir: PathBuf,
     /// Base image reference (overrides mise.toml and default setting).
@@ -116,7 +116,7 @@ fn build_reuse_index(remote: &registry::RemoteImage) -> IndexMap<ReuseKey, Reuse
     index
 }
 
-pub struct Builder {
+pub(crate) struct Builder {
     pub cfg: Arc<Config>,
     pub ts: Toolset,
     pub oci: OciConfig,
@@ -126,13 +126,13 @@ pub struct Builder {
 }
 
 /// Output summary returned to the CLI.
-pub struct BuildOutput {
+pub(crate) struct BuildOutput {
     pub out_dir: PathBuf,
     pub manifest_digest: String,
     pub tool_layers: Vec<ToolLayerInfo>,
 }
 
-pub struct ToolLayerInfo {
+pub(crate) struct ToolLayerInfo {
     pub short: String,
     pub version: String,
     pub digest: String,
@@ -142,7 +142,7 @@ pub struct ToolLayerInfo {
 }
 
 impl Builder {
-    pub fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
+    pub(crate) fn new(cfg: Arc<Config>, ts: Toolset, oci: OciConfig, opts: BuildOptions) -> Self {
         Self {
             cfg,
             ts,
@@ -153,18 +153,18 @@ impl Builder {
         }
     }
 
-    pub fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
+    pub(crate) fn with_dotfiles(mut self, dotfiles: Vec<FileRequest>) -> Self {
         self.dotfiles = dotfiles;
         self
     }
 
-    pub fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
+    pub(crate) fn with_system_packages(mut self, system_packages: Vec<ManagerPackages>) -> Self {
         self.system_packages = system_packages;
         self
     }
 
     /// Build the image and write it to the output directory.
-    pub async fn build(self) -> Result<BuildOutput> {
+    pub(crate) async fn build(self) -> Result<BuildOutput> {
         let versions = self.ts.list_current_versions();
         if versions.is_empty() {
             warn!("mise oci build: no tools in the toolset — image will have only the base layer");

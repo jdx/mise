@@ -4,14 +4,14 @@ use crate::document::{EntryValue, TomlDocument};
 
 /// Cursor position in the document
 #[derive(Debug, Clone)]
-pub struct Cursor {
+pub(crate) struct Cursor {
     /// Flat index into visible items
     index: usize,
 }
 
 /// What the cursor is currently pointing at
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CursorTarget {
+pub(crate) enum CursorTarget {
     /// Section header (section index)
     SectionHeader(usize),
     /// Entry within a section (section index, entry index)
@@ -28,7 +28,7 @@ pub enum CursorTarget {
 
 /// Types of add buttons
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AddButtonKind {
+pub(crate) enum AddButtonKind {
     /// Add a new section
     Section,
     /// Add an entry to a section (section index) - generic
@@ -65,23 +65,23 @@ pub enum AddButtonKind {
 
 impl Cursor {
     /// Create a new cursor at the beginning
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { index: 0 }
     }
 
     /// Get the current index
-    pub fn index(&self) -> usize {
+    pub(crate) fn index(&self) -> usize {
         self.index
     }
 
     /// Set the index directly
     #[allow(dead_code)]
-    pub fn set_index(&mut self, index: usize) {
+    pub(crate) fn set_index(&mut self, index: usize) {
         self.index = index;
     }
 
     /// Move cursor up, skipping comments
-    pub fn up(&mut self, doc: &TomlDocument) {
+    pub(crate) fn up(&mut self, doc: &TomlDocument) {
         let items = Self::build_visible_items(doc);
         let max = items.len();
         if max == 0 {
@@ -109,7 +109,7 @@ impl Cursor {
     }
 
     /// Move cursor down, skipping comments
-    pub fn down(&mut self, doc: &TomlDocument) {
+    pub(crate) fn down(&mut self, doc: &TomlDocument) {
         let items = Self::build_visible_items(doc);
         let max = items.len();
         if max == 0 {
@@ -137,7 +137,7 @@ impl Cursor {
     }
 
     /// Jump to next section header
-    pub fn next_section(&mut self, doc: &TomlDocument) {
+    pub(crate) fn next_section(&mut self, doc: &TomlDocument) {
         let items = Self::build_visible_items(doc);
         let current = self.index;
 
@@ -159,7 +159,7 @@ impl Cursor {
     }
 
     /// Jump to previous section header
-    pub fn prev_section(&mut self, doc: &TomlDocument) {
+    pub(crate) fn prev_section(&mut self, doc: &TomlDocument) {
         let items = Self::build_visible_items(doc);
         let current = self.index;
 
@@ -181,13 +181,13 @@ impl Cursor {
     }
 
     /// Get what the cursor is currently pointing at
-    pub fn target(&self, doc: &TomlDocument) -> Option<CursorTarget> {
+    pub(crate) fn target(&self, doc: &TomlDocument) -> Option<CursorTarget> {
         let items = Self::build_visible_items(doc);
         items.get(self.index).cloned()
     }
 
     /// Ensure cursor is within valid bounds and not on a comment
-    pub fn clamp(&mut self, doc: &TomlDocument) {
+    pub(crate) fn clamp(&mut self, doc: &TomlDocument) {
         let items = Self::build_visible_items(doc);
         let max = items.len();
         if max == 0 {
@@ -211,7 +211,7 @@ impl Cursor {
     }
 
     /// Build list of all visible items (for navigation)
-    pub fn build_visible_items(doc: &TomlDocument) -> Vec<CursorTarget> {
+    pub(crate) fn build_visible_items(doc: &TomlDocument) -> Vec<CursorTarget> {
         let mut items = Vec::new();
 
         for (section_idx, section) in doc.sections.iter().enumerate() {
@@ -332,13 +332,13 @@ impl Cursor {
     }
 
     /// Find index for a specific target
-    pub fn find_index(doc: &TomlDocument, target: &CursorTarget) -> Option<usize> {
+    pub(crate) fn find_index(doc: &TomlDocument, target: &CursorTarget) -> Option<usize> {
         let items = Self::build_visible_items(doc);
         items.iter().position(|t| t == target)
     }
 
     /// Move cursor to a specific target if it exists
-    pub fn goto(&mut self, doc: &TomlDocument, target: &CursorTarget) {
+    pub(crate) fn goto(&mut self, doc: &TomlDocument, target: &CursorTarget) {
         if let Some(idx) = Self::find_index(doc, target) {
             self.index = idx;
         }

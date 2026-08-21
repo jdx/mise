@@ -27,7 +27,7 @@ use crate::{dirs, file};
 pub(crate) mod rustc;
 pub(crate) mod session;
 
-pub use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
+pub(crate) use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
 
 pub(crate) fn effective_remote_cache_mode(configured: CacheRemoteMode) -> Option<CacheRemoteMode> {
     effective_remote_cache_mode_with(configured, |name| std::env::var(name).ok())
@@ -77,14 +77,14 @@ fn env_truthy(value: Option<String>) -> bool {
 }
 
 #[derive(Debug)]
-pub struct CacheManagerBuilder {
+pub(crate) struct CacheManagerBuilder {
     cache_file_path: PathBuf,
     cache_keys: Vec<String>,
     fresh_duration: Option<Duration>,
     fresh_files: Vec<PathBuf>,
 }
 
-pub static BASE_CACHE_KEYS: Lazy<Vec<String>> = Lazy::new(|| {
+pub(crate) static BASE_CACHE_KEYS: Lazy<Vec<String>> = Lazy::new(|| {
     [
         built_info::FEATURES_STR,
         built_info::PKG_VERSION,
@@ -97,7 +97,7 @@ pub static BASE_CACHE_KEYS: Lazy<Vec<String>> = Lazy::new(|| {
 });
 
 impl CacheManagerBuilder {
-    pub fn new(cache_file_path: impl AsRef<Path>) -> Self {
+    pub(crate) fn new(cache_file_path: impl AsRef<Path>) -> Self {
         let settings = Settings::get();
         let mut cache_keys = BASE_CACHE_KEYS.clone();
         cache_keys.extend([
@@ -113,17 +113,17 @@ impl CacheManagerBuilder {
         }
     }
 
-    pub fn with_fresh_duration(mut self, duration: Option<Duration>) -> Self {
+    pub(crate) fn with_fresh_duration(mut self, duration: Option<Duration>) -> Self {
         self.fresh_duration = duration;
         self
     }
 
-    pub fn with_fresh_file(mut self, path: PathBuf) -> Self {
+    pub(crate) fn with_fresh_file(mut self, path: PathBuf) -> Self {
         self.fresh_files.push(path);
         self
     }
 
-    pub fn with_cache_key(mut self, key: String) -> Self {
+    pub(crate) fn with_cache_key(mut self, key: String) -> Self {
         self.cache_keys.push(key);
         self
     }
@@ -132,7 +132,7 @@ impl CacheManagerBuilder {
         hash_to_str(&self.cache_keys).chars().take(5).collect()
     }
 
-    pub fn build<T>(self) -> CacheManager<T>
+    pub(crate) fn build<T>(self) -> CacheManager<T>
     where
         T: Serialize + DeserializeOwned,
     {
@@ -151,7 +151,7 @@ impl CacheManagerBuilder {
 }
 
 #[derive(Debug, Clone)]
-pub struct CacheManager<T>
+pub(crate) struct CacheManager<T>
 where
     T: Serialize + DeserializeOwned,
 {
@@ -166,7 +166,7 @@ impl<T> CacheManager<T>
 where
     T: Serialize + DeserializeOwned,
 {
-    pub fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
+    pub(crate) fn get_or_try_init<F>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Result<T>,
     {
@@ -189,7 +189,7 @@ where
         Ok(val)
     }
 
-    pub async fn get_or_try_init_async<F, Fut>(&self, fetch: F) -> Result<&T>
+    pub(crate) async fn get_or_try_init_async<F, Fut>(&self, fetch: F) -> Result<&T>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T>>,
@@ -218,7 +218,11 @@ where
 
     /// Like [`Self::get_or_try_init_async`], but values rejected by `should_cache`
     /// are returned without populating the in-memory or on-disk cache.
-    pub async fn get_or_try_init_async_if<F, Fut, P>(&self, fetch: F, should_cache: P) -> Result<T>
+    pub(crate) async fn get_or_try_init_async_if<F, Fut, P>(
+        &self,
+        fetch: F,
+        should_cache: P,
+    ) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T>>,
@@ -262,7 +266,7 @@ where
     /// any cache. The in-memory cache cells are replaced with the fresh value
     /// so future non-refresh reads observe it instead of a stale previously-
     /// initialized one.
-    pub async fn refresh_async<F, Fut>(&mut self, fetch: F) -> Result<T>
+    pub(crate) async fn refresh_async<F, Fut>(&mut self, fetch: F) -> Result<T>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<T>>,
@@ -282,7 +286,7 @@ where
     }
 
     /// Read the cache file without checking freshness and without fetching or writing.
-    pub fn get_cached(&self) -> Result<T>
+    pub(crate) fn get_cached(&self) -> Result<T>
     where
         T: Clone,
     {
@@ -304,7 +308,7 @@ where
         Ok(rmp_serde::from_slice(&bytes)?)
     }
 
-    pub fn write(&self, val: &T) -> Result<()> {
+    pub(crate) fn write(&self, val: &T) -> Result<()> {
         trace!("writing {}", display_path(&self.cache_file_path));
         if let Some(parent) = self.cache_file_path.parent() {
             file::create_dir_all(parent)?;
@@ -319,7 +323,7 @@ where
         Ok(())
     }
 
-    pub fn clear(&mut self) -> Result<()> {
+    pub(crate) fn clear(&mut self) -> Result<()> {
         let path = &self.cache_file_path;
         trace!("clearing cache {}", path.display());
         if path.exists() {

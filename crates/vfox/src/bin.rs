@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
 #[cfg(feature = "cli")]
 #[macro_use]
 extern crate log;

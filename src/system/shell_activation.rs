@@ -8,7 +8,7 @@ use crate::system::edits::{BlockSource, EditOp, EditRequest};
 use crate::system::resources::ResourceOrigin;
 
 #[derive(Debug, Clone)]
-pub struct ShellActivationRequest {
+pub(crate) struct ShellActivationRequest {
     pub target: ShellActivationTarget,
     pub shell: ShellActivationShell,
     pub mode: ShellActivationMode,
@@ -16,7 +16,7 @@ pub struct ShellActivationRequest {
 }
 
 impl ShellActivationRequest {
-    pub fn new(target: ShellActivationTarget, mode: ShellActivationMode) -> Self {
+    pub(crate) fn new(target: ShellActivationTarget, mode: ShellActivationMode) -> Self {
         let shell = target.shell();
         let target_raw = target.target_raw().to_string();
         Self {
@@ -46,13 +46,13 @@ impl ShellActivationRequest {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ShellActivationMode {
+pub(crate) enum ShellActivationMode {
     Activate,
     Shims,
 }
 
 impl ShellActivationMode {
-    pub fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "activate" => Some(Self::Activate),
             "shims" => Some(Self::Shims),
@@ -60,7 +60,7 @@ impl ShellActivationMode {
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Activate => "activate",
             Self::Shims => "shims",
@@ -69,14 +69,14 @@ impl ShellActivationMode {
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-pub enum ShellActivationShell {
+pub(crate) enum ShellActivationShell {
     Bash,
     Zsh,
     Fish,
 }
 
 impl ShellActivationShell {
-    pub fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "bash" => Some(Self::Bash),
             "zsh" => Some(Self::Zsh),
@@ -85,7 +85,7 @@ impl ShellActivationShell {
         }
     }
 
-    pub fn default_targets(self) -> &'static [ShellActivationTarget] {
+    pub(crate) fn default_targets(self) -> &'static [ShellActivationTarget] {
         match self {
             Self::Bash => &[
                 ShellActivationTarget::BashProfile,
@@ -99,7 +99,7 @@ impl ShellActivationShell {
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Bash => "bash",
             Self::Zsh => "zsh",
@@ -109,7 +109,7 @@ impl ShellActivationShell {
 }
 
 #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-pub enum ShellActivationTarget {
+pub(crate) enum ShellActivationTarget {
     BashProfile,
     Bashrc,
     Zshenv,
@@ -119,7 +119,7 @@ pub enum ShellActivationTarget {
 }
 
 impl ShellActivationTarget {
-    pub fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "bash_profile" => Some(Self::BashProfile),
             "bashrc" => Some(Self::Bashrc),
@@ -131,11 +131,11 @@ impl ShellActivationTarget {
         }
     }
 
-    pub fn expected_keys() -> &'static str {
+    pub(crate) fn expected_keys() -> &'static str {
         "bash, zsh, fish, bash_profile, bashrc, zshenv, zprofile, or zshrc"
     }
 
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::BashProfile => "bash_profile",
             Self::Bashrc => "bashrc",
@@ -146,7 +146,7 @@ impl ShellActivationTarget {
         }
     }
 
-    pub fn shell(self) -> ShellActivationShell {
+    pub(crate) fn shell(self) -> ShellActivationShell {
         match self {
             Self::BashProfile | Self::Bashrc => ShellActivationShell::Bash,
             Self::Zshenv | Self::Zprofile | Self::Zshrc => ShellActivationShell::Zsh,
@@ -154,7 +154,7 @@ impl ShellActivationTarget {
         }
     }
 
-    pub fn default_mode(self) -> ShellActivationMode {
+    pub(crate) fn default_mode(self) -> ShellActivationMode {
         match self {
             Self::BashProfile | Self::Zshenv | Self::Zprofile => ShellActivationMode::Shims,
             Self::Bashrc | Self::Zshrc | Self::Fish => ShellActivationMode::Activate,

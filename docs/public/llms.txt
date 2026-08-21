@@ -204,12 +204,12 @@
 - [mise env](https://mise.jdx.dev/cli/env.html): Exports env vars to activate mise a single time
 - [mise exec](https://mise.jdx.dev/cli/exec.html): Execute a command with tool(s) set
 - [mise fmt](https://mise.jdx.dev/cli/fmt.html): Formats mise.toml
-- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services
-- [mise generate bootstrap](https://mise.jdx.dev/cli/generate/bootstrap.html): Generate a script to download+execute mise
+- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services - mise generate config [FLAGS] [PATH] - mise generate devcontainer [FLAGS] - mise generate git-pre-commit [FLAGS] [-- MISEARG]… - mise generate github-action…
 - [mise generate config](https://mise.jdx.dev/cli/generate/config.html): Generate a mise.toml file
 - [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer to execute mise
 - [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git pre-commit hook
 - [mise generate github-action](https://mise.jdx.dev/cli/generate/github-action.html): Generate a GitHub Action workflow file
+- [mise generate install-script](https://mise.jdx.dev/cli/generate/install-script.html): Generate a script to download+execute mise
 - [mise generate task-docs](https://mise.jdx.dev/cli/generate/task-docs.html): Generate documentation for tasks in a project
 - [mise generate task-stubs](https://mise.jdx.dev/cli/generate/task-stubs.html): Generates shims to run mise tasks
 - [mise generate tool-stub](https://mise.jdx.dev/cli/generate/tool-stub.html): Generate a tool stub for HTTP-based tools

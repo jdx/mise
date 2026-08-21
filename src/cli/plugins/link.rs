@@ -14,7 +14,7 @@ use crate::{dirs, file};
 /// This is used for developing a plugin.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct PluginsLink {
+pub(super) struct PluginsLink {
     /// The name of the plugin
     /// e.g.: cmake, poetry
     #[clap(verbatim_doc_comment)]
@@ -31,7 +31,7 @@ pub struct PluginsLink {
 }
 
 impl PluginsLink {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let (name, path) = match self.dir {
             Some(path) => (self.name, path),
             None => {

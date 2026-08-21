@@ -1,7 +1,7 @@
 use mlua::Table;
 use mlua::prelude::*;
 
-pub fn mod_semver(lua: &Lua) -> LuaResult<()> {
+pub(crate) fn mod_semver(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     let semver = lua.create_table_from(vec![

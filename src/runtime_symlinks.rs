@@ -13,7 +13,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 use versions::Versioning;
 
-pub async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
+pub(crate) async fn rebuild_for_toolset(config: &Config, ts: &Toolset) -> Result<()> {
     rebuild_for_backends(config, ts, ts.list_cached_and_current_backends()).await
 }
 
@@ -56,7 +56,7 @@ fn run_all_rebuilds<T>(
     ))
 }
 
-pub async fn migrate_real_dirs(config: &Config) -> Result<()> {
+pub(crate) async fn migrate_real_dirs(config: &Config) -> Result<()> {
     for backend in backend::list() {
         for installs_dir in install_dirs_for(&backend) {
             migrate_real_dirs_in_dir(config, &backend, &installs_dir)?;
@@ -253,7 +253,7 @@ fn is_temporary_runtime_label(v: &str) -> bool {
     v == "latest"
 }
 
-pub fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
+pub(crate) fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
     remove_missing_symlinks_in_dir(&backend.ba().installs_path)
 }
 
@@ -280,7 +280,7 @@ fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn is_runtime_symlink(path: &Path) -> bool {
+pub(crate) fn is_runtime_symlink(path: &Path) -> bool {
     runtime_symlink_target(path).is_some()
 }
 

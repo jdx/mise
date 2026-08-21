@@ -8,20 +8,20 @@ use toml_edit::{DocumentMut, Item, Value};
 use crate::{file, parse_error};
 
 #[derive(Debug, Default, Clone)]
-pub struct MisePluginTomlScriptConfig {
+pub(crate) struct MisePluginTomlScriptConfig {
     pub cache_key: Option<Vec<String>>,
     pub data: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct MisePluginTomlPackageManagerConfig {
+pub(crate) struct MisePluginTomlPackageManagerConfig {
     pub requires: Vec<String>,
     pub supports_version_pins: bool,
     pub os: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct MisePluginToml {
+pub(crate) struct MisePluginToml {
     pub package_manager: MisePluginTomlPackageManagerConfig,
     pub exec_env: MisePluginTomlScriptConfig,
     pub list_aliases: MisePluginTomlScriptConfig,
@@ -30,7 +30,7 @@ pub struct MisePluginToml {
 }
 
 impl MisePluginToml {
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub(crate) fn from_file(path: &Path) -> Result<Self> {
         if !path.exists() {
             return Ok(Default::default());
         }

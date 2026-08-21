@@ -67,7 +67,7 @@ impl Value for SemVerValue {
     }
 }
 
-pub fn render(tmpl: &str, ctx: &Context) -> Result<String> {
+pub(crate) fn render(tmpl: &str, ctx: &Context) -> Result<String> {
     let mut result = String::new();
     let mut in_tag = false;
     let mut tag = String::new();

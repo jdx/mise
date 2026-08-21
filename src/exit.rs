@@ -19,15 +19,15 @@ impl Display for ExitRequest {
 impl Error for ExitRequest {}
 
 /// Request a process status without terminating before callers can unwind.
-pub fn request(code: i32) -> Report {
+pub(crate) fn request(code: i32) -> Report {
     Report::new(ExitRequest { code })
 }
 
-pub fn requested_exit_code(err: &Report) -> Option<i32> {
+pub(crate) fn requested_exit_code(err: &Report) -> Option<i32> {
     err.downcast_ref::<ExitRequest>().map(|exit| exit.code)
 }
 
-pub fn kill_all() {
+pub(crate) fn kill_all() {
     #[cfg(unix)]
     CmdLineRunner::kill_all(SIGTERM);
 
@@ -36,7 +36,7 @@ pub fn kill_all() {
 }
 
 /// Convert a requested process status after command scopes have unwound.
-pub fn status(code: i32) -> std::process::ExitCode {
+pub(crate) fn status(code: i32) -> std::process::ExitCode {
     debug!("exiting with code: {code}");
     std::process::ExitCode::from(code as u8)
 }

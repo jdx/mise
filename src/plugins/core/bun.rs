@@ -29,12 +29,12 @@ use crate::{file, github, plugins};
 const WINDOWS_ARM64_NATIVE_ARCHIVE_VERSION: &str = "1.3.10";
 
 #[derive(Debug)]
-pub struct BunPlugin {
+pub(super) struct BunPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl BunPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("bun")),
         }

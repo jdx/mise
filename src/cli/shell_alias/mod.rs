@@ -8,7 +8,7 @@ mod unset;
 
 #[derive(Debug, clap::Args)]
 #[clap(name = "shell-alias", about = "Manage shell aliases.")]
-pub struct ShellAlias {
+pub(crate) struct ShellAlias {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -26,7 +26,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Get(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
@@ -37,7 +37,7 @@ impl Commands {
 }
 
 impl ShellAlias {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::ShellAliasLs {
             no_header: self.no_header,
         }));

@@ -18,7 +18,7 @@ use crate::ui::table::MiseTable;
 /// Inspect output cache entries for a task
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct CacheTask {
+pub(super) struct CacheTask {
     /// Task name or pattern to inspect
     task: String,
 
@@ -28,7 +28,7 @@ pub struct CacheTask {
 }
 
 impl CacheTask {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let (config, tasks) = resolve_tasks(&self.task).await?;
         let mut task_entries = Vec::with_capacity(tasks.len());
         for task in tasks {

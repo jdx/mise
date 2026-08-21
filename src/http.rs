@@ -28,10 +28,10 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::time::format_duration;
 use crate::{env, file};
 
-pub static HTTP: Lazy<Client> =
+pub(crate) static HTTP: Lazy<Client> =
     Lazy::new(|| Client::new_shared(Settings::get().http_timeout(), ClientKind::Http));
 
-pub static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
+pub(crate) static HTTP_FETCH: Lazy<Client> = Lazy::new(|| {
     Client::new_shared(
         Settings::get().configured_fetch_remote_versions_timeout(),
         ClientKind::Fetch,
@@ -456,7 +456,7 @@ fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
 }
 
 #[derive(Debug)]
-pub struct Client {
+pub(crate) struct Client {
     reqwest: Result<reqwest::Client, String>,
     timeout: Duration,
     kind: ClientKind,
@@ -507,7 +507,7 @@ impl Client {
     /// exists for callers that need request shapes those helpers don't cover
     /// (e.g. form-encoded POST in the GitHub OAuth flow) but still want the
     /// shared timeouts, gzip, and user-agent.
-    pub fn reqwest(&self) -> Result<&reqwest::Client> {
+    pub(crate) fn reqwest(&self) -> Result<&reqwest::Client> {
         self.reqwest
             .as_ref()
             .map_err(|err| eyre!("Could not initialize the HTTP client: {err}"))
@@ -531,13 +531,13 @@ impl Client {
         }
     }
 
-    pub async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
+    pub(crate) async fn get_bytes<U: IntoUrl>(&self, url: U) -> Result<impl AsRef<[u8]>> {
         let url = url.into_url()?;
         let resp = self.get_async(url.clone()).await?;
         Ok(resp.bytes().await?)
     }
 
-    pub async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    pub(crate) async fn get_async<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
         self.get_async_with_headers(url, &headers).await
@@ -557,7 +557,7 @@ impl Client {
         Ok(resp)
     }
 
-    pub async fn get_async_with_headers_allow_error_status<U: IntoUrl>(
+    pub(crate) async fn get_async_with_headers_allow_error_status<U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
@@ -568,13 +568,13 @@ impl Client {
             .await
     }
 
-    pub async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
+    pub(crate) async fn head<U: IntoUrl>(&self, url: U) -> Result<Response> {
         let url = url.into_url()?;
         let headers = host_auth_headers(&url)?;
         self.head_async_with_headers(url, &headers).await
     }
 
-    pub async fn head_async_with_headers<U: IntoUrl>(
+    pub(crate) async fn head_async_with_headers<U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
@@ -588,11 +588,11 @@ impl Client {
         Ok(resp)
     }
 
-    pub async fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
+    pub(crate) async fn get_text<U: IntoUrl>(&self, url: U) -> Result<String> {
         self.get_text_request(url).send().await
     }
 
-    pub fn get_text_request<U: IntoUrl>(&self, url: U) -> TextRequest<'_> {
+    pub(crate) fn get_text_request<U: IntoUrl>(&self, url: U) -> TextRequest<'_> {
         // Defer surfacing an invalid URL to `send()` (which returns `Result`) so a
         // bad URL is reported as an error instead of panicking here. See #3547.
         TextRequest {
@@ -607,7 +607,7 @@ impl Client {
     /// Useful when the same URL will be requested multiple times (e.g., SHASUMS256.txt
     /// when locking multiple platforms). Concurrent requests for the same URL will
     /// wait for the first fetch to complete.
-    pub async fn get_text_cached<U: IntoUrl>(&self, url: U) -> Result<String> {
+    pub(crate) async fn get_text_cached<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url()?;
         let key = url.to_string();
 
@@ -636,7 +636,7 @@ impl Client {
         }
     }
 
-    pub async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
+    pub(crate) async fn get_html<U: IntoUrl>(&self, url: U) -> Result<String> {
         let url = url.into_url()?;
         let resp = self.get_async(url.clone()).await?;
         let is_html = resp
@@ -657,7 +657,7 @@ impl Client {
         Ok(html)
     }
 
-    pub async fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
+    pub(crate) async fn json_headers<T, U: IntoUrl>(&self, url: U) -> Result<(T, HeaderMap)>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -668,7 +668,7 @@ impl Client {
         Ok((json, headers))
     }
 
-    pub async fn json_headers_with_headers<T, U: IntoUrl>(
+    pub(crate) async fn json_headers_with_headers<T, U: IntoUrl>(
         &self,
         url: U,
         headers: &HeaderMap,
@@ -683,7 +683,7 @@ impl Client {
         Ok((json, headers))
     }
 
-    pub async fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    pub(crate) async fn json<T, U: IntoUrl>(&self, url: U) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -694,7 +694,7 @@ impl Client {
     /// Useful when the same URL will be requested multiple times (e.g., zig index.json
     /// when locking multiple platforms). Concurrent requests for the same URL will
     /// wait for the first fetch to complete.
-    pub async fn json_cached<T, U: IntoUrl>(&self, url: U) -> Result<T>
+    pub(crate) async fn json_cached<T, U: IntoUrl>(&self, url: U) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -702,7 +702,11 @@ impl Client {
         Ok(serde_json::from_str(&text)?)
     }
 
-    pub async fn json_with_headers<T, U: IntoUrl>(&self, url: U, headers: &HeaderMap) -> Result<T>
+    pub(crate) async fn json_with_headers<T, U: IntoUrl>(
+        &self,
+        url: U,
+        headers: &HeaderMap,
+    ) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -714,7 +718,7 @@ impl Client {
     /// POST JSON data to a URL. Returns Ok(true) on success, Ok(false) on non-success status.
     /// Errors only on network/connection failures.
     #[allow(dead_code)]
-    pub async fn post_json<U: IntoUrl, T: serde::Serialize>(
+    pub(crate) async fn post_json<U: IntoUrl, T: serde::Serialize>(
         &self,
         url: U,
         body: &T,
@@ -724,7 +728,7 @@ impl Client {
     }
 
     /// POST JSON data to a URL with custom headers.
-    pub async fn post_json_with_headers<U: IntoUrl, T: serde::Serialize>(
+    pub(crate) async fn post_json_with_headers<U: IntoUrl, T: serde::Serialize>(
         &self,
         url: U,
         body: &T,
@@ -744,7 +748,7 @@ impl Client {
         Ok(resp.status().is_success())
     }
 
-    pub async fn download_file<U: IntoUrl>(
+    pub(crate) async fn download_file<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
@@ -767,7 +771,7 @@ impl Client {
             .await
     }
 
-    pub async fn download_file_with_headers<U: IntoUrl>(
+    pub(crate) async fn download_file_with_headers<U: IntoUrl>(
         &self,
         url: U,
         path: &Path,
@@ -1409,7 +1413,7 @@ impl Client {
     }
 }
 
-pub struct TextRequest<'a> {
+pub(crate) struct TextRequest<'a> {
     client: &'a Client,
     // Parsed lazily by `get_text_request`; an invalid URL surfaces as an error in
     // `send()` rather than a panic. See #3547.
@@ -1419,17 +1423,17 @@ pub struct TextRequest<'a> {
 }
 
 impl TextRequest<'_> {
-    pub fn headers(mut self, headers: &HeaderMap) -> Self {
+    pub(crate) fn headers(mut self, headers: &HeaderMap) -> Self {
         self.extra_headers.extend(headers.clone());
         self
     }
 
-    pub fn retries(mut self, retries: i64) -> Self {
+    pub(crate) fn retries(mut self, retries: i64) -> Self {
         self.retries = retries;
         self
     }
 
-    pub async fn send(mut self) -> Result<String> {
+    pub(crate) async fn send(mut self) -> Result<String> {
         ensure!(!Settings::get().offline(), "offline mode is enabled");
         let mut url = self.url.clone().map_err(|e| eyre!(e))?;
         // Merge GitHub headers with any extra headers provided
@@ -1610,7 +1614,7 @@ fn stale_github_oauth_unauthorized_token(
     }
 }
 
-pub fn error_code(e: &Report) -> Option<u16> {
+pub(crate) fn error_code(e: &Report) -> Option<u16> {
     if e.to_string().contains("404") {
         // TODO: not this when I can figure out how to use eyre properly
         return Some(404);
@@ -1712,7 +1716,7 @@ pub(crate) fn resolve_pagination_url(current: &str, next: &str) -> Result<String
 
 /// Apply URL replacements based on settings configuration
 /// Supports both simple string replacement and regex patterns (prefixed with "regex:")
-pub fn apply_url_replacements(url: &mut Url) {
+pub(crate) fn apply_url_replacements(url: &mut Url) {
     let settings = Settings::get();
     if let Some(replacements) = &settings.url_replacements {
         let url_string = url.to_string();

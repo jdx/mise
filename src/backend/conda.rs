@@ -39,14 +39,14 @@ use versions::Versioning;
 
 /// Conda package info stored in the shared conda-packages section of lockfiles
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct CondaPackageInfo {
+pub(crate) struct CondaPackageInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
 }
 
 #[derive(Debug)]
-pub struct CondaBackend {
+pub(crate) struct CondaBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -116,7 +116,7 @@ impl CondaBackend {
         ))
     }
 
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 
@@ -794,7 +794,7 @@ impl CondaBackend {
 
     /// Resolve conda packages for lockfile's shared conda-packages section.
     /// Returns a map of basename -> CondaPackageInfo for deps of this tool on the given platform.
-    pub async fn resolve_conda_packages(
+    pub(crate) async fn resolve_conda_packages(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

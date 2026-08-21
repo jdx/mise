@@ -12,7 +12,7 @@ use crate::ui::table;
 /// Gets information about a tool
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Tool {
+pub(crate) struct Tool {
     /// Tool name to get information about
     tool: BackendArg,
     /// Output in JSON format
@@ -25,7 +25,7 @@ pub struct Tool {
 
 #[derive(Debug, Clone, clap::Args)]
 #[group(multiple = false)]
-pub struct ToolInfoFilter {
+pub(super) struct ToolInfoFilter {
     /// Only show active versions
     #[clap(long)]
     active: bool,
@@ -56,7 +56,7 @@ pub struct ToolInfoFilter {
 }
 
 impl Tool {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let mut ts = ToolsetBuilder::new().build(&config).await?;
         ts.resolve(&config).await?;

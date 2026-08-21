@@ -40,7 +40,7 @@ impl ResolvedAgeKey {
     }
 }
 
-pub async fn decrypt<PT, F>(
+pub(crate) async fn decrypt<PT, F>(
     config: &Arc<Config>,
     exec_env: &EnvMap,
     input: &str,

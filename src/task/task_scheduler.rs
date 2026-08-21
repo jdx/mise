@@ -10,14 +10,14 @@ use tokio::task::JoinSet;
 #[cfg(unix)]
 use nix::sys::signal::SIGTERM;
 
-pub struct SchedMsg {
+pub(crate) struct SchedMsg {
     pub task: Task,
     pub deps: Arc<Mutex<Deps>>,
     pub allow_during_interruption: bool,
 }
 
 impl SchedMsg {
-    pub fn new(task: Task, deps: Arc<Mutex<Deps>>, allow_during_interruption: bool) -> Self {
+    pub(crate) fn new(task: Task, deps: Arc<Mutex<Deps>>, allow_during_interruption: bool) -> Self {
         Self {
             task,
             deps,
@@ -27,7 +27,7 @@ impl SchedMsg {
 }
 
 /// Schedules and executes tasks with concurrency control
-pub struct Scheduler {
+pub(crate) struct Scheduler {
     pub semaphore: Arc<Semaphore>,
     pub jset: Arc<Mutex<JoinSet<Result<()>>>>,
     pub sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
@@ -36,7 +36,7 @@ pub struct Scheduler {
 }
 
 impl Scheduler {
-    pub fn new(jobs: usize) -> Self {
+    pub(crate) fn new(jobs: usize) -> Self {
         let (sched_tx, sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
         Self {
             semaphore: Arc::new(Semaphore::new(crate::jobs::normalize(jobs))),
@@ -48,7 +48,7 @@ impl Scheduler {
     }
 
     /// Take ownership of the receiver (can only be called once)
-    pub fn take_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<SchedMsg>> {
+    pub(crate) fn take_receiver(&mut self) -> Option<mpsc::UnboundedReceiver<SchedMsg>> {
         self.sched_rx.take()
     }
 
@@ -59,7 +59,7 @@ impl Scheduler {
     /// the duration of their natural runtime. We keep draining the JoinSet
     /// after sending the signal so the parent can exit cleanly once everyone
     /// has actually wrapped up.
-    pub async fn join_all(&self, continue_on_error: bool) -> Result<()> {
+    pub(crate) async fn join_all(&self, continue_on_error: bool) -> Result<()> {
         let mut killed = false;
         while let Some(result) = self.jset.lock().await.join_next().await {
             // result is Result<Result<()>, JoinError>: outer Err means the
@@ -81,7 +81,7 @@ impl Scheduler {
     }
 
     /// Create a spawn context
-    pub fn spawn_context(&self, config: Arc<Config>) -> SpawnContext {
+    pub(crate) fn spawn_context(&self, config: Arc<Config>) -> SpawnContext {
         SpawnContext {
             semaphore: self.semaphore.clone(),
             config,
@@ -92,7 +92,7 @@ impl Scheduler {
     }
 
     /// Get the in-flight task count
-    pub fn in_flight_count(&self) -> usize {
+    pub(crate) fn in_flight_count(&self) -> usize {
         self.in_flight.load(Ordering::SeqCst)
     }
 
@@ -101,7 +101,10 @@ impl Scheduler {
     /// Forwards initial leaves synchronously, then spawns an async task to forward
     /// remaining leaves as they become available. Returns a watch receiver that signals
     /// when all dependencies are complete.
-    pub async fn pump_deps(&self, deps: Arc<Mutex<Deps>>) -> tokio::sync::watch::Receiver<bool> {
+    pub(crate) async fn pump_deps(
+        &self,
+        deps: Arc<Mutex<Deps>>,
+    ) -> tokio::sync::watch::Receiver<bool> {
         let (main_done_tx, main_done_rx) = tokio::sync::watch::channel(false);
         let sched_tx = self.sched_tx.clone();
         let deps_clone = deps.clone();
@@ -167,7 +170,7 @@ impl Scheduler {
     ///
     /// Or if should_stop returns true (for early exit due to failures or interruption).
     /// An interruption always stops new work, even in continue-on-error mode.
-    pub async fn run_loop<F, Fut>(
+    pub(crate) async fn run_loop<F, Fut>(
         &mut self,
         main_done_rx: &mut tokio::sync::watch::Receiver<bool>,
         main_deps: Arc<Mutex<Deps>>,
@@ -277,7 +280,7 @@ impl Scheduler {
 
 /// Context passed to spawned tasks
 #[derive(Clone)]
-pub struct SpawnContext {
+pub(crate) struct SpawnContext {
     pub semaphore: Arc<Semaphore>,
     pub config: Arc<Config>,
     pub sched_tx: Arc<mpsc::UnboundedSender<SchedMsg>>,
