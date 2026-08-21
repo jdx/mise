@@ -109,9 +109,15 @@ function __zsh_like_cd()
 	chpwd_functions+=(_mise_hook_chpwd)
 fi
 
-_mise_hook
+# `--no-hook-env` means mise does not apply the environment at activation -- zsh, fish and pwsh
+# all keep their equivalent call inside this guard, and bash did too until the script moved out
+# of bash.rs into this file (#8920), which left the call outside it. The skip flag exists because
+# the hook runs here, so the two belong under one condition; it is set first so the `$?` that
+# `_mise_hook` saves is not read straight off the guard's condition, where it is the test's
+# status rather than a command's (SC2319).
 if [ "$__MISE_HOOK_ENABLED" = "1" ]; then
 	__MISE_BASH_SKIP_FIRST_PROMPT=1
+	_mise_hook
 fi
 
 # shellcheck shell=bash

@@ -3,14 +3,16 @@ use std::path::PathBuf;
 use eyre::Result;
 use itertools::sorted;
 
-use crate::{backend, config, dirs, file};
+use crate::{backend, config, file};
 use crate::{config::Config, config::Settings};
+
+use super::reconcile;
 
 /// Symlinks all tool versions from an external tool into mise
 ///
 /// For example, use this to import all Homebrew node installs into mise
 ///
-/// This won't overwrite any existing installs but will overwrite any existing symlinks
+/// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct SyncNode {
@@ -36,14 +38,32 @@ pub struct SyncNodeType {
 
 impl SyncNode {
     pub async fn run(self) -> Result<()> {
+        let node = backend::get(&"node".into()).unwrap();
+        let mut providers = vec![];
         if self._type.brew {
-            self.run_brew().await?;
+            providers.push(self.brew_links()?);
         }
         if self._type.nvm {
-            self.run_nvm().await?;
+            providers.push(self.nvm_links()?);
         }
         if self._type.nodenv {
-            self.run_nodenv().await?;
+            providers.push(self.nodenv_links()?);
+        }
+        let mut changed = reconcile::reconcile_all(node.ba(), providers)?.into_iter();
+        if self._type.brew {
+            for v in changed.next().unwrap_or_default() {
+                miseprintln!("Synced node@{} from Homebrew", v);
+            }
+        }
+        if self._type.nvm {
+            for v in changed.next().unwrap_or_default() {
+                miseprintln!("Synced node@{} from nvm", v);
+            }
+        }
+        if self._type.nodenv {
+            for v in changed.next().unwrap_or_default() {
+                miseprintln!("Synced node@{} from nodenv", v);
+            }
         }
         let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
@@ -57,15 +77,11 @@ impl SyncNode {
         Ok(())
     }
 
-    async fn run_brew(&self) -> Result<()> {
-        let node = backend::get(&"node".into()).unwrap();
+    fn brew_links(&self) -> Result<reconcile::ProviderLinks> {
+        let brew_opt = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
 
-        let brew_prefix = PathBuf::from(cmd!("brew", "--prefix").read()?).join("opt");
-        let installed_versions_path = dirs::INSTALLS.join("node");
-
-        file::remove_symlinks_with_target_prefix(&installed_versions_path, &brew_prefix)?;
-
-        let subdirs = file::dir_subdirs(&brew_prefix)?;
+        let subdirs = file::dir_subdirs(&brew_opt)?;
+        let mut links = vec![];
         for entry in sorted(subdirs) {
             if entry.starts_with(".") {
                 continue;
@@ -74,71 +90,47 @@ impl SyncNode {
                 continue;
             }
             let v = entry.trim_start_matches("node@");
-            if node.create_symlink(v, &brew_prefix.join(&entry))?.is_some() {
-                miseprintln!("Synced node@{} from Homebrew", v);
-            }
+            links.push((v.to_string(), brew_opt.join(&entry)));
         }
-        Ok(())
+        let ownership = reconcile::LinkOwnership::in_namespace(&brew_opt);
+        Ok(reconcile::ProviderLinks::new(ownership, links))
     }
 
-    async fn run_nvm(&self) -> Result<()> {
-        let node = backend::get(&"node".into()).unwrap();
+    fn nvm_links(&self) -> Result<reconcile::ProviderLinks> {
         let settings = Settings::get();
 
         let nvm_versions_path = file::replace_path(&settings.node.nvm_dir)
             .join("versions")
             .join("node");
-        let installed_versions_path = dirs::INSTALLS.join("node");
 
-        let removed =
-            file::remove_symlinks_with_target_prefix(&installed_versions_path, &nvm_versions_path)?;
-        if !removed.is_empty() {
-            debug!("Removed symlinks: {removed:?}");
-        }
-
-        let mut created = vec![];
         let subdirs = file::dir_subdirs(&nvm_versions_path)?;
+        let mut links = vec![];
         for entry in sorted(subdirs) {
             if entry.starts_with(".") {
                 continue;
             }
             let v = entry.trim_start_matches('v');
-            let symlink = node.create_symlink(v, &nvm_versions_path.join(&entry))?;
-            if let Some(symlink) = symlink {
-                created.push(symlink);
-                miseprintln!("Synced node@{} from nvm", v);
-            } else {
-                info!("Skipping node@{v} from nvm because it already exists in mise");
-            }
+            links.push((v.to_string(), nvm_versions_path.join(&entry)));
         }
-        if !created.is_empty() {
-            debug!("Created symlinks: {created:?}");
-        }
-        Ok(())
+        let ownership = reconcile::LinkOwnership::in_namespace(&nvm_versions_path);
+        Ok(reconcile::ProviderLinks::new(ownership, links))
     }
 
-    async fn run_nodenv(&self) -> Result<()> {
-        let node = backend::get(&"node".into()).unwrap();
+    fn nodenv_links(&self) -> Result<reconcile::ProviderLinks> {
         let settings = Settings::get();
 
         let nodenv_versions_path = file::replace_path(&settings.node.nodenv_root).join("versions");
-        let installed_versions_path = dirs::INSTALLS.join("node");
-
-        file::remove_symlinks_with_target_prefix(&installed_versions_path, &nodenv_versions_path)?;
 
         let subdirs = file::dir_subdirs(&nodenv_versions_path)?;
+        let mut links = vec![];
         for v in sorted(subdirs) {
             if v.starts_with(".") {
                 continue;
             }
-            if node
-                .create_symlink(&v, &nodenv_versions_path.join(&v))?
-                .is_some()
-            {
-                miseprintln!("Synced node@{} from nodenv", v);
-            }
+            links.push((v.clone(), nodenv_versions_path.join(&v)));
         }
-        Ok(())
+        let ownership = reconcile::LinkOwnership::in_namespace(&nodenv_versions_path);
+        Ok(reconcile::ProviderLinks::new(ownership, links))
     }
 }
 

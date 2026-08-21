@@ -829,6 +829,10 @@
           "description": "TTL for cached environments",
           "type": "string"
         },
+        "env_conf_d": {
+          "description": "Enable environment-specific filenames in conf.d directories.",
+          "type": "boolean"
+        },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
           "type": "string"

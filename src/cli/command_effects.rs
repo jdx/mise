@@ -158,11 +158,13 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("env", Read),
     ("fmt", Write),
     ("generate", Read),
+    // Deprecated spelling of `generate install-script`.
     ("generate bootstrap", Write),
     ("generate config", Write),
     ("generate devcontainer", Write),
     ("generate git-pre-commit", Write),
     ("generate github-action", Write),
+    ("generate install-script", Write),
     ("generate task-docs", Write),
     ("generate task-stubs", Write),
     ("generate tool-stub", Write),

@@ -1,5 +1,59 @@
 # Changelog
 
+## [2026.8.10](https://github.com/jdx/mise/compare/v2026.8.9..v2026.8.10) - 2026-08-20
+
+### 🚀 Features
+
+- **(bootstrap)** forward config environments to remote hosts by @jdx in [#12182](https://github.com/jdx/mise/pull/12182)
+- **(cache)** consume blob pack response metadata by @jdx in [#12193](https://github.com/jdx/mise/pull/12193)
+
+### 🐛 Bug Fixes
+
+- **(backend)** preserve Windows ZIP preference by @risu729 in [#12200](https://github.com/jdx/mise/pull/12200)
+- **(backend)** normalize shorthand archive stems by @risu729 in [#12199](https://github.com/jdx/mise/pull/12199)
+- **(bootstrap)** compose symlink-each targets by leaf by @jdx in [#12190](https://github.com/jdx/mise/pull/12190)
+- **(brew)** accept null cask auto_updates metadata by @jdx in [#12192](https://github.com/jdx/mise/pull/12192)
+- **(registry)** point aqua backends at renamed packages by @kkom in [#12186](https://github.com/jdx/mise/pull/12186)
+- **(self-update)** sweep stale copies before the TEMP length check by @JamBalaya56562 in [#12205](https://github.com/jdx/mise/pull/12205)
+- **(sync)** reconcile external provider links by @risu729 in [#11682](https://github.com/jdx/mise/pull/11682)
+- **(system)** recognize pacman package providers by @jdx in [#12183](https://github.com/jdx/mise/pull/12183)
+
+### 📚 Documentation
+
+- **(trust)** use neutral config file help by @risu729 in [#12210](https://github.com/jdx/mise/pull/12210)
+- fix mobile tables and banner overlays by @jdx in [#12184](https://github.com/jdx/mise/pull/12184)
+- clarify registry addition popularity bar by @jdx in [#12208](https://github.com/jdx/mise/pull/12208)
+
+### ⚡ Performance
+
+- **(cache)** batch foreground blob lookups by @jdx in [#12191](https://github.com/jdx/mise/pull/12191)
+
+### 🧪 Testing
+
+- **(aqua)** remove canonical package gate by @jdx in [#12209](https://github.com/jdx/mise/pull/12209)
+- **(e2e)** make the assert helpers usable from zsh by @JamBalaya56562 in [#12176](https://github.com/jdx/mise/pull/12176)
+
+### 📦 Registry
+
+- install azure-cli from the official Windows zip by @JamBalaya56562 in [#12161](https://github.com/jdx/mise/pull/12161)
+
+### New Contributors
+
+- @kkom made their first contribution in [#12186](https://github.com/jdx/mise/pull/12186)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (4)
+
+- [`bazel-contrib/buildtools/buildifier`](https://github.com/bazel-contrib/buildtools)
+- [`bazel-contrib/buildtools/buildozer`](https://github.com/bazel-contrib/buildtools)
+- [`gohugoio/hugo/hugo-extended-withdeploy`](https://github.com/gohugoio/hugo)
+- [`leoafarias/fvm`](https://github.com/leoafarias/fvm)
+
+#### Updated Packages (1)
+
+- [`Arata1202/ascdir`](https://github.com/Arata1202/ascdir)
+
 ## [2026.8.9](https://github.com/jdx/mise/compare/v2026.8.8..v2026.8.9) - 2026-08-19
 
 ### 🚀 Features

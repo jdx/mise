@@ -12,7 +12,7 @@ use crate::{
     remote_source::{RemoteGitSource, RemoteSource},
 };
 
-use super::TaskFileProvider;
+use super::{TaskFileArtifact, TaskFileProvider};
 
 #[derive(Debug)]
 pub struct RemoteTaskGitBuilder {
@@ -83,6 +83,19 @@ impl RemoteTaskGit {
         )
     }
 
+    fn prepare_cached_path(path: &PathBuf, destination: &PathBuf) -> Result<()> {
+        if let Err(err) = Self::prepare_remote_path(path) {
+            if let Err(cleanup_err) = crate::file::remove_all(destination) {
+                warn!(
+                    "failed to remove unusable remote Git task checkout {}: {cleanup_err:#}",
+                    display_path(destination)
+                );
+            }
+            return Err(err);
+        }
+        Ok(())
+    }
+
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
         let key = format!(
             "{}{}",
@@ -98,14 +111,81 @@ impl RemoteTaskGit {
             .unwrap()
     }
 
-    #[cfg(test)]
-    fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
-        RemoteSource::parse_git_ssh(file).map(|source| source.into())
+    fn unique_artifact_root(&self, cache_key: &str) -> Result<PathBuf> {
+        file::create_dir_all(&self.storage_path)?;
+        let temp_dir = tempfile::Builder::new()
+            .prefix(&format!("{cache_key}-"))
+            .tempdir_in(&self.storage_path)?;
+        Ok(temp_dir.keep())
     }
 
-    #[cfg(test)]
-    fn parse_https(file: &str) -> Option<GitRepoStructure> {
-        RemoteSource::parse_git_https(file).map(|source| source.into())
+    fn clone_to(repo_structure: &GitRepoStructure, destination: &PathBuf) -> Result<()> {
+        let git_repo = git::Git::new(destination);
+        let mut clone_options = CloneOptions::default();
+        if let Some(branch) = &repo_structure.branch {
+            trace!("Use specific branch {}", branch);
+            clone_options = clone_options.branch(branch);
+        }
+        git_repo.clone(repo_structure.url_without_path.as_str(), clone_options)
+    }
+
+    fn fetch_to_destination(
+        &self,
+        repo_structure: &GitRepoStructure,
+        destination: &PathBuf,
+        reuse_existing: bool,
+    ) -> Result<PathBuf> {
+        let repo_file_path = repo_structure.path.clone();
+        let full_path = destination.join(&repo_file_path);
+
+        debug!("Repo structure: {:?}", repo_structure);
+
+        let _lock = LockFile::new(destination)
+            .with_callback(|l| {
+                debug!(
+                    "waiting for lock on remote git task cache: {}",
+                    display_path(l)
+                );
+            })
+            .lock()?;
+
+        if reuse_existing && full_path.exists() {
+            debug!("Using cached file: {:?}", full_path);
+            Self::prepare_cached_path(&full_path, destination)?;
+            return Ok(full_path);
+        }
+
+        let mut tmp_destination = destination.as_os_str().to_os_string();
+        tmp_destination.push(".clone-tmp");
+        let tmp_destination = PathBuf::from(tmp_destination);
+        if tmp_destination.exists() {
+            crate::file::remove_all(&tmp_destination)?;
+        }
+
+        match Self::clone_to(repo_structure, &tmp_destination) {
+            Ok(()) => {
+                if destination.exists()
+                    && let Err(e) = crate::file::remove_all(destination)
+                {
+                    let _ = crate::file::remove_all(&tmp_destination);
+                    return Err(e);
+                }
+                if let Err(e) = std::fs::rename(&tmp_destination, destination) {
+                    let _ = crate::file::remove_all(&tmp_destination);
+                    return Err(eyre::eyre!(
+                        "failed to move cloned repo into cache at {}: {e}",
+                        display_path(destination)
+                    ));
+                }
+            }
+            Err(e) => {
+                let _ = crate::file::remove_all(&tmp_destination);
+                return Err(e);
+            }
+        }
+
+        Self::prepare_cached_path(&full_path, destination)?;
+        Ok(full_path)
     }
 }
 
@@ -125,69 +205,23 @@ impl TaskFileProvider for RemoteTaskGit {
         let repo_structure = self.get_repo_structure(file);
         let cache_key = self.get_cache_key(&repo_structure);
         let destination = self.storage_path.join(&cache_key);
-        let repo_file_path = repo_structure.path.clone();
-        let full_path = destination.join(&repo_file_path);
+        self.fetch_to_destination(&repo_structure, &destination, self.is_cached)
+    }
 
-        debug!("Repo structure: {:?}", repo_structure);
-
-        let _lock = LockFile::new(&destination)
-            .with_callback(|l| {
-                debug!(
-                    "waiting for lock on remote git task cache: {}",
-                    display_path(l)
-                );
-            })
-            .lock()?;
-
+    async fn get_local_artifact(&self, file: &str) -> Result<TaskFileArtifact> {
         if self.is_cached {
-            trace!("Cache mode enabled");
-            if full_path.exists() {
-                debug!("Using cached file: {:?}", full_path);
-                Self::prepare_remote_path(&full_path)?;
-                return Ok(full_path);
-            }
-        } else {
-            trace!("Cache mode disabled");
+            return Ok(TaskFileArtifact::persistent(
+                self.get_local_path(file).await?,
+            ));
         }
-
-        let tmp_destination = self.storage_path.join(format!("{}.clone-tmp", cache_key));
-        if tmp_destination.exists() {
-            crate::file::remove_all(&tmp_destination)?;
-        }
-
-        let git_repo = git::Git::new(&tmp_destination);
-
-        let mut clone_options = CloneOptions::default();
-
-        if let Some(branch) = &repo_structure.branch {
-            trace!("Use specific branch {}", branch);
-            clone_options = clone_options.branch(branch);
-        }
-
-        match git_repo.clone(repo_structure.url_without_path.as_str(), clone_options) {
-            Ok(()) => {
-                if destination.exists()
-                    && let Err(e) = crate::file::remove_all(&destination)
-                {
-                    let _ = crate::file::remove_all(&tmp_destination);
-                    return Err(e);
-                }
-                if let Err(e) = std::fs::rename(&tmp_destination, &destination) {
-                    let _ = crate::file::remove_all(&tmp_destination);
-                    return Err(eyre::eyre!(
-                        "failed to move cloned repo into cache at {}: {e}",
-                        display_path(&destination)
-                    ));
-                }
-            }
-            Err(e) => {
-                let _ = crate::file::remove_all(&tmp_destination);
-                return Err(e);
-            }
-        }
-
-        Self::prepare_remote_path(&full_path)?;
-        Ok(full_path)
+        let repo_structure = self.get_repo_structure(file);
+        let cache_key = self.get_cache_key(&repo_structure);
+        let artifact_root = self.unique_artifact_root(&cache_key)?;
+        let artifact = TaskFileArtifact::temporary(artifact_root.clone(), artifact_root.clone());
+        Self::clone_to(&repo_structure, &artifact_root)?;
+        let path = artifact_root.join(repo_structure.path);
+        Self::prepare_remote_path(&path)?;
+        Ok(artifact.with_path(path))
     }
 }
 
@@ -195,6 +229,28 @@ impl TaskFileProvider for RemoteTaskGit {
 mod tests {
 
     use super::*;
+
+    fn parse_ssh(file: &str) -> Option<GitRepoStructure> {
+        RemoteSource::parse_git_ssh(file).map(Into::into)
+    }
+
+    fn parse_https(file: &str) -> Option<GitRepoStructure> {
+        RemoteSource::parse_git_https(file).map(Into::into)
+    }
+
+    #[test]
+    fn test_unique_artifact_root_remains_reserved_for_clone() {
+        let storage = tempfile::tempdir().unwrap();
+        let provider = RemoteTaskGit {
+            storage_path: storage.path().to_path_buf(),
+            is_cached: false,
+        };
+
+        let artifact_root = provider.unique_artifact_root("cache-key").unwrap();
+
+        assert!(artifact_root.is_dir());
+        assert_eq!(std::fs::read_dir(&artifact_root).unwrap().count(), 0);
+    }
 
     #[test]
     #[cfg(unix)]
@@ -242,6 +298,25 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
+    fn test_prepare_cached_path_removes_checkout_on_failure() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let destination = temp_dir.path().join("checkout");
+        let task_file = destination.join("task");
+        let target = temp_dir.path().join("target");
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(&target, "#!/usr/bin/env bash\necho ok\n").unwrap();
+        symlink(&target, &task_file).unwrap();
+
+        let error = RemoteTaskGit::prepare_cached_path(&task_file, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("not a regular file"));
+        assert!(!destination.exists());
+    }
+
+    #[test]
     fn test_valid_parse_ssh() {
         let test_cases = vec![
             "git::ssh://git@github.com/myorg/example.git//myfile?ref=v1.0.0",
@@ -262,11 +337,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_ssh(url).is_some(),
-                "Failed for: {}",
-                url
-            );
+            assert!(parse_ssh(url).is_some(), "Failed for: {}", url);
         }
     }
 
@@ -284,11 +355,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_ssh(url).is_none(),
-                "Should fail for: {}",
-                url
-            );
+            assert!(parse_ssh(url).is_none(), "Should fail for: {}", url);
         }
     }
 
@@ -310,11 +377,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_https(url).is_some(),
-                "Failed for: {}",
-                url
-            );
+            assert!(parse_https(url).is_some(), "Failed for: {}", url);
         }
     }
 
@@ -331,11 +394,7 @@ mod tests {
         ];
 
         for url in test_cases {
-            assert!(
-                RemoteTaskGit::parse_https(url).is_none(),
-                "Should fail for: {}",
-                url
-            );
+            assert!(parse_https(url).is_none(), "Should fail for: {}", url);
         }
     }
 
@@ -399,7 +458,7 @@ mod tests {
         ];
 
         for (url, expected_repo, expected_path, expected_branch) in test_cases {
-            let repo = RemoteTaskGit::parse_ssh(url).unwrap();
+            let repo = parse_ssh(url).unwrap();
             assert_eq!(expected_repo, repo.url_without_path);
             assert_eq!(expected_path, repo.path);
             assert_eq!(expected_branch, repo.branch);
@@ -448,7 +507,7 @@ mod tests {
         ];
 
         for (url, expected_repo, expected_path, expected_branch) in test_cases {
-            let repo = RemoteTaskGit::parse_https(url).unwrap();
+            let repo = parse_https(url).unwrap();
             assert_eq!(expected_repo, repo.url_without_path);
             assert_eq!(expected_path, repo.path);
             assert_eq!(expected_branch, repo.branch);
@@ -493,8 +552,8 @@ mod tests {
         ];
 
         for (first_url, second_url, expected) in test_cases {
-            let first_repo = RemoteTaskGit::parse_ssh(first_url).unwrap();
-            let second_repo = RemoteTaskGit::parse_ssh(second_url).unwrap();
+            let first_repo = parse_ssh(first_url).unwrap();
+            let second_repo = parse_ssh(second_url).unwrap();
             let first_cache_key = remote_task_git.get_cache_key(&first_repo);
             let second_cache_key = remote_task_git.get_cache_key(&second_repo);
             assert_eq!(expected, first_cache_key == second_cache_key);
@@ -539,8 +598,8 @@ mod tests {
         ];
 
         for (first_url, second_url, expected) in test_cases {
-            let first_repo = RemoteTaskGit::parse_https(first_url).unwrap();
-            let second_repo = RemoteTaskGit::parse_https(second_url).unwrap();
+            let first_repo = parse_https(first_url).unwrap();
+            let second_repo = parse_https(second_url).unwrap();
             let first_cache_key = remote_task_git.get_cache_key(&first_repo);
             let second_cache_key = remote_task_git.get_cache_key(&second_repo);
             assert_eq!(expected, first_cache_key == second_cache_key);

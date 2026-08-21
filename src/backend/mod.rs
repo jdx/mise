@@ -2557,22 +2557,6 @@ pub trait Backend: Debug + Send + Sync {
         }
         None
     }
-    fn create_symlink(&self, version: &str, target: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
-        let _state_lock = install_state::lock_tool_version(&self.ba().short, version)?;
-        let link = self.ba().installs_path.join(version);
-        if link.exists() {
-            if target.exists() && file::is_symlink_to(&link, target) {
-                install_state::clear_incomplete_marker(&self.ba().short, version)?;
-            }
-            return Ok(None);
-        }
-        file::create_dir_all(link.parent().unwrap())?;
-        let link = file::make_symlink(target, &link)?;
-        if target.exists() {
-            install_state::clear_incomplete_marker(&self.ba().short, version)?;
-        }
-        Ok(Some(link))
-    }
     fn list_installed_versions_matching(&self, query: &str) -> Vec<String> {
         let versions = self.list_installed_versions();
         // No async config lookup available here; fall back to inline/registry
@@ -3123,10 +3107,10 @@ pub trait Backend: Debug + Send + Sync {
                 .collect()
         } else if crate::config::config_file::idiomatic_version::package_json::is_package_json(path)
         {
-            crate::config::config_file::idiomatic_version::package_json::parse(path, self.id())?
-                .into_iter()
-                .map(|version| (version, None))
-                .collect()
+            crate::config::config_file::idiomatic_version::package_json::parse_with_options(
+                path,
+                self.id(),
+            )?
         } else {
             self._parse_idiomatic_file_with_options(path).await?
         };
@@ -3394,7 +3378,7 @@ pub trait Backend: Debug + Send + Sync {
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
         // hook, resolved against this tool's already-installed dependencies. The
         // config env added above is resolved without tools (`NonToolsOnly`), so it
-        // omits these; `install_dependency_toolset` is fully resolved (offline) so
+        // omits these; `install_dependency_context` is fully resolved (offline) so
         // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
         // unresolved install toolset during a combined install. PATH stays owned by
         // `path_env` below. Best-effort: any resolution error leaves the tool-less
@@ -3419,11 +3403,8 @@ pub trait Backend: Debug + Send + Sync {
                 .is_some_and(|deps| !deps.is_empty());
         if declares_deps {
             let base = env_vars.clone();
-            let tool_vals = match self
-                .install_dependency_toolset(&ctx.config, &tv_exact)
-                .await
-            {
-                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+            let tool_vals = match self.install_dependency_context(ctx, &tv_exact).await {
+                Ok(dependencies) => dependencies.toolset.tool_val_env(&ctx.config, &base).await,
                 Err(e) => Err(e),
             };
             match tool_vals {
@@ -3743,47 +3724,12 @@ pub trait Backend: Debug + Send + Sync {
         Ok(ts)
     }
 
-    /// Like [`Self::dependency_toolset`] but also includes this tool's per-instance
-    /// mise.toml `depends` option (`tv.request.options().depends`). `get_dependencies`
-    /// only covers backend/plugin-metadata deps, so a user-declared
-    /// `gcloud = { depends = ["python"] }` is invisible to `dependency_toolset`.
-    /// Used anywhere an install needs the concrete paths or values of its declared
-    /// dependencies, including `tools = true` `[env]` value templates and asdf
-    /// install scripts. Resolved offline; the declared deps are installed before the
-    /// dependent (depends ordering), so their install paths are present. (#10282,
-    /// #4384)
-    async fn install_dependency_toolset(
+    async fn install_dependency_context<'a>(
         &self,
-        config: &Arc<Config>,
+        ctx: &'a InstallContext,
         tv: &ToolVersion,
-    ) -> eyre::Result<Toolset> {
-        let mut names: std::collections::HashSet<String> = self
-            .get_all_dependencies(true)?
-            .into_iter()
-            .map(|ba| ba.short)
-            .collect();
-        let opts = tv.request.options();
-        if let Some(user_deps) = opts.core.depends {
-            names.extend(
-                user_deps
-                    .into_iter()
-                    .flat_map(|dep| BackendArg::from(dep).all_fulls()),
-            );
-        }
-        let mut ts: Toolset = config
-            .get_tool_request_set()
-            .await?
-            .filter_by_tool(names)
-            .into();
-        ts.resolve_with_opts(
-            config,
-            &ResolveOptions {
-                offline: true,
-                ..Default::default()
-            },
-        )
-        .await?;
-        Ok(ts)
+    ) -> eyre::Result<&'a crate::install_context::InstallDependencyContext> {
+        ctx.dependency_context(&tv.request).await
     }
 
     async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {

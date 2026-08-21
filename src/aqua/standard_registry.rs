@@ -23,9 +23,9 @@ static AQUA_STANDARD_REGISTRY_ALIASES: phf::Map<&'static str, &'static str> = in
     "/aqua_standard_registry_aliases.rs"
 ));
 
-/// Returns all package IDs from the baked-in aqua registry.
-pub fn package_ids() -> Vec<&'static str> {
-    AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
+/// Returns all package IDs from the baked-in Aqua registry without allocating a collection.
+pub fn package_ids() -> impl Iterator<Item = &'static str> {
+    AQUA_STANDARD_REGISTRY_FILES.keys().copied()
 }
 
 pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {
@@ -105,39 +105,6 @@ mod tests {
         );
         assert_eq!(alias_package.repo_owner, canonical_package.repo_owner);
         assert_eq!(alias_package.repo_name, canonical_package.repo_name);
-    }
-
-    #[test]
-    fn aqua_backends_name_canonical_packages() {
-        let stale = crate::registry::baked_registry()
-            .iter()
-            .flat_map(|(short, tool)| {
-                tool.backends
-                    .iter()
-                    .map(move |backend| (short, backend.full))
-            })
-            .filter_map(|(short, full)| {
-                let id = full.strip_prefix("aqua:")?;
-                let id = id.split('[').next().unwrap_or(id);
-                if AQUA_STANDARD_REGISTRY_FILES.contains_key(id) {
-                    return None;
-                }
-                let Some(canonical) = AQUA_STANDARD_REGISTRY_ALIASES.get(id) else {
-                    return Some(format!(
-                        "  registry/{short}.toml: aqua:{id} names no package"
-                    ));
-                };
-                // The gate lowercases both sides, so a case-only alias still matches.
-                (!canonical.eq_ignore_ascii_case(id))
-                    .then(|| format!("  registry/{short}.toml: aqua:{id} -> aqua:{canonical}"))
-            })
-            .collect::<Vec<_>>();
-
-        assert!(
-            stale.is_empty(),
-            "aqua backends not naming a package the aqua registry keys:\n{}",
-            stale.join("\n")
-        );
     }
 
     #[test]

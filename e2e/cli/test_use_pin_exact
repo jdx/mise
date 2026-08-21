@@ -69,6 +69,9 @@ if [[ $1 == view && $3 == versions ]]; then
   echo '{"versions":["1.0.1"],"time":{}}'
   exit 0
 fi
+if [[ $1 == view && $3 == version && $4 == deprecated ]]; then
+  exit 0
+fi
 echo "unexpected npm invocation: $*" >&2
 exit 1
 EOF

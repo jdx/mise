@@ -35,7 +35,7 @@ use itertools::Itertools;
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub struct Trust {
-    /// The config file to trust
+    /// The config file whose trust status to change
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 

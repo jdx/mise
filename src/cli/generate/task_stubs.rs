@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 /// Generates shims to run mise tasks
 ///
-/// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
+/// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
 /// so contributors to a project can execute mise tasks without installing mise into their system.
 /// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 #[derive(Debug, clap::Args)]
@@ -24,7 +24,7 @@ pub struct TaskStubs {
 
     /// Path to a mise bin to use when running the task stub.
     ///
-    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
+    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
     #[clap(long, short, verbatim_doc_comment, default_value = "mise")]
     mise_bin: PathBuf,
 }
@@ -84,7 +84,7 @@ impl TaskStubs {
     /// The Windows launcher body for `task`, mirroring what the stub itself runs.
     ///
     /// `mise_bin` is embedded as given: with the default `mise` it resolves off PATH, and a
-    /// `--mise-bin` pointing at a `mise generate bootstrap` script will start working here as soon
+    /// `--mise-bin` pointing at a `mise generate install-script` script will start working here as soon
     /// as that script gains a Windows form of its own.
     fn generate_launcher(&self, task: &Task) -> String {
         let mise_bin = super::cmd_quote(&self.mise_bin.to_string_lossy());
