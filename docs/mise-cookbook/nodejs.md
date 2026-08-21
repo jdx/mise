@@ -121,7 +121,8 @@ This example uses `pnpm` as the package manager. It expects
 ```
 
 The install task is skipped when `package.json`, `pnpm-lock.yaml`, and
-`mise.toml` have not changed.
+`mise.toml` have not changed and `node_modules/.pnpm/lock.yaml` exists and is up
+to date.
 
 ```toml [mise.toml]
 [tools]
