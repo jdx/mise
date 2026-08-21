@@ -144,6 +144,23 @@ This design means CI environments that don't set `MISE_ENV` only depend on `mise
 
 Both `mise.lock` and `mise.<env>.lock` files should be committed to version control. `mise.local.lock` and `mise.<env>.local.lock` should be gitignored alongside their corresponding config files.
 
+## Global Lockfiles
+
+Tools declared in the global config (`~/.config/mise/config.toml`) are never locked by a
+plain `mise lock`, which only targets the active project config root. Use `mise lock --global`:
+
+```sh
+mise lock --global              # update global (and system) config lockfiles
+```
+
+::: tip
+This also applies when your global config is a symlink into a dotfiles repo, for example
+`~/.config/mise/config.toml` -> `~/dotfiles/mise.toml`. mise reaches the same file through
+both paths and treats it as the global config, so `mise lock` run from the repo reports that
+nothing is configured in project scope. Run `mise lock --global` instead; the lockfile is
+written next to the symlink target (`~/dotfiles/mise.lock`).
+:::
+
 ## Local Lockfiles
 
 Tools defined in `mise.local.toml` (which is typically gitignored) use a separate `mise.local.lock` file. This keeps local tool configurations separate from the committed lockfile.
