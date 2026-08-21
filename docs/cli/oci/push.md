@@ -84,24 +84,24 @@ image index containing one entry per platform, preserving entries
 other architectures pushed. Run `mise oci push --update-index` from
 one runner per platform to assemble a multi-arch tag.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 Build and push to GHCR:
-$ [1mmise oci push ghcr.io/me/devenv:latest[22m
+$ mise oci push ghcr.io/me/devenv:latest
 
 Push an image built earlier:
-$ [1mmise oci build -o ./img[22m
-$ [1mmise oci push --image-dir ./img ghcr.io/me/devenv:v1[22m
+$ mise oci build -o ./img
+$ mise oci push --image-dir ./img ghcr.io/me/devenv:v1
 ```
 
-[1m[4mAuth:[22m[24m
+Auth:
 
 ```
 Credentials are resolved the same way docker/podman resolve them:
-[1m$REGISTRY_AUTH_FILE[22m, [1m$XDG_RUNTIME_DIR/containers/auth.json[22m,
-[1m~/.config/containers/auth.json[22m, then [1m~/.docker/config.json[22m
+$REGISTRY_AUTH_FILE, $XDG_RUNTIME_DIR/containers/auth.json,
+~/.config/containers/auth.json, then ~/.docker/config.json
 (inline auths and credential helpers). Log in with either:
-$ [1mdocker login ghcr.io[22m
-$ [1mpodman login ghcr.io[22m
+$ docker login ghcr.io
+$ podman login ghcr.io
 ```

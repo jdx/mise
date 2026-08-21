@@ -21,9 +21,9 @@ Task to edit
 
 Display the path to the task instead of editing it
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise tasks edit build[22m
-[1mmise tasks edit test[22m
+mise tasks edit build
+mise tasks edit test
 ```

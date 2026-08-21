@@ -22,14 +22,14 @@ Checks the remote for newer versions and only displays plugins that are outdated
 Show the git url for each plugin
 e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise plugins ls[22m
+$ mise plugins ls
 cmake
 poetry
 
-$ [1mmise plugins ls --urls[22m
+$ mise plugins ls --urls
 cmake     https://github.com/mise-plugins/vfox-cmake.git
 poetry    https://github.com/mise-plugins/vfox-poetry.git
 ```

@@ -31,9 +31,9 @@ Print the config change without writing it
 
 Write to this config file or directory
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap packages brew tap railwaycat/emacsmacport[22m
-[1mmise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git[22m
+mise bootstrap packages brew tap railwaycat/emacsmacport
+mise bootstrap packages brew tap acme/tools https://github.com/acme/homebrew-tools.git
 ```

@@ -97,23 +97,23 @@ Allocate a TTY (pass `-t` to the engine)
 
 Working directory inside the container
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 Build the current mise.toml and drop into bash:
-$ [1mmise oci run -it -- bash[22m
+$ mise oci run -it -- bash
 
 Run a one-shot command with env + volume (note: `-v` is reserved
 for --verbose, so use `--volume`):
-$ [1mmise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test[22m
+$ mise oci run -e DEBUG=1 --volume $PWD:/work -w /work -- npm test
 
 Re-use a previously built layout (skip the build step):
-$ [1mmise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'[22m
+$ mise oci build -o ./img && mise oci run --image-dir ./img -- node -e 'console.log(process.version)'
 ```
 
-[1m[4mEngines:[22m[24m
+Engines:
 
 ```
-Prefers [1mpodman[22m (loads OCI layouts natively). Falls back to [1mdocker[22m
-(loaded via [1mdocker load[22m). Pass [1m--engine podman[22m or [1m--engine docker[22m to override.
+Prefers podman (loads OCI layouts natively). Falls back to docker
+(loaded via docker load). Pass --engine podman or --engine docker to override.
 ```

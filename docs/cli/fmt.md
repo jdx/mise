@@ -24,8 +24,8 @@ Check if the configs are formatted, no formatting is done
 Read config from stdin and write its formatted version into
 stdout
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise fmt[22m
+mise fmt
 ```

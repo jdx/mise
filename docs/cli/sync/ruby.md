@@ -13,10 +13,10 @@ Symlinks all ruby tool versions from an external tool into mise
 
 Get tool versions from Homebrew
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mbrew install ruby[22m
-[1mmise sync ruby --brew[22m
-[1mmise use -g ruby[22m - Use the latest version of Ruby installed by Homebrew
+brew install ruby
+mise sync ruby --brew
+mise use -g ruby - Use the latest version of Ruby installed by Homebrew
 ```

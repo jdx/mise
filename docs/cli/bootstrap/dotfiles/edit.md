@@ -31,9 +31,9 @@ Source path to use if the target is not yet managed
 
 Skip the confirmation prompt when adding an unmanaged target
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap dotfiles edit ~/.zshrc[22m
-[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml[22m
+mise bootstrap dotfiles edit ~/.zshrc
+mise bootstrap dotfiles edit --apply ~/.config/starship.toml
 ```

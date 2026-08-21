@@ -242,23 +242,23 @@ Report task output cache hits, restored bytes, and time saved
 Timeout for the task to complete
 e.g.: 30s, 5m
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # Runs the "lint" tasks. This needs to either be defined in mise.toml
 # or as a standalone script. See the project README for more information.
-$ [1mmise run lint[22m
+$ mise run lint
 
 # Forces the "build" tasks to run even if its sources are up-to-date.
-$ [1mmise run --force build[22m
+$ mise run --force build
 
 # Run "test" with stdin/stdout/stderr all connected to the current terminal.
 # This forces `--jobs=1` to prevent interleaving of output.
-$ [1mmise run --raw test[22m
+$ mise run --raw test
 
 # Runs the "lint", "test", and "check" tasks in parallel.
-$ [1mmise run lint ::: test ::: check[22m
+$ mise run lint ::: test ::: check
 
 # Execute multiple tasks each with their own arguments.
-$ [1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2[22m
+$ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2
 ```

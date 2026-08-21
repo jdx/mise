@@ -91,15 +91,15 @@ Skip automatic dependency preparation
 Connect backend install command stdin/stdout/stderr directly to the terminal
 Implies --jobs=1
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise exec node@20 -- node ./app.js[22m  # launch app.js using node-20.x
-$ [1mmise x node@20 -- node ./app.js[22m     # shorter alias
+$ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
+$ mise x node@20 -- node ./app.js     # shorter alias
 
 # Specify command as a string:
-$ [1mmise exec node@20 python@3.11 --command "node -v && python -V"[22m
+$ mise exec node@20 python@3.11 --command "node -v && python -V"
 
 # Run a command in a different directory:
-$ [1mmise x -C /path/to/project node@20 -- node ./app.js[22m
+$ mise x -C /path/to/project node@20 -- node ./app.js
 ```

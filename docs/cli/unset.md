@@ -31,12 +31,12 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 
 Use the global config file
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # Remove NODE_ENV from the current directory's config
-$ [1mmise unset NODE_ENV[22m
+$ mise unset NODE_ENV
 
 # Remove NODE_ENV from the global config
-$ [1mmise unset NODE_ENV -g[22m
+$ mise unset NODE_ENV -g
 ```

@@ -21,16 +21,16 @@ Get tool versions from pyenv
 
 Sync tool versions with uv (2-way sync)
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mpyenv install 3.11.0[22m
-[1mmise sync python --pyenv[22m
-[1mmise use -g python@3.11.0[22m - uses pyenv-provided python
+pyenv install 3.11.0
+mise sync python --pyenv
+mise use -g python@3.11.0 - uses pyenv-provided python
 
-[1muv python install 3.11.0[22m
-[1mmise install python@3.10.0[22m
-[1mmise sync python --uv[22m
-[1mmise x python@3.11.0 -- python -V[22m - uses uv-provided python
-[1muv run -p 3.10.0 -- python -V[22m - uses mise-provided python
+uv python install 3.11.0
+mise install python@3.10.0
+mise sync python --uv
+mise x python@3.11.0 -- python -V - uses uv-provided python
+uv run -p 3.10.0 -- python -V - uses mise-provided python
 ```

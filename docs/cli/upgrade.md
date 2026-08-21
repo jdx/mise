@@ -108,38 +108,38 @@ for a single run.
 Connect backend install command stdin/stdout/stderr directly to the terminal
 Implies --jobs=1
 
-[1m[4mDeprecation:[22m[24m
+Deprecation:
 
 The `-l` shorthand for `--bump` is deprecated and will be removed in mise 2027.8.5.
 After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` instead.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # Upgrades node to the latest version matching the range in mise.toml
-$ [1mmise upgrade node[22m
+$ mise upgrade node
 
 # Upgrades node to the latest version and bumps the version in mise.toml
-$ [1mmise upgrade node --bump[22m
+$ mise upgrade node --bump
 
 # Upgrades all tools to the latest versions
-$ [1mmise upgrade[22m
+$ mise upgrade
 
 # Upgrades all tools to the latest versions and bumps the version in mise.toml
-$ [1mmise upgrade --bump[22m
+$ mise upgrade --bump
 
 # Just print what would be done, don't actually do it
-$ [1mmise upgrade --dry-run[22m
+$ mise upgrade --dry-run
 
 # Upgrades node and python to the latest versions
-$ [1mmise upgrade node python[22m
+$ mise upgrade node python
 
 # Upgrade all tools except go
-$ [1mmise upgrade --exclude go[22m
+$ mise upgrade --exclude go
 
 # Show a multiselect menu to choose which tools to upgrade
-$ [1mmise upgrade --interactive[22m
+$ mise upgrade --interactive
 
 # Only upgrade tools defined in local mise.toml, not global ones
-$ [1mmise upgrade --local[22m
+$ mise upgrade --local
 ```

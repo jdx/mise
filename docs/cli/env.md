@@ -53,11 +53,11 @@ Only show redacted environment variables
 
 Only show values of environment variables
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1meval "$(mise env -s bash)"[22m
-[1meval "$(mise env -s zsh)"[22m
-[1mmise env -s fish | source[22m
-[1mexecx($(mise env -s xonsh))[22m
+eval "$(mise env -s bash)"
+eval "$(mise env -s zsh)"
+mise env -s fish | source
+execx($(mise env -s xonsh))
 ```

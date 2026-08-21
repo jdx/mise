@@ -20,9 +20,9 @@ The alias name
 
 The command to run (optional if provided as ALIAS=COMMAND)
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise shell-alias set ll "ls -la"[22m
-[1mmise shell-alias set gs "git status"[22m
+mise shell-alias set ll "ls -la"
+mise shell-alias set gs "git status"
 ```

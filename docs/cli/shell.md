@@ -38,10 +38,10 @@ Removes a previously set version
 Connect backend install command stdin/stdout/stderr directly to the terminal
 Implies --jobs=1
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise shell node@20[22m
-$ [1mnode -v[22m
+$ mise shell node@20
+$ node -v
 v20.0.0
 ```

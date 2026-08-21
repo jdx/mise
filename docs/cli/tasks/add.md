@@ -80,8 +80,8 @@ Run the task in a specific shell
 
 Do not print the command or its output
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit[22m
+mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```

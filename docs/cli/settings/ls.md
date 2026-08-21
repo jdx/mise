@@ -41,14 +41,14 @@ Output in TOML format
 
 Output in JSON format with sources
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise settings ls[22m
+$ mise settings ls
 idiomatic_version_file = false
 ...
 
-$ [1mmise settings ls python[22m
+$ mise settings ls python
 default_packages_file = "~/.default-python-packages"
 ...
 ```

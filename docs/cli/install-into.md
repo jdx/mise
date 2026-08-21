@@ -20,10 +20,10 @@ e.g.: node@20
 
 Path to install the tool into
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # install node@20.0.0 into ./mynode
-$ [1mmise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v[22m
+$ mise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v
 20.0.0
 ```

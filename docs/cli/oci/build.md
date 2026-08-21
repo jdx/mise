@@ -62,23 +62,23 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
 omitted, it defaults to UID. This affects file ownership only; [oci].user
 controls the image USER directive.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 Build with defaults (debian:bookworm-slim base):
-$ [1mmise oci build[22m
+$ mise oci build
 
 Build with a specific base image and tag:
-$ [1mmise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img[22m
+$ mise oci build --from ubuntu:24.04 --tag myorg/dev:latest -o ./img
 
 Inspect the result with skopeo:
-$ [1mskopeo inspect oci:./mise-oci[22m
+$ skopeo inspect oci:./mise-oci
 
 Push to a registry:
-$ [1mmise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest[22m
+$ mise oci push --image-dir ./mise-oci ghcr.io/me/dev:latest
 ```
 
-[1m[4mNotes:[22m[24m
+Notes:
 
 ```
 - The image only contains tools from the project's mise config (and

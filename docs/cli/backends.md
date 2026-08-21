@@ -11,7 +11,7 @@ Manage backends
 
 - [`mise backends ls`](/cli/backends/ls.md)
 
-[1m[4mDeprecation:[22m[24m
+Deprecation:
 
 The `mise b` alias is deprecated and will be removed in mise 2027.4.0.
 Use `mise backends` instead.

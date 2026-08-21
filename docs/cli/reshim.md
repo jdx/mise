@@ -32,10 +32,10 @@ currently active in mise.toml.
 
 Removes all shims before reshimming
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise reshim[22m
-$ [1m~/.local/share/mise/shims/node -v[22m
+$ mise reshim
+$ ~/.local/share/mise/shims/node -v
 v20.0.0
 ```

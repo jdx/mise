@@ -28,14 +28,14 @@ Only consider versions released before this date or older than this duration
 Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
 Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise latest node@20[22m  # get the latest version of node 20
+$ mise latest node@20  # get the latest version of node 20
 20.0.0
 
-$ [1mmise latest node[22m     # get the latest stable version of node
+$ mise latest node     # get the latest stable version of node
 20.0.0
 
-$ [1mmise latest node --minimum-release-age 2024-01-01[22m  # latest stable node released before 2024-01-01
+$ mise latest node --minimum-release-age 2024-01-01  # latest stable node released before 2024-01-01
 ```

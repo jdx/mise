@@ -24,9 +24,9 @@ The alias to set
 
 The value to set the alias to
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise tool-alias set maven asdf:mise-plugins/mise-maven[22m
-[1mmise tool-alias set node lts-jod 22.0.0[22m
+mise tool-alias set maven asdf:mise-plugins/mise-maven
+mise tool-alias set node lts-jod 22.0.0
 ```

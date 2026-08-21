@@ -32,10 +32,10 @@ Print the actions that would run without writing anything
 
 Skip the confirmation prompt
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap dotfiles apply[22m
-[1mmise bootstrap dotfiles apply --dry-run[22m
-[1mmise bootstrap dotfiles apply --force --yes[22m
+mise bootstrap dotfiles apply
+mise bootstrap dotfiles apply --dry-run
+mise bootstrap dotfiles apply --force --yes
 ```

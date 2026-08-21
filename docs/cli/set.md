@@ -76,34 +76,34 @@ Read the value from stdin (for multiline input)
 When using --stdin, provide a single key without a value.
 The value will be read from stdin until EOF.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise set NODE_ENV=production[22m
+$ mise set NODE_ENV=production
 
-$ [1mmise set NODE_ENV[22m
+$ mise set NODE_ENV
 production
 
-$ [1mmise set -E staging NODE_ENV=staging[22m
+$ mise set -E staging NODE_ENV=staging
 # creates or modifies mise.staging.toml
 
-$ [1mmise set[22m
+$ mise set
 key       value       source
 NODE_ENV  production  ~/.config/mise/config.toml
 
-$ [1mmise set --prompt PASSWORD[22m
+$ mise set --prompt PASSWORD
 Enter value for PASSWORD: [hidden input]
 
-[1m[4mMultiline Values (--stdin):[22m[24m
+Multiline Values (--stdin):
 
-$ [1mcat private.key | mise set --stdin MY_KEY[22m
+$ cat private.key | mise set --stdin MY_KEY
 
-$ [1mprintf "line1\nline2" | mise set --stdin MY_KEY[22m
+$ printf "line1\nline2" | mise set --stdin MY_KEY
 
-[1m[4m[experimental] Age Encryption:[22m[24m
+[experimental] Age Encryption:
 
-$ [1mmise set --age-encrypt API_KEY=secret[22m
+$ mise set --age-encrypt API_KEY=secret
 
-$ [1mmise set --age-encrypt --prompt API_KEY[22m
+$ mise set --age-encrypt --prompt API_KEY
 Enter value for API_KEY: [hidden input]
 ```

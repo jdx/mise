@@ -54,12 +54,12 @@ Does not trust or untrust any files.
 
 Remove explicit trust for this config
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # trusts ~/some_dir/mise.toml
-$ [1mmise trust ~/some_dir/mise.toml[22m
+$ mise trust ~/some_dir/mise.toml
 
 # trusts mise.toml in the current or parent directory
-$ [1mmise trust[22m
+$ mise trust
 ```

@@ -27,11 +27,11 @@ Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate inst
 
 **Default:** `mise`
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise tasks add test -- echo 'running tests'[22m
-$ [1mmise generate task-stubs[22m
-$ [1m./bin/test[22m
+$ mise tasks add test -- echo 'running tests'
+$ mise generate task-stubs
+$ ./bin/test
 running tests
 ```

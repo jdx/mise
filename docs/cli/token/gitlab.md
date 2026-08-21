@@ -24,15 +24,15 @@ GitLab hostname
 
 Show the full unmasked token
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise token gitlab[22m
+$ mise token gitlab
 gitlab.com: glpa…xxxx (source: GITLAB_TOKEN)
 
-$ [1mmise token gitlab --unmask[22m
+$ mise token gitlab --unmask
 gitlab.com: glpat-xxxxxxxxxxxx (source: GITLAB_TOKEN)
 
-$ [1mmise token gitlab gitlab.mycompany.com[22m
+$ mise token gitlab gitlab.mycompany.com
 gitlab.mycompany.com: (none)
 ```
