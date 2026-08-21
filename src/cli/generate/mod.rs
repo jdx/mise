@@ -1,11 +1,11 @@
 use clap::Subcommand;
 use std::path::{Path, PathBuf};
 
-mod bootstrap;
 mod config;
 mod devcontainer;
 mod git_pre_commit;
 mod github_action;
+mod install_script;
 mod task_docs;
 mod task_stubs;
 mod tool_stub;
@@ -20,11 +20,16 @@ pub struct Generate {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    Bootstrap(bootstrap::Bootstrap),
+    /// Deprecated. Use `mise generate install-script` instead
+    // Renamed because `bootstrap` read as a form of `mise bootstrap` (machine setup), which this
+    // command has nothing to do with.
+    #[clap(hide = true)]
+    Bootstrap(install_script::InstallScript),
     Config(config::Config),
     Devcontainer(devcontainer::Devcontainer),
     GitPreCommit(git_pre_commit::GitPreCommit),
     GithubAction(github_action::GithubAction),
+    InstallScript(install_script::InstallScript),
     TaskDocs(task_docs::TaskDocs),
     TaskStubs(task_stubs::TaskStubs),
     ToolStub(tool_stub::ToolStub),
@@ -33,11 +38,20 @@ enum Commands {
 impl Commands {
     pub async fn run(self) -> eyre::Result<()> {
         match self {
-            Self::Bootstrap(cmd) => cmd.run().await,
+            Self::Bootstrap(cmd) => {
+                deprecated_at!(
+                    "2026.9.0",
+                    "2027.9.0",
+                    "cli.generate.bootstrap",
+                    "`mise generate bootstrap` is deprecated. Use `mise generate install-script` instead."
+                );
+                cmd.run().await
+            }
             Self::Config(cmd) => cmd.run().await,
             Self::Devcontainer(cmd) => cmd.run().await,
             Self::GitPreCommit(cmd) => cmd.run().await,
             Self::GithubAction(cmd) => cmd.run().await,
+            Self::InstallScript(cmd) => cmd.run().await,
             Self::TaskDocs(cmd) => cmd.run().await,
             Self::TaskStubs(cmd) => cmd.run().await,
             Self::ToolStub(cmd) => cmd.run().await,
