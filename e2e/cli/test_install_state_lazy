@@ -33,3 +33,19 @@ assert_contains_text "$ls_out" "tiny"
 mise uninstall tiny@3.1.0
 ls_out="$(mise ls 2>&1)"
 assert_not_contains_text "$ls_out" "3.1.0"
+
+# A shared install dir can record a tool under a dir that doesn't kebab-match
+# its short. The full scan finds such dirs by enumeration; the per-tool path
+# must find them through the shared manifest, still without a full scan.
+shared_installs="$HOME/.local/share/mise-shared"
+mkdir -p "$shared_installs/dummy-renamed/2.0.0/bin"
+cat >"$shared_installs/.mise-installs.toml" <<'EOF'
+[dummy-renamed]
+short = "dummy"
+full = "asdf:dummy"
+explicit_backend = true
+EOF
+export MISE_SHARED_INSTALL_DIRS="$shared_installs"
+out="$(MISE_TIMINGS=1 mise latest --installed dummy@2 2>&1)"
+assert_contains_text "$out" "2.0.0"
+assert_not_contains_text "$out" "full_scan_tools"

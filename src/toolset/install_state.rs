@@ -390,11 +390,18 @@ fn merge_shared_tool(
 /// Scan every install dir. Memoized; enumerating callers ([`list_tools`]) pay
 /// for this once per process, per-tool callers never do.
 fn full_scan_tools() -> MutexResult<InstallStateTools> {
-    if let Some(tools) = INSTALL_STATE_TOOLS
+    // The full-map lock is held from before the first directory read until the
+    // map is published. get_tool serves this map ahead of the per-tool memo,
+    // so a raw publish could hide an install that finished mid-scan: the scan
+    // reads the tool's dir too early, add_tool_version records the version in
+    // the memo, then the publish shadows it. add_tool_version takes this lock
+    // too, so it either completes before the scan starts reading (its version
+    // is on disk by then) or blocks until the publish and updates the
+    // published map. Holding the lock also makes the scan single-flight.
+    let mut published = INSTALL_STATE_TOOLS
         .lock()
-        .expect("INSTALL_STATE_TOOLS lock failed")
-        .clone()
-    {
+        .expect("INSTALL_STATE_TOOLS lock failed");
+    if let Some(tools) = published.clone() {
         return Ok(tools);
     }
     measure!("install_state full_scan_tools", {
@@ -434,7 +441,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
             if !shared_dir.is_dir() {
                 continue;
             }
-            let shared_manifest = read_manifest_from(&shared_dir.join(".mise-installs.toml"));
+            let shared_manifest = shared_manifest(&shared_dir);
             let shared_subdirs = match file::dir_subdirs(&shared_dir) {
                 std::result::Result::Ok(d) => d,
                 Err(err) => {
@@ -454,9 +461,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         let plugins = load_plugins()?;
         merge_plugin_tools(&mut tools, plugins.as_ref());
         let tools = Arc::new(tools);
-        *INSTALL_STATE_TOOLS
-            .lock()
-            .expect("INSTALL_STATE_TOOLS lock failed") = Some(tools.clone());
+        *published = Some(tools.clone());
         Ok(tools)
     })
 }
@@ -464,6 +469,21 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
 /// short name -> manifest dir, for the manifest entries whose dir is not just
 /// the kebab-cased short. Lets a per-tool lookup skip walking every entry.
 static MANIFEST_BY_SHORT: Mutex<Option<Arc<HashMap<String, String>>>> = Mutex::new(None);
+
+/// Consolidated manifests of shared install dirs, keyed by dir. Memoized like
+/// the root manifest so a per-tool lookup costs one file read per shared dir
+/// per process rather than one per resolved tool.
+static SHARED_MANIFEST_MEMO: Mutex<Option<HashMap<PathBuf, Arc<Manifest>>>> = Mutex::new(None);
+
+fn shared_manifest(shared_dir: &Path) -> Arc<Manifest> {
+    let mut memo = SHARED_MANIFEST_MEMO
+        .lock()
+        .expect("SHARED_MANIFEST_MEMO lock failed");
+    memo.get_or_insert_with(Default::default)
+        .entry(shared_dir.to_path_buf())
+        .or_insert_with(|| Arc::new(read_manifest_from(&shared_dir.join(".mise-installs.toml"))))
+        .clone()
+}
 
 fn manifest_dir_for_short(short: &str) -> Option<String> {
     let mut memo = MANIFEST_BY_SHORT
@@ -590,17 +610,26 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
 
     // Shared install directories can add versions or supply the whole tool.
     for shared_dir in env::shared_install_dirs_early() {
-        let dir = shared_dir.join(&dir_name);
-        if !dir.is_dir() {
-            continue;
+        let shared_manifest = shared_manifest(&shared_dir);
+        // Like the root manifest above, a shared manifest may record this
+        // short under a dir that doesn't kebab-match it; the full scan finds
+        // such dirs by enumeration, so the per-tool path has to probe them.
+        let alt_dir = shared_manifest
+            .iter()
+            .find(|(d, mt)| mt.short == short && **d != dir_name)
+            .map(|(d, _)| d.clone());
+        for dir_name in std::iter::once(dir_name.clone()).chain(alt_dir) {
+            let dir = shared_dir.join(&dir_name);
+            if !dir.is_dir() {
+                continue;
+            }
+            let mut tools: InstallStateTools = tool
+                .take()
+                .map(|t| BTreeMap::from([(t.short.clone(), t)]))
+                .unwrap_or_default();
+            merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
+            tool = tools.remove(short);
         }
-        let shared_manifest = read_manifest_from(&shared_dir.join(".mise-installs.toml"));
-        let mut tools: InstallStateTools = tool
-            .take()
-            .map(|t| BTreeMap::from([(t.short.clone(), t)]))
-            .unwrap_or_default();
-        merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
-        tool = tools.remove(short);
     }
 
     // An asdf/vfox plugin supplies an identity even with nothing installed.
@@ -970,6 +999,9 @@ pub fn reset() {
     *MANIFEST_BY_SHORT
         .lock()
         .expect("MANIFEST_BY_SHORT lock failed") = None;
+    *SHARED_MANIFEST_MEMO
+        .lock()
+        .expect("SHARED_MANIFEST_MEMO lock failed") = None;
     super::tool_version::reset_install_path_cache();
 }
 

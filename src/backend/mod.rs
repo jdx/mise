@@ -423,8 +423,19 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
     let tools = Arc::new(tools);
-    *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
-    *TOOLS.lock().unwrap() = Some(tools.clone());
+    // Two tasks can race past the memo check above and both build seed maps.
+    // Committing unconditionally would let the loser replace a map list() may
+    // already have extended with installed tools — and TOOLS_INCLUDE_INSTALLED
+    // stays set, so those entries would never be restored. First publisher
+    // wins; everyone else adopts the published map.
+    {
+        let mut cached = TOOLS.lock().unwrap();
+        if let Some(existing) = cached.as_ref() {
+            return Ok(existing.clone());
+        }
+        *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
+        *cached = Some(tools.clone());
+    }
     time!("load_tools done");
     Ok(tools)
 }
@@ -485,10 +496,6 @@ fn ensure_installed_tools_loaded() {
 
 pub fn list() -> BackendList {
     ensure_installed_tools_loaded();
-    eprintln!(
-        "BLIST {}",
-        TOOLS.lock().unwrap().as_ref().map(|t| t.len()).unwrap_or(0)
-    );
     TOOLS
         .lock()
         .unwrap()
