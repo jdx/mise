@@ -766,7 +766,9 @@ fn formula_from_internal(
     let bottle_tag = signed
         .bottle_tag
         .as_deref()
-        .unwrap_or(&index.metadata.bottle_tag);
+        .map(parse_internal_bottle_tag)
+        .transpose()?
+        .unwrap_or_else(|| index.metadata.bottle_tag.clone());
     let mut bottle = HashMap::new();
     if let Some(checksum) = signed.bottle_checksum.as_deref() {
         validate_sha256("bottle", checksum)?;
@@ -782,7 +784,7 @@ fn formula_from_internal(
             "stable".to_string(),
             BottleSpec {
                 rebuild: signed.bottle_rebuild,
-                files: HashMap::from([(bottle_tag.to_string(), file)]),
+                files: HashMap::from([(bottle_tag, file)]),
             },
         );
     }
@@ -868,6 +870,18 @@ fn validate_formula_name(name: &str) -> Result<()> {
         bail!("Homebrew internal API has an unsafe formula name {name:?}");
     }
     Ok(())
+}
+
+fn parse_internal_bottle_tag(tag: &str) -> Result<String> {
+    let tag = tag.strip_prefix(':').unwrap_or(tag);
+    if tag.is_empty()
+        || !tag
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        bail!("Homebrew internal API has an unsafe bottle tag {tag:?}");
+    }
+    Ok(tag.to_string())
 }
 
 fn validate_sha256(kind: &str, checksum: &str) -> Result<()> {
@@ -1240,7 +1254,7 @@ mod tests {
                     "stable_dependencies": ["runtime", {"builder": ":build"}],
                     "bottle_checksum": bottle_sha,
                     "bottle_cellar": ":any_skip_relocation",
-                    "bottle_tag": "arm64_sequoia",
+                    "bottle_tag": ":arm64_sequoia",
                     "ruby_source_checksum": ruby_sha,
                     "keg_only_args": [":versioned_formula"],
                     "conflicts": [["other", {":because": "same binary"}]],
@@ -1290,6 +1304,16 @@ mod tests {
         assert_eq!(formula.conflicts_with(), ["other"]);
         assert_eq!(formula.conflict_reason("other"), Some("same binary"));
         assert_eq!(formula.link_overwrite(), ["bin/hello"]);
+    }
+
+    #[test]
+    fn signed_bottle_tags_normalize_ruby_symbols_and_reject_paths() {
+        assert_eq!(parse_internal_bottle_tag(":all").unwrap(), "all");
+        assert_eq!(
+            parse_internal_bottle_tag(":arm64_sequoia").unwrap(),
+            "arm64_sequoia"
+        );
+        assert!(parse_internal_bottle_tag(":../foreign").is_err());
     }
 
     #[test]
