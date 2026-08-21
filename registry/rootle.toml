@@ -1,0 +1,6 @@
+backends = ["github:tknawara/rootle", "cargo:rootle"]
+bins = ["rootle"]
+description = "Modal TUI for browsing remote source-control systems (GitHub in-tree, any forge via stdio providers)"
+os = ["linux"]
+test = { cmd = "rootle --version", expected = "rootle {{version}}" }
+version_order = "semver"
