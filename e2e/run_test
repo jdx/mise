@@ -79,6 +79,7 @@ within_isolated_env() {
       "$ROOT/e2e/cli/test_system_install_brew_interop_casks_macos_slow" | \
       "$ROOT/e2e/cli/test_system_install_brew_interop_formulae_macos_slow" | \
       "$ROOT/e2e/cli/test_system_install_brew_macos_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_cask_gcloud_macos_slow" | \
       "$ROOT/e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow")
       brew_oracle_vars+=(
         # Keep GitHub's process-tree identity so a canceled destructive oracle

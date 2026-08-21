@@ -26,6 +26,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Earlier oracle steps share this disposable prefix and may intentionally
+# leave casks that mise cannot prune. Normalize gcloud through Homebrew before
+# proving this test's own install and teardown lifecycle.
+"$brew" uninstall --cask --zap --force "$token" >/dev/null 2>&1 || true
 brew_oracle_require_absent_path "$room" "foreign gcloud-cli Caskroom"
 brew_oracle_require_absent_path "$sdk" "foreign Google Cloud SDK tree"
 brew_oracle_require_absent_path "$launcher" "foreign gcloud launcher"
