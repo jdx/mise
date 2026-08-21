@@ -45,7 +45,8 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
     // Filesystem read restrictions
     if config.effective_deny_read() {
         rules.push("(deny file-read*)".to_string());
-        // Permit absolute path traversal without granting recursive access from the root.
+        // Seatbelt requires data access to the root vnode for process startup and getcwd.
+        // This exposes names directly under `/`, but descendants still obey the read rules.
         rules.push("(allow file-read-data (literal \"/\"))".to_string());
         for path in SYSTEM_READ_PATHS {
             rules.push(format!("(allow file-read* (subpath \"{path}\"))"));
@@ -182,7 +183,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_allow_read_executes_shell_without_exposing_siblings() {
+    async fn test_allow_read_executes_shell_without_reading_siblings() {
         let root = tempfile::tempdir().unwrap();
         let allowed_dir = root.path().join("allowed");
         fs::create_dir(&allowed_dir).unwrap();
