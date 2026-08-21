@@ -3750,7 +3750,7 @@ mod tests {
         fs::create_dir(&path).unwrap();
         fs::write(path.join("expected"), "expected").unwrap();
 
-        remove_all_atomically_validated_inner(
+        let error = remove_all_atomically_validated_inner(
             &path,
             |_, _| Ok(()),
             |quarantine| {
@@ -3761,6 +3761,11 @@ mod tests {
             },
         )
         .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cleanup tombstone changed while formula lock was held")
+        );
 
         assert!(!path.exists());
         let foreign = rack
