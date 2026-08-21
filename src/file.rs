@@ -185,7 +185,7 @@ pub fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
 #[cfg(unix)]
 pub fn remove_all_atomically_validated(
     path: &Path,
-    validate: impl FnOnce(&Path, &fs::Metadata) -> Result<()>,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
 ) -> Result<()> {
     remove_all_atomically_validated_inner(path, validate, |_| Ok(()))
 }
@@ -193,12 +193,14 @@ pub fn remove_all_atomically_validated(
 #[cfg(unix)]
 fn remove_all_atomically_validated_inner(
     path: &Path,
-    validate: impl FnOnce(&Path, &fs::Metadata) -> Result<()>,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
     after_validate: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
     use nix::dir::Dir;
-    use nix::fcntl::OFlag;
+    use nix::fcntl::{OFlag, renameat};
     use nix::sys::stat::Mode;
+    use nix::sys::stat::fstat;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
 
     let parent = path
         .parent()
@@ -206,33 +208,87 @@ fn remove_all_atomically_validated_inner(
     let file_name = path
         .file_name()
         .ok_or_else(|| eyre::eyre!("cannot quarantine unnamed path: {}", path.display()))?;
-    let quarantine = parent.join(format!(
-        ".{}.mise-delete-{}",
+    let quarantine_name = format!(
+        ".mise-delete-{}-{}",
         file_name.to_string_lossy(),
         crate::rand::random_string(32)
-    ));
-    fs::rename(path, &quarantine)
-        .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
+    );
     let parent = File::open(parent)?;
-    let quarantine_name = quarantine.file_name().expect("quarantine has a file name");
+    renameat(&parent, file_name, &parent, quarantine_name.as_str())
+        .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
+    let quarantine = path.with_file_name(&quarantine_name);
     let mut detached = Dir::openat(
         &parent,
-        quarantine_name,
+        quarantine_name.as_str(),
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
-    let detached_metadata = fs::metadata(&quarantine)?;
-    if let Err(error) = validate(&quarantine, &detached_metadata) {
-        if fs::symlink_metadata(path).is_err() {
-            let _ = fs::rename(&quarantine, path);
-        }
+    let detached_identity = fstat(&detached)?;
+    if let Err(error) = validate(
+        detached_identity.st_dev as u64,
+        detached_identity.st_ino as u64,
+    ) {
         return Err(error)
             .wrap_err_with(|| format!("refusing to remove changed path: {}", display_path(path)));
     }
     after_validate(&quarantine)?;
     remove_dir_contents(&mut detached)?;
-    // POSIX has no unlink-by-handle operation. Keep the validated, now-empty directory as a
-    // tombstone rather than resolving `quarantine` again and risking deletion of a replacement.
+    match unlinkat(&parent, quarantine_name.as_str(), UnlinkatFlags::RemoveDir) {
+        Ok(()) | Err(nix::errno::Errno::ENOENT) => {}
+        Err(nix::errno::Errno::ENOTEMPTY | nix::errno::Errno::EEXIST) => {
+            // A concurrent replacement is not our object. It remains untouched and is hidden
+            // from formula version discovery by the `.mise-delete-` prefix.
+        }
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+pub fn rename_dir_atomically_validated(
+    from: &Path,
+    to: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+) -> Result<()> {
+    rename_dir_atomically_validated_inner(from, to, validate, |_| Ok(()))
+}
+
+#[cfg(unix)]
+fn rename_dir_atomically_validated_inner(
+    from: &Path,
+    to: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+    after_validate: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::fcntl::{OFlag, renameat};
+    use nix::sys::stat::{Mode, fstat, fstatat};
+
+    let parent = from
+        .parent()
+        .filter(|parent| Some(*parent) == to.parent())
+        .ok_or_else(|| eyre::eyre!("atomic directory rename requires one parent"))?;
+    let from_name = from
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("unnamed source"))?;
+    let to_name = to
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("unnamed destination"))?;
+    let parent = File::open(parent)?;
+    let retained = Dir::openat(
+        &parent,
+        from_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let identity = fstat(&retained)?;
+    validate(identity.st_dev as u64, identity.st_ino as u64)?;
+    after_validate(from)?;
+    renameat(&parent, from_name, &parent, to_name)?;
+    let installed = fstatat(&parent, to_name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    if installed.st_dev != identity.st_dev || installed.st_ino != identity.st_ino {
+        bail!("renamed directory identity changed during commit");
+    }
     Ok(())
 }
 
@@ -3152,11 +3208,10 @@ mod tests {
         fs::write(replacement.join("must-survive"), "foreign").unwrap();
         fs::rename(&replacement, &path).unwrap();
 
+        use std::os::unix::fs::MetadataExt;
         let expected_metadata = fs::metadata(&displaced).unwrap();
-        let error = remove_all_atomically_validated(&path, |_, detached_metadata| {
-            if same_file::is_same_file(&path, &displaced).unwrap_or(false)
-                && detached_metadata.len() == expected_metadata.len()
-            {
+        let error = remove_all_atomically_validated(&path, |device, inode| {
+            if (device, inode) == (expected_metadata.dev(), expected_metadata.ino()) {
                 Ok(())
             } else {
                 bail!("backup identity changed")
@@ -3169,8 +3224,17 @@ mod tests {
                 .to_string()
                 .contains("refusing to remove changed path")
         );
+        let foreign = root
+            .path()
+            .read_dir()
+            .unwrap()
+            .find_map(|entry| {
+                let path = entry.unwrap().path();
+                path.join("must-survive").is_file().then_some(path)
+            })
+            .unwrap();
         assert_eq!(
-            fs::read_to_string(path.join("must-survive")).unwrap(),
+            fs::read_to_string(foreign.join("must-survive")).unwrap(),
             "foreign"
         );
         assert_eq!(
@@ -3190,10 +3254,7 @@ mod tests {
 
         remove_all_atomically_validated_inner(
             &path,
-            |detached, _| {
-                assert_eq!(fs::read_to_string(detached.join("expected"))?, "expected");
-                Ok(())
-            },
+            |_, _| Ok(()),
             |quarantine| {
                 fs::rename(quarantine, &displaced)?;
                 fs::create_dir(quarantine)?;
@@ -3218,6 +3279,48 @@ mod tests {
             "foreign"
         );
         assert!(displaced.read_dir().unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomically_validated_rename_detects_source_replacement() {
+        use std::os::unix::fs::MetadataExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("backup");
+        let destination = root.path().join("keg");
+        let displaced = root.path().join("displaced-backup");
+        let replacement = root.path().join("replacement");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("expected"), "expected").unwrap();
+        let expected = fs::metadata(&source).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(replacement.join("must-survive"), "foreign").unwrap();
+
+        let error = rename_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |device, inode| {
+                assert_eq!((device, inode), (expected.dev(), expected.ino()));
+                Ok(())
+            },
+            |source| {
+                fs::rename(source, &displaced)?;
+                fs::rename(&replacement, source)?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("identity changed"));
+        assert_eq!(
+            fs::read_to_string(destination.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert_eq!(
+            fs::read_to_string(displaced.join("expected")).unwrap(),
+            "expected"
+        );
     }
 
     #[cfg(unix)]

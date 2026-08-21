@@ -2254,26 +2254,26 @@ fn recovery_backup_path(keg: &Path) -> Result<PathBuf> {
 }
 
 pub(super) fn restore_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()> {
-    if let Some(metadata) = metadata_if_exists(keg)? {
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            bail!(
-                "refusing to remove non-directory keg during rollback: {}",
-                keg.display()
-            );
-        }
-        crate::file::remove_all(keg)?;
+    if metadata_if_exists(keg)?.is_some() {
+        let expected = capture_path_identity(keg)?;
+        crate::file::remove_all_atomically_validated(keg, |device, inode| {
+            if (device, inode) != (expected.device, expected.inode) {
+                bail!("rollback keg identity changed before removal");
+            }
+            Ok(())
+        })?;
     }
     if let Some(backup) = backup {
-        let metadata = metadata_if_exists(backup)?.ok_or_else(|| {
+        metadata_if_exists(backup)?.ok_or_else(|| {
             eyre::eyre!("formula recovery backup disappeared: {}", backup.display())
         })?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() {
-            bail!(
-                "formula recovery backup is not a real directory: {}",
-                backup.display()
-            );
-        }
-        crate::file::rename(backup, keg)?;
+        let expected = capture_path_identity(backup)?;
+        crate::file::rename_dir_atomically_validated(backup, keg, |device, inode| {
+            if (device, inode) != (expected.device, expected.inode) {
+                bail!("formula recovery backup identity changed before restore");
+            }
+            Ok(())
+        })?;
     }
     Ok(())
 }
@@ -2702,13 +2702,8 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         let predecessor_identity = predecessor_identity.as_ref().ok_or_else(|| {
             eyre::eyre!("brew:{name}: recovery backup has no bound predecessor identity")
         })?;
-        crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
-            validate_install_identity_with_root_metadata(
-                name,
-                detached,
-                metadata,
-                predecessor_identity,
-            )
+        crate::file::remove_all_atomically_validated(&backup, |device, inode| {
+            validate_install_identity_with_root_identity(device, inode, predecessor_identity)
         })?;
     }
     let incarnation_marker = keg.join(FINALIZATION_INCARNATION_MARKER);
@@ -3008,17 +3003,19 @@ fn validate_install_identity(
     Ok(())
 }
 
-fn validate_install_identity_with_root_metadata(
-    formula: &str,
-    keg: &Path,
-    root_metadata: &std::fs::Metadata,
+fn validate_install_identity_with_root_identity(
+    device: u64,
+    inode: u64,
     identity: &FinalizationInstallIdentity,
 ) -> Result<()> {
-    validate_install_identity(formula, keg, identity)?;
-    let FinalizationIdentityKind::Native { device, inode } = &identity.kind else {
+    let FinalizationIdentityKind::Native {
+        device: expected_device,
+        inode: expected_inode,
+    } = &identity.kind
+    else {
         bail!("recovery backup does not have a native filesystem identity");
     };
-    if native_filesystem_identity(root_metadata)? != (*device, *inode) {
+    if (device, inode) != (*expected_device, *expected_inode) {
         bail!("detached recovery backup identity no longer matches");
     }
     Ok(())
@@ -3228,13 +3225,8 @@ pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
                 let predecessor = state.predecessor_identity.as_ref().ok_or_else(|| {
                     eyre::eyre!("completed formula finalization has no predecessor identity")
                 })?;
-                crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
-                    validate_install_identity_with_root_metadata(
-                        &state.formula,
-                        detached,
-                        metadata,
-                        predecessor,
-                    )
+                crate::file::remove_all_atomically_validated(&backup, |device, inode| {
+                    validate_install_identity_with_root_identity(device, inode, predecessor)
                 })?;
             }
             crate::file::remove_file(marker)?;
@@ -3288,13 +3280,8 @@ pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
         let predecessor = state.predecessor_identity.as_ref().ok_or_else(|| {
             eyre::eyre!("completed formula finalization has no predecessor identity")
         })?;
-        crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
-            validate_install_identity_with_root_metadata(
-                &state.formula,
-                detached,
-                metadata,
-                predecessor,
-            )
+        crate::file::remove_all_atomically_validated(&backup, |device, inode| {
+            validate_install_identity_with_root_identity(device, inode, predecessor)
         })?;
     }
     let marker = keg.join(FINALIZATION_INCARNATION_MARKER);
@@ -3389,13 +3376,8 @@ pub(super) async fn resume_source_finalization(
             eyre::eyre!("completed source finalization has no predecessor identity")
         })?;
         validate_install_identity(&linked_state.formula, keg, replacement)?;
-        crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
-            validate_install_identity_with_root_metadata(
-                &linked_state.formula,
-                detached,
-                metadata,
-                predecessor,
-            )
+        crate::file::remove_all_atomically_validated(&backup, |device, inode| {
+            validate_install_identity_with_root_identity(device, inode, predecessor)
         })?;
     }
     let marker = keg.join(FINALIZATION_INCARNATION_MARKER);
@@ -4250,6 +4232,20 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let path = tmp.path().canonicalize()?;
         Ok((tmp, path))
+    }
+
+    #[test]
+    fn installed_versions_hide_recovery_and_deletion_tombstones() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let rack = prefix.join("Cellar/openssl@3");
+        crate::file::create_dir_all(rack.join("3.6.0"))?;
+        crate::file::create_dir_all(rack.join(".mise-backup-3.6.0"))?;
+        crate::file::create_dir_all(rack.join(".mise-delete-backup-identity"))?;
+
+        assert_eq!(installed_versions("openssl@3"), ["3.6.0"]);
+        Ok(())
     }
 
     #[test]

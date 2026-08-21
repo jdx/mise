@@ -10,6 +10,7 @@ brew_oracle_fail() {
 
 brew_oracle_require_disposable() {
   local test_name=$1 expected_prefix=$2 checkout_sha credential_name runner_real
+  local probe probe_real suffix component source_real
 
   [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]] ||
     brew_oracle_fail "MISE_BREW_ORACLE_DISPOSABLE=1 is required" || return 1
@@ -35,7 +36,22 @@ brew_oracle_require_disposable() {
     macos-formula-lifecycle:/opt/homebrew | linux-formula:/home/linuxbrew/.linuxbrew) ;;
     linux-source:*)
       runner_real=$(realpath "$MISE_BREW_ORACLE_RUNNER_TEMP") || return 1
-      case "$expected_prefix/" in
+      case "/$expected_prefix/" in
+        */../* | */./*) brew_oracle_fail "source prefix must not contain dot components" || return 1 ;;
+      esac
+      probe=$expected_prefix
+      suffix=
+      while [[ ! -e $probe && ! -L $probe ]]; do
+        component=${probe##*/}
+        suffix="/$component$suffix"
+        probe=${probe%/*}
+        [[ -n $probe ]] || probe=/
+      done
+      [[ -d $probe && ! -L $probe ]] ||
+        brew_oracle_fail "source prefix ancestry must be real directories" || return 1
+      probe_real=$(realpath "$probe") || return 1
+      source_real="$probe_real$suffix"
+      case "$source_real/" in
         "$runner_real"/*) ;;
         *) brew_oracle_fail "source prefix must be inside runner temp" || return 1 ;;
       esac
