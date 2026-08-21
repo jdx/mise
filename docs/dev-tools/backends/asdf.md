@@ -76,8 +76,9 @@ Set environment variables for asdf plugin install scripts:
 
 ### Install dependencies
 
-Tools declared with the [`depends` option](/dev-tools/#tool-dependencies) are installed before the
-asdf tool and added to the `PATH` used by its `bin/download` and `bin/install` scripts:
+Matching tools selected in the same install operation and declared with the
+[`depends` option](/dev-tools/#tool-dependencies) are installed before the asdf tool. Their paths
+are added to the `PATH` used by its `bin/download` and `bin/install` scripts:
 
 ```toml
 [tools]
@@ -89,3 +90,6 @@ This allows an asdf plugin to invoke an executable supplied by another mise-mana
 the same `mise install`. Other active mise tools are not added implicitly; declare every
 mise-managed install requirement with `depends`. Executables already available on the ambient
 system or configuration `PATH` remain available.
+
+The `depends` option does not add or install a missing tool. A configured dependency must already
+be installed or selected in the same install operation.
