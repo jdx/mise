@@ -83,6 +83,19 @@ impl RemoteTaskGit {
         )
     }
 
+    fn prepare_cached_path(path: &PathBuf, destination: &PathBuf) -> Result<()> {
+        if let Err(err) = Self::prepare_remote_path(path) {
+            if let Err(cleanup_err) = crate::file::remove_all(destination) {
+                warn!(
+                    "failed to remove unusable remote Git task checkout {}: {cleanup_err:#}",
+                    display_path(destination)
+                );
+            }
+            return Err(err);
+        }
+        Ok(())
+    }
+
     fn get_cache_key(&self, repo_structure: &GitRepoStructure) -> String {
         let key = format!(
             "{}{}",
@@ -138,7 +151,7 @@ impl RemoteTaskGit {
 
         if reuse_existing && full_path.exists() {
             debug!("Using cached file: {:?}", full_path);
-            Self::prepare_remote_path(&full_path)?;
+            Self::prepare_cached_path(&full_path, destination)?;
             return Ok(full_path);
         }
 
@@ -171,7 +184,7 @@ impl RemoteTaskGit {
             }
         }
 
-        Self::prepare_remote_path(&full_path)?;
+        Self::prepare_cached_path(&full_path, destination)?;
         Ok(full_path)
     }
 }
@@ -282,6 +295,25 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
 
         RemoteTaskGit::prepare_remote_path(&temp_dir.path().to_path_buf()).unwrap();
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_prepare_cached_path_removes_checkout_on_failure() {
+        use std::os::unix::fs::symlink;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let destination = temp_dir.path().join("checkout");
+        let task_file = destination.join("task");
+        let target = temp_dir.path().join("target");
+        std::fs::create_dir(&destination).unwrap();
+        std::fs::write(&target, "#!/usr/bin/env bash\necho ok\n").unwrap();
+        symlink(&target, &task_file).unwrap();
+
+        let error = RemoteTaskGit::prepare_cached_path(&task_file, &destination).unwrap_err();
+
+        assert!(error.to_string().contains("not a regular file"));
+        assert!(!destination.exists());
     }
 
     #[test]
