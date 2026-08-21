@@ -6474,7 +6474,7 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=f55d71685720d9bdeef505fce7bacfb77fcb89cf)",
+ "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
  "usage-rs",
  "versions",
  "vfox",
@@ -11101,12 +11101,12 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 [[package]]
 name = "usage-argv"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=f55d71685720d9bdeef505fce7bacfb77fcb89cf#f55d71685720d9bdeef505fce7bacfb77fcb89cf"
+source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 
 [[package]]
 name = "usage-derive"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=f55d71685720d9bdeef505fce7bacfb77fcb89cf#f55d71685720d9bdeef505fce7bacfb77fcb89cf"
+source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -11141,7 +11141,7 @@ dependencies = [
 [[package]]
 name = "usage-lib"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=f55d71685720d9bdeef505fce7bacfb77fcb89cf#f55d71685720d9bdeef505fce7bacfb77fcb89cf"
+source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 dependencies = [
  "heck",
  "indexmap 2.14.0",
@@ -11163,7 +11163,7 @@ dependencies = [
 [[package]]
 name = "usage-rs"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=f55d71685720d9bdeef505fce7bacfb77fcb89cf#f55d71685720d9bdeef505fce7bacfb77fcb89cf"
+source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 dependencies = [
  "usage-argv",
  "usage-derive",
@@ -11173,7 +11173,7 @@ dependencies = [
 [[package]]
 name = "usage-validation"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=f55d71685720d9bdeef505fce7bacfb77fcb89cf#f55d71685720d9bdeef505fce7bacfb77fcb89cf"
+source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 dependencies = [
  "expr-lang",
 ]

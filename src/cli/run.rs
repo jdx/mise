@@ -55,7 +55,13 @@ use tokio::sync::Mutex;
 ///     EOF
 ///     $ mise run build
 #[derive(usage_rs::Args)]
-#[command(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
+#[command(
+    visible_alias = "r",
+    verbatim_doc_comment,
+    disable_help_flag = true,
+    after_long_help = AFTER_LONG_HELP,
+    unknown_flags = "value"
+)]
 pub struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`

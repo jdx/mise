@@ -97,7 +97,7 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "f55d71685720d9bdeef505fce7bacfb77fcb89cf", features = [
+usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "7e6e349e35716ef2095be9a6adceb1281470683f", features = [
   "completions",
   "diagnostics",
   "validation",
@@ -232,7 +232,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.10", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { git = "https://github.com/jdx/usage", rev = "f55d71685720d9bdeef505fce7bacfb77fcb89cf", features = [
+usage-lib = { git = "https://github.com/jdx/usage", rev = "7e6e349e35716ef2095be9a6adceb1281470683f", features = [
   "docs",
 ] }
 versions = { version = "7", features = ["serde"] }
