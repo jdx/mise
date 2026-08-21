@@ -488,7 +488,7 @@ struct InternalFormula {
     #[serde(default)]
     pour_bottle_args: Option<InternalPourPolicy>,
     #[serde(default)]
-    conflicts: Vec<(String, InternalConflictPolicy)>,
+    conflicts: Vec<InternalConflict>,
     #[serde(default)]
     link_overwrite_paths: Vec<String>,
     #[serde(default)]
@@ -562,6 +562,28 @@ struct InternalPourPolicy {
 struct InternalConflictPolicy {
     #[serde(default, rename = ":because")]
     reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum InternalConflict {
+    Bare((String,)),
+    WithPolicy((String, InternalConflictPolicy)),
+}
+
+impl InternalConflict {
+    fn name(&self) -> &str {
+        match self {
+            Self::Bare((name,)) | Self::WithPolicy((name, _)) => name,
+        }
+    }
+
+    fn reason(&self) -> Option<String> {
+        match self {
+            Self::Bare(_) => None,
+            Self::WithPolicy((_, policy)) => policy.reason.clone(),
+        }
+    }
 }
 
 static INTERNAL_FORMULAE: tokio::sync::OnceCell<
@@ -831,12 +853,12 @@ fn formula_from_internal(
             conflicts_with: signed
                 .conflicts
                 .iter()
-                .map(|(name, _)| name.clone())
+                .map(|conflict| conflict.name().to_string())
                 .collect(),
             conflicts_with_reasons: signed
                 .conflicts
                 .iter()
-                .map(|(_, policy)| policy.reason.clone())
+                .map(InternalConflict::reason)
                 .collect(),
             link_overwrite: signed.link_overwrite_paths.clone(),
         },
@@ -1324,5 +1346,49 @@ mod tests {
             formula.stable_url().unwrap().using.as_deref(),
             Some("signed URL options")
         );
+    }
+
+    #[test]
+    fn signed_conflicts_accept_every_observed_live_shape() {
+        let signed: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "1",
+            "conflicts": [
+                ["parrot"],
+                ["moarvm", {":because": "ships moarvm"}]
+            ]
+        }))
+        .unwrap();
+        let index = signed_index(json!({
+            "formulae": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        let formula =
+            formula_from_internal(&index, "rakudo-star", &signed, "signed-index-url").unwrap();
+
+        assert_eq!(formula.conflicts_with(), ["parrot", "moarvm"]);
+        assert_eq!(formula.conflict_reason("parrot"), None);
+        assert_eq!(formula.conflict_reason("moarvm"), Some("ships moarvm"));
+    }
+
+    #[test]
+    fn signed_conflicts_reject_unobserved_or_malformed_shapes() {
+        for conflict in [
+            json!([]),
+            json!(["one", {}, "extra"]),
+            json!([1]),
+            json!(["one", {":because": 1}]),
+            json!(["one", {":unknown": "value"}]),
+            json!("one"),
+        ] {
+            let value = json!({
+                "stable_version": "1",
+                "conflicts": [conflict]
+            });
+            assert!(
+                serde_json::from_value::<InternalFormula>(value).is_err(),
+                "unexpectedly accepted malformed signed conflict"
+            );
+        }
     }
 }
