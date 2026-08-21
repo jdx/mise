@@ -2254,23 +2254,26 @@ fn recovery_backup_path(keg: &Path) -> Result<PathBuf> {
 }
 
 pub(super) fn restore_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()> {
-    if metadata_if_exists(keg)?.is_some() {
-        let expected = capture_path_identity(keg)?;
-        crate::file::remove_all_atomically_validated(keg, |device, inode| {
-            if (device, inode) != (expected.device, expected.inode) {
-                bail!("rollback keg identity changed before removal");
-            }
-            Ok(())
-        })?;
-    }
     if let Some(backup) = backup {
         metadata_if_exists(backup)?.ok_or_else(|| {
             eyre::eyre!("formula recovery backup disappeared: {}", backup.display())
         })?;
         let expected = capture_path_identity(backup)?;
-        crate::file::restore_dir_atomically_validated(backup, keg, |device, inode| {
+        // Portable POSIX cannot atomically publish a directory by retained descriptor. Validate
+        // and fail before touching the live keg; the complete predecessor remains available for
+        // explicit manual recovery rather than risking a pathname-substitution restore.
+        return crate::file::restore_dir_atomically_validated(backup, keg, |device, inode| {
             if (device, inode) != (expected.device, expected.inode) {
                 bail!("formula recovery backup identity changed before restore");
+            }
+            Ok(())
+        });
+    }
+    if metadata_if_exists(keg)?.is_some() {
+        let expected = capture_path_identity(keg)?;
+        crate::file::remove_all_atomically_validated(keg, |device, inode| {
+            if (device, inode) != (expected.device, expected.inode) {
+                bail!("rollback keg identity changed before removal");
             }
             Ok(())
         })?;
@@ -4828,7 +4831,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn finalizer_restores_predecessor_when_linking_fails() -> Result<()> {
+    async fn finalizer_preserves_predecessor_when_linking_fails() -> Result<()> {
         let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -4867,24 +4870,19 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains("cannot link foo"));
-        assert_eq!(crate::file::read_to_string(keg.join("bin/foo"))?, "old");
+        assert!(error.to_string().contains("manual recovery"));
+        assert_eq!(crate::file::read_to_string(keg.join("bin/foo"))?, "new");
+        assert_eq!(crate::file::read_to_string(backup.join("bin/foo"))?, "old");
         assert_eq!(
             crate::file::read_to_string(prefix.join("bin/foo"))?,
             "foreign"
         );
-        assert!(backup.symlink_metadata().is_err());
-        assert!(
-            keg.join(FINALIZATION_INCARNATION_MARKER)
-                .symlink_metadata()
-                .is_err()
-        );
-        assert!(!finalization_needs_repair(&keg));
+        assert!(finalization_needs_repair(&keg));
         Ok(())
     }
 
     #[tokio::test]
-    async fn identity_preparation_failure_restores_live_predecessor() -> Result<()> {
+    async fn identity_preparation_failure_preserves_live_predecessor() -> Result<()> {
         let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -4913,18 +4911,12 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains("receipt"));
+        assert!(error.to_string().contains("manual recovery"));
+        assert_eq!(crate::file::read_to_string(keg.join("bin/foo"))?, "new");
         assert_eq!(
-            crate::file::read_to_string(keg.join("bin/foo"))?,
+            crate::file::read_to_string(backup.join("bin/foo"))?,
             "old-without-receipt"
         );
-        assert!(
-            keg.join(FINALIZATION_INCARNATION_MARKER)
-                .symlink_metadata()
-                .is_err()
-        );
-        assert!(backup.symlink_metadata().is_err());
-        assert!(read_finalization_state(&keg)?.is_none());
         Ok(())
     }
 

@@ -213,7 +213,7 @@ fn remove_all_atomically_validated_inner(
         crate::rand::random_string(32)
     );
     let parent = File::open(parent)?;
-    let mut detached = Dir::openat(
+    let detached = Dir::openat(
         &parent,
         file_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
@@ -260,435 +260,33 @@ fn remove_all_atomically_validated_inner(
         );
     }
     after_validate(&quarantine)?;
-    remove_dir_contents(&mut detached)?;
-    // POSIX has no portable unlink-by-handle operation. Retain only the empty validated tombstone;
-    // never re-resolve its mutable root name after descriptor-bound reclamation.
+    // POSIX has no portable unlink-by-handle operation. Retain the complete validated tombstone;
+    // never re-resolve its mutable root name after validation.
     Ok(())
 }
 
 #[cfg(unix)]
 pub fn restore_dir_atomically_validated(
     from: &Path,
-    to: &Path,
+    _to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
-) -> Result<()> {
-    restore_dir_atomically_validated_inner(from, to, validate, |_| Ok(()), |_| Ok(()))
-}
-
-#[cfg(unix)]
-fn restore_dir_atomically_validated_inner(
-    from: &Path,
-    to: &Path,
-    validate: impl FnOnce(u64, u64) -> Result<()>,
-    after_validate: impl FnOnce(&Path) -> Result<()>,
-    before_cleanup: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
     use nix::dir::Dir;
-    use nix::fcntl::{AtFlags, OFlag};
-    use nix::sys::stat::{Mode, fstat, fstatat};
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::{Mode, fstat};
 
-    let parent = from
-        .parent()
-        .filter(|parent| Some(*parent) == to.parent())
-        .ok_or_else(|| eyre::eyre!("atomic directory rename requires one parent"))?;
-    let from_name = from
-        .file_name()
-        .ok_or_else(|| eyre::eyre!("unnamed source"))?;
-    let to_name = to
-        .file_name()
-        .ok_or_else(|| eyre::eyre!("unnamed destination"))?;
-    let parent = File::open(parent)?;
-    let retained = Dir::openat(
-        &parent,
-        from_name,
+    let retained = Dir::open(
+        from,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
     let identity = fstat(&retained)?;
     validate(identity.st_dev as u64, identity.st_ino as u64)?;
-    after_validate(from)?;
-
-    // Populate the final keg through its retained descriptor. POSIX cannot conditionally rename a
-    // directory by descriptor, so publishing a staged pathname would recreate the source-name
-    // validation race this helper exists to remove.
-    nix::sys::stat::mkdirat(&parent, to_name, Mode::from_bits_truncate(0o700))?;
-    let installed_dir = Dir::openat(
-        &parent,
-        to_name,
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )?;
-    let installed_path_identity = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-    let installed_identity = fstat(&installed_dir)?;
-    if (
-        installed_path_identity.st_dev,
-        installed_path_identity.st_ino,
-    ) != (installed_identity.st_dev, installed_identity.st_ino)
-    {
-        bail!("restore destination changed before clone");
-    }
-    if let Err(error) = clone_dir_from_fd(&retained, &installed_dir) {
-        return Err(error).wrap_err("failed to clone retained recovery backup");
-    }
-    let installed = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-    if (installed.st_dev, installed.st_ino)
-        != (installed_identity.st_dev, installed_identity.st_ino)
-    {
-        bail!("restore destination identity changed during clone");
-    }
-
-    // Publication completed the restore transaction. Only now may the still-discoverable backup
-    // be detached and reclaimed, through the same identity-validated cleanup primitive used by
-    // normal finalization. Cleanup failure cannot invalidate the restored keg.
-    if let Err(error) = before_cleanup(from).and_then(|_| {
-        remove_all_atomically_validated(from, |device, inode| {
-            if (device, inode) != (identity.st_dev as u64, identity.st_ino as u64) {
-                bail!("recovery backup identity changed before cleanup");
-            }
-            Ok(())
-        })
-    }) {
-        warn!(
-            "failed to reclaim restored recovery backup {}: {error:#}",
-            from.display()
-        );
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Result<()> {
-    clone_dir_from_fd_inner(
-        source,
-        destination,
-        destination,
-        Path::new(""),
-        &mut HashMap::new(),
+    bail!(
+        "automatic formula predecessor restore is unavailable on this platform; validated backup is preserved for manual recovery: {}",
+        from.display()
     )
 }
-
-#[cfg(unix)]
-fn clone_dir_from_fd_inner(
-    source: &nix::dir::Dir,
-    destination: &nix::dir::Dir,
-    destination_root: &nix::dir::Dir,
-    relative: &Path,
-    hardlinks: &mut HashMap<(u64, u64), PathBuf>,
-) -> Result<()> {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-
-    use nix::dir::Dir;
-    use nix::fcntl::{AtFlags, OFlag, openat, readlinkat};
-    use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
-    use nix::unistd::{LinkatFlags, linkat, symlinkat};
-
-    let mut entries = Dir::openat(
-        source,
-        ".",
-        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-        Mode::empty(),
-    )?;
-    let names = entries
-        .iter()
-        .filter_map(|entry| match entry {
-            Ok(entry)
-                if entry.file_name().to_bytes() != b"."
-                    && entry.file_name().to_bytes() != b".." =>
-            {
-                Some(Ok(entry.file_name().to_bytes().to_vec()))
-            }
-            Ok(_) => None,
-            Err(error) => Some(Err(error)),
-        })
-        .collect::<nix::Result<Vec<_>>>()?;
-    for name in names {
-        let name = OsStr::from_bytes(&name);
-        let destination_relative = relative.join(name);
-        let metadata = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-        let kind = SFlag::from_bits_truncate(metadata.st_mode);
-        if kind.contains(SFlag::S_IFLNK) {
-            let target = readlinkat(source, name)?;
-            let after = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-            ensure_same_native_identity(&metadata, &after, name)?;
-            symlinkat(Path::new(&target), destination, name)?;
-        } else if kind.contains(SFlag::S_IFDIR) {
-            let source_child = Dir::openat(
-                source,
-                name,
-                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-                Mode::empty(),
-            )?;
-            ensure_same_native_identity(&metadata, &fstat(&source_child)?, name)?;
-            mkdirat(destination, name, Mode::from_bits_truncate(0o700))?;
-            let destination_child = Dir::openat(
-                destination,
-                name,
-                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-                Mode::empty(),
-            )?;
-            let destination_path = fstatat(destination, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-            ensure_same_native_identity(&destination_path, &fstat(&destination_child)?, name)?;
-            clone_dir_from_fd_inner(
-                &source_child,
-                &destination_child,
-                destination_root,
-                &destination_relative,
-                hardlinks,
-            )?;
-        } else if kind.contains(SFlag::S_IFREG) {
-            let source_file = openat(
-                source,
-                name,
-                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-                Mode::empty(),
-            )?;
-            let mut source_file = File::from(source_file);
-            ensure_same_native_identity(&metadata, &fstat(&source_file)?, name)?;
-            let hardlink_identity = (metadata.st_dev as u64, metadata.st_ino as u64);
-            if metadata.st_nlink > 1
-                && let Some(first) = hardlinks.get(&hardlink_identity)
-            {
-                linkat(
-                    destination_root,
-                    first,
-                    destination_root,
-                    &destination_relative,
-                    LinkatFlags::empty(),
-                )?;
-            } else {
-                let destination_file = openat(
-                    destination,
-                    name,
-                    OFlag::O_WRONLY
-                        | OFlag::O_CREAT
-                        | OFlag::O_EXCL
-                        | OFlag::O_NOFOLLOW
-                        | OFlag::O_CLOEXEC,
-                    Mode::from_bits_truncate(0o600),
-                )?;
-                let mut destination_file = File::from(destination_file);
-                std::io::copy(&mut source_file, &mut destination_file)?;
-                fchmod(
-                    &destination_file,
-                    Mode::from_bits_truncate(metadata.st_mode),
-                )?;
-                preserve_fd_times(&destination_file, &metadata)?;
-                preserve_fd_xattrs(&source_file, &destination_file)?;
-                if metadata.st_nlink > 1 {
-                    hardlinks.insert(hardlink_identity, destination_relative);
-                }
-            }
-        } else {
-            bail!(
-                "unsupported recovery backup entry: {}",
-                name.to_string_lossy()
-            );
-        }
-    }
-    let metadata = fstat(source)?;
-    fchmod(destination, Mode::from_bits_truncate(metadata.st_mode))?;
-    preserve_fd_times(destination, &metadata)?;
-    preserve_fd_xattrs(source, destination)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn preserve_fd_times(fd: &impl std::os::fd::AsFd, metadata: &nix::libc::stat) -> Result<()> {
-    use nix::sys::stat::futimens;
-    use nix::sys::time::TimeSpec;
-
-    let atime = TimeSpec::new(metadata.st_atime, metadata.st_atime_nsec);
-    let mtime = TimeSpec::new(metadata.st_mtime, metadata.st_mtime_nsec);
-    futimens(fd, &atime, &mtime)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn preserve_fd_xattrs(
-    source: &impl std::os::fd::AsRawFd,
-    destination: &impl std::os::fd::AsRawFd,
-) -> Result<()> {
-    use std::ffi::CString;
-
-    let size = fd_list_xattrs(source.as_raw_fd(), std::ptr::null_mut(), 0)?;
-    let mut names = vec![0_u8; size];
-    if size > 0 {
-        fd_list_xattrs(source.as_raw_fd(), names.as_mut_ptr().cast(), size)?;
-    }
-    for name in names
-        .split(|byte| *byte == 0)
-        .filter(|name| !name.is_empty())
-    {
-        let name = CString::new(name)?;
-        let size = fd_get_xattr(source.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0)?;
-        let mut value = vec![0_u8; size];
-        if size > 0 {
-            fd_get_xattr(
-                source.as_raw_fd(),
-                name.as_ptr(),
-                value.as_mut_ptr().cast(),
-                size,
-            )?;
-        }
-        fd_set_xattr(
-            destination.as_raw_fd(),
-            name.as_ptr(),
-            value.as_ptr().cast(),
-            size,
-        )?;
-    }
-    Ok(())
-}
-
-#[cfg(target_os = "linux")]
-fn fd_list_xattrs(fd: i32, list: *mut nix::libc::c_char, size: usize) -> Result<usize> {
-    let result = unsafe { nix::libc::flistxattr(fd, list, size) };
-    if result < 0 {
-        Err(std::io::Error::last_os_error().into())
-    } else {
-        Ok(result as usize)
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn fd_list_xattrs(fd: i32, list: *mut nix::libc::c_char, size: usize) -> Result<usize> {
-    let result = unsafe { nix::libc::flistxattr(fd, list, size, 0) };
-    if result < 0 {
-        Err(std::io::Error::last_os_error().into())
-    } else {
-        Ok(result as usize)
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn fd_get_xattr(
-    fd: i32,
-    name: *const nix::libc::c_char,
-    value: *mut nix::libc::c_void,
-    size: usize,
-) -> Result<usize> {
-    let result = unsafe { nix::libc::fgetxattr(fd, name, value, size) };
-    if result < 0 {
-        Err(std::io::Error::last_os_error().into())
-    } else {
-        Ok(result as usize)
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn fd_get_xattr(
-    fd: i32,
-    name: *const nix::libc::c_char,
-    value: *mut nix::libc::c_void,
-    size: usize,
-) -> Result<usize> {
-    let result = unsafe { nix::libc::fgetxattr(fd, name, value, size, 0, 0) };
-    if result < 0 {
-        Err(std::io::Error::last_os_error().into())
-    } else {
-        Ok(result as usize)
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn fd_set_xattr(
-    fd: i32,
-    name: *const nix::libc::c_char,
-    value: *const nix::libc::c_void,
-    size: usize,
-) -> Result<()> {
-    let result = unsafe { nix::libc::fsetxattr(fd, name, value, size, 0) };
-    if result < 0 {
-        Err(std::io::Error::last_os_error().into())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn fd_set_xattr(
-    fd: i32,
-    name: *const nix::libc::c_char,
-    value: *const nix::libc::c_void,
-    size: usize,
-) -> Result<()> {
-    let result = unsafe { nix::libc::fsetxattr(fd, name, value, size, 0, 0) };
-    if result < 0 {
-        Err(std::io::Error::last_os_error().into())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(unix)]
-fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-
-    use nix::dir::Dir;
-    use nix::errno::Errno;
-    use nix::fcntl::OFlag;
-    use nix::sys::stat::Mode;
-    use nix::unistd::{UnlinkatFlags, unlinkat};
-
-    let names = dir
-        .iter()
-        .filter_map(|entry| match entry {
-            Ok(entry)
-                if entry.file_name().to_bytes() != b"."
-                    && entry.file_name().to_bytes() != b".." =>
-            {
-                Some(Ok(entry.file_name().to_bytes().to_vec()))
-            }
-            Ok(_) => None,
-            Err(error) => Some(Err(error)),
-        })
-        .collect::<nix::Result<Vec<_>>>()?;
-    for name in names {
-        let name = OsStr::from_bytes(&name);
-        match Dir::openat(
-            &*dir,
-            name,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        ) {
-            Ok(mut child) => {
-                remove_dir_contents(&mut child)?;
-                unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
-            }
-            Err(Errno::ENOTDIR | Errno::ELOOP) => {
-                unlinkat(&*dir, name, UnlinkatFlags::NoRemoveDir)?;
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn ensure_same_native_identity(
-    expected: &nix::libc::stat,
-    actual: &nix::libc::stat,
-    name: &std::ffi::OsStr,
-) -> Result<()> {
-    if (
-        expected.st_dev,
-        expected.st_ino,
-        expected.st_mode & nix::libc::S_IFMT,
-    ) != (
-        actual.st_dev,
-        actual.st_ino,
-        actual.st_mode & nix::libc::S_IFMT,
-    ) {
-        bail!(
-            "directory entry changed during descriptor-bound operation: {}",
-            name.to_string_lossy()
-        );
-    }
-    Ok(())
-}
-
 #[cfg(unix)]
 fn atomic_rename_noreplace(
     parent: &impl std::os::fd::AsRawFd,
@@ -3671,56 +3269,6 @@ mod tests {
             fs::read_to_string(foreign.join("must-survive")).unwrap(),
             "foreign"
         );
-        assert!(displaced.read_dir().unwrap().next().is_none());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn atomically_validated_restore_ignores_source_replacement() {
-        use std::os::unix::fs::MetadataExt;
-
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("backup");
-        let destination = root.path().join("keg");
-        let replacement = root.path().join("replacement");
-        let displaced = root.path().join("displaced-backup");
-        fs::create_dir(&source).unwrap();
-        fs::write(source.join("expected"), "expected").unwrap();
-        let expected = fs::metadata(&source).unwrap();
-        fs::create_dir(&replacement).unwrap();
-        fs::write(replacement.join("must-survive"), "foreign").unwrap();
-
-        restore_dir_atomically_validated_inner(
-            &source,
-            &destination,
-            |device, inode| {
-                assert_eq!((device, inode), (expected.dev(), expected.ino()));
-                Ok(())
-            },
-            |source| {
-                fs::rename(source, &displaced)?;
-                fs::rename(&replacement, source)?;
-                Ok(())
-            },
-            |_| Ok(()),
-        )
-        .unwrap();
-
-        assert_eq!(
-            fs::read_to_string(destination.join("expected")).unwrap(),
-            "expected"
-        );
-        let foreign = root
-            .path()
-            .read_dir()
-            .unwrap()
-            .filter_map(Result::ok)
-            .find(|entry| entry.path().join("must-survive").is_file())
-            .unwrap();
-        assert_eq!(
-            fs::read_to_string(foreign.path().join("must-survive")).unwrap(),
-            "foreign"
-        );
         assert_eq!(
             fs::read_to_string(displaced.join("expected")).unwrap(),
             "expected"
@@ -3729,27 +3277,17 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn failed_restore_keeps_backup_discoverable() {
+    fn automatic_restore_fails_before_namespace_mutation() {
         let root = tempfile::tempdir().unwrap();
-        let source = root.path().join(".mise-backup-1.0");
-        let destination = root.path().join("1.0");
+        let source = root.path().join("backup");
+        let destination = root.path().join("keg");
         fs::create_dir(&source).unwrap();
         fs::write(source.join("expected"), "expected").unwrap();
 
-        let error = restore_dir_atomically_validated_inner(
-            &source,
-            &destination,
-            |_, _| Ok(()),
-            |_| bail!("injected pre-publication failure"),
-            |_| Ok(()),
-        )
-        .unwrap_err();
+        let error =
+            restore_dir_atomically_validated(&source, &destination, |_, _| Ok(())).unwrap_err();
 
-        assert!(
-            error
-                .to_string()
-                .contains("injected pre-publication failure")
-        );
+        assert!(error.to_string().contains("manual recovery"));
         assert_eq!(
             fs::read_to_string(source.join("expected")).unwrap(),
             "expected"
@@ -3759,194 +3297,47 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn recovery_clone_ignores_destination_replacement() {
-        use nix::dir::Dir;
-        use nix::fcntl::OFlag;
-        use nix::sys::stat::Mode;
-
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("source");
-        let destination = root.path().join("staging");
-        let displaced = root.path().join("displaced-staging");
-        fs::create_dir(&source).unwrap();
-        fs::create_dir(source.join("nested")).unwrap();
-        fs::write(source.join("nested/expected"), "expected").unwrap();
-        fs::create_dir(&destination).unwrap();
-        let source = Dir::open(
-            &source,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
-            Mode::empty(),
-        )
-        .unwrap();
-        let destination_fd = Dir::open(
-            &destination,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
-            Mode::empty(),
-        )
-        .unwrap();
-
-        fs::rename(&destination, &displaced).unwrap();
-        fs::create_dir(&destination).unwrap();
-        fs::write(destination.join("must-survive"), "foreign").unwrap();
-        clone_dir_from_fd(&source, &destination_fd).unwrap();
-
-        assert_eq!(
-            fs::read_to_string(displaced.join("nested/expected")).unwrap(),
-            "expected"
-        );
-        assert_eq!(
-            fs::read_to_string(destination.join("must-survive")).unwrap(),
-            "foreign"
-        );
-        assert!(!destination.join("nested").exists());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn recovery_clone_preserves_hardlinks_and_timestamps() {
-        use std::os::unix::fs::MetadataExt;
-
-        use nix::dir::Dir;
-        use nix::fcntl::OFlag;
-        use nix::sys::stat::Mode;
-
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("source");
-        let destination = root.path().join("destination");
-        fs::create_dir(&source).unwrap();
-        fs::create_dir(&destination).unwrap();
-        fs::write(source.join("first"), "expected").unwrap();
-        fs::hard_link(source.join("first"), source.join("second")).unwrap();
-        let timestamp = FileTime::from_unix_time(1_234_567_890, 123_456_789);
-        set_file_times(source.join("first"), timestamp, timestamp).unwrap();
-        let source = Dir::open(
-            &source,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
-            Mode::empty(),
-        )
-        .unwrap();
-        let destination_fd = Dir::open(
-            &destination,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
-            Mode::empty(),
-        )
-        .unwrap();
-
-        clone_dir_from_fd(&source, &destination_fd).unwrap();
-
-        let first = fs::metadata(destination.join("first")).unwrap();
-        let second = fs::metadata(destination.join("second")).unwrap();
-        assert_eq!(first.ino(), second.ino());
-        assert_eq!(FileTime::from_last_modification_time(&first), timestamp);
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn restore_never_overwrites_preempting_destination() {
+    fn quarantine_never_traverses_swapped_descendants() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("backup");
-        let destination = root.path().join("keg");
-        fs::create_dir(&source).unwrap();
-        fs::write(source.join("expected"), "expected").unwrap();
-
-        restore_dir_atomically_validated_inner(
-            &source,
-            &destination,
-            |_, _| Ok(()),
-            |_| {
-                fs::create_dir(&destination)?;
-                fs::write(destination.join("must-survive"), "foreign")?;
-                Ok(())
-            },
-            |_| Ok(()),
-        )
-        .unwrap_err();
-
-        assert_eq!(
-            fs::read_to_string(destination.join("must-survive")).unwrap(),
-            "foreign"
-        );
-        assert_eq!(
-            fs::read_to_string(source.join("expected")).unwrap(),
-            "expected"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn atomically_validated_removal_never_unlinks_replacement_root() {
-        use std::os::unix::fs::MetadataExt;
-
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("backup");
-        let displaced = root.path().join("displaced");
-        fs::create_dir(&source).unwrap();
-        fs::write(source.join("expected"), "expected").unwrap();
-        let expected = fs::metadata(&source).unwrap();
+        let foreign = root.path().join("foreign");
+        fs::create_dir_all(source.join("child")).unwrap();
+        fs::write(source.join("child/expected"), "expected").unwrap();
+        fs::create_dir(&foreign).unwrap();
+        fs::write(foreign.join("must-survive"), "foreign").unwrap();
 
         remove_all_atomically_validated_inner(
             &source,
-            |device, inode| {
-                assert_eq!((device, inode), (expected.dev(), expected.ino()));
-                Ok(())
-            },
+            |_, _| Ok(()),
             |quarantine| {
-                fs::rename(quarantine, &displaced)?;
-                fs::create_dir(quarantine)?;
+                fs::rename(quarantine.join("child"), root.path().join("expected-child"))?;
+                fs::rename(&foreign, quarantine.join("child"))?;
                 Ok(())
             },
         )
         .unwrap();
 
-        assert!(
-            root.path()
-                .read_dir()
-                .unwrap()
-                .filter_map(Result::ok)
-                .any(|entry| entry
+        let tombstone = root
+            .path()
+            .read_dir()
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| {
+                entry
                     .file_name()
                     .to_string_lossy()
-                    .starts_with(".mise-delete-"))
-        );
-        assert!(displaced.read_dir().unwrap().next().is_none());
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn restored_keg_survives_reclamation_failure() {
-        use std::os::unix::fs::MetadataExt;
-
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("backup");
-        let destination = root.path().join("keg");
-        fs::create_dir(&source).unwrap();
-        fs::write(source.join("expected"), "expected").unwrap();
-        let expected = fs::metadata(&source).unwrap();
-
-        restore_dir_atomically_validated_inner(
-            &source,
-            &destination,
-            |device, inode| {
-                assert_eq!((device, inode), (expected.dev(), expected.ino()));
-                Ok(())
-            },
-            |_| Ok(()),
-            |_| bail!("injected mid-cleanup failure"),
-        )
-        .unwrap();
-
+                    .starts_with(".mise-delete-")
+            })
+            .unwrap();
         assert_eq!(
-            fs::read_to_string(destination.join("expected")).unwrap(),
-            "expected"
+            fs::read_to_string(tombstone.path().join("child/must-survive")).unwrap(),
+            "foreign"
         );
         assert_eq!(
-            fs::read_to_string(source.join("expected")).unwrap(),
+            fs::read_to_string(root.path().join("expected-child/expected")).unwrap(),
             "expected"
         );
     }
-
-    #[cfg(unix)]
-    #[test]
     fn test_desymlink_path_preserves_absolute_target() {
         use std::os::unix::fs::symlink;
 
