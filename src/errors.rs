@@ -136,7 +136,7 @@ impl Error {
     }
 
     #[cfg(not(unix))]
-    pub fn is_sigint(_err: &Report) -> bool {
+    pub(crate) fn is_sigint(_err: &Report) -> bool {
         false
     }
 

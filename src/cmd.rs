@@ -589,7 +589,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     #[cfg(windows)]
-    pub fn kill_all() {
+    pub(crate) fn kill_all() {
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             if let Err(e) = std::process::Command::new("taskkill")
@@ -769,7 +769,7 @@ impl<'a> CmdLineRunner<'a> {
     /// must reach cmd unquoted. See `TaskExecutor::get_cmd_program_and_args`
     /// and discussion #9355.
     #[cfg(windows)]
-    pub fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+    pub(crate) fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         // tokio's `Command` exposes `raw_arg` as an inherent method, so the
         // `std::os::windows::process::CommandExt` trait import is unnecessary.
         self.cmd.raw_arg(arg);
