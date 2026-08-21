@@ -406,7 +406,17 @@ impl Lock {
         }
 
         if !has_lock_targets && !self.json {
-            miseprintln!("{} No tools configured to lock", style("!").yellow());
+            // --local asks for mise.local.lock specifically, and there is no global
+            // equivalent, so don't redirect that run to global scope.
+            if !self.global && !self.local && self.global_config_declares_tools(ts) {
+                miseprintln!(
+                    "{} No tools configured to lock in this project, but global config declares tools. Run {} to lock those.",
+                    style("!").yellow(),
+                    style("mise lock --global").cyan()
+                );
+            } else {
+                miseprintln!("{} No tools configured to lock", style("!").yellow());
+            }
         }
 
         // Update config files when a specific version is requested that doesn't match
@@ -845,6 +855,29 @@ impl Lock {
                     cf.source().is_mise_toml() && !crate::config::is_global_config(path)
                 })
                 .map(|(_, cf)| cf.config_root())
+        })
+    }
+
+    /// Whether any tool this run asked for comes from a global mise.toml, meaning
+    /// `--global` would have something to lock even though the project scope is empty.
+    ///
+    /// This also covers a config reached through two paths, such as a dotfiles repo
+    /// that symlinks ~/.config/mise/config.toml to its own mise.toml: the single
+    /// merged config counts as global, so plain `mise lock` finds nothing.
+    ///
+    /// Tool selectors are honored so `mise lock node` never points at `--global`
+    /// for some unrelated tool that happens to live in the global config.
+    fn global_config_declares_tools(&self, toolset: &Toolset) -> bool {
+        toolset.list_current_versions().iter().any(|(backend, tv)| {
+            if !self.tool.is_empty()
+                && !self
+                    .tool
+                    .iter()
+                    .any(|requested| requested.ba.short == backend.ba().short)
+            {
+                return false;
+            }
+            matches!(tv.request.source(), ToolSource::MiseToml(path) if crate::config::is_global_config(path))
         })
     }
 
