@@ -1581,10 +1581,10 @@ fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> 
         .filter_map(|line| line.strip_prefix(&prefix))
         .filter_map(|line| line.split_once(' '))
         .filter_map(|(version, field)| {
-            // With both fields requested npm prefixes each matched version and
-            // labels deprecation metadata. npm sometimes renders version-only
-            // entries without a `version =` label, so match the field name
-            // positively rather than treating every other line as deprecated.
+            // When `deprecated` is absent, npm collapses the remaining
+            // `version` field to `<package>@<version> '<version>'` without a
+            // `version =` label. Match `deprecated =` positively so the
+            // shorthand version-only line is not treated as deprecated.
             field
                 .starts_with("deprecated = ")
                 .then_some(version.to_string())
