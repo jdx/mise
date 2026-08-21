@@ -9101,6 +9101,14 @@ fn validate_installed_cask_topology_with_metadata(
             declared_appdir_binary_symlink_is_owned(&binary.source, &artifacts.apps, &target)?
         } else {
             symlink_resolves_below(&target, version_dir)
+                || recorded_guarded_flight_symlink_is_owned(
+                    cask,
+                    artifacts,
+                    &appdir,
+                    version_dir,
+                    &target,
+                    recorded_targets,
+                )?
         };
         if !owned {
             bail!(
@@ -9157,6 +9165,47 @@ fn validate_installed_cask_topology_with_metadata(
         bail!("one or more recorded package receipts are missing");
     }
     Ok(())
+}
+
+fn recorded_guarded_flight_symlink_is_owned(
+    cask: &Cask,
+    artifacts: &CaskArtifacts,
+    appdir: &Path,
+    version_dir: &Path,
+    target: &Path,
+    recorded_targets: Option<&[CaskTargetRecord]>,
+) -> Result<bool> {
+    let declared = artifacts
+        .preflight_steps
+        .iter()
+        .chain(&artifacts.postflight_steps)
+        .any(|step| match step {
+            FlightStep::Symlink {
+                target: declared,
+                guards,
+                ..
+            } if guards.iter().any(|guard| {
+                matches!(
+                    guard,
+                    FlightGuard::IfExists(_) | FlightGuard::UnlessExists(_)
+                )
+            }) =>
+            {
+                resolve_flight_path_with_context(cask, declared, version_dir, appdir)
+                    .is_ok_and(|declared| declared == target)
+            }
+            _ => false,
+        });
+    if !declared {
+        return Ok(false);
+    }
+    Ok(recorded_targets.is_some_and(|records| {
+        records.iter().any(|record| {
+            record.path == target
+                && record.fingerprint.kind == CaskTargetKind::Symlink
+                && cask_target_present(record)
+        })
+    }))
 }
 
 fn declared_appdir_symlink_is_owned(
@@ -17027,6 +17076,72 @@ mod tests {
             )?,
             None
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn guarded_flight_binary_requires_current_receipt_fingerprint() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("declared");
+        let other = tmp.path().join("other");
+        let target = tmp.path().join("binary");
+        file::write(&source, "declared")?;
+        file::write(&other, "other")?;
+        std::os::unix::fs::symlink(&source, &target)?;
+        let cask = test_cask("external", "1.0.0");
+        let artifacts = CaskArtifacts {
+            postflight_steps: vec![FlightStep::Symlink {
+                source: FlightPath {
+                    base: FlightPathBase::Literal,
+                    path: source.to_string_lossy().into_owned(),
+                },
+                target: FlightPath {
+                    base: FlightPathBase::Literal,
+                    path: target.to_string_lossy().into_owned(),
+                },
+                force: false,
+                uninstall: true,
+                source_glob: false,
+                sudo: FlightSudo::Never,
+                guards: vec![FlightGuard::UnlessExists(FlightPath {
+                    base: FlightPathBase::Literal,
+                    path: target.to_string_lossy().into_owned(),
+                })],
+            }],
+            ..Default::default()
+        };
+        assert!(!recorded_guarded_flight_symlink_is_owned(
+            &cask,
+            &artifacts,
+            Path::new("/Applications"),
+            tmp.path(),
+            &target,
+            None,
+        )?);
+        let records = vec![CaskTargetRecord {
+            path: target.clone(),
+            fingerprint: cask_target_fingerprint(&target)?,
+            uninstall: Some(true),
+        }];
+        assert!(recorded_guarded_flight_symlink_is_owned(
+            &cask,
+            &artifacts,
+            Path::new("/Applications"),
+            tmp.path(),
+            &target,
+            Some(&records),
+        )?);
+        file::remove_file(&target)?;
+        std::os::unix::fs::symlink(other, &target)?;
+        assert!(!recorded_guarded_flight_symlink_is_owned(
+            &cask,
+            &artifacts,
+            Path::new("/Applications"),
+            tmp.path(),
+            &target,
+            Some(&records),
+        )?);
         Ok(())
     }
 
