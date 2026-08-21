@@ -679,6 +679,27 @@ tool versions, settings, or watched files change.
 env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
 
+[env_conf_d]
+description = "Enable environment-specific filenames in conf.d directories."
+docs = """
+When enabled, files in `.mise/conf.d` and `.config/mise/conf.d` use environment
+suffixes: `tools.development.toml` loads only when `development` is active, and
+`tools.development.local.toml` is its local variant.
+
+This behavior is opt-in during the migration period. When disabled or unset,
+all non-hidden TOML files in `conf.d` continue to load unconditionally. Dots in
+unconditional fragment names are deprecated; rename `node.tools.toml` to
+`node-tools.toml` before mise 2027.8.10.
+
+This is an early-init setting: it must be set in a `miserc.toml` file or via the
+`MISE_ENV_CONF_D` environment variable. Setting it in `mise.toml` has no effect
+because config file discovery has already occurred by the time `mise.toml` is read.
+"""
+env = "MISE_ENV_CONF_D"
+optional = true
+rc = true
+type = "Bool"
+
 [env_file]
 description = "Path to a file containing environment variables to automatically load."
 env = "MISE_ENV_FILE"
