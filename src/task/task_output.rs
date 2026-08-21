@@ -1,6 +1,5 @@
 use crate::config::Settings;
 use crate::env;
-use console;
 
 #[derive(
     Debug,
