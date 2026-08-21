@@ -1830,7 +1830,17 @@ fn install_generic_artifact(
         );
     }
     let target = generic_artifact_target_path(&artifact.target)?;
-    let relative_source = source.strip_prefix(stage)?;
+    // Not a lexical `strip_prefix`: the lookup resolves symlinks it had to
+    // traverse, so a source reached that way can be contained by the stage
+    // without sharing its literal prefix — as it is whenever `stage` itself
+    // has a symlinked ancestor. `staged_relative_path` retries against the
+    // resolved stage, matching the containment check above.
+    let relative_source = staged_relative_path(stage, &source).ok_or_else(|| {
+        eyre!(
+            "brew-cask: generic artifact source is not contained by the extraction root: {}",
+            source.display()
+        )
+    })?;
     let caskroom_source = temporary_caskroom.join(relative_source);
     if !path_starts_with_resolved_root(&caskroom_source, temporary_caskroom) {
         bail!(
@@ -4595,7 +4605,10 @@ fn stage_binary(
             file::copy(&source, &caskroom_binary)?;
             file::make_executable(&caskroom_binary)?;
         } else {
-            file::make_symlink(&source, &caskroom_binary)?;
+            file::make_symlink(
+                &durable_binary_link_target(&source, stage, caskroom),
+                &caskroom_binary,
+            )?;
         }
     }
     Ok(())
@@ -4701,6 +4714,26 @@ fn find_binary_source(
                 binary.source
             )
         })
+}
+
+/// Where to point a caskroom binary link whose source is not stage content.
+///
+/// A source handed to us under the stage or the temporary caskroom, yet
+/// resolving outside it, has to be linked at its real location: a link at the
+/// literal path dangles as soon as staging tears that directory down. This is
+/// reachable both from the walk, which returns a symlink entry it matched by
+/// name, and from `generated_caskroom_artifact`, which maps a hook-generated
+/// path onto either root.
+///
+/// Sources that already sit outside both roots — the absolute paths a pkg
+/// installer creates, for instance — are linked verbatim, so the recorded
+/// target stays the path the cask metadata named.
+fn durable_binary_link_target(source: &Path, stage: &Path, caskroom: &Path) -> PathBuf {
+    if source.starts_with(stage) || source.starts_with(caskroom) {
+        file::desymlink_path(source)
+    } else {
+        source.to_path_buf()
+    }
 }
 
 fn absolute_binary_source(source: &str) -> Option<PathBuf> {
@@ -12932,6 +12965,79 @@ end
                 .parent()
                 .and_then(Path::parent)
                 .is_some_and(|root| root.join("lib").is_dir())
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_a_stage_symlink_at_its_target_so_it_survives_teardown() -> Result<()> {
+        // The walk matches symlink entries by name and `is_file` follows them,
+        // so a stage-local link to a durable binary comes back as a stage path
+        // that resolves outside the stage. Linking the caskroom entry at that
+        // literal path would dangle the moment staging tears the stage down.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let durable = tmp.path().join("opt/vendor/tool");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(durable.parent().unwrap())?;
+        crate::file::write(&durable, "durable")?;
+        std::os::unix::fs::symlink(&durable, stage.join("tool"))?;
+        let caskroom = caskroom_version_dir("linked-binary", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("linked-binary", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "tool".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/tool".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+
+        let staged = caskroom.join("bin/tool");
+        assert_eq!(
+            std::fs::read_link(&staged)?,
+            file::desymlink_path(&durable),
+            "must link the real location, not the path through the stage"
+        );
+        // The decisive check: staging is over, so the stage is gone.
+        file::remove_all(&stage)?;
+        assert_eq!(crate::file::read_to_string(&staged)?, "durable");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_generic_artifact_through_a_symlinked_stage() -> Result<()> {
+        // The lookup resolves links it traverses, so the source can be
+        // contained by the stage without sharing its literal prefix. A lexical
+        // strip would fail here even though the containment check passes.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let real_stage = tmp.path().join("real-stage");
+        let payload = real_stage.join("libcblite-4.1.0/include/cbl");
+        file::create_dir_all(&payload)?;
+        file::write(payload.join("CouchbaseLite.h"), "header")?;
+        std::os::unix::fs::symlink(
+            real_stage.join("libcblite-4.1.0"),
+            real_stage.join("current"),
+        )?;
+        let stage = tmp.path().join("stage");
+        std::os::unix::fs::symlink(&real_stage, &stage)?;
+        let artifact = GenericArtifact {
+            source: "current/include/cbl".to_string(),
+            target: "$HOMEBREW_PREFIX/include/cbl".to_string(),
+        };
+
+        let mut targets = FlightTargetTransaction::default();
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        install_generic_artifact(&stage, &temporary_caskroom, &artifact, &mut targets)?;
+
+        assert_eq!(
+            file::read_to_string(tmp.path().join("include/cbl/CouchbaseLite.h"))?,
+            "header"
         );
         Ok(())
     }
