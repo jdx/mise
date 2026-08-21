@@ -12011,6 +12011,7 @@ fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
 enum HomebrewUninstallAction {
     Pkgutil(String),
     Delete(PathBuf),
+    Trash(PathBuf),
     Quit(String),
     Launchctl(String),
     Signal {
@@ -12254,6 +12255,7 @@ fn homebrew_uninstall_actions_from_artifacts(
                     "script" => "script",
                     "pkgutil" => "pkgutil",
                     "delete" => "delete",
+                    "trash" => "trash",
                     _ => {
                         bail!("brew-cask:{token}: unsupported recorded uninstall directive {kind}")
                     }
@@ -12278,7 +12280,15 @@ fn homebrew_uninstall_actions_from_artifacts(
     let mut actions = Vec::new();
     // Homebrew 6.0.17 AbstractUninstall::ORDERED_DIRECTIVES. Unsupported
     // directives fail above; zap artifacts are intentionally never included.
-    for kind in ["launchctl", "quit", "signal", "script", "pkgutil", "delete"] {
+    for kind in [
+        "launchctl",
+        "quit",
+        "signal",
+        "script",
+        "pkgutil",
+        "delete",
+        "trash",
+    ] {
         for value in directives.remove(kind).unwrap_or_default() {
             match kind {
                 "launchctl" => actions.push(HomebrewUninstallAction::Launchctl(
@@ -12293,6 +12303,9 @@ fn homebrew_uninstall_actions_from_artifacts(
                     value.as_str().unwrap().to_string(),
                 )),
                 "delete" => actions.push(HomebrewUninstallAction::Delete(PathBuf::from(
+                    value.as_str().unwrap(),
+                ))),
+                "trash" => actions.push(HomebrewUninstallAction::Trash(PathBuf::from(
                     value.as_str().unwrap(),
                 ))),
                 _ => unreachable!(),
@@ -12433,7 +12446,7 @@ fn validate_homebrew_uninstall_actions(
 ) -> Result<()> {
     for action in actions {
         match action {
-            HomebrewUninstallAction::Delete(path) => {
+            HomebrewUninstallAction::Delete(path) | HomebrewUninstallAction::Trash(path) => {
                 let expanded = expand_cask_template(
                     &path.to_string_lossy(),
                     &caskroom_version_dir(token, version),
@@ -12559,7 +12572,7 @@ fn execute_homebrew_uninstall_action(
                 execute_pkg_removal_plan(&candidate.token, plan)?;
             }
         }
-        HomebrewUninstallAction::Delete(path) => {
+        HomebrewUninstallAction::Delete(path) | HomebrewUninstallAction::Trash(path) => {
             let raw = path.to_string_lossy();
             let expanded = expand_cask_template(
                 &raw,
@@ -13132,7 +13145,7 @@ fn preflight_homebrew_uninstall_actions(
 ) -> Result<()> {
     for action in actions {
         match action {
-            HomebrewUninstallAction::Delete(path) => {
+            HomebrewUninstallAction::Delete(path) | HomebrewUninstallAction::Trash(path) => {
                 let expanded = expand_cask_template(
                     &path.to_string_lossy(),
                     &candidate.version_dir,
@@ -20421,6 +20434,35 @@ end
                 HomebrewUninstallAction::Pkgutil("com.example.two".to_string()),
                 HomebrewUninstallAction::Delete(PathBuf::from("/Library/Example")),
             ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn gcloud_uninstall_trash_is_typed_and_confined() -> Result<()> {
+        let artifacts = serde_json::json!([{
+            "uninstall": [{
+                "trash": "$HOMEBREW_PREFIX/Caskroom/gcloud-cli/latest"
+            }]
+        }]);
+        let actions =
+            homebrew_uninstall_actions_from_artifacts("gcloud-cli", artifacts.as_array().unwrap())?;
+        assert_eq!(
+            actions,
+            vec![HomebrewUninstallAction::Trash(PathBuf::from(
+                "$HOMEBREW_PREFIX/Caskroom/gcloud-cli/latest"
+            ))]
+        );
+        assert!(validate_homebrew_uninstall_actions("gcloud-cli", "581.0.0", &actions).is_ok());
+        assert!(
+            validate_homebrew_uninstall_actions(
+                "gcloud-cli",
+                "581.0.0",
+                &[HomebrewUninstallAction::Trash(PathBuf::from("/"))],
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("protected path")
         );
         Ok(())
     }
