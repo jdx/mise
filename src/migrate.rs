@@ -8,7 +8,7 @@ use crate::runtime_symlinks;
 use crate::toolset::install_state;
 use eyre::Result;
 
-pub async fn run() {
+pub(crate) async fn run() {
     tokio::join!(
         task(migrate_trusted_configs),
         task(migrate_tracked_configs),

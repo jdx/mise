@@ -171,13 +171,13 @@ impl Logger {
     }
 }
 
-pub fn thread_id() -> String {
+pub(crate) fn thread_id() -> String {
     let id = format!("{:?}", thread::current().id());
     let id = id.replace("ThreadId(", "");
     id.replace(")", "")
 }
 
-pub fn init() {
+pub(crate) fn init() {
     static LOGGER: OnceLock<Logger> = OnceLock::new();
     let settings = Settings::try_get().unwrap_or_else(|_| Default::default());
     let term_level = settings.log_level();

@@ -18,7 +18,7 @@ fn syscall_number<T: Into<i64>>(number: T) -> i64 {
 /// execution additionally rejects cross-process inspection, kernel control,
 /// namespaces, async-I/O bypasses, and path-based metadata mutation.
 /// Based on the syscall list from OpenAI's codex-linux-sandbox.
-pub fn apply_seccomp_net_filter(
+pub(super) fn apply_seccomp_net_filter(
     deny_local_sockets: bool,
     deny_process_group_escape: bool,
     strict_formula_execution: bool,

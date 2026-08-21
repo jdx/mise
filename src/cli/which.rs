@@ -13,7 +13,7 @@ use itertools::Itertools;
 /// Use this to figure out what version of a tool is currently active.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Which {
+pub(crate) struct Which {
     /// The bin to look up
     #[clap(required_unless_present = "complete")]
     pub bin_name: Option<String>,
@@ -36,7 +36,7 @@ pub struct Which {
 }
 
 impl Which {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         if self.complete {
             return self.complete(&config).await;

@@ -28,7 +28,7 @@ use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
-pub struct VfoxBackend {
+pub(crate) struct VfoxBackend {
     ba: Arc<BackendArg>,
     plugin: Arc<VfoxPlugin>,
     plugin_enum: PluginEnum,
@@ -622,7 +622,7 @@ impl VfoxBackend {
         options
     }
 
-    pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
         let pathname = match &backend_plugin_name {
             Some(plugin_name) => plugin_name.clone(),
             None => ba.short.to_kebab_case(),

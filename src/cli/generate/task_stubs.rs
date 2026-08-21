@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 /// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskStubs {
+pub(super) struct TaskStubs {
     /// Directory to create task stubs inside of
     #[clap(long, short, verbatim_doc_comment, default_value="bin", value_hint=ValueHint::DirPath)]
     dir: PathBuf,
@@ -30,7 +30,7 @@ pub struct TaskStubs {
 }
 
 impl TaskStubs {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let tasks = config.tasks().await?;
         let task_paths = tasks.values().map(Task::name_to_path).collect::<Vec<_>>();

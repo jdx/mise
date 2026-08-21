@@ -10,7 +10,7 @@ use thiserror::Error;
 #[derive(Debug, Error, Diagnostic)]
 #[error("Invalid TOML in config file: {}", path.display())]
 #[diagnostic(code(mise::config::parse_error))]
-pub struct TomlParseError {
+pub(crate) struct TomlParseError {
     path: PathBuf,
     #[source_code]
     src: NamedSource<String>,
@@ -22,7 +22,7 @@ pub struct TomlParseError {
 /// A diagnostic error that stores pre-rendered miette output.
 /// This allows miette's fancy formatting to be preserved when wrapped in eyre.
 #[derive(Debug)]
-pub struct MiseDiagnostic {
+pub(crate) struct MiseDiagnostic {
     /// Short description for Display
     message: String,
     /// Pre-rendered miette output for rich display
@@ -39,20 +39,20 @@ impl std::error::Error for MiseDiagnostic {}
 
 impl MiseDiagnostic {
     /// Create a new diagnostic from any miette Diagnostic
-    pub fn new<D: Diagnostic + Send + Sync + 'static>(diagnostic: D) -> Self {
+    pub(crate) fn new<D: Diagnostic + Send + Sync + 'static>(diagnostic: D) -> Self {
         let message = diagnostic.to_string();
         let rendered = format!("{:?}", miette::Report::new(diagnostic));
         MiseDiagnostic { message, rendered }
     }
 
     /// Get the pre-rendered miette output
-    pub fn render(&self) -> &str {
+    pub(crate) fn render(&self) -> &str {
         &self.rendered
     }
 }
 
 /// Create an eyre error from a toml::de::Error with rich source context.
-pub fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path) -> eyre::Report {
+pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path) -> eyre::Report {
     let message = err.message().to_string();
 
     // Get the byte span from toml error

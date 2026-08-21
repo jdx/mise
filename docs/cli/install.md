@@ -89,6 +89,11 @@ Install tool(s) to the system-wide shared directory
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
 
+This shares the install location between users; it does not put binaries on
+PATH for use without mise. Every user still needs mise to run these tools.
+For binaries usable without mise, see `mise install-into` or
+`[bootstrap.packages]`.
+
 Examples:
 
 ```

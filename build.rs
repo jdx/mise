@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
@@ -615,7 +618,7 @@ fn codegen_settings() {
     let mut lines = vec![
         r#"#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(layer_attr(derive(Clone, Serialize, Default)))]
-pub struct Settings {"#
+pub(crate) struct Settings {"#
             .to_string(),
     ];
 
@@ -729,7 +732,7 @@ pub struct Settings {"#
 #[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(layer_attr(derive(Clone, Serialize, Default)))]
 #[config(layer_attr(serde(deny_unknown_fields)))]
-pub struct {name} {{"#,
+pub(crate) struct {name} {{"#,
                 name = settings_struct_name(&path)
             ));
 
@@ -744,7 +747,7 @@ pub struct {name} {{"#,
 
     lines.push(
         r#"
-pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
+pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
     indexmap!{"#
             .to_string(),
     );
@@ -836,7 +839,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
 /// These settings affect config file discovery and must be loaded before
 /// the main config files are parsed.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct MisercSettings {"#
+pub(crate) struct MisercSettings {"#
             .to_string(),
     );
 

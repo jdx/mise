@@ -1,6 +1,6 @@
 use mlua::{Lua, Table};
 
-pub fn mod_html(lua: &Lua) -> mlua::Result<()> {
+pub(crate) fn mod_html(lua: &Lua) -> mlua::Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     loaded.set(

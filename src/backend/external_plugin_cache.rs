@@ -11,13 +11,13 @@ use eyre::{WrapErr, eyre};
 use std::sync::Arc;
 
 #[derive(Debug, Default)]
-pub struct ExternalPluginCache {
+pub(super) struct ExternalPluginCache {
     list_bin_paths: DashMap<ToolRequest, CacheManager<Vec<String>>>,
     exec_env: DashMap<ToolRequest, CacheManager<EnvMap>>,
 }
 
 impl ExternalPluginCache {
-    pub async fn list_bin_paths<F, Fut>(
+    pub(super) async fn list_bin_paths<F, Fut>(
         &self,
         config: &Arc<Config>,
         plugin: &AsdfBackend,
@@ -55,7 +55,7 @@ impl ExternalPluginCache {
         res
     }
 
-    pub async fn exec_env<F, Fut>(
+    pub(super) async fn exec_env<F, Fut>(
         &self,
         config: &Config,
         plugin: &AsdfBackend,

@@ -14,12 +14,12 @@ use super::ProviderBase;
 /// executable they invoke, so they're handled by a single provider type
 /// parameterised on the program name (also used as the provider id).
 #[derive(Debug)]
-pub struct DartDepsProvider {
+pub(crate) struct DartDepsProvider {
     base: ProviderBase,
 }
 
 impl DartDepsProvider {
-    pub fn new(program: &str, project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(program: &str, project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new(program, project_root, config),
         }

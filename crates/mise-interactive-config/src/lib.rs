@@ -1,3 +1,5 @@
+#![deny(unreachable_pub)]
+
 //! Interactive TOML config editor for mise
 //!
 //! This crate provides an interactive editor where the TOML config file itself IS the menu.

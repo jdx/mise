@@ -714,7 +714,7 @@ impl SourceInstallHelperIdentity {
 }
 
 /// does this formula have a bottle that can be poured on this machine?
-pub fn has_bottle(formula: &Formula) -> bool {
+pub(super) fn has_bottle(formula: &Formula) -> bool {
     // undocumented override for testing the source-build pipeline with
     // formulae that do have bottles (comma-separated names)
     if let Ok(force) = crate::env::var("MISE_SYSTEM_BREW_FORCE_SOURCE")
@@ -729,7 +729,7 @@ pub fn has_bottle(formula: &Formula) -> bool {
 }
 
 /// why `has_bottle` is false, for log/dry-run output
-pub fn missing_bottle_reason(formula: &Formula) -> String {
+pub(super) fn missing_bottle_reason(formula: &Formula) -> String {
     match formula.bottle_files() {
         Some(files) if !files.is_empty() => {
             let mut tags: Vec<String> = files.keys().cloned().collect();
@@ -742,7 +742,7 @@ pub fn missing_bottle_reason(formula: &Formula) -> String {
 
 /// Reject early what the source builder cannot handle, with the reason —
 /// checked before any work happens so dry-run and real runs fail alike.
-pub fn check_buildable(formula: &Formula) -> Result<()> {
+pub(super) fn check_buildable(formula: &Formula) -> Result<()> {
     validate_source_build_platform(&formula.name)?;
     let Some(src) = formula.stable_url() else {
         bail!("{}: formula has no stable source URL", formula.name);
@@ -829,7 +829,7 @@ fn valid_sha256(value: &str) -> bool {
 }
 
 /// Build a formula from source into its keg and link it.
-pub async fn build(
+pub(super) async fn build(
     rf: &ResolvedFormula,
     closure: &[ResolvedFormula],
     lifecycle: &super::lifecycle::PreparedFormulaLifecycle,

@@ -27,7 +27,7 @@ use vfox::embedded_plugins;
 
 /// Result from a mise_env call with cache metadata
 #[derive(Debug, Default)]
-pub struct MiseEnvResponse {
+pub(crate) struct MiseEnvResponse {
     /// Environment variables to set
     pub env: IndexMap<String, String>,
     /// Whether this module's output can be cached
@@ -40,7 +40,7 @@ pub struct MiseEnvResponse {
 use xx::regex;
 
 #[derive(Debug)]
-pub struct VfoxPlugin {
+pub(crate) struct VfoxPlugin {
     pub name: String,
     pub full: Option<String>,
     pub plugin_path: PathBuf,
@@ -85,7 +85,7 @@ impl VfoxPlugin {
         Ok(vfox_to_url(url)?.to_string())
     }
 
-    pub async fn mise_env(
+    pub(crate) async fn mise_env(
         &self,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
@@ -107,7 +107,7 @@ impl VfoxPlugin {
         }))
     }
 
-    pub async fn mise_path(
+    pub(crate) async fn mise_path(
         &self,
         opts: &toml::Value,
         env: &IndexMap<String, String>,
@@ -124,7 +124,7 @@ impl VfoxPlugin {
         Ok(Some(out))
     }
 
-    pub fn vfox(&self) -> Result<(Vfox, mpsc::Receiver<String>)> {
+    pub(crate) fn vfox(&self) -> Result<(Vfox, mpsc::Receiver<String>)> {
         let settings = Settings::get();
         let env_type = if settings.os() == "linux" {
             settings
@@ -176,7 +176,7 @@ impl VfoxPlugin {
         Ok(())
     }
 
-    pub fn is_embedded(&self) -> bool {
+    pub(crate) fn is_embedded(&self) -> bool {
         embedded_plugins::get_embedded_plugin(&self.name).is_some()
     }
 

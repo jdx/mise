@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Watch {
+pub(crate) struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
@@ -55,7 +55,7 @@ pub struct Watch {
 }
 
 impl Watch {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if let Some(task) = &self.task {
             if task == "-h" {
                 self.get_clap_command().print_help()?;
@@ -559,7 +559,7 @@ const OPTSET_DEBUGGING: &str = "Debugging";
 const OPTSET_OUTPUT: &str = "Output";
 
 #[derive(Debug, clap::Args)]
-pub struct WatchexecArgs {
+pub(super) struct WatchexecArgs {
     /// Watch a specific file or directory
     ///
     /// By default, Watchexec watches the current directory.
@@ -1433,7 +1433,7 @@ pub struct WatchexecArgs {
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub enum EmitEvents {
+pub(super) enum EmitEvents {
     #[default]
     Environment,
     Stdio,
@@ -1445,7 +1445,7 @@ pub enum EmitEvents {
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub enum OnBusyUpdate {
+pub(super) enum OnBusyUpdate {
     #[default]
     Queue,
     DoNothing,
@@ -1470,7 +1470,7 @@ fn wrap_process_args(mode: Option<WrapMode>) -> Vec<String> {
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub enum WrapMode {
+pub(super) enum WrapMode {
     #[default]
     Group,
     Session,
@@ -1478,14 +1478,14 @@ pub enum WrapMode {
 }
 
 #[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub enum ClearMode {
+pub(super) enum ClearMode {
     #[default]
     Clear,
     Reset,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum FsEvent {
+pub(super) enum FsEvent {
     Access,
     Create,
     Remove,
@@ -1496,7 +1496,7 @@ pub enum FsEvent {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 #[clap(rename_all = "lower")]
-pub enum ShellCompletion {
+pub(super) enum ShellCompletion {
     Bash,
     Elvish,
     Fish,
@@ -1506,7 +1506,7 @@ pub enum ShellCompletion {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum ColourMode {
+pub(super) enum ColourMode {
     Auto,
     Always,
     Never,

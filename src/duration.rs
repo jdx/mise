@@ -1,18 +1,18 @@
 use std::sync::OnceLock;
-pub use std::time::Duration;
+pub(crate) use std::time::Duration;
 
 use eyre::{Result, bail};
 use jiff::{Span, Timestamp, Zoned, civil::date};
 
-pub const HOURLY: Duration = Duration::from_secs(60 * 60);
-pub const DAILY: Duration = Duration::from_secs(60 * 60 * 24);
-pub const WEEKLY: Duration = Duration::from_secs(60 * 60 * 24 * 7);
+pub(crate) const HOURLY: Duration = Duration::from_secs(60 * 60);
+pub(crate) const DAILY: Duration = Duration::from_secs(60 * 60 * 24);
+pub(crate) const WEEKLY: Duration = Duration::from_secs(60 * 60 * 24 * 7);
 
 /// Returns the number of whole seconds from `from` to `to`, rounded up.
 ///
 /// Returns 0 when `from >= to` so callers don't have to guard against the
 /// degenerate "cutoff is already in the future" case.
-pub fn elapsed_seconds_ceil(from: Timestamp, to: Timestamp) -> u64 {
+pub(crate) fn elapsed_seconds_ceil(from: Timestamp, to: Timestamp) -> u64 {
     if from >= to {
         return 0;
     }
@@ -29,12 +29,12 @@ pub fn elapsed_seconds_ceil(from: Timestamp, to: Timestamp) -> u64 {
 /// that converts the absolute timestamp back to a duration (e.g. for npm's
 /// `--min-release-age`) gets the exact duration the user specified rather than
 /// a slightly-larger value due to wall clock drift between phases.
-pub fn process_now() -> Timestamp {
+pub(crate) fn process_now() -> Timestamp {
     static PROCESS_NOW: OnceLock<Timestamp> = OnceLock::new();
     *PROCESS_NOW.get_or_init(Timestamp::now)
 }
 
-pub fn parse_duration(s: &str) -> Result<Duration> {
+pub(crate) fn parse_duration(s: &str) -> Result<Duration> {
     match s.parse::<Span>() {
         Ok(span) => {
             // we must provide a relative date to determine the duration with months and years
@@ -56,7 +56,7 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
 ///
 /// Relative durations are anchored to [`process_now`] so all resolutions
 /// within a single mise invocation agree on "now".
-pub fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
+pub(crate) fn parse_into_timestamp(s: &str) -> Result<Timestamp> {
     // Try RFC3339 timestamp first
     if let Ok(ts) = s.parse::<Timestamp>() {
         return Ok(ts);

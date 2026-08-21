@@ -57,7 +57,7 @@ use tokio::sync::Mutex;
 ///     $ mise run build
 #[derive(clap::Args)]
 #[clap(visible_alias = "r", verbatim_doc_comment, disable_help_flag = true, after_long_help = AFTER_LONG_HELP)]
-pub struct Run {
+pub(crate) struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
@@ -557,7 +557,7 @@ fn display_affected_text(text: &str) -> String {
 }
 
 impl Run {
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         // Check help flags before doing any work
         if self.task.as_deref() == Some("-h") {
             self.get_clap_command().print_help()?;

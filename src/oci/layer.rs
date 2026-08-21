@@ -33,27 +33,27 @@ use walkdir::WalkDir;
 /// Keeping the mappings here lets the layer writer fix those references while
 /// retaining the one-layer-per-tool layout.
 #[derive(Debug, Clone, Default)]
-pub struct ToolRelocation {
+pub(crate) struct ToolRelocation {
     paths: Vec<(PathBuf, PathBuf)>,
     pythons: Vec<PythonRelocation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PythonRelocation {
+pub(crate) struct PythonRelocation {
     pub version: String,
     pub host: PathBuf,
     pub image: PathBuf,
 }
 
 impl ToolRelocation {
-    pub fn new(paths: Vec<(PathBuf, PathBuf)>) -> Self {
+    pub(crate) fn new(paths: Vec<(PathBuf, PathBuf)>) -> Self {
         Self {
             paths,
             pythons: Vec::new(),
         }
     }
 
-    pub fn with_pythons(mut self, pythons: Vec<PythonRelocation>) -> Self {
+    pub(crate) fn with_pythons(mut self, pythons: Vec<PythonRelocation>) -> Self {
         self.pythons = pythons;
         self
     }
@@ -61,7 +61,7 @@ impl ToolRelocation {
 
 /// The result of building a layer blob.
 #[derive(Debug, Clone)]
-pub struct LayerBlob {
+pub(crate) struct LayerBlob {
     /// sha256 digest of the gzipped tar (the "blob digest"; what the manifest
     /// descriptor's `digest` field references).
     pub digest: String,
@@ -76,13 +76,13 @@ pub struct LayerBlob {
 
 /// Numeric owner to write into every tar header in a generated OCI layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LayerOwner {
+pub(crate) struct LayerOwner {
     pub uid: u32,
     pub gid: u32,
 }
 
 impl LayerOwner {
-    pub const fn new(uid: u32, gid: u32) -> Self {
+    pub(crate) const fn new(uid: u32, gid: u32) -> Self {
         Self { uid, gid }
     }
 }
@@ -124,7 +124,7 @@ fn parse_owner_id(value: &str, name: &str) -> std::result::Result<u32, String> {
 ///
 /// `src_dir` must exist and be a directory. Symlinks are preserved; their
 /// targets are NOT followed. `owner` is applied to every emitted tar entry.
-pub fn build_layer_from_dir(
+pub(crate) fn build_layer_from_dir(
     src_dir: &Path,
     target_prefix: &str,
     owner: LayerOwner,
@@ -138,7 +138,7 @@ pub fn build_layer_from_dir(
 }
 
 /// Build a tool layer while rebasing host paths embedded by its installer.
-pub fn build_relocated_tool_layer_from_dir(
+pub(crate) fn build_relocated_tool_layer_from_dir(
     src_dir: &Path,
     target_prefix: &str,
     owner: LayerOwner,
@@ -155,7 +155,7 @@ pub fn build_relocated_tool_layer_from_dir(
 /// Build a reproducible layer from one host file, symlink, or directory.
 /// Directory contents are placed under `image_path`; a file or symlink is
 /// placed at `image_path` itself.
-pub fn build_layer_from_path(
+pub(crate) fn build_layer_from_path(
     host_path: &Path,
     image_path: &str,
     owner: LayerOwner,
@@ -220,7 +220,7 @@ pub fn build_layer_from_path(
 }
 
 /// Build a layer from a source directory, preserving uid/gid/mode from disk.
-pub fn build_layer_from_dir_preserve_metadata(
+pub(crate) fn build_layer_from_dir_preserve_metadata(
     src_dir: &Path,
     target_prefix: &str,
 ) -> Result<LayerBlob> {
@@ -235,7 +235,7 @@ pub fn build_layer_from_dir_preserve_metadata(
 /// Build a layer from an in-memory list of (path_in_tar, content) pairs.
 /// Useful for layers that don't correspond to a real directory (e.g. the
 /// synthesized config layer). `owner` is applied to every emitted tar entry.
-pub fn build_layer_from_files(
+pub(crate) fn build_layer_from_files(
     files: &[(String, Vec<u8>, u32)],
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
@@ -243,7 +243,7 @@ pub fn build_layer_from_files(
 }
 
 /// Build a layer from in-memory file and directory entries.
-pub fn build_layer_from_files_and_dirs(
+pub(crate) fn build_layer_from_files_and_dirs(
     files: &[(String, Vec<u8>, u32)],
     dirs: &[String],
     owner: LayerOwner,

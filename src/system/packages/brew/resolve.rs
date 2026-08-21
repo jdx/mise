@@ -11,7 +11,7 @@ use crate::result::Result;
 use crate::system::packages::PackageRequest;
 
 #[derive(Debug, Clone)]
-pub struct ResolvedFormula {
+pub(super) struct ResolvedFormula {
     pub formula: Formula,
     /// Canonical tap identity validated while resolving metadata. Core uses
     /// its explicit Homebrew identity instead of an absent optional value.
@@ -43,7 +43,7 @@ impl FormulaKey {
 /// host's own tag for formulae that will be built from source. Shared with
 /// source.rs so the build environment walks the same dependency lists this
 /// resolution installed.
-pub fn dep_tag(formula: &Formula, host_tag: &str) -> String {
+pub(super) fn dep_tag(formula: &Formula, host_tag: &str) -> String {
     if super::source::has_bottle(formula)
         && let Some((tag, _)) = formula.bottle_files().and_then(tag::select)
     {
@@ -62,7 +62,9 @@ fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
     deps
 }
 
-pub async fn resolve_closure_with_taps(roots: &[PackageRequest]) -> Result<Vec<ResolvedFormula>> {
+pub(super) async fn resolve_closure_with_taps(
+    roots: &[PackageRequest],
+) -> Result<Vec<ResolvedFormula>> {
     resolve_closure_with_taps_mode(roots, api::FetchMode::Cached).await
 }
 

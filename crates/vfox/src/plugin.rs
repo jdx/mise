@@ -20,7 +20,7 @@ use crate::vfox::UrlRewriter;
 use crate::{VfoxError, config, error, lua_mod};
 
 #[derive(Debug)]
-pub enum PluginSource {
+pub(crate) enum PluginSource {
     Filesystem(PathBuf),
     Embedded(&'static EmbeddedPlugin),
 }

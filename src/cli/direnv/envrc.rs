@@ -14,10 +14,10 @@ use crate::toolset::ToolsetBuilder;
 /// for direnv to consume.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true)]
-pub struct Envrc {}
+pub(super) struct Envrc {}
 
 impl Envrc {
-    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+    pub(super) async fn run(self, config: &Arc<Config>) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config).await?;
 
         let envrc_path = env::MISE_TMP_DIR

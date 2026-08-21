@@ -36,7 +36,7 @@ use jiff::{Span, Timestamp, civil::date};
 /// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Upgrade {
+pub(crate) struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded
@@ -149,7 +149,7 @@ impl Upgrade {
         }
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.legacy_bump {
             deprecated_at!(
                 "2026.8.5",

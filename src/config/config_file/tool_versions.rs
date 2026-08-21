@@ -23,7 +23,7 @@ use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
 /// represents asdf's .tool-versions file
 #[derive(Debug, Default)]
-pub struct ToolVersions {
+pub(crate) struct ToolVersions {
     context: Context,
     path: PathBuf,
     pre: String,
@@ -39,7 +39,7 @@ struct ToolVersionPlugin {
 }
 
 impl ToolVersions {
-    pub fn init(filename: &Path) -> ToolVersions {
+    pub(crate) fn init(filename: &Path) -> ToolVersions {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
         ToolVersions {
@@ -50,19 +50,19 @@ impl ToolVersions {
         }
     }
 
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub(crate) fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
         Self::parse_str(&file::read_to_string(path)?, path.to_path_buf())
     }
 
-    pub fn path_requires_trust(path: &Path) -> bool {
+    pub(crate) fn path_requires_trust(path: &Path) -> bool {
         match file::read_to_string(path) {
             Ok(body) => contains_template_syntax(&body),
             Err(_) => true,
         }
     }
 
-    pub fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
+    pub(crate) fn parse_str(s: &str, path: PathBuf) -> Result<Self> {
         let mut cf = Self::init(&path);
         let dir = path.parent();
         let s = if contains_template_syntax(s) {

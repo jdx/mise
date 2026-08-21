@@ -31,7 +31,7 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Exec {
+pub(crate) struct Exec {
     /// Tool(s) to start
     /// e.g.: node@20 python@3.10
     #[clap(value_name = "TOOL@VERSION")]
@@ -299,7 +299,7 @@ impl Exec {
 }
 
 #[cfg(all(not(test), unix))]
-pub async fn exec_program<T, U>(
+pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
@@ -447,7 +447,7 @@ async fn err_cannot_find_binary_path(program_name: &str) -> eyre::Report {
 }
 
 #[cfg(all(windows, not(test)))]
-pub async fn exec_program<T, U>(
+pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
@@ -567,7 +567,7 @@ where
 }
 
 #[cfg(test)]
-pub async fn exec_program<T, U>(
+pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,

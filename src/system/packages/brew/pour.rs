@@ -178,7 +178,7 @@ struct InstalledRuntimeDependency {
     pkg_version: String,
 }
 
-pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
+pub(super) fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
     prefix::cellar().join(name).join(pkg_version)
 }
 
@@ -186,7 +186,7 @@ pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
 /// `opt/<name>` symlink (even for keg-only formulae), so a Cellar directory
 /// without it is a remnant of a failed install and must not block a retry.
 #[cfg(test)]
-pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
+pub(super) fn keg_installed(name: &str, pkg_version: &str) -> bool {
     let keg = keg_path(name, pkg_version);
     keg.exists()
         && linked_version(name).as_deref() == Some(pkg_version)
@@ -197,7 +197,7 @@ pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
 /// the version `opt/<name>` points at, if the symlink resolves to an
 /// existing keg
 #[cfg(test)]
-pub fn linked_version(name: &str) -> Option<String> {
+pub(super) fn linked_version(name: &str) -> Option<String> {
     let opt = prefix::prefix().join("opt").join(name);
     record_keg(name, &opt).map(|(version, _)| version)
 }
@@ -1646,7 +1646,7 @@ fn symlink_points_to_checked(link: &Path, target: &Path) -> Result<bool> {
 
 /// installed versions of this formula; the active keg (per the `opt`
 /// symlink, like brew) first, the rest name-sorted
-pub fn installed_versions(name: &str) -> Vec<String> {
+pub(super) fn installed_versions(name: &str) -> Vec<String> {
     let dir = prefix::cellar().join(name);
     let mut versions: Vec<String> = crate::file::ls(&dir)
         .unwrap_or_default()
@@ -1680,7 +1680,7 @@ pub(super) struct BottlePour<'a> {
     pub pr: &'a dyn SingleReport,
 }
 
-pub async fn pour(input: BottlePour<'_>) -> Result<()> {
+pub(super) async fn pour(input: BottlePour<'_>) -> Result<()> {
     let BottlePour {
         rf,
         tag,
@@ -3600,7 +3600,7 @@ fn finalization_needs_repair(keg: &Path) -> bool {
 /// lifecycle has been fully finalized. Written for both poured bottles and
 /// source-built kegs; `poured_from_bottle` distinguishes them the same way
 /// Homebrew's tab does.
-pub fn write_receipt(
+pub(super) fn write_receipt(
     rf: &ResolvedFormula,
     tag: &str,
     keg: &Path,
@@ -4113,7 +4113,7 @@ fn stage_materialized_tree(source: &Path, staging: &Path, final_path: &Path) -> 
 /// into the prefix. Conflicts are detected before anything is touched, and a
 /// failure partway through removes the links already created — the caller
 /// rolls the keg back on error, and nothing may be left dangling into it.
-pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
+pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
     let prefix_path = prefix::prefix();
     let keg = keg_path(name, pkg_version);
     if keg_only {

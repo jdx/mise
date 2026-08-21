@@ -27,10 +27,10 @@ use strum::{AsRefStr, EnumString, VariantNames};
 use url::Url;
 use xx::regex;
 
-pub const EXPERIMENTAL: bool = false;
+pub(crate) const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
-pub struct SPMBackend {
+pub(crate) struct SPMBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -306,7 +306,7 @@ impl Backend for SPMBackend {
     }
 }
 
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "provider".into(),
         "api_url".into(),
@@ -318,7 +318,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl SPMBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 
@@ -708,7 +708,7 @@ fn verify_install_command_output(install_command: &str, bin_path: &Path) -> eyre
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct GitProvider {
+pub(crate) struct GitProvider {
     pub api_url: String,
     pub kind: GitProviderKind,
 }
@@ -723,7 +723,7 @@ impl Default for GitProvider {
 }
 
 #[derive(AsRefStr, Clone, Debug, Eq, PartialEq, EnumString, VariantNames)]
-pub enum GitProviderKind {
+pub(crate) enum GitProviderKind {
     #[strum(serialize = "github")]
     GitHub,
     #[strum(serialize = "gitlab")]

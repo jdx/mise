@@ -24,7 +24,7 @@ const SYSTEM_READ_PATHS: &[&str] = &[
 ];
 
 /// Generate a Seatbelt (SBPL) profile string from sandbox config.
-pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
+pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
     let mut rules = Vec::new();
     rules.push("(version 1)".to_string());
     rules.push("(allow default)".to_string());

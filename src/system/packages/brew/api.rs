@@ -57,7 +57,7 @@ struct GithubContent {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Formula {
+pub(super) struct Formula {
     pub name: String,
     #[serde(default)]
     pub tap: Option<String>,
@@ -159,7 +159,7 @@ struct FormulaRequirement {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SourceUrl {
+pub(super) struct SourceUrl {
     pub url: String,
     /// sha256 of the source archive; absent for VCS sources
     #[serde(default)]
@@ -170,18 +170,18 @@ pub struct SourceUrl {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct RubySourceChecksum {
+pub(super) struct RubySourceChecksum {
     #[serde(default)]
     pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Versions {
+pub(super) struct Versions {
     pub stable: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct BottleSpec {
+pub(super) struct BottleSpec {
     #[serde(default)]
     pub rebuild: u32,
     #[serde(default)]
@@ -189,7 +189,7 @@ pub struct BottleSpec {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct BottleFile {
+pub(super) struct BottleFile {
     /// ":any", ":any_skip_relocation", or a pinned cellar path
     pub cellar: String,
     pub url: String,
@@ -197,7 +197,7 @@ pub struct BottleFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct Variation {
+pub(super) struct Variation {
     #[serde(default)]
     pub dependencies: Option<Vec<String>>,
     #[serde(default)]
@@ -211,7 +211,7 @@ impl Formula {
     /// overwrite authority: mise's topology preflight remains conservative
     /// and rejects an occupied destination. This preserves user/Homebrew state
     /// until exact typed overwrite ownership exists.
-    pub fn validate_install_policy(&self) -> Result<()> {
+    pub(super) fn validate_install_policy(&self) -> Result<()> {
         let policy = &self.install_policy;
         if policy.disabled && lifecycle_policy_is_active(policy.disable_date.as_deref())? {
             let detail = policy_detail(
@@ -273,11 +273,11 @@ impl Formula {
         Ok(())
     }
 
-    pub fn conflicts_with(&self) -> &[String] {
+    pub(super) fn conflicts_with(&self) -> &[String] {
         &self.install_policy.conflicts_with
     }
 
-    pub fn conflict_reason(&self, name: &str) -> Option<&str> {
+    pub(super) fn conflict_reason(&self, name: &str) -> Option<&str> {
         let index = self
             .install_policy
             .conflicts_with
@@ -291,12 +291,12 @@ impl Formula {
 
     /// Patterns are informational until an exact ownership-aware overwrite
     /// implementation exists. Callers must not treat them as mutation authority.
-    pub fn link_overwrite(&self) -> &[String] {
+    pub(super) fn link_overwrite(&self) -> &[String] {
         &self.install_policy.link_overwrite
     }
 
     /// keg directory name: version plus brew's bottle revision suffix
-    pub fn pkg_version(&self) -> Result<String> {
+    pub(super) fn pkg_version(&self) -> Result<String> {
         let stable = self
             .versions
             .stable
@@ -310,7 +310,7 @@ impl Formula {
     }
 
     /// runtime dependencies for the given bottle tag, applying `variations`
-    pub fn dependencies_for(&self, tag: &str) -> &[String] {
+    pub(super) fn dependencies_for(&self, tag: &str) -> &[String] {
         if let Some(v) = self.variations.get(tag)
             && let Some(deps) = &v.dependencies
         {
@@ -320,7 +320,7 @@ impl Formula {
     }
 
     /// build-time dependencies for the given bottle tag, applying `variations`
-    pub fn build_dependencies_for(&self, tag: &str) -> &[String] {
+    pub(super) fn build_dependencies_for(&self, tag: &str) -> &[String] {
         if let Some(v) = self.variations.get(tag)
             && let Some(deps) = &v.build_dependencies
         {
@@ -329,12 +329,12 @@ impl Formula {
         &self.build_dependencies
     }
 
-    pub fn bottle_files(&self) -> Option<&HashMap<String, BottleFile>> {
+    pub(super) fn bottle_files(&self) -> Option<&HashMap<String, BottleFile>> {
         self.bottle.get("stable").map(|b| &b.files)
     }
 
     /// the stable source archive spec, when present
-    pub fn stable_url(&self) -> Option<&SourceUrl> {
+    pub(super) fn stable_url(&self) -> Option<&SourceUrl> {
         self.urls.get("stable")
     }
 }

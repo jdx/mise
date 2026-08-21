@@ -15,7 +15,7 @@ use crate::result::Result;
 
 /// A single `[bootstrap.macos.defaults.<domain>]` entry: `key = value`
 #[derive(Debug, Clone, PartialEq)]
-pub struct DefaultsRequest {
+pub(crate) struct DefaultsRequest {
     /// preferences domain, e.g. "com.apple.dock" or "NSGlobalDomain"
     pub domain: String,
     pub key: String,
@@ -32,7 +32,7 @@ impl std::fmt::Display for DefaultsRequest {
 /// types (arrays, dicts, dates, data) are not supported — config entries with
 /// those TOML types warn and are skipped.
 #[derive(Debug, Clone, PartialEq)]
-pub enum DefaultsValue {
+pub(crate) enum DefaultsValue {
     Bool(bool),
     Int(i64),
     Float(f64),
@@ -40,7 +40,7 @@ pub enum DefaultsValue {
 }
 
 impl DefaultsValue {
-    pub fn from_toml(value: &toml::Value) -> Option<Self> {
+    pub(crate) fn from_toml(value: &toml::Value) -> Option<Self> {
         match value {
             toml::Value::Boolean(b) => Some(Self::Bool(*b)),
             toml::Value::Integer(i) => Some(Self::Int(*i)),
@@ -51,7 +51,7 @@ impl DefaultsValue {
     }
 
     /// type+value arguments for `defaults write <domain> <key> ...`
-    pub fn write_args(&self) -> Vec<String> {
+    pub(crate) fn write_args(&self) -> Vec<String> {
         match self {
             Self::Bool(b) => vec!["-bool".into(), b.to_string()],
             Self::Int(i) => vec!["-int".into(), i.to_string()],
@@ -60,7 +60,7 @@ impl DefaultsValue {
         }
     }
 
-    pub fn to_json(&self) -> serde_json::Value {
+    pub(crate) fn to_json(&self) -> serde_json::Value {
         match self {
             Self::Bool(b) => (*b).into(),
             Self::Int(i) => (*i).into(),
@@ -98,7 +98,7 @@ impl std::fmt::Display for DefaultsValue {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum DefaultsState {
+pub(crate) enum DefaultsState {
     /// current value matches the config
     Set,
     /// a value exists but differs from the config (in value or type)
@@ -108,16 +108,16 @@ pub enum DefaultsState {
 }
 
 #[derive(Debug, Clone)]
-pub struct DefaultsStatus {
+pub(crate) struct DefaultsStatus {
     pub request: DefaultsRequest,
     pub state: DefaultsState,
 }
 
-pub fn is_available() -> bool {
+pub(crate) fn is_available() -> bool {
     cfg!(target_os = "macos") && crate::file::which("defaults").is_some()
 }
 
-pub fn unavailable_reason() -> String {
+pub(crate) fn unavailable_reason() -> String {
     if cfg!(target_os = "macos") {
         "`defaults` not found".to_string()
     } else {
@@ -126,7 +126,7 @@ pub fn unavailable_reason() -> String {
 }
 
 /// Query the current state of each entry. Side-effect free.
-pub async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
+pub(crate) async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>> {
     let mut out = vec![];
     for req in requests {
         let state = match read(&req.domain, &req.key).await? {
@@ -155,7 +155,7 @@ pub async fn status(requests: &[DefaultsRequest]) -> Result<Vec<DefaultsStatus>>
 }
 
 /// Write the given entries (already filtered to unset/differing ones)
-pub async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
+pub(crate) async fn apply(requests: &[DefaultsRequest], dry_run: bool) -> Result<()> {
     for req in requests {
         let mut args = vec!["write".to_string(), req.domain.clone(), req.key.clone()];
         args.extend(req.value.write_args());

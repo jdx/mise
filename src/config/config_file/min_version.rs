@@ -1,12 +1,12 @@
 use versions::Versioning;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct MinVersionSpec {
+pub(crate) struct MinVersionSpec {
     hard: Option<Versioning>,
     soft: Option<Versioning>,
 }
 
 impl MinVersionSpec {
-    pub fn new(hard: Option<Versioning>, soft: Option<Versioning>) -> Option<Self> {
+    pub(crate) fn new(hard: Option<Versioning>, soft: Option<Versioning>) -> Option<Self> {
         if hard.is_none() && soft.is_none() {
             None
         } else {
@@ -22,11 +22,11 @@ impl MinVersionSpec {
         self.soft.as_ref()
     }
 
-    pub fn hard_violation(&self, current: &Versioning) -> Option<&Versioning> {
+    pub(crate) fn hard_violation(&self, current: &Versioning) -> Option<&Versioning> {
         self.hard().filter(|required| current < *required)
     }
 
-    pub fn soft_violation(&self, current: &Versioning) -> Option<&Versioning> {
+    pub(crate) fn soft_violation(&self, current: &Versioning) -> Option<&Versioning> {
         self.soft().filter(|recommended| current < *recommended)
     }
 }

@@ -43,7 +43,7 @@ const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
-pub struct NPMBackend {
+pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
@@ -592,7 +592,7 @@ impl NPMBackend {
         Ok(archive.to_string_lossy().into_owned())
     }
 
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: TokioMutex::new(
                 CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
@@ -1719,7 +1719,7 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
 }
 
 /// Returns install-time-only option keys for NPM backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "npm_args".into(),
         "pnpm_args".into(),

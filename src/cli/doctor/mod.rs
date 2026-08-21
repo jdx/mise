@@ -32,7 +32,7 @@ use strum::IntoEnumIterator;
 /// Check mise installation for possible problems
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Doctor {
+pub(crate) struct Doctor {
     #[clap(subcommand)]
     subcommand: Option<Commands>,
     #[clap(skip)]
@@ -44,7 +44,7 @@ pub struct Doctor {
 }
 
 #[derive(Debug, clap::Subcommand)]
-pub enum Commands {
+pub(super) enum Commands {
     Path(path::Path),
 }
 
@@ -82,7 +82,7 @@ enum SystemLoginShellDiagnosis {
 }
 
 impl Doctor {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         if let Some(cmd) = self.subcommand {
             match cmd {
                 Commands::Path(cmd) => cmd.run().await,

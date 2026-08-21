@@ -19,14 +19,14 @@ use crate::{dirs, duration, env, file};
 /// If the version is out of date, it will display a warning.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
-pub struct Version {
+pub(crate) struct Version {
     /// Print the version information in JSON format
     #[clap(short = 'J', long)]
     json: bool,
 }
 
 impl Version {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if self.json {
             self.json().await?
         } else {
@@ -49,8 +49,8 @@ impl Version {
     }
 }
 
-pub static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
-pub static ARCH: Lazy<String> = Lazy::new(|| {
+pub(crate) static OS: Lazy<String> = Lazy::new(|| env::consts::OS.into());
+pub(crate) static ARCH: Lazy<String> = Lazy::new(|| {
     match env::consts::ARCH {
         "x86_64" => "x64",
         "aarch64" => "arm64",
@@ -59,7 +59,7 @@ pub static ARCH: Lazy<String> = Lazy::new(|| {
     .to_string()
 });
 
-pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
+pub(crate) static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
     let mut v = V.to_string();
     if cfg!(debug_assertions) {
         v.push_str("-DEBUG");
@@ -67,7 +67,7 @@ pub static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
     v
 });
 
-pub static VERSION: Lazy<String> = Lazy::new(|| {
+pub(crate) static VERSION: Lazy<String> = Lazy::new(|| {
     let build_time = BUILD_TIME.format("%Y-%m-%d");
     let v = &*VERSION_PLAIN;
     format!("{v} {os}-{arch} ({build_time})", os = *OS, arch = *ARCH)
@@ -83,9 +83,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 "#
 );
 
-pub static V: Lazy<Versioning> = Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
+pub(crate) static V: Lazy<Versioning> =
+    Lazy::new(|| Versioning::new(env!("CARGO_PKG_VERSION")).unwrap());
 
-pub fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
+pub(crate) fn print_version_if_requested(args: &[String]) -> std::io::Result<bool> {
     if args.len() == 2 && !*crate::env::IS_RUNNING_AS_SHIM {
         let cmd = &args[1].to_lowercase();
         if cmd == "version" || cmd == "-v" || cmd == "--version" || cmd == "v" {
@@ -116,7 +117,7 @@ fn show_version() -> std::io::Result<()> {
     Ok(())
 }
 
-pub async fn show_latest() {
+pub(crate) async fn show_latest() {
     if ci_info::is_ci() && !cfg!(test) {
         return;
     }
@@ -131,7 +132,7 @@ pub async fn show_latest() {
     }
 }
 
-pub async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
+pub(crate) async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
     if let Some(latest) = get_latest_version(cache_duration)
         .await
         .and_then(Versioning::new)

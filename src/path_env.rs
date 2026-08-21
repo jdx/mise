@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-pub struct PathEnv {
+pub(crate) struct PathEnv {
     pre: Vec<PathBuf>,
     mise: Vec<PathBuf>,
     post: Vec<PathBuf>,
@@ -17,7 +17,7 @@ pub struct PathEnv {
 }
 
 impl PathEnv {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             pre: Vec::new(),
             mise: Vec::new(),
@@ -26,7 +26,7 @@ impl PathEnv {
         }
     }
 
-    pub fn add(&mut self, path: PathBuf) {
+    pub(crate) fn add(&mut self, path: PathBuf) {
         for part in split_paths(&path) {
             self.mise.push(part);
         }
@@ -43,7 +43,7 @@ impl PathEnv {
     /// Only for environments mise computes — children and display. A surface that hands
     /// PATH back to the user's live shell must use [`Self::join_verbatim`] instead:
     /// user-owned duplicates there are preserved exactly as written.
-    pub fn to_vec(&self) -> Vec<PathBuf> {
+    pub(crate) fn to_vec(&self) -> Vec<PathBuf> {
         let mut seen = HashSet::new();
         self.pre
             .iter()
@@ -59,7 +59,7 @@ impl PathEnv {
     /// removal — where a duplicate the user put there deliberately is theirs to keep
     /// (`cli/test_deactivate` pins that contract, three copies and all). Deduplicating
     /// here would silently rewrite the user's PATH as a side effect of removing shims.
-    pub fn to_vec_verbatim(&self) -> Vec<PathBuf> {
+    pub(crate) fn to_vec_verbatim(&self) -> Vec<PathBuf> {
         self.pre
             .iter()
             .chain(self.mise.iter())
@@ -68,14 +68,14 @@ impl PathEnv {
             .collect()
     }
 
-    pub fn join(&self) -> OsString {
+    pub(crate) fn join(&self) -> OsString {
         let joined = join_paths(self.to_vec()).unwrap();
         warn_if_cmd_ignores_path(&joined);
         joined
     }
 
     /// [`Self::join`] over the verbatim projection — see [`Self::to_vec_verbatim`].
-    pub fn join_verbatim(&self) -> OsString {
+    pub(crate) fn join_verbatim(&self) -> OsString {
         join_paths(self.to_vec_verbatim()).unwrap()
     }
 }
@@ -120,7 +120,7 @@ impl FromIterator<PathBuf> for PathEnv {
 }
 
 impl PathEnv {
-    pub fn from_path_str(path: &str) -> Self {
+    pub(crate) fn from_path_str(path: &str) -> Self {
         Self::from_iter(split_paths(path))
     }
 }
@@ -219,7 +219,7 @@ fn warn_if_cmd_ignores_path(path: &OsStr) {
 /// [`warn_if_cmd_ignores_path`] for a PATH assembled outside [`PathEnv`]. `hook-env` builds
 /// the shell's own PATH by hand, and that copy — not a computed child environment — is what
 /// breaks a tool the user starts directly from an activated shell.
-pub fn warn_if_cmd_ignores_path_str(path: &str) {
+pub(crate) fn warn_if_cmd_ignores_path_str(path: &str) {
     warn_if_cmd_ignores_path(OsStr::new(path));
 }
 

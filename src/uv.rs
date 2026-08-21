@@ -16,7 +16,7 @@ use tokio::sync::OnceCell;
 static UV_VENV: Lazy<OnceCell<Option<Venv>>> = Lazy::new(Default::default);
 const UV_PROJECT_ENVIRONMENT: &str = "UV_PROJECT_ENVIRONMENT";
 
-pub async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'static Option<Venv>> {
+pub(crate) async fn uv_venv(config: &Arc<Config>, ts: &Toolset) -> Result<&'static Option<Venv>> {
     UV_VENV
         .get_or_try_init(async || {
             let settings = Settings::get();

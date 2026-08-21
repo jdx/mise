@@ -202,7 +202,7 @@ fn add_formula_execution_device_rules(
 }
 
 /// Apply Landlock filesystem restrictions.
-pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
+pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
     let abi = PRODUCTION_ABI;
 
     let read_access = AccessFs::from_read(abi);

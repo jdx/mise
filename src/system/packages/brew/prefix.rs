@@ -31,7 +31,7 @@ const SUBDIRS: &[&str] = &[
     "var/homebrew/linked",
 ];
 
-pub fn prefix() -> PathBuf {
+pub(super) fn prefix() -> PathBuf {
     // undocumented override for testing the pour pipeline without touching
     // the real prefix
     match crate::env::var("MISE_SYSTEM_BREW_PREFIX") {
@@ -41,19 +41,19 @@ pub fn prefix() -> PathBuf {
     }
 }
 
-pub fn cellar() -> PathBuf {
+pub(super) fn cellar() -> PathBuf {
     prefix().join("Cellar")
 }
 
 /// Homebrew's active linked-keg record for a non-keg-only formula.
-pub fn linked_keg_record(name: &str) -> PathBuf {
+pub(super) fn linked_keg_record(name: &str) -> PathBuf {
     prefix().join("var/homebrew/linked").join(name)
 }
 
 /// where brew would keep its own repository — referenced by the
 /// @@HOMEBREW_REPOSITORY@@ placeholder (== prefix on arm64 macOS, a
 /// subdirectory on Linux)
-pub fn repository() -> PathBuf {
+pub(super) fn repository() -> PathBuf {
     if cfg!(target_os = "macos") {
         prefix()
     } else {
@@ -66,7 +66,7 @@ pub fn repository() -> PathBuf {
 /// is installed, otherwise at the host's dynamic linker. Mirror that here.
 /// Called before and after pours so a glibc poured in the current run
 /// repoints the symlink.
-pub fn setup_linux_runtime() -> Result<()> {
+pub(super) fn setup_linux_runtime() -> Result<()> {
     if !cfg!(target_os = "linux") {
         return Ok(());
     }
@@ -137,7 +137,7 @@ fn writable(path: &Path) -> bool {
 
 /// The invoking user when mise itself was run under sudo (root euid with
 /// SUDO_USER set). None for plain root (e.g. a container) and non-root runs.
-pub fn sudo_invoking_user() -> Option<String> {
+pub(super) fn sudo_invoking_user() -> Option<String> {
     if nix::unistd::geteuid().is_root()
         && let Ok(sudo_user) = crate::env::var("SUDO_USER")
         && !sudo_user.is_empty()
@@ -178,7 +178,7 @@ fn bootstrap_dirs(prefix: &Path) -> Vec<PathBuf> {
     dirs
 }
 
-pub fn bootstrap(dry_run: bool) -> Result<()> {
+pub(super) fn bootstrap(dry_run: bool) -> Result<()> {
     let prefix = prefix();
     let dirs = bootstrap_dirs(&prefix);
     let needs_create = !prefix.exists();

@@ -82,7 +82,7 @@ fn all_versions_deprecated(packument: &aube_registry::Packument) -> bool {
 /// sorted to match the order `npm view versions` produced — prefix resolution
 /// (e.g. `npm:@angular/cli@19`) depends on it. Anything unparseable keeps a
 /// stable position at the end.
-pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
+pub(crate) async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
     let packument = fetch_packument(name).await?;
     let all_versions_deprecated = all_versions_deprecated(&packument);
     let versions = packument.versions.iter().filter_map(|(version, metadata)| {
@@ -116,7 +116,7 @@ fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a Stri
 }
 
 /// Resolve the `latest` dist-tag for a package, if the registry publishes one.
-pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
+pub(crate) async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
     let packument = fetch_packument(name).await?;
     let all_versions_deprecated = all_versions_deprecated(&packument);
     Ok(packument
@@ -134,7 +134,7 @@ pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
 
 /// Download the exact npm registry tarball for a package version, honoring
 /// user npm registry and authentication configuration.
-pub async fn download_tarball(name: &str, version: &str, path: &Path) -> Result<()> {
+pub(crate) async fn download_tarball(name: &str, version: &str, path: &Path) -> Result<()> {
     let metadata = CLIENT.fetch_single_version_metadata(name, version).await?;
     let dist = metadata
         .dist

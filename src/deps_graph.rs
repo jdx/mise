@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 /// - `K`: Key type for identifying nodes
 /// - `N`: Node value type stored in the graph
 #[derive(Debug)]
-pub struct DepsGraph<K, N>
+pub(crate) struct DepsGraph<K, N>
 where
     K: Hash + Eq + Clone + fmt::Display,
     N: Clone + fmt::Debug,
@@ -42,7 +42,7 @@ where
     /// - `nodes`: Iterator of (key, node) pairs to add to the graph
     /// - `edges`: Iterator of (from_key, to_key) pairs meaning "from depends on to"
     /// - `key_fn`: Function to extract a key from a node value
-    pub fn new(
+    pub(crate) fn new(
         nodes: impl IntoIterator<Item = (K, N)>,
         edges: impl IntoIterator<Item = (K, K)>,
         key_fn: fn(&N) -> K,
@@ -89,7 +89,7 @@ where
     /// Subscribe to receive nodes that are ready to process.
     /// Returns a receiver that emits `Some(node)` for each ready node,
     /// followed by `None` when all nodes have been processed.
-    pub fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<N>> {
+    pub(crate) fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<N>> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.tx = tx;
         self.emit_leaves();
@@ -97,13 +97,13 @@ where
     }
 
     /// Mark a node as successfully completed and emit any newly-ready nodes.
-    pub fn complete_success(&mut self, key: &K) {
+    pub(crate) fn complete_success(&mut self, key: &K) {
         self.remove_node(key);
         self.emit_leaves();
     }
 
     /// Mark a node as failed and block all transitive dependents.
-    pub fn complete_failure(&mut self, key: &K) {
+    pub(crate) fn complete_failure(&mut self, key: &K) {
         if let Some(&idx) = self.node_indices.get(key) {
             let dependents = self.get_transitive_dependents(idx);
             for dep_idx in dependents {
@@ -119,12 +119,12 @@ where
     }
 
     /// Returns whether all nodes have been processed.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.graph.node_count() == 0
     }
 
     /// Returns the keys of all blocked nodes (dependency failures or cycles).
-    pub fn blocked_keys(&self) -> Vec<K> {
+    pub(crate) fn blocked_keys(&self) -> Vec<K> {
         self.graph
             .node_indices()
             .filter_map(|idx| {
@@ -140,7 +140,7 @@ where
     }
 
     /// Returns the node values that are blocked.
-    pub fn blocked_nodes(&self) -> Vec<N> {
+    pub(crate) fn blocked_nodes(&self) -> Vec<N> {
         self.graph
             .node_indices()
             .filter_map(|idx| {

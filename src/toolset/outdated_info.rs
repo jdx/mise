@@ -13,7 +13,7 @@ use tabled::Tabled;
 use versions::Version;
 
 #[derive(Debug, Serialize, Clone, Tabled, PartialEq, Eq, Hash)]
-pub struct OutdatedInfo {
+pub(crate) struct OutdatedInfo {
     pub name: String,
     #[serde(skip)]
     #[tabled(skip)]
@@ -31,7 +31,7 @@ pub struct OutdatedInfo {
 }
 
 impl OutdatedInfo {
-    pub fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
+    pub(crate) fn new(config: &Arc<Config>, tv: ToolVersion, latest: String) -> Result<Self> {
         let t = tv.backend()?;
         let current = Self::current_version(config, &t, &tv)?;
         let oi = Self {
@@ -92,7 +92,7 @@ impl OutdatedInfo {
         }
     }
 
-    pub async fn resolve(
+    pub(crate) async fn resolve(
         config: &Arc<Config>,
         tv: ToolVersion,
         bump: bool,
@@ -257,7 +257,7 @@ pub(crate) fn prefixed_latest_query(prefix: &str, prefix_version: &str) -> Optio
 /// at the same specificity level as the old version
 /// used with `mise outdated --bump` to determine what new semver range to use
 /// given old: "20" and new: "21.2.3", return Some("21")
-pub fn check_semver_bump(old: &str, new: &str) -> Option<String> {
+pub(crate) fn check_semver_bump(old: &str, new: &str) -> Option<String> {
     // Preserve known channel names as-is
     const CHANNEL_NAMES: &[&str] = &[
         "latest", "nightly", "stable", "beta", "dev", "canary", "edge", "lts",
@@ -299,7 +299,7 @@ pub fn check_semver_bump(old: &str, new: &str) -> Option<String> {
 
 /// Represents a config file update needed when a CLI-specified version doesn't match
 /// the current config prefix.
-pub struct ConfigBump {
+pub(crate) struct ConfigBump {
     pub tool_name: String,
     pub config_path: std::path::PathBuf,
     pub old_version: String,
@@ -309,7 +309,7 @@ pub struct ConfigBump {
 
 /// Compute config bumps needed when CLI-specified versions don't match current config prefixes.
 /// Returns a list of bumps to apply (or preview in dry-run mode).
-pub fn compute_config_bumps(
+pub(crate) fn compute_config_bumps(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
 ) -> Vec<ConfigBump> {
@@ -321,7 +321,7 @@ pub fn compute_config_bumps(
 ///
 /// This lets callers that intentionally target a subset of the loaded config
 /// hierarchy avoid updating shadowed parent configs.
-pub fn compute_config_bumps_for_paths(
+pub(crate) fn compute_config_bumps_for_paths(
     config: &Config,
     tool_versions: &[(&str, &str)], // (tool_short_name, cli_version)
     config_paths: &BTreeSet<PathBuf>,
@@ -400,7 +400,7 @@ pub fn compute_config_bumps_for_paths(
 }
 
 /// Apply config bumps by writing the new versions to their config files.
-pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
+pub(crate) fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     for bump in bumps {
         let Some(cf) = config.config_files.get(&bump.config_path) else {
             continue;
@@ -417,7 +417,7 @@ pub fn apply_config_bumps(config: &Config, bumps: &[ConfigBump]) -> Result<()> {
     Ok(())
 }
 
-pub fn is_outdated_version(current: &str, latest: &str) -> bool {
+pub(crate) fn is_outdated_version(current: &str, latest: &str) -> bool {
     if let (Some(c), Some(l)) = (Version::new(current), Version::new(latest)) {
         c.lt(&l)
     } else {

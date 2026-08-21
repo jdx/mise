@@ -2,12 +2,12 @@
 ///
 /// A Tokio semaphore with zero permits can never start its first job, so all
 /// user-facing job counts treat zero as serial execution.
-pub fn normalize(jobs: usize) -> usize {
+pub(crate) fn normalize(jobs: usize) -> usize {
     jobs.max(1)
 }
 
 /// Resolve a command-specific override before applying the minimum.
-pub fn resolve(configured: usize, override_: Option<usize>) -> usize {
+pub(crate) fn resolve(configured: usize, override_: Option<usize>) -> usize {
     normalize(override_.unwrap_or(configured))
 }
 

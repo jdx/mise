@@ -15,7 +15,7 @@ type SettingMinWidth = Settings<SettingPriority, MinWidth>;
 // type SettingCellHeightLimit = Settings<SettingMinWidth, CellHeightLimit>;
 // type SettingCellHeightIncrease = Settings<SettingCellHeightLimit, CellHeightIncrease>;
 
-pub fn term_size_settings() -> SettingMinWidth {
+pub(crate) fn term_size_settings() -> SettingMinWidth {
     Settings::default()
         .with(Width::wrap(*TERM_WIDTH).priority(PriorityMax::default()))
         .with(Width::increase(*TERM_WIDTH))
@@ -23,7 +23,7 @@ pub fn term_size_settings() -> SettingMinWidth {
     // .with(Height::increase(*TERM_HEIGHT))
 }
 
-pub fn default_style(table: &mut Table, no_headers: bool) {
+pub(crate) fn default_style(table: &mut Table, no_headers: bool) {
     let header = |h: &_| style(h).italic().magenta().to_string();
 
     if no_headers || !console::user_attended() || cfg!(test) {
@@ -41,13 +41,13 @@ pub fn default_style(table: &mut Table, no_headers: bool) {
         .with(Modify::new(Columns::last()).with(Padding::zero()));
 }
 
-pub struct MiseTable {
+pub(crate) struct MiseTable {
     table: comfy_table::Table,
     truncate: bool,
 }
 
 impl MiseTable {
-    pub fn new(no_header: bool, headers: &[&str]) -> Self {
+    pub(crate) fn new(no_header: bool, headers: &[&str]) -> Self {
         let mut table = comfy_table::Table::new();
         table
             .load_style(comfy_table::presets::NOTHING)
@@ -74,7 +74,7 @@ impl MiseTable {
         }
     }
 
-    pub fn truncate(&mut self, truncate: bool) -> &mut Self {
+    pub(crate) fn truncate(&mut self, truncate: bool) -> &mut Self {
         self.truncate = truncate;
         self
     }
@@ -85,13 +85,13 @@ impl MiseTable {
             .fg(Color::Magenta)
     }
 
-    pub fn add_row(&mut self, row: impl Into<Row>) {
+    pub(crate) fn add_row(&mut self, row: impl Into<Row>) {
         let mut row = row.into();
         row.max_height(1);
         self.table.add_row(row);
     }
 
-    pub fn print(&self) -> Result<()> {
+    pub(crate) fn print(&self) -> Result<()> {
         let table = self.table.to_string();
         // trim first character, skipping color characters
         let re = regex!(r"^(\x{1b}[^ ]*\d+m) ");

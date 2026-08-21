@@ -1965,7 +1965,6 @@ checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
 dependencies = [
  "chrono",
  "phf 0.12.1",
- "serde",
 ]
 
 [[package]]
@@ -3390,9 +3389,9 @@ dependencies = [
 
 [[package]]
 name = "expr-lang"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86283664be0dc99b1247e957cf8234bb0e98fe76096bd36767d8f87ac98f00b7"
+checksum = "0ccbe01093a53933ac2e794bf8de543359ba840520304a6b93b8d00d0b99ceaf"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -3400,13 +3399,10 @@ dependencies = [
  "iana-time-zone",
  "indexmap 2.14.0",
  "log",
- "once_cell",
  "pest",
  "pest_derive",
  "regex",
  "serde_json",
- "strum 0.28.0",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -5395,7 +5391,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]

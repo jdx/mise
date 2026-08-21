@@ -9,7 +9,7 @@ mod ls;
     aliases = ["b", "backend", "backend-list"],
     after_long_help = AFTER_LONG_HELP
 )]
-pub struct Backends {
+pub(crate) struct Backends {
     #[clap(subcommand)]
     command: Option<Commands>,
 }
@@ -28,7 +28,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         match self {
             Self::Ls(cmd) => cmd.run(),
         }
@@ -36,7 +36,7 @@ impl Commands {
 }
 
 impl Backends {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::BackendsLs {}));
 
         cmd.run()

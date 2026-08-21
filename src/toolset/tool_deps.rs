@@ -6,7 +6,7 @@ use crate::install_context::install_dependency_declarations;
 use crate::toolset::tool_request::ToolRequest;
 
 /// Unique key for a tool request (tool short name + version).
-pub type ToolKey = String;
+pub(super) type ToolKey = String;
 
 /// Creates a unique key for a ToolRequest
 pub(crate) fn tool_key(tr: &ToolRequest) -> ToolKey {
@@ -37,7 +37,7 @@ pub(crate) fn ensure_compatible_install_requests(requests: &[ToolRequest]) -> Re
 /// Thin wrapper around `DepsGraph<ToolKey, ToolRequest>` with
 /// tool-specific dependency resolution.
 #[derive(Debug)]
-pub struct ToolDeps {
+pub(super) struct ToolDeps {
     inner: DepsGraph<ToolKey, ToolRequest>,
 }
 
@@ -47,7 +47,7 @@ impl ToolDeps {
     /// Duplicate tool requests (same tool short name and version) are deduplicated.
     /// Distinct aliases may resolve to the same backend/version but still need separate
     /// install jobs because they have distinct short names and install directories.
-    pub fn new(requests: Vec<ToolRequest>) -> Result<Self> {
+    pub(super) fn new(requests: Vec<ToolRequest>) -> Result<Self> {
         ensure_compatible_install_requests(&requests)?;
 
         // Build nodes
@@ -98,22 +98,22 @@ impl ToolDeps {
     }
 
     /// Subscribe to receive tools that are ready to install.
-    pub fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<ToolRequest>> {
+    pub(super) fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<ToolRequest>> {
         self.inner.subscribe()
     }
 
     /// Mark a tool as successfully installed and emit any newly-ready tools.
-    pub fn complete_success(&mut self, tr: &ToolRequest) {
+    pub(super) fn complete_success(&mut self, tr: &ToolRequest) {
         self.inner.complete_success(&tool_key(tr));
     }
 
     /// Mark a tool as failed and block all transitive dependents.
-    pub fn complete_failure(&mut self, tr: &ToolRequest) {
+    pub(super) fn complete_failure(&mut self, tr: &ToolRequest) {
         self.inner.complete_failure(&tool_key(tr));
     }
 
     /// Returns the list of blocked tools (those whose dependencies failed or are in cycles)
-    pub fn blocked_tools(&self) -> Vec<ToolRequest> {
+    pub(super) fn blocked_tools(&self) -> Vec<ToolRequest> {
         self.inner.blocked_nodes()
     }
 }

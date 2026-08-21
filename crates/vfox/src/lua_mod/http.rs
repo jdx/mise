@@ -72,7 +72,7 @@ async fn send_with_retry(builder: RequestBuilder) -> std::result::Result<Respons
     unreachable!("retry loop should always return a response or error")
 }
 
-pub fn mod_http(lua: &Lua) -> Result<()> {
+pub(crate) fn mod_http(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     loaded.set(

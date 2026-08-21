@@ -15,7 +15,7 @@ use indexmap::IndexSet;
 /// use this if you have `mise activate` in your shell rc file.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Env {
+pub(crate) struct Env {
     /// Tool(s) to use
     #[clap(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
@@ -46,7 +46,7 @@ pub struct Env {
 }
 
 impl Env {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)

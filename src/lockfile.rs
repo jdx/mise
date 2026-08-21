@@ -40,7 +40,7 @@ const LOCKFILE_HEADER_PREFIX: &str = "# @generated - this file is auto-generated
 const DEFAULT_LOCKFILE_DOC_URL: &str = "https://mise.jdx.dev/dev-tools/mise-lock.html";
 
 /// Invalidate all lockfile caches. Call this after modifying a lockfile.
-pub fn invalidate_caches() {
+pub(crate) fn invalidate_caches() {
     if let Ok(mut cache) = ALL_LOCKFILES_CACHE.lock() {
         cache.clear();
     }
@@ -54,7 +54,7 @@ pub fn invalidate_caches() {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Lockfile {
+pub(crate) struct Lockfile {
     #[serde(skip)]
     generated_header_url: Option<String>,
     #[serde(skip)]
@@ -69,7 +69,7 @@ pub struct Lockfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct LockfileTool {
+pub(crate) struct LockfileTool {
     pub version: String,
     pub backend: Option<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
@@ -91,7 +91,7 @@ type MergeToolEntriesResult = (Vec<LockfileTool>, HashSet<LockfileToolKey>);
 /// `VerifiedAttestation` in `crates/vfox/src/hooks/pre_install.rs`.
 #[derive(Debug, Clone, strum::Display, strum::EnumIs)]
 #[strum(serialize_all = "kebab-case")]
-pub enum ProvenanceType {
+pub(crate) enum ProvenanceType {
     Minisign,
     Cosign,
     #[strum(serialize = "slsa")]
@@ -236,7 +236,7 @@ impl<'de> serde::Deserialize<'de> for ProvenanceType {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum GithubAttestationsStatus {
+pub(crate) enum GithubAttestationsStatus {
     Unavailable,
 }
 
@@ -264,7 +264,7 @@ fn merge_provenance_state(
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ArtifactInfo {
+pub(crate) struct ArtifactInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
     /// Size in bytes (read-only field, preserved from existing lockfiles but not written)
@@ -281,7 +281,7 @@ pub struct ArtifactInfo {
 }
 
 impl ArtifactInfo {
-    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+    pub(crate) fn has_checksum_and_verified_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
     }
 
@@ -336,7 +336,7 @@ fn merge_additional_artifacts(
 }
 
 #[derive(Debug, Default, Clone, Serialize, PartialEq, Eq)]
-pub struct PlatformInfo {
+pub(crate) struct PlatformInfo {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -375,8 +375,8 @@ pub struct PlatformInfo {
 }
 
 // Re-export CondaPackageInfo from conda backend for lockfile serialization
-pub use crate::backend::conda::CondaPackageInfo;
-pub use crate::backend::pkgx::PkgxPackageInfo;
+pub(crate) use crate::backend::conda::CondaPackageInfo;
+pub(crate) use crate::backend::pkgx::PkgxPackageInfo;
 
 impl<'de> Deserialize<'de> for PlatformInfo {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -390,7 +390,7 @@ impl<'de> Deserialize<'de> for PlatformInfo {
 
 impl PlatformInfo {
     /// Returns true if this PlatformInfo has no meaningful data (for serde skip)
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.install.is_none()
             && self.checksum.is_none()
             && self.url.is_none()
@@ -408,7 +408,7 @@ impl PlatformInfo {
     /// the fields that describe how the tool is built or what it depends on.
     /// Used when an entry is known to be for the right tool version but not
     /// necessarily the right artifact.
-    pub fn without_artifact_data(&self) -> Self {
+    pub(crate) fn without_artifact_data(&self) -> Self {
         PlatformInfo {
             install: self.install.clone(),
             conda_deps: self.conda_deps.clone(),
@@ -427,7 +427,7 @@ impl PlatformInfo {
     }
 
     /// True when the lockfile has checksum-backed, successfully verified provenance.
-    pub fn has_checksum_and_verified_provenance(&self) -> bool {
+    pub(crate) fn has_checksum_and_verified_provenance(&self) -> bool {
         self.checksum.is_some() && self.provenance.is_some() && self.provenance_verified
     }
 
@@ -438,7 +438,7 @@ impl PlatformInfo {
     /// - Drops the other side's checksum/size/url_api when URLs disagree, since
     ///   those fields describe a specific artifact and become stale if the URL
     ///   changes.
-    pub fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
+    pub(crate) fn merge_with(&self, other: &PlatformInfo) -> PlatformInfo {
         let url_changed = self.url.is_some() && other.url.is_some() && self.url != other.url;
         let install_changed = self.install.is_some() && self.install != other.install;
         let artifact_changed = url_changed
@@ -854,7 +854,7 @@ fn existing_lockfile_doc_url_from_path(path: &Path) -> Option<String> {
 }
 
 impl Lockfile {
-    pub fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub(crate) fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
             return Ok(Lockfile::default());
@@ -1055,7 +1055,12 @@ impl Lockfile {
 
     /// Add or update a conda package in the shared section
     /// `basename` is without extension, e.g., "ncurses-6.4-h7ea286d_0"
-    pub fn set_conda_package(&mut self, platform: &str, basename: &str, info: CondaPackageInfo) {
+    pub(crate) fn set_conda_package(
+        &mut self,
+        platform: &str,
+        basename: &str,
+        info: CondaPackageInfo,
+    ) {
         self.conda_packages
             .entry(platform.to_string())
             .or_default()
@@ -1063,18 +1068,22 @@ impl Lockfile {
     }
 
     /// Get a conda package from the shared section by basename
-    pub fn get_conda_package(&self, platform: &str, basename: &str) -> Option<&CondaPackageInfo> {
+    pub(crate) fn get_conda_package(
+        &self,
+        platform: &str,
+        basename: &str,
+    ) -> Option<&CondaPackageInfo> {
         self.conda_packages.get(platform)?.get(basename)
     }
 
-    pub fn set_pkgx_package(&mut self, platform: &str, id: &str, info: PkgxPackageInfo) {
+    pub(crate) fn set_pkgx_package(&mut self, platform: &str, id: &str, info: PkgxPackageInfo) {
         self.pkgx_packages
             .entry(platform.to_string())
             .or_default()
             .insert(id.to_string(), info);
     }
 
-    pub fn get_pkgx_package(&self, platform: &str, id: &str) -> Option<&PkgxPackageInfo> {
+    pub(crate) fn get_pkgx_package(&self, platform: &str, id: &str) -> Option<&PkgxPackageInfo> {
         self.pkgx_packages.get(platform)?.get(id)
     }
 
@@ -1144,7 +1153,7 @@ impl Lockfile {
     }
 
     /// Get all platform keys present in the lockfile
-    pub fn all_platform_keys(&self) -> BTreeSet<String> {
+    pub(crate) fn all_platform_keys(&self) -> BTreeSet<String> {
         let mut platforms = BTreeSet::new();
         for tools in self.tools.values() {
             for tool in tools {
@@ -1156,13 +1165,13 @@ impl Lockfile {
         platforms
     }
 
-    pub fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
+    pub(crate) fn tools(&self) -> &BTreeMap<String, Vec<LockfileTool>> {
         &self.tools
     }
 
     /// Keep only tools matching configured short names or backend identifiers.
     /// Also removes conda packages that become unreferenced.
-    pub fn retain_tools_by_short_or_backend(
+    pub(crate) fn retain_tools_by_short_or_backend(
         &mut self,
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
@@ -1176,7 +1185,7 @@ impl Lockfile {
 
     /// Remove entries for a tool whose version is not in the given set.
     /// Used to prune stale version entries during filtered `mise lock <tool>` runs.
-    pub fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
+    pub(crate) fn retain_tool_versions(&mut self, short: &str, keep_versions: &BTreeSet<String>) {
         if let Some(tools) = self.tools.get_mut(short) {
             tools.retain(|t| keep_versions.contains(&t.version));
             if tools.is_empty() {
@@ -1188,7 +1197,7 @@ impl Lockfile {
     }
 
     /// Return versions of a tool that would be removed by `retain_tool_versions`.
-    pub fn stale_tool_versions(
+    pub(crate) fn stale_tool_versions(
         &self,
         short: &str,
         keep_versions: &BTreeSet<String>,
@@ -1206,7 +1215,7 @@ impl Lockfile {
     }
 
     /// Return tool keys that would be removed by `retain_tools_by_short_or_backend`.
-    pub fn stale_tool_shorts(
+    pub(crate) fn stale_tool_shorts(
         &self,
         keep_shorts: &BTreeSet<String>,
         keep_backends: &BTreeSet<String>,
@@ -1235,7 +1244,7 @@ impl Lockfile {
 
     /// Update or add platform info for a tool version
     /// Merges with existing info, preserving fields we don't have new values for
-    pub fn set_platform_info(
+    pub(crate) fn set_platform_info(
         &mut self,
         short: &str,
         version: &str,
@@ -1359,7 +1368,7 @@ impl Lockfile {
     }
 
     /// Save the lockfile to disk (public for mise lock command)
-    pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+    pub(crate) fn write<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         self.save(path)
     }
 }
@@ -1372,7 +1381,7 @@ impl Lockfile {
 /// - `.config/mise.toml` -> `.config/mise.lock`
 /// - `.mise/config.toml` -> `.mise/mise.lock`
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
-pub fn lockfile_path_for_config(
+pub(crate) fn lockfile_path_for_config(
     config_path: &Path,
     monorepo_root: Option<&Path>,
 ) -> (PathBuf, bool) {
@@ -1417,7 +1426,7 @@ pub fn lockfile_path_for_config(
 /// If multiple base configs share that root, the later entry in config_files wins
 /// so colocated configs have a deterministic lockfile target, such as
 /// .mise/config.toml mapping .dummy-version to .mise/mise.lock instead of mise.lock.
-pub fn lockfile_path_for_tool_source(
+pub(crate) fn lockfile_path_for_tool_source(
     config: &Config,
     source: &ToolSource,
 ) -> Option<(PathBuf, bool)> {
@@ -1468,7 +1477,7 @@ fn is_local_config(path: &Path) -> bool {
 
 /// Extracts environment name from config filename
 /// e.g., "mise.test.toml" -> Some("test"), "mise.test.local.toml" -> Some("test"), "mise.toml" -> None
-pub fn extract_env_from_config_path(path: &Path) -> Option<String> {
+pub(crate) fn extract_env_from_config_path(path: &Path) -> Option<String> {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -1490,7 +1499,7 @@ pub fn extract_env_from_config_path(path: &Path) -> Option<String> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LockfileUpdateMode {
+pub(crate) enum LockfileUpdateMode {
     Normal,
     AllowLocked,
 }
@@ -1501,7 +1510,7 @@ impl LockfileUpdateMode {
     }
 }
 
-pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
+pub(crate) fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
     if !Settings::get().lockfile_enabled() {
         return Ok(());
     }
@@ -1679,7 +1688,7 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
     }
 }
 
-pub fn update_lockfiles(
+pub(crate) fn update_lockfiles(
     config: &Config,
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -2158,7 +2167,7 @@ fn check_provenance_regression(
 /// entries — the snapshot is what lets `auto_lock_new_versions` tell a user-curated
 /// lockfile (existing entries are authoritative) apart from a fresh one whose only
 /// current-platform entry was just added by this install.
-pub fn snapshot_pre_install_platforms(
+pub(crate) fn snapshot_pre_install_platforms(
     config: &Config,
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -2345,7 +2354,7 @@ fn determine_target_platforms_from_lockfile(
 /// Determine target platforms from an existing lockfile for explicit `mise lock` calls.
 /// If the lockfile already has platform entries, only those are targeted.
 /// Otherwise, falls back to all common platforms + current platform.
-pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform>> {
+pub(crate) fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform>> {
     // If lockfile_platforms setting is configured, use it as the authoritative set
     if let Some(configured) = Settings::get().lockfile_platforms()? {
         let mut platforms: BTreeSet<Platform> = configured.into_iter().collect();
@@ -2379,7 +2388,7 @@ pub fn determine_existing_platforms(lockfile_path: &Path) -> Result<Vec<Platform
 /// so the lockfile is complete and doesn't change when other developers on different
 /// platforms run `mise install`. When no versions were installed, retry only deferred
 /// provenance verification left incomplete by an earlier auto-lock failure.
-pub async fn auto_lock_new_versions(
+pub(crate) async fn auto_lock_new_versions(
     config: &Config,
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -2602,7 +2611,7 @@ fn deferred_provenance_resolution_error(
 /// The `info_or_error` field is `Ok(info)` on success or `Err(message)` on failure,
 /// allowing callers to log at the appropriate level. `error_is_fatal` distinguishes
 /// genuine conda solve failures from backends that use errors to skip unsupported targets.
-pub type LockResolutionResult = (
+pub(crate) type LockResolutionResult = (
     String,
     String,
     String,
@@ -2619,7 +2628,7 @@ pub type LockResolutionResult = (
 /// Returns a tuple of (short_name, version, backend_full, platform, info_or_error, options,
 /// conda_packages, pkgx_packages, error_is_fatal).
 /// Does not log errors — callers decide the appropriate log level.
-pub async fn resolve_tool_lock_info(
+pub(crate) async fn resolve_tool_lock_info(
     ba: crate::cli::args::BackendArg,
     tv: ToolVersion,
     platform: Platform,
@@ -2748,7 +2757,10 @@ pub async fn resolve_tool_lock_info(
 ///
 /// Returns an error if a github backend tool loses provenance on version upgrade,
 /// which could indicate a supply chain attack.
-pub fn apply_lock_result(lockfile: &mut Lockfile, result: LockResolutionResult) -> Result<bool> {
+pub(crate) fn apply_lock_result(
+    lockfile: &mut Lockfile,
+    result: LockResolutionResult,
+) -> Result<bool> {
     let (
         short,
         version,
@@ -3173,7 +3185,7 @@ pub(crate) fn read_lockfile_for_tool_source(
 /// entry written before those options existed. The version pin is honored — it
 /// is the only record of what this project resolved to — but the artifact data
 /// is dropped, since there's no way to tell which variant it describes.
-pub fn get_locked_version(
+pub(crate) fn get_locked_version(
     config: &Config,
     path: Option<&Path>,
     short: &str,
@@ -3287,7 +3299,7 @@ fn strip_leading_v(version: &str) -> &str {
 
 /// Get the backend for a tool from the lockfile, ignoring options.
 /// This is used for backend discovery where we just need any entry's backend.
-pub fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
+pub(crate) fn get_locked_backend(config: &Config, short: &str) -> Option<String> {
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
         return None;

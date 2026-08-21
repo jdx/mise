@@ -1,7 +1,7 @@
 use mlua::prelude::*;
 use mlua::{Table, Value};
 
-pub fn mod_strings(lua: &Lua) -> LuaResult<()> {
+pub(crate) fn mod_strings(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     let strings = lua.create_table_from(vec![

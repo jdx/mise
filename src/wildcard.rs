@@ -1,15 +1,15 @@
-pub struct Wildcard {
+pub(crate) struct Wildcard {
     patterns: Vec<String>,
 }
 
 impl Wildcard {
-    pub fn new(patterns: impl IntoIterator<Item = impl Into<String>>) -> Self {
+    pub(crate) fn new(patterns: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
             patterns: patterns.into_iter().map(Into::into).collect(),
         }
     }
 
-    pub fn match_any(&self, input: &str) -> bool {
+    pub(crate) fn match_any(&self, input: &str) -> bool {
         for pattern in &self.patterns {
             if wildcard_match(input, pattern) {
                 return true;

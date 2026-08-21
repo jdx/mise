@@ -3,7 +3,7 @@ use mlua::prelude::*;
 use std::path::Path;
 use std::process::Command;
 
-pub fn mod_cmd(lua: &Lua) -> LuaResult<()> {
+pub(crate) fn mod_cmd(lua: &Lua) -> LuaResult<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     let cmd = lua.create_table_from(vec![("exec", lua.create_function(exec)?)])?;

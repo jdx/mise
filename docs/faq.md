@@ -351,7 +351,57 @@ Things mise does **not** do:
 - Handle system-level dependencies that tools need to compile
 
 If a mise-installed tool needs a system library, install that library with your OS package
-manager first.
+manager first. You can declare those packages in
+[`[bootstrap.packages]`](/bootstrap/packages/) so `mise bootstrap` installs them: through
+apt/dnf/pacman where the platform's package manager owns them, or through mise's built-in
+Homebrew installers for `brew:` and `brew-cask:` entries, which do not require Homebrew
+itself. Either way they are host packages, not `[tools]` entries.
+
+## How do I install tools other users can run without mise?
+
+Two features install binaries that work on `PATH` with no mise involved at runtime.
+
+Use [`[bootstrap.packages]`](/bootstrap/packages/) with `brew:` entries for tools that have
+a Homebrew formula:
+
+```toml
+[bootstrap.packages]
+"brew:ffmpeg" = "latest"
+"brew:jq" = "latest"
+```
+
+mise pours bottles into the canonical prefix (`/home/linuxbrew/.linuxbrew` on Linux,
+`/opt/homebrew` on arm64 macOS) with the usual `<prefix>/bin` links, and does not require
+Homebrew itself to be installed. Once `<prefix>/bin` is on `PATH`, the binaries behave like
+any other Homebrew install.
+[Keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae are the exception:
+like brew, mise leaves them out of the prefix, so their binaries stay at
+`<prefix>/opt/<name>/bin`.
+
+On arm64 macOS and x86_64/arm64 Linux, where mise's brew manager runs,
+`mise bootstrap packages import --manager brew` snapshots an existing Homebrew or Linuxbrew
+setup into your config — the formulae you installed on request, or every linked formula
+with `--all`.
+
+Use [`mise install-into`](/cli/install-into.html) for any backend mise supports. It installs
+one tool version into a directory you pick, for use outside of mise:
+
+```sh
+mise install-into node@22 /opt/node
+/opt/node/bin/node -v
+```
+
+Point it at a new or empty directory: `install-into` deletes whatever is already at the
+destination, after a confirmation prompt that defaults to no, or without asking under
+`--yes`. It only writes to that directory, so add its `bin` to `PATH` yourself the way you
+would the brew prefix above. Tools that expect environment variables such as `JAVA_HOME`,
+or other configuration mise normally applies at runtime, still need those set up by hand.
+
+Both approaches make the same trade Homebrew makes: one version on `PATH` for everyone,
+with no per-project version selection. When you want that selection, keep the tools in
+`[tools]` and let [`mise bootstrap`](/bootstrap.html) converge each user's activation,
+config, and tools in one command — or across many hosts with
+[`mise bootstrap remote`](/bootstrap/remote.html).
 
 ## How does mise versioning work?
 

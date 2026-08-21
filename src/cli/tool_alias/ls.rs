@@ -16,7 +16,7 @@ use crate::ui::table;
 ///     lts = "22.0.0"
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ToolAliasLs {
+pub(super) struct ToolAliasLs {
     /// Show aliases for <TOOL>
     #[clap()]
     pub tool: Option<BackendArg>,
@@ -27,7 +27,7 @@ pub struct ToolAliasLs {
 }
 
 impl ToolAliasLs {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let rows = config
             .all_aliases

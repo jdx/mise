@@ -9,7 +9,7 @@ use crate::git::Git;
 /// when you push changes to your repository.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct GithubAction {
+pub(super) struct GithubAction {
     /// The task to run when the workflow is triggered
     #[clap(long, short, default_value = "ci")]
     task: String,
@@ -22,7 +22,7 @@ pub struct GithubAction {
 }
 
 impl GithubAction {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(super) async fn run(self) -> eyre::Result<()> {
         let output = self.generate()?;
         if self.write {
             let path = Git::get_root()?

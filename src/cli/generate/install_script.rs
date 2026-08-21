@@ -15,7 +15,7 @@ use xx::regex;
 /// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct InstallScript {
+pub(super) struct InstallScript {
     /// Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
     ///
     /// This is necessary if users may use a different version of mise outside the project.
@@ -45,7 +45,7 @@ pub struct InstallScript {
 }
 
 impl InstallScript {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(super) async fn run(self) -> eyre::Result<()> {
         let (output, version) = self.generate().await?;
         if let Some(bin) = &self.write {
             if let Some(parent) = bin.parent() {

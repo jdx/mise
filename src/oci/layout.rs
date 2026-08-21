@@ -21,12 +21,12 @@ use crate::oci::manifest::{
     Descriptor, ImageIndex, ImageManifest, MEDIA_TYPE_OCI_INDEX, OciLayout, Platform,
 };
 
-pub struct ImageLayout {
+pub(crate) struct ImageLayout {
     pub root: PathBuf,
 }
 
 impl ImageLayout {
-    pub fn init(root: &Path) -> Result<Self> {
+    pub(crate) fn init(root: &Path) -> Result<Self> {
         file::create_dir_all(root)?;
         file::create_dir_all(root.join("blobs/sha256"))?;
         let layout_path = root.join("oci-layout");
@@ -39,7 +39,7 @@ impl ImageLayout {
 
     /// Write raw bytes as a blob. Returns the blob digest (as `sha256:...`).
     /// Idempotent — if the blob already exists it is left untouched.
-    pub fn write_blob(&self, bytes: &[u8]) -> Result<(String, u64)> {
+    pub(crate) fn write_blob(&self, bytes: &[u8]) -> Result<(String, u64)> {
         let mut h = Sha256::new();
         h.update(bytes);
         let hex = crate::oci::layer::hex_encode(&h.finalize());
@@ -62,7 +62,7 @@ impl ImageLayout {
     ///     or tampered content surfaces with a clear "got X, wanted Y"
     ///     message instead of later as a confusing mismatch from skopeo /
     ///     podman.
-    pub fn write_blob_with_digest(&self, digest: &str, bytes: &[u8]) -> Result<()> {
+    pub(crate) fn write_blob_with_digest(&self, digest: &str, bytes: &[u8]) -> Result<()> {
         validate_sha256_digest(digest)?;
         let mut h = Sha256::new();
         h.update(bytes);
@@ -77,12 +77,12 @@ impl ImageLayout {
         Ok(())
     }
 
-    pub fn blob_path(&self, digest: &str) -> PathBuf {
+    pub(crate) fn blob_path(&self, digest: &str) -> PathBuf {
         let hex = digest.trim_start_matches("sha256:");
         self.root.join("blobs/sha256").join(hex)
     }
 
-    pub fn read_blob(&self, digest: &str) -> Result<Vec<u8>> {
+    pub(crate) fn read_blob(&self, digest: &str) -> Result<Vec<u8>> {
         // Validate before turning the digest into a path component — a crafted
         // layout (`mise oci push/run --image-dir <untrusted>`) could otherwise
         // use `sha256:../../etc/passwd` to read outside the blobs directory.
@@ -92,7 +92,7 @@ impl ImageLayout {
     }
 
     /// Write the top-level `index.json` pointing at a single manifest descriptor.
-    pub fn write_index(
+    pub(crate) fn write_index(
         &self,
         manifest_digest: &str,
         manifest_size: u64,
@@ -125,7 +125,7 @@ impl ImageLayout {
         Ok(())
     }
 
-    pub fn write_manifest(&self, manifest: &ImageManifest) -> Result<(String, u64)> {
+    pub(crate) fn write_manifest(&self, manifest: &ImageManifest) -> Result<(String, u64)> {
         let bytes = serde_json::to_vec(manifest)?;
         self.write_blob(&bytes)
     }

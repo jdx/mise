@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for aube (aube-lock.yaml)
 #[derive(Debug)]
-pub struct AubeDepsProvider {
+pub(crate) struct AubeDepsProvider {
     base: ProviderBase,
 }
 
 impl AubeDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("aube", project_root, config),
         }

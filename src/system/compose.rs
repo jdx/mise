@@ -11,7 +11,7 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, Resou
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ComposeState {
+pub(crate) enum ComposeState {
     #[default]
     Running,
     Stopped,
@@ -20,7 +20,7 @@ pub enum ComposeState {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ComposePullPolicy {
+pub(crate) enum ComposePullPolicy {
     Always,
     #[default]
     Missing,
@@ -29,7 +29,7 @@ pub enum ComposePullPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ComposeBuildPolicy {
+pub(crate) enum ComposeBuildPolicy {
     #[default]
     Auto,
     Always,
@@ -38,7 +38,7 @@ pub enum ComposeBuildPolicy {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ComposeRecreatePolicy {
+pub(crate) enum ComposeRecreatePolicy {
     #[default]
     Auto,
     Always,
@@ -47,13 +47,13 @@ pub enum ComposeRecreatePolicy {
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ComposeRemoveImages {
+pub(crate) enum ComposeRemoveImages {
     Local,
     All,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ComposeTomlConfig {
+pub(crate) struct ComposeTomlConfig {
     pub project_dir: PathBuf,
     #[serde(default)]
     pub files: Vec<PathBuf>,
@@ -100,7 +100,7 @@ pub struct ComposeTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct ComposeRequest {
+pub(crate) struct ComposeRequest {
     pub name: String,
     project_dir: PathBuf,
     files: Vec<PathBuf>,
@@ -155,7 +155,7 @@ struct ComposeContainer {
     config_hash: Option<String>,
 }
 
-pub fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
+pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut composed: IndexMap<String, (ComposeTomlConfig, ResourceOrigin)> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for (name, declaration) in compose_from_config_files(config_files) {
@@ -202,13 +202,13 @@ fn compose_from_config_files(
     merged
 }
 
-pub fn requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
+pub(crate) fn requests_from_config(config: &Config) -> Result<Vec<ComposeRequest>> {
     let mut requests = prepare_requests_from_config(config)?;
     inspect_requests(&mut requests);
     Ok(requests)
 }
 
-pub fn inspect_requests(requests: &mut [ComposeRequest]) {
+pub(crate) fn inspect_requests(requests: &mut [ComposeRequest]) {
     for request in requests {
         request.inspection = Some(
             request
@@ -218,18 +218,18 @@ pub fn inspect_requests(requests: &mut [ComposeRequest]) {
     }
 }
 
-pub fn plans(requests: &[ComposeRequest], dependency_changed: bool) -> Vec<ResourcePlan> {
+pub(crate) fn plans(requests: &[ComposeRequest], dependency_changed: bool) -> Vec<ResourcePlan> {
     requests
         .iter()
         .map(|request| request.plan_with_dependency_change(dependency_changed))
         .collect()
 }
 
-pub fn apply(requests: &[ComposeRequest], dry_run: bool, yes: bool) -> Result<()> {
+pub(crate) fn apply(requests: &[ComposeRequest], dry_run: bool, yes: bool) -> Result<()> {
     apply_with_dry_run_actions(requests, &HashMap::new(), dry_run, yes)
 }
 
-pub fn apply_with_dry_run_actions(
+pub(crate) fn apply_with_dry_run_actions(
     requests: &[ComposeRequest],
     dry_run_actions: &HashMap<String, ResourceAction>,
     dry_run: bool,
@@ -405,15 +405,15 @@ impl ComposeRequest {
         })
     }
 
-    pub fn explicit_dependencies(&self) -> &[ResourceId] {
+    pub(crate) fn explicit_dependencies(&self) -> &[ResourceId] {
         &self.explicit_dependencies
     }
 
-    pub fn path_dependencies(&self) -> &[ResourceId] {
+    pub(crate) fn path_dependencies(&self) -> &[ResourceId] {
         &self.path_dependencies
     }
 
-    pub fn plan(&self) -> ResourcePlan {
+    pub(crate) fn plan(&self) -> ResourcePlan {
         let id = ResourceId::new("compose", &self.name);
         let desired = self.desired();
         let Some(inspection) = &self.inspection else {
@@ -492,7 +492,7 @@ impl ComposeRequest {
         }
     }
 
-    pub fn plan_with_dependency_change(&self, dependency_changed: bool) -> ResourcePlan {
+    pub(crate) fn plan_with_dependency_change(&self, dependency_changed: bool) -> ResourcePlan {
         let mut plan = self.plan();
         if dependency_changed && self.state == ComposeState::Running {
             match plan.action {

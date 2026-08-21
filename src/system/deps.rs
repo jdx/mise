@@ -25,7 +25,7 @@ use crate::system::packages::{self, PackageRequest, SystemPackageManager};
 
 /// A single capability a plugin requires before it can install.
 #[derive(Debug, Clone)]
-pub struct SystemDep {
+pub(crate) struct SystemDep {
     pub check: SystemDepCheck,
     /// Optional version constraint (only meaningful for `Bin`/`PkgConfig`).
     pub version: Option<VersionConstraint>,
@@ -43,7 +43,7 @@ pub struct SystemDep {
 
 /// How to detect whether a [`SystemDep`] is satisfied.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SystemDepCheck {
+pub(crate) enum SystemDepCheck {
     /// executable resolvable on `PATH`
     Bin(String),
     /// `pkg-config --exists <name>` (a `.pc` module)
@@ -76,7 +76,7 @@ impl SystemDepCheck {
 
 /// A version comparison operator for [`VersionConstraint`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VersionOp {
+pub(crate) enum VersionOp {
     AtLeast,
     Greater,
     AtMost,
@@ -104,13 +104,13 @@ impl VersionOp {
 /// resolve or order mise tool versions (see the semver rules in CLAUDE.md);
 /// it is the same class of comparison as [`crate::config::config_file::min_version`].
 #[derive(Debug, Clone)]
-pub struct VersionConstraint {
+pub(crate) struct VersionConstraint {
     pub op: VersionOp,
     pub version: Versioning,
 }
 
 impl VersionConstraint {
-    pub fn parse(s: &str) -> eyre::Result<Self> {
+    pub(crate) fn parse(s: &str) -> eyre::Result<Self> {
         let s = s.trim();
         let (op, rest) = if let Some(r) = s.strip_prefix(">=") {
             (VersionOp::AtLeast, r)
@@ -130,7 +130,7 @@ impl VersionConstraint {
         Ok(Self { op, version })
     }
 
-    pub fn satisfied_by(&self, current: &Versioning) -> bool {
+    pub(crate) fn satisfied_by(&self, current: &Versioning) -> bool {
         match self.op {
             VersionOp::AtLeast => current >= &self.version,
             VersionOp::Greater => current > &self.version,
@@ -149,7 +149,7 @@ impl fmt::Display for VersionConstraint {
 
 impl SystemDep {
     /// Human-readable capability label, e.g. `bison >=3.0`, `pkg-config libxml-2.0`.
-    pub fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         let base = match &self.check {
             SystemDepCheck::Bin(name) => name.clone(),
             SystemDepCheck::PkgConfig(name) => format!("pkg-config {name}"),
@@ -180,7 +180,7 @@ impl fmt::Display for SystemDep {
 
 /// The result of probing one [`SystemDep`] on the host.
 #[derive(Debug, Clone)]
-pub struct DepStatus {
+pub(crate) struct DepStatus {
     pub dep: SystemDep,
     /// detected version, if a version was extracted
     pub found: Option<String>,
@@ -253,14 +253,14 @@ static CACHE: Lazy<Mutex<HashMap<String, DetectOutcome>>> =
 
 /// Detect all `deps`, memoized. Concurrency-safe; two calls with the same
 /// fingerprint reuse the first result.
-pub async fn detect(deps: &[SystemDep]) -> Vec<DepStatus> {
+pub(crate) async fn detect(deps: &[SystemDep]) -> Vec<DepStatus> {
     detect_inner(deps, true).await
 }
 
 /// Detect all `deps`, bypassing (and refreshing) the memo cache. Used to
 /// re-verify after remediation, since a package we just installed changes the
 /// answer.
-pub async fn detect_fresh(deps: &[SystemDep]) -> Vec<DepStatus> {
+pub(crate) async fn detect_fresh(deps: &[SystemDep]) -> Vec<DepStatus> {
     detect_inner(deps, false).await
 }
 
@@ -491,7 +491,7 @@ fn extract_version(text: &str) -> Option<String> {
 /// Pick the first available, settings-enabled package manager that has a hint
 /// for `dep`. Mirrors the manager selection [`crate::system`] applies so we
 /// never propose a manager the driver would reject.
-pub async fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
+pub(crate) async fn pick_manager(dep: &SystemDep) -> Option<Arc<dyn SystemPackageManager>> {
     let enabled = Settings::get().system_packages.managers.clone();
     for m in packages::all_managers() {
         let name = m.name();
@@ -550,7 +550,7 @@ async fn resolve_package(m: &Arc<dyn SystemPackageManager>, dep: &SystemDep) -> 
 /// Group missing deps into per-manager [`PackageRequest`]s for remediation.
 /// Returns `(by_manager, unremediable)` where `unremediable` are deps with no
 /// available manager hint.
-pub async fn build_requests(
+pub(crate) async fn build_requests(
     missing: &[&SystemDep],
 ) -> (IndexMap<String, Vec<PackageRequest>>, Vec<SystemDep>) {
     let mut by_mgr: IndexMap<String, Vec<PackageRequest>> = IndexMap::new();
@@ -581,7 +581,7 @@ pub async fn build_requests(
 
 /// Copy-pasteable install hint commands for `missing`, grouped by the manager
 /// that would satisfy each. Used by warn mode.
-pub async fn hint_commands(missing: &[&SystemDep]) -> Vec<String> {
+pub(crate) async fn hint_commands(missing: &[&SystemDep]) -> Vec<String> {
     let (by_mgr, _) = build_requests(missing).await;
     by_mgr
         .into_iter()

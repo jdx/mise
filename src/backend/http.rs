@@ -144,7 +144,7 @@ impl FileInfo {
 }
 
 #[derive(Debug)]
-pub struct HttpBackend {
+pub(crate) struct HttpBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -250,7 +250,7 @@ impl<'a> HttpOptions<'a> {
 }
 
 impl HttpBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 
@@ -1018,7 +1018,7 @@ fn write_windows_script_launcher(script: &Path, interpreter: &str) -> Result<()>
 }
 
 /// Returns install-time-only option keys for HTTP backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "url".into(),
         "checksum".into(),

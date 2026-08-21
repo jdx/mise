@@ -15,20 +15,20 @@ use crate::{
 use super::{TaskFileArtifact, TaskFileProvider};
 
 #[derive(Debug)]
-pub struct RemoteTaskGitBuilder {
+pub(super) struct RemoteTaskGitBuilder {
     store_path: PathBuf,
     use_cache: bool,
 }
 
 impl RemoteTaskGitBuilder {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             store_path: env::temp_dir(),
             use_cache: false,
         }
     }
 
-    pub fn with_cache(mut self, use_cache: bool) -> Self {
+    pub(super) fn with_cache(mut self, use_cache: bool) -> Self {
         if use_cache {
             self.store_path = dirs::CACHE.join("remote-git-tasks-cache");
             self.use_cache = true;
@@ -36,7 +36,7 @@ impl RemoteTaskGitBuilder {
         self
     }
 
-    pub fn build(self) -> RemoteTaskGit {
+    pub(super) fn build(self) -> RemoteTaskGit {
         RemoteTaskGit {
             storage_path: self.store_path,
             is_cached: self.use_cache,
@@ -45,7 +45,7 @@ impl RemoteTaskGitBuilder {
 }
 
 #[derive(Debug)]
-pub struct RemoteTaskGit {
+pub(super) struct RemoteTaskGit {
     storage_path: PathBuf,
     is_cached: bool,
 }
@@ -58,7 +58,7 @@ struct GitRepoStructure {
 }
 
 impl GitRepoStructure {
-    pub fn new(url_without_path: &str, path: &str, branch: Option<String>) -> Self {
+    pub(crate) fn new(url_without_path: &str, path: &str, branch: Option<String>) -> Self {
         Self {
             url_without_path: url_without_path.to_string(),
             path: path.to_string(),

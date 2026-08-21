@@ -22,7 +22,7 @@ use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
 #[derive(Debug, Clone)]
-pub struct OciBottleMetadata {
+pub(super) struct OciBottleMetadata {
     pub tab: Value,
     pub sbom_supplement: Option<Value>,
 }
@@ -51,7 +51,7 @@ impl Error for DescriptorIdentityMiss {}
 /// mutable cache pathname, so another same-UID process cannot swap the bottle
 /// between lifecycle authorization and pour.
 #[derive(Debug)]
-pub struct VerifiedArtifact {
+pub(super) struct VerifiedArtifact {
     file: File,
     label: PathBuf,
 }
@@ -93,13 +93,13 @@ impl VerifiedArtifact {
         }))
     }
 
-    pub fn reader(&self) -> Result<File> {
+    pub(super) fn reader(&self) -> Result<File> {
         let mut file = self.file.try_clone()?;
         file.seek(SeekFrom::Start(0))?;
         Ok(file)
     }
 
-    pub fn label(&self) -> &Path {
+    pub(super) fn label(&self) -> &Path {
         &self.label
     }
 
@@ -223,7 +223,7 @@ async fn download_verified_bottle(
 }
 
 /// Download a bottle to the mise cache (or reuse a verified cached copy).
-pub async fn fetch_bottle(
+pub(super) async fn fetch_bottle(
     name: &str,
     pkg_version: &str,
     bottle: &BottleFile,
@@ -262,7 +262,7 @@ pub async fn fetch_bottle(
 
 /// Fetch digest-bound GHCR metadata. A URL without an OCI blob identity is an
 /// archive bottle and must derive facts from its checksum-verified archive.
-pub async fn fetch_oci_bottle_metadata(
+pub(super) async fn fetch_oci_bottle_metadata(
     name: &str,
     pkg_version: &str,
     rebuild: u32,

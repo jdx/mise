@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 /// Skips config directory by default.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct Implode {
+pub(crate) struct Implode {
     /// List directories that would be removed without actually removing them
     #[clap(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
@@ -24,7 +24,7 @@ pub struct Implode {
 }
 
 impl Implode {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         let mut files: BTreeSet<&Path> = [*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::MISE_BIN]
             .into_iter()
             .collect();

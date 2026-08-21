@@ -5,14 +5,14 @@ use std::env;
 /// Print the current PATH entries mise is providing
 #[derive(Debug, clap::Args)]
 #[clap(alias="paths", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Path {
+pub(crate) struct Path {
     /// Print all entries including those not provided by mise
     #[clap(long, short, verbatim_doc_comment)]
     full: bool,
 }
 
 impl Path {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let ts = config.get_toolset().await?;
         let paths = if self.full {

@@ -10,10 +10,10 @@ use crate::result::Result;
 use crate::system::sudo;
 
 /// Arch-family (Arch, Manjaro, EndeavourOS) via pacman
-pub struct PacmanManager {}
+pub(crate) struct PacmanManager {}
 
 impl PacmanManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 

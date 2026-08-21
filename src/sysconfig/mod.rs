@@ -284,7 +284,7 @@ fn patch_sysconfigdata(mut data: SysconfigData, real_prefix: &Path) -> Sysconfig
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum Error {
+pub(crate) enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("Python installation is missing a `lib` directory")]

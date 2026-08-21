@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for PHP Composer (composer.lock)
 #[derive(Debug)]
-pub struct ComposerDepsProvider {
+pub(crate) struct ComposerDepsProvider {
     base: ProviderBase,
 }
 
 impl ComposerDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("composer", project_root, config),
         }

@@ -30,7 +30,7 @@ use std::sync::Arc;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct UnifiedGitBackend {
+pub(crate) struct UnifiedGitBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -306,7 +306,7 @@ fn is_slsa_format_issue(e: &crate::github::sigstore::AttestationError) -> bool {
 }
 
 /// Returns install-time-only option keys for GitHub/GitLab backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "asset_pattern".into(),
         "additional_asset_patterns".into(),
@@ -933,7 +933,7 @@ impl Backend for UnifiedGitBackend {
 }
 
 impl UnifiedGitBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 

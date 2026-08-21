@@ -7,20 +7,20 @@ use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSour
 use super::{TaskFileArtifact, TaskFileProvider};
 
 #[derive(Debug)]
-pub struct RemoteTaskHttpBuilder {
+pub(super) struct RemoteTaskHttpBuilder {
     store_path: PathBuf,
     use_cache: bool,
 }
 
 impl RemoteTaskHttpBuilder {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             store_path: env::temp_dir(),
             use_cache: false,
         }
     }
 
-    pub fn with_cache(mut self, use_cache: bool) -> Self {
+    pub(super) fn with_cache(mut self, use_cache: bool) -> Self {
         if use_cache {
             self.store_path = dirs::CACHE.join("remote-http-tasks-cache");
             self.use_cache = true;
@@ -28,7 +28,7 @@ impl RemoteTaskHttpBuilder {
         self
     }
 
-    pub fn build(self) -> RemoteTaskHttp {
+    pub(super) fn build(self) -> RemoteTaskHttp {
         RemoteTaskHttp {
             storage_path: self.store_path,
             is_cached: self.use_cache,
@@ -37,7 +37,7 @@ impl RemoteTaskHttpBuilder {
 }
 
 #[derive(Debug)]
-pub struct RemoteTaskHttp {
+pub(super) struct RemoteTaskHttp {
     storage_path: PathBuf,
     is_cached: bool,
 }

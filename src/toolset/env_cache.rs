@@ -86,7 +86,7 @@ fn validate_watch_files(watch_files: &[PathBuf], expected_mtimes: &[u64]) -> Res
 
 /// Represents the cached environment data
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedEnv {
+pub(crate) struct CachedEnv {
     /// Cached environment variables
     pub env: BTreeMap<String, String>,
     /// User-configured paths from env._.path directives
@@ -107,7 +107,7 @@ pub struct CachedEnv {
 
 /// Cached environment data for non-tool env results (config-time env resolution)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CachedNonToolEnv {
+pub(crate) struct CachedNonToolEnv {
     /// Environment variables resolved from non-tool directives
     pub env: IndexMap<String, (String, PathBuf)>,
     /// Variables removed by env directives
@@ -141,12 +141,12 @@ pub struct CachedNonToolEnv {
 
 impl CachedEnv {
     /// Returns the directory where env cache files are stored
-    pub fn cache_dir() -> PathBuf {
+    pub(crate) fn cache_dir() -> PathBuf {
         dirs::STATE.join("env-cache")
     }
 
     /// Computes the cache key based on config files, settings, tool versions, etc.
-    pub fn compute_cache_key(
+    pub(crate) fn compute_cache_key(
         config_files: &[(PathBuf, u64)],    // (path, mtime)
         tool_versions: &[(String, String)], // (tool, version)
         settings_hash: &str,
@@ -180,18 +180,18 @@ impl CachedEnv {
     }
 
     /// Generates a new encryption key and returns it as a base64 string
-    pub fn generate_encryption_key() -> String {
+    pub(crate) fn generate_encryption_key() -> String {
         let key = Key::generate();
         BASE64_STANDARD.encode(key)
     }
 
     /// Ensures an encryption key exists, returns one if not set
-    pub fn ensure_encryption_key() -> String {
+    pub(crate) fn ensure_encryption_key() -> String {
         std::env::var("__MISE_ENV_CACHE_KEY").unwrap_or_else(|_| Self::generate_encryption_key())
     }
 
     /// Loads a cached environment from disk
-    pub fn load(cache_key: &str) -> Result<Option<Self>> {
+    pub(crate) fn load(cache_key: &str) -> Result<Option<Self>> {
         let key = match get_encryption_key() {
             Some(k) => k,
             None => {
@@ -265,7 +265,7 @@ impl CachedEnv {
     }
 
     /// Saves a cached environment to disk
-    pub fn save(&self, cache_key: &str) -> Result<()> {
+    pub(crate) fn save(&self, cache_key: &str) -> Result<()> {
         let key = match get_encryption_key() {
             Some(k) => k,
             None => {
@@ -288,12 +288,12 @@ impl CachedEnv {
     }
 
     /// Returns true if env caching is enabled and we have an encryption key
-    pub fn is_enabled() -> bool {
+    pub(crate) fn is_enabled() -> bool {
         Settings::get().env_cache && get_encryption_key().is_some()
     }
 
     /// Clears all env cache files
-    pub fn clear() -> Result<()> {
+    pub(crate) fn clear() -> Result<()> {
         let cache_dir = Self::cache_dir();
         if cache_dir.exists() {
             file::remove_all(&cache_dir)?;
@@ -304,12 +304,12 @@ impl CachedEnv {
 
 impl CachedNonToolEnv {
     /// Returns the directory where env cache files are stored
-    pub fn cache_dir() -> PathBuf {
+    pub(crate) fn cache_dir() -> PathBuf {
         CachedEnv::cache_dir()
     }
 
     /// Computes the cache key based on config files and settings
-    pub fn compute_cache_key(
+    pub(crate) fn compute_cache_key(
         config_files: &[(PathBuf, u64)], // (path, mtime)
         settings_hash: &str,
         base_path: &str,
@@ -339,7 +339,7 @@ impl CachedNonToolEnv {
     }
 
     /// Loads cached non-tool env data if it exists and is valid
-    pub fn load(cache_key: &str) -> Result<Option<Self>> {
+    pub(crate) fn load(cache_key: &str) -> Result<Option<Self>> {
         let key = match get_encryption_key() {
             Some(k) => k,
             None => {
@@ -412,7 +412,7 @@ impl CachedNonToolEnv {
     }
 
     /// Saves cached non-tool env data to disk
-    pub fn save(&self, cache_key: &str) -> Result<()> {
+    pub(crate) fn save(&self, cache_key: &str) -> Result<()> {
         let key = match get_encryption_key() {
             Some(k) => k,
             None => {
@@ -435,13 +435,13 @@ impl CachedNonToolEnv {
     }
 
     /// Returns true if env caching is enabled and we have an encryption key
-    pub fn is_enabled() -> bool {
+    pub(crate) fn is_enabled() -> bool {
         Settings::get().env_cache && get_encryption_key().is_some()
     }
 }
 
 /// Helper to get the mtime of a file as seconds since UNIX epoch
-pub fn get_file_mtime(path: &Path) -> Option<u64> {
+pub(crate) fn get_file_mtime(path: &Path) -> Option<u64> {
     std::fs::metadata(path)
         .ok()
         .and_then(|m| m.modified().ok())
@@ -450,7 +450,7 @@ pub fn get_file_mtime(path: &Path) -> Option<u64> {
 }
 
 /// Computes a hash of the current settings that affect env computation
-pub fn compute_settings_hash() -> String {
+pub(crate) fn compute_settings_hash() -> String {
     let settings = Settings::get();
     let mut hasher = Hasher::new();
 

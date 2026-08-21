@@ -17,7 +17,7 @@ use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::{dirs, env};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitlabRelease {
+pub(crate) struct GitlabRelease {
     pub tag_name: String,
     pub description: Option<String>,
     pub released_at: Option<String>,
@@ -25,25 +25,25 @@ pub struct GitlabRelease {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitlabTag {
+pub(crate) struct GitlabTag {
     pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitlabAssets {
+pub(crate) struct GitlabAssets {
     // pub count: i64,
     pub sources: Vec<GitlabAssetSource>,
     pub links: Vec<GitlabAssetLink>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitlabAssetSource {
+pub(crate) struct GitlabAssetSource {
     pub format: String,
     pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitlabAssetLink {
+pub(crate) struct GitlabAssetLink {
     pub id: i64,
     pub name: String,
     pub url: String,
@@ -59,9 +59,9 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GitlabRelease>>> = Lazy::new(Defaul
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
-pub static API_URL: &str = "https://gitlab.com/api/v4";
+pub(crate) static API_URL: &str = "https://gitlab.com/api/v4";
 
-pub static API_PATH: &str = "/api/v4";
+pub(crate) static API_PATH: &str = "/api/v4";
 
 async fn get_tags_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<Vec<String>>> {
     TAGS_CACHE
@@ -103,7 +103,7 @@ async fn get_release_cache(key: &str) -> RwLockReadGuard<'_, CacheGroup<GitlabRe
 }
 
 #[allow(dead_code)]
-pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
+pub(crate) async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
     let key = repo.to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -115,7 +115,10 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GitlabRelease>> {
         .to_vec())
 }
 
-pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GitlabRelease>> {
+pub(crate) async fn list_releases_from_url(
+    api_url: &str,
+    repo: &str,
+) -> Result<Vec<GitlabRelease>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -162,7 +165,7 @@ async fn list_releases_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec
 }
 
 #[allow(dead_code)]
-pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
+pub(crate) async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let key = repo.to_kebab_case();
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -174,7 +177,7 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
         .to_vec())
 }
 
-pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
+pub(crate) async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -215,7 +218,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
 }
 
 #[allow(dead_code)]
-pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
+pub(crate) async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
     let key = format!("{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -225,7 +228,11 @@ pub async fn get_release(repo: &str, tag: &str) -> Result<GitlabRelease> {
         .clone())
 }
 
-pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<GitlabRelease> {
+pub(crate) async fn get_release_for_url(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+) -> Result<GitlabRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -262,7 +269,7 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("gitlab")
 }
 
-pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
+pub(crate) fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     // An invalid URL just means no auth headers; the real error surfaces when the
     // request is made. Avoid panicking here. See #3547.
@@ -289,7 +296,7 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
 
 /// The source from which a GitLab token was resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenSource {
+pub(crate) enum TokenSource {
     EnvVar(&'static str),
     TokensFile,
     GlabCli,
@@ -339,7 +346,7 @@ pub(crate) mod test_support {
 /// 4. `gitlab_tokens.toml` (per-host)
 /// 5. glab CLI token (from `config.yml`)
 /// 6. `git credential fill` (if enabled)
-pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     #[cfg(test)]
     if let Some(token) = test_support::lookup_tokens_file_override(host) {
         return Some((token, TokenSource::TokensFile));

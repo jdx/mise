@@ -4,7 +4,7 @@ use crate::document::{Entry, EntryValue, Section};
 
 /// An action that can be undone
 #[derive(Debug, Clone)]
-pub enum UndoAction {
+pub(crate) enum UndoAction {
     /// Deleted an entry (section_idx, entry_idx, entry)
     DeleteEntry(usize, usize, Entry),
     /// Deleted an array item (section_idx, entry_idx, array_idx, value)
