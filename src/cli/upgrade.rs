@@ -582,26 +582,23 @@ impl Upgrade {
             }
         }
 
-        let monorepo_update = if config.monorepo_lockfile_root().is_some() {
+        let monorepo_update = if Settings::get().lockfile_enabled()
+            && config.monorepo_lockfile_root().is_some()
+        {
             match config.monorepo_union_tool_request_set().await {
                 Ok(requests) => {
-                    let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
+                    let mut omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
                     let mut ts: Toolset = requests.into();
                     match ts.resolve(config).await {
-                        Ok(()) if monorepo_toolset_is_complete(&ts) => {
+                        Ok(()) => {
+                            omitted_shorts.extend(monorepo_toolset_unresolved_shorts(&ts));
                             if !omitted_shorts.is_empty() {
                                 warn_once!(
-                                    "the monorepo toolset omitted unavailable or disabled tools for lockfile update; preserving existing entries for: {}",
+                                    "some monorepo tools are unavailable, disabled, platform-gated, or unresolved for lockfile update; preserving existing entries for: {}",
                                     omitted_shorts.iter().sorted().join(", ")
                                 );
                             }
                             Some((ts, omitted_shorts))
-                        }
-                        Ok(()) => {
-                            warn!(
-                                "could not completely resolve the monorepo toolset for lockfile update; preserving existing sibling entries"
-                            );
-                            None
                         }
                         Err(err) => {
                             warn!(
@@ -621,12 +618,8 @@ impl Upgrade {
         } else {
             None
         };
-        match upgrade_lockfile_update(
-            monorepo_update
-                .as_ref()
-                .map(|(ts, omitted_shorts)| (ts, omitted_shorts)),
-        ) {
-            UpgradeLockfileUpdate::Active => {
+        match monorepo_update.as_ref() {
+            None => {
                 config::rebuild_shims_and_runtime_symlinks(
                     config,
                     ts,
@@ -635,10 +628,7 @@ impl Upgrade {
                 )
                 .await?;
             }
-            UpgradeLockfileUpdate::MonorepoUnion {
-                toolset: monorepo_ts,
-                omitted_shorts,
-            } => {
+            Some((monorepo_ts, omitted_shorts)) => {
                 config::rebuild_shims_and_runtime_symlinks_for_monorepo(
                     config,
                     ts,
@@ -871,55 +861,35 @@ impl Upgrade {
     }
 }
 
-/// Selects whether upgrade lockfile maintenance has an authoritative monorepo union.
-enum UpgradeLockfileUpdate<'a> {
-    /// Use the active toolset and preserve all absent monorepo sibling entries.
-    Active,
-    /// Use the resolved union, preserving all entries for tools omitted while loading it.
-    MonorepoUnion {
-        toolset: &'a Toolset,
-        omitted_shorts: &'a HashSet<String>,
-    },
-}
-
-/// Uses the union only when it was loaded and completely resolved.
-fn upgrade_lockfile_update<'a>(
-    monorepo_update: Option<(&'a Toolset, &'a HashSet<String>)>,
-) -> UpgradeLockfileUpdate<'a> {
-    match monorepo_update {
-        Some((toolset, omitted_shorts)) => UpgradeLockfileUpdate::MonorepoUnion {
-            toolset,
-            omitted_shorts,
-        },
-        None => UpgradeLockfileUpdate::Active,
-    }
-}
-
 /// Returns tool shorts omitted while constructing the union's preservation keep-set.
 fn monorepo_request_set_omitted_shorts(requests: &ToolRequestSet) -> HashSet<String> {
     // unknown_tools is included independently as a defensive measure for request
     // sets constructed outside ToolRequestSetBuilder. Builder-produced unknowns
     // are also present in filtered_tools.
-    requests
+    let mut omitted_shorts = requests
         .unknown_tools
         .iter()
         .chain(&requests.filtered_tools)
         .map(|ba| ba.short.to_string())
-        .collect()
+        .collect::<HashSet<_>>();
+    omitted_shorts.extend(
+        requests
+            .iter()
+            .filter(|(_, requests, _)| requests.iter().any(|request| !request.is_os_supported()))
+            .map(|(ba, _, _)| ba.short.to_string()),
+    );
+    omitted_shorts
 }
 
-/// Returns whether every monorepo request can safely contribute to the preservation keep-set.
-fn monorepo_toolset_is_complete(ts: &Toolset) -> bool {
-    // Toolset::resolve warns and retains a partially resolved list for ordinary
-    // per-tool failures, so its Ok result alone does not prove completeness.
-    // OS-gated requests intentionally make this false: they do not resolve on
-    // this platform, so treating the union as authoritative would prune their
-    // cross-platform lock entries. Consequently, monorepos containing any
-    // OS-gated request do not prune stale entries on this upgrade path.
-    ts.versions.values().all(|tvl| {
-        tvl.requests.iter().all(|request| request.is_os_supported())
-            && tvl.versions.len() == tvl.requests.len()
-    })
+/// Returns shorts whose retained request lists did not resolve completely.
+fn monorepo_toolset_unresolved_shorts(ts: &Toolset) -> HashSet<String> {
+    // Toolset::resolve warns and retains partially resolved lists for ordinary
+    // per-tool failures, so compare request and result counts after it returns.
+    ts.versions
+        .iter()
+        .filter(|(_, tvl)| tvl.versions.len() != tvl.requests.len())
+        .map(|(ba, _)| ba.short.to_string())
+        .collect()
 }
 
 fn current_satisfies_hidden_release(
@@ -1091,9 +1061,9 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 #[cfg(test)]
 mod tests {
     use super::{
-        UpgradeLockfileUpdate, current_version_satisfies_hidden_release,
-        format_hidden_release_details, monorepo_request_set_omitted_shorts,
-        monorepo_toolset_is_complete, release_is_eligible_at, upgrade_lockfile_update,
+        current_version_satisfies_hidden_release, format_hidden_release_details,
+        monorepo_request_set_omitted_shorts, monorepo_toolset_unresolved_shorts,
+        release_is_eligible_at,
     };
     use crate::cli::args::BackendArg;
     use crate::toolset::{
@@ -1104,42 +1074,15 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_upgrade_uses_complete_monorepo_union_for_lockfile_update() {
-        let ts = Toolset::new(ToolSource::Unknown);
-        let omitted_shorts = HashSet::new();
-        assert!(matches!(
-            upgrade_lockfile_update(Some((&ts, &omitted_shorts))),
-            UpgradeLockfileUpdate::MonorepoUnion {
-                toolset: _,
-                omitted_shorts: _
-            }
-        ));
-        assert!(matches!(
-            upgrade_lockfile_update(None),
-            UpgradeLockfileUpdate::Active
-        ));
-    }
-
-    #[test]
     fn test_unknown_or_filtered_monorepo_request_preserves_omitted_shorts() {
         let ba = Arc::new(BackendArg::from("missing-sibling-tool"));
         let mut requests = ToolRequestSet::new();
         let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
         assert!(omitted_shorts.is_empty());
 
-        let ts = Toolset::new(ToolSource::Unknown);
-        assert!(matches!(
-            upgrade_lockfile_update(Some((&ts, &omitted_shorts))),
-            UpgradeLockfileUpdate::MonorepoUnion { .. }
-        ));
-
         requests.unknown_tools.push(ba.clone());
         let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
         assert_eq!(omitted_shorts, HashSet::from([ba.short.to_string()]));
-        assert!(matches!(
-            upgrade_lockfile_update(Some((&ts, &omitted_shorts))),
-            UpgradeLockfileUpdate::MonorepoUnion { .. }
-        ));
 
         requests.unknown_tools.clear();
         requests.filtered_tools.push(ba);
@@ -1148,65 +1091,62 @@ mod tests {
             omitted_shorts,
             HashSet::from(["missing-sibling-tool".to_string()])
         );
-        match upgrade_lockfile_update(Some((&ts, &omitted_shorts))) {
-            UpgradeLockfileUpdate::MonorepoUnion {
-                omitted_shorts: carried,
-                ..
-            } => assert_eq!(carried, &omitted_shorts),
-            UpgradeLockfileUpdate::Active => panic!("filtered union must still be used per-short"),
-        }
     }
 
     #[tokio::test]
-    async fn test_monorepo_toolset_completeness_requires_every_request_to_resolve() {
+    async fn test_unresolved_monorepo_request_only_omits_its_short() {
         crate::toolset::install_state::init().await.unwrap();
         let mut ts = Toolset::new(ToolSource::Unknown);
-        let omitted_shorts = HashSet::new();
-        let ba = Arc::new(BackendArg::new("dummy".to_string(), None));
-        let request = ToolRequest::new(ba.clone(), "1", ToolSource::Unknown).unwrap();
-        ts.add_version(request);
-        let complete = monorepo_toolset_is_complete(&ts);
-        assert!(!complete);
-        assert!(matches!(
-            upgrade_lockfile_update(complete.then_some((&ts, &omitted_shorts))),
-            UpgradeLockfileUpdate::Active
-        ));
+        let unresolved_ba = Arc::new(BackendArg::new("dummy".to_string(), None));
+        let resolved_ba = Arc::new(BackendArg::new("tiny".to_string(), None));
+        let unresolved =
+            ToolRequest::new(unresolved_ba.clone(), "missing", ToolSource::Unknown).unwrap();
+        let resolved = ToolRequest::new(resolved_ba.clone(), "2", ToolSource::Unknown).unwrap();
+        ts.add_version(unresolved);
+        ts.add_version(resolved.clone());
+        ts.versions
+            .get_mut(&resolved_ba)
+            .unwrap()
+            .versions
+            .push(ToolVersion::new(resolved, "2.0.0".to_string()));
 
-        let tvl = ts.versions.values_mut().next().unwrap();
-        tvl.versions.push(ToolVersion::new(
-            tvl.requests[0].clone(),
-            "1.0.0".to_string(),
-        ));
-        let complete = monorepo_toolset_is_complete(&ts);
-        assert!(complete);
-        assert!(matches!(
-            upgrade_lockfile_update(complete.then_some((&ts, &omitted_shorts))),
-            UpgradeLockfileUpdate::MonorepoUnion { .. }
-        ));
+        assert_eq!(
+            monorepo_toolset_unresolved_shorts(&ts),
+            HashSet::from([unresolved_ba.short.to_string()])
+        );
     }
 
     #[tokio::test]
-    async fn test_os_gated_monorepo_request_forces_preserve_all_fallback() {
+    async fn test_os_gated_monorepo_request_only_omits_its_short() {
         crate::toolset::install_state::init().await.unwrap();
-        let mut ts = Toolset::new(ToolSource::Unknown);
-        let ba = Arc::new(BackendArg::new("dummy".to_string(), None));
+        let mut requests = ToolRequestSet::new();
+        let inactive_ba = Arc::new(BackendArg::new("dummy".to_string(), None));
+        let active_ba = Arc::new(BackendArg::new("tiny".to_string(), None));
         let inactive_os = match crate::cli::version::OS.as_str() {
             "linux" => "macos",
             _ => "linux",
         };
         let mut inactive_options = parse_tool_options("");
         inactive_options.core.os = Some(vec![inactive_os.to_string()]);
-        let inactive_request =
-            ToolRequest::new_opts(ba, "2", inactive_options, ToolSource::Unknown).unwrap();
-        ts.add_version(inactive_request);
+        requests.add_version(
+            ToolRequest::new_opts(
+                inactive_ba.clone(),
+                "2",
+                inactive_options,
+                ToolSource::Unknown,
+            )
+            .unwrap(),
+            &ToolSource::Unknown,
+        );
+        requests.add_version(
+            ToolRequest::new(active_ba, "1", ToolSource::Unknown).unwrap(),
+            &ToolSource::Unknown,
+        );
 
-        let complete = monorepo_toolset_is_complete(&ts);
-        let omitted_shorts = HashSet::new();
-        assert!(!complete);
-        assert!(matches!(
-            upgrade_lockfile_update(complete.then_some((&ts, &omitted_shorts))),
-            UpgradeLockfileUpdate::Active
-        ));
+        assert_eq!(
+            monorepo_request_set_omitted_shorts(&requests),
+            HashSet::from([inactive_ba.short.to_string()])
+        );
     }
 
     #[test]
