@@ -213,7 +213,7 @@ fn remove_all_atomically_validated_inner(
         crate::rand::random_string(32)
     );
     let parent = File::open(parent)?;
-    validate_trusted_formula_rack(&parent)?;
+    validate_trusted_formula_rack(path, &parent)?;
     let _lock = lock_formula_rack(path)?;
     let mut detached = Dir::openat(
         &parent,
@@ -287,6 +287,16 @@ pub fn restore_dir_atomically_validated(
     to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
 ) -> Result<()> {
+    restore_dir_atomically_validated_inner(from, to, validate, |_| Ok(()))
+}
+
+#[cfg(unix)]
+fn restore_dir_atomically_validated_inner(
+    from: &Path,
+    to: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+    after_publish: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
     use nix::dir::Dir;
     use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag};
@@ -301,7 +311,7 @@ pub fn restore_dir_atomically_validated(
         .ok_or_else(|| eyre::eyre!("unnamed backup"))?;
     let to_name = to.file_name().ok_or_else(|| eyre::eyre!("unnamed keg"))?;
     let parent = File::open(parent_path)?;
-    validate_trusted_formula_rack(&parent)?;
+    validate_trusted_formula_rack(from, &parent)?;
     let _lock = lock_formula_rack(from)?;
     let retained = Dir::openat(
         &parent,
@@ -362,11 +372,12 @@ pub fn restore_dir_atomically_validated(
     if (installed.st_dev, installed.st_ino) != (identity.st_dev, identity.st_ino) {
         bail!("formula restore identity changed while package lock was held");
     }
+    after_publish(&parent_path.join(&quarantine_name))?;
     // The shared Homebrew/mise formula lock is the cooperative namespace boundary. POSIX cannot
     // defend against a malicious same-UID process that deliberately ignores that lock; cleanup
     // remains descriptor-rooted so cooperative actors cannot redirect descendant deletion.
-    if let Some((mut current, current_identity)) = displaced.take()
-        && let Err(error) = (|| -> Result<()> {
+    if let Some((mut current, current_identity)) = displaced.take() {
+        (|| -> Result<()> {
             remove_dir_contents(&mut current)?;
             let final_path = fstatat(
                 &parent,
@@ -385,19 +396,21 @@ pub fn restore_dir_atomically_validated(
             )?;
             Ok(())
         })()
-    {
-        warn!("formula restore succeeded but quarantine cleanup failed: {error:#}");
+        .wrap_err(
+            "formula predecessor is active, but displaced-keg cleanup failed; retry cleanup of the identity-bound .mise-rollback tombstone",
+        )?;
     }
     Ok(())
 }
 
 #[cfg(unix)]
-fn validate_trusted_formula_rack(rack: &File) -> Result<()> {
+fn validate_trusted_formula_rack(path: &Path, rack: &File) -> Result<()> {
     let metadata = nix::sys::stat::fstat(rack)?;
-    if !trusted_formula_owner(metadata.st_uid) || metadata.st_mode & 0o022 != 0 {
-        bail!(
-            "formula rack must have a trusted prefix owner and not be writable by group or others"
-        );
+    let (expected_uid, expected_gid) = formula_prefix_identity(path)?;
+    if (metadata.st_uid, metadata.st_gid) != (expected_uid, expected_gid)
+        || metadata.st_mode & 0o002 != 0
+    {
+        bail!("formula rack must match the trusted prefix owner/group and not be world-writable");
     }
     Ok(())
 }
@@ -414,7 +427,35 @@ fn trusted_formula_owner(uid: u32) -> bool {
 }
 
 #[cfg(unix)]
-fn lock_formula_rack(path: &Path) -> Result<fslock::LockFile> {
+fn formula_prefix_identity(path: &Path) -> Result<(u32, u32)> {
+    let rack = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("formula path has no rack"))?;
+    let prefix = rack
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| eyre::eyre!("formula rack has no Homebrew prefix"))?;
+    let metadata = prefix.symlink_metadata()?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || !trusted_formula_owner(metadata.uid())
+        || metadata.mode() & 0o002 != 0
+    {
+        bail!("untrusted Homebrew prefix: {}", prefix.display());
+    }
+    Ok((metadata.uid(), metadata.gid()))
+}
+
+#[cfg(unix)]
+fn lock_formula_rack(path: &Path) -> Result<File> {
+    lock_formula_rack_inner(path, |_| Ok(()))
+}
+
+#[cfg(unix)]
+fn lock_formula_rack_inner(
+    path: &Path,
+    after_open: impl FnOnce(&Path) -> Result<()>,
+) -> Result<File> {
     let rack = path
         .parent()
         .ok_or_else(|| eyre::eyre!("formula path has no rack"))?;
@@ -425,6 +466,7 @@ fn lock_formula_rack(path: &Path) -> Result<fslock::LockFile> {
         .parent()
         .and_then(Path::parent)
         .ok_or_else(|| eyre::eyre!("formula rack has no Homebrew prefix"))?;
+    let (expected_uid, expected_gid) = formula_prefix_identity(path)?;
     let locks = prefix.join("var/homebrew/locks");
     for component in [
         prefix.to_path_buf(),
@@ -442,8 +484,8 @@ fn lock_formula_rack(path: &Path) -> Result<fslock::LockFile> {
         let metadata = component.symlink_metadata()?;
         if !metadata.is_dir()
             || metadata.file_type().is_symlink()
-            || !trusted_formula_owner(metadata.uid())
-            || metadata.mode() & 0o022 != 0
+            || (metadata.uid(), metadata.gid()) != (expected_uid, expected_gid)
+            || metadata.mode() & 0o002 != 0
         {
             bail!(
                 "untrusted Homebrew formula lock directory: {}",
@@ -460,19 +502,28 @@ fn lock_formula_rack(path: &Path) -> Result<fslock::LockFile> {
             lock_path.display()
         );
     }
-    let mut lock = fslock::LockFile::open(&lock_path)?;
-    let before = lock_path.symlink_metadata()?;
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o664)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+        .open(&lock_path)?;
+    let before = lock.metadata()?;
     if !before.is_file()
         || before.file_type().is_symlink()
-        || !trusted_formula_owner(before.uid())
-        || before.mode() & 0o022 != 0
+        || (before.uid(), before.gid()) != (expected_uid, expected_gid)
+        || before.mode() & 0o002 != 0
     {
         bail!(
             "untrusted Homebrew formula lock file: {}",
             lock_path.display()
         );
     }
-    lock.lock()?;
+    after_open(&lock_path)?;
+    if unsafe { nix::libc::flock(lock.as_raw_fd(), nix::libc::LOCK_EX) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
     let after = lock_path.symlink_metadata()?;
     if (before.dev(), before.ino()) != (after.dev(), after.ino()) {
         bail!("Homebrew formula lock inode changed while acquiring lock");
@@ -3564,6 +3615,47 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn locked_restore_reports_cleanup_failure_with_predecessor_active() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        let displaced = rack.join("preserved-displaced");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |quarantine| {
+                fs::rename(quarantine, &displaced)?;
+                fs::create_dir(quarantine)?;
+                fs::write(quarantine.join("foreign"), "survive")?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("predecessor is active"));
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+        assert!(displaced.is_dir());
+        assert!(
+            rack.read_dir()
+                .unwrap()
+                .filter_map(Result::ok)
+                .any(|entry| { entry.path().join("foreign").is_file() })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn formula_lock_rejects_symlinked_lock_directory() {
         let root = tempfile::tempdir().unwrap();
         let rack = root.path().join("Cellar/foo");
@@ -3603,6 +3695,46 @@ mod tests {
         drop(homebrew);
         drop(received.recv_timeout(Duration::from_secs(2)).unwrap());
         worker.join().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_lock_rejects_path_replacement_after_open() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        fs::create_dir_all(root.path().join("var/homebrew/locks")).unwrap();
+        let displaced = root.path().join("opened-lock");
+
+        let error = lock_formula_rack_inner(&rack.join("1.0"), |lock_path| {
+            fs::rename(lock_path, &displaced)?;
+            fs::write(lock_path, "replacement")?;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("lock inode changed"));
+        assert!(displaced.is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_namespace_accepts_homebrew_group_writable_mode() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(root.path().join("var/homebrew/locks")).unwrap();
+        fs::create_dir_all(&rack).unwrap();
+        for path in [
+            root.path(),
+            &root.path().join("var"),
+            &root.path().join("var/homebrew"),
+            &root.path().join("var/homebrew/locks"),
+            &rack,
+        ] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o775)).unwrap();
+        }
+
+        drop(lock_formula_rack(&rack.join("1.0")).unwrap());
     }
 
     #[cfg(unix)]

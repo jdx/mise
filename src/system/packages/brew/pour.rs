@@ -2105,10 +2105,13 @@ pub(super) fn begin_source_build_transaction(
             predecessor_keg: state.predecessor_keg.clone(),
         })
     })();
-    if result.is_err() {
-        rollback_source_build_transaction(keg)?;
+    match result {
+        Ok(transaction) => Ok(transaction),
+        Err(error) => Err(with_rollback_context(
+            error,
+            rollback_source_build_transaction(keg),
+        )),
     }
-    result
 }
 
 /// Roll back only a partial source-build keg carrying this transaction's
@@ -4869,6 +4872,17 @@ mod tests {
         assert!(rendered.contains("cannot link foo"));
         assert!(rendered.contains("formula rollback also failed"));
         assert!(rendered.contains("trusted rack validation failed"));
+    }
+
+    #[test]
+    fn source_transaction_rollback_preserves_originating_error() {
+        let error = with_rollback_context(
+            eyre::eyre!("source transaction preparation failed"),
+            Err(eyre::eyre!("source transaction rollback failed")),
+        );
+        let rendered = format!("{error:#}");
+        assert!(rendered.contains("source transaction preparation failed"));
+        assert!(rendered.contains("source transaction rollback failed"));
     }
 
     #[tokio::test]
