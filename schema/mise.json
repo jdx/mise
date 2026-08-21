@@ -1132,6 +1132,11 @@
             "type": "string"
           }
         },
+        "idiomatic_version_file_ignore_minimum_versions": {
+          "default": false,
+          "description": "Ignore idiomatic version file fields that only declare a minimum compatible version.",
+          "type": "boolean"
+        },
         "ignored_config_paths": {
           "default": [],
           "description": "This is a list of config paths that mise will ignore.",
