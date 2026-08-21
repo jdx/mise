@@ -105,6 +105,11 @@ pub struct Use {
     #[clap(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
+    /// Mark the tool as pinned (not rolling): a same-version checksum change is
+    /// surfaced as an integrity warning instead of being reinstalled.
+    #[clap(long, overrides_with = "rolling")]
+    no_rolling: bool,
+
     /// Save the resolved concrete version to the config file
     ///
     /// If the request exactly matches an available release, that release is preferred over
@@ -125,6 +130,14 @@ pub struct Use {
     /// Remove the tool(s) from config file
     #[clap(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Vec<BackendArg>,
+
+    /// Mark the tool as a rolling release (a stable version string like `nightly`
+    /// whose artifact changes over time), so `mise upgrade` reinstalls it in place
+    /// when the upstream checksum changes.
+    ///
+    /// e.g.: `mise use --rolling "github:neovim/neovim@nightly"`
+    #[clap(long, overrides_with = "no_rolling")]
+    rolling: bool,
 }
 
 impl Use {
@@ -161,25 +174,44 @@ impl Use {
             refresh_remote_versions: false,
             inactive: false,
         };
+        // Tri-state from --rolling / --no-rolling (neither = leave as-is). Applied
+        // before resolution/install so the current invocation's checksum decision
+        // (e.g. a pinned tool skipping the rolling reinstall) sees the override too.
+        let rolling_override = if self.no_rolling {
+            Some(false)
+        } else if self.rolling {
+            Some(true)
+        } else {
+            None
+        };
         let versions: Vec<_> = self
             .tool
             .iter()
             .cloned()
             .map(|t| match t.tvr {
-                Some(tvr) => {
+                Some(mut tvr) => {
                     if tvr.version() == "latest" && !Settings::get().locked {
                         // user specified `@latest` so we should resolve the latest version
                         // TODO: this should only happen on this tool, not all of them
                         resolve_options.latest_versions = true;
                         resolve_options.use_locked_version = false;
                     }
+                    if let Some(rolling) = rolling_override {
+                        tvr.set_rolling(rolling);
+                    }
                     Ok(tvr)
                 }
-                None => ToolRequest::new(
-                    t.ba,
-                    "latest",
-                    ToolSource::MiseToml(cf.get_path().to_path_buf()),
-                ),
+                None => {
+                    let mut tvr = ToolRequest::new(
+                        t.ba,
+                        "latest",
+                        ToolSource::MiseToml(cf.get_path().to_path_buf()),
+                    )?;
+                    if let Some(rolling) = rolling_override {
+                        tvr.set_rolling(rolling);
+                    }
+                    Ok(tvr)
+                }
             })
             .collect::<Result<_>>()?;
         let mut versions = ts
@@ -198,6 +230,8 @@ impl Use {
                 },
             )
             .await?;
+
+        let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
 
         // Installation can take long enough for another `mise use` process to update this file.
         // Serialize only the read-modify-write phase, then re-read under the lock so we apply our
@@ -230,6 +264,9 @@ impl Use {
                             options,
                             backend,
                         };
+                    }
+                    if let Some(rolling) = rolling_override {
+                        request.set_rolling(rolling);
                     }
                     request
                 })

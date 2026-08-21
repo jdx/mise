@@ -24,6 +24,14 @@ pub struct CoreToolOptions {
     pub depends: Option<Vec<String>>,
     #[serde(default)]
     pub install_env: IndexMap<String, EnvValue>,
+    /// Whether this tool is a rolling release (a stable version string like a
+    /// `nightly` tag whose artifact changes over time). `Some(true)` opts in
+    /// (and enables the `resolve_lock_info` slow path for backends without a
+    /// cheap checksum source); `Some(false)` declares it pinned, so a same-version
+    /// checksum change is treated as an integrity warning rather than a rolling
+    /// update; `None` leaves it to cheap auto-detection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rolling: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -259,6 +267,7 @@ impl ToolOptions {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
             && self.install_env.is_empty()
+            && self.rolling.is_none()
             && self.opts.is_empty()
     }
 
@@ -319,6 +328,9 @@ impl ToolOptions {
         if overrides.depends.is_some() {
             self.depends = overrides.depends.clone();
         }
+        if overrides.rolling.is_some() {
+            self.rolling = overrides.rolling;
+        }
     }
 
     pub fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
@@ -341,6 +353,14 @@ impl ToolOptions {
             }
             "depends" => {
                 self.depends = Some(parse_string_or_array(value, "depends")?);
+                Ok(true)
+            }
+            "rolling" => {
+                self.rolling = Some(
+                    value
+                        .as_bool()
+                        .ok_or_else(|| "rolling must be a boolean".to_string())?,
+                );
                 Ok(true)
             }
             "install_env" => {
@@ -397,6 +417,9 @@ impl ToolOptions {
         }
         if key == "install_env" {
             return !self.install_env.is_empty();
+        }
+        if key == "rolling" {
+            return self.rolling.is_some();
         }
         if let Some(env_key) = key.strip_prefix("install_env.") {
             return self.install_env.contains_key(env_key);
@@ -1123,6 +1146,7 @@ mod tests {
                 .iter()
                 .cloned()
                 .collect(),
+                rolling: None,
             },
             ..Default::default()
         };
@@ -1272,6 +1296,27 @@ mod tests {
     }
 
     #[test]
+    fn test_rolling_field_is_not_empty() {
+        let tvo = ToolVersionOptions {
+            core: CoreToolOptions {
+                rolling: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!tvo.is_empty());
+
+        let tvo = ToolVersionOptions {
+            core: CoreToolOptions {
+                rolling: Some(false),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(!tvo.is_empty());
+    }
+
+    #[test]
     fn test_apply_overrides_replaces_existing_values() {
         let mut base = ToolVersionOptions {
             core: CoreToolOptions {
@@ -1281,6 +1326,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                rolling: None,
             },
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
@@ -1298,6 +1344,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                rolling: None,
             },
             opts: [("api_url".to_string(), s("https://inline.example"))]
                 .iter()

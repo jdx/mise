@@ -76,6 +76,8 @@ pub struct LockfileTool {
     pub options: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub platforms: BTreeMap<String, PlatformInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rolling: Option<bool>,
 }
 
 type LockfileToolKey = (String, BTreeMap<String, String>);
@@ -1255,6 +1257,7 @@ impl Lockfile {
             // Merge with existing platform info, preferring new values when present.
             // When the URL changes, drop existing checksum/size/url_api — those fields
             // describe a specific artifact and are stale once the URL points elsewhere.
+            let mut detected_rolling = false;
             let merged = if let Some(existing) = tool.platforms.get(platform_key) {
                 let url_changed = platform_info.url.is_some()
                     && existing.url.is_some()
@@ -1265,6 +1268,15 @@ impl Lockfile {
                     && platform_info.install.is_none()
                     && existing.install.as_deref() == Some("source");
                 let preserve_artifact_fields = !url_changed && !install_changed && !source_to_url;
+                // Same artifact (URL unchanged) but a different checksum means the
+                // content moved under a stable version string — a rolling release.
+                if preserve_artifact_fields
+                    && let (Some(new_ck), Some(old_ck)) =
+                        (&platform_info.checksum, &existing.checksum)
+                    && new_ck != old_ck
+                {
+                    detected_rolling = true;
+                }
                 let (provenance, provenance_verified) = if preserve_artifact_fields {
                     merge_provenance_state(
                         platform_info.provenance.clone(),
@@ -1337,6 +1349,11 @@ impl Lockfile {
             if !merged.is_empty() {
                 tool.platforms.insert(platform_key.to_string(), merged);
             }
+            // Respect an explicit `rolling = false` pin — a changed checksum there
+            // is an integrity concern, not a rolling update.
+            if detected_rolling && tool.rolling != Some(false) {
+                tool.rolling = Some(true);
+            }
         } else {
             let mut platforms = BTreeMap::new();
             // Only insert non-empty platform info
@@ -1348,6 +1365,7 @@ impl Lockfile {
                 backend: backend.map(|s| s.to_string()),
                 options: options.clone(),
                 platforms,
+                rolling: None,
             });
         }
 
@@ -2914,19 +2932,64 @@ where
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
-            if !existing_tool.options.is_empty() {
-                if let Some(entry) = by_key.get_mut(&key) {
-                    // Preserve platform data only for an exact non-empty option
-                    // match. Moving it to another real variant could attach a
-                    // stale checksum to a different artifact.
-                    for (platform, info) in &existing_tool.platforms {
-                        entry
-                            .platforms
-                            .entry(platform.clone())
-                            .and_modify(|existing| *existing = existing.merge_with(info))
-                            .or_insert(info.clone());
+            // An exact (version, options) match — including the common empty-options
+            // case — is unambiguous, so detect rolling releases and merge platform
+            // data for it regardless of whether options are set. Only entries with
+            // no exact match at all (typically legacy empty-options entries written
+            // before a backend recorded explicit options) fall through to the
+            // rekey-by-platform migration below.
+            if let Some(entry) = by_key.get_mut(&key) {
+                // An explicit state on the fresh entry (e.g. from `mise use
+                // --rolling`/`--no-rolling`, threaded through via
+                // ToolVersion::rolling) always wins, so a user can flip a
+                // previously pinned or previously rolling tool the other way.
+                // Only when the fresh entry has no explicit state (`rolling:
+                // None` — the common case, and also what a lockfile-unaware
+                // resolve like `mise lock --bump` always produces) do we fall
+                // back to the existing on-disk entry's state, so that doesn't
+                // silently clear or flip a prior explicit choice.
+                if entry.rolling.is_none() {
+                    entry.rolling = existing_tool.rolling;
+                }
+                if entry.rolling == Some(false) {
+                    // Explicitly pinned: a changed checksum is an integrity
+                    // concern the backend surfaces as a warning, not a
+                    // rolling update — never auto-promote here.
+                } else {
+                    // Detect a rolling release: the same version string and
+                    // artifact (URL) now resolves to a different checksum
+                    // than what the lockfile recorded. That means the content
+                    // moved under a stable version pointer (e.g. a `nightly`
+                    // tag), so mark the tool rolling. Compare BEFORE merging
+                    // platforms, since merge_with may overwrite the new
+                    // checksum with the existing one.
+                    for (platform, existing_info) in &existing_tool.platforms {
+                        if let (Some(new_info), Some(old_ck)) =
+                            (entry.platforms.get(platform), &existing_info.checksum)
+                            && let Some(new_ck) = &new_info.checksum
+                        {
+                            let same_artifact = new_info.url.is_none()
+                                || existing_info.url.is_none()
+                                || new_info.url == existing_info.url;
+                            if same_artifact && new_ck != old_ck {
+                                entry.rolling = Some(true);
+                            }
+                        }
                     }
                 }
+                // Preserve platform data only for an exact option match. Moving it
+                // to another real variant could attach a stale checksum to a
+                // different artifact.
+                for (platform, info) in &existing_tool.platforms {
+                    entry
+                        .platforms
+                        .entry(platform.clone())
+                        .and_modify(|existing| *existing = existing.merge_with(info))
+                        .or_insert(info.clone());
+                }
+                continue;
+            }
+            if !existing_tool.options.is_empty() {
                 continue;
             }
             if !fresh_versions.contains(&existing_tool.version) {
@@ -2944,6 +3007,7 @@ where
                             version: existing_tool.version.clone(),
                             backend: existing_tool.backend.clone(),
                             options: existing_tool.options.clone(),
+                            rolling: existing_tool.rolling,
                             platforms: BTreeMap::new(),
                         })
                         .platforms
@@ -2956,6 +3020,7 @@ where
                     version: existing_tool.version.clone(),
                     backend: existing_tool.backend.clone(),
                     options: resolved_options,
+                    rolling: existing_tool.rolling,
                     platforms: BTreeMap::new(),
                 });
                 target
@@ -3380,6 +3445,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                 backend: Default::default(),
                 options: Default::default(),
                 platforms: Default::default(),
+                rolling: None,
             },
             toml::Value::Table(mut t) => {
                 let mut platforms = BTreeMap::new();
@@ -3413,6 +3479,10 @@ impl TryFrom<toml::Value> for LockfileTool {
                 }
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
+                let rolling = match t.remove("rolling") {
+                    Some(toml::Value::Boolean(b)) => Some(b),
+                    _ => None,
+                };
                 LockfileTool {
                     version: t
                         .remove("version")
@@ -3426,6 +3496,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .unwrap_or_default(),
                     options,
                     platforms,
+                    rolling,
                 }
             }
             _ => bail!("unsupported lockfile format {}", value),
@@ -3452,6 +3523,9 @@ impl LockfileTool {
         if !self.platforms.is_empty() {
             table.insert("platforms".to_string(), self.platforms.clone().into());
         }
+        if let Some(rolling) = self.rolling {
+            table.insert("rolling".to_string(), rolling.into());
+        }
         table.into()
     }
 }
@@ -3477,6 +3551,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
         backend: Some(tv.ba().stored_full()),
         options,
         platforms,
+        rolling: tv.rolling,
     })
 }
 
@@ -3543,6 +3618,7 @@ mod tests {
             backend: Some(backend.to_string()),
             options: BTreeMap::new(),
             platforms: BTreeMap::new(),
+            rolling: None,
         }
     }
 
@@ -3649,6 +3725,7 @@ mod tests {
             backend: Some(backend.to_string()),
             options: BTreeMap::new(),
             platforms,
+            rolling: None,
         }
     }
 
@@ -3794,6 +3871,7 @@ backend = "core:python"
             backend: Some("core:node".to_string()),
             options: BTreeMap::new(),
             platforms,
+            rolling: None,
         };
 
         lockfile.tools.insert("node".to_string(), vec![tool]);
@@ -3932,6 +4010,7 @@ checksum = "blake3:abc123"
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
             options: BTreeMap::new(), // Empty options
             platforms: BTreeMap::new(),
+            rolling: None,
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -3959,6 +4038,7 @@ checksum = "blake3:abc123"
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
             options,
             platforms: BTreeMap::new(),
+            rolling: None,
         };
         lockfile.tools.insert("ripgrep".to_string(), vec![tool]);
 
@@ -4181,6 +4261,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::new(),
+            rolling: None,
             platforms,
         }];
         let mut options = BTreeMap::new();
@@ -4197,6 +4278,7 @@ options = { exe = "rg" }
                 version: "26.0.1".to_string(),
                 backend: Some("core:java".to_string()),
                 options: options.clone(),
+                rolling: None,
                 platforms: fresh_platforms,
             }],
             Some(&existing),
@@ -4220,6 +4302,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
+            rolling: None,
             platforms: BTreeMap::new(),
         });
         let mut merged = vec![basic_tool("22.0.0", "core:node")];
@@ -4258,6 +4341,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::new(),
+            rolling: None,
             platforms: existing_platforms,
         }];
 
@@ -4276,6 +4360,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: new_options.clone(),
+            rolling: None,
             platforms: fresh_platforms,
         }];
 
@@ -4309,6 +4394,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options.clone(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4321,6 +4407,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
                     PlatformInfo {
@@ -4335,6 +4422,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options,
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4347,6 +4435,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
                     PlatformInfo {
@@ -4405,6 +4494,7 @@ options = { exe = "rg" }
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: old_options,
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4417,6 +4507,7 @@ options = { exe = "rg" }
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: new_options.clone(),
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4443,6 +4534,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::new(),
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4455,6 +4547,7 @@ options = { exe = "rg" }
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
+            rolling: None,
             platforms: BTreeMap::new(),
         }];
 
@@ -4500,6 +4593,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4512,6 +4606,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options.clone(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4525,6 +4620,7 @@ options = { exe = "rg" }
             version: "3.4.2".to_string(),
             backend: Some("core:ruby".to_string()),
             options: unix_options.clone(),
+            rolling: None,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
                 PlatformInfo {
@@ -4553,12 +4649,14 @@ options = { exe = "rg" }
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: other_options.clone(),
+            rolling: None,
             platforms: BTreeMap::new(),
         }];
         let fresh = vec![LockfileTool {
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
             options: current_options,
+            rolling: None,
             platforms: BTreeMap::new(),
         }];
         let (mut merged, consumed) = merge_tool_entries(fresh, Some(&existing), |_, _| None);
@@ -4622,6 +4720,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: unix_options.clone(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
                     PlatformInfo {
@@ -4635,6 +4734,7 @@ options = { exe = "rg" }
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
                 options: BTreeMap::new(),
+                rolling: None,
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
                     PlatformInfo {
@@ -4849,6 +4949,7 @@ backend = "conda:jq"
                 backend: Some("conda:jq".to_string()),
                 options: BTreeMap::new(),
                 platforms,
+                rolling: None,
             }],
         );
 
@@ -4936,6 +5037,7 @@ backend = "conda:jq"
                 backend: Some("conda:mytool".to_string()),
                 options: BTreeMap::new(),
                 platforms,
+                rolling: None,
             }],
         );
 
@@ -5049,6 +5151,7 @@ backend = "conda:jq"
                 options: BTreeMap::new(),
 
                 platforms: BTreeMap::new(),
+                rolling: None,
             }],
         );
 
@@ -6120,5 +6223,163 @@ backend = "conda:jq"
                 common.to_key()
             );
         }
+    }
+
+    fn tool_with_checksum(version: &str, url: &str, checksum: &str) -> LockfileTool {
+        let mut platforms = BTreeMap::new();
+        platforms.insert(
+            "linux-x64".to_string(),
+            PlatformInfo {
+                checksum: Some(checksum.to_string()),
+                url: Some(url.to_string()),
+                ..Default::default()
+            },
+        );
+        LockfileTool {
+            version: version.to_string(),
+            backend: Some("github:neovim/neovim".to_string()),
+            options: BTreeMap::new(),
+            platforms,
+            rolling: None,
+        }
+    }
+
+    #[test]
+    fn test_merge_marks_rolling_when_checksum_changes_for_same_artifact() {
+        // Same version string + same URL but a different checksum means the
+        // artifact moved under a stable pointer (e.g. a `nightly` tag).
+        let url = "https://github.com/neovim/neovim/releases/download/nightly/nvim.tar.gz";
+        let new = tool_with_checksum("nightly", url, "sha256:NEW");
+        let existing = vec![tool_with_checksum("nightly", url, "sha256:OLD")];
+
+        let (merged, _consumed) = merge_tool_entries(vec![new], Some(&existing), |_, _| None);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].rolling, Some(true));
+        // The baseline must advance to the new checksum so detection converges
+        // instead of reinstalling on every run.
+        assert_eq!(
+            merged[0].platforms["linux-x64"].checksum.as_deref(),
+            Some("sha256:NEW")
+        );
+    }
+
+    #[test]
+    fn test_merge_does_not_mark_rolling_when_checksum_unchanged() {
+        let url = "https://github.com/neovim/neovim/releases/download/nightly/nvim.tar.gz";
+        let new = tool_with_checksum("nightly", url, "sha256:SAME");
+        let existing = vec![tool_with_checksum("nightly", url, "sha256:SAME")];
+
+        let (merged, _consumed) = merge_tool_entries(vec![new], Some(&existing), |_, _| None);
+        assert_eq!(merged[0].rolling, None);
+    }
+
+    #[test]
+    fn test_merge_respects_explicit_rolling_false_on_checksum_change() {
+        // A tool explicitly pinned (`rolling = false`) must NOT be auto-promoted to
+        // rolling when its checksum changes — that case is an integrity concern.
+        let url = "https://github.com/cli/cli/releases/download/v2.62.0/gh.tar.gz";
+        let mut new = tool_with_checksum("2.62.0", url, "sha256:NEW");
+        new.rolling = Some(false);
+        let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:OLD");
+        existing_tool.rolling = Some(false);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(false));
+    }
+
+    #[test]
+    fn test_merge_respects_explicit_rolling_false_when_fresh_entry_has_no_rolling_state() {
+        // `mise lock --bump` resolves without reading the lockfile, so the fresh
+        // entry naturally has `rolling: None` even though the on-disk entry is
+        // explicitly pinned. The pin must still be respected: the guard must key
+        // off the existing entry's `rolling`, not the fresh one's.
+        let url = "https://github.com/cli/cli/releases/download/v2.62.0/gh.tar.gz";
+        let new = tool_with_checksum("2.62.0", url, "sha256:NEW");
+        let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:OLD");
+        existing_tool.rolling = Some(false);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(false));
+    }
+
+    #[test]
+    fn test_merge_honors_explicit_fresh_rolling_true_over_existing_pin() {
+        // `mise use --rolling` on a previously pinned tool must be able to
+        // flip it: an explicit fresh state always wins over stale disk state.
+        let url = "https://github.com/cli/cli/releases/download/v2.62.0/gh.tar.gz";
+        let mut new = tool_with_checksum("2.62.0", url, "sha256:SAME");
+        new.rolling = Some(true);
+        let mut existing_tool = tool_with_checksum("2.62.0", url, "sha256:SAME");
+        existing_tool.rolling = Some(false);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(true));
+    }
+
+    #[test]
+    fn test_merge_honors_explicit_fresh_rolling_false_over_existing_sticky_true() {
+        // `mise use --no-rolling` on a previously rolling tool must be able to
+        // pin it: an explicit fresh state always wins over a sticky Some(true).
+        let url = "https://github.com/neovim/neovim/releases/download/nightly/nvim.tar.gz";
+        let mut new = tool_with_checksum("nightly", url, "sha256:NEW");
+        new.rolling = Some(false);
+        let mut existing_tool = tool_with_checksum("nightly", url, "sha256:OLD");
+        existing_tool.rolling = Some(true);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(false));
+    }
+
+    #[test]
+    fn test_merge_preserves_sticky_rolling_flag() {
+        let url = "https://github.com/neovim/neovim/releases/download/nightly/nvim.tar.gz";
+        let new = tool_with_checksum("nightly", url, "sha256:SAME");
+        let mut existing_tool = tool_with_checksum("nightly", url, "sha256:SAME");
+        existing_tool.rolling = Some(true);
+
+        let (merged, _consumed) =
+            merge_tool_entries(vec![new], Some(&vec![existing_tool]), |_, _| None);
+        assert_eq!(merged[0].rolling, Some(true));
+    }
+
+    #[test]
+    fn test_merge_does_not_mark_rolling_when_url_changed() {
+        // A different URL means a genuinely different artifact (e.g. a normal
+        // version bump), not a rolling release — so a differing checksum here
+        // must NOT set the flag.
+        let new = tool_with_checksum("1.2.3", "https://example.com/v2/x.tar.gz", "sha256:NEW");
+        let existing = vec![tool_with_checksum(
+            "1.2.3",
+            "https://example.com/v1/x.tar.gz",
+            "sha256:OLD",
+        )];
+
+        let (merged, _consumed) = merge_tool_entries(vec![new], Some(&existing), |_, _| None);
+        assert_eq!(merged[0].rolling, None);
+    }
+
+    #[test]
+    fn test_rolling_flag_roundtrips_through_toml() {
+        let mut tool = tool_with_checksum("nightly", "https://example.com/x.tar.gz", "sha256:abc");
+        tool.rolling = Some(true);
+
+        let value = tool.clone().into_toml_value();
+        let parsed = LockfileTool::try_from(value).unwrap();
+        assert_eq!(parsed.rolling, Some(true));
+
+        // `false` must round-trip too (it's a meaningful "pinned" state, not absence).
+        let mut pinned = tool_with_checksum("2.0.0", "https://example.com/x.tar.gz", "sha256:abc");
+        pinned.rolling = Some(false);
+        let parsed_false = LockfileTool::try_from(pinned.into_toml_value()).unwrap();
+        assert_eq!(parsed_false.rolling, Some(false));
+
+        // A tool without the flag must not serialize `rolling` at all.
+        let plain = tool_with_checksum("nightly", "https://example.com/x.tar.gz", "sha256:abc");
+        let plain_value = plain.into_toml_value();
+        assert!(plain_value.get("rolling").is_none());
     }
 }

@@ -87,6 +87,10 @@ Each tool entry (`[[tools.name]]`) can contain:
 - **`backend`** (optional): The backend used to install the tool (e.g., `core:node`, `aqua:BurntSushi/ripgrep`)
 - **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
 - **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
+- **`rolling`** (optional): Marks whether the tool is a rolling release — a stable version string (such as a `nightly` tag) whose artifact content changes over time:
+  - `true` — rolling. `mise upgrade` reinstalls it in place when the upstream checksum changes. mise sets this automatically when it observes the recorded checksum change for the same version (on a backend with a cheap checksum source), and you can set it explicitly via `mise use --rolling` or `rolling = true` in `mise.toml` (required for backends with no cheap checksum source).
+  - `false` — pinned. A same-version checksum change is surfaced as an integrity warning (possible tampering or a re-released artifact) rather than reinstalled. Set via `mise use --no-rolling` or `rolling = false`.
+  - absent — auto-detect on backends with a cheap checksum source; no cost otherwise.
 
 A tool can have several entries for the same version when its artifact identity
 depends on more than the platform key. Swift, for example, publishes a different

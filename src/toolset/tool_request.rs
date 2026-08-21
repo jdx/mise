@@ -162,8 +162,10 @@ impl ToolRequest {
         match &mut tvr {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => *o = options,
-            _ => Default::default(),
+            | Self::Ref { options: o, .. }
+            | Self::Sub { options: o, .. }
+            | Self::Path { options: o, .. }
+            | Self::System { options: o, .. } => *o = options,
         }
         Ok(tvr)
     }
@@ -245,6 +247,69 @@ impl ToolRequest {
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
             | Self::System { options: o, .. } => o.clone(),
+        }
+    }
+
+    /// The explicit `rolling` tool option, if set in config. Read without cloning
+    /// the whole options map since it's consulted on every `ToolVersion::new`.
+    pub fn rolling(&self) -> Option<bool> {
+        match self {
+            Self::Version { options: o, .. }
+            | Self::Prefix { options: o, .. }
+            | Self::Ref { options: o, .. }
+            | Self::Sub { options: o, .. }
+            | Self::Path { options: o, .. }
+            | Self::System { options: o, .. } => o.rolling,
+        }
+    }
+
+    /// Sets the explicit `rolling` tool option on this request, regardless of
+    /// which request variant it is (`prefix:`, `ref:`, `sub-N:`, `path:`, and
+    /// `system` requests carry `rolling` the same way `Version` does).
+    ///
+    /// Also records it on the request's embedded `BackendArg` as an explicit
+    /// (`InlineBackendArg`-sourced) option. `Toolset::init_request_options`
+    /// recomputes a request's options from `ToolRequest::ba().opts_with_config`
+    /// during install — which reads only from the embedded `BackendArg`, not
+    /// from this request's own `options` field — so a mutation that touched
+    /// only `options.rolling` would be silently discarded there.
+    pub fn set_rolling(&mut self, rolling: bool) {
+        match self {
+            Self::Version {
+                options: o,
+                backend,
+                ..
+            }
+            | Self::Prefix {
+                options: o,
+                backend,
+                ..
+            }
+            | Self::Ref {
+                options: o,
+                backend,
+                ..
+            }
+            | Self::Sub {
+                options: o,
+                backend,
+                ..
+            }
+            | Self::Path {
+                options: o,
+                backend,
+                ..
+            }
+            | Self::System {
+                options: o,
+                backend,
+                ..
+            } => {
+                o.rolling = Some(rolling);
+                let mut ba_opts = backend.opts.clone().unwrap_or_default();
+                ba_opts.rolling = Some(rolling);
+                Arc::make_mut(backend).set_opts(Some(ba_opts));
+            }
         }
     }
 

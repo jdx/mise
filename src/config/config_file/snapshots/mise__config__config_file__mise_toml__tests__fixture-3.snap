@@ -13,6 +13,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -32,6 +33,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -49,6 +51,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -67,6 +70,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -84,6 +88,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -103,6 +108,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -122,6 +128,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},
@@ -141,6 +148,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {
@@ -162,6 +170,7 @@ ToolRequestSet {
                         os: None,
                         depends: None,
                         install_env: {},
+                        rolling: None,
                     },
                     opts: RawBackendOptions {
                         values: {},

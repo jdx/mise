@@ -88,7 +88,7 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(key, "os" | "depends" | "install_env") && !key.starts_with("install_env.")
+    !matches!(key, "os" | "depends" | "install_env" | "rolling") && !key.starts_with("install_env.")
 }
 
 fn insert_tool_option<E>(
@@ -197,6 +197,9 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("install_env", env.into());
     }
+    if let Some(rolling) = core.rolling {
+        table.insert("rolling", Value::from(rolling));
+    }
 }
 
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
@@ -292,6 +295,9 @@ fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVers
         insert_table_item_preserving_decor(table, "depends", Item::Value(Value::Array(arr)));
     }
     update_install_env_table(table, options);
+    if let Some(rolling) = options.rolling {
+        insert_table_item_preserving_decor(table, "rolling", Item::Value(Value::from(rolling)));
+    }
 }
 
 fn update_standard_tool_table(
@@ -1261,17 +1267,18 @@ impl ConfigFile for MiseToml {
         let is_tools_sorted = is_tools_sorted(&tools); // was it previously sorted (if so we'll keep it sorted)
         let existing = tools.entry(ba.clone()).or_default();
         let output_empty_opts = |opts: &ToolVersionOptions| {
-            if opts.os.as_ref().is_some_and(|o| !o.is_empty())
-                || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
-                || !opts.install_env.is_empty()
-            {
-                return false;
-            }
             if let Some(reg_ba) = REGISTRY.get(ba.short.as_str()).and_then(|b| b.ba())
                 && reg_ba.opts.as_ref().is_some_and(|o| o == opts)
             {
                 // in this case the options specified are the same as in the registry so output no options and rely on the defaults
                 return true;
+            }
+            if opts.os.as_ref().is_some_and(|o| !o.is_empty())
+                || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
+                || !opts.install_env.is_empty()
+                || opts.rolling.is_some()
+            {
+                return false;
             }
             opts.is_empty()
         };
@@ -1334,6 +1341,12 @@ impl ConfigFile for MiseToml {
                 *table.decor_mut() = decor;
                 table.set_position(position);
             }
+            // `ToolRequest::set_rolling` records an explicit `--rolling`/
+            // `--no-rolling` override on the request's embedded `BackendArg`
+            // (marked `InlineBackendArg`-sourced), so `ba.explicit_opts()`
+            // already reflects a CLI override here — and stays `None` (leaving
+            // this table entry untouched) when no override was given, rather
+            // than picking up an inherited registry/alias/config value.
             update_standard_tool_table(&mut table, &versions[0], ba.explicit_opts());
             replace_tool_entries_preserving_position(tools, &keys, key, Item::Table(table));
             if is_tools_sorted {
@@ -1528,6 +1541,7 @@ impl ConfigFile for MiseToml {
                     ba_opts.os = options.os.clone();
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
+                    ba_opts.rolling = options.rolling;
                     ba.set_opts(Some(ba_opts.clone()));
                     ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())
                         .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
