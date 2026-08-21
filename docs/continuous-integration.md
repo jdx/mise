@@ -24,7 +24,7 @@ Alternatively, you can add the [shims](/dev-tools/shims.md) directory to your `P
 
 ### Bootstrapping
 
-An alternative to calling `curl https://mise.run | sh` is to use [`mise generate install-script`](/cli/generate/install-script.html) to generate a script that runs and install `mise`.
+An alternative to calling `curl https://mise.run | sh` is to use [`mise generate install-script`](/cli/generate/install-script.html) to generate a script that runs and installs `mise`.
 
 ```shell
 mise generate install-script -l -w
