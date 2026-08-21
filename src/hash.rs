@@ -11,7 +11,7 @@ use digest::Digest;
 use eyre::{Result, bail};
 use md5::Md5;
 use sha1::Sha1;
-use sha2::{Sha256, Sha512};
+use sha2::{Sha224, Sha256, Sha384, Sha512};
 use siphasher::sip::SipHasher;
 
 pub fn hash_to_str<T: Hash>(t: &T) -> String {
@@ -109,6 +109,8 @@ pub fn ensure_checksum(
             }
         }
         "sha256" => file_hash_prog::<Sha256>(path, pr)?,
+        "sha224" => file_hash_prog::<Sha224>(path, pr)?,
+        "sha384" => file_hash_prog::<Sha384>(path, pr)?,
         "sha1" => {
             if use_external_hasher && file::which("sha1sum").is_some() {
                 let out = cmd!("sha1sum", path).read()?;
@@ -171,5 +173,27 @@ mod tests {
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_prog::<Sha256>(path, None).unwrap();
         assert_snapshot!(hash);
+    }
+
+    #[test]
+    fn test_corepack_checksum_algorithms() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.tgz");
+        file::write(&path, b"corepack").unwrap();
+
+        ensure_checksum(
+            &path,
+            "8aba612a6193520492b81c698962a0d81c3609da7ab498d028ac452e",
+            None,
+            "sha224",
+        )
+        .unwrap();
+        ensure_checksum(
+            &path,
+            "cbedf1fe9f759bba045da15cecdfb24340308ffdae357bbb0a10bed2535aa957c7cad13d8081847203cd409a7a7e3cda",
+            None,
+            "sha384",
+        )
+        .unwrap();
     }
 }
