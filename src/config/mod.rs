@@ -4012,7 +4012,7 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             Some(&mut rendered_file_tasks),
         )
         .await?;
-        rendered_file_tasks.finish_scope();
+        rendered_file_tasks.finish_config();
         for task in sources.into_tasks() {
             tasks.entry(task.name.clone()).or_insert(task);
         }
@@ -4685,8 +4685,8 @@ fn cascaded_task_config_for_dir(
 
 #[derive(Default)]
 struct RenderedTaskCache {
-    previous_scopes: HashMap<(PathBuf, String), Task>,
-    current_scope: HashMap<(PathBuf, String), Task>,
+    previous_configs: HashMap<(PathBuf, String), Task>,
+    current_config: HashMap<(PathBuf, String), Task>,
 }
 
 fn rendered_task_cache_key(task: &Task) -> (PathBuf, String) {
@@ -4695,16 +4695,16 @@ fn rendered_task_cache_key(task: &Task) -> (PathBuf, String) {
 
 impl RenderedTaskCache {
     fn get(&self, key: &(PathBuf, String)) -> Option<&Task> {
-        self.previous_scopes.get(key)
+        self.previous_configs.get(key)
     }
 
     fn insert(&mut self, key: (PathBuf, String), task: Task) {
-        self.current_scope.insert(key, task);
+        self.current_config.insert(key, task);
     }
 
-    fn finish_scope(&mut self) {
-        for (key, task) in self.current_scope.drain() {
-            self.previous_scopes.entry(key).or_insert(task);
+    fn finish_config(&mut self) {
+        for (key, task) in self.current_config.drain() {
+            self.previous_configs.entry(key).or_insert(task);
         }
     }
 }
