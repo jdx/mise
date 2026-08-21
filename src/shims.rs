@@ -935,9 +935,7 @@ pub async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
-    // try_list_tools rather than list_tools: an error path must not panic
-    // because install state was never initialized.
-    let installed_shorts = crate::toolset::install_state::try_list_tools()?
+    let installed_shorts = crate::toolset::install_state::list_tools()
         .values()
         .filter(|t| !t.versions.is_empty())
         .map(|t| t.short.clone())

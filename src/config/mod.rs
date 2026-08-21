@@ -870,7 +870,7 @@ impl Config {
 
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
-        let plugin_aliases: Vec<_> = backend::list()
+        let plugin_aliases: Vec<_> = backend::alias_backends()
             .into_iter()
             .map(|backend| {
                 let aliases = backend.get_aliases().unwrap_or_else(|err| {

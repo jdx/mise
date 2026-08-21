@@ -378,6 +378,11 @@ pub enum SecurityFeature {
 }
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
+/// Whether TOOLS has been extended with every installed tool. Enumerating the
+/// installs dir costs a readdir per tool plus stats per version, so it only
+/// happens when a caller genuinely needs the full list ([`list`]).
+static TOOLS_INCLUDE_INSTALLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
@@ -395,13 +400,6 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
             .filter_map(|rt| arg_to_backend(rt.short.into())),
     );
     time!("load_tools core");
-    tools.extend(
-        install_state::list_tools()
-            .values()
-            .filter(|ist| ist.full.is_some())
-            .flat_map(|ist| arg_to_backend(ist.clone().into())),
-    );
-    time!("load_tools install_state");
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
@@ -424,7 +422,44 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
     Ok(tools)
 }
 
+/// Extend TOOLS with a backend for every installed tool. Installed tools are
+/// otherwise loaded one at a time through [`get`]; enumerating callers need
+/// them all, which means a full installs-dir scan.
+fn ensure_installed_tools_loaded() {
+    let mut tools = TOOLS.lock().unwrap();
+    if TOOLS_INCLUDE_INSTALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let Some(current) = tools.as_ref() else {
+        // load_tools has not run; the flag stays set and list() callers go
+        // through load_tools first, which ends up here again.
+        TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+        return;
+    };
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    let mut next = current.deref().clone();
+    for backend in install_state::list_tools()
+        .values()
+        .filter(|ist| ist.full.is_some())
+        .flat_map(|ist| arg_to_backend(ist.clone().into()))
+    {
+        if !tool_enabled(
+            enable_tools.as_ref(),
+            &disable_tools,
+            &backend.id().to_string(),
+        ) || is_disabled_backend_type(&backend.get_type())
+        {
+            continue;
+        }
+        next.entry(backend.ba().short.clone()).or_insert(backend);
+    }
+    *tools = Some(Arc::new(next));
+}
+
 pub fn list() -> BackendList {
+    ensure_installed_tools_loaded();
     TOOLS
         .lock()
         .unwrap()
@@ -432,6 +467,35 @@ pub fn list() -> BackendList {
         .unwrap()
         .values()
         .cloned()
+        .collect()
+}
+
+/// Backends that can contribute version aliases.
+///
+/// Only core tools and asdf/vfox plugins override `get_aliases`; every other
+/// backend returns the default empty map. Config loading calls this on every
+/// invocation, so enumerating all installed tools here would put the full
+/// installs-dir scan back on the hot path for entries that contribute nothing.
+pub fn alias_backends() -> BackendList {
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    CORE_PLUGINS
+        .values()
+        .cloned()
+        .chain(
+            install_state::try_list_plugins()
+                .unwrap_or_default()
+                .keys()
+                .filter_map(|short| arg_to_backend(short.as_str().into())),
+        )
+        .filter(|backend| {
+            tool_enabled(
+                enable_tools.as_ref(),
+                &disable_tools,
+                &backend.id().to_string(),
+            ) && !is_disabled_backend_type(&backend.get_type())
+        })
         .collect()
 }
 
@@ -5164,7 +5228,11 @@ impl Ord for dyn Backend {
 
 pub async fn reset() -> Result<()> {
     install_state::reset();
-    *TOOLS.lock().unwrap() = None;
+    {
+        let mut tools = TOOLS.lock().unwrap();
+        *tools = None;
+        TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     load_tools().await?;
     Ok(())
 }

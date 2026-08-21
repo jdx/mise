@@ -10,7 +10,7 @@ use eyre::{Ok, Result};
 use heck::ToKebabCase;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -62,6 +62,13 @@ type Manifest = BTreeMap<String, ManifestTool>;
 
 static INSTALL_STATE_PLUGINS: Mutex<Option<Arc<InstallStatePlugins>>> = Mutex::new(None);
 static INSTALL_STATE_TOOLS: Mutex<Option<Arc<InstallStateTools>>> = Mutex::new(None);
+/// Per-tool results loaded without a full installs scan. `None` records a
+/// known-absent tool so repeated lookups of uninstalled tools stay cheap.
+/// Superseded by INSTALL_STATE_TOOLS once a full scan has run.
+static INSTALL_STATE_TOOL_MEMO: Mutex<Option<HashMap<String, Option<InstallStateTool>>>> =
+    Mutex::new(None);
+/// Memoized read of the consolidated root manifest, for per-tool lookups.
+static ROOT_MANIFEST_MEMO: Mutex<Option<Arc<Manifest>>> = Mutex::new(None);
 static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
 
 fn manifest_path() -> PathBuf {
@@ -175,17 +182,21 @@ fn read_legacy_backend_meta(short: &str) -> Option<(String, Option<String>, bool
     Some((s, full, explicit_backend))
 }
 
+/// Initialize plugin state. Tool state is deliberately NOT loaded here: a full
+/// scan of the installs dir costs a readdir per tool plus stats per version,
+/// which dominated startup on machines with many tools installed. Per-tool
+/// lookups load lazily via [`get_tool`]; enumerating callers get the full scan
+/// on first use of [`list_tools`].
 pub(crate) async fn init() -> Result<()> {
-    let (plugins, tools) = tokio::join!(
-        tokio::task::spawn(async { measure!("init_plugins", { init_plugins().await }) }),
-        tokio::task::spawn(async { measure!("init_tools", { init_tools().await }) }),
-    );
-    plugins??;
-    tools??;
+    measure!("init_plugins", { init_plugins().await })?;
     Ok(())
 }
 
 async fn init_plugins() -> MutexResult<InstallStatePlugins> {
+    load_plugins()
+}
+
+fn load_plugins() -> MutexResult<InstallStatePlugins> {
     if let Some(plugins) = INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed")
@@ -215,7 +226,153 @@ async fn init_plugins() -> MutexResult<InstallStatePlugins> {
     Ok(plugins)
 }
 
-async fn init_tools() -> MutexResult<InstallStateTools> {
+/// Versions present in a tool's install dir, sorted. One readdir plus stats
+/// per version.
+fn scan_versions(dir: &Path) -> Vec<String> {
+    file::dir_subdirs(dir)
+        .unwrap_or_else(|err| {
+            warn!("reading versions in {} failed: {err:?}", display_path(dir));
+            Default::default()
+        })
+        .into_iter()
+        .filter(|v| !v.starts_with('.'))
+        .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
+        .filter(|v| !dir.join(v).join("incomplete").exists())
+        .sorted_by_cached_key(|v| {
+            let normalized = normalize_version_for_sort(v);
+            (Versioning::new(normalized), v.to_string())
+        })
+        .collect()
+}
+
+/// Identity and versions for one primary install dir: the sidecar wins, then
+/// the consolidated manifest, then legacy `.mise.backend` metadata. Returns
+/// `None` when the dir holds no complete versions.
+///
+/// Read-only: when a legacy format was parsed, the manifest entry the caller
+/// may want to persist is returned as the second element. Only the full scan
+/// writes it; per-tool lookups leave migration to the next full scan.
+fn scan_tool_dir(
+    dir_name: &str,
+    dir: &Path,
+    manifest: &Manifest,
+) -> Option<(InstallStateTool, Option<ManifestTool>)> {
+    let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
+    let manifest_tool = tool_manifest.as_ref().or_else(|| manifest.get(dir_name));
+    let legacy_meta = if manifest_tool.is_none() {
+        read_legacy_backend_meta(dir_name)
+    } else {
+        None
+    };
+    let versions = scan_versions(dir);
+    if versions.is_empty() {
+        return None;
+    }
+
+    let mut migrate = None;
+    let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+        let mut full = mt.full.clone();
+        let mut opts = mt.opts.clone();
+        // Backward compat: if opts is empty but full contains [...], extract opts
+        if opts.is_empty()
+            && let Some(ref f) = full
+            && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
+        {
+            let stripped = stripped_str.to_string();
+            let parsed = parse_tool_options(opts_str);
+            for (k, v) in &parsed.opts {
+                if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
+                    continue;
+                }
+                opts.insert(k.clone(), v.clone());
+            }
+            full = Some(stripped);
+            migrate = Some(ManifestTool {
+                short: mt.short.clone(),
+                full: full.clone(),
+                explicit_backend: mt.explicit_backend,
+                opts: opts.clone(),
+            });
+        }
+        (mt.short.clone(), full, mt.explicit_backend, opts)
+    } else if let Some((s, full, explicit)) = legacy_meta {
+        migrate = Some(ManifestTool {
+            short: s.clone(),
+            full: full.clone(),
+            explicit_backend: explicit,
+            opts: BTreeMap::new(),
+        });
+        (s, full, explicit, BTreeMap::new())
+    } else {
+        (dir_name.to_string(), None, true, BTreeMap::new())
+    };
+
+    let tool = InstallStateTool {
+        short,
+        full,
+        versions,
+        explicit_backend,
+        opts,
+        installs_path: Some(dir.to_path_buf()),
+    };
+    Some((tool, migrate))
+}
+
+/// Merge the versions (and missing identity) of a shared-dir install into an
+/// already-collected tool entry, creating it if absent.
+fn merge_shared_tool(
+    tools: &mut InstallStateTools,
+    dir: &Path,
+    dir_name: &str,
+    shared_manifest: &Manifest,
+) {
+    let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
+    let manifest_tool = tool_manifest
+        .as_ref()
+        .or_else(|| shared_manifest.get(dir_name));
+    let versions = scan_versions(dir);
+    if versions.is_empty() {
+        return;
+    }
+
+    let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
+        (
+            mt.short.clone(),
+            mt.full.clone(),
+            mt.explicit_backend,
+            mt.opts.clone(),
+        )
+    } else {
+        (dir_name.to_string(), None, true, BTreeMap::new())
+    };
+
+    let tool = tools
+        .entry(short.clone())
+        .or_insert_with(|| InstallStateTool {
+            short: short.clone(),
+            full: full.clone(),
+            versions: Vec::new(),
+            explicit_backend,
+            opts: opts.clone(),
+            installs_path: Some(dir.to_path_buf()),
+        });
+    for v in versions {
+        if !tool.versions.contains(&v) {
+            tool.versions.push(v);
+        }
+    }
+    tool.versions.sort_by_cached_key(|v| {
+        let normalized = normalize_version_for_sort(v);
+        (Versioning::new(normalized), v.to_string())
+    });
+    if tool.full.is_none() {
+        tool.full = full;
+    }
+}
+
+/// Scan every install dir. Memoized; enumerating callers ([`list_tools`]) pay
+/// for this once per process, per-tool callers never do.
+fn full_scan_tools() -> MutexResult<InstallStateTools> {
     if let Some(tools) = INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed")
@@ -223,203 +380,161 @@ async fn init_tools() -> MutexResult<InstallStateTools> {
     {
         return Ok(tools);
     }
+    measure!("install_state full_scan_tools", {
+        let manifest = read_manifest();
+        let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
 
-    // 1. Read manifest (1 syscall)
-    let manifest = read_manifest();
-
-    // 2. List install dirs (1 syscall)
-    let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
-
-    // 3. For each dir, read versions from filesystem and merge with manifest metadata.
-    //    Only clone the manifest for mutation if we actually need to migrate legacy entries.
-    let mut updated_manifest: Option<Manifest> = None;
-    let mut tools = BTreeMap::new();
-    for dir_name in subdirs {
-        let dir = dirs::INSTALLS.join(&dir_name);
-        let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
-        let manifest_tool = tool_manifest.as_ref().or_else(|| manifest.get(&dir_name));
-        let legacy_meta = if manifest_tool.is_none() {
-            read_legacy_backend_meta(&dir_name)
-        } else {
-            None
-        };
-        // Read versions from filesystem (1 syscall per tool — unavoidable)
-        let versions: Vec<String> = file::dir_subdirs(&dir)
-            .unwrap_or_else(|err| {
-                warn!("reading versions in {} failed: {err:?}", display_path(&dir));
-                Default::default()
-            })
-            .into_iter()
-            .filter(|v| !v.starts_with('.'))
-            .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-            .filter(|v| !dir.join(v).join("incomplete").exists())
-            .sorted_by_cached_key(|v| {
-                let normalized = normalize_version_for_sort(v);
-                (Versioning::new(normalized), v.to_string())
-            })
-            .collect();
-
-        if versions.is_empty() {
-            continue;
-        }
-
-        // Get metadata: prefer manifest, fall back to legacy .mise.backend
-        let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
-            let mut full = mt.full.clone();
-            let mut opts = mt.opts.clone();
-            // Backward compat: if opts is empty but full contains [...], extract opts
-            if opts.is_empty()
-                && let Some(ref f) = full
-                && let Some((stripped_str, opts_str)) = crate::cli::args::split_bracketed_opts(f)
-            {
-                let stripped = stripped_str.to_string();
-                let parsed = parse_tool_options(opts_str);
-                for (k, v) in &parsed.opts {
-                    if EPHEMERAL_OPT_KEYS.contains(&k.as_str()) {
-                        continue;
-                    }
-                    opts.insert(k.clone(), v.clone());
-                }
-                full = Some(stripped);
-                // Schedule manifest rewrite to migrate to new format
-                let m = updated_manifest.get_or_insert_with(|| manifest.clone());
-                m.insert(
-                    dir_name.clone(),
-                    ManifestTool {
-                        short: mt.short.clone(),
-                        full: full.clone(),
-                        explicit_backend: mt.explicit_backend,
-                        opts: opts.clone(),
-                    },
-                );
-            }
-            (mt.short.clone(), full, mt.explicit_backend, opts)
-        } else if let Some((s, full, explicit)) = legacy_meta {
-            // Migration: absorb into manifest (clone on first migration)
-            let m = updated_manifest.get_or_insert_with(|| manifest.clone());
-            m.insert(
-                dir_name.clone(),
-                ManifestTool {
-                    short: s.clone(),
-                    full: full.clone(),
-                    explicit_backend: explicit,
-                    opts: BTreeMap::new(),
-                },
-            );
-            (s, full, explicit, BTreeMap::new())
-        } else {
-            (dir_name.clone(), None, true, BTreeMap::new())
-        };
-
-        let tool = InstallStateTool {
-            short: short.clone(),
-            full,
-            versions,
-            explicit_backend,
-            opts,
-            installs_path: Some(dir),
-        };
-        time!("init_tools {short}");
-        tools.insert(short, tool);
-    }
-
-    // Write updated manifest if we migrated any legacy entries
-    if let Some(ref m) = updated_manifest {
-        let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
-        if let Err(err) = write_manifest(m) {
-            warn!("failed to write install manifest: {err:#}");
-        }
-    }
-
-    // Scan shared install directories (read-only fallback directories)
-    for shared_dir in env::shared_install_dirs_early() {
-        if !shared_dir.is_dir() {
-            continue;
-        }
-        let shared_manifest_path = shared_dir.join(".mise-installs.toml");
-        let shared_manifest = read_manifest_from(&shared_manifest_path);
-        let shared_subdirs = match file::dir_subdirs(&shared_dir) {
-            std::result::Result::Ok(d) => d,
-            Err(err) => {
-                warn!(
-                    "reading shared install dir {} failed: {err:?}",
-                    display_path(&shared_dir)
-                );
+        // Only clone the manifest for mutation if we actually need to migrate
+        // legacy entries.
+        let mut updated_manifest: Option<Manifest> = None;
+        let mut tools = BTreeMap::new();
+        for dir_name in subdirs {
+            let dir = dirs::INSTALLS.join(&dir_name);
+            let Some((tool, migrate)) = scan_tool_dir(&dir_name, &dir, &manifest) else {
                 continue;
-            }
-        };
-        for dir_name in shared_subdirs {
-            let dir = shared_dir.join(&dir_name);
-            let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
-            let manifest_tool = tool_manifest
-                .as_ref()
-                .or_else(|| shared_manifest.get(&dir_name));
-            let versions: Vec<String> = file::dir_subdirs(&dir)
-                .unwrap_or_else(|err| {
-                    warn!("reading versions in {} failed: {err:?}", display_path(&dir));
-                    Default::default()
-                })
-                .into_iter()
-                .filter(|v| !v.starts_with('.'))
-                .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
-                .filter(|v| !dir.join(v).join("incomplete").exists())
-                .sorted_by_cached_key(|v| {
-                    let normalized = normalize_version_for_sort(v);
-                    (Versioning::new(normalized), v.to_string())
-                })
-                .collect();
-
-            if versions.is_empty() {
-                continue;
-            }
-
-            let (short, full, explicit_backend, opts) = if let Some(mt) = manifest_tool {
-                (
-                    mt.short.clone(),
-                    mt.full.clone(),
-                    mt.explicit_backend,
-                    mt.opts.clone(),
-                )
-            } else {
-                (dir_name.clone(), None, true, BTreeMap::new())
             };
-
-            // Merge with existing tool entry or create new one
-            let tool = tools
-                .entry(short.clone())
-                .or_insert_with(|| InstallStateTool {
-                    short: short.clone(),
-                    full: full.clone(),
-                    versions: Vec::new(),
-                    explicit_backend,
-                    opts: opts.clone(),
-                    installs_path: Some(dir),
-                });
-            // Add versions from shared dir that aren't already present
-            for v in versions {
-                if !tool.versions.contains(&v) {
-                    tool.versions.push(v);
-                }
+            if let Some(mt) = migrate {
+                updated_manifest
+                    .get_or_insert_with(|| manifest.clone())
+                    .insert(dir_name.clone(), mt);
             }
-            // Re-sort after merging
-            tool.versions.sort_by_cached_key(|v| {
-                let normalized = normalize_version_for_sort(v);
-                (Versioning::new(normalized), v.to_string())
-            });
-            // Fill in metadata if not yet set
-            if tool.full.is_none() {
-                tool.full = full;
+            tools.insert(tool.short.clone(), tool);
+        }
+
+        // Write updated manifest if we migrated any legacy entries
+        if let Some(ref m) = updated_manifest {
+            let _lock = MANIFEST_LOCK.lock().expect("MANIFEST_LOCK lock failed");
+            if let Err(err) = write_manifest(m) {
+                warn!("failed to write install manifest: {err:#}");
             }
         }
+
+        // Scan shared install directories (read-only fallback directories)
+        for shared_dir in env::shared_install_dirs_early() {
+            if !shared_dir.is_dir() {
+                continue;
+            }
+            let shared_manifest = read_manifest_from(&shared_dir.join(".mise-installs.toml"));
+            let shared_subdirs = match file::dir_subdirs(&shared_dir) {
+                std::result::Result::Ok(d) => d,
+                Err(err) => {
+                    warn!(
+                        "reading shared install dir {} failed: {err:?}",
+                        display_path(&shared_dir)
+                    );
+                    continue;
+                }
+            };
+            for dir_name in shared_subdirs {
+                let dir = shared_dir.join(&dir_name);
+                merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
+            }
+        }
+
+        let plugins = load_plugins()?;
+        merge_plugin_tools(&mut tools, plugins.as_ref());
+        let tools = Arc::new(tools);
+        *INSTALL_STATE_TOOLS
+            .lock()
+            .expect("INSTALL_STATE_TOOLS lock failed") = Some(tools.clone());
+        Ok(tools)
+    })
+}
+
+fn root_manifest() -> Arc<Manifest> {
+    let mut memo = ROOT_MANIFEST_MEMO
+        .lock()
+        .expect("ROOT_MANIFEST_MEMO lock failed");
+    memo.get_or_insert_with(|| Arc::new(read_manifest()))
+        .clone()
+}
+
+/// Install state for one tool, loaded without scanning any other tool's
+/// install dir.
+///
+/// mise creates install dirs as the kebab-cased short name, so that dir is
+/// probed directly; the consolidated manifest (one memoized file read) covers
+/// dirs recorded under a different name. A dir whose only identity is a
+/// sidecar under a name that doesn't kebab-match its short is not found here —
+/// that requires enumeration, which mise itself never produces, and full-scan
+/// callers still see such dirs.
+pub fn get_tool(short: &str) -> Option<InstallStateTool> {
+    // A completed full scan is authoritative (it includes plugin identities and
+    // shared dirs), so serve from it when available.
+    if let Some(tools) = INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed")
+        .as_ref()
+    {
+        return tools.get(short).cloned();
+    }
+    {
+        let memo = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+        if let Some(memo) = memo.as_ref()
+            && let Some(hit) = memo.get(short)
+        {
+            return hit.clone();
+        }
+    }
+    let tool = load_tool(short);
+    INSTALL_STATE_TOOL_MEMO
+        .lock()
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed")
+        .get_or_insert_with(Default::default)
+        .insert(short.to_string(), tool.clone());
+    tool
+}
+
+fn load_tool(short: &str) -> Option<InstallStateTool> {
+    let manifest = root_manifest();
+    let dir_name = short.to_kebab_case();
+    let scan_named = |dir_name: &str| {
+        scan_tool_dir(dir_name, &dirs::INSTALLS.join(dir_name), &manifest)
+            .map(|(tool, _migrate)| tool)
+            .filter(|tool| tool.short == short)
+    };
+    let mut tool = scan_named(&dir_name);
+    if tool.is_none() {
+        // The manifest may record this short under a dir that doesn't
+        // kebab-match it (e.g. a renamed or hand-migrated install).
+        tool = manifest
+            .iter()
+            .find(|(d, mt)| mt.short == short && **d != dir_name)
+            .and_then(|(d, _)| scan_named(d));
     }
 
-    let plugins = init_plugins().await?;
-    merge_plugin_tools(&mut tools, plugins.as_ref());
-    let tools = Arc::new(tools);
-    *INSTALL_STATE_TOOLS
-        .lock()
-        .expect("INSTALL_STATE_TOOLS lock failed") = Some(tools.clone());
-    Ok(tools)
+    // Shared install directories can add versions or supply the whole tool.
+    for shared_dir in env::shared_install_dirs_early() {
+        let dir = shared_dir.join(&dir_name);
+        if !dir.is_dir() {
+            continue;
+        }
+        let shared_manifest = read_manifest_from(&shared_dir.join(".mise-installs.toml"));
+        let mut tools: InstallStateTools = tool
+            .take()
+            .map(|t| BTreeMap::from([(t.short.clone(), t)]))
+            .unwrap_or_default();
+        merge_shared_tool(&mut tools, &dir, &dir_name, &shared_manifest);
+        tool = tools.remove(short);
+    }
+
+    // An asdf/vfox plugin supplies an identity even with nothing installed.
+    if let Some(plugins) = try_list_plugins()
+        && plugins.contains_key(short)
+    {
+        let mut tools: InstallStateTools = tool
+            .take()
+            .map(|t| BTreeMap::from([(t.short.clone(), t)]))
+            .unwrap_or_default();
+        merge_plugin_tools(
+            &mut tools,
+            &BTreeMap::from([(short.to_string(), plugins[short])]),
+        );
+        tool = tools.remove(short);
+    }
+    tool
 }
 
 fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugins) {
@@ -469,36 +584,28 @@ fn is_banned_plugin(path: &Path) -> bool {
 }
 
 pub fn get_tool_full(short: &str) -> Option<String> {
-    list_tools().get(short).and_then(|t| t.full.clone())
+    get_tool(short).and_then(|t| t.full.clone())
 }
 
 pub fn get_plugin_type(short: &str) -> Option<PluginType> {
     list_plugins().get(short).cloned()
 }
 
+/// Every installed tool. This enumerates the whole installs dir (a readdir per
+/// tool plus stats per version) — reach for [`get_tool`] instead when only
+/// specific tools matter.
 pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
-    try_list_tools().expect("INSTALL_STATE_TOOLS is None")
-}
-
-/// Non-panicking counterpart to [`list_tools`], mirroring [`try_list_plugins`].
-/// Callers on error paths must not panic just because install state was never
-/// initialized.
-pub fn try_list_tools() -> Option<Arc<BTreeMap<String, InstallStateTool>>> {
-    INSTALL_STATE_TOOLS
-        .lock()
-        .expect("INSTALL_STATE_TOOLS lock failed")
-        .as_ref()
-        .cloned()
+    full_scan_tools().unwrap_or_else(|err| {
+        warn!("failed to scan installed tools: {err:#}");
+        Arc::new(Default::default())
+    })
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
-    let backend_type = list_tools()
-        .get(short)
-        .and_then(|ist| ist.full.as_ref())
-        .and_then(|full| {
-            full.split_once(':')
-                .map(|(backend, _)| BackendType::guess(backend))
-        });
+    let backend_type = get_tool(short).and_then(|ist| ist.full).and_then(|full| {
+        full.split_once(':')
+            .map(|(backend, _)| BackendType::guess(backend))
+    });
     if let Some(BackendType::Unknown) = backend_type
         && let Some((plugin_name, _)) = short.split_once(':')
         && let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name)
@@ -509,9 +616,8 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
 }
 
 pub fn list_versions(short: &str) -> Vec<String> {
-    list_tools()
-        .get(short)
-        .map(|tool| tool.versions.clone())
+    get_tool(short)
+        .map(|tool| tool.versions)
         .unwrap_or_default()
 }
 
@@ -521,43 +627,60 @@ pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
     let explicit_backend = ba.has_explicit_backend();
     let opts = persistent_opts(ba);
 
-    let mut tools = INSTALL_STATE_TOOLS
-        .lock()
-        .expect("INSTALL_STATE_TOOLS lock failed");
-    let Some(existing_tools) = tools.as_ref() else {
-        return;
+    let update = |tool: &mut InstallStateTool| {
+        if tool.full.is_none() {
+            tool.full = Some(full.clone());
+        }
+        tool.explicit_backend = explicit_backend;
+        if tool.opts.is_empty() {
+            tool.opts = opts.clone();
+        }
+        if tool.installs_path.is_none() {
+            tool.installs_path = tool_dir.clone();
+        }
+        if !tool.versions.iter().any(|v| v == version) {
+            // Do not sort here: this version has just been resolved by the backend
+            // for this install run, and offline dependency env resolution should
+            // see that concrete result without adding another ordering rule.
+            tool.versions.push(version.to_string());
+        }
     };
-
-    let mut next_tools = existing_tools.deref().clone();
-    let tool = next_tools
-        .entry(ba.short.clone())
-        .or_insert_with(|| InstallStateTool {
+    let new_tool = || {
+        let mut tool = InstallStateTool {
             short: ba.short.clone(),
             full: Some(full.clone()),
             versions: Vec::new(),
             explicit_backend,
             opts: opts.clone(),
             installs_path: tool_dir.clone(),
-        });
+        };
+        update(&mut tool);
+        tool
+    };
 
-    if tool.full.is_none() {
-        tool.full = Some(full);
+    // Same-run resolution reads through both memo layers, so the fresh install
+    // has to land in whichever ones exist.
+    {
+        let mut tools = INSTALL_STATE_TOOLS
+            .lock()
+            .expect("INSTALL_STATE_TOOLS lock failed");
+        if let Some(existing_tools) = tools.as_ref() {
+            let mut next_tools = existing_tools.deref().clone();
+            update(next_tools.entry(ba.short.clone()).or_insert_with(new_tool));
+            *tools = Some(Arc::new(next_tools));
+        }
     }
-    tool.explicit_backend = explicit_backend;
-    if tool.opts.is_empty() {
-        tool.opts = opts;
+    let mut memo = INSTALL_STATE_TOOL_MEMO
+        .lock()
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+    let entry = memo
+        .get_or_insert_with(Default::default)
+        .entry(ba.short.clone())
+        .or_insert(None);
+    match entry {
+        Some(tool) => update(tool),
+        None => *entry = Some(new_tool()),
     }
-    if tool.installs_path.is_none() {
-        tool.installs_path = tool_dir;
-    }
-    if !tool.versions.iter().any(|v| v == version) {
-        // Do not sort here: this version has just been resolved by the backend
-        // for this install run, and offline dependency env resolution should
-        // see that concrete result without adding another ordering rule.
-        tool.versions.push(version.to_string());
-    }
-
-    *tools = Some(Arc::new(next_tools));
 }
 
 pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
@@ -566,6 +689,15 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     *INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = Some(Arc::new(plugins));
+    // A plugin can supply this tool's identity, so a memoized per-tool lookup
+    // from before the plugin existed is stale.
+    if let Some(memo) = INSTALL_STATE_TOOL_MEMO
+        .lock()
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed")
+        .as_mut()
+    {
+        memo.remove(short);
+    }
     Ok(())
 }
 
@@ -696,6 +828,12 @@ pub fn reset() {
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;
+    *INSTALL_STATE_TOOL_MEMO
+        .lock()
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed") = None;
+    *ROOT_MANIFEST_MEMO
+        .lock()
+        .expect("ROOT_MANIFEST_MEMO lock failed") = None;
     super::tool_version::reset_install_path_cache();
 }
 
