@@ -30,7 +30,9 @@ use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENA
 use crate::file::display_path;
 use crate::remote_source::RemoteSource;
 use crate::shorthands::{Shorthands, get_shorthands};
-use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::task_file_providers::{
+    TaskFileArtifact, TaskFileProvidersBuilder, validate_remote_git_path,
+};
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
     RunEntry, Task, TaskCacheConfig, TaskRustCacheConfig, TaskTemplate, monorepo_scope,
@@ -4551,13 +4553,7 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
         .await?;
 
     let artifact = checkout.with_path(checkout.path.join(source.path));
-    let metadata = artifact.path.symlink_metadata()?;
-    if !metadata.file_type().is_file() && !metadata.file_type().is_dir() {
-        bail!(
-            "remote task path is not a regular file or directory: {}",
-            display_path(&artifact.path)
-        );
-    }
+    validate_remote_git_path(&checkout.path, &artifact.path)?;
     Ok(artifact)
 }
 

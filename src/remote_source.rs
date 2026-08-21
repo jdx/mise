@@ -60,9 +60,13 @@ impl RemoteSource {
 fn parse_git_with(regex: &Regex, file: &str) -> Option<RemoteGitSource> {
     let captures = regex.captures(file)?;
     let path = captures.name("path").unwrap().as_str();
-    if path
-        .split('/')
-        .any(|component| component.is_empty() || component == "." || component == "..")
+    let mut components = path.split('/');
+    let first = components.next()?;
+    if path.contains('\\')
+        || is_windows_drive_component(first)
+        || std::iter::once(first)
+            .chain(components)
+            .any(|component| component.is_empty() || component == "." || component == "..")
     {
         return None;
     }
@@ -71,6 +75,11 @@ fn parse_git_with(regex: &Regex, file: &str) -> Option<RemoteGitSource> {
         path: path.to_string(),
         git_ref: captures.name("ref").map(|m| m.as_str().to_string()),
     })
+}
+
+fn is_windows_drive_component(component: &str) -> bool {
+    let bytes = component.as_bytes();
+    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 #[cfg(test)]
@@ -142,6 +151,15 @@ mod tests {
         assert!(
             RemoteSource::parse_git("git::https://myserver.com/example.git//plugin/./other")
                 .is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//..\\outside").is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//C:/outside").is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//C:\\outside").is_none()
         );
     }
 
