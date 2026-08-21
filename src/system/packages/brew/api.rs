@@ -743,9 +743,6 @@ fn formula_from_internal(
     _source: &str,
 ) -> Result<Formula> {
     validate_formula_name(name)?;
-    if !signed.stable_patches.is_empty() {
-        bail!("brew:{name} has signed source patches that mise cannot apply safely");
-    }
     let mut dependencies = Vec::new();
     let mut build_dependencies = Vec::new();
     for dependency in &signed.stable_dependencies {
@@ -900,7 +897,11 @@ fn parse_internal_source(name: &str, signed: &InternalFormula) -> Result<Option<
     // Additional URL arguments describe VCS strategies, tags, revisions, or
     // other download behavior. Preserve the URL for diagnostics but mark the
     // strategy unsupported instead of guessing at Homebrew DSL semantics.
-    let using = (signed.stable_url_args.len() > 1).then(|| "signed URL options".to_string());
+    let using = if !signed.stable_patches.is_empty() {
+        Some("signed source patches".to_string())
+    } else {
+        (signed.stable_url_args.len() > 1).then(|| "signed URL options".to_string())
+    };
     Ok(Some(SourceUrl {
         url: url.to_string(),
         checksum: checksum.map(str::to_string),
@@ -1305,21 +1306,24 @@ mod tests {
             "formulae": {
                 "patched": {
                     "stable_version": "1",
+                    "stable_url_args": ["https://example.test/tool.tar.gz"],
                     "stable_patches": [{"url": "https://example.test/patch"}]
                 }
             },
             "formula_tap_git_head": "signed-core-head",
             "metadata": {"bottle_tag": "all"}
         }));
-        let err = formula_from_internal(
+        let formula = formula_from_internal(
             &index,
             "patched",
             &index.formulae["patched"],
             "signed-index-url",
         )
-        .unwrap_err()
-        .to_string();
-        assert!(err.contains("signed source patches"));
+        .unwrap();
+        assert_eq!(
+            formula.stable_url().unwrap().using.as_deref(),
+            Some("signed source patches")
+        );
     }
 
     #[test]
