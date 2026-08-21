@@ -406,7 +406,9 @@ impl Lock {
         }
 
         if !has_lock_targets && !self.json {
-            if !self.global && self.global_config_declares_tools(ts) {
+            // --local asks for mise.local.lock specifically, and there is no global
+            // equivalent, so don't redirect that run to global scope.
+            if !self.global && !self.local && self.global_config_declares_tools(ts) {
                 miseprintln!(
                     "{} No tools configured to lock in this project, but global config declares tools. Run {} to lock those.",
                     style("!").yellow(),

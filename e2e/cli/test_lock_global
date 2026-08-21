@@ -97,6 +97,12 @@ assert_not_contains "echo '$output'" "mise lock --global"
 output=$(mise lock "aqua:jqlang/jq" 2>&1)
 assert_contains "echo '$output'" "mise lock --global"
 
+echo "=== Testing the hint stays out of --local runs ==="
+# --local asks for mise.local.lock; there is no global equivalent to point at
+output=$(mise lock --local 2>&1)
+assert_contains "echo '$output'" "No tools configured to lock"
+assert_not_contains "echo '$output'" "mise lock --global"
+
 echo "=== Testing mise lock with nothing configured anywhere ==="
 rm -f "$MISE_CONFIG_DIR/config.toml" mise.toml
 rm -rf dotfiles
