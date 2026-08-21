@@ -288,19 +288,17 @@ fn restore_dir_atomically_validated_inner(
     // descriptor instead, then publish only our private staging directory. Child lookup remains
     // relative to the already-open directory even when `from_name` is concurrently replaced.
     let staging_name = format!(".mise-restore-{}", crate::rand::random_string(32));
-    let staging = from.with_file_name(&staging_name);
-    fs::create_dir(&staging)?;
-    if let Err(error) = clone_dir_from_fd(&retained, &staging) {
-        let _ = fs::remove_dir_all(&staging);
-        return Err(error).wrap_err("failed to clone retained recovery backup");
-    }
-
+    nix::sys::stat::mkdirat(&parent, staging_name.as_str(), Mode::from_bits_truncate(0o700))?;
     let staged = Dir::openat(
         &parent,
         staging_name.as_str(),
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
+    if let Err(error) = clone_dir_from_fd(&retained, &staged) {
+        return Err(error).wrap_err("failed to clone retained recovery backup");
+    }
+
     let staged_identity = fstat(&staged)?;
     match fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
         Err(Errno::ENOENT) => {}
@@ -329,14 +327,14 @@ fn restore_dir_atomically_validated_inner(
 }
 
 #[cfg(unix)]
-fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &Path) -> Result<()> {
+fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Result<()> {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
-    use std::os::unix::fs::PermissionsExt;
 
     use nix::dir::Dir;
     use nix::fcntl::{AtFlags, OFlag, openat, readlinkat};
-    use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+    use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
+    use nix::unistd::symlinkat;
 
     let mut entries = Dir::openat(
         source,
@@ -359,20 +357,25 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &Path) -> Result<()> {
         .collect::<nix::Result<Vec<_>>>()?;
     for name in names {
         let name = OsStr::from_bytes(&name);
-        let destination_path = destination.join(name);
         let metadata = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
         let kind = SFlag::from_bits_truncate(metadata.st_mode);
         if kind.contains(SFlag::S_IFLNK) {
-            make_symlink(Path::new(&readlinkat(source, name)?), &destination_path)?;
+            symlinkat(Path::new(&readlinkat(source, name)?), destination, name)?;
         } else if kind.contains(SFlag::S_IFDIR) {
-            fs::create_dir(&destination_path)?;
-            let child = Dir::openat(
+            mkdirat(destination, name, Mode::from_bits_truncate(0o700))?;
+            let source_child = Dir::openat(
                 source,
                 name,
                 OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 Mode::empty(),
             )?;
-            clone_dir_from_fd(&child, &destination_path)?;
+            let destination_child = Dir::openat(
+                destination,
+                name,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?;
+            clone_dir_from_fd(&source_child, &destination_child)?;
         } else if kind.contains(SFlag::S_IFREG) {
             let source_file = openat(
                 source,
@@ -381,25 +384,21 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &Path) -> Result<()> {
                 Mode::empty(),
             )?;
             let mut source_file = File::from(source_file);
-            let mut destination_file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&destination_path)?;
+            let destination_file = openat(
+                destination,
+                name,
+                OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::from_bits_truncate(0o600),
+            )?;
+            let mut destination_file = File::from(destination_file);
             std::io::copy(&mut source_file, &mut destination_file)?;
-            destination_file
-                .set_permissions(fs::Permissions::from_mode(metadata.st_mode as u32))?;
+            fchmod(&destination_file, Mode::from_bits_truncate(metadata.st_mode))?;
         } else {
-            bail!(
-                "unsupported recovery backup entry: {}",
-                destination_path.display()
-            );
+            bail!("unsupported recovery backup entry: {}", name.to_string_lossy());
         }
     }
     let metadata = fstat(source)?;
-    fs::set_permissions(
-        destination,
-        fs::Permissions::from_mode(metadata.st_mode as u32),
-    )?;
+    fchmod(destination, Mode::from_bits_truncate(metadata.st_mode))?;
     Ok(())
 }
 
