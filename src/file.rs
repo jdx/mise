@@ -257,7 +257,7 @@ fn restore_dir_atomically_validated_inner(
 ) -> Result<()> {
     use nix::dir::Dir;
     use nix::errno::Errno;
-    use nix::fcntl::{AtFlags, OFlag, renameat};
+    use nix::fcntl::{AtFlags, OFlag};
     use nix::sys::stat::{Mode, fstat, fstatat};
 
     let parent = from
@@ -295,17 +295,25 @@ fn restore_dir_atomically_validated_inner(
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
+    let staged_path_identity =
+        fstatat(&parent, staging_name.as_str(), AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    let staged_identity = fstat(&staged)?;
+    if (staged_path_identity.st_dev, staged_path_identity.st_ino)
+        != (staged_identity.st_dev, staged_identity.st_ino)
+    {
+        bail!("restore staging path changed before clone");
+    }
     if let Err(error) = clone_dir_from_fd(&retained, &staged) {
         return Err(error).wrap_err("failed to clone retained recovery backup");
     }
 
-    let staged_identity = fstat(&staged)?;
-    match fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
-        Err(Errno::ENOENT) => {}
-        Ok(_) => bail!("restore destination appeared before commit"),
-        Err(error) => return Err(error.into()),
-    }
-    renameat(&parent, staging_name.as_str(), &parent, to_name)?;
+    atomic_rename_noreplace(&parent, staging_name.as_ref(), to_name).map_err(|error| {
+        if error == Errno::EEXIST {
+            eyre::eyre!("restore destination appeared before commit")
+        } else {
+            error.into()
+        }
+    })?;
     let installed = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
     if (installed.st_dev, installed.st_ino) != (staged_identity.st_dev, staged_identity.st_ino) {
         bail!("staged restore identity changed during commit");
@@ -364,21 +372,27 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
         let metadata = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
         let kind = SFlag::from_bits_truncate(metadata.st_mode);
         if kind.contains(SFlag::S_IFLNK) {
-            symlinkat(Path::new(&readlinkat(source, name)?), destination, name)?;
+            let target = readlinkat(source, name)?;
+            let after = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+            ensure_same_native_identity(&metadata, &after, name)?;
+            symlinkat(Path::new(&target), destination, name)?;
         } else if kind.contains(SFlag::S_IFDIR) {
-            mkdirat(destination, name, Mode::from_bits_truncate(0o700))?;
             let source_child = Dir::openat(
                 source,
                 name,
                 OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 Mode::empty(),
             )?;
+            ensure_same_native_identity(&metadata, &fstat(&source_child)?, name)?;
+            mkdirat(destination, name, Mode::from_bits_truncate(0o700))?;
             let destination_child = Dir::openat(
                 destination,
                 name,
                 OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
                 Mode::empty(),
             )?;
+            let destination_path = fstatat(destination, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+            ensure_same_native_identity(&destination_path, &fstat(&destination_child)?, name)?;
             clone_dir_from_fd(&source_child, &destination_child)?;
         } else if kind.contains(SFlag::S_IFREG) {
             let source_file = openat(
@@ -388,6 +402,7 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
                 Mode::empty(),
             )?;
             let mut source_file = File::from(source_file);
+            ensure_same_native_identity(&metadata, &fstat(&source_file)?, name)?;
             let destination_file = openat(
                 destination,
                 name,
@@ -417,14 +432,79 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
 }
 
 #[cfg(unix)]
+fn ensure_same_native_identity(
+    expected: &nix::libc::stat,
+    actual: &nix::libc::stat,
+    name: &std::ffi::OsStr,
+) -> Result<()> {
+    if (
+        expected.st_dev,
+        expected.st_ino,
+        expected.st_mode & nix::libc::S_IFMT,
+    ) != (
+        actual.st_dev,
+        actual.st_ino,
+        actual.st_mode & nix::libc::S_IFMT,
+    ) {
+        bail!(
+            "directory entry changed during descriptor-bound operation: {}",
+            name.to_string_lossy()
+        );
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn atomic_rename_noreplace(
+    parent: &File,
+    from: &std::ffi::OsStr,
+    to: &std::ffi::OsStr,
+) -> nix::Result<()> {
+    use std::ffi::CString;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+
+    let from = CString::new(from.as_bytes()).map_err(|_| nix::errno::Errno::EINVAL)?;
+    let to = CString::new(to.as_bytes()).map_err(|_| nix::errno::Errno::EINVAL)?;
+    #[cfg(target_os = "linux")]
+    let result = unsafe {
+        nix::libc::syscall(
+            nix::libc::SYS_renameat2,
+            parent.as_raw_fd(),
+            from.as_ptr(),
+            parent.as_raw_fd(),
+            to.as_ptr(),
+            nix::libc::RENAME_NOREPLACE,
+        )
+    };
+    #[cfg(target_os = "macos")]
+    let result = unsafe {
+        nix::libc::renameatx_np(
+            parent.as_raw_fd(),
+            from.as_ptr(),
+            parent.as_raw_fd(),
+            to.as_ptr(),
+            nix::libc::RENAME_EXCL,
+        ) as nix::libc::c_long
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    compile_error!("descriptor-bound formula restore requires atomic no-replace rename support");
+    if result == -1 {
+        Err(nix::errno::Errno::last())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
 fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 
     use nix::dir::Dir;
     use nix::errno::Errno;
-    use nix::fcntl::OFlag;
-    use nix::sys::stat::Mode;
+    use nix::fcntl::{AtFlags, OFlag};
+    use nix::sys::stat::{Mode, fstat, fstatat};
     use nix::unistd::{UnlinkatFlags, unlinkat};
 
     let names = dir
@@ -449,7 +529,10 @@ fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
             Mode::empty(),
         ) {
             Ok(mut child) => {
+                let retained = fstat(&child)?;
                 remove_dir_contents(&mut child)?;
+                let current = fstatat(&*dir, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+                ensure_same_native_identity(&retained, &current, name)?;
                 unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
             }
             Err(Errno::ENOTDIR | Errno::ELOOP) => {
