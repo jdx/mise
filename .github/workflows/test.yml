@@ -31,8 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
           persist-credentials: false
+          fetch-depth: 0
       - name: Classify changes
         id: classify
         env:
@@ -121,7 +121,7 @@ jobs:
         run: |
           cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
           cargo build -p mise-shim
-          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+          Add-Content $env:GITHUB_PATH (Join-Path $env:GITHUB_WORKSPACE 'target\debug')
       - parallel:
           - run: mise -v
           - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -140,8 +140,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.head_ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.head_ref || github.ref_name }}
           persist-credentials: false
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
@@ -175,12 +175,13 @@ jobs:
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
         run: cargo test --workspace --exclude mise
-      - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
+      # The destructive cask test runs only in brew-oracle-macos below, where
+      # the disposable capability and canonical-prefix proof are available.
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       - run: sccache --show-stats
         if: always()
 
-  brew-formula-macos:
+  brew-interop-build-macos:
     runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
     timeout-minutes: 45
     env:
@@ -190,6 +191,7 @@ jobs:
       FORGEJO_TOKEN: ""
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: "6.0.17"
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
+      MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST: not-containerized
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
@@ -207,42 +209,123 @@ jobs:
             ~/.cache/sccache
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with: { tool: sccache }
-      - name: Build exact-head binary
+      - name: Build shared exact-head brew oracle binary
         run: |
           export RUSTC_WRAPPER=sccache
           export SCCACHE_DIR="$HOME/.cache/sccache"
           cargo build --all-features
-          strip -S target/debug/mise
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - name: Prepare pinned Homebrew
+          mkdir -p target/ci-artifacts
+          install -m755 target/debug/mise target/ci-artifacts/mise
+          strip -S target/ci-artifacts/mise
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mise-brew-interop-macos
+          path: target/ci-artifacts/mise
+          if-no-files-found: error
+          retention-days: 1
+
+  brew-oracle-macos:
+    name: brew-oracle-macos-${{ matrix.reference.id }}
+    runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
+    # Eight bidirectional cask fixtures plus the formula-chain oracle regularly
+    # exceed 40 minutes. Leave bounded headroom for pinned Homebrew downloads;
+    # marker verification still rejects every partial or early exit.
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        reference:
+          - id: baseline
+            release: "6.0.17"
+            sha: 4dacfe77a24dead72de749c0876028b77b99cd04
+          - id: current
+            release: "6.0.18"
+            sha: 5b90e281d4e0c8fbd6ca4d8358276fb305b8d0bd
+    env:
+      MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST: not-containerized
+      GITHUB_TOKEN: ""
+      GH_TOKEN: ""
+      MISE_GITHUB_TOKEN: ""
+      FORGEJO_TOKEN: ""
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: ${{ matrix.reference.release }}
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: ${{ matrix.reference.sha }}
+    needs: [classify-changes, brew-interop-build-macos]
+    # Start the proof job once classification says this is full CI. Do not use
+    # always(): a superseding head must be able to cancel destructive work.
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-brew-interop-macos
+          path: target/debug
+      - run: chmod +x target/debug/mise
+      - name: Prepare exact-head oracle environment
         run: |
-          homebrew_repository="$RUNNER_TEMP/homebrew-6.0.17"
-          test ! -e "$homebrew_repository"
-          git init "$homebrew_repository"
-          git -C "$homebrew_repository" remote add origin https://github.com/Homebrew/brew.git
-          git -C "$homebrew_repository" fetch --depth=1 origin \
-            "refs/tags/$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:refs/tags/$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
-          git -C "$homebrew_repository" checkout --detach \
-            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          homebrew_repository="$RUNNER_TEMP/homebrew-${{ matrix.reference.id }}-$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          source e2e/cli/brew_oracle_guard.sh
+          brew_oracle_prepare_homebrew_reference \
+            "$homebrew_repository" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
           homebrew_brew="$homebrew_repository/bin/brew"
+          homebrew_runtime_sha=$(git -C "$homebrew_repository" rev-parse HEAD)
+          test "$homebrew_runtime_sha" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
           homebrew_runtime_version=$(env \
             HOMEBREW_PREFIX=/opt/homebrew \
             HOMEBREW_REPOSITORY="$homebrew_repository" \
             HOMEBREW_LIBRARY="$homebrew_repository/Library" \
             "$homebrew_brew" --version | awk 'NR == 1 { print $2 }')
-          homebrew_runtime_sha=$(git -C "$homebrew_repository" rev-parse HEAD)
           test "$homebrew_runtime_version" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
-          test "$homebrew_runtime_sha" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
           {
             echo "MISE_BREW_ORACLE_BREW_SOURCE=$homebrew_brew"
             echo "MISE_BREW_ORACLE_HOMEBREW_REPOSITORY=$homebrew_repository"
             echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$homebrew_runtime_version"
             echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$homebrew_runtime_sha"
           } >> "$GITHUB_ENV"
-      - name: Test formula lifecycle
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+          result_dir="$RUNNER_TEMP/mise-brew-oracle-${{ matrix.reference.id }}-results"
+          mkdir -p "$result_dir"
+          test ! -L "$result_dir"
+      - name: Run cask oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-${{ matrix.reference.id }}-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
+          MISE_AUTO_INSTALL: "false"
+        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_macos_slow
+      - name: Run cask appdir oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-${{ matrix.reference.id }}-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
+          MISE_AUTO_INSTALL: "false"
+        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_cask_appdir_slow
+      - name: Run gcloud-cli durable launcher oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-${{ matrix.reference.id }}-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
+          MISE_AUTO_INSTALL: "false"
+        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_cask_gcloud_macos_slow
+      - name: Run canonical formula lifecycle oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-${{ matrix.reference.id }}-results
           MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
           MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
@@ -251,8 +334,87 @@ jobs:
           MISE_AUTO_INSTALL: "false"
         run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow
 
-  brew-formula-linux:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+  brew-interop-macos:
+    name: brew-interop-macos-${{ matrix.reference.id }}-${{ matrix.kind }}-${{ matrix.shard }}
+    runs-on: namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        reference:
+          - id: baseline
+            release: "6.0.17"
+            sha: 4dacfe77a24dead72de749c0876028b77b99cd04
+          - id: current
+            release: "6.0.18"
+            sha: 5b90e281d4e0c8fbd6ca4d8358276fb305b8d0bd
+        kind: [casks, formulae]
+        shard: [0, 1]
+    env:
+      GITHUB_TOKEN: ""
+      GH_TOKEN: ""
+      MISE_GITHUB_TOKEN: ""
+      FORGEJO_TOKEN: ""
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE: ${{ matrix.reference.release }}
+      MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: ${{ matrix.reference.sha }}
+      MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST: not-containerized
+    needs: [classify-changes, brew-interop-build-macos]
+    if: needs.classify-changes.outputs.full-ci == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-brew-interop-macos
+          path: target/debug
+      - run: chmod +x target/debug/mise
+      - name: Prepare pinned Homebrew and evidence directory
+        run: |
+          homebrew_repository="$RUNNER_TEMP/homebrew-${{ matrix.reference.id }}-$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          source e2e/cli/brew_oracle_guard.sh
+          brew_oracle_prepare_homebrew_reference \
+            "$homebrew_repository" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
+            "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
+          homebrew_brew="$homebrew_repository/bin/brew"
+          homebrew_runtime_sha=$(git -C "$homebrew_repository" rev-parse HEAD)
+          test "$homebrew_runtime_sha" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA"
+          homebrew_runtime_version=$(env \
+            HOMEBREW_PREFIX=/opt/homebrew \
+            HOMEBREW_REPOSITORY="$homebrew_repository" \
+            HOMEBREW_LIBRARY="$homebrew_repository/Library" \
+            "$homebrew_brew" --version | awk 'NR == 1 { print $2 }')
+          test "$homebrew_runtime_version" = "$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE"
+          result_dir="$RUNNER_TEMP/mise-brew-corpus-${{ matrix.reference.id }}-${{ matrix.kind }}-${{ matrix.shard }}"
+          mkdir "$result_dir"
+          test ! -L "$result_dir"
+          {
+            echo "MISE_BREW_ORACLE_BREW_SOURCE=$homebrew_brew"
+            echo "MISE_BREW_ORACLE_HOMEBREW_REPOSITORY=$homebrew_repository"
+            echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE=$homebrew_runtime_version"
+            echo "MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA=$homebrew_runtime_sha"
+            echo "MISE_BREW_ORACLE_RESULT_DIR=$result_dir"
+          } >> "$GITHUB_ENV"
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - name: Run downstream package shard
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_CORPUS_SHARD: ${{ matrix.shard }}
+          MISE_BREW_ORACLE_CORPUS_SHARDS: "2"
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
+          MISE_AUTO_INSTALL: "false"
+        run: |
+          mise run --skip-deps test:e2e \
+            "e2e/cli/test_system_install_brew_interop_${{ matrix.kind }}_macos_slow"
+
+  brew-oracle-linux:
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       GITHUB_TOKEN: ""
@@ -264,6 +426,7 @@ jobs:
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: not-installed
       MISE_E2E_DOCKER_IMAGE: ghcr.io/jdx/mise@sha256:28f0206dfbcf342c234262a6cfbe2db5465f24f102b95f1131e99ca9ec1a39d3
+      MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST: sha256:28f0206dfbcf342c234262a6cfbe2db5465f24f102b95f1131e99ca9ec1a39d3
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
@@ -272,13 +435,6 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/sccache
       - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
         with: { tool: sccache }
       - name: Pull disposable e2e image
@@ -286,31 +442,48 @@ jobs:
           docker pull "$MISE_E2E_DOCKER_IMAGE"
           docker image inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' \
             "$MISE_E2E_DOCKER_IMAGE" | grep -Fx "$MISE_E2E_DOCKER_IMAGE"
-      - name: Build exact-head binary
+      - name: Build exact-head oracle binary
         run: |
           export RUSTC_WRAPPER=sccache
           export SCCACHE_DIR="$HOME/.cache/sccache"
           cargo build --all-features --ignore-rust-version
           strip --strip-debug target/debug/mise
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git rev-parse HEAD > target/debug/mise.git-sha
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: mise-brew-oracle-linux-exact
+          path: |
+            target/debug/mise
+            target/debug/mise.git-sha
+      - name: Prepare exact-head oracle environment
+        run: |
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - name: Test Linux bottle lifecycle
+          result_dir="$RUNNER_TEMP/mise-brew-oracle-results"
+          mkdir -p "$result_dir"
+          test ! -L "$result_dir"
+      - name: Run Linux formula oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-results
           MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
           MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: ${{ env.MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE }}
+          MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: ${{ env.MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA }}
           MISE_DISABLE_TOOLS: "1"
           MISE_AUTO_INSTALL: "false"
         run: |
           env \
             MISE_BREW_ORACLE_DISPOSABLE="$MISE_BREW_ORACLE_DISPOSABLE" \
+            MISE_BREW_ORACLE_RESULT_DIR="$MISE_BREW_ORACLE_RESULT_DIR" \
             MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
             MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
             MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
             MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
             MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
             MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
+            MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST="$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST" \
             MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
             MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
             MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
@@ -318,7 +491,7 @@ jobs:
             MISE_E2E_DOCKER=1 \
             mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_linux
 
-  brew-formula-linux-source:
+  brew-oracle-linux-source:
     # Landlock is a host-kernel boundary; Namespace/container images cannot supply ABI v6.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -331,7 +504,8 @@ jobs:
       MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA: 4dacfe77a24dead72de749c0876028b77b99cd04
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
       MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: not-installed
-    needs: [classify-changes]
+      MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST: not-containerized
+    needs: [classify-changes, brew-oracle-linux]
     if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -339,26 +513,94 @@ jobs:
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - name: Build exact-head binary
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: mise-brew-oracle-linux-exact
+          path: target/debug
+      - name: Prepare exact-head source oracle environment
+        env:
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          cargo build --all-features --ignore-rust-version
-          strip --strip-debug target/debug/mise
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test "$(git rev-parse HEAD)" = "$MISE_BREW_ORACLE_MISE_SHA"
+          test -f target/debug/mise.git-sha
+          test ! -L target/debug/mise.git-sha
+          test "$(cat target/debug/mise.git-sha)" = "$MISE_BREW_ORACLE_MISE_SHA"
+          test -f target/debug/mise
+          test ! -L target/debug/mise
+          chmod +x target/debug/mise
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - name: Test Linux source lifecycle
+          mkdir -p "$RUNNER_TEMP/mise-brew-oracle-results"
+          test ! -L "$RUNNER_TEMP/mise-brew-oracle-results"
+      - name: Run source-build formula oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-results
           MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
           MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MISE_BREW_ORACLE_SOURCE_PREFIX: ${{ runner.temp }}/mise-brew-source-prefix
           MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE: not-installed
+          MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA: not-installed
           MISE_DISABLE_TOOLS: "1"
           MISE_AUTO_INSTALL: "false"
         run: |
           for command in bash cc make ar ranlib git jq realpath stat awk sed grep install mkdir xargs; do
-            command -v "$command" >/dev/null || { echo "missing source-build oracle prerequisite: $command" >&2; exit 1; }
+            if ! command -v "$command" >/dev/null; then
+              echo "missing source-build oracle prerequisite: $command" >&2
+              exit 1
+            fi
           done
-          mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
+          env \
+            MISE_BREW_ORACLE_DISPOSABLE="$MISE_BREW_ORACLE_DISPOSABLE" \
+            MISE_BREW_ORACLE_RESULT_DIR="$MISE_BREW_ORACLE_RESULT_DIR" \
+            MISE_BREW_ORACLE_RUNNER_TEMP="$MISE_BREW_ORACLE_RUNNER_TEMP" \
+            MISE_BREW_ORACLE_MISE_SHA="$MISE_BREW_ORACLE_MISE_SHA" \
+            MISE_BREW_ORACLE_SOURCE_PREFIX="$MISE_BREW_ORACLE_SOURCE_PREFIX" \
+            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE" \
+            MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="$MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA" \
+            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE" \
+            MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="$MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA" \
+            MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST="$MISE_BREW_ORACLE_EXECUTOR_IMAGE_DIGEST" \
+            MISE_BREW_ORACLE_UNFORWARDED="$MISE_BREW_ORACLE_UNFORWARDED" \
+            MISE_DISABLE_TOOLS="$MISE_DISABLE_TOOLS" \
+            MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
+            mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
+
+  brew-interop-ci:
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    timeout-minutes: 1
+    needs:
+      - classify-changes
+      - brew-interop-build-macos
+      - brew-interop-macos
+      - brew-oracle-macos
+      - brew-oracle-linux
+      - brew-oracle-linux-source
+    if: ${{ always() && !cancelled() && needs.classify-changes.outputs.full-ci == 'true' }}
+    steps:
+      - name: Check brew interoperability job results
+        run: |
+          if [ "${{ needs.brew-interop-build-macos.result }}" != "success" ]; then
+            echo "brew-interop-build-macos failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.brew-interop-macos.result }}" != "success" ]; then
+            echo "brew-interop-macos failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.brew-oracle-macos.result }}" != "success" ]; then
+            echo "brew-oracle-macos failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.brew-oracle-linux.result }}" != "success" ]; then
+            echo "brew-oracle-linux failed or was skipped"
+            exit 1
+          fi
+          if [ "${{ needs.brew-oracle-linux-source.result }}" != "success" ]; then
+            echo "brew-oracle-linux-source failed or was skipped"
+            exit 1
+          fi
+          echo "Homebrew interoperability jobs completed successfully"
 
   nightly:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
@@ -596,7 +838,6 @@ jobs:
               TOKEN_A: ${{ steps.token_3.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
               TOKEN_B: ${{ steps.token_7.outputs.token || secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
             with: *e2e-retry
-
   bootstrap-linux-host:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 20
@@ -662,7 +903,7 @@ jobs:
           name: mise-windows-latest
           path: target/debug
       - run: ls target\debug
-      - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
+      - run: Add-Content $env:GITHUB_PATH (Join-Path $env:GITHUB_WORKSPACE 'target\debug')
       - uses: ./.github/actions/mise-tools
       - name: e2e
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
@@ -686,9 +927,10 @@ jobs:
       - bootstrap-linux-host
       - windows-unit
       - windows-e2e
-      - brew-formula-macos
-      - brew-formula-linux
-      - brew-formula-linux-source
+      - brew-interop-macos
+      - brew-oracle-macos
+      - brew-oracle-linux
+      - brew-oracle-linux-source
     # Evaluate skipped and failed dependencies, but do not waste a runner when
     # the workflow is cancelled.
     if: ${{ always() && !cancelled() }}
@@ -737,16 +979,20 @@ jobs:
               echo "e2e failed or was skipped"
               exit 1
             fi
-            if [ "${{ needs.brew-formula-macos.result }}" != "success" ]; then
-              echo "brew-formula-macos failed or was skipped"
+            if [ "${{ needs.brew-oracle-macos.result }}" != "success" ]; then
+              echo "brew-oracle-macos failed or was skipped"
               exit 1
             fi
-            if [ "${{ needs.brew-formula-linux.result }}" != "success" ]; then
-              echo "brew-formula-linux failed or was skipped"
+            if [ "${{ needs.brew-interop-macos.result }}" != "success" ]; then
+              echo "brew-interop-macos failed or was skipped"
               exit 1
             fi
-            if [ "${{ needs.brew-formula-linux-source.result }}" != "success" ]; then
-              echo "brew-formula-linux-source failed or was skipped"
+            if [ "${{ needs.brew-oracle-linux.result }}" != "success" ]; then
+              echo "brew-oracle-linux failed or was skipped"
+              exit 1
+            fi
+            if [ "${{ needs.brew-oracle-linux-source.result }}" != "success" ]; then
+              echo "brew-oracle-linux-source failed or was skipped"
               exit 1
             fi
             if [ "${{ needs.bootstrap-linux-host.result }}" != "success" ]; then
@@ -769,9 +1015,10 @@ jobs:
               "${{ needs.bootstrap-linux-host.result }}" \
               "${{ needs.windows-unit.result }}" \
               "${{ needs.windows-e2e.result }}" \
-              "${{ needs.brew-formula-macos.result }}" \
-              "${{ needs.brew-formula-linux.result }}" \
-              "${{ needs.brew-formula-linux-source.result }}"; do
+              "${{ needs.brew-interop-macos.result }}" \
+              "${{ needs.brew-oracle-macos.result }}" \
+              "${{ needs.brew-oracle-linux.result }}" \
+              "${{ needs.brew-oracle-linux-source.result }}"; do
               if [ "$result" != "skipped" ]; then
                 echo "docs-only jobs should be skipped"
                 exit 1

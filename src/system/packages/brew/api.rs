@@ -102,6 +102,12 @@ pub(super) struct Formula {
     pub post_install_steps: Vec<Value>,
     #[serde(default)]
     pub post_install_defined: bool,
+    #[serde(default)]
+    pub version_scheme: u64,
+    #[serde(skip)]
+    pub loaded_from_internal_api: bool,
+    #[serde(skip)]
+    pub internal_api_source: Option<String>,
     /// Homebrew install policy that must be checked before any keg mutation.
     /// Kept grouped so callers cannot accidentally deserialize a policy field
     /// without including it in the common validation boundary.
@@ -183,7 +189,7 @@ pub(super) struct Versions {
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct BottleSpec {
     #[serde(default)]
-    pub rebuild: u32,
+    pub rebuild: u64,
     #[serde(default)]
     pub files: HashMap<String, BottleFile>,
 }
@@ -212,6 +218,14 @@ impl Formula {
     /// and rejects an occupied destination. This preserves user/Homebrew state
     /// until exact typed overwrite ownership exists.
     pub(super) fn validate_install_policy(&self) -> Result<()> {
+        self.validate_install_policy_mode(false)
+    }
+
+    pub(super) fn validate_source_install_policy(&self) -> Result<()> {
+        self.validate_install_policy_mode(true)
+    }
+
+    fn validate_install_policy_mode(&self, source_build: bool) -> Result<()> {
         let policy = &self.install_policy;
         if policy.disabled && lifecycle_policy_is_active(policy.disable_date.as_deref())? {
             let detail = policy_detail(
@@ -229,7 +243,7 @@ impl Formula {
         let unsupported_requirements = policy
             .requirements
             .iter()
-            .filter(|requirement| !requirement.is_satisfied())
+            .filter(|requirement| !requirement.is_satisfied(source_build))
             .collect::<Vec<_>>();
         if !unsupported_requirements.is_empty() {
             let requirements = unsupported_requirements
@@ -349,7 +363,10 @@ fn lifecycle_policy_is_active(date: Option<&str>) -> Result<bool> {
 }
 
 impl FormulaRequirement {
-    fn is_satisfied(&self) -> bool {
+    fn is_satisfied(&self, source_build: bool) -> bool {
+        if !source_build && self.contexts.as_slice() == ["build"] {
+            return true;
+        }
         if cfg!(target_os = "macos")
             && self.name == "macos"
             && self.version.is_none()
@@ -366,11 +383,14 @@ impl FormulaRequirement {
         }
         if !cfg!(target_os = "macos")
             || self.name != "xcode"
-            || self.version.is_some()
             || self.cask.is_some()
             || self.download.is_some()
             || self.contexts.as_slice() != ["build"]
-            || self.specs.as_slice() != ["stable"]
+            || self.specs.is_empty()
+            || !self
+                .specs
+                .iter()
+                .all(|spec| matches!(spec.as_str(), "stable" | "head"))
         {
             return false;
         }
@@ -382,7 +402,15 @@ impl FormulaRequirement {
             .args(["--find", "clang"])
             .output()
             .is_ok_and(|output| output.status.success() && !output.stdout.is_empty());
-        selected && compiler
+        let version = self.version.as_deref().is_none_or(|minimum| {
+            std::process::Command::new("/usr/bin/xcodebuild")
+                .arg("-version")
+                .output()
+                .is_ok_and(|output| {
+                    output.status.success() && xcode_version_satisfies(&output.stdout, minimum)
+                })
+        });
+        selected && compiler && version
     }
 
     fn describe(&self) -> String {
@@ -408,6 +436,35 @@ impl FormulaRequirement {
             format!("{}[{}]", self.name, attributes.join(","))
         }
     }
+}
+
+fn xcode_version_satisfies(output: &[u8], minimum: &str) -> bool {
+    let output = String::from_utf8_lossy(output);
+    let Some(version) = output
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("Xcode "))
+    else {
+        return false;
+    };
+    let parse = |value: &str| -> Option<[u64; 3]> {
+        let parts = value
+            .split('.')
+            .map(str::parse::<u64>)
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .ok()?;
+        if parts.is_empty() || parts.len() > 3 {
+            return None;
+        }
+        Some([
+            parts[0],
+            parts.get(1).copied().unwrap_or(0),
+            parts.get(2).copied().unwrap_or(0),
+        ])
+    };
+    parse(version.trim())
+        .zip(parse(minimum))
+        .is_some_and(|(version, minimum)| version >= minimum)
 }
 
 fn policy_detail(
@@ -493,8 +550,7 @@ struct InternalFormula {
     #[serde(default)]
     revision: u32,
     #[serde(default)]
-    #[serde(rename = "version_scheme")]
-    _version_scheme: u64,
+    version_scheme: u64,
     #[serde(default)]
     aliases: Vec<String>,
     #[serde(default)]
@@ -781,7 +837,7 @@ fn formula_from_internal(
     index: &InternalFormulaIndex,
     name: &str,
     signed: &InternalFormula,
-    _source: &str,
+    source: &str,
 ) -> Result<Formula> {
     validate_formula_name(name)?;
     let mut dependencies = Vec::new();
@@ -825,7 +881,7 @@ fn formula_from_internal(
         bottle.insert(
             "stable".to_string(),
             BottleSpec {
-                rebuild: signed.bottle_rebuild,
+                rebuild: signed.bottle_rebuild.into(),
                 files: HashMap::from([(bottle_tag, file)]),
             },
         );
@@ -884,6 +940,9 @@ fn formula_from_internal(
         tap_metadata_sha256: None,
         post_install_defined: false,
         post_install_steps: signed.post_install_steps.clone(),
+        version_scheme: signed.version_scheme,
+        loaded_from_internal_api: true,
+        internal_api_source: Some(source.to_string()),
         install_policy: FormulaInstallPolicy {
             disabled: disable.is_some(),
             disable_date: disable.and_then(|p| p.date.clone()),
@@ -1646,9 +1705,9 @@ mod tests {
     fn unsupported_requirements_and_pour_predicates_are_rejected() {
         let requirement = formula_with_policy(json!({
             "requirements": [{
-                "name": "xcode",
+                "name": "unsupported",
                 "version": "26.0",
-                "contexts": ["build"],
+                "contexts": ["runtime"],
                 "specs": ["stable"]
             }]
         }));
@@ -1656,7 +1715,7 @@ mod tests {
             .validate_install_policy()
             .unwrap_err()
             .to_string();
-        assert!(error.contains("xcode[version=26.0,contexts=build,specs=stable]"));
+        assert!(error.contains("unsupported[version=26.0,contexts=runtime,specs=stable]"));
 
         let predicate = formula_with_policy(json!({
             "pour_bottle_only_if": "default_prefix"
@@ -1668,6 +1727,29 @@ mod tests {
                 .to_string()
                 .contains("default_prefix")
         );
+    }
+
+    #[test]
+    fn xcode_requirement_uses_reported_numeric_version() {
+        assert!(xcode_version_satisfies(
+            b"Xcode 26.1\nBuild version 17B55\n",
+            "26.0"
+        ));
+        assert!(!xcode_version_satisfies(b"Xcode 25.4\n", "26.0"));
+        assert!(!xcode_version_satisfies(b"CommandLineTools 26.0\n", "26.0"));
+    }
+
+    #[test]
+    fn bottle_policy_ignores_build_only_requirements_but_source_does_not() {
+        let formula = formula_with_policy(json!({
+            "requirements": [{
+                "name": "unsupported",
+                "contexts": ["build"],
+                "specs": ["stable"]
+            }]
+        }));
+        formula.validate_install_policy().unwrap();
+        assert!(formula.validate_source_install_policy().is_err());
     }
 
     #[cfg(target_os = "macos")]

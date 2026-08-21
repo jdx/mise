@@ -75,6 +75,10 @@ within_isolated_env() {
   case "$(realpath "$TEST_SCRIPT")" in
     "$ROOT/e2e/cli/test_system_install_brew_linux" | \
       "$ROOT/e2e/cli/test_system_install_brew_source_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_cask_appdir_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_interop_casks_macos_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_interop_formulae_macos_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_macos_slow" | \
       "$ROOT/e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow")
       brew_oracle_vars+=(
         # Keep GitHub's process-tree identity so a canceled destructive oracle
@@ -82,12 +86,15 @@ within_isolated_env() {
         # capability and is forwarded only to the four oracle entry points.
         RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
         MISE_BREW_ORACLE_DISPOSABLE="${MISE_BREW_ORACLE_DISPOSABLE:-}"
+        MISE_BREW_ORACLE_RESULT_DIR="${MISE_BREW_ORACLE_RESULT_DIR:-}"
         MISE_BREW_ORACLE_RUNNER_TEMP="${MISE_BREW_ORACLE_RUNNER_TEMP:-}"
         MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
         MISE_BREW_ORACLE_BREW_SOURCE="${MISE_BREW_ORACLE_BREW_SOURCE:-}"
         MISE_BREW_ORACLE_HOMEBREW_REPOSITORY="${MISE_BREW_ORACLE_HOMEBREW_REPOSITORY:-}"
         MISE_BREW_ORACLE_SOURCE_PREFIX="${MISE_BREW_ORACLE_SOURCE_PREFIX:-}"
         MISE_BREW_LIFECYCLE_TEST_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
+        MISE_BREW_ORACLE_CORPUS_SHARD="${MISE_BREW_ORACLE_CORPUS_SHARD:-}"
+        MISE_BREW_ORACLE_CORPUS_SHARDS="${MISE_BREW_ORACLE_CORPUS_SHARDS:-}"
         MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:-}"
         MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
         MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}"

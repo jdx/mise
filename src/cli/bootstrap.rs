@@ -2823,8 +2823,8 @@ impl BootstrapStatus {
                         (installed.clone(), "version mismatch", None, true)
                     }
                     #[cfg(unix)]
-                    PackageState::Unavailable { reason } => {
-                        ("".to_string(), "skipped", Some(reason.as_str()), false)
+                    PackageState::Unsupported { reason } => {
+                        ("".to_string(), "unsupported", Some(reason.as_str()), true)
                     }
                 };
                 report.row(

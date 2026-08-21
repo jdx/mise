@@ -13,6 +13,8 @@ esac
 
 # shellcheck source=e2e/cli/brew_oracle_guard.sh
 source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+# shellcheck source=e2e/cli/brew_oracle.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle.sh"
 if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
   source_prefix=${MISE_BREW_ORACLE_SOURCE_PREFIX:-}
   brew_oracle_require_disposable linux-source "$source_prefix"

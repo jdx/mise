@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+
+if [[ $(uname) != Darwin ]] || [[ $(uname -m) != arm64 ]]; then
+  echo "SKIP: downstream cask oracle requires macOS arm64" >&2
+  exit 0
+fi
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+# shellcheck source=e2e/cli/brew_oracle.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle.sh"
+
+shard=${MISE_BREW_ORACLE_CORPUS_SHARD:-}
+shards=${MISE_BREW_ORACLE_CORPUS_SHARDS:-}
+[[ $shard =~ ^[0-9]+$ && $shards =~ ^[1-9][0-9]*$ && $shard -lt $shards ]] ||
+  brew_oracle_fail "valid downstream corpus shard identity is required"
+marker="macos-corpus-casks-$shard"
+test_name="test_system_install_brew_interop_casks_macos_slow-shard-$shard"
+prefix=/opt/homebrew
+brew_oracle_require_disposable "$marker" "$prefix"
+brew_oracle_configure_runtime "$prefix"
+brew=$BREW_ORACLE_BREW
+manifest="${BASH_SOURCE[0]%/*}/brew_interop_macos_packages.tsv"
+
+tokens=()
+versions=()
+digests=()
+index=0
+while read -r kind token version digest; do
+  [[ -n $kind && $kind != \#* ]] || continue
+  [[ $kind == cask ]] || continue
+  if ((index % shards == shard)); then
+    tokens+=("$token")
+    versions+=("$version")
+    digests+=("$digest")
+  fi
+  index=$((index + 1))
+done <"$manifest"
+fixture_count=${#tokens[@]}
+((fixture_count > 0)) || brew_oracle_fail "downstream cask shard has zero fixtures"
+
+current_token=
+cleanup() {
+  if [[ -n $current_token ]]; then
+    "$brew" uninstall --cask "$current_token" --force >/dev/null 2>&1 || true
+  fi
+  brew_oracle_remove_runtime_bridge
+}
+trap cleanup EXIT
+
+validate_native_caskroom() {
+  local room token
+  for room in "$prefix"/Caskroom/*; do
+    [[ -e $room || -L $room ]] || continue
+    token=${room##*/}
+    [[ -d $room && ! -L $room ]] ||
+      brew_oracle_fail "foreign or symlinked Caskroom entry: $token"
+    [[ -d $room/.metadata && ! -L $room/.metadata ]] ||
+      brew_oracle_fail "Caskroom entry has no native metadata: $token"
+    "$brew" list --cask "$token" >/dev/null 2>&1 ||
+      brew_oracle_fail "Caskroom entry is not recognized by pinned Homebrew: $token"
+  done
+}
+
+write_cask_prune_preserve_config() {
+  local excluded=$1 room token
+  printf '[bootstrap.packages]\n' >mise.toml
+  for room in "$prefix"/Caskroom/*; do
+    [[ -e $room || -L $room ]] || continue
+    token=${room##*/}
+    [[ $token != "$excluded" ]] || continue
+    [[ -d $room && ! -L $room && -d $room/.metadata && ! -L $room/.metadata ]] ||
+      brew_oracle_fail "cannot preserve non-native Caskroom entry: $token"
+    "$brew" list --cask "$token" >/dev/null 2>&1 ||
+      brew_oracle_fail "cannot preserve unrecognized Caskroom entry: $token"
+    printf '"brew-cask:%s" = "latest"\n' "$token" >>mise.toml
+  done
+}
+
+snapshot_protected_cask_roots() {
+  local excluded=$1 output=$2 room token
+  : >"$output"
+  for room in "$prefix"/Caskroom/*; do
+    [[ -e $room || -L $room ]] || continue
+    token=${room##*/}
+    [[ $token != "$excluded" ]] || continue
+    printf '%s\t%s\n' "$token" "$("$brew" list --versions --cask "$token")" >>"$output"
+  done
+}
+
+# Validate the complete existing Caskroom before the first uninstall mutates it.
+validate_native_caskroom
+
+# Record and validate every selected root before normalizing this disposable
+# runner to clean Caskroom state. Public artifact conflicts without native
+# metadata remain subject to both producers' fail-closed ownership checks.
+preexisting="$MISE_BREW_ORACLE_RESULT_DIR/preexisting-cask-roots.tsv"
+: >"$preexisting"
+for token in "${tokens[@]}"; do
+  room="$prefix/Caskroom/$token"
+  if "$brew" list --cask "$token" >/dev/null 2>&1; then
+    [[ -d $room && ! -L $room && -d $room/.metadata && ! -L $room/.metadata ]] ||
+      brew_oracle_fail "pre-existing cask is not native Caskroom state: $token"
+    printf '%s\t%s\n' "$token" "$("$brew" list --versions --cask "$token")" \
+      >>"$preexisting"
+  else
+    brew_oracle_require_absent_path "$room" "foreign or stale downstream Caskroom"
+  fi
+done
+for token in "${tokens[@]}"; do
+  if "$brew" list --cask "$token" >/dev/null 2>&1; then
+    "$brew" uninstall --cask --force "$token"
+  fi
+  brew_oracle_require_absent_path "$prefix/Caskroom/$token" \
+    "downstream Caskroom remained after normalization"
+done
+
+for position in "${!tokens[@]}"; do
+  token=${tokens[$position]}
+  current_token=$token
+  room="$prefix/Caskroom/$token"
+  brew_oracle_record_api_fixture \
+    cask "$token" "${versions[$position]}" "${digests[$position]}"
+
+  cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:$token" = "latest"
+EOF
+
+  # Real Homebrew producer, mise consumer and remover.
+  "$brew" install --cask "$token" --yes
+  assert_directory_exists "$room/.metadata"
+  assert_contains "mise bootstrap packages status" "installed"
+  brew_oracle_snapshot \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-$token.snapshot" "caskroom=$room"
+  mise bootstrap packages apply --yes
+  brew_oracle_snapshot \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-after-mise-$token.snapshot" "caskroom=$room"
+  brew_oracle_diff \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-$token.snapshot" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-after-mise-$token.snapshot"
+  protected_before="$MISE_BREW_ORACLE_RESULT_DIR/protected-before-prune-$token.tsv"
+  protected_after="$MISE_BREW_ORACLE_RESULT_DIR/protected-after-prune-$token.tsv"
+  snapshot_protected_cask_roots "$token" "$protected_before"
+  write_cask_prune_preserve_config "$token"
+  mise bootstrap packages prune --manager brew-cask --yes
+  assert_fail "test -e '$room'"
+  assert_fail "'$brew' list --cask '$token'"
+  snapshot_protected_cask_roots "$token" "$protected_after"
+  brew_oracle_diff "$protected_before" "$protected_after"
+
+  # Mise producer, real Homebrew consumer and remover.
+  cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:$token" = "latest"
+EOF
+  mise bootstrap packages apply --yes
+  assert_directory_exists "$room/.metadata"
+  assert_contains "mise bootstrap packages status" "installed"
+  assert_contains "'$brew' list --cask" "$token"
+  assert_succeed "'$brew' info --cask '$token'"
+  brew_oracle_snapshot \
+    "$MISE_BREW_ORACLE_RESULT_DIR/mise-$token.snapshot" "caskroom=$room"
+  brew_oracle_diff \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-$token.snapshot" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/mise-$token.snapshot"
+  snapshot_protected_cask_roots "$token" "$protected_before"
+  "$brew" uninstall --cask "$token" --force
+  assert_fail "test -e '$room'"
+  snapshot_protected_cask_roots "$token" "$protected_after"
+  brew_oracle_diff "$protected_before" "$protected_after"
+  current_token=
+done

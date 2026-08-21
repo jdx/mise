@@ -76,8 +76,9 @@ impl SystemStatus {
                         (installed.clone(), "version mismatch", None)
                     }
                     #[cfg(unix)]
-                    PackageState::Unavailable { reason } => {
-                        ("".to_string(), "skipped", Some(reason.as_str()))
+                    PackageState::Unsupported { reason } => {
+                        any_missing = true;
+                        ("".to_string(), "unsupported", Some(reason.as_str()))
                     }
                 };
                 if self.json {

@@ -84,6 +84,13 @@ struct InstallReceipt {
     installed_on_request: Option<bool>,
     #[serde(default)]
     source: Option<ReceiptSource>,
+    #[serde(default)]
+    runtime_dependencies: Vec<InstalledReceiptDependency>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstalledReceiptDependency {
+    full_name: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -175,11 +182,64 @@ async fn configured_package_closure(configured: &[PackageRequest]) -> Result<Has
     if configured.is_empty() {
         return Ok(HashSet::new());
     }
-    Ok(resolve::resolve_closure_with_taps(configured)
-        .await?
-        .into_iter()
-        .map(|rf| formula_package_name(&rf.formula))
-        .collect())
+    match resolve::resolve_closure_with_taps(configured).await {
+        Ok(closure) => Ok(closure
+            .into_iter()
+            .map(|rf| formula_package_name(&rf.formula))
+            .collect()),
+        Err(resolve_error) => {
+            configured_package_closure_from_installed(configured)?.ok_or(resolve_error)
+        }
+    }
+}
+
+/// A configured formula can disappear from the live API while remaining a
+/// valid installed root. Prune must preserve that root and its authoritative
+/// installed dependency closure instead of requiring mutable remote metadata.
+/// Fall back only when every configured root has a native linked receipt.
+fn configured_package_closure_from_installed(
+    configured: &[PackageRequest],
+) -> Result<Option<HashSet<String>>> {
+    let mut dependencies = BTreeMap::new();
+    for formula in linked_formulae(true)? {
+        let keg = file::desymlink_path(&pour::keg_path(&formula.name, &formula.version));
+        let Some(receipt) = read_receipt(&keg)? else {
+            continue;
+        };
+        dependencies.insert(
+            formula.package_name(),
+            receipt
+                .runtime_dependencies
+                .into_iter()
+                .map(|dependency| dependency.full_name)
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    let mut pending = configured
+        .iter()
+        .map(|request| {
+            request
+                .name
+                .strip_prefix("homebrew/core/")
+                .unwrap_or(&request.name)
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    if pending.iter().any(|name| !dependencies.contains_key(name)) {
+        return Ok(None);
+    }
+
+    let mut keep = HashSet::new();
+    while let Some(name) = pending.pop() {
+        if !keep.insert(name.clone()) {
+            continue;
+        }
+        if let Some(runtime_dependencies) = dependencies.get(&name) {
+            pending.extend(runtime_dependencies.iter().cloned());
+        }
+    }
+    Ok(Some(keep))
 }
 
 fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> {
@@ -260,7 +320,12 @@ fn unlink_and_remove_keg(candidate: &PruneCandidate) -> Result<()> {
     pour::remove_finalization_state_prepared(finalization_removal)?;
     file::remove_all(&candidate.keg)?;
     let rack = prefix::cellar().join(&candidate.name);
-    file::remove_dir(&rack)?;
+    if rack
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_none())
+    {
+        file::remove_dir(&rack)?;
+    }
     Ok(())
 }
 
@@ -724,6 +789,46 @@ mod tests {
     }
 
     #[test]
+    fn installed_receipts_preserve_removed_configured_formula_closure() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "dependency",
+            "1.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "removed-root",
+            "2.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"dependency"}]}"#,
+        )?;
+        let configured = vec![PackageRequest {
+            name: "removed-root".to_string(),
+            version: None,
+            tap_url: None,
+        }];
+
+        assert_eq!(
+            configured_package_closure_from_installed(&configured)?,
+            Some(HashSet::from([
+                "dependency".to_string(),
+                "removed-root".to_string(),
+            ]))
+        );
+
+        let missing = vec![PackageRequest {
+            name: "not-installed".to_string(),
+            version: None,
+            tap_url: None,
+        }];
+        assert_eq!(configured_package_closure_from_installed(&missing)?, None);
+        Ok(())
+    }
+
+    #[test]
     fn unlink_and_remove_keg_removes_links_and_keg() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
@@ -755,6 +860,38 @@ mod tests {
         assert!(tmp.path().join("opt").exists());
         assert!(!keg.exists());
         assert!(!tmp.path().join("Cellar").join("jq").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn unlink_one_version_preserves_nonempty_rack() -> Result<()> {
+        assert!(
+            include_str!("testdata/brew-uninstall-post-state.txt")
+                .contains("present-if-other-version Cellar/jq/1.6")
+        );
+        let _lock = ENV_LOCK.blocking_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let old = write_keg(
+            tmp.path(),
+            "jq",
+            "1.6",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let current = write_keg(
+            tmp.path(),
+            "jq",
+            "1.7",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        unlink_and_remove_keg(&PruneCandidate {
+            name: "jq".to_string(),
+            version: "1.7".to_string(),
+            keg: current.clone(),
+        })?;
+        assert!(old.exists());
+        assert!(!current.exists());
+        assert!(tmp.path().join("Cellar/jq").is_dir());
         Ok(())
     }
 

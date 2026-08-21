@@ -221,10 +221,7 @@ impl Install {
             }
             match mp.manager.installed(&mp.requests).await {
                 Ok(statuses) => {
-                    missing += statuses
-                        .iter()
-                        .filter(|s| !s.state.is_installed() && !s.state.is_unavailable())
-                        .count();
+                    missing += statuses.iter().filter(|s| !s.state.is_installed()).count();
                 }
                 // a transient query failure must not start the 24h throttle
                 Err(_) => all_queries_ok = false,

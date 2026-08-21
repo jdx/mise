@@ -1,40 +1,357 @@
 #!/usr/bin/env bash
 
-# Direct Homebrew metadata tests need a macOS CI runner with network. Keep this
-# out of local runs so it never removes a developer's installed applications.
-if [[ "$(uname)" != "Darwin" ]] || [[ ${CI:-} != "true" ]]; then
+# This oracle is intentionally tied to the disposable arm64 macOS job. An
+# irrelevant platform skips explicitly; an eligible platform without the
+# private capability fails before touching /Applications or Caskroom.
+if [[ $(uname) != Darwin ]] || [[ $(uname -m) != arm64 ]]; then
+  echo "SKIP: brew cask oracle requires macOS arm64" >&2
   exit 0
 fi
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+# shellcheck source=e2e/cli/brew_oracle.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle.sh"
+brew_oracle_require_disposable macos-cask /opt/homebrew
+brew_oracle_configure_runtime /opt/homebrew
+brew=$BREW_ORACLE_BREW
 
 cask_app="/Applications/Hidden Bar.app"
 caskroom="/opt/homebrew/Caskroom/hiddenbar"
+prefix=/opt/homebrew
+hiddenbar_app=$cask_app
+hiddenbar_room=$caskroom
+font_room="$prefix/Caskroom/font-jetbrains-mono"
+ghostty_app=/Applications/Ghostty.app
+ghostty_room="$prefix/Caskroom/ghostty"
+ghostty_targets=(
+  "$ghostty_app"
+  "$prefix/share/man/man1/ghostty.1"
+  "$prefix/share/man/man5/ghostty.5"
+  "$prefix/etc/bash_completion.d/ghostty"
+  "$prefix/share/fish/vendor_completions.d/ghostty.fish"
+  "$prefix/share/zsh/site-functions/_ghostty"
+)
+onepassword_room="$prefix/Caskroom/1password-cli"
+onepassword_targets=(
+  "$prefix/bin/op"
+  "$prefix/etc/bash_completion.d/op"
+  "$prefix/share/fish/vendor_completions.d/op.fish"
+  "$prefix/share/zsh/site-functions/_op"
+)
+codexbar_room="$prefix/Caskroom/codexbar"
+codexbar_targets=(/Applications/CodexBar.app "$prefix/bin/codexbar")
+vlc_room="$prefix/Caskroom/vlc"
+vlc_targets=(/Applications/VLC.app "$prefix/bin/vlc")
+surge_room="$prefix/Caskroom/surge"
+surge_app="/Applications/Surge.app"
+surge_targets=(
+  "$surge_app"
+  "/Applications/Surge Dashboard.app"
+  "$prefix/bin/surge-cli"
+  "$prefix/sbin/surge-dhcpd"
+)
+surge_launchagent="$HOME/Library/LaunchAgents/com.nssurge.surge-mac.helper.plist"
+surge_delete_target="/Library/PrivilegedHelperTools/com.nssurge.surge-mac.helper"
 
-if [[ -e $cask_app ]] || [[ -e $caskroom ]]; then
-  exit 0
+brew_oracle_require_absent_path "$cask_app" "foreign or stale fixture app"
+brew_oracle_require_absent_path "$caskroom" "foreign or stale fixture Caskroom"
+brew_oracle_require_absent_path "$font_room" "foreign or stale font Caskroom"
+brew_oracle_require_absent_path "$ghostty_room" "foreign or stale Ghostty Caskroom"
+for target in "${ghostty_targets[@]}"; do
+  brew_oracle_require_absent_path "$target" "foreign or stale Ghostty artifact"
+done
+for room in "$onepassword_room" "$codexbar_room" "$vlc_room" "$surge_room"; do
+  brew_oracle_require_absent_path "$room" "foreign or stale cask Caskroom"
+done
+for target in "${onepassword_targets[@]}" "${codexbar_targets[@]}" "${vlc_targets[@]}"; do
+  brew_oracle_require_absent_path "$target" "foreign or stale cask artifact"
+done
+for target in "${surge_targets[@]}"; do
+  brew_oracle_require_absent_path "$target" "foreign or stale Surge artifact"
+done
+brew_oracle_require_absent_path "$surge_launchagent" "foreign Surge launch agent"
+brew_oracle_require_absent_path "$surge_delete_target" "foreign Surge helper"
+if find "$HOME/Library/Fonts" -maxdepth 1 -iname 'JetBrainsMono*' -print -quit 2>/dev/null | grep -q .; then
+  brew_oracle_fail "foreign or stale JetBrains Mono font exists"
 fi
 
+brew_oracle_record_api_fixture cask hiddenbar 1.10 \
+  3f0fc95f18e49bdbef7d049d3dd72d15839f888f3db2e3f32322dda58fd7ac33
+brew_oracle_record_api_fixture cask font-jetbrains-mono 2.304 \
+  4aa667b54ee06b86b2473d6cfbedb0900527e918d0be8f89b2026efd69588ca2
+brew_oracle_record_api_fixture cask ghostty 1.3.1 \
+  fd15d22ac65ec6603d446f636014487d07515e296e961600575d39f7e564469b
+brew_oracle_record_api_fixture cask 1password-cli 2.39.0 \
+  208ecd1eb63734ad5d39ac4443bae88b502d281061286d3b454fe02d05a686b5
+brew_oracle_record_api_fixture cask codexbar 0.54.0 \
+  c2b9c4f76cb0ccd9ca04ad67d450b36b150693e42e7d2a32057e2c5cade702a3
+brew_oracle_record_api_fixture cask vlc 3.0.23 \
+  d2006154048a8f146edf3f4827019e42deb7f82e03eb954c82d9d9ea0311dcd5
+brew_oracle_record_api_fixture cask surge 6.8.1,12030,69f4be88db9663476f31a6b264109f0b \
+  0fb4149cc488687d0cb8a720cbaf77dfa13910aa03fee77bc38154cb3148a2e2
+brew_oracle_record_api_fixture cask cloudflare-warp 2026.7.1343.0 \
+  5f6c224977eba11d57c0e421e274013cef5cc5ea033be1bd1149ccb4d5702113
+
+cloudflare_room="$prefix/Caskroom/cloudflare-warp"
+cloudflare_app="/Applications/Cloudflare WARP.app"
+cloudflare_pkg=com.cloudflare.1dot1dot1dot1.macos
+cloudflare_targets=(
+  "$cloudflare_app"
+  /usr/local/bin/warp-cli
+  /usr/local/bin/warp-dex
+  /usr/local/bin/warp-diag
+)
+brew_oracle_require_absent_path "$cloudflare_room" "foreign pkg cask metadata"
+brew_oracle_require_absent_path "$cloudflare_app" "foreign pkg cask app"
+assert_fail "pkgutil --pkg-info com.cloudflare.1dot1dot1dot1.macos"
+
+# Pinned Homebrew's own CaskLock blocks mise before the first artifact or
+# metadata mutation.
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:hiddenbar" = "latest"
+EOF
+lock_ready="$MISE_BREW_ORACLE_RESULT_DIR/hiddenbar-lock-held"
+lock_release="$MISE_BREW_ORACLE_RESULT_DIR/hiddenbar-lock-release"
+lock_holder="$MISE_BREW_ORACLE_RESULT_DIR/homebrew-cask-lock-holder.rb"
+cat <<'RUBY' >"$lock_holder"
+require "lock_file"
+
+CaskLock.new(ARGV.fetch(0)).with_lock do
+    File.write(ARGV.fetch(1), "held\n")
+    1_200.times do
+      break if File.exist?(ARGV.fetch(2))
+
+      sleep 0.1
+    end
+end
+RUBY
+"$brew" ruby "$lock_holder" hiddenbar "$lock_ready" "$lock_release" &
+lock_pid=$!
+wait_for_file "$lock_ready" "Homebrew-compatible lock holder" 30 "$lock_pid"
+assert_fail "mise bootstrap packages apply --yes"
+brew_oracle_require_absent_path "$hiddenbar_app" "artifact created while cask lock was held"
+brew_oracle_require_absent_path "$hiddenbar_room" "metadata created while cask lock was held"
+: >"$lock_release"
+wait "$lock_pid"
+unset lock_pid
+
 cleanup() {
+  if [[ -n ${lock_pid:-} ]]; then
+    kill "$lock_pid" 2>/dev/null || true
+    wait "$lock_pid" 2>/dev/null || true
+  fi
+  "$brew" uninstall --cask hiddenbar >/dev/null 2>&1 || true
+  "$brew" uninstall --cask font-jetbrains-mono >/dev/null 2>&1 || true
+  "$brew" uninstall --cask ghostty >/dev/null 2>&1 || true
+  "$brew" uninstall --cask 1password-cli >/dev/null 2>&1 || true
+  "$brew" uninstall --cask codexbar >/dev/null 2>&1 || true
+  "$brew" uninstall --cask vlc >/dev/null 2>&1 || true
+  "$brew" uninstall --cask surge >/dev/null 2>&1 || true
+  "$brew" uninstall --cask cloudflare-warp >/dev/null 2>&1 || true
   shopt -s nullglob
   local app_work_paths=(
     /Applications/Hidden\ Bar.mise-old-*
     /Applications/Hidden\ Bar.mise-tmp-*
   )
-  chmod -RN "$cask_app" "${app_work_paths[@]}" 2>/dev/null || true
-  rm -rf "$cask_app" "$caskroom" "${app_work_paths[@]}"
+  chmod -RN "$hiddenbar_app" "${app_work_paths[@]}" 2>/dev/null || true
+  rm -rf "$hiddenbar_app" "$hiddenbar_room" "$font_room" "$ghostty_room" \
+    "$onepassword_room" "$codexbar_room" "$vlc_room" "$surge_room" \
+    "$cloudflare_room" \
+    "$surge_launchagent" \
+    "${ghostty_targets[@]}" "${onepassword_targets[@]}" \
+    "${codexbar_targets[@]}" "${vlc_targets[@]}" "${surge_targets[@]}" \
+    "${app_work_paths[@]}"
+  sudo rm -rf "$surge_delete_target"
+  sudo rm -rf "${cloudflare_targets[@]}"
+  brew_oracle_remove_runtime_bridge
 }
 trap cleanup EXIT
 
+snapshot_cask() {
+  local token=$1 output=$2 room="$prefix/Caskroom/$1"
+  output="$MISE_BREW_ORACLE_RESULT_DIR/$output"
+  local roots=("caskroom=$room")
+  if [[ $token == hiddenbar ]]; then
+    roots+=("app=$hiddenbar_app")
+  elif [[ $token == font-jetbrains-mono ]]; then
+    local font
+    while IFS= read -r font; do
+      roots+=("font-$(basename "$font")=$font")
+    done < <(find "$HOME/Library/Fonts" -maxdepth 1 -iname 'JetBrainsMono*' -print | LC_ALL=C sort)
+  elif [[ $token == ghostty ]]; then
+    local target
+    for target in "${ghostty_targets[@]}"; do
+      [[ -e $target || -L $target ]] || return 1
+      roots+=("ghostty-$(basename "$target")=$target")
+    done
+  else
+    local target targets=()
+    case "$token" in
+      1password-cli) targets=("${onepassword_targets[@]}") ;;
+      codexbar) targets=("${codexbar_targets[@]}") ;;
+      vlc) targets=("${vlc_targets[@]}") ;;
+      surge) targets=("${surge_targets[@]}") ;;
+      cloudflare-warp) targets=("${cloudflare_targets[@]}") ;;
+      *) return 1 ;;
+    esac
+    for target in "${targets[@]}"; do
+      [[ -e $target || -L $target ]] || return 1
+      roots+=("$token-$(basename "$target")=$target")
+    done
+  fi
+  brew_oracle_snapshot "$output" "${roots[@]}"
+  if [[ $token == cloudflare-warp ]]; then
+    pkgutil --files "$cloudflare_pkg" | LC_ALL=C sort | sed 's/^/pkg-bom /' \
+      >>"$output"
+  fi
+}
+
+assert_cask_absent() {
+  local token=$1 room="$prefix/Caskroom/$1" target
+  [[ ! -e $room && ! -L $room ]] || return 1
+  case "$token" in
+    hiddenbar) [[ ! -e $hiddenbar_app && ! -L $hiddenbar_app ]] ;;
+    font-jetbrains-mono)
+      ! find "$HOME/Library/Fonts" -maxdepth 1 -iname 'JetBrainsMono*' -print -quit 2>/dev/null | grep -q .
+      ;;
+    ghostty)
+      for target in "${ghostty_targets[@]}"; do
+        [[ ! -e $target && ! -L $target ]] || return 1
+      done
+      ;;
+    1password-cli)
+      for target in "${onepassword_targets[@]}"; do
+        [[ ! -e $target && ! -L $target ]] || return 1
+      done
+      ;;
+    codexbar)
+      for target in "${codexbar_targets[@]}"; do
+        [[ ! -e $target && ! -L $target ]] || return 1
+      done
+      ;;
+    vlc)
+      for target in "${vlc_targets[@]}"; do
+        [[ ! -e $target && ! -L $target ]] || return 1
+      done
+      ;;
+    surge)
+      for target in "${surge_targets[@]}"; do
+        [[ ! -e $target && ! -L $target ]] || return 1
+      done
+      ;;
+    cloudflare-warp)
+      assert_fail "pkgutil --pkg-info '$cloudflare_pkg'"
+      for target in "${cloudflare_targets[@]}"; do
+        [[ ! -e $target && ! -L $target ]] || return 1
+      done
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+oracle_cask() {
+  local token=$1 room="$prefix/Caskroom/$1"
+  cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:$token" = "latest"
+EOF
+
+  "$brew" install --cask "$token" --yes
+  cp "$room/.metadata/INSTALL_RECEIPT.json" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-$token-receipt.json"
+  snapshot_cask "$token" "brew-$token.snapshot"
+  "$brew" uninstall --cask "$token"
+  assert_fail "test -e '$room'"
+
+  mise bootstrap packages apply --yes
+  cp "$room/.metadata/INSTALL_RECEIPT.json" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/mise-$token-receipt.json"
+  snapshot_cask "$token" "mise-$token.snapshot"
+  brew_oracle_diff \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-$token.snapshot" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/mise-$token.snapshot"
+  assert_contains "'$brew' list --cask" "$token"
+  assert_succeed "'$brew' info --cask '$token'"
+  "$brew" upgrade --cask "$token"
+  "$brew" reinstall --cask "$token"
+  snapshot_cask "$token" "brew-reinstalled-$token.snapshot"
+  brew_oracle_diff \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-$token.snapshot" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/brew-reinstalled-$token.snapshot"
+  "$brew" uninstall --cask "$token"
+  assert_fail "test -e '$room'"
+
+  "$brew" install --cask "$token" --yes
+  snapshot_cask "$token" "before-$token-noop.snapshot"
+  assert_contains "mise bootstrap packages status" "installed"
+  local apply_output
+  if ! apply_output=$(mise bootstrap packages apply --yes 2>&1); then
+    printf '%s\n' "$apply_output" \
+      >"$MISE_BREW_ORACLE_RESULT_DIR/$token-mise-noop.txt"
+    printf '%s\n' "$apply_output" >&2
+    return 1
+  fi
+  printf '%s\n' "$apply_output" \
+    >"$MISE_BREW_ORACLE_RESULT_DIR/$token-mise-noop.txt"
+  snapshot_cask "$token" "after-$token-noop.snapshot"
+  brew_oracle_diff \
+    "$MISE_BREW_ORACLE_RESULT_DIR/before-$token-noop.snapshot" \
+    "$MISE_BREW_ORACLE_RESULT_DIR/after-$token-noop.snapshot"
+
+  # Real-Homebrew-created state must also be removable by mise using only the
+  # installed receipt. An empty declarative set drives the real prune path.
+  cat <<'EOF' >mise.toml
+[bootstrap.packages]
+EOF
+  mise bootstrap packages prune --manager brew-cask --yes
+  assert_cask_absent "$token"
+}
+
+oracle_cask hiddenbar
+oracle_cask font-jetbrains-mono
+oracle_cask ghostty
+oracle_cask 1password-cli
+oracle_cask codexbar
+oracle_cask vlc
+oracle_cask surge
+oracle_cask cloudflare-warp
+
+# Surge's installed receipt supplies launchctl and delete teardown.
+# Break only its public app to force a successor install, then prove predecessor
+# actions execute before activation and the app is recreated.
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew-cask:surge" = "latest"
+EOF
+mise bootstrap packages apply --yes
+mkdir -p "$(dirname "$surge_launchagent")"
+printf 'fixture\n' >"$surge_launchagent"
+sudo mkdir -p "$surge_delete_target"
+sudo touch "$surge_delete_target/mise-oracle"
+rm -rf "$surge_app"
+assert_contains "mise bootstrap packages status" "needs repair"
+mise bootstrap packages apply --yes
+assert_directory_exists "$surge_app"
+assert_fail "test -e '$surge_launchagent'"
+assert_fail "test -e '$surge_delete_target'"
+assert_contains "mise bootstrap packages status" "installed"
+"$brew" uninstall --cask surge
+
+# Preserve tap coverage.
 assert_contains "mise bootstrap packages brew tap --dry-run jdx/tap" "~/.config/mise/config.toml"
 mise bootstrap packages brew tap jdx/tap
 assert_contains "cat ~/.config/mise/config.toml" '[bootstrap.brew.taps]'
-assert_contains "cat ~/.config/mise/config.toml" '"jdx/tap" = "https://github.com/jdx/homebrew-tap.git"'
 
+# Removing all native metadata destroys the only ownership proof for the
+# surviving app. mise must fail closed and leave that app untouched. After the
+# disposable fixture explicitly removes the now-foreign app, a fresh install
+# must recreate both the app and complete Homebrew metadata.
 cat <<EOF >mise.toml
 [bootstrap.packages]
 "brew-cask:hiddenbar" = "latest"
 EOF
-
-assert_contains "mise bootstrap packages status" "missing"
 mise bootstrap packages apply --yes
 
 assert_directory_exists "$cask_app"
@@ -47,28 +364,36 @@ assert_contains "mise bootstrap packages status" "installed"
 # Force a reinstall while the existing app contains a delete-protected
 # directory. This exercises the complete app swap and permission-recovery path
 # without downloading the much larger docker-desktop cask.
-chmod +a "everyone deny delete_child" "$cask_app/Contents"
-rm -rf "$caskroom"
+chmod +a "everyone deny delete_child" "$hiddenbar_app/Contents"
+rm -rf "$hiddenbar_room"
 assert_contains "mise bootstrap packages status" "missing"
+if ambiguous_output=$(mise bootstrap packages apply --yes 2>&1); then
+  printf '%s\n' "$ambiguous_output" >&2
+  echo "expected missing-receipt cask repair to fail closed" >&2
+  exit 1
+fi
+printf '%s\n' "$ambiguous_output" \
+  >"$MISE_BREW_ORACLE_RESULT_DIR/hiddenbar-ambiguous-repair.txt"
+grep -F "already exists with ambiguous ownership" \
+  "$MISE_BREW_ORACLE_RESULT_DIR/hiddenbar-ambiguous-repair.txt"
+assert_directory_exists "$hiddenbar_app"
+assert_fail "test -e '$hiddenbar_room'"
+chmod -RN "$hiddenbar_app"
+rm -rf "$hiddenbar_app"
 mise bootstrap packages apply --yes
-
-assert_directory_exists "$cask_app"
-assert_directory_exists "$caskroom"
+assert_directory_exists "$hiddenbar_app"
+assert_directory_exists "$hiddenbar_room/.metadata"
 caskroom_app="$(find "$caskroom" -mindepth 2 -maxdepth 2 -name 'Hidden Bar.app' -type l -print -quit)"
 assert_succeed "test -n '$caskroom_app'"
 assert_succeed "test \"$(readlink "$caskroom_app")\" = '$cask_app'"
 assert_contains "mise bootstrap packages status" "installed"
 assert_fail "find /Applications -maxdepth 1 -name 'Hidden Bar.mise-old-*' -print -quit | grep -q ."
 
-# aube's install docs reference jdx/tap/aube. It currently lives in
-# homebrew/core and the public jdx tap does not publish aube API metadata, so
-# this assertion starts validating the tapped install path as soon as that tap
-# metadata is available without falling back to the brew CLI.
 if curl --retry 3 --retry-delay 1 --max-time 10 -fsSL https://raw.githubusercontent.com/jdx/homebrew-tap/HEAD/api/formula/aube.json >/dev/null 2>&1; then
   cat <<EOF >mise.toml
 [bootstrap.packages]
 "brew:jdx/tap/aube" = "latest"
 EOF
   mise bootstrap packages apply --yes
-  assert_contains "/opt/homebrew/bin/aube --version" "aube"
+  assert_contains "$prefix/bin/aube --version" "aube"
 fi

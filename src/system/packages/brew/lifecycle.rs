@@ -451,6 +451,7 @@ struct LifecycleSymlink {
 #[serde(rename_all = "snake_case")]
 enum LifecyclePermissionKind {
     UserWrite,
+    Exact(u32),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -621,6 +622,15 @@ fn prepare_set_permissions(
     }
     let permission = match raw.permissions.as_str() {
         "u+w" => LifecyclePermissionKind::UserWrite,
+        permissions
+            if permissions.len() == 4
+                && permissions.starts_with('0')
+                && permissions[1..]
+                    .bytes()
+                    .all(|byte| (b'0'..=b'7').contains(&byte)) =>
+        {
+            LifecyclePermissionKind::Exact(u32::from_str_radix(&permissions[1..], 8)?)
+        }
         permissions => bail!("unsupported permissions mode {permissions:?}"),
     };
     Ok(PreparedStep::SetPermissions {
@@ -1074,6 +1084,7 @@ fn formula_name_from_keg(keg: &Path) -> Result<String> {
 
 fn capture_install_identity(
     prepared: &PreparedFormulaLifecycle,
+    reuse_existing_marker: bool,
 ) -> Result<LifecycleInstallIdentity> {
     validate_lifecycle_keg_ancestry(&prepared.keg)?;
     let formula = formula_name_from_keg(&prepared.keg)?;
@@ -1092,6 +1103,40 @@ fn capture_install_identity(
             .join(format!("{}.rb", prepared.formula)),
         "formula snapshot",
     )?;
+    let marker = identity_marker_path(&prepared.keg);
+    if reuse_existing_marker {
+        match marker.symlink_metadata() {
+            Ok(metadata) => {
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    bail!(
+                        "lifecycle incarnation marker is not a regular file: {}",
+                        marker.display()
+                    );
+                }
+                let incarnation = fs::read_to_string(&marker)?;
+                if incarnation.len() != 64
+                    || !incarnation
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    bail!(
+                        "lifecycle incarnation marker is malformed: {}",
+                        marker.display()
+                    );
+                }
+                return Ok(LifecycleInstallIdentity {
+                    formula,
+                    receipt,
+                    formula_snapshot_sha256,
+                    tap_provenance: prepared.tap_provenance.clone(),
+                    identity_nonce: None,
+                    incarnation,
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+    }
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos()
@@ -1732,9 +1777,17 @@ pub(super) async fn install(
     prepared: &PreparedFormulaLifecycle,
     predecessor_keg: Option<&Path>,
 ) -> Result<()> {
+    install_with_identity_marker(prepared, predecessor_keg, false).await
+}
+
+async fn install_with_identity_marker(
+    prepared: &PreparedFormulaLifecycle,
+    predecessor_keg: Option<&Path>,
+    reuse_existing_marker: bool,
+) -> Result<()> {
     let keg = &prepared.keg;
     let state_path = state_path(keg);
-    let install_identity = capture_install_identity(prepared)?;
+    let install_identity = capture_install_identity(prepared, reuse_existing_marker)?;
     write_state(
         &state_path,
         &LifecycleState {
@@ -1860,7 +1913,7 @@ pub(super) async fn repair(
     let path = state_path(keg);
     let Some(mut state) = read_state_if_present(&path)? else {
         validate_legacy_formula_snapshot(prepared)?;
-        install(prepared, None).await?;
+        install_with_identity_marker(prepared, None, true).await?;
         return Ok(true);
     };
     validate_install_identity(keg, &state).wrap_err_with(|| {
@@ -3255,6 +3308,7 @@ fn apply_permission_unchecked(path: &Path, permission: LifecyclePermissionKind) 
     let mut permissions = path.metadata()?.permissions();
     let mode = match permission {
         LifecyclePermissionKind::UserWrite => permissions.mode() | 0o200,
+        LifecyclePermissionKind::Exact(mode) => mode,
     };
     permissions.set_mode(mode);
     fs::set_permissions(path, permissions)?;
@@ -3273,6 +3327,7 @@ fn permission_satisfied(path: &Path, permission: LifecyclePermissionKind) -> Res
     let metadata = path.metadata()?;
     Ok(match permission {
         LifecyclePermissionKind::UserWrite => metadata.permissions().mode() & 0o200 != 0,
+        LifecyclePermissionKind::Exact(mode) => metadata.permissions().mode() & 0o777 == mode,
     })
 }
 
@@ -6744,6 +6799,12 @@ mod tests {
             LifecyclePermissionKind::UserWrite
         )?);
         assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o644);
+        apply_permission_unchecked(&path, LifecyclePermissionKind::Exact(0o755))?;
+        assert!(permission_satisfied(
+            &path,
+            LifecyclePermissionKind::Exact(0o755)
+        )?);
+        assert_eq!(path.metadata()?.permissions().mode() & 0o777, 0o755);
         Ok(())
     }
 
@@ -6854,7 +6915,7 @@ mod tests {
         crate::file::write(&shared_target, "default")?;
         crate::file::write(&link_source, "binary")?;
         let prepared = prepare(&formula(vec![]), &keg)?;
-        let identity = capture_install_identity(&prepared)?;
+        let identity = capture_install_identity(&prepared, false)?;
         let state = LifecycleState {
             complete: true,
             phase: LifecyclePhase::Complete,
@@ -6957,7 +7018,7 @@ mod tests {
         let state = LifecycleState {
             complete: true,
             phase: LifecyclePhase::Complete,
-            install_identity: Some(capture_install_identity(&prepared)?),
+            install_identity: Some(capture_install_identity(&prepared, false)?),
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],
@@ -7003,13 +7064,40 @@ mod tests {
             r#"{"homebrew_version":"6.0.17 (mise)","source":{"versions":{"stable":"1"},"tap":"homebrew/core"}}"#,
         )?;
 
-        assert!(capture_install_identity(&prepare(&formula(vec![]), &keg)?).is_err());
+        assert!(capture_install_identity(&prepare(&formula(vec![]), &keg)?, false).is_err());
         assert_eq!(crate::file::read_to_string(external)?, "preserve");
         assert!(
             identity_marker_path(&keg)
                 .symlink_metadata()?
                 .file_type()
                 .is_symlink()
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_repair_reuses_valid_existing_incarnation() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let prefix = crate::file::desymlink_path(&tmp.path().join("prefix"));
+        let mut env = crate::test::EnvVarGuard::new();
+        env.set("MISE_SYSTEM_BREW_PREFIX", &prefix);
+        let keg = prefix.join("Cellar/openssl@3/1");
+        let snapshot = keg.join(".brew/openssl@3.rb");
+        crate::file::create_dir_all(snapshot.parent().unwrap())?;
+        crate::file::write(&snapshot, "class OpensslAT3; end")?;
+        crate::file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            r#"{"homebrew_version":"6.0.17 (mise)","source":{"versions":{"stable":"1"},"tap":"homebrew/core"}}"#,
+        )?;
+        let prepared = prepare(&formula(vec![]), &keg)?;
+        let created = capture_install_identity(&prepared, false)?;
+        let reused = capture_install_identity(&prepared, true)?;
+        assert_eq!(reused.incarnation, created.incarnation);
+        assert_eq!(reused.receipt, created.receipt);
+        assert_eq!(
+            reused.formula_snapshot_sha256,
+            created.formula_snapshot_sha256
         );
         Ok(())
     }
@@ -7520,7 +7608,7 @@ mod tests {
         let state = LifecycleState {
             complete: true,
             phase: LifecyclePhase::Complete,
-            install_identity: Some(capture_install_identity(&prepared)?),
+            install_identity: Some(capture_install_identity(&prepared, false)?),
             shared_state: vec![],
             symlinks: vec![],
             required_paths: vec![],

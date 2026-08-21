@@ -4,8 +4,27 @@
 # pinned-image checks; this guard proves the mutation authority and target.
 
 brew_oracle_fail() {
-  echo "brew formula test safety check failed: $*" >&2
+  echo "brew interoperability test safety check failed: $*" >&2
   return 1
+}
+
+brew_oracle_prepare_homebrew_reference() {
+  local repository=$1 release=$2 expected_sha=$3 actual_sha
+
+  [[ $repository == /* && ! -e $repository && $release =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
+    brew_oracle_fail "invalid Homebrew reference target or release" || return 1
+  [[ $expected_sha =~ ^[0-9a-f]{40}$ ]] ||
+    brew_oracle_fail "exact Homebrew reference SHA is required" || return 1
+
+  git -c init.templateDir= init --quiet "$repository" || return 1
+  git -C "$repository" config core.hooksPath /dev/null || return 1
+  git -C "$repository" remote add origin https://github.com/Homebrew/brew.git || return 1
+  git -C "$repository" fetch --quiet --depth=1 origin \
+    "refs/tags/$release:refs/tags/$release" || return 1
+  actual_sha=$(git -C "$repository" rev-parse "refs/tags/$release^{commit}") || return 1
+  [[ $actual_sha == "$expected_sha" ]] ||
+    brew_oracle_fail "Homebrew tag does not match pinned SHA" || return 1
+  git -C "$repository" checkout --quiet --detach "$expected_sha" || return 1
 }
 
 brew_oracle_require_disposable() {
@@ -33,7 +52,13 @@ brew_oracle_require_disposable() {
     brew_oracle_fail "non-allowlisted CI state reached destructive test" || return 1
 
   case "$test_name:$expected_prefix" in
-    macos-formula-lifecycle:/opt/homebrew | linux-formula:/home/linuxbrew/.linuxbrew) ;;
+    macos-cask:/opt/homebrew | \
+      macos-cask-appdir:/opt/homebrew | \
+      macos-gcloud-cli:/opt/homebrew | \
+      macos-corpus-casks-[01]:/opt/homebrew | \
+      macos-corpus-formulae-[01]:/opt/homebrew | \
+      macos-formula-lifecycle:/opt/homebrew | \
+      linux-formula:/home/linuxbrew/.linuxbrew) ;;
     linux-source:*)
       runner_real=$(realpath "$MISE_BREW_ORACLE_RUNNER_TEMP") || return 1
       case "/$expected_prefix/" in

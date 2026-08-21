@@ -171,12 +171,12 @@ declarative cleanup command, similar in spirit to
 [Homebrew Bundle cleanup](https://docs.brew.sh/Manpage), not the old upstream
 `brew prune` command, which Homebrew removed.
 
-`mise bootstrap packages prune --manager brew-cask` removes only mise-owned
-direct artifacts backed by a current install-time receipt and unchanged content
-fingerprints. It skips older receipts, Homebrew-owned casks, pkg and command
-wrapper artifacts, casks with lifecycle actions, changed or shared targets,
-and incomplete transactions. Skips include a reason, and `zap` metadata is
-never applied.
+`mise bootstrap packages prune --manager brew-cask` removes supported casks
+installed by either mise or Homebrew from the installed version's native
+receipt. It preflights artifact ownership and the complete recorded teardown
+plan before mutation. Unknown actions, malformed receipts, foreign or changed
+targets, unsupported pkg/BOM state, and incomplete transactions fail closed;
+`zap` metadata is never applied implicitly.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available

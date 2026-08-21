@@ -265,13 +265,18 @@ pub(super) async fn fetch_bottle(
 pub(super) async fn fetch_oci_bottle_metadata(
     name: &str,
     pkg_version: &str,
-    rebuild: u32,
+    rebuild: u64,
     tag: &str,
     bottle: &BottleFile,
 ) -> Result<Option<OciBottleMetadata>> {
     let Some((registry, _)) = bottle.url.split_once("/blobs/") else {
+        // Non-OCI third-party bottles carry their original receipt inside the
+        // verified archive. The pour path derives truthful facts from it.
         return Ok(None);
     };
+    // Homebrew publishes a distinct OCI index for every bottle rebuild. The
+    // keg version does not carry this suffix: manifest tags use `version-N`,
+    // while their platform descriptors use `version.tag.N`.
     let manifest_version = manifest_version_rebuild(pkg_version, rebuild);
     let url = format!("{registry}/manifests/{manifest_version}");
     let mut headers = HeaderMap::new();
@@ -290,7 +295,7 @@ pub(super) async fn fetch_oci_bottle_metadata(
     oci_metadata_from_index(name, pkg_version, rebuild, tag, &bottle.sha256, &index).map(Some)
 }
 
-fn manifest_version_rebuild(pkg_version: &str, rebuild: u32) -> String {
+fn manifest_version_rebuild(pkg_version: &str, rebuild: u64) -> String {
     if rebuild == 0 {
         pkg_version.to_string()
     } else {
@@ -301,7 +306,7 @@ fn manifest_version_rebuild(pkg_version: &str, rebuild: u32) -> String {
 fn oci_metadata_from_index(
     name: &str,
     pkg_version: &str,
-    rebuild: u32,
+    rebuild: u64,
     tag: &str,
     bottle_sha256: &str,
     index: &Value,
@@ -410,33 +415,57 @@ mod tests {
         let index = serde_json::json!({
             "manifests": [{
                 "annotations": {
-                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe.1",
+                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe",
                     "sh.brew.bottle.digest": "abc123",
                     "sh.brew.tab": "{\"compiler\":\"clang\"}"
                 }
             }]
         });
         let metadata =
-            oci_metadata_from_index("foo", "1.0", 1, "arm64_tahoe", "abc123", &index).unwrap();
+            oci_metadata_from_index("foo", "1.0", 0, "arm64_tahoe", "abc123", &index).unwrap();
         assert_eq!(metadata.tab["compiler"], "clang");
         assert!(metadata.sbom_supplement.is_none());
     }
 
     #[test]
-    fn oci_metadata_rejects_matching_tag_with_wrong_bottle_digest() {
+    fn oci_bottle_rebuild_selects_exact_digest_bound_descriptor() {
+        let index = serde_json::json!({
+            "manifests": [
+                {
+                    "annotations": {
+                        "org.opencontainers.image.ref.name": "1.0.arm64_tahoe.1",
+                        "sh.brew.bottle.digest": "stale",
+                        "sh.brew.tab": "{\"compiler\":\"stale\"}"
+                    }
+                },
+                {
+                    "annotations": {
+                        "org.opencontainers.image.ref.name": "1.0.arm64_tahoe.1",
+                        "sh.brew.bottle.digest": "current",
+                        "sh.brew.tab": "{\"compiler\":\"current\"}"
+                    }
+                }
+            ]
+        });
+        let metadata =
+            oci_metadata_from_index("foo", "1.0", 1, "arm64_tahoe", "current", &index).unwrap();
+        assert_eq!(manifest_version_rebuild("1.0", 1), "1.0-1");
+        assert_eq!(metadata.tab["compiler"], "current");
+    }
+
+    #[test]
+    fn oci_descriptor_identity_mismatch_fails_closed() {
         let index = serde_json::json!({
             "manifests": [{
                 "annotations": {
-                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe",
-                    "sh.brew.bottle.digest": "different-bottle",
-                    "sh.brew.tab": "{}"
+                    "org.opencontainers.image.ref.name": "1.0.arm64_tahoe.1",
+                    "sh.brew.bottle.digest": "stale",
+                    "sh.brew.tab": "{\"compiler\":\"stale\"}"
                 }
             }]
         });
-
         let error =
-            oci_metadata_from_index("foo", "1.0", 0, "arm64_tahoe", "expected-bottle", &index)
-                .unwrap_err();
+            oci_metadata_from_index("foo", "1.0", 1, "arm64_tahoe", "current", &index).unwrap_err();
         assert!(error.downcast_ref::<DescriptorIdentityMiss>().is_some());
     }
 

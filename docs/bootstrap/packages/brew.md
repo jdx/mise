@@ -20,32 +20,27 @@ bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
 `brew` for homebrew/core formulae.
 
-Third-party taps are supported directly when the tap publishes Homebrew API
-metadata (`api/formula/<name>.json` or `api/cask/<token>.json`). Use the same
-fully-qualified name you would pass to Homebrew:
+Third-party tap formulae and casks are currently rejected. Their generated API
+metadata supplies both an artifact URL and its checksum, so a compromised tap
+can substitute both without an independent identity check. Official
+`homebrew/core` and `homebrew/cask` metadata is accepted only after verification
+against Homebrew's signed internal package index. Install third-party tap
+packages with Homebrew itself until the tap exposes an independently
+authenticated artifact identity.
 
-```toml
-[bootstrap.packages]
-"brew:railwaycat/emacsmacport/emacs-mac" = "latest"
-"brew-cask:owner/tap/app" = "latest"
-```
-
-For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
-`[plugins]`: the key is the tap name and the value is the GitHub git URL.
+Tap sources may still be recorded for Homebrew-compatible configuration. This
+mirrors `[plugins]`: the key is the tap name and the value is the GitHub git URL.
 
 ```toml
 [bootstrap.brew.taps]
 "acme/tools" = "https://github.com/acme/homebrew-tools.git"
 
-[bootstrap.packages]
-"brew:acme/tools/widget" = "latest"
-"brew-cask:acme/tools/widget-app" = "latest"
 ```
 
 `mise bootstrap packages brew tap` and `mise bootstrap packages brew untap`
 manage `[bootstrap.brew.taps]` in `mise.toml`; they do not mutate a Homebrew
-installation. Non-GitHub taps are not currently supported because mise needs
-direct raw access to the generated API metadata.
+installation. Recording a tap does not make its unauthenticated packages
+installable through mise.
 
 ```sh
 mise bootstrap packages brew tap railwaycat/emacsmacport
@@ -55,13 +50,17 @@ mise bootstrap packages brew untap acme/tools
 
 ## Casks
 
-Casks use the `brew-cask:` manager. mise fetches cask metadata directly from
-the Homebrew cask API (or from tap API metadata), downloads the artifact,
-verifies its sha256 when the cask provides one, extracts the archive, and
+Casks use the `brew-cask:` manager. mise verifies official cask metadata from
+Homebrew's signed internal package index, downloads the artifact,
+requires and verifies its sha256, extracts the archive, and
 installs app bundles into `/Applications` while recording the version under
 `<prefix>/Caskroom`. Like Homebrew, mise moves each app bundle into
 `/Applications` and leaves a symlink at its versioned Caskroom path instead of
 retaining a second copy of the application.
+
+Casks that declare `sha256 :no_check` or use a Git/VCS payload are rejected
+before download or package-state mutation. Homebrew's signed index does not bind
+those payloads to immutable bytes, so mise cannot install them safely.
 
 ```toml
 [bootstrap.packages]
@@ -167,7 +166,7 @@ installed into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
 "brew-cask:font-heavy-data-nerd-font" = "latest"
 ```
 
-Other Linux casks are reported as unavailable and skipped when they come from
+Other Linux casks are skipped by `apply` when they come implicitly from
 `[bootstrap.packages]`, allowing macOS and Linux to share a package list. An
 explicit request such as `mise bootstrap packages apply brew-cask:firefox`
 still fails with a clear unsupported-platform error. You can also mark macOS
@@ -204,13 +203,13 @@ choices, services, unsupported hook DSL, unsupported structured lifecycle
 steps, or other cask artifact types fail with a clear unsupported artifact
 error instead of delegating to Homebrew.
 
-Direct cask pours remain mise-owned. Their completed state is recorded in
-`.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
-receipts. If Homebrew metadata already exists for a cask, mise preserves it and
-fails before mutation rather than taking over Homebrew's lifecycle state.
-Status uses recorded installation facts rather than reconstructing them from a
-newer cask definition; missing or unknown receipts and pending transactions are
-reported as unhealthy so the next apply can reconcile them.
+Direct cask pours write Homebrew-compatible `.metadata/INSTALL_RECEIPT.json`,
+`config.json`, and the installed cask snapshot alongside mise's private
+transaction and ownership records. Homebrew can therefore inspect, reinstall,
+upgrade, or uninstall a mise-produced cask. mise likewise reads native Homebrew
+metadata and validates its recorded artifacts before adopting, repairing, or
+removing the cask. Missing, malformed, foreign, or incomplete ownership state
+fails closed before mutation.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
@@ -300,23 +299,12 @@ This command is mise's declarative cleanup for bootstrap packages, similar to
 `brew prune`, which Homebrew removed in favor of cleanup commands.
 
 `mise bootstrap packages prune --manager brew-cask` applies the same merged
-config model to direct cask artifacts, with a deliberately narrower ownership
-boundary. A cask is removed only when its install-time `.mise-cask.toml`
-receipt explicitly marks it safe to prune and every recorded target still has
-the exact content fingerprint mise recorded after installation. The command
-removes those targets and the cask's Caskroom entry; `--dry-run` previews the
-plan and `--yes` skips confirmation. Adopted and self-updating apps are tracked
-without a duplicate Caskroom bundle, so mise cannot prove that a later bundle
-at the same destination is still the one it owns. These metadata-only apps are
-therefore never removed by prune.
-
-Casks installed before their receipt included prune metadata are skipped until
-a later upgrade or reinstall refreshes the receipt. Casks with pkg or command
-wrapper artifacts, install or uninstall lifecycle actions, pending
-transactions, Homebrew `.metadata`, changed targets, or targets shared with
-another mise cask are also skipped with a reason. Prune never runs `zap`
-metadata and never reconstructs historical uninstall behavior from the current
-Homebrew API.
+config model to casks installed by either engine. It derives teardown only from
+the installed native receipt, then preflights the complete recorded ownership
+and uninstall plan before mutation. Malformed receipts, unknown actions,
+foreign or changed targets, unsupported pkg/BOM state, shared targets, and
+incomplete transactions fail closed. `--dry-run` previews the plan and `--yes`
+skips confirmation. Prune never applies `zap` metadata implicitly.
 
 ## How pouring works
 
@@ -393,17 +381,14 @@ operation.
 
 ## Limitations
 
-- **Cask artifact coverage is intentionally narrow.** On macOS, `brew-cask`
-  supports app bundles, binary artifacts, font artifacts, and simple pkg
-  installers from dmg and common archive formats. On Linux, it supports
-  font-only casks without lifecycle hooks or structured `preflight_steps` or
-  `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
-  IDs, and pkg installers with custom choices fail explicitly.
+- **Cask artifact coverage is fail-closed.** The supported artifacts and
+  lifecycle operations are listed above. Unknown artifact fields, unsupported
+  hook operations, unsafe external mutations, and incomplete uninstall facts
+  fail before mutation.
 - **`brew services` is not implemented.**
-- **Cask import is not implemented.** Cask prune is limited to mise-owned direct
-  artifacts whose install-time receipt proves they can be removed safely. Pkg
-  artifacts and casks with lifecycle actions are skipped until their uninstall
-  semantics are supported.
+- **Cask import is not implemented.** Native Homebrew casks are recognized and
+  can be managed from config, but there is no command that writes all installed
+  casks into `[bootstrap.packages]`.
 - **Source builds cover the common formula shapes.** mise's formula shim
   implements the widely-used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail

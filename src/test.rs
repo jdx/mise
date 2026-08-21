@@ -47,6 +47,13 @@ fn init() {
     env::set_var("MISE_STATE_DIR", env::HOME.join("state"));
     env::set_var("MISE_USE_TOML", "0");
     env::set_var("MISE_YES", "1");
+    // A unit test may re-exec this test binary to prove process-level behavior.
+    // The parent already initialized these shared fixtures; deleting its cwd
+    // from the child leaves the parent in an unlinked directory and poisons all
+    // later tests.
+    if env::var("MISE_TEST_PRESERVE_FIXTURE").is_ok() {
+        return;
+    }
     file::remove_all(&*env::HOME.join("cwd")).unwrap();
     file::create_dir_all(&*env::HOME.join("cwd").join(".mise").join("tasks")).unwrap();
     env::set_current_dir(env::HOME.join("cwd")).unwrap();

@@ -837,7 +837,7 @@ pub(super) async fn build(
 ) -> Result<()> {
     let formula = &rf.formula;
     let name = &formula.name;
-    pour::validate_formula_install_policy(formula)?;
+    formula.validate_source_install_policy()?;
     let pkg_version = formula.pkg_version()?;
     check_buildable(formula)?;
     let keg = pour::keg_path(name, &pkg_version);
@@ -1005,7 +1005,7 @@ pub(super) async fn build(
         Ok(pour::FormulaInstallProvenance::SourceBuild {
             formula_snapshot,
             compiler: source_compiler()?,
-            built_on: native_build_system_info()?,
+            built_on: super::receipt::native_build_system_info()?,
         })
     }
     .await;
@@ -1284,7 +1284,13 @@ fn source_compiler() -> Result<String> {
         bail!("cannot determine source-build compiler")
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    let version = command_output("cc", &["-dumpfullversion", "-dumpversion"]);
+    let version = std::process::Command::new("cc")
+        .args(["-dumpfullversion", "-dumpversion"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        .filter(|version| !version.is_empty());
     parse_source_compiler(&text, version.as_deref())
 }
 
@@ -1304,46 +1310,6 @@ fn parse_source_compiler(version_output: &str, dumped_version: Option<&str>) -> 
         return Ok(format!("gcc-{major}"));
     }
     bail!("unrecognized source-build compiler")
-}
-
-fn native_build_system_info() -> Result<serde_json::Value> {
-    let os = if cfg!(target_os = "macos") {
-        "macOS"
-    } else {
-        "Linux"
-    };
-    let os_version = if cfg!(target_os = "macos") {
-        command_output("/usr/bin/sw_vers", &["-productVersion"])
-    } else {
-        std::fs::read_to_string("/etc/os-release")
-            .ok()
-            .and_then(|contents| {
-                contents.lines().find_map(|line| {
-                    line.strip_prefix("PRETTY_NAME=")
-                        .map(|value| value.trim_matches('"').to_string())
-                })
-            })
-    }
-    .ok_or_else(|| eyre::eyre!("cannot determine source-build operating system version"))?;
-    let cpu_family = command_output("uname", &["-m"])
-        .ok_or_else(|| eyre::eyre!("cannot determine source-build CPU family"))?;
-    Ok(serde_json::json!({
-        "os": os,
-        "os_version": os_version,
-        "cpu_family": cpu_family,
-    }))
-}
-
-fn command_output(program: &str, args: &[&str]) -> Option<String> {
-    let output = std::process::Command::new(program)
-        .args(args)
-        .output()
-        .ok()?;
-    output
-        .status
-        .success()
-        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .filter(|value| !value.is_empty())
 }
 
 /// Ensure a mise-managed ruby is installed (precompiled by default) and
@@ -1810,6 +1776,9 @@ mod tests {
             tap_metadata_sha256: None,
             post_install_steps: vec![],
             post_install_defined: false,
+            version_scheme: 0,
+            loaded_from_internal_api: false,
+            internal_api_source: None,
             install_policy: Default::default(),
         }
     }

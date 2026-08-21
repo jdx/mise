@@ -11,6 +11,7 @@ use super::api::BottleFile;
 use super::fetch::{OciBottleMetadata, VerifiedArtifact};
 use super::lifecycle;
 use super::prefix;
+use super::receipt;
 use super::relocate;
 use super::resolve::ResolvedFormula;
 use crate::file::{ExtractOptions, ExtractionFormat};
@@ -23,7 +24,6 @@ use crate::ui::progress_report::SingleReport;
 pub(super) const LINK_DIRS: &[&str] = &["bin", "sbin", "include", "lib", "share", "Frameworks"];
 const KEG_ONLY_MARKER: &str = ".mise-keg-only";
 const FINALIZATION_INCARNATION_MARKER: &str = ".brew/.mise-finalization-incarnation";
-const EMULATED_BREW_VERSION: &str = "6.0.17";
 
 #[cfg(test)]
 struct RecordRepair {
@@ -46,24 +46,73 @@ pub(super) enum FormulaInstallProvenance {
     SourceBuild {
         formula_snapshot: PathBuf,
         compiler: String,
-        built_on: Value,
+        built_on: receipt::BuiltOn,
     },
 }
 
 #[derive(Clone, Debug, Deserialize)]
 struct BottleFacts {
     #[serde(default)]
-    changed_files: Vec<String>,
+    changed_files: Option<Vec<String>>,
     source_modified_time: u64,
     compiler: String,
     #[serde(default)]
-    runtime_dependencies: Vec<Value>,
+    runtime_dependencies: Vec<receipt::RuntimeDependency>,
     #[serde(default)]
-    built_on: Option<Value>,
+    built_on: Option<receipt::BuiltOn>,
     #[serde(default)]
     poured_from_bottle: Option<bool>,
     #[serde(default)]
     source: Option<Value>,
+}
+
+fn formula_receipt_source(
+    rf: &ResolvedFormula,
+    bottle_source: Option<&Value>,
+) -> receipt::FormulaSource {
+    let mut source_extra = bottle_source
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut versions_extra = source_extra
+        .remove("versions")
+        .and_then(|versions| versions.as_object().cloned())
+        .unwrap_or_default();
+    let head = versions_extra
+        .remove("head")
+        .and_then(|head| head.as_str().map(str::to_string));
+    let compatibility_version = versions_extra
+        .remove("compatibility_version")
+        .and_then(|version| version.as_str().map(str::to_string));
+    versions_extra.remove("stable");
+    versions_extra.remove("version_scheme");
+    source_extra.remove("spec");
+    source_extra.remove("path");
+    source_extra.remove("tap_git_head");
+    source_extra.remove("tap");
+
+    let tap = rf
+        .formula
+        .tap
+        .clone()
+        .unwrap_or_else(|| "homebrew/core".to_string());
+    let tap_git_head = (tap != "homebrew/core")
+        .then(|| rf.formula.tap_git_head.clone())
+        .flatten();
+    receipt::FormulaSource {
+        spec: "stable".to_string(),
+        versions: receipt::FormulaVersions {
+            stable: rf.formula.versions.stable.clone(),
+            head,
+            version_scheme: rf.formula.version_scheme,
+            compatibility_version,
+            extra: versions_extra,
+        },
+        path: rf.formula.internal_api_source.clone(),
+        tap_git_head,
+        tap,
+        extra: source_extra,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -503,7 +552,7 @@ fn formula_health(
                 reasons.push("linked-keg record is missing or ambiguously owned".into());
             }
         }
-        match metadata_is_real.then(|| plan_public_topology(name, keg, false)) {
+        match metadata_is_real.then(|| plan_public_topology(name, keg, false, !mise_owned)) {
             None => {}
             Some(Ok(repairs)) if !repairs.is_empty() => {
                 kind = max_health(kind, FormulaHealthKind::Repairable);
@@ -977,7 +1026,7 @@ fn preflight_topology_repair(
         )?);
     }
     if !keg_only {
-        repairs.extend(plan_public_topology(name, keg, false)?);
+        repairs.extend(plan_public_topology(name, keg, false, false)?);
     }
     Ok(repairs)
 }
@@ -1141,6 +1190,7 @@ fn plan_public_topology(
     name: &str,
     keg: &Path,
     allow_replacement: bool,
+    native_observation: bool,
 ) -> Result<Vec<TopologyRepairLink>> {
     let mut repairs = vec![];
     for root_name in LINK_DIRS {
@@ -1160,6 +1210,7 @@ fn plan_public_topology(
             root_name,
             keg,
             allow_replacement,
+            native_observation,
             repairs: &mut repairs,
         }
         .plan_directory(&source, &destination, Path::new(""), KegLinkPolicy::Mkpath)?;
@@ -1172,6 +1223,7 @@ struct PublicTopologyPlanner<'a> {
     root_name: &'a str,
     keg: &'a Path,
     allow_replacement: bool,
+    native_observation: bool,
     repairs: &'a mut Vec<TopologyRepairLink>,
 }
 
@@ -1283,6 +1335,9 @@ impl PublicTopologyPlanner<'_> {
                 continue;
             }
             let operation = if policy == KegLinkPolicy::Info {
+                if self.native_observation {
+                    continue;
+                }
                 let installer = install_info_executable()?;
                 let index = installer
                     .as_ref()
@@ -1872,9 +1927,13 @@ fn validate_bottle_provenance(
             rf.formula.name
         );
     }
-    if let Some(source) = &facts.source {
-        let actual = source.pointer("/versions/stable").and_then(Value::as_str);
-        if actual != rf.formula.versions.stable.as_deref() {
+    let receipt_version = facts
+        .source
+        .as_ref()
+        .and_then(|source| source.pointer("/versions/stable"))
+        .and_then(Value::as_str);
+    match receipt_version {
+        Some(actual) if Some(actual) != rf.formula.versions.stable.as_deref() => {
             bail!(
                 "brew:{}: {kind} receipt version {:?} does not match formula version {:?}",
                 rf.formula.name,
@@ -1882,11 +1941,13 @@ fn validate_bottle_provenance(
                 rf.formula.versions.stable
             );
         }
-    } else if require_receipt_identity {
-        bail!(
-            "brew:{}: archive-bottle receipt has no source version identity",
-            rf.formula.name
-        );
+        None if require_receipt_identity => {
+            bail!(
+                "brew:{}: archive-bottle receipt has no source version identity",
+                rf.formula.name
+            );
+        }
+        Some(_) | None => {}
     }
     if let Some(sbom) = sbom {
         let identity_matches =
@@ -3612,25 +3673,7 @@ pub(super) fn write_receipt(
     require_real_directory(&keg.join(".brew"), "formula metadata directory")?;
     require_regular_file_or_absent(&keg.join("INSTALL_RECEIPT.json"), "formula receipt")?;
     require_regular_file_or_absent(&keg.join("sbom.spdx.json"), "formula SBOM")?;
-    let derived_runtime_dependencies: Vec<Value> = closure
-        .iter()
-        .filter(|other| {
-            rf.formula
-                .dependencies_for(tag)
-                .iter()
-                .any(|d| d == &other.formula.name || other.formula.aliases.contains(d))
-        })
-        .filter_map(|dep| {
-            let pkg_version = dep.formula.pkg_version().ok()?;
-            Some(json!({
-                "full_name": dep.formula.name,
-                "version": dep.formula.versions.stable,
-                "revision": dep.formula.revision,
-                "pkg_version": pkg_version,
-                "declared_directly": true,
-            }))
-        })
-        .collect();
+    let resolved_runtime_dependencies = resolved_runtime_dependencies(rf, tag, closure)?;
     let relocated_files: Vec<String> = report
         .changed_files
         .iter()
@@ -3639,15 +3682,21 @@ pub(super) fn write_receipt(
         .collect();
     let (poured_from_bottle, facts) = match provenance {
         FormulaInstallProvenance::OciBottle { tab, .. }
-        | FormulaInstallProvenance::ArchiveBottle { tab, .. } => (
-            true,
-            serde_json::from_value::<BottleFacts>(tab.clone()).wrap_err_with(|| {
-                format!(
-                    "brew:{}: bottle receipt facts are incomplete",
-                    rf.formula.name
-                )
-            })?,
-        ),
+        | FormulaInstallProvenance::ArchiveBottle { tab, .. } => {
+            let mut facts =
+                serde_json::from_value::<BottleFacts>(tab.clone()).wrap_err_with(|| {
+                    format!(
+                        "brew:{}: bottle receipt facts are incomplete",
+                        rf.formula.name
+                    )
+                })?;
+            // Bottle annotations are authoritative build-time minimums, not
+            // the installed tab. Homebrew rewrites this list from the current
+            // resolved formula graph after pouring so newly added transitive
+            // dependencies are represented too.
+            facts.runtime_dependencies = resolved_runtime_dependencies.clone();
+            (true, facts)
+        }
         FormulaInstallProvenance::SourceBuild {
             formula_snapshot,
             compiler,
@@ -3673,10 +3722,10 @@ pub(super) fn write_receipt(
             (
                 false,
                 BottleFacts {
-                    changed_files: relocated_files,
+                    changed_files: Some(relocated_files),
                     source_modified_time,
                     compiler: compiler.clone(),
-                    runtime_dependencies: derived_runtime_dependencies,
+                    runtime_dependencies: resolved_runtime_dependencies,
                     built_on: Some(built_on.clone()),
                     poured_from_bottle: Some(false),
                     source: None,
@@ -3687,41 +3736,33 @@ pub(super) fn write_receipt(
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
-    let receipt = json!({
-        "homebrew_version": format!("{EMULATED_BREW_VERSION} (mise)"),
-        "used_options": [],
-        "unused_options": [],
-        "built_as_bottle": poured_from_bottle,
-        "poured_from_bottle": poured_from_bottle,
-        "loaded_from_api": true,
-        "installed_as_dependency": !rf.on_request,
-        "installed_on_request": rf.on_request,
-        "changed_files": facts.changed_files,
-        "time": now,
-        "source_modified_time": facts.source_modified_time,
-        "compiler": facts.compiler,
-        "aliases": rf.formula.aliases,
-        "runtime_dependencies": facts.runtime_dependencies,
-        "source": {
-            "spec": "stable",
-            "versions": {
-                "stable": rf.formula.versions.stable,
-                "head": null,
-                "version_scheme": 0,
-            },
-            "path": rf.formula.ruby_source_path,
-            "tap": rf.formula.tap.as_deref().unwrap_or("homebrew/core"),
-            "tap_git_head": rf.formula.tap_git_head,
+    let formula_receipt = receipt::FormulaReceipt {
+        homebrew_version: receipt::EMULATED_BREW_VERSION.to_string(),
+        used_options: Vec::new(),
+        unused_options: Vec::new(),
+        built_as_bottle: poured_from_bottle,
+        poured_from_bottle,
+        loaded_from_api: true,
+        loaded_from_internal_api: rf.formula.loaded_from_internal_api,
+        installed_on_request: rf.on_request,
+        changed_files: facts.changed_files,
+        time: now,
+        source_modified_time: facts.source_modified_time,
+        compiler: facts.compiler,
+        aliases: rf.formula.aliases.clone(),
+        runtime_dependencies: facts.runtime_dependencies,
+        source: formula_receipt_source(rf, facts.source.as_ref()),
+        arch: if cfg!(target_arch = "aarch64") {
+            "arm64".to_string()
+        } else {
+            "x86_64".to_string()
         },
-        "arch": if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" },
-        // Homebrew's Tab#to_json always emits this key. Authoritative bottle
-        // metadata may omit the build host, in which case the installed tab
-        // contains JSON null rather than dropping the field.
-        "built_on": facts.built_on,
-    });
+        built_on: facts.built_on,
+        extra: serde_json::Map::new(),
+    };
     crate::file::write_atomic(
         keg.join("INSTALL_RECEIPT.json"),
-        serde_json::to_string(&receipt)?,
+        formula_receipt.to_json_bytes()?,
     )?;
     match provenance {
         FormulaInstallProvenance::OciBottle {
@@ -3758,6 +3799,100 @@ pub(super) fn write_receipt(
     Ok(())
 }
 
+/// Reproduce `formula.runtime_dependencies(read_from_tab: false)` and
+/// `Tab.runtime_deps_hash`: recursively walk the current formula graph in
+/// dependency-first order, then record the versions actually resolved.
+fn resolved_runtime_dependencies(
+    rf: &ResolvedFormula,
+    tag: &str,
+    closure: &[ResolvedFormula],
+) -> Result<Vec<receipt::RuntimeDependency>> {
+    fn visit<'a>(
+        root: &ResolvedFormula,
+        dependency: &str,
+        closure: &'a [ResolvedFormula],
+        host_tag: &str,
+        visiting: &mut BTreeSet<String>,
+        done: &mut BTreeSet<String>,
+        ordered: &mut Vec<&'a ResolvedFormula>,
+    ) -> Result<()> {
+        let resolved = closure
+            .iter()
+            .find(|candidate| formula_matches_dependency(&candidate.formula, dependency))
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "brew:{}: runtime dependency {dependency} is absent from the resolved closure",
+                    root.formula.name
+                )
+            })?;
+        let name = resolved.formula.name.clone();
+        if done.contains(&name) || !visiting.insert(name.clone()) {
+            return Ok(());
+        }
+        let dependency_tag = super::resolve::dep_tag(&resolved.formula, host_tag);
+        for child in resolved.formula.dependencies_for(&dependency_tag) {
+            visit(root, child, closure, host_tag, visiting, done, ordered)?;
+        }
+        visiting.remove(&name);
+        done.insert(name);
+        ordered.push(resolved);
+        Ok(())
+    }
+
+    let direct = rf.formula.dependencies_for(tag);
+    let host_tag = super::tag::host_tag();
+    let mut visiting = BTreeSet::new();
+    let mut done = BTreeSet::from([rf.formula.name.clone()]);
+    let mut ordered = Vec::new();
+    for dependency in direct {
+        visit(
+            rf,
+            dependency,
+            closure,
+            &host_tag,
+            &mut visiting,
+            &mut done,
+            &mut ordered,
+        )?;
+    }
+    ordered
+        .into_iter()
+        .map(|resolved| {
+            Ok(receipt::RuntimeDependency {
+                full_name: resolved.formula.name.clone(),
+                version: resolved.formula.versions.stable.clone().ok_or_else(|| {
+                    eyre::eyre!(
+                        "brew:{}: resolved dependency {} has no stable version",
+                        rf.formula.name,
+                        resolved.formula.name
+                    )
+                })?,
+                revision: u64::from(resolved.formula.revision),
+                bottle_rebuild: resolved
+                    .formula
+                    .bottle
+                    .get("stable")
+                    .map(|bottle| bottle.rebuild)
+                    .unwrap_or_default(),
+                pkg_version: resolved.formula.pkg_version()?,
+                declared_directly: direct
+                    .iter()
+                    .any(|name| formula_matches_dependency(&resolved.formula, name)),
+                extra: serde_json::Map::new(),
+            })
+        })
+        .collect()
+}
+
+fn formula_matches_dependency(formula: &super::api::Formula, dependency: &str) -> bool {
+    formula.name == dependency
+        || formula.aliases.iter().any(|alias| alias == dependency)
+        || formula
+            .tap
+            .as_ref()
+            .is_some_and(|tap| dependency == format!("{tap}/{}", formula.name))
+}
+
 fn update_sbom(keg: &Path, time: u64, supplement: Option<&Value>) -> Result<()> {
     let path = keg.join("sbom.spdx.json");
     let mut sbom: Value =
@@ -3773,7 +3908,8 @@ fn update_sbom(keg: &Path, time: u64, supplement: Option<&Value>) -> Result<()> 
     creation.insert(
         "creators".to_string(),
         json!([format!(
-            "Tool: https://github.com/Homebrew/brew@{EMULATED_BREW_VERSION}"
+            "Tool: https://github.com/Homebrew/brew@{}",
+            receipt::EMULATED_BREW_VERSION
         )]),
     );
     if let Some(supplement) = supplement {
@@ -4142,9 +4278,11 @@ pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<
             prefix_path.display()
         );
     } else {
-        repairs.extend(plan_public_topology(name, &keg, true).wrap_err_with(|| {
-            format!("cannot link {name}: public topology was not created by mise or brew")
-        })?);
+        repairs.extend(
+            plan_public_topology(name, &keg, true, false).wrap_err_with(|| {
+                format!("cannot link {name}: public topology was not created by mise or brew")
+            })?,
+        );
         let linked = prefix::linked_keg_record(name);
         if !symlink_points_to_checked(&linked, &keg)? {
             if !can_overwrite(name, &linked)? {
@@ -4276,6 +4414,18 @@ mod tests {
         Ok((tmp, path))
     }
 
+    fn test_built_on() -> receipt::BuiltOn {
+        receipt::BuiltOn {
+            os: "TestOS".to_string(),
+            os_version: "1".to_string(),
+            cpu_family: "test".to_string(),
+            xcode: None,
+            clt: None,
+            preferred_perl: None,
+            extra: serde_json::Map::new(),
+        }
+    }
+
     #[test]
     fn installed_versions_hide_recovery_and_deletion_tombstones() -> Result<()> {
         let _lock = ENV_LOCK.blocking_lock();
@@ -4354,6 +4504,51 @@ mod tests {
         })
     }
 
+    #[test]
+    fn installed_receipt_recomputes_current_recursive_runtime_dependencies() -> Result<()> {
+        let mut bat = resolved_formula("bat", "0.26.1");
+        bat.formula.dependencies = vec!["libgit2".to_string(), "oniguruma".to_string()];
+        let mut libgit2 = resolved_formula("libgit2", "1.9.7");
+        libgit2.formula.dependencies = vec!["libssh2".to_string(), "llhttp".to_string()];
+        let mut libssh2 = resolved_formula("libssh2", "1.11.1");
+        libssh2.formula.dependencies = vec!["openssl@3".to_string()];
+        let mut openssl = resolved_formula("openssl@3", "3.6.3");
+        openssl.formula.dependencies = vec!["ca-certificates".to_string()];
+        let ca = resolved_formula("ca-certificates", "2026-08-13");
+        let llhttp = resolved_formula("llhttp", "9.4.3");
+        let oniguruma = resolved_formula("oniguruma", "6.9.10");
+        let dependencies = resolved_runtime_dependencies(
+            &bat,
+            "arm64_tahoe",
+            &[ca, openssl, libssh2, llhttp, libgit2, oniguruma],
+        )?;
+
+        assert_eq!(
+            dependencies
+                .iter()
+                .map(|dependency| dependency.full_name.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "ca-certificates",
+                "openssl@3",
+                "libssh2",
+                "llhttp",
+                "libgit2",
+                "oniguruma"
+            ]
+        );
+        assert_eq!(
+            dependencies
+                .iter()
+                .filter(|dependency| dependency.declared_directly)
+                .map(|dependency| dependency.full_name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["libgit2", "oniguruma"]
+        );
+        assert!(dependencies[3].extra.is_empty());
+        Ok(())
+    }
+
     fn bottle_sbom(name: &str, version: &str) -> Value {
         json!({
             "spdxVersion": "SPDX-2.3",
@@ -4374,7 +4569,7 @@ mod tests {
         FormulaInstallProvenance::SourceBuild {
             formula_snapshot: snapshot,
             compiler: "clang".to_string(),
-            built_on: json!({"os": "TestOS", "os_version": "1", "cpu_family": "test"}),
+            built_on: test_built_on(),
         }
     }
 
@@ -4407,6 +4602,27 @@ mod tests {
         )?;
         link_keg(name, version, false)?;
         Ok(keg)
+    }
+
+    #[test]
+    fn native_install_info_is_not_mise_repair_work() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let (_tmp, prefix) = canonical_tempdir()?;
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let keg = write_installed_formula(&prefix, "foo", "1.0", false, &[])?;
+        crate::file::create_dir_all(keg.join("share/info"))?;
+        crate::file::write(keg.join("share/info/foo.info"), "native info")?;
+        crate::file::create_dir_all(prefix.join("share/info"))?;
+        crate::file::write(prefix.join("share/info/dir"), "native index")?;
+
+        let health = installed_formula_health("foo", "1.0");
+        assert_eq!(
+            health.kind,
+            FormulaHealthKind::Healthy,
+            "{:?}",
+            health.reasons
+        );
+        Ok(())
     }
 
     #[test]
@@ -4563,6 +4779,48 @@ mod tests {
     }
 
     #[test]
+    fn archive_receipt_preserves_nullable_and_tap_provenance() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let mut rf = resolved_formula("foo", "1.0");
+        rf.formula.tap = Some("mise/oracle".to_string());
+        let keg = tmp.path().join("foo/1.0");
+        crate::file::create_dir_all(keg.join(".brew"))?;
+        let sbom = bottle_sbom("foo", "1.0");
+        crate::file::write(keg.join("sbom.spdx.json"), serde_json::to_vec(&sbom)?)?;
+        let mut tab = bottle_tab("1.0");
+        tab["changed_files"] = Value::Null;
+        tab["built_on"]["xcode"] = Value::Null;
+        tab["built_on"]["clt"] = Value::Null;
+        tab["built_on"]["preferred_perl"] = Value::Null;
+        tab["source"] = json!({
+            "scm_revision": "source-deadbeef",
+            "versions": {
+                "stable": "1.0",
+                "head": null,
+                "version_scheme": 0,
+                "compatibility_version": null
+            }
+        });
+
+        write_receipt(
+            &rf,
+            "test",
+            &keg,
+            &Default::default(),
+            &[],
+            &FormulaInstallProvenance::ArchiveBottle { tab, sbom },
+        )?;
+
+        let receipt: Value =
+            serde_json::from_slice(&std::fs::read(keg.join("INSTALL_RECEIPT.json"))?)?;
+        assert!(receipt["changed_files"].is_null());
+        assert_eq!(receipt["source"]["tap_git_head"], "deadbeef");
+        assert_eq!(receipt["source"]["scm_revision"], "source-deadbeef");
+        assert!(receipt["built_on"]["xcode"].is_null());
+        Ok(())
+    }
+
+    #[test]
     fn source_receipt_requires_snapshot_and_writes_sbom() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let mut rf = resolved_formula("foo", "1.0");
@@ -4573,7 +4831,7 @@ mod tests {
         let provenance = FormulaInstallProvenance::SourceBuild {
             formula_snapshot: snapshot.clone(),
             compiler: "clang".to_string(),
-            built_on: json!({"os": "TestOS", "os_version": "1", "cpu_family": "test"}),
+            built_on: test_built_on(),
         };
         assert!(
             write_receipt(&rf, "test", &keg, &Default::default(), &[], &provenance)
@@ -4650,6 +4908,114 @@ mod tests {
     }
 
     #[test]
+    fn formula_receipt_matches_real_brew_fixture() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        crate::file::create_dir_all(tmp.path().join(".brew"))?;
+        let mut expected: receipt::FormulaReceipt =
+            serde_json::from_str(include_str!("testdata/ada-url-INSTALL_RECEIPT.json"))?;
+        let mut rf = resolved_formula("ada-url", "4.0.0");
+        rf.formula.tap = Some("homebrew/core".to_string());
+        rf.formula.aliases = expected.aliases.clone();
+        rf.formula.dependencies = vec!["fmt".to_string()];
+        rf.formula.version_scheme = expected.source.versions.version_scheme;
+        rf.formula.loaded_from_internal_api = true;
+        rf.formula.internal_api_source = Some("internal-api-fixture".to_string());
+        rf.on_request = false;
+        let mut manifest_dependencies = expected.runtime_dependencies.clone();
+        for dependency in &mut manifest_dependencies {
+            dependency.version = "1.0.0".to_string();
+            dependency.revision = 9;
+            dependency.bottle_rebuild = 7;
+            dependency.pkg_version = "1.0.0_9".to_string();
+            dependency.declared_directly = false;
+            dependency
+                .extra
+                .insert("compatibility_version".to_string(), json!(1));
+        }
+        let tab = json!({
+            "homebrew_version": receipt::EMULATED_BREW_VERSION,
+            "poured_from_bottle": true,
+            "changed_files": expected.changed_files,
+            "source_modified_time": expected.source_modified_time,
+            "compiler": expected.compiler,
+            "runtime_dependencies": manifest_dependencies,
+            "built_on": expected.built_on,
+            "source": {"versions": {"stable": "4.0.0"}}
+        });
+        let sbom = bottle_sbom("ada-url", "4.0.0");
+        crate::file::write(
+            tmp.path().join("sbom.spdx.json"),
+            serde_json::to_vec(&sbom)?,
+        )?;
+        let fmt = resolved_formula("fmt", "12.2.0");
+
+        write_receipt(
+            &rf,
+            "arm64_tahoe",
+            tmp.path(),
+            &Default::default(),
+            &[fmt],
+            &FormulaInstallProvenance::OciBottle {
+                tab,
+                sbom,
+                sbom_supplement: None,
+            },
+        )?;
+
+        let actual = receipt::read_formula_receipt(tmp.path())?;
+        expected.homebrew_version = receipt::EMULATED_BREW_VERSION.to_string();
+        expected.time = actual.time;
+        expected.source.path = actual.source.path.clone();
+        expected.arch = actual.arch.clone();
+        assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn old_mise_receipt_keeps_linux_relocation_compatibility() {
+        let provenance = FormulaInstallProvenance::ArchiveBottle {
+            tab: json!({"homebrew_version": "5.1.15 (mise)"}),
+            sbom: Value::Null,
+        };
+        assert!(bottled_by_homebrew_at_least(&provenance, (5, 1, 15)));
+    }
+
+    #[test]
+    fn sbom_pour_metadata_matches_homebrew_merge_order() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        crate::file::write(
+            tmp.path().join("sbom.spdx.json"),
+            json!({
+                "creationInfo": {"created": "build-time", "creators": ["build-tool"]},
+                "documentDescribes": ["bottle"],
+                "packages": [{"SPDXID": "bottle"}],
+                "relationships": [{"spdxElementId": "bottle"}]
+            })
+            .to_string(),
+        )?;
+        let supplement = json!({
+            "documentDescribes": ["source"],
+            "packages": [{"SPDXID": "source"}],
+            "relationships": [{"spdxElementId": "source"}]
+        });
+        update_sbom(tmp.path(), 0, Some(&supplement))?;
+        let actual: Value =
+            serde_json::from_slice(&std::fs::read(tmp.path().join("sbom.spdx.json"))?)?;
+        assert_eq!(actual["creationInfo"]["created"], "1970-01-01T00:00:00Z");
+        assert_eq!(
+            actual["creationInfo"]["creators"],
+            json!([format!(
+                "Tool: https://github.com/Homebrew/brew@{}",
+                receipt::EMULATED_BREW_VERSION
+            )])
+        );
+        assert_eq!(actual["documentDescribes"], json!(["bottle", "source"]));
+        assert_eq!(actual["packages"].as_array().unwrap().len(), 2);
+        assert_eq!(actual["relationships"].as_array().unwrap().len(), 2);
+        Ok(())
+    }
+
+    #[test]
     fn bottle_receipt_serializes_absent_build_host_as_null() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let rf = resolved_formula("foo", "1.0");
@@ -4673,6 +5039,52 @@ mod tests {
         assert_eq!(receipt["compiler"], "bottle-clang");
         assert!(receipt["built_on"].is_null());
         Ok(())
+    }
+
+    #[test]
+    fn oci_identity_accepts_missing_tab_version_but_rejects_mismatch() -> Result<()> {
+        let rf = resolved_formula("helm", "4.2.4");
+        let sbom = bottle_sbom("helm", "4.2.4");
+        let mut tab = bottle_tab("4.2.4");
+        tab["source"] = json!({"versions": {}});
+        let provenance = FormulaInstallProvenance::OciBottle {
+            tab: tab.clone(),
+            sbom: sbom.clone(),
+            sbom_supplement: None,
+        };
+        validate_bottle_provenance(&rf, &provenance)?;
+
+        tab["source"] = json!({"versions": {"stable": "4.2.3"}});
+        let mismatch = FormulaInstallProvenance::OciBottle {
+            tab,
+            sbom,
+            sbom_supplement: None,
+        };
+        assert!(
+            validate_bottle_provenance(&rf, &mismatch)
+                .unwrap_err()
+                .to_string()
+                .contains("does not match formula version")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn archive_identity_requires_embedded_tab_version() {
+        let rf = resolved_formula("foo", "1.0");
+        let mut tab = bottle_tab("1.0");
+        tab["source"] = json!({"versions": {}});
+        let provenance = FormulaInstallProvenance::ArchiveBottle {
+            tab,
+            sbom: bottle_sbom("foo", "1.0"),
+        };
+
+        assert!(
+            validate_bottle_provenance(&rf, &provenance)
+                .unwrap_err()
+                .to_string()
+                .contains("has no source version identity")
+        );
     }
 
     #[tokio::test]
@@ -5752,7 +6164,7 @@ mod tests {
         crate::file::write(keg.join("share/example/value"), "keg")?;
         let share = prefix.join("share");
         crate::file::create_dir_all(&share)?;
-        let repairs = plan_public_topology("foo", &keg, true)?;
+        let repairs = plan_public_topology("foo", &keg, true, false)?;
 
         let original_share = prefix.join("share-original");
         crate::file::rename(&share, &original_share)?;
