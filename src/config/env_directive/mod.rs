@@ -115,6 +115,15 @@ pub struct EnvDirectiveOptions {
     pub(crate) required: RequiredValue,
     #[serde(default)]
     pub(crate) expand: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) parser: Option<DotenvParser>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DotenvParser {
+    Dotenvy,
+    DotenvNg,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -447,6 +456,13 @@ impl EnvResults {
         };
         let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
         let safe_mode = Settings::safe_mode();
+        if input.iter().any(|(directive, _)| {
+            directive.options().parser.is_some() && !matches!(directive, EnvDirective::File(..))
+        }) {
+            return Err(eyre!(
+                "`parser` is only supported for env._.file directives"
+            ));
+        }
         // In safe mode, environment directives from project (non-global) config are
         // ignored — they would otherwise be applied to the host environment and to
         // subprocesses mise spawns during resolution (e.g. `go list`, vfox hooks),
@@ -713,7 +729,8 @@ impl EnvResults {
                         config_root: &config_root,
                         toolset,
                     };
-                    let files = Self::file(&mut directive_ctx, input, opts.expand).await?;
+                    let files =
+                        Self::file(&mut directive_ctx, input, opts.expand, opts.parser).await?;
                     for (f, new_env) in files {
                         r.env_files.push(f.clone());
                         for (k, v) in new_env {

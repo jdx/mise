@@ -108,6 +108,7 @@ dashmap = "6"
 demand = "2"
 digest = "0.11"
 dotenvy = "0.15"
+dotenv-ng-parser = { package = "dotenv-ng", version = "1" }
 duct = "1"
 dunce = "1"
 homedir = "0.3"

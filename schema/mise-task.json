@@ -523,7 +523,7 @@
             "file": {
               "oneOf": [
                 {
-                  "$ref": "#/$defs/env_directive"
+                  "$ref": "#/$defs/env_file_directive"
                 },
                 {
                   "description": "environment file to load (dotenv, json, yaml, or toml)",
@@ -539,7 +539,7 @@
                         "type": "string"
                       },
                       {
-                        "$ref": "#/$defs/env_directive"
+                        "$ref": "#/$defs/env_file_directive"
                       }
                     ]
                   }
@@ -1102,6 +1102,21 @@
       ],
       "type": "object"
     },
+    "env_file_directive": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/env_directive"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "parser": {
+              "$ref": "#/$defs/env_file_parser"
+            }
+          }
+        }
+      ]
+    },
     "env_directive": {
       "type": "object",
       "properties": {
@@ -1191,6 +1206,12 @@
       "type": "boolean",
       "default": false,
       "description": "enable shell-style variable expansion for values loaded by env._.file"
+    },
+    "env_file_parser": {
+      "type": "string",
+      "enum": ["dotenvy", "dotenv-ng"],
+      "default": "dotenvy",
+      "description": "dotenv parser used by env._.file"
     },
     "os_filter_item": {
       "description": "operating system or os/arch pair to install on",
