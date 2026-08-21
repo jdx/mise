@@ -508,25 +508,27 @@ impl Backend for NPMBackend {
                     NpmOptions::npm_lifecycle_script_args(allow_builds, supports_allow_scripts);
                 let skipped_lifecycle_scripts =
                     Self::effective_npm_ignore_scripts(default_ignore_scripts, &npm_args);
-                let mut cmd = Self::npm_command(
-                    CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "npm").await)
-                        .arg("install")
-                        .arg("-g")
-                        .arg(&package)
-                        .arg("--prefix")
-                        .arg(tv.install_path())
-                        .args(install_before_args)
-                        .with_pr(ctx.pr.as_ref())
-                        .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                        .env_values(tv.install_env())
-                        .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-                        .prepend_path(
-                            self.dependency_toolset(&ctx.config)
-                                .await?
-                                .list_paths(&ctx.config)
-                                .await,
-                        )?,
-                );
+                let install_env = ctx.ts.env_with_path_without_tools(&ctx.config).await?;
+                let mut cmd = self
+                    .npm_command(&ctx.config, Some(&ctx.ts), |cmd| {
+                        cmd.arg("install")
+                            .arg("-g")
+                            .arg(&package)
+                            .arg("--prefix")
+                            .arg(tv.install_path())
+                            .args(install_before_args)
+                            .with_pr(ctx.pr.as_ref())
+                            .envs(install_env)
+                            .env_values(tv.install_env())
+                    })
+                    .await
+                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                    .prepend_path(
+                        self.dependency_toolset(&ctx.config)
+                            .await?
+                            .list_paths(&ctx.config)
+                            .await,
+                    )?;
                 cmd = cmd.args(lifecycle_script_args);
                 if let Some(args) = &npm_args {
                     cmd = cmd.args(args);
@@ -814,15 +816,13 @@ impl NPMBackend {
                 return false;
             }
         };
-        let npm = self.spawn_program(config, None, "npm").await;
-        let output = match Self::npm_command(
-            CmdLineRunner::new(npm)
-                .arg("--version")
-                .env_clear()
-                .envs(env),
-        )
-        .read()
-        .await
+        let output = match self
+            .npm_command(config, None, |cmd| {
+                cmd.arg("--version").env_clear().envs(env)
+            })
+            .await
+            .read()
+            .await
         {
             Ok(s) => s,
             Err(e) => {
@@ -843,9 +843,17 @@ impl NPMBackend {
         Ok(dir)
     }
 
-    /// Apply environment required by every npm subprocess.
-    fn npm_command<'a>(cmd: CmdLineRunner<'a>) -> CmdLineRunner<'a> {
-        cmd.env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+    /// Resolve npm and apply environment required by every npm subprocess.
+    /// Caller configuration runs first so its environment cannot override
+    /// mise-owned npm settings.
+    async fn npm_command<'a>(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+        configure: impl FnOnce(CmdLineRunner<'a>) -> CmdLineRunner<'a>,
+    ) -> CmdLineRunner<'a> {
+        let npm = self.spawn_program(config, ts, "npm").await;
+        configure(CmdLineRunner::new(npm)).env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
     }
 
     /// Run an isolated `npm view` query with mise's required npm environment.
@@ -856,18 +864,19 @@ impl NPMBackend {
         fields: &[&str],
         json: bool,
     ) -> eyre::Result<String> {
-        let npm = self.spawn_program(config, None, "npm").await;
-        Self::npm_command(
-            CmdLineRunner::new(npm)
-                .arg("view")
+        let prefix = Self::npm_meta_prefix()?;
+        let env = self.dependency_env(config).await?;
+        self.npm_command(config, None, |cmd| {
+            cmd.arg("view")
                 .arg(package)
                 .args(fields)
                 .arg(format!("--json={json}"))
                 .arg("--prefix")
-                .arg(Self::npm_meta_prefix()?)
+                .arg(prefix)
                 .env_clear()
-                .envs(self.dependency_env(config).await?),
-        )
+                .envs(env)
+        })
+        .await
         .read()
         .await
     }
