@@ -2702,8 +2702,13 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         let predecessor_identity = predecessor_identity.as_ref().ok_or_else(|| {
             eyre::eyre!("brew:{name}: recovery backup has no bound predecessor identity")
         })?;
-        crate::file::remove_all_atomically_validated(&backup, |detached| {
-            validate_install_identity(name, detached, predecessor_identity)
+        crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
+            validate_install_identity_with_root_metadata(
+                name,
+                detached,
+                metadata,
+                predecessor_identity,
+            )
         })?;
     }
     let incarnation_marker = keg.join(FINALIZATION_INCARNATION_MARKER);
@@ -3003,6 +3008,22 @@ fn validate_install_identity(
     Ok(())
 }
 
+fn validate_install_identity_with_root_metadata(
+    formula: &str,
+    keg: &Path,
+    root_metadata: &std::fs::Metadata,
+    identity: &FinalizationInstallIdentity,
+) -> Result<()> {
+    validate_install_identity(formula, keg, identity)?;
+    let FinalizationIdentityKind::Native { device, inode } = &identity.kind else {
+        bail!("recovery backup does not have a native filesystem identity");
+    };
+    if native_filesystem_identity(root_metadata)? != (*device, *inode) {
+        bail!("detached recovery backup identity no longer matches");
+    }
+    Ok(())
+}
+
 fn install_incarnation_matches(keg: &Path, identity: &FinalizationInstallIdentity) -> Result<bool> {
     let FinalizationIdentityKind::Mise { incarnation } = &identity.kind else {
         return Ok(false);
@@ -3207,8 +3228,13 @@ pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
                 let predecessor = state.predecessor_identity.as_ref().ok_or_else(|| {
                     eyre::eyre!("completed formula finalization has no predecessor identity")
                 })?;
-                crate::file::remove_all_atomically_validated(&backup, |detached| {
-                    validate_install_identity(&state.formula, detached, predecessor)
+                crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
+                    validate_install_identity_with_root_metadata(
+                        &state.formula,
+                        detached,
+                        metadata,
+                        predecessor,
+                    )
                 })?;
             }
             crate::file::remove_file(marker)?;
@@ -3262,8 +3288,13 @@ pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
         let predecessor = state.predecessor_identity.as_ref().ok_or_else(|| {
             eyre::eyre!("completed formula finalization has no predecessor identity")
         })?;
-        crate::file::remove_all_atomically_validated(&backup, |detached| {
-            validate_install_identity(&state.formula, detached, predecessor)
+        crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
+            validate_install_identity_with_root_metadata(
+                &state.formula,
+                detached,
+                metadata,
+                predecessor,
+            )
         })?;
     }
     let marker = keg.join(FINALIZATION_INCARNATION_MARKER);
@@ -3358,8 +3389,13 @@ pub(super) async fn resume_source_finalization(
             eyre::eyre!("completed source finalization has no predecessor identity")
         })?;
         validate_install_identity(&linked_state.formula, keg, replacement)?;
-        crate::file::remove_all_atomically_validated(&backup, |detached| {
-            validate_install_identity(&linked_state.formula, detached, predecessor)
+        crate::file::remove_all_atomically_validated(&backup, |detached, metadata| {
+            validate_install_identity_with_root_metadata(
+                &linked_state.formula,
+                detached,
+                metadata,
+                predecessor,
+            )
         })?;
     }
     let marker = keg.join(FINALIZATION_INCARNATION_MARKER);

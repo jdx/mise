@@ -185,8 +185,21 @@ pub fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
 #[cfg(unix)]
 pub fn remove_all_atomically_validated(
     path: &Path,
-    validate: impl FnOnce(&Path) -> Result<()>,
+    validate: impl FnOnce(&Path, &fs::Metadata) -> Result<()>,
 ) -> Result<()> {
+    remove_all_atomically_validated_inner(path, validate, |_| Ok(()))
+}
+
+#[cfg(unix)]
+fn remove_all_atomically_validated_inner(
+    path: &Path,
+    validate: impl FnOnce(&Path, &fs::Metadata) -> Result<()>,
+    after_validate: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::Mode;
+
     let parent = path
         .parent()
         .ok_or_else(|| eyre::eyre!("cannot quarantine path without parent: {}", path.display()))?;
@@ -200,14 +213,83 @@ pub fn remove_all_atomically_validated(
     ));
     fs::rename(path, &quarantine)
         .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
-    if let Err(error) = validate(&quarantine) {
+    let parent = File::open(parent)?;
+    let quarantine_name = quarantine.file_name().expect("quarantine has a file name");
+    let mut detached = Dir::openat(
+        &parent,
+        quarantine_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let detached_metadata = fs::metadata(&quarantine)?;
+    if let Err(error) = validate(&quarantine, &detached_metadata) {
         if fs::symlink_metadata(path).is_err() {
             let _ = fs::rename(&quarantine, path);
         }
         return Err(error)
             .wrap_err_with(|| format!("refusing to remove changed path: {}", display_path(path)));
     }
-    remove_all(&quarantine)
+    after_validate(&quarantine)?;
+    remove_dir_contents(&mut detached)?;
+    // POSIX has no unlink-by-handle operation. Keep the validated, now-empty directory as a
+    // tombstone rather than resolving `quarantine` again and risking deletion of a replacement.
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::Mode;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+
+    let names = dir
+        .iter()
+        .filter_map(|entry| match entry {
+            Ok(entry)
+                if entry.file_name().to_bytes() != b"."
+                    && entry.file_name().to_bytes() != b".." =>
+            {
+                Some(Ok(entry.file_name().to_bytes().to_vec()))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<nix::Result<Vec<_>>>()?;
+    for name in names {
+        let name = OsStr::from_bytes(&name);
+        match Dir::openat(
+            &*dir,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(mut child) => {
+                remove_dir_contents(&mut child)?;
+                unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
+            }
+            Err(Errno::ENOTDIR | Errno::ELOOP) => {
+                unlinkat(&*dir, name, UnlinkatFlags::NoRemoveDir)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn remove_all_atomically_validated_inner(
+    path: &Path,
+    validate: impl FnOnce(&Path, &fs::Metadata) -> Result<()>,
+    after_validate: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    validate(path, &fs::metadata(path)?)?;
+    after_validate(path)?;
+    remove_all(path)
 }
 
 fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
@@ -3081,8 +3163,11 @@ mod tests {
         fs::write(replacement.join("must-survive"), "foreign").unwrap();
         fs::rename(&replacement, &path).unwrap();
 
-        let error = remove_all_atomically_validated(&path, |detached| {
-            if same_file::is_same_file(detached, &displaced).unwrap_or(false) {
+        let expected_metadata = fs::metadata(&displaced).unwrap();
+        let error = remove_all_atomically_validated(&path, |_, detached_metadata| {
+            if same_file::is_same_file(&path, &displaced).unwrap_or(false)
+                && detached_metadata.len() == expected_metadata.len()
+            {
                 Ok(())
             } else {
                 bail!("backup identity changed")
@@ -3103,6 +3188,47 @@ mod tests {
             fs::read_to_string(displaced.join("expected")).unwrap(),
             "expected"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomically_validated_removal_does_not_follow_quarantine_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("backup");
+        let displaced = root.path().join("displaced-quarantine");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("expected"), "expected").unwrap();
+
+        remove_all_atomically_validated_inner(
+            &path,
+            |detached, _| {
+                assert_eq!(fs::read_to_string(detached.join("expected"))?, "expected");
+                Ok(())
+            },
+            |quarantine| {
+                fs::rename(quarantine, &displaced)?;
+                fs::create_dir(quarantine)?;
+                fs::write(quarantine.join("must-survive"), "foreign")?;
+                Ok(())
+            },
+        )
+        .unwrap();
+
+        assert!(!path.exists());
+        let foreign = root
+            .path()
+            .read_dir()
+            .unwrap()
+            .find_map(|entry| {
+                let path = entry.unwrap().path();
+                path.join("must-survive").is_file().then_some(path)
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(foreign.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert!(displaced.read_dir().unwrap().next().is_none());
     }
 
     #[cfg(unix)]
