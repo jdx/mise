@@ -488,7 +488,7 @@ impl Backend for AquaBackend {
                 }
             });
         }
-        validate(&pkg)?;
+        validate(&pkg, &v)?;
 
         // Validate lockfile URL matches expected asset pattern from registry
         // This handles cases where the registry format changed (e.g., raw binary -> tar.gz)
@@ -3553,7 +3553,7 @@ packages:
         .unwrap();
         let pkg = registry.package("example/tool").unwrap();
 
-        let error = validate(&pkg).unwrap_err().to_string();
+        let error = validate(&pkg, "v1.0.0").unwrap_err().to_string();
 
         assert!(error.ends_with("Use the cargo backend instead: cargo:example-crate."));
     }
@@ -3573,7 +3573,7 @@ packages:
         .unwrap();
         let pkg = registry.package("crates.io/example-crate").unwrap();
 
-        let error = validate(&pkg).unwrap_err().to_string();
+        let error = validate(&pkg, "v1.0.0").unwrap_err().to_string();
 
         assert!(error.ends_with("Use the cargo backend instead: cargo:example-crate."));
     }
@@ -3592,11 +3592,50 @@ packages:
         .unwrap();
         let pkg = registry.package("example/tool").unwrap();
 
-        let error = validate(&pkg).unwrap_err().to_string();
+        let error = validate(&pkg, "v1.0.0").unwrap_err().to_string();
 
         assert!(!error.contains('\u{1b}'));
         assert!(!error.contains('\n'));
         assert!(error.ends_with(r"Use the cargo backend instead: cargo:example\u{1b}[2J\ncrate."));
+    }
+
+    #[test]
+    fn go_install_warning_renders_versioned_path() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: go_install
+    repo_owner: example
+    repo_name: tool
+    path: github.com/example/tool/v{{(semver .Version).Major}}/cmd/tool
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("example/tool").unwrap();
+
+        let error = validate(&pkg, "v2.3.1").unwrap_err().to_string();
+
+        assert!(
+            error.ends_with("Use the go backend instead: go:github.com/example/tool/v2/cmd/tool.")
+        );
+    }
+
+    #[test]
+    fn go_install_warning_uses_repository_when_path_is_missing() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: go_install
+    repo_owner: example
+    repo_name: tool
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("example/tool").unwrap();
+
+        let error = validate(&pkg, "v1.0.0").unwrap_err().to_string();
+
+        assert!(error.ends_with("Use the go backend instead: go:github.com/example/tool."));
     }
 
     fn aqua_var(name: &str, required: bool) -> AquaVar {
@@ -4769,7 +4808,7 @@ async fn get_tags_with_release_dates(
         .collect())
 }
 
-fn validate(pkg: &AquaPackage) -> Result<()> {
+fn validate(pkg: &AquaPackage, version: &str) -> Result<()> {
     if pkg.no_asset.unwrap_or(false) {
         bail!("no asset released");
     }
@@ -4800,7 +4839,13 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
                     .unwrap_or_default()
             )
         }
-        AquaPackageType::GoInstall | AquaPackageType::GoBuild => {
+        AquaPackageType::GoInstall => {
+            let backend = go_install_backend(pkg, version)?;
+            bail!(
+                "package type `go_install` is not supported in the aqua backend. Use the go backend instead: {backend}."
+            )
+        }
+        AquaPackageType::GoBuild => {
             bail!(
                 "package type `{}` is not supported in the aqua backend. Use the go backend instead{}.",
                 pkg.package_type(),
@@ -4815,6 +4860,14 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+fn go_install_backend(pkg: &AquaPackage, version: &str) -> Result<String> {
+    let path = match pkg.path.as_deref() {
+        Some(path) => pkg.parse_aqua_str(path, version, &Default::default(), os(), arch())?,
+        None => format!("github.com/{}/{}", pkg.repo_owner, pkg.repo_name),
+    };
+    Ok(format!("go:{path}"))
 }
 
 /// Resolve repo owner and name from an override config, falling back to pkg defaults.
