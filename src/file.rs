@@ -213,7 +213,9 @@ fn remove_all_atomically_validated_inner(
         crate::rand::random_string(32)
     );
     let parent = File::open(parent)?;
-    let detached = Dir::openat(
+    validate_trusted_formula_rack(&parent)?;
+    let _lock = lock_formula_rack(path)?;
+    let mut detached = Dir::openat(
         &parent,
         file_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
@@ -260,32 +262,157 @@ fn remove_all_atomically_validated_inner(
         );
     }
     after_validate(&quarantine)?;
-    // POSIX has no portable unlink-by-handle operation. Retain the complete validated tombstone;
-    // never re-resolve its mutable root name after validation.
+    remove_dir_contents(&mut detached)?;
+    let final_identity = nix::sys::stat::fstatat(
+        &parent,
+        quarantine_name.as_str(),
+        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+    )?;
+    if (final_identity.st_dev, final_identity.st_ino)
+        != (detached_identity.st_dev, detached_identity.st_ino)
+    {
+        bail!("cleanup tombstone changed while formula lock was held");
+    }
+    nix::unistd::unlinkat(
+        &parent,
+        quarantine_name.as_str(),
+        nix::unistd::UnlinkatFlags::RemoveDir,
+    )?;
     Ok(())
 }
 
 #[cfg(unix)]
 pub fn restore_dir_atomically_validated(
     from: &Path,
-    _to: &Path,
+    to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
 ) -> Result<()> {
     use nix::dir::Dir;
-    use nix::fcntl::OFlag;
-    use nix::sys::stat::{Mode, fstat};
+    use nix::errno::Errno;
+    use nix::fcntl::{AtFlags, OFlag};
+    use nix::sys::stat::{Mode, fstat, fstatat};
 
-    let retained = Dir::open(
-        from,
+    let parent_path = from
+        .parent()
+        .filter(|parent| Some(*parent) == to.parent())
+        .ok_or_else(|| eyre::eyre!("formula restore requires one rack parent"))?;
+    let from_name = from
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("unnamed backup"))?;
+    let to_name = to.file_name().ok_or_else(|| eyre::eyre!("unnamed keg"))?;
+    let parent = File::open(parent_path)?;
+    validate_trusted_formula_rack(&parent)?;
+    let _lock = lock_formula_rack(from)?;
+    let retained = Dir::openat(
+        &parent,
+        from_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
     let identity = fstat(&retained)?;
     validate(identity.st_dev as u64, identity.st_ino as u64)?;
-    bail!(
-        "automatic formula predecessor restore is unavailable on this platform; validated backup is preserved for manual recovery: {}",
-        from.display()
-    )
+    match Dir::openat(
+        &parent,
+        to_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(mut current) => {
+            let current_identity = fstat(&current)?;
+            let current_path = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+            if (current_path.st_dev, current_path.st_ino)
+                != (current_identity.st_dev, current_identity.st_ino)
+            {
+                bail!("formula restore destination changed while package lock was held");
+            }
+            remove_dir_contents(&mut current)?;
+            let final_path = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+            if (final_path.st_dev, final_path.st_ino)
+                != (current_identity.st_dev, current_identity.st_ino)
+            {
+                bail!("formula restore destination changed during cleanup");
+            }
+            nix::unistd::unlinkat(&parent, to_name, nix::unistd::UnlinkatFlags::RemoveDir)?;
+        }
+        Err(Errno::ENOENT) => {}
+        Err(error) => return Err(error.into()),
+    }
+    atomic_rename_noreplace(&parent, from_name, to_name)?;
+    let installed = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    if (installed.st_dev, installed.st_ino) != (identity.st_dev, identity.st_ino) {
+        bail!("formula restore identity changed while package lock was held");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn validate_trusted_formula_rack(rack: &File) -> Result<()> {
+    let metadata = nix::sys::stat::fstat(rack)?;
+    if metadata.st_uid != nix::unistd::geteuid().as_raw() || metadata.st_mode & 0o022 != 0 {
+        bail!("formula rack must be owned by the current user and not writable by group or others");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn lock_formula_rack(path: &Path) -> Result<fslock::LockFile> {
+    let rack = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("formula path has no rack"))?;
+    let formula = rack
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("formula rack is unnamed"))?;
+    let prefix = rack
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| eyre::eyre!("formula rack has no Homebrew prefix"))?;
+    let locks = prefix.join("var/homebrew/locks");
+    fs::create_dir_all(&locks)?;
+    let lock_path = locks.join(format!("{}.formula.lock", formula.to_string_lossy()));
+    let mut lock = fslock::LockFile::open(&lock_path)?;
+    lock.lock()?;
+    Ok(lock)
+}
+
+#[cfg(unix)]
+fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::Mode;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let names = dir
+        .iter()
+        .filter_map(|entry| match entry {
+            Ok(entry) if !matches!(entry.file_name().to_bytes(), b"." | b"..") => {
+                Some(Ok(entry.file_name().to_bytes().to_vec()))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<nix::Result<Vec<_>>>()?;
+    for name in names {
+        let name = OsStr::from_bytes(&name);
+        match Dir::openat(
+            &*dir,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(mut child) => {
+                remove_dir_contents(&mut child)?;
+                unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
+            }
+            Err(Errno::ENOTDIR | Errno::ELOOP) => {
+                unlinkat(&*dir, name, UnlinkatFlags::NoRemoveDir)?
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
 }
 #[cfg(unix)]
 fn atomic_rename_noreplace(
@@ -3277,66 +3404,37 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn automatic_restore_fails_before_namespace_mutation() {
+    fn locked_restore_atomically_publishes_absent_destination() {
         let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("backup");
-        let destination = root.path().join("keg");
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
         fs::create_dir(&source).unwrap();
         fs::write(source.join("expected"), "expected").unwrap();
 
-        let error =
-            restore_dir_atomically_validated(&source, &destination, |_, _| Ok(())).unwrap_err();
+        restore_dir_atomically_validated(&source, &destination, |_, _| Ok(())).unwrap();
 
-        assert!(error.to_string().contains("manual recovery"));
+        assert!(!source.exists());
         assert_eq!(
-            fs::read_to_string(source.join("expected")).unwrap(),
+            fs::read_to_string(destination.join("expected")).unwrap(),
             "expected"
         );
-        assert!(!destination.exists());
     }
 
     #[cfg(unix)]
     #[test]
-    fn quarantine_never_traverses_swapped_descendants() {
+    fn repeated_locked_cleanup_leaves_no_tombstones() {
         let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("backup");
-        let foreign = root.path().join("foreign");
-        fs::create_dir_all(source.join("child")).unwrap();
-        fs::write(source.join("child/expected"), "expected").unwrap();
-        fs::create_dir(&foreign).unwrap();
-        fs::write(foreign.join("must-survive"), "foreign").unwrap();
-
-        remove_all_atomically_validated_inner(
-            &source,
-            |_, _| Ok(()),
-            |quarantine| {
-                fs::rename(quarantine.join("child"), root.path().join("expected-child"))?;
-                fs::rename(&foreign, quarantine.join("child"))?;
-                Ok(())
-            },
-        )
-        .unwrap();
-
-        let tombstone = root
-            .path()
-            .read_dir()
-            .unwrap()
-            .filter_map(Result::ok)
-            .find(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with(".mise-delete-")
-            })
-            .unwrap();
-        assert_eq!(
-            fs::read_to_string(tombstone.path().join("child/must-survive")).unwrap(),
-            "foreign"
-        );
-        assert_eq!(
-            fs::read_to_string(root.path().join("expected-child/expected")).unwrap(),
-            "expected"
-        );
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        for version in ["1.0", "2.0", "3.0"] {
+            let keg = rack.join(version);
+            fs::create_dir(&keg).unwrap();
+            fs::write(keg.join("payload"), version).unwrap();
+            remove_all_atomically_validated(&keg, |_, _| Ok(())).unwrap();
+        }
+        assert!(rack.read_dir().unwrap().next().is_none());
     }
     fn test_desymlink_path_preserves_absolute_target() {
         use std::os::unix::fs::symlink;

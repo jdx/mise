@@ -2303,6 +2303,13 @@ fn restore_uncommitted_keg(keg: &Path, backup: Option<&Path>) -> Result<()> {
     }
 }
 
+fn with_rollback_context(original: eyre::Report, rollback: Result<()>) -> eyre::Report {
+    match rollback {
+        Ok(()) => original,
+        Err(rollback) => original.wrap_err(format!("formula rollback also failed: {rollback:#}")),
+    }
+}
+
 pub(super) struct FormulaFinalizer<'a> {
     pub rf: &'a ResolvedFormula,
     pub tag: &'a str,
@@ -2614,9 +2621,9 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
 
     pr.set_message("link".to_string());
     if let Err(error) = link_keg(name, &pkg_version, rf.formula.keg_only) {
-        restore_bound_keg_backup(keg, backup.as_deref())?;
-        restore_finalization_state(keg, previous_finalization_state.as_deref())?;
-        return Err(error);
+        let rollback = restore_bound_keg_backup(keg, backup.as_deref())
+            .and_then(|_| restore_finalization_state(keg, previous_finalization_state.as_deref()));
+        return Err(with_rollback_context(error, rollback));
     }
     // Linking is already externally visible. Retain the identity-bound Keg
     // state and replacement if this durable checkpoint fails so retry can
@@ -4830,8 +4837,20 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn rollback_context_preserves_originating_error() {
+        let error = with_rollback_context(
+            eyre::eyre!("cannot link foo"),
+            Err(eyre::eyre!("trusted rack validation failed")),
+        );
+        let rendered = format!("{error:#}");
+        assert!(rendered.contains("cannot link foo"));
+        assert!(rendered.contains("formula rollback also failed"));
+        assert!(rendered.contains("trusted rack validation failed"));
+    }
+
     #[tokio::test]
-    async fn finalizer_preserves_predecessor_when_linking_fails() -> Result<()> {
+    async fn finalizer_restores_predecessor_when_linking_fails() -> Result<()> {
         let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -4870,19 +4889,19 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains("manual recovery"));
-        assert_eq!(crate::file::read_to_string(keg.join("bin/foo"))?, "new");
-        assert_eq!(crate::file::read_to_string(backup.join("bin/foo"))?, "old");
+        assert!(error.to_string().contains("cannot link foo"));
+        assert_eq!(crate::file::read_to_string(keg.join("bin/foo"))?, "old");
         assert_eq!(
             crate::file::read_to_string(prefix.join("bin/foo"))?,
             "foreign"
         );
-        assert!(finalization_needs_repair(&keg));
+        assert!(backup.symlink_metadata().is_err());
+        assert!(!finalization_needs_repair(&keg));
         Ok(())
     }
 
     #[tokio::test]
-    async fn identity_preparation_failure_preserves_live_predecessor() -> Result<()> {
+    async fn identity_preparation_failure_restores_live_predecessor() -> Result<()> {
         let _lock = ENV_LOCK.lock().await;
         let (_tmp, prefix) = canonical_tempdir()?;
         let _guard = BrewPrefixGuard::set(&prefix);
@@ -4911,12 +4930,12 @@ mod tests {
         .await
         .unwrap_err();
 
-        assert!(error.to_string().contains("manual recovery"));
-        assert_eq!(crate::file::read_to_string(keg.join("bin/foo"))?, "new");
+        assert!(error.to_string().contains("receipt"));
         assert_eq!(
-            crate::file::read_to_string(backup.join("bin/foo"))?,
+            crate::file::read_to_string(keg.join("bin/foo"))?,
             "old-without-receipt"
         );
+        assert!(backup.symlink_metadata().is_err());
         Ok(())
     }
 
