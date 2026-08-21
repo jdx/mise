@@ -3433,6 +3433,50 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn recovery_clone_ignores_destination_replacement() {
+        use nix::dir::Dir;
+        use nix::fcntl::OFlag;
+        use nix::sys::stat::Mode;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("staging");
+        let displaced = root.path().join("displaced-staging");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(source.join("nested")).unwrap();
+        fs::write(source.join("nested/expected"), "expected").unwrap();
+        fs::create_dir(&destination).unwrap();
+        let source = Dir::open(
+            &source,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+        let destination_fd = Dir::open(
+            &destination,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+
+        fs::rename(&destination, &displaced).unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("must-survive"), "foreign").unwrap();
+        clone_dir_from_fd(&source, &destination_fd).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(displaced.join("nested/expected")).unwrap(),
+            "expected"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert!(!destination.join("nested").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn atomically_validated_removal_never_unlinks_replacement_root() {
         use std::os::unix::fs::MetadataExt;
 
