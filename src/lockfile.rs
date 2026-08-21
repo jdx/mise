@@ -4321,6 +4321,31 @@ options = { exe = "rg" }
         let empty_versions = BTreeSet::new();
         let existing = vec![basic_tool("1.0.0", "aqua:example/tool")];
 
+        // Non-root lockfiles drop absent entries even for omitted shorts.
+        assert!(matches!(
+            absent_entry_policy_for_update(
+                false,
+                Some(&omitted_shorts),
+                Some(&keep_versions),
+                &lockfile_path,
+                "omitted",
+                &empty_versions,
+            ),
+            AbsentEntryPolicy::Drop
+        ));
+        // Without a resolved union, every root-lockfile short preserves all.
+        assert!(matches!(
+            absent_entry_policy_for_update(
+                true,
+                None,
+                None,
+                &lockfile_path,
+                "unaffected",
+                &empty_versions,
+            ),
+            AbsentEntryPolicy::PreserveAll
+        ));
+
         let omitted_policy = absent_entry_policy_for_update(
             true,
             Some(&omitted_shorts),

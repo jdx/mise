@@ -586,15 +586,17 @@ impl Upgrade {
             match config.monorepo_union_tool_request_set().await {
                 Ok(requests) => {
                     let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
-                    if !omitted_shorts.is_empty() {
-                        warn_once!(
-                            "the monorepo toolset omitted unavailable or disabled tools for lockfile update; preserving existing entries for: {}",
-                            omitted_shorts.iter().sorted().join(", ")
-                        );
-                    }
                     let mut ts: Toolset = requests.into();
                     match ts.resolve(config).await {
-                        Ok(()) if monorepo_toolset_is_complete(&ts) => Some((ts, omitted_shorts)),
+                        Ok(()) if monorepo_toolset_is_complete(&ts) => {
+                            if !omitted_shorts.is_empty() {
+                                warn_once!(
+                                    "the monorepo toolset omitted unavailable or disabled tools for lockfile update; preserving existing entries for: {}",
+                                    omitted_shorts.iter().sorted().join(", ")
+                                );
+                            }
+                            Some((ts, omitted_shorts))
+                        }
                         Ok(()) => {
                             warn!(
                                 "could not completely resolve the monorepo toolset for lockfile update; preserving existing sibling entries"
@@ -1146,10 +1148,13 @@ mod tests {
             omitted_shorts,
             HashSet::from(["missing-sibling-tool".to_string()])
         );
-        assert!(matches!(
-            upgrade_lockfile_update(None),
-            UpgradeLockfileUpdate::Active
-        ));
+        match upgrade_lockfile_update(Some((&ts, &omitted_shorts))) {
+            UpgradeLockfileUpdate::MonorepoUnion {
+                omitted_shorts: carried,
+                ..
+            } => assert_eq!(carried, &omitted_shorts),
+            UpgradeLockfileUpdate::Active => panic!("filtered union must still be used per-short"),
+        }
     }
 
     #[tokio::test]
