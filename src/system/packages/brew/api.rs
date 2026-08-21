@@ -772,12 +772,13 @@ fn formula_from_internal(
     let mut bottle = HashMap::new();
     if let Some(checksum) = signed.bottle_checksum.as_deref() {
         validate_sha256("bottle", checksum)?;
+        let oci_name = name.replace('@', "/");
         let file = BottleFile {
             cellar: signed
                 .bottle_cellar
                 .clone()
                 .unwrap_or_else(|| ":any_skip_relocation".to_string()),
-            url: format!("https://ghcr.io/v2/homebrew/core/{name}/blobs/sha256:{checksum}"),
+            url: format!("https://ghcr.io/v2/homebrew/core/{oci_name}/blobs/sha256:{checksum}"),
             sha256: checksum.to_string(),
         };
         bottle.insert(
@@ -1314,6 +1315,27 @@ mod tests {
             "arm64_sequoia"
         );
         assert!(parse_internal_bottle_tag(":../foreign").is_err());
+    }
+
+    #[test]
+    fn signed_versioned_formula_uses_homebrew_oci_repository_path() {
+        let checksum = "a".repeat(64);
+        let signed: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "3.0",
+            "bottle_checksum": checksum
+        }))
+        .unwrap();
+        let index = signed_index(json!({
+            "formulae": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        let formula =
+            formula_from_internal(&index, "openssl@3", &signed, "signed-index-url").unwrap();
+        assert_eq!(
+            formula.bottle["stable"].files["all"].url,
+            format!("https://ghcr.io/v2/homebrew/core/openssl/3/blobs/sha256:{checksum}")
+        );
     }
 
     #[test]
