@@ -128,8 +128,17 @@ for formula in "${formula_fixtures[@]}"; do
   brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/opt/$formula" "$formula opt record after Homebrew uninstall"
   brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula" "$formula linked-keg record after Homebrew uninstall"
 done
+# Official Homebrew deliberately preserves formula-managed configuration across
+# uninstall. Prove mise-created shared state has the same lifecycle, remains
+# usable after the kegs are gone, then remove only these audited fixture paths
+# so the disposable runner is returned to fresh state.
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem'"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/openssl.cnf'"
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "readlink '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'" "ca-certificates/cert.pem"
 for path in "${shared_fixture_paths[@]}"; do
-  brew_oracle_require_absent_path "$path" "shared formula state after Homebrew uninstall"
+  rm -rf "$path"
+  brew_oracle_require_absent_path "$path" "shared formula fixture cleanup"
 done
 
 # Python's venv templates require Homebrew's typed `set_permissions u+w` step.
