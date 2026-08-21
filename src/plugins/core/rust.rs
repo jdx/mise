@@ -22,7 +22,7 @@ use indexmap::IndexMap;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct RustPlugin {
+pub(super) struct RustPlugin {
     ba: Arc<BackendArg>,
 }
 
@@ -133,7 +133,7 @@ impl<'a> RustOptions<'a> {
 }
 
 impl RustPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("rust").into(),
         }

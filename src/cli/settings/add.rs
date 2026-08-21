@@ -8,7 +8,7 @@ use crate::cli::settings::set::set;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsAdd {
+pub(super) struct SettingsAdd {
     /// The setting to set
     #[clap()]
     pub setting: String,
@@ -20,7 +20,7 @@ pub struct SettingsAdd {
 }
 
 impl SettingsAdd {
-    pub fn run(self) -> Result<()> {
+    pub(super) fn run(self) -> Result<()> {
         match self.value {
             Some(value) => set(&self.setting, &value, true, self.local),
             None => {

@@ -11,7 +11,7 @@ use eyre::bail;
 /// but managed separately with `mise tool-alias get`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsGet {
+pub(super) struct SettingsGet {
     /// The setting to show
     pub setting: String,
     /// Use the local config file instead of the global one
@@ -20,7 +20,7 @@ pub struct SettingsGet {
 }
 
 impl SettingsGet {
-    pub fn run(self) -> eyre::Result<()> {
+    pub(super) fn run(self) -> eyre::Result<()> {
         let settings = if self.local {
             let partial = Settings::parse_settings_file(&config::local_toml_config_path())
                 .unwrap_or_default();

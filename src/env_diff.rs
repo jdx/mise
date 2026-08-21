@@ -18,7 +18,7 @@ use crate::env::PATH_KEY;
 use crate::file;
 
 #[derive(Default, Serialize, Deserialize)]
-pub struct EnvDiff {
+pub(crate) struct EnvDiff {
     #[serde(default)]
     pub old: IndexMap<String, String>,
     #[serde(default)]
@@ -28,17 +28,17 @@ pub struct EnvDiff {
 }
 
 #[derive(Debug)]
-pub enum EnvDiffOperation {
+pub(crate) enum EnvDiffOperation {
     Add(String, String),
     Change(String, String),
     Remove(String),
 }
 
-pub type EnvDiffPatches = Vec<EnvDiffOperation>;
-pub type EnvMap = BTreeMap<String, String>;
+pub(crate) type EnvDiffPatches = Vec<EnvDiffOperation>;
+pub(crate) type EnvMap = BTreeMap<String, String>;
 
 impl EnvDiff {
-    pub fn new<T>(original: &EnvMap, additions: T) -> EnvDiff
+    pub(crate) fn new<T>(original: &EnvMap, additions: T) -> EnvDiff
     where
         T: IntoIterator<Item = (String, String)>,
     {
@@ -62,7 +62,7 @@ impl EnvDiff {
         diff
     }
 
-    pub fn from_bash_script<T, U, V>(
+    pub(crate) fn from_bash_script<T, U, V>(
         script: &Path,
         dir: &Path,
         env: T,
@@ -188,7 +188,7 @@ impl EnvDiff {
         Ok(Self::new(&env, additions))
     }
 
-    pub fn deserialize(raw: &str) -> Result<EnvDiff> {
+    pub(crate) fn deserialize(raw: &str) -> Result<EnvDiff> {
         let mut writer = Vec::new();
         let mut decoder = ZlibDecoder::new(writer);
         let bytes = BASE64_STANDARD_NO_PAD.decode(raw)?;
@@ -197,13 +197,13 @@ impl EnvDiff {
         Ok(rmp_serde::from_slice(&writer[..])?)
     }
 
-    pub fn serialize(&self) -> Result<String> {
+    pub(crate) fn serialize(&self) -> Result<String> {
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
         gz.write_all(&rmp_serde::to_vec_named(self)?)?;
         Ok(BASE64_STANDARD_NO_PAD.encode(gz.finish()?))
     }
 
-    pub fn to_patches(&self) -> EnvDiffPatches {
+    pub(crate) fn to_patches(&self) -> EnvDiffPatches {
         let mut patches = EnvDiffPatches::new();
 
         for k in self.old.keys() {
@@ -221,7 +221,7 @@ impl EnvDiff {
         patches
     }
 
-    pub fn reverse(&self) -> EnvDiff {
+    pub(crate) fn reverse(&self) -> EnvDiff {
         EnvDiff {
             old: self.new.clone(),
             new: self.old.clone(),
@@ -237,7 +237,7 @@ impl EnvDiff {
     /// write. This mirrors what `mise hook-env` writes during shell activation,
     /// so nested `mise` invocations can reverse it via `get_pristine_env` and
     /// avoid stacking outer tool paths on top of inner ones.
-    pub fn from_final_env(pristine: &EnvMap, final_env: &EnvMap) -> EnvDiff {
+    pub(crate) fn from_final_env(pristine: &EnvMap, final_env: &EnvMap) -> EnvDiff {
         use std::collections::HashSet;
 
         let path_key = PATH_KEY.as_str();
@@ -450,7 +450,7 @@ fn normalize_escape_sequences(input: &str) -> String {
     result
 }
 
-pub struct EnvDiffOptions {
+pub(crate) struct EnvDiffOptions {
     pub ignore_keys: IndexSet<String>,
 }
 

@@ -14,7 +14,7 @@ const DISABLED_MINIMUM_RELEASE_AGE_CUTOFF: &str = "2099-01-01";
 
 /// Where an effective release-age cutoff came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BeforeDateSource {
+pub(crate) enum BeforeDateSource {
     /// Pre-resolved by the caller (e.g. the `--minimum-release-age` CLI flag
     /// or a `ResolveOptions` cutoff threaded through from another resolution).
     /// The caller already knows whether it was explicit or default.
@@ -43,7 +43,7 @@ pub enum BeforeDateSource {
 /// use the resolved timestamp both to resolve which version to install *and*
 /// to build the corresponding package-manager CLI flag (e.g.
 /// `--min-release-age`) without the two drifting apart.
-pub fn resolve_before_date(
+pub(crate) fn resolve_before_date(
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
@@ -55,7 +55,7 @@ pub fn resolve_before_date(
 
 /// Resolve the CLI `--minimum-release-age` flag without falling back to global
 /// settings or the built-in default when the flag is omitted.
-pub fn resolve_cli_minimum_release_age(
+pub(crate) fn resolve_cli_minimum_release_age(
     minimum_release_age: Option<&str>,
 ) -> Result<Option<Timestamp>> {
     if minimum_release_age
@@ -71,7 +71,7 @@ pub fn resolve_cli_minimum_release_age(
     )
 }
 
-pub fn resolve_before_date_for_tool(
+pub(crate) fn resolve_before_date_for_tool(
     backend_arg: &BackendArg,
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
@@ -85,7 +85,7 @@ pub fn resolve_before_date_for_tool(
 /// Like `resolve_before_date_for_tool` but also reports where the cutoff came
 /// from, so callers can treat the built-in default differently from explicit
 /// configuration.
-pub fn resolve_before_date_for_tool_with_source(
+pub(crate) fn resolve_before_date_for_tool_with_source(
     backend_arg: &BackendArg,
     before_date: Option<Timestamp>,
     minimum_release_age: Option<&str>,
@@ -105,7 +105,7 @@ pub fn resolve_before_date_for_tool_with_source(
 /// `resolve_before_date_for_tool_with_source`, except cutoffs pre-resolved by
 /// the caller (e.g. the CLI flag) are not visible here — the caller already
 /// knows those. Returns `None` when no cutoff applies to the tool.
-pub fn effective_minimum_release_age_for_tool(
+pub(crate) fn effective_minimum_release_age_for_tool(
     backend_arg: &BackendArg,
     minimum_release_age: Option<&str>,
 ) -> Option<String> {

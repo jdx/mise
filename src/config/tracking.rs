@@ -8,14 +8,14 @@ use crate::dirs::{TRACKED_CONFIGS, TRACKED_STUBS};
 use crate::file::{create_dir_all, make_symlink_or_file};
 use crate::hash::hash_to_str;
 
-pub struct Tracker {}
+pub(crate) struct Tracker {}
 
 impl Tracker {
-    pub fn track(path: &Path) -> Result<()> {
+    pub(crate) fn track(path: &Path) -> Result<()> {
         Self::track_in(&TRACKED_CONFIGS, path)
     }
 
-    pub fn track_stub(path: &Path) -> Result<()> {
+    pub(crate) fn track_stub(path: &Path) -> Result<()> {
         Self::track_in(&TRACKED_STUBS, path)
     }
 
@@ -28,11 +28,11 @@ impl Tracker {
         Ok(())
     }
 
-    pub fn list_all() -> Result<Vec<PathBuf>> {
+    pub(crate) fn list_all() -> Result<Vec<PathBuf>> {
         Self::list_all_in(&TRACKED_CONFIGS)
     }
 
-    pub fn list_all_stubs() -> Result<Vec<PathBuf>> {
+    pub(crate) fn list_all_stubs() -> Result<Vec<PathBuf>> {
         Self::list_all_in(&TRACKED_STUBS)
     }
 
@@ -57,7 +57,7 @@ impl Tracker {
         Ok(output)
     }
 
-    pub fn clean() -> Result<()> {
+    pub(crate) fn clean() -> Result<()> {
         Self::clean_in(&TRACKED_CONFIGS)?;
         Self::clean_in(&TRACKED_STUBS)
     }

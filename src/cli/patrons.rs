@@ -16,7 +16,7 @@ use crate::{dirs, duration, file};
 /// To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Patrons {
+pub(crate) struct Patrons {
     /// Output in JSON format
     #[clap(long, short = 'J')]
     json: bool,
@@ -48,7 +48,7 @@ const SPONSOR_URL: &str = "https://jdx.dev/sponsors.html";
 const CACHE_TTL: Duration = duration::DAILY;
 
 impl Patrons {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let payload = load_patrons(self.refresh).await?;
 
         if self.json {

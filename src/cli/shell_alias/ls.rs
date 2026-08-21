@@ -10,14 +10,14 @@ use crate::ui::table;
 /// These are defined in `mise.toml` under the `[shell_alias]` section.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ShellAliasLs {
+pub(super) struct ShellAliasLs {
     /// Don't show table header
     #[clap(long)]
     pub no_header: bool,
 }
 
 impl ShellAliasLs {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let rows = config
             .shell_aliases

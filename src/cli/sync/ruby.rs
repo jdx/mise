@@ -14,21 +14,21 @@ use super::reconcile;
 /// Symlinks all ruby tool versions from an external tool into mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SyncRuby {
+pub(super) struct SyncRuby {
     #[clap(flatten)]
     _type: SyncRubyType,
 }
 
 #[derive(Debug, clap::Args)]
 #[group(required = true, multiple = true)]
-pub struct SyncRubyType {
+pub(super) struct SyncRubyType {
     /// Get tool versions from Homebrew
     #[clap(long)]
     brew: bool,
 }
 
 impl SyncRuby {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         if self._type.brew {
             self.run_brew().await?;
         }

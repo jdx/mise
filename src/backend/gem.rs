@@ -21,7 +21,7 @@ use tokio::sync::OnceCell as TokioOnceCell;
 static GEM_SOURCE: TokioOnceCell<String> = TokioOnceCell::const_new();
 
 #[derive(Debug)]
-pub struct GemBackend {
+pub(crate) struct GemBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -129,7 +129,7 @@ impl Backend for GemBackend {
 }
 
 impl GemBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 

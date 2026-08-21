@@ -15,7 +15,7 @@ use tabled::{Table, Tabled};
 /// but managed separately with `mise tool-alias`
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsLs {
+pub(super) struct SettingsLs {
     /// Name of setting
     pub setting: Option<String>,
 
@@ -61,7 +61,7 @@ fn settings_type_to_string(st: &SettingsType) -> String {
 }
 
 impl SettingsLs {
-    pub fn run(self) -> Result<()> {
+    pub(super) fn run(self) -> Result<()> {
         if self.complete {
             return self.complete();
         }

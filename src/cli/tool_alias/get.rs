@@ -9,7 +9,7 @@ use crate::config::Config;
 ///
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ToolAliasGet {
+pub(super) struct ToolAliasGet {
     /// The tool to show the alias for
     #[clap(value_name = "TOOL")]
     pub tool: BackendArg,
@@ -18,7 +18,7 @@ pub struct ToolAliasGet {
 }
 
 impl ToolAliasGet {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         match config.all_aliases.get(&self.tool.short) {
             Some(alias) => match alias.versions.get(&self.alias) {

@@ -30,7 +30,7 @@ use path_absolutize::Absolutize;
 /// Will also prune the installed version if no other configurations are using it.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
-pub struct Unuse {
+pub(crate) struct Unuse {
     /// Tool(s) to remove
     #[clap(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
@@ -56,7 +56,7 @@ pub struct Unuse {
 }
 
 impl Unuse {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let cf = self.get_config_file(&config).await?;
         let tools = cf.to_tool_request_set()?.tools;

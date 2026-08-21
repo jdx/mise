@@ -8,7 +8,7 @@ use crate::cli::edit::Edit;
 /// Generate a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Config {
+pub(super) struct Config {
     /// Generate the global config file (~/.config/mise/config.toml)
     // Declared here as well as on `Edit`: this command parses its own arguments before handing
     // them over, so the conflict does not carry across on its own.
@@ -26,7 +26,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Edit::new(self.global, self.dry_run, self.path, self.tool_versions)
             .run()
             .await

@@ -23,7 +23,7 @@ use aube::embed::{EmbedderInstallOverrides, EmbedderRuntime};
 use bytesize::ByteSize;
 use jiff::Timestamp;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::{fmt::Debug, sync::Arc};
@@ -43,7 +43,7 @@ const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
 
 #[derive(Debug)]
-pub struct NPMBackend {
+pub(crate) struct NPMBackend {
     ba: Arc<BackendArg>,
     // use a mutex to prevent deadlocks that occurs due to reentrant cache access
     latest_version_cache: TokioMutex<CacheManager<Option<String>>>,
@@ -82,6 +82,10 @@ impl<'a> NpmOptions<'a> {
 
     fn aube_args(&self) -> Option<&'a str> {
         self.values.str("aube_args")
+    }
+
+    fn checksum(&self) -> Option<&'a str> {
+        self.values.str("checksum")
     }
 
     fn trust_policy_excludes(&self) -> eyre::Result<Vec<String>> {
@@ -403,6 +407,7 @@ impl Backend for NPMBackend {
             .await;
         let request_options = tv.request.options();
         let options = NpmOptions::new(&request_options);
+        let package = self.package_install_spec(ctx, &tv, &options).await?;
         let install_before_args = match ctx.before_date {
             Some(before_date) => {
                 self.warn_if_package_manager_may_not_support_release_age(ctx, package_manager)
@@ -415,16 +420,18 @@ impl Backend for NPMBackend {
         match package_manager {
             NpmPackageManager::Auto => unreachable!("auto package manager should be resolved"),
             NpmPackageManager::Aube => {
-                self.install_via_aube_embed(ctx, &tv, &options).await?;
+                self.install_via_aube_embed(ctx, &tv, &options, &package)
+                    .await?;
             }
             NpmPackageManager::AubeCli => {
-                self.install_via_aube_cli(ctx, &tv, &options).await?;
+                self.install_via_aube_cli(ctx, &tv, &options, &package)
+                    .await?;
             }
             NpmPackageManager::Bun => {
                 let mut cmd =
                     CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "bun").await)
                         .arg("install")
-                        .arg(format!("{}@{}", self.tool_name(), tv.version))
+                        .arg(&package)
                         .arg("--global")
                         // Isolated linker does not symlink binaries into BUN_INSTALL_BIN properly.
                         // https://github.com/jdx/mise/discussions/7541
@@ -457,7 +464,7 @@ impl Backend for NPMBackend {
                 )
                 .arg("add")
                 .arg("--global")
-                .arg(format!("{}@{}", self.tool_name(), tv.version))
+                .arg(&package)
                 .arg("--global-dir")
                 .arg(tv.install_path())
                 .arg("--global-bin-dir")
@@ -501,25 +508,27 @@ impl Backend for NPMBackend {
                     NpmOptions::npm_lifecycle_script_args(allow_builds, supports_allow_scripts);
                 let skipped_lifecycle_scripts =
                     Self::effective_npm_ignore_scripts(default_ignore_scripts, &npm_args);
-                let mut cmd =
-                    CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "npm").await)
-                        .arg("install")
-                        .arg("-g")
-                        .arg(format!("{}@{}", self.tool_name(), tv.version))
-                        .arg("--prefix")
-                        .arg(tv.install_path())
-                        .args(install_before_args)
-                        .with_pr(ctx.pr.as_ref())
-                        .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
-                        .env_values(tv.install_env())
-                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                        .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
-                        .prepend_path(
-                            self.dependency_toolset(&ctx.config)
-                                .await?
-                                .list_paths(&ctx.config)
-                                .await,
-                        )?;
+                let install_env = ctx.ts.env_with_path_without_tools(&ctx.config).await?;
+                let mut cmd = self
+                    .npm_command(&ctx.config, Some(&ctx.ts), |cmd| {
+                        cmd.arg("install")
+                            .arg("-g")
+                            .arg(&package)
+                            .arg("--prefix")
+                            .arg(tv.install_path())
+                            .args(install_before_args)
+                            .with_pr(ctx.pr.as_ref())
+                            .envs(install_env)
+                            .env_values(tv.install_env())
+                    })
+                    .await
+                    .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
+                    .prepend_path(
+                        self.dependency_toolset(&ctx.config)
+                            .await?
+                            .list_paths(&ctx.config)
+                            .await,
+                    )?;
                 cmd = cmd.args(lifecycle_script_args);
                 if let Some(args) = &npm_args {
                     cmd = cmd.args(args);
@@ -559,7 +568,31 @@ impl Backend for NPMBackend {
 }
 
 impl NPMBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    async fn package_install_spec(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+        options: &NpmOptions<'_>,
+    ) -> Result<String> {
+        let Some(checksum) = options.checksum() else {
+            return Ok(format!("{}@{}", self.tool_name(), tv.version));
+        };
+        let (algorithm, digest) = checksum
+            .split_once(':')
+            .ok_or_else(|| eyre::eyre!("invalid packageManager checksum {checksum:?}"))?;
+        let download_dir = tv.download_path();
+        crate::file::create_dir_all(&download_dir)?;
+        let archive = download_dir.join("package.tgz");
+        ctx.pr
+            .set_message(format!("download {}@{}", self.tool_name(), tv.version));
+        npm_registry::download_tarball(&self.tool_name(), &tv.version, &archive).await?;
+        ctx.pr
+            .set_message(format!("verify {}@{}", self.tool_name(), tv.version));
+        crate::hash::ensure_checksum(&archive, digest, Some(ctx.pr.as_ref()), algorithm)?;
+        Ok(archive.to_string_lossy().into_owned())
+    }
+
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self {
             latest_version_cache: TokioMutex::new(
                 CacheManagerBuilder::new(ba.cache_path.join("latest_version.msgpack.z"))
@@ -582,27 +615,19 @@ impl NPMBackend {
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
-                let env = self.dependency_env(config).await?;
-                let prefix = Self::npm_meta_prefix()?;
-                let npm = self.spawn_program(config, None, "npm").await;
-
-                let raw = cmd!(
-                    npm,
-                    "view",
-                    self.tool_name(),
-                    "versions",
-                    "time",
-                    "--json",
-                    "--prefix",
-                    &prefix
-                )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()?;
+                let raw = self
+                    .npm_view(config, self.tool_name(), &["versions", "time"], true)
+                    .await?;
                 let data: Value = serde_json::from_str(&raw)?;
-                let version_info = npm_view_versions_time(&data)?;
+                let versions = npm_view_versions_time(&data)?;
 
-                Ok(version_info)
+                // `npm view <package> versions time` omits per-version
+                // deprecation metadata. The shell-out compatibility path
+                // intentionally pays for a second query so its resolution
+                // semantics match the default HTTP registry client.
+                let deprecated_versions = self.npm_deprecated_versions(config, &versions).await?;
+
+                Ok(filter_deprecated_versions(versions, &deprecated_versions))
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -611,22 +636,20 @@ impl NPMBackend {
 
     /// Legacy `npm view` dist-tags lookup, see [`Self::list_remote_versions_npm_view`].
     async fn latest_dist_tag_npm_view(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        let prefix = Self::npm_meta_prefix()?;
-        let npm = self.spawn_program(config, None, "npm").await;
-        let raw = cmd!(
-            npm,
-            "view",
-            self.tool_name(),
-            "dist-tags",
-            "--json",
-            "--prefix",
-            &prefix
-        )
-        .full_env(self.dependency_env(config).await?)
-        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-        .read()?;
-        let dist_tags: Value = serde_json::from_str(&raw)?;
-        npm_view_latest_dist_tag(&dist_tags)
+        let raw = self
+            .npm_view(config, self.tool_name(), &["versions", "dist-tags"], true)
+            .await?;
+        let data: Value = serde_json::from_str(&raw)?;
+        let versions = npm_view_versions_time(&data)?;
+        let latest = npm_view_latest_dist_tag(&data)?;
+
+        let deprecated_versions = self.npm_deprecated_versions(config, &versions).await?;
+
+        Ok(filter_deprecated_latest_dist_tag(
+            latest,
+            &versions,
+            &deprecated_versions,
+        ))
     }
 
     async fn build_transitive_release_age_args(
@@ -784,11 +807,13 @@ impl NPMBackend {
                 return false;
             }
         };
-        let npm = self.spawn_program(config, None, "npm").await;
-        let output = match cmd!(npm, "--version")
-            .full_env(env)
-            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+        let output = match self
+            .npm_command(config, None, |cmd| {
+                cmd.arg("--version").env_clear().envs(env)
+            })
+            .await
             .read()
+            .await
         {
             Ok(s) => s,
             Err(e) => {
@@ -807,6 +832,61 @@ impl NPMBackend {
         let dir = crate::dirs::CACHE.join("npm-meta");
         crate::file::create_dir_all(&dir)?;
         Ok(dir)
+    }
+
+    /// Resolve npm and apply environment required by every npm subprocess.
+    /// Caller configuration runs first so its environment cannot override
+    /// mise-owned npm settings.
+    async fn npm_command<'a>(
+        &self,
+        config: &Arc<Config>,
+        ts: Option<&Toolset>,
+        configure: impl FnOnce(CmdLineRunner<'a>) -> CmdLineRunner<'a>,
+    ) -> CmdLineRunner<'a> {
+        let npm = self.spawn_program(config, ts, "npm").await;
+        configure(CmdLineRunner::new(npm)).env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+    }
+
+    /// Run an isolated `npm view` query with mise's required npm environment.
+    async fn npm_view(
+        &self,
+        config: &Arc<Config>,
+        package: impl AsRef<std::ffi::OsStr>,
+        fields: &[&str],
+        json: bool,
+    ) -> eyre::Result<String> {
+        let prefix = Self::npm_meta_prefix()?;
+        let env = self.dependency_env(config).await?;
+        self.npm_command(config, None, |cmd| {
+            cmd.arg("view")
+                .arg(package)
+                .args(fields)
+                .arg(format!("--json={json}"))
+                .arg("--prefix")
+                .arg(prefix)
+                .env_clear()
+                .envs(env)
+        })
+        .await
+        .read()
+        .await
+    }
+
+    /// Fetch deprecation metadata in one combined query, or skip the lookup for
+    /// an empty version history because npm rejects ranges matching no versions.
+    async fn npm_deprecated_versions(
+        &self,
+        config: &Arc<Config>,
+        versions: &[VersionInfo],
+    ) -> eyre::Result<HashSet<String>> {
+        let package = self.tool_name();
+        let Some(query) = npm_deprecated_query(&package, versions) else {
+            return Ok(HashSet::new());
+        };
+        let raw = self
+            .npm_view(config, query, &["version", "deprecated"], false)
+            .await?;
+        Ok(npm_view_deprecated_versions(&package, &raw))
     }
 
     /// Check dependencies for version checking (always needs npm)
@@ -928,6 +1008,7 @@ impl NPMBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
+        package: &str,
     ) -> Result<()> {
         crate::backend::aube_host::init();
         let install_path = tv.install_path();
@@ -972,7 +1053,7 @@ impl NPMBackend {
         };
         opts.ignore_scripts = matches!(allow_builds, AllowBuilds::None);
 
-        let package = format!("{}@{}", self.tool_name(), tv.version);
+        let package = package.to_string();
         let install = aube::embed::add_with_overrides(
             &install_path,
             std::slice::from_ref(&package),
@@ -1007,6 +1088,7 @@ impl NPMBackend {
         ctx: &InstallContext,
         tv: &ToolVersion,
         options: &NpmOptions<'_>,
+        package: &str,
     ) -> Result<()> {
         let bin_dir = tv.install_path().join("bin");
         let aube_program = self
@@ -1022,7 +1104,7 @@ impl NPMBackend {
         let mut cmd = CmdLineRunner::new(aube_program)
             .arg("add")
             .arg("--global")
-            .arg(format!("{}@{}", self.tool_name(), tv.version))
+            .arg(package)
             .with_pr(ctx.pr.as_ref())
             .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
             .env_values(tv.install_env())
@@ -1496,8 +1578,90 @@ fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
         .collect())
 }
 
+fn npm_view_deprecated_versions(package: &str, output: &str) -> HashSet<String> {
+    let prefix = format!("{package}@");
+    output
+        .lines()
+        .filter_map(|line| line.strip_prefix(&prefix))
+        .filter_map(|line| line.split_once(' '))
+        .filter_map(|(version, field)| {
+            // When `deprecated` is absent, npm collapses the remaining
+            // `version` field to `<package>@<version> '<version>'` without a
+            // `version =` label. Match `deprecated =` positively so the
+            // shorthand version-only line is not treated as deprecated.
+            field
+                .starts_with("deprecated = ")
+                .then_some(version.to_string())
+        })
+        .collect()
+}
+
+/// Build one npm range that covers every stable release plus every prerelease
+/// core returned by the versions query. npm ranges exclude prereleases unless
+/// a comparator in the same set names their major/minor/patch tuple.
+fn npm_deprecated_query(package: &str, versions: &[VersionInfo]) -> Option<String> {
+    if versions.is_empty() {
+        return None;
+    }
+
+    let prerelease_cores = versions
+        .iter()
+        .filter(|version| version.prerelease)
+        .filter_map(|version| semver::Version::parse(&version.version).ok())
+        .map(|version| (version.major, version.minor, version.patch))
+        .collect::<BTreeSet<_>>();
+    let ranges = std::iter::once(">=0.0.0-0".to_string())
+        .chain(prerelease_cores.into_iter().map(|(major, minor, patch)| {
+            format!(">={major}.{minor}.{patch}-0 <{major}.{minor}.{patch}")
+        }))
+        .collect::<Vec<_>>()
+        .join(" || ");
+    Some(format!("{package}@{ranges}"))
+}
+
+/// Exclude individually deprecated releases while retaining a package whose
+/// entire version history is deprecated. npm uses that all-versions state for
+/// package-level deprecation and still permits the package to be installed.
+fn filter_deprecated_versions(
+    versions: Vec<VersionInfo>,
+    deprecated_versions: &HashSet<String>,
+) -> Vec<VersionInfo> {
+    if deprecated_versions.is_empty()
+        || versions
+            .iter()
+            .all(|version| deprecated_versions.contains(&version.version))
+    {
+        return versions;
+    }
+
+    versions
+        .into_iter()
+        .filter(|version| !deprecated_versions.contains(&version.version))
+        .collect()
+}
+
+/// Reject a selectively deprecated latest target. Preserve a missing target
+/// because npm registries can briefly publish a dist-tag before its version
+/// metadata, matching the direct registry path's behavior.
+fn filter_deprecated_latest_dist_tag(
+    latest: Option<String>,
+    versions: &[VersionInfo],
+    deprecated_versions: &HashSet<String>,
+) -> Option<String> {
+    let all_versions_deprecated = versions
+        .iter()
+        .all(|version| deprecated_versions.contains(&version.version));
+    latest.filter(|latest| {
+        all_versions_deprecated
+            || !versions.iter().any(|version| version.version == *latest)
+            || !deprecated_versions.contains(latest)
+    })
+}
+
 fn npm_view_latest_dist_tag(data: &Value) -> eyre::Result<Option<String>> {
-    Ok(match npm_view_json(data)?["latest"] {
+    let data = npm_view_json(data)?;
+    let dist_tags = data.get("dist-tags").unwrap_or(data);
+    Ok(match dist_tags["latest"] {
         Value::String(ref s) => Some(s.clone()),
         _ => None,
     })
@@ -1555,7 +1719,7 @@ fn build_aube_install_error_message(err: &miette::Report, tool_full: &str) -> St
 }
 
 /// Returns install-time-only option keys for NPM backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "npm_args".into(),
         "pnpm_args".into(),
@@ -1952,6 +2116,94 @@ mod tests {
     }
 
     #[test]
+    fn test_npm_view_deprecated_versions_extracts_versions() {
+        let output = "\
+aws-cdk@1.0.0 version = '1.0.0'
+aws-cdk@1.0.0 deprecated = 'use 1.2.0'
+aws-cdk@2.0.0 version = '2.0.0'
+aws-cdk@2.0.0 deprecated = 'published accidentally'
+";
+        assert_eq!(
+            npm_view_deprecated_versions("aws-cdk", output),
+            HashSet::from(["1.0.0".into(), "2.0.0".into()])
+        );
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_handles_scoped_packages_and_multiline_messages() {
+        let output = "\
+@scope/pkg@1.0.0 version = '1.0.0'
+@scope/pkg@1.0.0 deprecated = 'first line\n' +
+  'second line'
+@scope/pkg@2.0.0 version = '2.0.0'
+@scope/pkg@2.0.0 deprecated = 'use a newer version'
+";
+        assert_eq!(
+            npm_view_deprecated_versions("@scope/pkg", output),
+            HashSet::from(["1.0.0".into(), "2.0.0".into()])
+        );
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_accepts_empty_output() {
+        assert!(npm_view_deprecated_versions("prettier", "").is_empty());
+    }
+
+    #[test]
+    fn test_npm_view_deprecated_versions_preserves_a_single_deprecated_release() {
+        let output = "\
+pkg@1.0.0 '1.0.0'
+pkg@1.1.0 version = '1.1.0'
+pkg@1.1.0 deprecated = 'published accidentally'
+pkg@1.2.0 '1.2.0'
+";
+
+        assert_eq!(
+            npm_view_deprecated_versions("pkg", output),
+            HashSet::from(["1.1.0".into()])
+        );
+    }
+
+    #[test]
+    fn test_npm_deprecated_query_and_filter_include_prereleases() {
+        let versions = [
+            ("1.0.0", false),
+            ("2.0.0-beta.1", true),
+            ("2.0.0-rc.1", true),
+            ("3.1.4-dev.1", true),
+        ]
+        .map(|(version, prerelease)| VersionInfo {
+            version: version.into(),
+            prerelease,
+            ..Default::default()
+        });
+
+        assert_eq!(
+            npm_deprecated_query("pkg", &versions),
+            Some("pkg@>=0.0.0-0 || >=2.0.0-0 <2.0.0 || >=3.1.4-0 <3.1.4".into())
+        );
+
+        let deprecated_versions = npm_view_deprecated_versions(
+            "pkg",
+            "pkg@2.0.0-beta.1 deprecated = 'published accidentally'\n",
+        );
+        let filtered = filter_deprecated_versions(versions.into(), &deprecated_versions);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|version| version.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0", "2.0.0-rc.1", "3.1.4-dev.1"]
+        );
+    }
+
+    #[test]
+    fn test_npm_deprecated_query_skips_empty_version_history() {
+        assert_eq!(npm_deprecated_query("pkg", &[]), None);
+    }
+
+    #[test]
     fn test_npm_view_latest_dist_tag_accepts_legacy_object() {
         let data = serde_json::json!({
             "latest": "1.0.0"
@@ -1972,6 +2224,97 @@ mod tests {
         assert_eq!(
             npm_view_latest_dist_tag(&data).unwrap(),
             Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_npm_view_latest_dist_tag_accepts_nested_dist_tags() {
+        let data = serde_json::json!([{
+            "versions": ["1.0.0"],
+            "dist-tags": { "latest": "1.0.0" }
+        }]);
+
+        assert_eq!(
+            npm_view_latest_dist_tag(&data).unwrap(),
+            Some("1.0.0".into())
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_versions_excludes_individual_releases() {
+        let versions = ["1.0.0", "1.1.0", "2.0.0"]
+            .map(|version| VersionInfo {
+                version: version.into(),
+                ..Default::default()
+            })
+            .into();
+        let deprecated_versions = HashSet::from(["1.1.0".into(), "2.0.0".into()]);
+
+        let filtered = filter_deprecated_versions(versions, &deprecated_versions);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|version| version.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_versions_retains_package_level_deprecation() {
+        let versions = ["1.0.0", "1.1.0"]
+            .map(|version| VersionInfo {
+                version: version.into(),
+                ..Default::default()
+            })
+            .into();
+        let deprecated_versions = HashSet::from(["1.0.0".into(), "1.1.0".into()]);
+
+        let filtered = filter_deprecated_versions(versions, &deprecated_versions);
+
+        assert_eq!(
+            filtered
+                .iter()
+                .map(|version| version.version.as_str())
+                .collect::<Vec<_>>(),
+            ["1.0.0", "1.1.0"]
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_latest_dist_tag_rejects_selective_deprecation() {
+        let versions = ["1.0.0", "2.0.0"].map(|version| VersionInfo {
+            version: version.into(),
+            ..Default::default()
+        });
+        let deprecated_versions = HashSet::from(["2.0.0".into()]);
+
+        assert_eq!(
+            filter_deprecated_latest_dist_tag(
+                Some("2.0.0".into()),
+                &versions,
+                &deprecated_versions
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn test_filter_deprecated_latest_dist_tag_preserves_missing_target() {
+        let versions = [VersionInfo {
+            version: "1.0.0".into(),
+            ..Default::default()
+        }];
+        let deprecated_versions = HashSet::from(["2.0.0".into()]);
+
+        assert_eq!(
+            filter_deprecated_latest_dist_tag(
+                Some("2.0.0".into()),
+                &versions,
+                &deprecated_versions
+            ),
+            Some("2.0.0".into())
         );
     }
 

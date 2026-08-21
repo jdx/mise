@@ -14,18 +14,18 @@ enum FlatpakScope {
 }
 
 /// Flatpak applications and runtimes installed system-wide or for the current user.
-pub struct FlatpakManager {
+pub(crate) struct FlatpakManager {
     scope: FlatpakScope,
 }
 
 impl FlatpakManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             scope: FlatpakScope::System,
         }
     }
 
-    pub fn new_user() -> Self {
+    pub(crate) fn new_user() -> Self {
         Self {
             scope: FlatpakScope::User,
         }

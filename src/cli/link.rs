@@ -16,7 +16,7 @@ use crate::{cli::args::ToolArg, config::Config};
 /// Use this for adding installs either custom compiled outside mise or built with a different tool.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Link {
+pub(crate) struct Link {
     /// Tool name and version to create a symlink for
     #[clap(value_name = "TOOL@VERSION")]
     tool: ToolArg,
@@ -32,7 +32,7 @@ pub struct Link {
 }
 
 impl Link {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let tvr = match self.tool.tvr.as_ref() {
             Some(tvr @ (ToolRequest::Version { .. } | ToolRequest::Ref { .. })) => tvr,
             Some(tvr) => bail!(

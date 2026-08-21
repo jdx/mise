@@ -5,12 +5,12 @@ use crate::env;
 use crate::env::PATH_KEY;
 
 #[cfg(windows)]
-pub fn setup() -> color_eyre::Result<PathBuf> {
+pub(crate) fn setup() -> color_eyre::Result<PathBuf> {
     let path = env::MISE_DATA_DIR.join(".fake-asdf");
     Ok(path)
 }
 
-pub fn get_path_with_fake_asdf() -> String {
+pub(crate) fn get_path_with_fake_asdf() -> String {
     let mut path = split_paths(&env::var_os(&*PATH_KEY).unwrap_or_default()).collect::<Vec<_>>();
     match setup() {
         Ok(fake_asdf_path) => {

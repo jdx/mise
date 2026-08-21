@@ -29,7 +29,7 @@ mod rust;
 mod swift;
 mod zig;
 
-pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
+pub(crate) static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
     let plugins: Vec<Arc<dyn Backend>> = vec![
         Arc::new(bun::BunPlugin::new()),
         Arc::new(deno::DenoPlugin::new()),
@@ -51,13 +51,13 @@ pub static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         .collect()
 });
 
-pub fn path_env_with_tv_path(tv: &ToolVersion) -> Result<OsString> {
+pub(crate) fn path_env_with_tv_path(tv: &ToolVersion) -> Result<OsString> {
     let mut path_env = PathEnv::from_iter(env::PATH.clone());
     path_env.add(tv.install_path().join("bin"));
     Ok(path_env.join())
 }
 
-pub fn run_fetch_task_with_timeout<F, T>(f: F) -> Result<T>
+pub(crate) fn run_fetch_task_with_timeout<F, T>(f: F) -> Result<T>
 where
     F: FnOnce() -> Result<T> + Send,
     T: Send,
@@ -78,7 +78,7 @@ where
     }
 }
 
-pub async fn run_fetch_task_with_timeout_async<F, Fut, T>(f: F) -> Result<T>
+pub(crate) async fn run_fetch_task_with_timeout_async<F, Fut, T>(f: F) -> Result<T>
 where
     Fut: Future<Output = Result<T>> + Send,
     T: Send,
@@ -99,7 +99,7 @@ where
     }
 }
 
-pub fn new_backend_arg(tool_name: &str) -> BackendArg {
+pub(crate) fn new_backend_arg(tool_name: &str) -> BackendArg {
     BackendArg::new_raw(
         tool_name.to_string(),
         Some(format!("core:{tool_name}")),
@@ -118,7 +118,7 @@ pub fn new_backend_arg(tool_name: &str) -> BackendArg {
 /// `\r` on the end of every URL. Neither a path nor a URL can legitimately carry surrounding
 /// whitespace, and a TOML multi-line string indented to match the surrounding block would
 /// otherwise turn every entry into a filename that starts with spaces.
-pub fn patch_sources(setting: Option<&str>) -> Vec<String> {
+pub(crate) fn patch_sources(setting: Option<&str>) -> Vec<String> {
     setting
         .unwrap_or_default()
         .lines()
@@ -132,7 +132,7 @@ pub fn patch_sources(setting: Option<&str>) -> Vec<String> {
 ///
 /// Returned one entry per source rather than concatenated: the `-p` strip level a patch needs is
 /// decided per patch, so a caller that runs `patch` itself has to keep them apart.
-pub async fn fetch_patch_contents(sources: &[String]) -> Result<Vec<String>> {
+pub(crate) async fn fetch_patch_contents(sources: &[String]) -> Result<Vec<String>> {
     let re = xx::regex!(r#"^[Hh][Tt][Tt][Pp][Ss]?://"#);
     let mut patches = vec![];
     for f in sources {

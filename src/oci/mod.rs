@@ -6,33 +6,33 @@
 //! exactly one content-addressable blob. See `builder.rs` for how this is
 //! orchestrated.
 
-pub mod auth;
-pub mod builder;
-pub mod docker_archive;
-pub mod layer;
-pub mod layout;
-pub mod manifest;
-pub mod packages;
-pub mod registry;
+pub(crate) mod auth;
+pub(crate) mod builder;
+pub(crate) mod docker_archive;
+pub(crate) mod layer;
+pub(crate) mod layout;
+pub(crate) mod manifest;
+pub(crate) mod packages;
+pub(crate) mod registry;
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
 
-pub use builder::{BuildOptions, BuildOutput, Builder};
-pub use layer::LayerOwner;
+pub(crate) use builder::{BuildOptions, BuildOutput, Builder};
+pub(crate) use layer::LayerOwner;
 
 /// A host path copied into an OCI image as an independent layer.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct OciCopy {
+pub(crate) struct OciCopy {
     pub host: PathBuf,
     pub image: String,
 }
 
 impl OciCopy {
-    pub fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         if self.host.as_os_str().is_empty() {
             return Err("copy host path must not be empty".to_string());
         }
@@ -79,7 +79,7 @@ fn validate_image_path(path: &str) -> Result<(), String> {
 
 /// Normalize a Rust-style arch name (`x86_64`, `aarch64`) to the OCI-spec
 /// value (`amd64`, `arm64`).
-pub fn normalize_arch(a: &str) -> &str {
+pub(crate) fn normalize_arch(a: &str) -> &str {
     match a {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
@@ -93,7 +93,7 @@ pub fn normalize_arch(a: &str) -> &str {
 /// (e.g. `debian:bookworm-slim`) would fail with "no matching platform",
 /// and a scratch build would label its `ImageConfig.os` as a value that
 /// makes the image unrunnable as a Linux container.
-pub fn normalize_os(o: &str) -> &str {
+pub(crate) fn normalize_os(o: &str) -> &str {
     match o {
         "macos" | "windows" => "linux",
         other => other,
@@ -103,7 +103,7 @@ pub fn normalize_os(o: &str) -> &str {
 /// The `[oci]` section of a `mise.toml`. All fields optional.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct OciConfig {
+pub(crate) struct OciConfig {
     /// Base image reference (overrides `oci.default_from` setting).
     #[serde(default)]
     pub from: Option<String>,
@@ -154,7 +154,7 @@ impl OciConfig {
     /// new keys from `other` are added. Copy entries accumulate with less
     /// specific configs first, so a more specific copy targeting the same
     /// image path is emitted later and takes precedence.
-    pub fn fill_defaults_from(&mut self, other: Self) {
+    pub(crate) fn fill_defaults_from(&mut self, other: Self) {
         if self.from.is_none() {
             self.from = other.from;
         }

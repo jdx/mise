@@ -8,14 +8,14 @@ use super::trust;
 /// Remove explicit trust for a config
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct Untrust {
+pub(crate) struct Untrust {
     /// The config file to untrust
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 }
 
 impl Untrust {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         trust::untrust_config_file(self.config_file())
     }
 

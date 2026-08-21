@@ -2,17 +2,17 @@ use aqua_registry::{AquaPackage, Result, decode_package_rkyv};
 
 /// Metadata for the baked aqua registry snapshot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AquaRegistryMetadata {
+pub(crate) struct AquaRegistryMetadata {
     pub repository: &'static str,
     pub tag: &'static str,
 }
 
 /// Baked canonical registry packages (compiled into the mise binary).
-pub static AQUA_STANDARD_REGISTRY_FILES: phf::Map<&'static str, &'static [u8]> =
+pub(crate) static AQUA_STANDARD_REGISTRY_FILES: phf::Map<&'static str, &'static [u8]> =
     include!(concat!(env!("OUT_DIR"), "/aqua_standard_registry_files.rs"));
 
 /// Baked aqua registry snapshot metadata (compiled into the mise binary).
-pub static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(concat!(
+pub(crate) static AQUA_STANDARD_REGISTRY_METADATA: AquaRegistryMetadata = include!(concat!(
     env!("OUT_DIR"),
     "/aqua_standard_registry_metadata.rs"
 ));
@@ -23,12 +23,12 @@ static AQUA_STANDARD_REGISTRY_ALIASES: phf::Map<&'static str, &'static str> = in
     "/aqua_standard_registry_aliases.rs"
 ));
 
-/// Returns all package IDs from the baked-in aqua registry.
-pub fn package_ids() -> Vec<&'static str> {
-    AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
+/// Returns all package IDs from the baked-in Aqua registry without allocating a collection.
+pub(crate) fn package_ids() -> impl Iterator<Item = &'static str> {
+    AQUA_STANDARD_REGISTRY_FILES.keys().copied()
 }
 
-pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {
+pub(crate) fn package(package_id: &str) -> Option<Result<AquaPackage>> {
     baked_registry_file(package_id).map(|content| decode_package_rkyv(package_id, content))
 }
 

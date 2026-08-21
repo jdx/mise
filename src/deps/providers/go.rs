@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for Go (go.sum)
 #[derive(Debug)]
-pub struct GoDepsProvider {
+pub(crate) struct GoDepsProvider {
     base: ProviderBase,
 }
 
 impl GoDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("go", project_root, config),
         }

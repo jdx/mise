@@ -1,3 +1,5 @@
+#![deny(unreachable_pub)]
+
 #[cfg(test)]
 #[macro_use]
 extern crate insta;

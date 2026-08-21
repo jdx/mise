@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use usage::SpecCommandEffect::{self, Destructive, Read, Write};
 
 /// Commands whose effect is fixed, keyed by their full path under `mise`.
-pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
+pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("activate", Read),
     ("backends", Read),
     ("backends ls", Read),
@@ -158,11 +158,13 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("env", Read),
     ("fmt", Write),
     ("generate", Read),
+    // Deprecated spelling of `generate install-script`.
     ("generate bootstrap", Write),
     ("generate config", Write),
     ("generate devcontainer", Write),
     ("generate git-pre-commit", Write),
     ("generate github-action", Write),
+    ("generate install-script", Write),
     ("generate task-docs", Write),
     ("generate task-stubs", Write),
     ("generate tool-stub", Write),
@@ -269,7 +271,7 @@ pub const EFFECTS: &[(&str, SpecCommandEffect)] = &[
 ///
 /// `bootstrap packages brew` is `#[cfg(unix)]`; `render-help` is
 /// `#[cfg(debug_assertions)]`.
-pub const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
+pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
     #[cfg(unix)]
     ("bootstrap packages brew", Read),
     #[cfg(unix)]
@@ -288,7 +290,7 @@ pub const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
 // Only the coverage test reads this; it exists so the reason a command is
 // left unclassified lives next to the decision rather than in a commit message.
 #[cfg(test)]
-pub const UNCLASSIFIED: &[(&str, &str)] = &[
+pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("asdf", "proxies whatever asdf command a plugin invoked"),
     (
         "bootstrap repos exec",
@@ -307,7 +309,7 @@ pub const UNCLASSIFIED: &[(&str, &str)] = &[
 ];
 
 /// Annotate every command in the spec that has a declared effect.
-pub fn apply(spec: &mut usage::Spec) {
+pub(super) fn apply(spec: &mut usage::Spec) {
     let effects: HashMap<&str, SpecCommandEffect> =
         EFFECTS.iter().chain(PLATFORM_EFFECTS).copied().collect();
     annotate(&mut spec.cmd, &mut vec![], &effects);

@@ -25,6 +25,23 @@ unset MISE_MINIMUM_RELEASE_AGE
 # Test: `mise latest --minimum-release-age` CLI flag should filter by date
 assert_contains "mise latest npm:prettier --minimum-release-age 2023-06-01" "2.8.8"
 
+# Test: selectively deprecated releases are excluded from date-aware latest
+# resolution. aws-cdk 3.0.0 was published accidentally and deprecated in favor
+# of 2.x; 2.1007.0 is the newest usable release before this cutoff.
+assert "mise latest npm:aws-cdk --minimum-release-age 2025-04-10" "2.1007.0"
+
+# The npm CLI metadata path needs an additional query for deprecated releases.
+assert \
+  "MISE_CACHE_DIR='$PWD/npm-shell-out-cache' MISE_NPM_SHELL_OUT=1 NPM_CONFIG_JSON=true mise latest npm:aws-cdk --minimum-release-age 2025-04-10" \
+  "2.1007.0"
+
+# A package whose entire version history is deprecated remains resolvable. npm
+# treats that as package-level deprecation and warns during installation.
+assert "MISE_CACHE_DIR='$PWD/npm-request-cache' mise latest npm:request" "2.88.2"
+assert \
+  "MISE_CACHE_DIR='$PWD/npm-request-shell-out-cache' MISE_NPM_SHELL_OUT=1 mise latest npm:request" \
+  "2.88.2"
+
 # Test: CLI --minimum-release-age flag overrides the global minimum_release_age setting
 # Global is 2024-01-01 (would give 3.1.0), CLI is 2023-06-01 (gives 2.8.8)
 export MISE_MINIMUM_RELEASE_AGE="2024-01-01"

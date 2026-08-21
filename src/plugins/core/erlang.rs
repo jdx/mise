@@ -31,7 +31,7 @@ use crate::cmd::CmdLineRunner;
 use std::fs;
 
 #[derive(Debug)]
-pub struct ErlangPlugin {
+pub(super) struct ErlangPlugin {
     ba: Arc<BackendArg>,
 }
 
@@ -39,7 +39,7 @@ const KERL_VERSION: &str = "4.4.0";
 const ERLANG_PRECOMPILED_OS_OPTION: &str = "precompiled_os";
 
 impl ErlangPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("erlang")),
         }

@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for Deno (deno.lock)
 #[derive(Debug)]
-pub struct DenoDepsProvider {
+pub(crate) struct DenoDepsProvider {
     base: ProviderBase,
 }
 
 impl DenoDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("deno", project_root, config),
         }

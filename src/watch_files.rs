@@ -13,7 +13,7 @@ use std::{collections::BTreeSet, sync::Arc};
 #[derive(
     Debug, Clone, serde::Serialize, serde::Deserialize, Ord, PartialOrd, Eq, PartialEq, Hash,
 )]
-pub struct WatchFile {
+pub(crate) struct WatchFile {
     pub patterns: Vec<String>,
     #[serde(default)]
     pub run: Option<String>,
@@ -22,15 +22,15 @@ pub struct WatchFile {
     pub task: Option<String>,
 }
 
-pub static MODIFIED_FILES: Mutex<Option<BTreeSet<PathBuf>>> = Mutex::new(None);
+pub(crate) static MODIFIED_FILES: Mutex<Option<BTreeSet<PathBuf>>> = Mutex::new(None);
 
-pub fn add_modified_file(file: PathBuf) {
+pub(crate) fn add_modified_file(file: PathBuf) {
     let mut mu = MODIFIED_FILES.lock().unwrap();
     let set = mu.get_or_insert_with(BTreeSet::new);
     set.insert(file);
 }
 
-pub async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
+pub(crate) async fn execute_runs(config: &Arc<Config>, ts: &Toolset) {
     let files = {
         let mut mu = MODIFIED_FILES.lock().unwrap();
         mu.take().unwrap_or_default()
@@ -202,7 +202,7 @@ fn has_matching_files<'a>(
         .collect())
 }
 
-pub fn glob(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
+pub(crate) fn glob(root: &Path, patterns: &[String]) -> Result<Vec<PathBuf>> {
     if patterns.is_empty() {
         return Ok(vec![]);
     }

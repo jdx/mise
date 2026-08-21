@@ -6,7 +6,7 @@ use crate::cli::token::github::Github;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
-pub struct Token {
+pub(crate) struct Token {
     /// GitHub hostname
     #[clap(default_value = "github.com")]
     host: String,
@@ -30,7 +30,7 @@ pub struct Token {
 }
 
 impl Token {
-    pub fn run(self) -> eyre::Result<()> {
+    pub(crate) fn run(self) -> eyre::Result<()> {
         Github::from(self).run()
     }
 }

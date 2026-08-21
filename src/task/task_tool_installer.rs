@@ -10,13 +10,13 @@ use std::path::Path;
 use std::sync::Arc;
 
 /// Handles collection and installation of tools required by tasks
-pub struct TaskToolInstaller<'a> {
+pub(crate) struct TaskToolInstaller<'a> {
     context_builder: &'a TaskContextBuilder,
     cli_tools: &'a [ToolArg],
 }
 
 impl<'a> TaskToolInstaller<'a> {
-    pub fn new(context_builder: &'a TaskContextBuilder, cli_tools: &'a [ToolArg]) -> Self {
+    pub(crate) fn new(context_builder: &'a TaskContextBuilder, cli_tools: &'a [ToolArg]) -> Self {
         Self {
             context_builder,
             cli_tools,
@@ -24,7 +24,7 @@ impl<'a> TaskToolInstaller<'a> {
     }
 
     /// Collect and install all tools needed by tasks
-    pub async fn install_tools(
+    pub(crate) async fn install_tools(
         &self,
         config: &mut Arc<Config>,
         tasks: &Deps,
@@ -46,7 +46,7 @@ impl<'a> TaskToolInstaller<'a> {
 
     /// Collect every tool request needed to prepare the supplied tasks without
     /// executing their commands or dependency graphs.
-    pub async fn collect_tool_requests<'t>(
+    pub(crate) async fn collect_tool_requests<'t>(
         &self,
         config: &Arc<Config>,
         tasks: impl IntoIterator<Item = &'t Task>,

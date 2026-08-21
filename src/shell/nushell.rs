@@ -7,7 +7,7 @@ use crate::shell::{self, ActivateOptions, ActivatePrelude, Shell};
 use itertools::Itertools;
 
 #[derive(Default)]
-pub struct Nushell {}
+pub(super) struct Nushell {}
 
 enum EnvOp<'a> {
     Set { key: &'a str, val: &'a str },

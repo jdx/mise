@@ -8,7 +8,7 @@ use eyre::Report;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub(crate) enum Error {
     #[error("[{ts}] {tr}: {source:#}")]
     FailedToResolveVersion {
         tr: Box<ToolRequest>,
@@ -95,7 +95,7 @@ fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> St
 }
 
 /// Split an install result into successful versions and a result preserving any error.
-pub fn split_install_result(
+pub(crate) fn split_install_result(
     result: Result<Vec<ToolVersion>, Report>,
 ) -> (Vec<ToolVersion>, Result<(), Report>) {
     match result {
@@ -114,7 +114,7 @@ pub fn split_install_result(
 }
 
 impl Error {
-    pub fn get_exit_status(err: &Report) -> Option<i32> {
+    pub(crate) fn get_exit_status(err: &Report) -> Option<i32> {
         if let Some(Error::ScriptFailed(_, Some(status))) = err.downcast_ref::<Error>() {
             status.code()
         } else {
@@ -123,7 +123,7 @@ impl Error {
     }
 
     #[cfg(unix)]
-    pub fn is_sigint(err: &Report) -> bool {
+    pub(crate) fn is_sigint(err: &Report) -> bool {
         use std::os::unix::process::ExitStatusExt;
 
         err.downcast_ref::<Error>().is_some_and(|err| {
@@ -136,19 +136,19 @@ impl Error {
     }
 
     #[cfg(not(unix))]
-    pub fn is_sigint(_err: &Report) -> bool {
+    pub(crate) fn is_sigint(_err: &Report) -> bool {
         false
     }
 
-    pub fn is_task_interrupted(err: &Report) -> bool {
+    pub(crate) fn is_task_interrupted(err: &Report) -> bool {
         Self::is_task_interrupted_before_start(err) || Self::is_sigint(err)
     }
 
-    pub fn is_task_interrupted_before_start(err: &Report) -> bool {
+    pub(crate) fn is_task_interrupted_before_start(err: &Report) -> bool {
         matches!(err.downcast_ref::<Error>(), Some(Error::TaskInterrupted))
     }
 
-    pub fn is_argument_err(err: &Report) -> bool {
+    pub(crate) fn is_argument_err(err: &Report) -> bool {
         err.downcast_ref::<Error>()
             .map(|e| {
                 matches!(
@@ -162,7 +162,7 @@ impl Error {
             .unwrap_or(false)
     }
 
-    pub fn is_required_channel_resolution_err(err: &Report) -> bool {
+    pub(crate) fn is_required_channel_resolution_err(err: &Report) -> bool {
         err.chain().any(|source| {
             matches!(
                 source.downcast_ref::<Error>(),

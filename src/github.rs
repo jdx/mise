@@ -19,7 +19,7 @@ pub(crate) mod oauth;
 pub(crate) mod sigstore;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubRelease {
+pub(crate) struct GithubRelease {
     pub tag_name: String,
     // pub name: Option<String>,
     // pub body: Option<String>,
@@ -34,47 +34,47 @@ pub struct GithubRelease {
 impl GithubRelease {
     /// The time this release became public. GitHub's `created_at` is the date
     /// of the tagged commit, which may be much older than the publication date.
-    pub fn released_at(&self) -> &str {
+    pub(crate) fn released_at(&self) -> &str {
         self.published_at.as_deref().unwrap_or(&self.created_at)
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubTag {
+pub(crate) struct GithubTag {
     pub name: String,
     pub commit: Option<GithubTagCommit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubTagCommit {
+pub(crate) struct GithubTagCommit {
     pub sha: String,
     pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubCommit {
+pub(crate) struct GithubCommit {
     pub commit: GithubCommitInfo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubCommitInfo {
+pub(crate) struct GithubCommitInfo {
     pub committer: GithubCommitPerson,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubCommitPerson {
+pub(crate) struct GithubCommitPerson {
     pub date: String,
 }
 
 /// Tag with date information
 #[derive(Debug, Clone)]
-pub struct GithubTagWithDate {
+pub(crate) struct GithubTagWithDate {
     pub name: String,
     pub date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GithubAsset {
+pub(crate) struct GithubAsset {
     pub name: String,
     // pub size: u64,
     pub browser_download_url: String,
@@ -93,9 +93,9 @@ static RELEASE_CACHE: Lazy<RwLock<CacheGroup<GithubRelease>>> = Lazy::new(Defaul
 
 static TAGS_CACHE: Lazy<RwLock<CacheGroup<Vec<String>>>> = Lazy::new(Default::default);
 
-pub static API_URL: &str = "https://api.github.com";
+pub(crate) static API_URL: &str = "https://api.github.com";
 
-pub static API_PATH: &str = "/api/v3";
+pub(crate) static API_PATH: &str = "/api/v3";
 
 /// Without `MISE_LIST_ALL_VERSIONS`, mise normally fetches only the first page of
 /// releases to save API quota. The read path filters out prereleases/drafts by
@@ -143,7 +143,7 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Gith
     RELEASE_CACHE.read().await
 }
 
-pub async fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
+pub(crate) async fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
     Ok(list_releases_including_prereleases(repo)
         .await?
         .into_iter()
@@ -151,7 +151,10 @@ pub async fn list_releases(repo: &str) -> Result<Vec<GithubRelease>> {
         .collect())
 }
 
-pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>> {
+pub(crate) async fn list_releases_from_url(
+    api_url: &str,
+    repo: &str,
+) -> Result<Vec<GithubRelease>> {
     Ok(list_releases_including_prereleases_from_url(api_url, repo)
         .await?
         .into_iter()
@@ -163,7 +166,7 @@ pub async fn list_releases_from_url(api_url: &str, repo: &str) -> Result<Vec<Git
 /// Drafts are always filtered out. Callers opting in to pre-releases (e.g. the
 /// `github:` backend with `prerelease = true`) use this variant; the cache is
 /// shared with [`list_releases`] so there's no extra API cost.
-pub async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<GithubRelease>> {
+pub(crate) async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<GithubRelease>> {
     let key = repo.to_kebab_case();
     let cache = get_releases_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -173,7 +176,7 @@ pub async fn list_releases_including_prereleases(repo: &str) -> Result<Vec<Githu
         .to_vec())
 }
 
-pub async fn list_releases_including_prereleases_from_url(
+pub(crate) async fn list_releases_including_prereleases_from_url(
     api_url: &str,
     repo: &str,
 ) -> Result<Vec<GithubRelease>> {
@@ -220,7 +223,7 @@ async fn list_releases_(api_url: &str, repo: &str) -> Result<Vec<GithubRelease>>
     Ok(releases)
 }
 
-pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
+pub(crate) async fn list_tags(repo: &str) -> Result<Vec<String>> {
     let key = repo.to_kebab_case();
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -232,7 +235,7 @@ pub async fn list_tags(repo: &str) -> Result<Vec<String>> {
         .to_vec())
 }
 
-pub async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
+pub(crate) async fn list_tags_from_url(api_url: &str, repo: &str) -> Result<Vec<String>> {
     let key = format!("{api_url}-{repo}").to_kebab_case();
     let cache = get_tags_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -271,7 +274,7 @@ async fn list_tags_(api_url: &str, repo: &str, list_all: bool) -> Result<Vec<Str
 
 /// List tags with their commit dates. This is slower than `list_tags` as it requires
 /// fetching commit info for each tag. Use only when MISE_LIST_ALL_VERSIONS is set.
-pub async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> {
+pub(crate) async fn list_tags_with_dates(repo: &str) -> Result<Vec<GithubTagWithDate>> {
     list_tags_with_dates_(API_URL, repo).await
 }
 
@@ -320,11 +323,11 @@ async fn list_tags_with_dates_(api_url: &str, repo: &str) -> Result<Vec<GithubTa
         .collect())
 }
 
-pub async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
+pub(crate) async fn get_release(repo: &str, tag: &str) -> Result<GithubRelease> {
     get_release_with_versions_host(repo, tag, true).await
 }
 
-pub async fn get_release_with_versions_host(
+pub(crate) async fn get_release_with_versions_host(
     repo: &str,
     tag: &str,
     use_versions_host: bool,
@@ -340,7 +343,7 @@ pub async fn get_release_with_versions_host(
         .await
 }
 
-pub async fn get_release_for_url_with_versions_host(
+pub(crate) async fn get_release_for_url_with_versions_host(
     api_url: &str,
     repo: &str,
     tag: &str,
@@ -384,7 +387,7 @@ fn should_cache_release(release: &GithubRelease) -> bool {
 /// when `MISE_LIST_ALL_VERSIONS` is not set. For repos with many releases, older versions
 /// may not be found, falling back to the exact version tag via `get_release`.
 #[cfg_attr(windows, allow(dead_code))]
-pub async fn get_release_with_build_revision_status(
+pub(crate) async fn get_release_with_build_revision_status(
     repo: &str,
     version: &str,
     use_versions_host: bool,
@@ -494,7 +497,7 @@ fn cache_dir() -> PathBuf {
 
 /// The source from which a GitHub token was resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenSource {
+pub(crate) enum TokenSource {
     EnvVar(&'static str),
     TokensFile,
     GhCli,
@@ -560,7 +563,7 @@ fn token_lookup_hosts(host: &str) -> Vec<&str> {
 /// such as github.com release downloads and content/CDN URLs under
 /// githubusercontent.com are not REST API URLs and can reject or mishandle those
 /// headers.
-pub fn is_github_api_url(url: &url::Url) -> bool {
+pub(crate) fn is_github_api_url(url: &url::Url) -> bool {
     let Some(host) = url.host_str() else {
         return false;
     };
@@ -581,7 +584,7 @@ pub fn is_github_api_url(url: &url::Url) -> bool {
 /// API endpoint instead. `get_headers`/`host_auth_headers` add the bearer token and the media type
 /// required by release assets or repository content. Shared by GitHub-backed installers so they
 /// resolve private downloads consistently.
-pub async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
+pub(crate) async fn pick_reachable_asset_url(browser_url: &str, api_url: &str) -> String {
     if browser_url == api_url {
         return browser_url.to_string();
     }
@@ -651,7 +654,7 @@ pub(crate) fn token_source_for_token(host: &str, token: &str) -> Option<TokenSou
 /// 5. `github_tokens.toml` (per-host)
 /// 6. gh CLI token (from `hosts.yml`)
 /// 7. `git credential fill` (if enabled)
-pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let settings = Settings::get();
 
     if is_github_release_asset_host(host) {
@@ -735,7 +738,7 @@ pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
 
 /// Resolve the GitHub token from a full API base URL (e.g., "https://api.github.com").
 /// Extracts the hostname and delegates to [`resolve_token`].
-pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
+pub(crate) fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
     let parsed = url::Url::parse(api_url).ok();
     let host = parsed
         .as_ref()
@@ -744,7 +747,7 @@ pub fn resolve_token_for_api_url(api_url: &str) -> Option<String> {
     resolve_token(host).map(|(t, _)| t)
 }
 
-pub fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
+pub(crate) fn get_headers<U: IntoUrl>(url: U) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
     let url = url
         .into_url()

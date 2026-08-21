@@ -1,3 +1,5 @@
+#![deny(unreachable_pub)]
+
 use mise_cache_core::{CacheDigest, canonical_json};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

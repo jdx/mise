@@ -28,7 +28,7 @@ use crate::http::HTTP;
 // ========== Platform Detection Types (from asset_detector) ==========
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AssetOs {
+pub(crate) enum AssetOs {
     Linux,
     Macos,
     Windows,
@@ -36,7 +36,7 @@ pub enum AssetOs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AssetArch {
+pub(crate) enum AssetArch {
     X64,
     Arm64,
     X86,
@@ -46,14 +46,14 @@ pub enum AssetArch {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AssetLibc {
+pub(crate) enum AssetLibc {
     Gnu,
     Musl,
     Msvc,
 }
 
 impl AssetOs {
-    pub fn matches_target(&self, target: &str) -> bool {
+    pub(crate) fn matches_target(&self, target: &str) -> bool {
         match self {
             AssetOs::Linux => target == "linux",
             AssetOs::Macos => target == "macos" || target == "darwin",
@@ -64,7 +64,7 @@ impl AssetOs {
 }
 
 impl AssetArch {
-    pub fn matches_target(&self, target: &str) -> bool {
+    pub(crate) fn matches_target(&self, target: &str) -> bool {
         match self {
             AssetArch::X64 => target == "x86_64" || target == "amd64" || target == "x64",
             AssetArch::Arm64 => target == "aarch64" || target == "arm64",
@@ -77,7 +77,7 @@ impl AssetArch {
 }
 
 impl AssetLibc {
-    pub fn matches_target(&self, target: &str) -> bool {
+    pub(crate) fn matches_target(&self, target: &str) -> bool {
         target.split('-').any(|part| match self {
             AssetLibc::Gnu => part == "gnu" || part == "glibc",
             AssetLibc::Musl => part == "musl",
@@ -88,7 +88,7 @@ impl AssetLibc {
 
 /// Detected platform information from a URL
 #[derive(Debug, Clone)]
-pub struct DetectedPlatform {
+pub(crate) struct DetectedPlatform {
     pub os: AssetOs,
     pub arch: AssetArch,
     #[allow(unused)]
@@ -97,7 +97,7 @@ pub struct DetectedPlatform {
 
 impl DetectedPlatform {
     /// Convert to mise's platform string format (e.g., "linux-x64", "macos-arm64")
-    pub fn to_platform_string(&self) -> String {
+    pub(crate) fn to_platform_string(&self) -> String {
         let os_str = match self.os {
             AssetOs::Linux => "linux",
             AssetOs::Macos => "macos",
@@ -193,7 +193,7 @@ static LIBC_PATTERNS: LazyLock<Vec<(AssetLibc, Regex)>> = LazyLock::new(|| {
 // ========== AssetPicker (from asset_detector) ==========
 
 /// Automatically detects the best asset for the current platform
-pub struct AssetPicker {
+pub(crate) struct AssetPicker {
     target_os: String,
     target_arch: String,
     target_libc: String,
@@ -217,7 +217,7 @@ impl AssetPicker {
     /// (msvc for Windows, gnu for Linux/other). The caller is responsible for passing
     /// the correct libc qualifier from PlatformTarget — this avoids polluting
     /// cross-platform lockfile entries with the current system's libc.
-    pub fn with_libc(target_os: String, target_arch: String, libc: Option<String>) -> Self {
+    pub(crate) fn with_libc(target_os: String, target_arch: String, libc: Option<String>) -> Self {
         let target_libc = libc.unwrap_or_else(|| {
             if target_os == "windows" {
                 "msvc".to_string()
@@ -238,13 +238,13 @@ impl AssetPicker {
     }
 
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
-    pub fn with_no_app(mut self, no_app: bool) -> Self {
+    pub(crate) fn with_no_app(mut self, no_app: bool) -> Self {
         self.no_app = no_app;
         self
     }
 
     /// Prefer assets whose platform-stripped name matches the primary tool.
-    pub fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
+    pub(crate) fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
         let preferred_name = preferred_name.into();
         if !preferred_name.is_empty() {
             self.preferred_name = Some(preferred_name);
@@ -255,7 +255,7 @@ impl AssetPicker {
     /// Narrow candidates to assets whose name contains `matching`, before
     /// platform autodetection runs. Ports ubi's `matching` to keep a portable,
     /// autodetecting config for repos that ship multiple binaries per platform.
-    pub fn with_matching(mut self, matching: impl Into<String>) -> Self {
+    pub(crate) fn with_matching(mut self, matching: impl Into<String>) -> Self {
         let matching = matching.into();
         if !matching.is_empty() {
             self.matching = Some(matching);
@@ -270,7 +270,7 @@ impl AssetPicker {
     /// An invalid pattern is retained as `Some(Err(msg))` rather than dropped, so
     /// it can be surfaced as a hard error on the binary path and fails closed on
     /// the provenance path — never silently degrading to "no filter".
-    pub fn with_matching_regex(mut self, matching_regex: impl Into<String>) -> Self {
+    pub(crate) fn with_matching_regex(mut self, matching_regex: impl Into<String>) -> Self {
         let matching_regex = matching_regex.into();
         if !matching_regex.is_empty() {
             let compiled = Regex::new(&matching_regex)
@@ -326,7 +326,7 @@ impl AssetPicker {
     /// `tool-x64.tar.gz`, `tool-lsp-x64.tar.gz`, `tool-mcp-x64.tar.gz`) — the
     /// canonical binary's name is almost always the shortest.
     /// See: https://github.com/jdx/mise/discussions/9358
-    pub fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
+    pub(crate) fn pick_best_asset(&self, assets: &[String]) -> Option<String> {
         // Narrow by `matching`/`matching_regex` before scoring. When neither is
         // set, score the assets directly — no filtering, no intermediate clone —
         // so the no-matching path is allocation-identical to the pre-feature
@@ -360,7 +360,7 @@ impl AssetPicker {
 
     /// Picks the best provenance file for the current platform from available assets.
     /// Returns the provenance file that best matches the target OS and architecture.
-    pub fn pick_best_provenance(&self, assets: &[String]) -> Option<String> {
+    pub(crate) fn pick_best_provenance(&self, assets: &[String]) -> Option<String> {
         // Filter to only provenance files
         let provenance_assets: Vec<&String> = assets
             .iter()
@@ -442,7 +442,7 @@ impl AssetPicker {
     }
 
     /// Scores a single asset based on platform compatibility
-    pub fn score_asset(&self, asset: &str) -> i32 {
+    pub(crate) fn score_asset(&self, asset: &str) -> i32 {
         let mut score = 0;
         score += self.score_os_match(asset);
         score += self.score_arch_match(asset);
@@ -814,7 +814,7 @@ fn is_asset_stem_format(format: ExtractionFormat, ext: &str) -> bool {
 }
 
 /// Detects platform information from a URL
-pub fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
+pub(crate) fn detect_platform_from_url(url: &str) -> Option<DetectedPlatform> {
     let mut detected_os = None;
     let mut detected_arch = None;
     let mut detected_libc = None;
@@ -902,7 +902,7 @@ static CHECKSUM_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 /// which returns `None` and is read downstream as "no provenance", silently
 /// skipping SLSA verification. This reuses the picker's cached-compile and error
 /// message so every path decides "is the pattern valid?" identically.
-pub fn validate_matching_regex(matching_regex: Option<&str>) -> Result<()> {
+pub(crate) fn validate_matching_regex(matching_regex: Option<&str>) -> Result<()> {
     let picker = AssetPicker::with_libc(String::new(), String::new(), None)
         .with_matching_regex(matching_regex.unwrap_or_default());
     if let Some(msg) = picker.matching_regex_error() {
@@ -913,14 +913,14 @@ pub fn validate_matching_regex(matching_regex: Option<&str>) -> Result<()> {
 
 /// Represents a matched asset with metadata
 #[derive(Debug, Clone)]
-pub struct MatchedAsset {
+pub(crate) struct MatchedAsset {
     /// The asset name/filename
     pub name: String,
 }
 
 /// Builder for matching assets
 #[derive(Debug, Default)]
-pub struct AssetMatcher {
+pub(crate) struct AssetMatcher {
     /// Target OS (e.g., "linux", "macos", "windows")
     target_os: Option<String>,
     /// Target architecture (e.g., "x86_64", "aarch64")
@@ -939,12 +939,12 @@ pub struct AssetMatcher {
 
 impl AssetMatcher {
     /// Create a new AssetMatcher with default settings
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
     /// Configure for a specific target platform
-    pub fn for_target(mut self, target: &PlatformTarget) -> Self {
+    pub(crate) fn for_target(mut self, target: &PlatformTarget) -> Self {
         self.target_os = Some(target.os_name().to_string());
         self.target_arch = Some(target.arch_name().to_string());
         self.target_libc = target.qualifier().map(|s| s.to_string());
@@ -952,13 +952,13 @@ impl AssetMatcher {
     }
 
     /// Set whether to avoid .app bundles (prefer standalone CLI tools)
-    pub fn with_no_app(mut self, no_app: bool) -> Self {
+    pub(crate) fn with_no_app(mut self, no_app: bool) -> Self {
         self.no_app = no_app;
         self
     }
 
     /// Prefer assets whose platform-stripped name matches the primary tool.
-    pub fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
+    pub(crate) fn with_preferred_name(mut self, preferred_name: impl Into<String>) -> Self {
         let preferred_name = preferred_name.into();
         if !preferred_name.is_empty() {
             self.preferred_name = Some(preferred_name);
@@ -970,7 +970,7 @@ impl AssetMatcher {
     /// platform autodetection (ubi's `matching`). Empty is a no-op. Mirrors
     /// [`Self::with_preferred_name`]'s signature so the optional string fields
     /// are configured the same way.
-    pub fn with_matching(mut self, matching: impl Into<String>) -> Self {
+    pub(crate) fn with_matching(mut self, matching: impl Into<String>) -> Self {
         let matching = matching.into();
         if !matching.is_empty() {
             self.matching = Some(matching);
@@ -984,7 +984,7 @@ impl AssetMatcher {
     /// This stores the *unparsed* pattern by design: the compile-once cache lives
     /// on [`AssetPicker`] (built in [`Self::create_picker`]), so validity is a
     /// local property of the picker rather than of this builder.
-    pub fn with_matching_regex(mut self, matching_regex: impl Into<String>) -> Self {
+    pub(crate) fn with_matching_regex(mut self, matching_regex: impl Into<String>) -> Self {
         let matching_regex = matching_regex.into();
         if !matching_regex.is_empty() {
             self.matching_regex = Some(matching_regex);
@@ -993,12 +993,12 @@ impl AssetMatcher {
     }
 
     /// Pick the best matching asset from a list of names
-    pub fn pick_from(&self, assets: &[String]) -> Result<MatchedAsset> {
+    pub(crate) fn pick_from(&self, assets: &[String]) -> Result<MatchedAsset> {
         self.match_by_auto_detection(assets)
     }
 
     /// Find checksum file for a given asset
-    pub fn find_checksum_for(&self, asset_name: &str, assets: &[String]) -> Option<String> {
+    pub(crate) fn find_checksum_for(&self, asset_name: &str, assets: &[String]) -> Option<String> {
         let base_name = extraction_suffix_len(asset_name)
             .map(|suffix_len| &asset_name[..asset_name.len() - suffix_len])
             .unwrap_or(asset_name);
@@ -1092,7 +1092,7 @@ impl AssetMatcher {
 
 /// Represents an asset with its download URL
 #[derive(Debug, Clone)]
-pub struct Asset {
+pub(crate) struct Asset {
     /// The asset filename
     pub name: String,
     /// The download URL for the asset
@@ -1100,7 +1100,7 @@ pub struct Asset {
 }
 
 impl Asset {
-    pub fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
+    pub(crate) fn new(name: impl Into<String>, url: impl Into<String>) -> Self {
         Self {
             name: name.into(),
             url: url.into(),
@@ -1110,7 +1110,7 @@ impl Asset {
 
 /// Result of a checksum lookup
 #[derive(Debug, Clone)]
-pub struct ChecksumResult {
+pub(crate) struct ChecksumResult {
     /// Algorithm used (sha256, sha512, md5, blake3)
     pub algorithm: String,
     /// The hash value
@@ -1121,19 +1121,19 @@ pub struct ChecksumResult {
 
 impl ChecksumResult {
     /// Format as "algorithm:hash" string for verification
-    pub fn to_string_formatted(&self) -> String {
+    pub(crate) fn to_string_formatted(&self) -> String {
         format!("{}:{}", self.algorithm, self.hash)
     }
 }
 
 /// Checksum file fetcher that finds and parses checksums from release assets
-pub struct ChecksumFetcher<'a> {
+pub(crate) struct ChecksumFetcher<'a> {
     assets: &'a [Asset],
 }
 
 impl<'a> ChecksumFetcher<'a> {
     /// Create a new checksum fetcher with the given assets
-    pub fn new(assets: &'a [Asset]) -> Self {
+    pub(crate) fn new(assets: &'a [Asset]) -> Self {
         Self { assets }
     }
 
@@ -1145,7 +1145,7 @@ impl<'a> ChecksumFetcher<'a> {
     /// 3. Parses it to extract the checksum for the target file
     ///
     /// Returns None if no checksum file is found or parsing fails.
-    pub async fn fetch_checksum_for(&self, asset_name: &str) -> Option<ChecksumResult> {
+    pub(crate) async fn fetch_checksum_for(&self, asset_name: &str) -> Option<ChecksumResult> {
         let asset_names: Vec<String> = self.assets.iter().map(|a| a.name.clone()).collect();
         let matcher = AssetMatcher::new();
 

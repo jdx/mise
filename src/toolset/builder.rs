@@ -12,7 +12,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from
 use crate::{config, env};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum ConfigScope {
+pub(crate) enum ConfigScope {
     /// Include tools from all config files
     #[default]
     All,
@@ -23,7 +23,7 @@ pub enum ConfigScope {
 }
 
 #[derive(Debug, Default)]
-pub struct ToolsetBuilder {
+pub(crate) struct ToolsetBuilder {
     args: Vec<ToolArg>,
     scope: ConfigScope,
     default_to_latest: bool,
@@ -32,37 +32,37 @@ pub struct ToolsetBuilder {
 }
 
 impl ToolsetBuilder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
-    pub fn with_args(mut self, args: &[ToolArg]) -> Self {
+    pub(crate) fn with_args(mut self, args: &[ToolArg]) -> Self {
         self.args = args.to_vec();
         self
     }
 
-    pub fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
+    pub(crate) fn with_default_to_latest(mut self, default_to_latest: bool) -> Self {
         self.default_to_latest = default_to_latest;
         self
     }
 
-    pub fn with_scope(mut self, scope: ConfigScope) -> Self {
+    pub(crate) fn with_scope(mut self, scope: ConfigScope) -> Self {
         self.scope = scope;
         self
     }
 
-    pub fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
+    pub(crate) fn with_resolve_options(mut self, resolve_options: ResolveOptions) -> Self {
         self.resolve_options = resolve_options;
         self
     }
 
     /// Use custom config files instead of config.config_files
-    pub fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+    pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
         self.config_files = Some(config_files);
         self
     }
 
-    pub async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
+    pub(crate) async fn build(self, config: &Arc<Config>) -> Result<Toolset> {
         let mut toolset = Toolset {
             ..Default::default()
         };

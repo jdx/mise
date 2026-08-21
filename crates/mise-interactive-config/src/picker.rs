@@ -40,7 +40,7 @@ impl PickerItem {
 
 /// Filtered item with match score for sorting
 #[derive(Debug, Clone)]
-pub struct FilteredItem {
+pub(crate) struct FilteredItem {
     /// Index into the original items list
     pub index: usize,
     /// Match score (higher is better)

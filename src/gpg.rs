@@ -8,7 +8,7 @@ use std::io::{Cursor, Read};
 use std::path::Path;
 
 /// Verify a detached signature over `shasums` using the bundled Node.js release signing keys.
-pub fn verify_node(shasums: &[u8], signature: &[u8]) -> Result<()> {
+pub(crate) fn verify_node(shasums: &[u8], signature: &[u8]) -> Result<()> {
     verify_detached(include_str!("assets/gpg/node.asc"), signature, || {
         Ok(Cursor::new(shasums))
     })
@@ -16,7 +16,7 @@ pub fn verify_node(shasums: &[u8], signature: &[u8]) -> Result<()> {
 
 /// Verify a detached signature over the Swift release tarball at `tarball_path` using the bundled
 /// Swift release signing keys. The tarball is streamed from disk rather than buffered in memory.
-pub fn verify_swift(tarball_path: &Path, signature: &[u8]) -> Result<()> {
+pub(crate) fn verify_swift(tarball_path: &Path, signature: &[u8]) -> Result<()> {
     verify_detached(include_str!("assets/gpg/swift.asc"), signature, || {
         Ok(std::io::BufReader::new(file::open(tarball_path)?))
     })

@@ -415,7 +415,7 @@ export const commands: { [key: string]: Command } = {
     hide: false,
     subcommands: {
       bootstrap: {
-        hide: false,
+        hide: true,
       },
       config: {
         hide: false,
@@ -427,6 +427,9 @@ export const commands: { [key: string]: Command } = {
         hide: false,
       },
       "github-action": {
+        hide: false,
+      },
+      "install-script": {
         hide: false,
       },
       "task-docs": {

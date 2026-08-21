@@ -13,7 +13,7 @@ use plist::{Dictionary, Value};
 use serde::Deserialize;
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct LaunchdTomlConfig {
+pub(crate) struct LaunchdTomlConfig {
     #[serde(default)]
     pub program: Option<String>,
     #[serde(default)]
@@ -43,7 +43,7 @@ pub struct LaunchdTomlConfig {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Deserialize)]
-pub struct LaunchdCalendarInterval {
+pub(crate) struct LaunchdCalendarInterval {
     #[serde(default)]
     pub minute: Option<u8>,
     #[serde(default)]
@@ -58,13 +58,13 @@ pub struct LaunchdCalendarInterval {
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
-pub enum LaunchdCalendarIntervals {
+pub(crate) enum LaunchdCalendarIntervals {
     Single(LaunchdCalendarInterval),
     Multiple(Vec<LaunchdCalendarInterval>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchdRequest {
+pub(crate) struct LaunchdRequest {
     pub name: String,
     pub label: String,
     pub program: String,
@@ -83,7 +83,7 @@ pub struct LaunchdRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LaunchdState {
+pub(crate) enum LaunchdState {
     Loaded,
     Unloaded,
     Differs,
@@ -91,7 +91,7 @@ pub enum LaunchdState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchdStatus {
+pub(crate) struct LaunchdStatus {
     pub request: LaunchdRequest,
     pub path: PathBuf,
     pub loaded: bool,
@@ -99,7 +99,7 @@ pub struct LaunchdStatus {
 }
 
 impl LaunchdRequest {
-    pub fn from_toml(name: String, config: LaunchdTomlConfig) -> Result<Self> {
+    pub(crate) fn from_toml(name: String, config: LaunchdTomlConfig) -> Result<Self> {
         if !valid_name(&name) {
             bail!("agent name '{name}' must contain only letters, numbers, '.', '_', or '-'");
         }
@@ -206,11 +206,11 @@ impl std::fmt::Display for LaunchdRequest {
     }
 }
 
-pub fn is_available() -> bool {
+pub(crate) fn is_available() -> bool {
     cfg!(target_os = "macos") && crate::file::which("launchctl").is_some()
 }
 
-pub fn unavailable_reason() -> String {
+pub(crate) fn unavailable_reason() -> String {
     if cfg!(target_os = "macos") {
         "`launchctl` not found".to_string()
     } else {
@@ -218,7 +218,7 @@ pub fn unavailable_reason() -> String {
     }
 }
 
-pub async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdStatus>> {
+pub(crate) async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdStatus>> {
     let mut out = vec![];
     for req in requests {
         let path = plist_path(req);
@@ -245,7 +245,7 @@ pub async fn status(requests: &[LaunchdRequest]) -> Result<Vec<LaunchdStatus>> {
     Ok(out)
 }
 
-pub async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
+pub(crate) async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
     for req in requests {
         let path = plist_path(req);
         let domain = launchctl_domain();
@@ -317,7 +317,7 @@ pub async fn apply(requests: &[LaunchdRequest], dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn render_plist(request: &LaunchdRequest) -> Result<Vec<u8>> {
+pub(crate) fn render_plist(request: &LaunchdRequest) -> Result<Vec<u8>> {
     let mut out = vec![];
     plist::to_writer_xml(&mut out, &plist_value(request))?;
     Ok(out)

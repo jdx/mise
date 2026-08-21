@@ -9,7 +9,7 @@ use itertools::Itertools;
 use shell_escape::unix::escape;
 
 #[derive(Default)]
-pub struct Fish {}
+pub(super) struct Fish {}
 
 impl Fish {}
 

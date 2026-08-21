@@ -9,7 +9,7 @@ const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 /// Generate documentation for tasks in a project
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskDocs {
+pub(super) struct TaskDocs {
     /// inserts the documentation into an existing file
     ///
     /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.
@@ -44,7 +44,7 @@ enum TaskDocsStyle {
 }
 
 impl TaskDocs {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let dir = dirs::CWD.as_ref().unwrap();
         let tasks = config::load_tasks_in_dir(&config, dir, &config.config_files).await?;

@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for pip (requirements.txt)
 #[derive(Debug)]
-pub struct PipDepsProvider {
+pub(crate) struct PipDepsProvider {
     base: ProviderBase,
 }
 
 impl PipDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("pip", project_root, config),
         }

@@ -18,7 +18,7 @@ use crate::ui::progress_report::SingleReport;
 #[cfg(unix)]
 use std::ffi::OsString;
 
-pub struct Git {
+pub(crate) struct Git {
     pub dir: PathBuf,
     pub repo: OnceCell<gix::Repository>,
 }
@@ -44,14 +44,14 @@ macro_rules! git_cmd_read {
 }
 
 impl Git {
-    pub fn new<P: AsRef<Path>>(dir: P) -> Self {
+    pub(crate) fn new<P: AsRef<Path>>(dir: P) -> Self {
         Self {
             dir: dir.as_ref().to_path_buf(),
             repo: OnceCell::new(),
         }
     }
 
-    pub fn repo(&self) -> Result<&gix::Repository> {
+    pub(crate) fn repo(&self) -> Result<&gix::Repository> {
         self.repo.get_or_try_init(|| {
             trace!("opening git repository via gix at {:?}", self.dir);
             gix::open(&self.dir)
@@ -60,11 +60,11 @@ impl Git {
         })
     }
 
-    pub fn is_repo(&self) -> bool {
+    pub(crate) fn is_repo(&self) -> bool {
         self.dir.join(".git").is_dir()
     }
 
-    pub fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
+    pub(crate) fn update(&self, gitref: Option<String>) -> Result<(String, String)> {
         match gitref {
             Some(gitref) => {
                 let remote_ref_kind = self.remote_ref_kind(&gitref)?;
@@ -74,7 +74,7 @@ impl Git {
         }
     }
 
-    pub fn update_tag(&self, gitref: String) -> Result<(String, String)> {
+    pub(crate) fn update_tag(&self, gitref: String) -> Result<(String, String)> {
         self.update_ref(gitref, Some(RemoteRefKind::Tag))
     }
 
@@ -186,7 +186,7 @@ impl Git {
         Ok((prev_rev, post_rev))
     }
 
-    pub fn clone(&self, url: &str, options: CloneOptions) -> Result<()> {
+    pub(crate) fn clone(&self, url: &str, options: CloneOptions) -> Result<()> {
         if let Some(parent) = self.dir.parent() {
             file::mkdirp(parent)?;
         }
@@ -267,7 +267,7 @@ impl Git {
         Ok(())
     }
 
-    pub fn update_submodules(&self) -> Result<()> {
+    pub(crate) fn update_submodules(&self) -> Result<()> {
         debug!("updating submodules in {}", self.dir.display());
 
         let exec = |cmd: Expression| match cmd.stderr_to_stdout().stdout_capture().unchecked().run()
@@ -293,7 +293,7 @@ impl Git {
         Ok(())
     }
 
-    pub fn current_branch(&self) -> Result<String> {
+    pub(crate) fn current_branch(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
@@ -308,7 +308,7 @@ impl Git {
         debug!("current branch for {}: {}", self.dir.display(), &branch);
         Ok(branch)
     }
-    pub fn current_sha(&self) -> Result<String> {
+    pub(crate) fn current_sha(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
@@ -322,7 +322,7 @@ impl Git {
         Ok(sha)
     }
 
-    pub fn current_sha_short(&self) -> Result<String> {
+    pub(crate) fn current_sha_short(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
@@ -336,7 +336,7 @@ impl Git {
         Ok(sha)
     }
 
-    pub fn current_abbrev_ref(&self) -> Result<String> {
+    pub(crate) fn current_abbrev_ref(&self) -> Result<String> {
         let dir = &self.dir;
         if let Ok(repo) = self.repo() {
             let head = repo.head()?;
@@ -349,7 +349,7 @@ impl Git {
         Ok(aref)
     }
 
-    pub fn get_remote_url(&self) -> Option<String> {
+    pub(crate) fn get_remote_url(&self) -> Option<String> {
         let dir = &self.dir;
         if !self.exists() {
             return None;
@@ -374,14 +374,14 @@ impl Git {
         }
     }
 
-    pub fn split_url_and_ref(url: &str) -> (String, Option<String>) {
+    pub(crate) fn split_url_and_ref(url: &str) -> (String, Option<String>) {
         match url.split_once('#') {
             Some((url, _ref)) => (url.to_string(), Some(_ref.to_string())),
             None => (url.to_string(), None),
         }
     }
 
-    pub fn remote_sha(&self, branch: &str) -> Result<Option<String>> {
+    pub(crate) fn remote_sha(&self, branch: &str) -> Result<Option<String>> {
         let output = git_cmd_read!(&self.dir, "ls-remote", "origin", branch)?;
         Ok(output
             .lines()
@@ -390,11 +390,11 @@ impl Git {
             .map(|sha| sha.to_string()))
     }
 
-    pub fn exists(&self) -> bool {
+    pub(crate) fn exists(&self) -> bool {
         self.dir.join(".git").is_dir()
     }
 
-    pub fn get_root() -> eyre::Result<PathBuf> {
+    pub(crate) fn get_root() -> eyre::Result<PathBuf> {
         Ok(cmd!("git", "rev-parse", "--show-toplevel")
             .read()?
             .trim()
@@ -405,7 +405,7 @@ impl Git {
     ///
     /// Rename detection is disabled so moves report both the old and new path.
     /// Paths are relative to `self.dir`, and changes outside it are excluded.
-    pub fn changed_paths(&self, base: &str, head: &str) -> Result<BTreeSet<PathBuf>> {
+    pub(crate) fn changed_paths(&self, base: &str, head: &str) -> Result<BTreeSet<PathBuf>> {
         validate_revisions(base, head)?;
         let range = format!("{base}...{head}");
         let output = git_cmd!(
@@ -431,7 +431,7 @@ impl Git {
     }
 
     /// Returns the merge base used by a triple-dot comparison.
-    pub fn merge_base(&self, base: &str, head: &str) -> Result<String> {
+    pub(crate) fn merge_base(&self, base: &str, head: &str) -> Result<String> {
         validate_revisions(base, head)?;
         Ok(git_cmd_read!(&self.dir, "merge-base", "--", base, head)?
             .trim()
@@ -439,7 +439,7 @@ impl Git {
     }
 
     /// Reads a UTF-8 file at a Git revision, returning `None` when it does not exist there.
-    pub fn file_at_revision(&self, revision: &str, path: &Path) -> Result<Option<String>> {
+    pub(crate) fn file_at_revision(&self, revision: &str, path: &Path) -> Result<Option<String>> {
         validate_revision("revision", revision)?;
         let Some(path) = path.to_str() else {
             return Ok(None);
@@ -459,7 +459,7 @@ impl Git {
         )?))
     }
 
-    pub fn get_path<P: AsRef<Path>>(path: P) -> eyre::Result<PathBuf> {
+    pub(crate) fn get_path<P: AsRef<Path>>(path: P) -> eyre::Result<PathBuf> {
         let root = Self::get_root()?;
         let path = cmd!("git", "-C", &root, "rev-parse", "--git-path", path.as_ref()).read()?;
         let path = PathBuf::from(path.trim());
@@ -577,7 +577,7 @@ fn looks_like_sha(s: &str) -> bool {
 ///
 /// Detection is filesystem-only (no git subprocess): a linked worktree root
 /// contains a `.git` *file* pointing at `<main>/.git/worktrees/<name>`.
-pub fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
+pub(crate) fn main_checkout_equivalent(path: &Path) -> Option<PathBuf> {
     static CACHE: LazyLock<Mutex<HashMap<PathBuf, Option<PathBuf>>>> =
         LazyLock::new(Default::default);
     for wt_root in path.ancestors() {
@@ -652,19 +652,19 @@ impl Debug for Git {
 }
 
 #[derive(Default)]
-pub struct CloneOptions<'a> {
+pub(crate) struct CloneOptions<'a> {
     pr: Option<&'a dyn SingleReport>,
     branch: Option<String>,
     revision: Option<String>,
 }
 
 impl<'a> CloneOptions<'a> {
-    pub fn pr(mut self, pr: &'a dyn SingleReport) -> Self {
+    pub(crate) fn pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
     }
 
-    pub fn branch(mut self, branch: &str) -> Self {
+    pub(crate) fn branch(mut self, branch: &str) -> Self {
         self.branch = Some(branch.to_string());
         self.revision = None;
         self
@@ -674,7 +674,7 @@ impl<'a> CloneOptions<'a> {
     ///
     /// Unlike `branch`, this accepts abbreviated commit IDs and avoids passing
     /// them to `git clone -b` or gix's ref-name-only clone API.
-    pub fn revision(mut self, revision: &str) -> Self {
+    pub(crate) fn revision(mut self, revision: &str) -> Self {
         self.branch = None;
         self.revision = Some(revision.to_string());
         self

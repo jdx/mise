@@ -1,6 +1,5 @@
 use crate::config::Settings;
 use crate::env;
-use console;
 
 #[derive(
     Debug,
@@ -16,7 +15,7 @@ use console;
 )]
 #[serde(rename_all = "kebab-case")]
 #[strum(serialize_all = "kebab-case")]
-pub enum TaskOutput {
+pub(crate) enum TaskOutput {
     Interleave,
     KeepOrder,
     #[default]
@@ -60,7 +59,7 @@ impl TaskOutput {
 /// Returns the first line of a message for display unless task_show_full_cmd is true
 /// In CI mode, returns the full first line without truncation
 /// Otherwise, truncates to terminal width with ellipsis
-pub fn trunc(prefix: &str, msg: &str) -> String {
+pub(crate) fn trunc(prefix: &str, msg: &str) -> String {
     let settings = Settings::get();
 
     // Skip width truncation when explicitly disabled

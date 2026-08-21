@@ -16,7 +16,7 @@ mod run;
 /// in future releases.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct Oci {
+pub(crate) struct Oci {
     #[clap(subcommand)]
     command: Commands,
 }
@@ -29,7 +29,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         match self {
             Self::Build(cmd) => cmd.run().await,
             Self::Push(cmd) => cmd.run().await,
@@ -39,7 +39,7 @@ impl Commands {
 }
 
 impl Oci {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         self.command.run().await
     }
 }

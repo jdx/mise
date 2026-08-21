@@ -8,7 +8,7 @@ use crate::env;
 use crate::ui::progress_report::{ProgressReport, QuietReport, SingleReport, VerboseReport};
 
 #[derive(Debug)]
-pub struct MultiProgressReport {
+pub(crate) struct MultiProgressReport {
     quiet: bool,
     use_progress_ui: bool,
     pause_state: Mutex<ProgressPauseState>,
@@ -48,7 +48,7 @@ impl ProgressPauseState {
 /// Keeps the global progress renderer suspended until every overlapping
 /// suspension has been released.
 #[derive(Debug)]
-pub struct ProgressPauseGuard {
+pub(crate) struct ProgressPauseGuard {
     report: Arc<MultiProgressReport>,
 }
 
@@ -61,11 +61,11 @@ impl Drop for ProgressPauseGuard {
 static INSTANCE: Mutex<Option<Arc<MultiProgressReport>>> = Mutex::new(None);
 
 impl MultiProgressReport {
-    pub fn try_get() -> Option<Arc<Self>> {
+    pub(crate) fn try_get() -> Option<Arc<Self>> {
         INSTANCE.lock().unwrap().as_ref().cloned()
     }
 
-    pub fn get() -> Arc<Self> {
+    pub(crate) fn get() -> Arc<Self> {
         let mut guard = INSTANCE.lock().unwrap();
         if let Some(existing) = guard.as_ref() {
             return existing.clone();
@@ -131,7 +131,7 @@ impl MultiProgressReport {
     ///
     /// Suspensions are reference-counted because tool installs run in
     /// parallel. The renderer resumes only after the final guard is dropped.
-    pub fn pause_progress(self: &Arc<Self>) -> ProgressPauseGuard {
+    pub(crate) fn pause_progress(self: &Arc<Self>) -> ProgressPauseGuard {
         let mut state = self.pause_state.lock().unwrap();
         let renderer_is_paused = !self.use_progress_ui || progress::is_paused();
         if state.acquire(renderer_is_paused) {
@@ -142,6 +142,16 @@ impl MultiProgressReport {
         }
     }
 
+    /// Depth of overlapping progress suspensions.
+    ///
+    /// For tests that need to observe that a caller holds its guard for a whole
+    /// scope — such as an elevated child's lifetime in [`crate::system::sudo`] —
+    /// rather than only that it constructed one.
+    #[cfg(test)]
+    pub(crate) fn progress_suspension_depth(&self) -> usize {
+        self.pause_state.lock().unwrap().count
+    }
+
     fn resume_progress(&self) {
         let mut state = self.pause_state.lock().unwrap();
         if state.release() {
@@ -149,7 +159,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
+    pub(crate) fn add(&self, prefix: &str) -> Box<dyn SingleReport> {
         self.add_with_options(prefix, false)
     }
 
@@ -164,7 +174,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
+    pub(crate) fn add_with_options(&self, prefix: &str, dry_run: bool) -> Box<dyn SingleReport> {
         if self.quiet {
             progress_trace!(
                 "add_with_options[{}]: creating QuietReport (quiet=true)",
@@ -188,7 +198,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub fn init_footer(&self, dry_run: bool, _message: &str, total_count: usize) {
+    pub(crate) fn init_footer(&self, dry_run: bool, _message: &str, total_count: usize) {
         // Only create header once - check if already initialized
         if self.header_job.lock().unwrap().is_some() {
             return;
@@ -234,7 +244,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub fn footer_inc(&self, n: usize) {
+    pub(crate) fn footer_inc(&self, n: usize) {
         if n == 0 {
             return;
         }
@@ -253,7 +263,7 @@ impl MultiProgressReport {
         }
     }
 
-    pub fn footer_finish(&self) {
+    pub(crate) fn footer_finish(&self) {
         let total = *self.total_count.lock().unwrap();
         let completed = *self.completed_count.lock().unwrap();
 
@@ -264,12 +274,12 @@ impl MultiProgressReport {
 
     /// Render the final progress state, then clear clx's registered jobs so
     /// later regular terminal output cannot be erased by process shutdown.
-    pub fn finish_progress(&self) {
+    pub(crate) fn finish_progress(&self) {
         progress::stop();
         self.reset_jobs();
     }
 
-    pub fn stop(&self) -> eyre::Result<()> {
+    pub(crate) fn stop(&self) -> eyre::Result<()> {
         progress::stop_clear();
         self.reset_jobs();
         Ok(())

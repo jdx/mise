@@ -2,20 +2,20 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum TaskConfirm {
+pub(crate) enum TaskConfirm {
     Message(String),
     Options { message: String, default: String },
 }
 
 impl TaskConfirm {
-    pub fn message(&self) -> &str {
+    pub(crate) fn message(&self) -> &str {
         match self {
             TaskConfirm::Message(message) => message,
             TaskConfirm::Options { message, .. } => message,
         }
     }
 
-    pub fn default_value(&self) -> Option<&str> {
+    pub(crate) fn default_value(&self) -> Option<&str> {
         match self {
             TaskConfirm::Message(_) => None,
             TaskConfirm::Options { default, .. } => Some(default.as_str()),

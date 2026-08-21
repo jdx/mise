@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// Display the value of a setting in a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ConfigGet {
+pub(super) struct ConfigGet {
     /// The path of the config to display
     pub key: Option<String>,
 
@@ -20,7 +20,7 @@ pub struct ConfigGet {
 }
 
 impl ConfigGet {
-    pub fn run(self) -> eyre::Result<()> {
+    pub(super) fn run(self) -> eyre::Result<()> {
         // Only an explicitly named target goes through the shared resolver — the default is a
         // different rule (the top TOML config of the loaded set, not the nearest writable one).
         let file = match self.file {

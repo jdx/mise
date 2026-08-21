@@ -113,17 +113,17 @@ fn init() {
 /// and in the `test:unit` task), so a guarded set/read/restore sequence is not
 /// observed by other tests.
 #[cfg(unix)]
-pub struct EnvVarGuard {
+pub(crate) struct EnvVarGuard {
     prev: Vec<(OsString, Option<OsString>)>,
 }
 
 #[cfg(unix)]
 impl EnvVarGuard {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { prev: vec![] }
     }
 
-    pub fn set<K: AsRef<OsStr>, V: AsRef<OsStr>>(&mut self, key: K, value: V) -> &mut Self {
+    pub(crate) fn set<K: AsRef<OsStr>, V: AsRef<OsStr>>(&mut self, key: K, value: V) -> &mut Self {
         let key = key.as_ref().to_os_string();
         self.prev.push((key.clone(), env::var_os(&key)));
         env::set_var(&key, value);
@@ -134,7 +134,7 @@ impl EnvVarGuard {
     /// restoring any previous value on drop. Useful for asserting default
     /// behavior even when the variable happens to be set in the caller's
     /// environment.
-    pub fn remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
+    pub(crate) fn remove<K: AsRef<OsStr>>(&mut self, key: K) -> &mut Self {
         let key = key.as_ref().to_os_string();
         self.prev.push((key.clone(), env::var_os(&key)));
         env::remove_var(&key);
@@ -166,13 +166,13 @@ impl Drop for EnvVarGuard {
 /// Measured once: a single failed assertion in `http::tests` was reported as **29** failures,
 /// 28 of them `PoisonError` from tests that had nothing to do with it. Triage cost more than the
 /// bug did.
-pub fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock_ignoring_poison<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-pub fn replace_path(input: &str) -> String {
+pub(crate) fn replace_path(input: &str) -> String {
     let path = join_paths(&*env::PATH)
         .unwrap()
         .to_string_lossy()

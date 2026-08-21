@@ -30,6 +30,7 @@ mod tests {
         let mut package = AquaPackage::default();
         package.repo_owner = "owner".into();
         package.repo_name = "repo".into();
+        package.crate_name = Some("example-crate".into());
         package.private = true;
         package.vars = vec![AquaVar {
             name: "channel".into(),
@@ -42,6 +43,7 @@ mod tests {
 
         assert_eq!(decoded.repo_owner, "owner");
         assert_eq!(decoded.repo_name, "repo");
+        assert_eq!(decoded.crate_name.as_deref(), Some("example-crate"));
         assert!(decoded.private);
         assert_eq!(decoded.vars[0].default.as_deref(), Some("beta"));
     }

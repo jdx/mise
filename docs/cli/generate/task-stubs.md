@@ -7,7 +7,7 @@
 
 Generates shims to run mise tasks
 
-By default, this will build shims like ./bin/&lt;task>. These can be paired with `mise generate bootstrap`
+By default, this will build shims like ./bin/&lt;task>. These can be paired with `mise generate install-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 
@@ -23,7 +23,7 @@ Directory to create task stubs inside of
 
 Path to a mise bin to use when running the task stub.
 
-Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
+Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
 
 **Default:** `mise`
 

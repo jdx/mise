@@ -13,7 +13,7 @@ mod task;
 /// Run `mise cache` with no args to view the current cache directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct Cache {
+pub(crate) struct Cache {
     #[clap(subcommand)]
     command: Option<Commands>,
 }
@@ -27,7 +27,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Clear(cmd) => cmd.run().await,
             Self::Path(cmd) => cmd.run(),
@@ -38,7 +38,7 @@ impl Commands {
 }
 
 impl Cache {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self.command {
             Some(cmd) => cmd.run().await,
             None => {

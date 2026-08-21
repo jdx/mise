@@ -11,16 +11,16 @@ use digest::Digest;
 use eyre::{Result, bail};
 use md5::Md5;
 use sha1::Sha1;
-use sha2::{Sha256, Sha512};
+use sha2::{Sha224, Sha256, Sha384, Sha512};
 use siphasher::sip::SipHasher;
 
-pub fn hash_to_str<T: Hash>(t: &T) -> String {
+pub(crate) fn hash_to_str<T: Hash>(t: &T) -> String {
     let mut s = SipHasher::new();
     t.hash(&mut s);
     format!("{:x}", s.finish())
 }
 
-pub fn hash_sha256_to_str(s: &str) -> String {
+pub(crate) fn hash_sha256_to_str(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s);
     hasher
@@ -30,7 +30,7 @@ pub fn hash_sha256_to_str(s: &str) -> String {
         .collect()
 }
 
-pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+pub(crate) fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
     let use_external_hasher = file::size(path).unwrap_or_default() > 50 * 1024 * 1024;
     if use_external_hasher && file::which("sha256sum").is_some() {
         let out = cmd!("sha256sum", path).read()?;
@@ -64,13 +64,13 @@ where
     Ok(hash.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-pub fn hash_blake3_to_str(s: &str) -> String {
+pub(crate) fn hash_blake3_to_str(s: &str) -> String {
     let mut hasher = Blake3Hasher::new();
     hasher.update(s.as_bytes());
     hasher.finalize().to_hex().to_string()
 }
 
-pub fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+pub(crate) fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
     let mut file = file::open(path)?;
     if let Some(pr) = pr {
         pr.set_length(file.metadata()?.len());
@@ -91,7 +91,7 @@ pub fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<St
     Ok(format!("{}", hash.to_hex()))
 }
 
-pub fn ensure_checksum(
+pub(crate) fn ensure_checksum(
     path: &Path,
     checksum: &str,
     pr: Option<&dyn SingleReport>,
@@ -109,6 +109,8 @@ pub fn ensure_checksum(
             }
         }
         "sha256" => file_hash_prog::<Sha256>(path, pr)?,
+        "sha224" => file_hash_prog::<Sha224>(path, pr)?,
+        "sha384" => file_hash_prog::<Sha384>(path, pr)?,
         "sha1" => {
             if use_external_hasher && file::which("sha1sum").is_some() {
                 let out = cmd!("sha1sum", path).read()?;
@@ -137,7 +139,7 @@ pub fn ensure_checksum(
     Ok(())
 }
 
-pub fn parse_shasums(text: &str) -> HashMap<String, String> {
+pub(crate) fn parse_shasums(text: &str) -> HashMap<String, String> {
     text.lines()
         .filter_map(|l| {
             let mut parts = l.split_whitespace();
@@ -171,5 +173,27 @@ mod tests {
         let path = Path::new(".test-tool-versions");
         let hash = file_hash_prog::<Sha256>(path, None).unwrap();
         assert_snapshot!(hash);
+    }
+
+    #[test]
+    fn test_corepack_checksum_algorithms() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("package.tgz");
+        file::write(&path, b"corepack").unwrap();
+
+        ensure_checksum(
+            &path,
+            "8aba612a6193520492b81c698962a0d81c3609da7ab498d028ac452e",
+            None,
+            "sha224",
+        )
+        .unwrap();
+        ensure_checksum(
+            &path,
+            "cbedf1fe9f759bba045da15cecdfb24340308ffdae357bbb0a10bed2535aa957c7cad13d8081847203cd409a7a7e3cda",
+            None,
+            "sha384",
+        )
+        .unwrap();
     }
 }

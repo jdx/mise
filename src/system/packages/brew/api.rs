@@ -11,7 +11,7 @@ use crate::result::Result;
 const API_BASE: &str = "https://formulae.brew.sh/api";
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Formula {
+pub(super) struct Formula {
     pub name: String,
     #[serde(default)]
     pub tap: Option<String>,
@@ -47,7 +47,7 @@ pub struct Formula {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct SourceUrl {
+pub(super) struct SourceUrl {
     pub url: String,
     /// sha256 of the source archive; absent for VCS sources
     #[serde(default)]
@@ -58,24 +58,24 @@ pub struct SourceUrl {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct RubySourceChecksum {
+pub(super) struct RubySourceChecksum {
     #[serde(default)]
     pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct Versions {
+pub(super) struct Versions {
     pub stable: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct BottleSpec {
+pub(super) struct BottleSpec {
     #[serde(default)]
     pub files: HashMap<String, BottleFile>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct BottleFile {
+pub(super) struct BottleFile {
     /// ":any", ":any_skip_relocation", or a pinned cellar path
     pub cellar: String,
     pub url: String,
@@ -83,7 +83,7 @@ pub struct BottleFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct Variation {
+pub(super) struct Variation {
     #[serde(default)]
     pub dependencies: Option<Vec<String>>,
     #[serde(default)]
@@ -92,7 +92,7 @@ pub struct Variation {
 
 impl Formula {
     /// keg directory name: version plus brew's bottle revision suffix
-    pub fn pkg_version(&self) -> Result<String> {
+    pub(super) fn pkg_version(&self) -> Result<String> {
         let stable = self
             .versions
             .stable
@@ -106,7 +106,7 @@ impl Formula {
     }
 
     /// runtime dependencies for the given bottle tag, applying `variations`
-    pub fn dependencies_for(&self, tag: &str) -> &[String] {
+    pub(super) fn dependencies_for(&self, tag: &str) -> &[String] {
         if let Some(v) = self.variations.get(tag)
             && let Some(deps) = &v.dependencies
         {
@@ -116,7 +116,7 @@ impl Formula {
     }
 
     /// build-time dependencies for the given bottle tag, applying `variations`
-    pub fn build_dependencies_for(&self, tag: &str) -> &[String] {
+    pub(super) fn build_dependencies_for(&self, tag: &str) -> &[String] {
         if let Some(v) = self.variations.get(tag)
             && let Some(deps) = &v.build_dependencies
         {
@@ -125,19 +125,19 @@ impl Formula {
         &self.build_dependencies
     }
 
-    pub fn bottle_files(&self) -> Option<&HashMap<String, BottleFile>> {
+    pub(super) fn bottle_files(&self) -> Option<&HashMap<String, BottleFile>> {
         self.bottle.get("stable").map(|b| &b.files)
     }
 
     /// the stable source archive spec, when present
-    pub fn stable_url(&self) -> Option<&SourceUrl> {
+    pub(super) fn stable_url(&self) -> Option<&SourceUrl> {
         self.urls.get("stable")
     }
 }
 
 /// Fetch formula metadata by name (or alias — brew's API redirects aliases
 /// to the canonical formula).
-pub async fn formula(name: &str) -> Result<Formula> {
+pub(super) async fn formula(name: &str) -> Result<Formula> {
     let url = format!("{API_BASE}/formula/{name}.json");
     HTTP_FETCH
         .json_cached::<Formula, _>(url)
@@ -145,7 +145,7 @@ pub async fn formula(name: &str) -> Result<Formula> {
         .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
 }
 
-pub async fn formula_with_tap_name(
+pub(super) async fn formula_with_tap_name(
     name: &str,
     tap_name: Option<&str>,
     tap_url: Option<&str>,

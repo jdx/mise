@@ -21,12 +21,12 @@ use eyre::bail;
 
 use crate::result::Result;
 
-pub struct Replacement {
+pub(super) struct Replacement {
     pub placeholder: &'static [u8],
     pub value: Vec<u8>,
 }
 
-pub fn standard_replacements() -> Vec<Replacement> {
+pub(super) fn standard_replacements() -> Vec<Replacement> {
     let prefix_buf = super::prefix::prefix();
     let prefix = prefix_buf.to_string_lossy();
     let repository_buf = super::prefix::repository();
@@ -70,7 +70,7 @@ pub fn standard_replacements() -> Vec<Replacement> {
 }
 
 #[derive(Debug, Default)]
-pub struct RelocationReport {
+pub(super) struct RelocationReport {
     /// files whose contents were modified
     pub changed_files: Vec<PathBuf>,
     /// modified Mach-O binaries that must be re-codesigned
@@ -195,7 +195,7 @@ fn replace_in_binary(
 /// Walk a poured keg and replace placeholders. `skip_linkage` leaves binary
 /// linkage untouched while still relocating text files, matching Homebrew's
 /// handling of `:any_skip_relocation` bottles.
-pub fn relocate_keg(
+pub(super) fn relocate_keg(
     keg: &Path,
     formula_name: &str,
     skip_linkage: bool,
@@ -287,7 +287,7 @@ fn relocate_keg_with_replacements(
 
 /// Ad-hoc re-sign modified Mach-O files — mandatory on arm64 macOS, where
 /// the kernel kills binaries whose signature doesn't match their contents.
-pub fn codesign(files: &[PathBuf]) -> Result<()> {
+pub(super) fn codesign(files: &[PathBuf]) -> Result<()> {
     for file in files {
         let res = crate::cmd::cmd(
             "/usr/bin/codesign",

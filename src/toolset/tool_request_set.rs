@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 use itertools::Itertools;
 
 #[derive(Debug, Default, Clone)]
-pub struct ToolRequestSet {
+pub(crate) struct ToolRequestSet {
     pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
     pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
     /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
@@ -23,7 +23,7 @@ pub struct ToolRequestSet {
 }
 
 impl ToolRequestSet {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::default()
     }
 
@@ -46,7 +46,7 @@ impl ToolRequestSet {
     //         .collect()
     // }
 
-    pub async fn missing_tools(&self, config: &Arc<Config>) -> Vec<&ToolRequest> {
+    pub(crate) async fn missing_tools(&self, config: &Arc<Config>) -> Vec<&ToolRequest> {
         let mut tools = vec![];
         for tr in self.tools.values().flatten() {
             if tr.is_os_supported() && !tr.is_install_satisfied(config).await {
@@ -56,11 +56,11 @@ impl ToolRequestSet {
         tools
     }
 
-    pub fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
+    pub(crate) fn list_tools(&self) -> Vec<&Arc<BackendArg>> {
         self.tools.keys().collect()
     }
 
-    pub fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
+    pub(crate) fn add_version(&mut self, tr: ToolRequest, source: &ToolSource) {
         let fa = tr.ba();
         if !self.tools.contains_key(fa) {
             self.sources.insert(fa.clone(), source.clone());
@@ -69,13 +69,15 @@ impl ToolRequestSet {
         list.push(tr);
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&Arc<BackendArg>, &Vec<ToolRequest>, &ToolSource)> {
+    pub(crate) fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&Arc<BackendArg>, &Vec<ToolRequest>, &ToolSource)> {
         self.tools
             .iter()
             .map(|(backend, tvr)| (backend, tvr, self.sources.get(backend).unwrap()))
     }
 
-    pub fn into_iter(
+    pub(crate) fn into_iter(
         self,
     ) -> impl Iterator<Item = (Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> {
         self.tools.into_iter().map(move |(ba, tvr)| {
@@ -84,7 +86,7 @@ impl ToolRequestSet {
         })
     }
 
-    pub fn filter_by_tool(&self, mut tools: HashSet<String>) -> ToolRequestSet {
+    pub(crate) fn filter_by_tool(&self, mut tools: HashSet<String>) -> ToolRequestSet {
         // add in the full names so something like cargo:cargo-binstall can be used in place of cargo-binstall
         for short in tools.clone().iter() {
             if let Some(rt) = REGISTRY.get(short.as_str()) {
@@ -97,7 +99,7 @@ impl ToolRequestSet {
             .collect::<ToolRequestSet>()
     }
 
-    pub fn into_toolset(self) -> Toolset {
+    pub(crate) fn into_toolset(self) -> Toolset {
         self.into()
     }
 }
@@ -130,7 +132,7 @@ impl FromIterator<(Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> for ToolReque
 }
 
 #[derive(Debug, Default)]
-pub struct ToolRequestSetBuilder {
+pub(crate) struct ToolRequestSetBuilder {
     /// cli tool args
     args: Vec<ToolArg>,
     /// default to latest version if no version is specified (for `mise x`)
@@ -144,7 +146,7 @@ pub struct ToolRequestSetBuilder {
 }
 
 impl ToolRequestSetBuilder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let settings = Settings::get();
         Self {
             disable_tools: settings.disable_tools().iter().map(|s| s.into()).collect(),
@@ -167,17 +169,17 @@ impl ToolRequestSetBuilder {
     //
 
     /// Use custom config files instead of config.config_files.
-    pub fn with_config_files(mut self, config_files: ConfigMap) -> Self {
+    pub(crate) fn with_config_files(mut self, config_files: ConfigMap) -> Self {
         self.config_files = Some(config_files);
         self
     }
 
-    pub fn without_runtime_args(mut self) -> Self {
+    pub(crate) fn without_runtime_args(mut self) -> Self {
         self.skip_runtime_args = true;
         self
     }
 
-    pub async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
+    pub(crate) async fn build(&self, config: &Arc<Config>) -> eyre::Result<ToolRequestSet> {
         let mut trs = ToolRequestSet::default();
         trs = self.load_config_files(config, trs).await?;
         trs = self.load_runtime_env(trs)?;
@@ -336,7 +338,7 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
 }
 
 /// Returns the environment variable used to select a tool version for a shell session.
-pub fn tool_env_var_name(tool: &str) -> String {
+pub(crate) fn tool_env_var_name(tool: &str) -> String {
     format!("MISE_{}_VERSION", tool.to_shouty_snake_case())
 }
 
@@ -344,7 +346,7 @@ pub fn tool_env_var_name(tool: &str) -> String {
 ///
 /// Shell environment variable names cannot preserve the distinction between `-` and `_`.
 /// Since mise tool names conventionally use kebab-case, both spellings decode to `-`.
-pub fn tool_from_env_var_name(name: &str) -> Option<String> {
+pub(crate) fn tool_from_env_var_name(name: &str) -> Option<String> {
     if env::NON_TOOL_VERSION_ENV_VARS.contains(&name) {
         return None;
     }
@@ -359,7 +361,7 @@ pub fn tool_from_env_var_name(name: &str) -> Option<String> {
 /// maps to a tool. `short` is the unaliased backend short name (so
 /// `MISE_NODEJS_VERSION` yields `"node"`). Skips `MISE_VERSION` and the
 /// `MISE_INSTALL_VERSION` / `MISE_TOOL_VERSION` vars set during hooks.
-pub fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
+pub(crate) fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> {
     env::vars_safe().filter_map(|(k, v)| {
         let short = tool_from_env_var_name(&k)?;
         Some((short, k, v))

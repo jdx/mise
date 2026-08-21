@@ -24,7 +24,7 @@ use crate::{env, file};
 /// is set. A future v2 release of mise will default to using `mise.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
-pub struct Local {
+pub(crate) struct Local {
     /// Tool(s) to add to .tool-versions/mise.toml
     /// e.g.: node@20
     /// if this is a single tool with no version,
@@ -58,7 +58,7 @@ pub struct Local {
 }
 
 impl Local {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let path = if self.parent {
             get_parent_path()?
@@ -93,7 +93,7 @@ fn get_path() -> Result<PathBuf> {
     }
 }
 
-pub fn get_parent_path() -> Result<PathBuf> {
+pub(super) fn get_parent_path() -> Result<PathBuf> {
     let mut filenames = vec![MISE_DEFAULT_CONFIG_FILENAME.as_str()];
     if !*env::MISE_USE_TOML {
         filenames.push(MISE_DEFAULT_TOOL_VERSIONS_FILENAME.as_str());
@@ -102,7 +102,7 @@ pub fn get_parent_path() -> Result<PathBuf> {
         .wrap_err_with(|| eyre!("no {} file found", filenames.join(" or "),))
 }
 
-pub async fn local(
+pub(super) async fn local(
     config: &Arc<Config>,
     path: &Path,
     runtime: Vec<ToolArg>,

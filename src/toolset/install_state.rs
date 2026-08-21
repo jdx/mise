@@ -29,7 +29,7 @@ type InstallStateTools = BTreeMap<String, InstallStateTool>;
 type MutexResult<T> = Result<Arc<T>>;
 
 #[derive(Debug, Clone)]
-pub struct InstallStateTool {
+pub(crate) struct InstallStateTool {
     pub short: String,
     pub full: Option<String>,
     pub versions: Vec<String>,
@@ -519,7 +519,7 @@ fn root_manifest() -> Arc<Manifest> {
 /// sidecar under a name that doesn't kebab-match its short is not found here —
 /// that requires enumeration, which mise itself never produces, and full-scan
 /// callers still see such dirs.
-pub fn get_tool(short: &str) -> Option<InstallStateTool> {
+pub(crate) fn get_tool(short: &str) -> Option<InstallStateTool> {
     // A completed full scan is authoritative (it includes plugin identities and
     // shared dirs), so serve from it when available.
     if let Some(tools) = INSTALL_STATE_TOOLS
@@ -673,11 +673,11 @@ fn merge_plugin_tools(tools: &mut InstallStateTools, plugins: &InstallStatePlugi
     }
 }
 
-pub fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
+pub(crate) fn list_plugins() -> Arc<BTreeMap<String, PluginType>> {
     try_list_plugins().expect("INSTALL_STATE_PLUGINS is None")
 }
 
-pub fn try_list_plugins() -> Option<Arc<BTreeMap<String, PluginType>>> {
+pub(crate) fn try_list_plugins() -> Option<Arc<BTreeMap<String, PluginType>>> {
     INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed")
@@ -720,11 +720,11 @@ fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T
     get_tool(short).as_ref().map(f)
 }
 
-pub fn get_tool_full(short: &str) -> Option<String> {
+pub(crate) fn get_tool_full(short: &str) -> Option<String> {
     with_tool(short, |t| t.full.clone()).flatten()
 }
 
-pub fn get_plugin_type(short: &str) -> Option<PluginType> {
+pub(crate) fn get_plugin_type(short: &str) -> Option<PluginType> {
     list_plugins().get(short).cloned()
 }
 
@@ -737,21 +737,21 @@ pub fn get_plugin_type(short: &str) -> Option<PluginType> {
 /// rebuilding deletes every shim it cannot account for), so an unreadable
 /// installs dir must not be indistinguishable from an empty one. Note a
 /// missing installs dir is not an error — that reads as genuinely empty.
-pub fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
+pub(crate) fn try_list_tools() -> Result<Arc<BTreeMap<String, InstallStateTool>>> {
     full_scan_tools()
 }
 
 /// [`try_list_tools`] for callers that only display or enumerate, where a
 /// warning is a better outcome than aborting. Never use this to decide what to
 /// delete.
-pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
+pub(crate) fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
     try_list_tools().unwrap_or_else(|err| {
         warn!("failed to scan installed tools: {err:#}");
         Arc::new(Default::default())
     })
 }
 
-pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
+pub(crate) fn backend_type(short: &str) -> Result<Option<BackendType>> {
     let backend_type = with_tool(short, |ist| ist.full.clone())
         .flatten()
         .and_then(|full| {
@@ -767,11 +767,11 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
     Ok(backend_type)
 }
 
-pub fn list_versions(short: &str) -> Vec<String> {
+pub(crate) fn list_versions(short: &str) -> Vec<String> {
     with_tool(short, |tool| tool.versions.clone()).unwrap_or_default()
 }
 
-pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
+pub(crate) fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
     let tool_dir = install_path.parent().map(Path::to_path_buf);
     let full = ba.full_without_opts();
     let explicit_backend = ba.has_explicit_backend();
@@ -833,7 +833,7 @@ pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
     }
 }
 
-pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
+pub(crate) async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
     let mut plugins = init_plugins().await?.deref().clone();
     plugins.insert(short.to_string(), plugin_type);
     *INSTALL_STATE_PLUGINS
@@ -865,12 +865,12 @@ pub async fn add_plugin(short: &str, plugin_type: PluginType) -> Result<()> {
 
 /// Writes backend metadata to the consolidated manifest file.
 /// Uses the primary installs dir manifest by default.
-pub fn write_backend_meta(ba: &BackendArg) -> Result<()> {
+pub(crate) fn write_backend_meta(ba: &BackendArg) -> Result<()> {
     write_backend_meta_to(ba, &manifest_path())
 }
 
 /// Writes backend metadata to a manifest at a specific install path.
-pub fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
+pub(crate) fn write_backend_meta_to(ba: &BackendArg, path: &Path) -> Result<()> {
     let full = ba.full_without_opts();
     let explicit = ba.has_explicit_backend();
     let opts_map = persistent_opts(ba);
@@ -907,7 +907,7 @@ fn persistent_opts(ba: &BackendArg) -> BTreeMap<String, toml::Value> {
     opts_map
 }
 
-pub fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
+pub(crate) fn incomplete_file_path(short: &str, v: &str) -> PathBuf {
     dirs::CACHE
         .join(short.to_kebab_case())
         .join(v)
@@ -932,7 +932,7 @@ pub(crate) fn lock_tool_version(short: &str, v: &str) -> Result<fslock::LockFile
         .lock()
 }
 
-pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
+pub(crate) fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
     let incomplete_path = incomplete_file_path(short, v);
     match file::remove_file(&incomplete_path) {
         std::result::Result::Ok(()) => {
@@ -954,7 +954,7 @@ pub fn clear_incomplete_marker(short: &str, v: &str) -> Result<()> {
     }
 }
 
-pub fn clear_incomplete_marker_best_effort(short: &str, v: &str) {
+pub(crate) fn clear_incomplete_marker_best_effort(short: &str, v: &str) {
     if let Err(err) = clear_incomplete_marker(short, v) {
         debug!("error clearing incomplete marker: {:?}", err);
     }
@@ -967,14 +967,14 @@ fn checksum_file_path(install_path: &Path) -> PathBuf {
 }
 
 /// Store the checksum for a tool version (used for rolling release tracking)
-pub fn write_checksum(install_path: &Path, checksum: &str) -> Result<()> {
+pub(crate) fn write_checksum(install_path: &Path, checksum: &str) -> Result<()> {
     let path = checksum_file_path(install_path);
     file::write(&path, checksum)?;
     Ok(())
 }
 
 /// Read the stored checksum for a tool version
-pub fn read_checksum(install_path: &Path) -> Option<String> {
+pub(crate) fn read_checksum(install_path: &Path) -> Option<String> {
     let path = checksum_file_path(install_path);
     if path.exists() {
         file::read_to_string(&path).ok()
@@ -983,7 +983,7 @@ pub fn read_checksum(install_path: &Path) -> Option<String> {
     }
 }
 
-pub fn reset() {
+pub(crate) fn reset() {
     *INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = None;

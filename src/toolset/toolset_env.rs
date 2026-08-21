@@ -30,7 +30,7 @@ fn pristine_path_without_install_dirs() -> Vec<PathBuf> {
 }
 
 impl Toolset {
-    pub async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    pub(crate) async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         env.extend(self.env_with_path(config).await?.clone());
         Ok(env)
@@ -40,7 +40,7 @@ impl Toolset {
     /// Used for preinstall hooks where tool-dependent env vars aren't available yet,
     /// and for dependency_env where resolving tools=true modules on a partial toolset
     /// would trigger spurious errors from modules expecting the full PATH.
-    pub async fn full_env_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    pub(crate) async fn full_env_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         env.extend(self.env_with_path_without_tools(config).await?);
         Ok(env)
@@ -50,7 +50,7 @@ impl Toolset {
     /// Used during tool installation where tool-dependent env vars
     /// may reference tools that aren't installed yet, and in
     /// dependency_env to avoid triggering module hooks on a partial PATH.
-    pub async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    pub(crate) async fn env_with_path_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let (mut env, add_paths) = self.env(config).await?;
         let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
         for p in config.path_dirs().await?.clone() {
@@ -67,7 +67,7 @@ impl Toolset {
     }
 
     /// the full mise environment including all tool paths
-    pub async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
+    pub(crate) async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
             && let Some(mut cached) = self.try_load_env_cache(config).await?
@@ -108,7 +108,7 @@ impl Toolset {
     /// Get environment with split paths (user_paths and tool_paths separate)
     /// This method uses the env cache when available and returns paths separately
     /// for proper handling in hook_env.
-    pub async fn env_with_path_and_split(
+    pub(crate) async fn env_with_path_and_split(
         &self,
         config: &Arc<Config>,
     ) -> Result<(EnvMap, Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>)> {
@@ -307,7 +307,10 @@ impl Toolset {
         ))
     }
 
-    pub async fn env_from_tools(&self, config: &Arc<Config>) -> Vec<(String, String, String)> {
+    pub(crate) async fn env_from_tools(
+        &self,
+        config: &Arc<Config>,
+    ) -> Vec<(String, String, String)> {
         let this = Arc::new(self.clone());
         let items: Vec<_> = self
             .list_current_installed_versions(config)
@@ -338,7 +341,7 @@ impl Toolset {
             .collect()
     }
 
-    pub async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
+    pub(crate) async fn env(&self, config: &Arc<Config>) -> Result<(EnvMap, Vec<PathBuf>)> {
         time!("env start");
         let entries = self
             .env_from_tools(config)
@@ -371,7 +374,7 @@ impl Toolset {
         Ok((env, paths_to_add))
     }
 
-    pub async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
+    pub(crate) async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
         let (mut env, add_paths) = self.env(config).await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
         tera_env.extend(env.clone());
@@ -484,7 +487,11 @@ impl Toolset {
     /// dependent tool's install picks up vars like `CLOUDSDK_PYTHON` during a
     /// combined `mise install`, mirroring what a re-activated shell exports
     /// between separate installs. (#10282)
-    pub async fn tool_val_env(&self, config: &Arc<Config>, base_env: &EnvMap) -> Result<EnvMap> {
+    pub(crate) async fn tool_val_env(
+        &self,
+        config: &Arc<Config>,
+        base_env: &EnvMap,
+    ) -> Result<EnvMap> {
         let mut ctx = config.tera_ctx.clone();
         ctx.insert("env", base_env);
         ctx.insert("tools", &self.build_tools_tera_map(config));

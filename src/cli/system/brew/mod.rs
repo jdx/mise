@@ -10,7 +10,7 @@ pub(super) mod untap;
 /// can be fetched directly by mise without a Homebrew installation.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct SystemBrew {
+pub(crate) struct SystemBrew {
     #[clap(subcommand)]
     command: Commands,
 }
@@ -22,7 +22,7 @@ enum Commands {
 }
 
 impl SystemBrew {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self.command {
             Commands::Tap(cmd) => cmd.run(),
             Commands::Untap(cmd) => cmd.run(),

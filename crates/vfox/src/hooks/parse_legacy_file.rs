@@ -6,7 +6,7 @@ use crate::Plugin;
 use crate::error::Result;
 
 #[derive(Debug)]
-pub struct LegacyFileContext {
+pub(crate) struct LegacyFileContext {
     pub args: Vec<String>,
     pub filepath: PathBuf,
 }

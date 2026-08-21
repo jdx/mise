@@ -139,7 +139,7 @@ macro_rules! warn {
     }};
 }
 
-pub static WARNED_ONCE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+pub(crate) static WARNED_ONCE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 macro_rules! warn_once {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
@@ -157,7 +157,8 @@ macro_rules! error {
     }};
 }
 
-pub static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(Default::default);
+pub(crate) static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> =
+    LazyLock::new(Default::default);
 
 #[macro_export]
 macro_rules! deprecated {
@@ -196,9 +197,9 @@ macro_rules! deprecated_at {
 }
 
 #[cfg(test)]
-pub mod tests {
+pub(crate) mod tests {
     use std::sync::Mutex;
 
-    pub static STDOUT: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    pub static STDERR: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub(crate) static STDOUT: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub(crate) static STDERR: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }

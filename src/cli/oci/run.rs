@@ -21,7 +21,7 @@ use crate::oci::{BuildOptions, LayerOwner};
 /// one of: `podman`, `docker`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Run {
+pub(super) struct Run {
     // Long-only flags, kept alphabetical (asserted by
     // `cli::tests::test_subcommands_are_sorted`).
     /// Container engine to use (`auto`, `podman`, or `docker`)
@@ -105,7 +105,7 @@ enum Engine {
 }
 
 impl Run {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise oci run")?;
 
         // 1. Validate arguments first so bad args win over "engine missing".

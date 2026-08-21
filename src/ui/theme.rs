@@ -16,7 +16,7 @@ use crate::config::Settings;
 /// When colors are disabled (e.g. `color=false`, `NO_COLOR`, `CLICOLOR=0`) an
 /// unstyled theme is returned, mirroring `demand::Theme::default()`'s own
 /// behavior so that interactive prompts honor the color settings.
-pub fn get_theme() -> Theme {
+pub(crate) fn get_theme() -> Theme {
     let settings = Settings::get();
     select_theme(
         console::colors_enabled_stderr(),

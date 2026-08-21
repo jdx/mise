@@ -12,10 +12,10 @@ use crate::{backend::Backend, config::Config};
 use async_trait::async_trait;
 use eyre::eyre;
 
-pub const EXPERIMENTAL: bool = false;
+pub(crate) const EXPERIMENTAL: bool = false;
 
 #[derive(Debug)]
-pub struct DotnetBackend {
+pub(crate) struct DotnetBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -151,7 +151,7 @@ impl Backend for DotnetBackend {
 }
 
 impl DotnetBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 

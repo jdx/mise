@@ -1,4 +1,4 @@
-pub const BINARY_OS_TOKENS: &[&str] = &[
+pub(super) const BINARY_OS_TOKENS: &[&str] = &[
     "linux",
     "manylinux",
     "musllinux",
@@ -14,7 +14,7 @@ pub const BINARY_OS_TOKENS: &[&str] = &[
     "unknown",
 ];
 
-pub const BINARY_ARCH_TOKENS: &[&str] = &[
+pub(super) const BINARY_ARCH_TOKENS: &[&str] = &[
     "x86_64", "aarch64", "ppc64le", "ppc64", "armv7", "armv6", "arm64", "amd64", "mipsel",
     "riscv64", "s390x", "i686", "i386", "x64", "mips", "arm", "x86",
 ];
@@ -26,7 +26,7 @@ const PREFERRED_NAME_OS_TOKENS: &[&str] = &[
 const PREFERRED_NAME_ARCH_TOKENS: &[&str] = &["64"];
 const QUALIFIER_TOKENS: &[&str] = &["gnu", "glibc", "musl", "msvc", "pc", "apple"];
 
-pub fn is_platform_or_version_token(token: &str) -> bool {
+pub(super) fn is_platform_or_version_token(token: &str) -> bool {
     if token.is_empty() {
         return true;
     }

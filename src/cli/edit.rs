@@ -122,7 +122,7 @@ impl BackendProvider for MiseBackendProvider {
 /// Edit mise.toml interactively
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Edit {
+pub(crate) struct Edit {
     /// Edit the global config file (~/.config/mise/config.toml)
     // Rejected alongside a path rather than resolved in its favour: "edit the global config
     // file, namely ./custom.toml" has no meaning, and resolving it silently is how
@@ -166,7 +166,7 @@ impl Edit {
         }
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let path = if let Some(path) = self.path.clone() {
             path
         } else if self.global {
