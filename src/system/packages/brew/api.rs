@@ -47,6 +47,12 @@ struct GithubCommit {
     sha: String,
 }
 
+#[derive(Deserialize)]
+struct GithubContent {
+    content: String,
+    encoding: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Formula {
     pub name: String,
@@ -1092,16 +1098,29 @@ pub(super) async fn formula_with_tap_snapshot_mode(
     snapshot: &TapSnapshot,
     mode: FetchMode,
 ) -> Result<Formula> {
+    let (owner, repo) = raw_github_repository(&snapshot.repository_raw_base)
+        .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    let repository_api_base = format!("https://api.github.com/repos/{owner}/{repo}");
+    formula_with_tap_snapshot_from(name, snapshot, &repository_api_base, mode).await
+}
+
+async fn formula_with_tap_snapshot_from(
+    name: &str,
+    snapshot: &TapSnapshot,
+    repository_api_base: &str,
+    mode: FetchMode,
+) -> Result<Formula> {
     let formula_name = split_tap_name(name)
         .map(|(_, _, formula)| formula)
         .unwrap_or(name);
     let url = format!(
-        "{}/{}/api/formula/{formula_name}.json",
-        snapshot.repository_raw_base, snapshot.metadata_commit
+        "{}/contents/api/formula/{formula_name}.json?ref={}",
+        repository_api_base.trim_end_matches('/'),
+        snapshot.metadata_commit
     );
-    let formula = match mode {
-        FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
-        FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
+    let content = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<GithubContent, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<GithubContent, _>(url).await,
     }
     .wrap_err_with(|| {
         format!(
@@ -1109,6 +1128,23 @@ pub(super) async fn formula_with_tap_snapshot_mode(
             snapshot.metadata_commit
         )
     })?;
+    if content.encoding != "base64" {
+        bail!(
+            "brew: tap formula '{name}' metadata uses unsupported GitHub content encoding {:?}",
+            content.encoding
+        );
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(
+            content
+                .content
+                .bytes()
+                .filter(|byte| !byte.is_ascii_whitespace())
+                .collect::<Vec<_>>(),
+        )
+        .wrap_err_with(|| format!("brew: tap formula '{name}' metadata is not valid base64"))?;
+    let formula: Formula = serde_json::from_slice(&bytes)
+        .wrap_err_with(|| format!("brew: tap formula '{name}' metadata is not valid JSON"))?;
     let source_commit = formula
         .tap_git_head
         .as_deref()
@@ -1203,9 +1239,43 @@ pub(super) fn github_raw_base(url: &str) -> Option<String> {
     ))
 }
 
-fn github_repository(url: &str) -> Option<(&str, &str)> {
-    let url = url.trim_end_matches('/').trim_end_matches(".git");
-    let rest = url.strip_prefix("https://github.com/")?;
+pub(super) fn normalize_github_repository_url(url: &str) -> Option<String> {
+    let (owner, repo) = github_repository(url)?;
+    Some(format!("https://github.com/{owner}/{repo}"))
+}
+
+fn github_repository(url: &str) -> Option<(String, String)> {
+    url.strip_prefix("https://github.com/")?;
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("github.com")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return None;
+    }
+    let path = parsed.path().strip_prefix('/')?.trim_end_matches('/');
+    let mut parts = path.split('/');
+    let owner = parts.next()?;
+    let repository = parts.next()?;
+    let repo = repository.strip_suffix(".git").unwrap_or(repository);
+    if parts.next().is_some()
+        || owner.is_empty()
+        || repo.is_empty()
+        || owner.contains('%')
+        || repo.contains('%')
+    {
+        None
+    } else {
+        Some((owner.to_string(), repo.to_string()))
+    }
+}
+
+fn raw_github_repository(url: &str) -> Option<(&str, &str)> {
+    let rest = url.strip_prefix("https://raw.githubusercontent.com/")?;
     let mut parts = rest.split('/');
     let owner = parts.next()?;
     let repo = parts.next()?;
@@ -1231,11 +1301,15 @@ mod tests {
         let metadata = server
             .mock(
                 "GET",
-                format!("/{metadata_commit}/api/formula/widget.json").as_str(),
+                "/contents/api/formula/widget.json",
             )
-            .with_body(format!(
-                r#"{{"name":"widget","tap":"owner/tools","versions":{{"stable":"1.0"}},"tap_git_head":"{source_commit}"}}"#
-            ))
+            .match_query(mockito::Matcher::UrlEncoded("ref".into(), metadata_commit.into()))
+            .with_body(serde_json::json!({
+                "encoding": "base64",
+                "content": base64::engine::general_purpose::STANDARD.encode(format!(
+                    r#"{{"name":"widget","tap":"owner/tools","versions":{{"stable":"1.0"}},"tap_git_head":"{source_commit}"}}"#
+                ))
+            }).to_string())
             .create_async()
             .await;
         let mut snapshot = resolve_tap_snapshot_from(
@@ -1246,9 +1320,10 @@ mod tests {
         )
         .await
         .unwrap();
-        let formula = formula_with_tap_snapshot_mode("widget", &snapshot, FetchMode::Fresh)
-            .await
-            .unwrap();
+        let formula =
+            formula_with_tap_snapshot_from("widget", &snapshot, &server.url(), FetchMode::Fresh)
+                .await
+                .unwrap();
         bind_tap_source_commit(&mut snapshot, &formula).unwrap();
         assert_eq!(snapshot.metadata_commit, metadata_commit);
         assert_eq!(snapshot.source_commit.as_deref(), Some(source_commit));
@@ -1277,6 +1352,33 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("inconsistent source commits")
+        );
+    }
+
+    #[test]
+    fn github_repository_urls_are_strict_and_normalized() {
+        assert_eq!(
+            github_repository("https://github.com/owner/repo"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+        assert_eq!(
+            github_repository("https://github.com/owner/repo.git/"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+        for url in [
+            "http://github.com/owner/repo",
+            "https://user@github.com/owner/repo",
+            "https://github.com:443/owner/repo",
+            "https://github.com/owner/repo/extra",
+            "https://github.com/owner//repo",
+            "https://github.com/owner/repo?ref=main",
+            "https://github.com.evil.test/owner/repo",
+        ] {
+            assert_eq!(github_repository(url), None, "accepted {url}");
+        }
+        assert_eq!(
+            normalize_github_repository_url("https://github.com/owner/repo.git/"),
+            Some("https://github.com/owner/repo".to_string())
         );
     }
 

@@ -91,6 +91,7 @@ async fn resolve_closure_pairs(
     mode: api::FetchMode,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
+    let tap_urls = configured_tap_urls(roots)?;
     let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
     let mut raw_bases: HashMap<FormulaKey, Option<String>> = HashMap::new();
     let mut tap_snapshots: HashMap<String, api::TapSnapshot> = HashMap::new();
@@ -142,7 +143,7 @@ async fn resolve_closure_pairs(
                 if !formulae.contains_key(&canonical_key) {
                     let tag = dep_tag(&formula, &host_tag);
                     for dep in install_deps(&formula, &tag) {
-                        queue.push((dependency_key(dep, &canonical_key), false));
+                        queue.push((dependency_key(dep, &canonical_key, &tap_urls), false));
                     }
                     let raw_base = effective_tap_name
                         .as_ref()
@@ -168,6 +169,7 @@ async fn resolve_closure_pairs(
         host_tag: &'a str,
         formulae: &'a HashMap<FormulaKey, Formula>,
         raw_bases: &'a HashMap<FormulaKey, Option<String>>,
+        tap_urls: &'a HashMap<String, String>,
         canonical: &'a HashMap<FormulaKey, FormulaKey>,
         done: &'a mut HashSet<FormulaKey>,
         visiting: &'a mut Vec<FormulaKey>,
@@ -190,7 +192,7 @@ async fn resolve_closure_pairs(
         ctx.visiting.push(key.clone());
         let tag = dep_tag(formula, ctx.host_tag);
         for dep in install_deps(formula, &tag) {
-            let dep_key = dependency_key(dep, key);
+            let dep_key = dependency_key(dep, key, ctx.tap_urls);
             let dep_key = ctx.canonical.get(&dep_key).cloned().unwrap_or(dep_key);
             visit(&dep_key, ctx)?;
         }
@@ -218,6 +220,7 @@ async fn resolve_closure_pairs(
         host_tag: &host_tag,
         formulae: &formulae,
         raw_bases: &raw_bases,
+        tap_urls: &tap_urls,
         canonical: &canonical,
         done: &mut done,
         visiting: &mut visiting,
@@ -323,7 +326,11 @@ fn expected_tap_name(key: &FormulaKey) -> Option<String> {
         .or_else(|| key.tap_name.clone())
 }
 
-fn dependency_key(dependency: &str, parent: &FormulaKey) -> FormulaKey {
+fn dependency_key(
+    dependency: &str,
+    parent: &FormulaKey,
+    tap_urls: &HashMap<String, String>,
+) -> FormulaKey {
     let Some((owner, tap, _)) = api::split_tap_name(dependency) else {
         return FormulaKey::new(
             dependency.to_string(),
@@ -332,10 +339,37 @@ fn dependency_key(dependency: &str, parent: &FormulaKey) -> FormulaKey {
         );
     };
     let tap_name = (owner != "homebrew" || tap != "core").then(|| format!("{owner}/{tap}"));
-    let tap_url = (tap_name == parent.tap_name)
-        .then(|| parent.tap_url.clone())
-        .flatten();
+    let tap_url = tap_name.as_ref().and_then(|tap| {
+        if Some(tap) == parent.tap_name.as_ref() {
+            parent.tap_url.clone()
+        } else {
+            tap_urls.get(tap).cloned()
+        }
+    });
     FormulaKey::new(dependency.to_string(), tap_name, tap_url)
+}
+
+fn configured_tap_urls(
+    roots: &[(String, Option<String>, Option<String>)],
+) -> Result<HashMap<String, String>> {
+    let mut configured = HashMap::new();
+    for (name, tap_name, tap_url) in roots {
+        let logical_tap = api::tap_name(name).or_else(|| tap_name.clone());
+        let (Some(tap), Some(url)) = (logical_tap, tap_url.as_deref()) else {
+            continue;
+        };
+        let normalized = api::normalize_github_repository_url(url).ok_or_else(|| {
+            eyre::eyre!("brew: third-party tap '{tap}' must use a canonical GitHub repository URL")
+        })?;
+        if let Some(previous) = configured.insert(tap.clone(), normalized.clone())
+            && previous != normalized
+        {
+            bail!(
+                "brew: logical tap '{tap}' is configured with multiple repositories: {previous} and {normalized}"
+            );
+        }
+    }
+    Ok(configured)
 }
 
 fn validate_formula_response_identity(
@@ -432,6 +466,58 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn configured_taps_reject_multiple_repository_identities() {
+        let roots = vec![
+            (
+                "owner/tools/one".to_string(),
+                Some("owner/tools".to_string()),
+                Some("https://github.com/owner/homebrew-tools".to_string()),
+            ),
+            (
+                "owner/tools/two".to_string(),
+                Some("owner/tools".to_string()),
+                Some("https://github.com/attacker/homebrew-tools".to_string()),
+            ),
+        ];
+        assert!(
+            configured_tap_urls(&roots)
+                .unwrap_err()
+                .to_string()
+                .contains("multiple repositories")
+        );
+    }
+
+    #[test]
+    fn configured_taps_normalize_and_supply_cross_tap_dependencies() {
+        let roots = vec![
+            (
+                "owner/one/root".to_string(),
+                Some("owner/one".to_string()),
+                Some("https://github.com/owner/homebrew-one".to_string()),
+            ),
+            (
+                "owner/two/other".to_string(),
+                Some("owner/two".to_string()),
+                Some("https://github.com/owner/homebrew-two.git/".to_string()),
+            ),
+        ];
+        let taps = configured_tap_urls(&roots).unwrap();
+        let parent = FormulaKey::new(
+            "root".to_string(),
+            Some("owner/one".to_string()),
+            Some("https://github.com/owner/homebrew-one".to_string()),
+        );
+        let dependency = dependency_key("owner/two/helper", &parent, &taps);
+        assert_eq!(dependency.tap_name.as_deref(), Some("owner/two"));
+        assert_eq!(
+            dependency.tap_url.as_deref(),
+            Some("https://github.com/owner/homebrew-two")
+        );
+        let unconfigured = dependency_key("other/tap/helper", &parent, &taps);
+        assert!(unconfigured.tap_url.is_none());
+    }
+
     fn formula(name: &str, version: &str, tap: Option<&str>, aliases: &[&str]) -> Formula {
         serde_json::from_value(json!({
             "name": name,
@@ -520,13 +606,13 @@ mod tests {
             Some("owner/parent".into()),
             Some("https://github.com/owner/homebrew-parent".into()),
         );
-        let dependency = dependency_key("other/tools/helper", &parent);
+        let dependency = dependency_key("other/tools/helper", &parent, &HashMap::new());
         assert_eq!(dependency.name, "other/tools/helper");
         assert_eq!(formula_reference_name(&dependency.name), "helper");
         assert_eq!(dependency.tap_name.as_deref(), Some("other/tools"));
         assert_eq!(dependency.tap_url, None);
 
-        let sibling = dependency_key("owner/parent/helper", &parent);
+        let sibling = dependency_key("owner/parent/helper", &parent, &HashMap::new());
         assert_eq!(sibling.tap_name.as_deref(), Some("owner/parent"));
         assert_eq!(sibling.tap_url, parent.tap_url);
 
