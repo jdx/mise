@@ -12280,7 +12280,9 @@ fn homebrew_uninstall_actions(
     token: &str,
     homebrew: &receipt::CaskReceipt,
 ) -> Result<Vec<HomebrewUninstallAction>> {
-    homebrew_uninstall_actions_from_artifacts(token, &homebrew.uninstall_artifacts)
+    let actions = homebrew_uninstall_actions_from_artifacts(token, &homebrew.uninstall_artifacts)?;
+    validate_homebrew_uninstall_actions(token, &homebrew.source.version, &actions)?;
+    Ok(actions)
 }
 
 fn homebrew_uninstall_actions_from_artifacts(
@@ -12527,6 +12529,13 @@ fn validate_homebrew_uninstall_actions(
     version: &str,
     actions: &[HomebrewUninstallAction],
 ) -> Result<()> {
+    if !cfg!(target_os = "macos")
+        && actions
+            .iter()
+            .any(|action| matches!(action, HomebrewUninstallAction::Trash(_)))
+    {
+        bail!("brew-cask:{token}: Homebrew-compatible trash is unavailable on this host");
+    }
     for action in actions {
         match action {
             HomebrewUninstallAction::Delete(path) | HomebrewUninstallAction::Trash(path) => {
@@ -20822,7 +20831,16 @@ end
                 "$HOMEBREW_PREFIX/Caskroom/gcloud-cli/latest"
             ))]
         );
-        assert!(validate_homebrew_uninstall_actions("gcloud-cli", "581.0.0", &actions).is_ok());
+        if cfg!(target_os = "macos") {
+            assert!(validate_homebrew_uninstall_actions("gcloud-cli", "581.0.0", &actions).is_ok());
+        } else {
+            assert!(
+                validate_homebrew_uninstall_actions("gcloud-cli", "581.0.0", &actions)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("trash is unavailable")
+            );
+        }
         assert!(
             validate_homebrew_uninstall_actions(
                 "gcloud-cli",
@@ -20833,6 +20851,40 @@ end
             .to_string()
             .contains("protected path")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn unavailable_trash_rejects_complete_plan_before_delete() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let sentinel = tmp.path().join("must-survive");
+        file::write(&sentinel, "owned")?;
+        let mut value: Value =
+            serde_json::from_str(include_str!("testdata/codex-INSTALL_RECEIPT.json"))?;
+        value["source"]["version"] = Value::String("1.0.0".to_string());
+        let mut homebrew: receipt::CaskReceipt = serde_json::from_value(value)?;
+        homebrew.uninstall_artifacts = serde_json::json!([{
+            "uninstall": [{
+                "delete": sentinel,
+                "trash": "$HOMEBREW_PREFIX/Caskroom/example/latest"
+            }]
+        }])
+        .as_array()
+        .unwrap()
+        .clone();
+
+        let prepared = homebrew_uninstall_actions("example", &homebrew);
+        if cfg!(target_os = "macos") {
+            assert!(prepared.is_ok());
+        } else {
+            assert!(
+                prepared
+                    .unwrap_err()
+                    .to_string()
+                    .contains("trash is unavailable")
+            );
+        }
+        assert_eq!(file::read_to_string(sentinel)?, "owned");
         Ok(())
     }
 
