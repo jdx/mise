@@ -208,9 +208,16 @@ Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
 receipts. If Homebrew metadata already exists for a cask, mise preserves it and
 fails before mutation rather than taking over Homebrew's lifecycle state.
-Status uses recorded installation facts rather than reconstructing them from a
-newer cask definition; missing or unknown receipts and pending transactions are
-reported as unhealthy so the next apply can reconcile them.
+Status treats a cask as installed when its receipt and recorded targets are
+still present. App and font content fingerprints are kept for prune and adopt
+safety, but content drift inside an existing app or font does **not** mark the
+cask missing or trigger a reinstall on apply — replacing `/Applications/*.app`
+resets macOS Privacy & Security (TCC) grants. Binary and completion symlinks
+still require the recorded link destination (a cheap `readlink`) and a
+resolvable target, so dangling or retargeted links stay repairable. Missing or
+unknown receipts and pending transactions are still reported as unhealthy so
+the next apply can reconcile them. Version upgrades and an explicit remove +
+apply still replace the app when you want a fresh pour.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
