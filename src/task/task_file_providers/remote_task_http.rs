@@ -1,8 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 
-use crate::{Result, dirs, env, file, hash, http::HTTP, remote_source::RemoteSource};
+use crate::{
+    Result, dirs, env, file, hash, http::HTTP, lock_file::LockFile, remote_source::RemoteSource,
+};
 
 use super::{TaskFileArtifact, TaskFileProvider};
 
@@ -47,10 +49,32 @@ impl RemoteTaskHttp {
         hash::hash_sha256_to_str(file)
     }
 
-    async fn download_file(&self, file: &str, destination: &PathBuf) -> Result<()> {
+    async fn download_file(&self, file: &str, destination: &Path) -> Result<()> {
         trace!("Downloading file: {}", file);
         HTTP.download_file(file, destination, None).await?;
         file::make_executable(destination)?;
+        Ok(())
+    }
+
+    fn temp_download_path(destination: &Path) -> PathBuf {
+        let mut path = destination.as_os_str().to_os_string();
+        path.push(".download-tmp");
+        path.into()
+    }
+
+    async fn download_file_atomically(&self, file: &str, destination: &Path) -> Result<()> {
+        let temp = Self::temp_download_path(destination);
+        if temp.exists() {
+            file::remove_file(&temp)?;
+        }
+        if let Err(error) = self.download_file(file, &temp).await {
+            let _ = file::remove_file(&temp);
+            return Err(error);
+        }
+        if let Err(error) = file::rename(&temp, destination) {
+            let _ = file::remove_file(&temp);
+            return Err(error);
+        }
         Ok(())
     }
 
@@ -77,26 +101,22 @@ impl TaskFileProvider for RemoteTaskHttp {
     async fn get_local_path(&self, file: &str) -> Result<PathBuf> {
         let cache_key = self.get_cache_key(file);
         let destination = self.storage_path.join(&cache_key);
-
-        match self.is_cached {
-            true => {
-                trace!("Cache mode enabled");
-
-                if destination.exists() {
-                    debug!("Using cached file: {:?}", destination);
-                    return Ok(destination);
-                }
+        if self.is_cached {
+            trace!("Cache mode enabled");
+            file::create_dir_all(&self.storage_path)?;
+            let _lock = LockFile::new(&destination).lock()?;
+            if destination.exists() {
+                debug!("Using cached file: {:?}", destination);
+                return Ok(destination);
             }
-            false => {
-                trace!("Cache mode disabled");
-
-                if destination.exists() {
-                    file::remove_file(&destination)?;
-                }
-            }
+            self.download_file_atomically(file, &destination).await?;
+            return Ok(destination);
         }
 
-        self.download_file(file, &destination).await?;
+        trace!("Cache mode disabled");
+        file::create_dir_all(&self.storage_path)?;
+        let _lock = LockFile::new(&destination).lock()?;
+        self.download_file_atomically(file, &destination).await?;
         Ok(destination)
     }
 
@@ -133,7 +153,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_http_remote_task_get_local_path_without_cache() {
+    async fn test_http_remote_task_get_local_artifact_without_cache() {
         let paths = vec![
             "/myfile.py",
             "/subpath/myfile.sh",
@@ -271,6 +291,31 @@ mod tests {
         assert!(fetch.await.unwrap_err().is_cancelled());
         release.store(true, Ordering::SeqCst);
         assert_eq!(std::fs::read_dir(storage.path()).unwrap().count(), 0);
+        remote.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_cached_download_failure_leaves_no_partial_file() {
+        let mut server = mockito::Server::new_async().await;
+        let remote = server
+            .mock("GET", "/task")
+            .with_status(500)
+            .expect(4)
+            .create_async()
+            .await;
+        let storage = tempfile::tempdir().unwrap();
+        let provider = RemoteTaskHttp {
+            storage_path: storage.path().to_path_buf(),
+            is_cached: true,
+        };
+        let request_url = format!("{}/task", server.url());
+        let destination = storage.path().join(provider.get_cache_key(&request_url));
+        let temp_destination = RemoteTaskHttp::temp_download_path(&destination);
+        std::fs::write(&temp_destination, b"partial download").unwrap();
+
+        assert!(provider.get_local_path(&request_url).await.is_err());
+        assert!(!destination.exists());
+        assert!(!temp_destination.exists());
         remote.assert_async().await;
     }
 }

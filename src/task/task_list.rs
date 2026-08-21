@@ -1,5 +1,6 @@
 use crate::config::{self, Config};
 use crate::file::display_path;
+use crate::task::task_fetcher::TaskFetcher;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
     resolve_task_pattern,
@@ -412,6 +413,17 @@ pub async fn get_task_lists(
     only: bool,
     prompt_all: bool,
 ) -> Result<Vec<Task>> {
+    get_task_lists_with_no_cache(config, args, prompt, only, prompt_all, false).await
+}
+
+pub async fn get_task_lists_with_no_cache(
+    config: &Arc<Config>,
+    args: &[String],
+    prompt: bool,
+    only: bool,
+    prompt_all: bool,
+    no_cache: bool,
+) -> Result<Vec<Task>> {
     if prompt_all {
         let mut task = prompt_for_task(config, true).await?;
         if only {
@@ -519,30 +531,45 @@ pub async fn get_task_lists(
         };
 
         let all_tasks = if let Some(ref ctx) = effective_context {
-            config.tasks_with_context(Some(ctx)).await?
+            config
+                .tasks_with_context_no_cache(Some(ctx), no_cache)
+                .await?
         } else {
-            config.tasks().await?
+            config.tasks_with_context_no_cache(None, no_cache).await?
         };
 
-        let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
+        let find_matching_tasks =
+            |tasks_with_aliases: &BTreeMap<String, &Task>| -> Result<Vec<Task>> {
+                let mut matches = tasks_with_aliases
+                    .get_matching(&t)?
+                    .into_iter()
+                    .map(|task| (**task).clone())
+                    .collect_vec();
+                if matches.is_empty()
+                    && t != original_name
+                    && !original_name.starts_with("//")
+                    && !original_name.starts_with(':')
+                {
+                    matches = tasks_with_aliases
+                        .get_matching(&original_name)?
+                        .into_iter()
+                        .map(|task| (**task).clone())
+                        .collect_vec();
+                }
+                Ok(matches)
+            };
 
-        let mut cur_tasks = tasks_with_aliases
-            .get_matching(&t)?
-            .into_iter()
-            .cloned()
-            .collect_vec();
-        // If the task name was auto-expanded to monorepo syntax (e.g., "hello" -> "//:hello")
-        // but no monorepo task matched, fall back to the original bare name to find global tasks
-        if cur_tasks.is_empty()
-            && t != original_name
-            && !original_name.starts_with("//")
-            && !original_name.starts_with(':')
-        {
-            cur_tasks = tasks_with_aliases
-                .get_matching(&original_name)?
-                .into_iter()
-                .cloned()
-                .collect_vec();
+        let tasks_with_aliases = crate::task::build_task_ref_map(all_tasks.iter());
+        let mut cur_tasks = find_matching_tasks(&tasks_with_aliases)?;
+        if cur_tasks.is_empty() {
+            // Remote aliases exist only after parsing their headers. A miss is
+            // passive discovery, so require trust before fetching them.
+            let resolved_tasks = TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(config, &all_tasks)
+                .await?;
+            let resolved_with_aliases = crate::task::build_task_ref_map(resolved_tasks.iter());
+            cur_tasks = find_matching_tasks(&resolved_with_aliases)?;
         }
         if cur_tasks.is_empty() {
             // Check if this is a "default" task (either plain "default" or monorepo syntax like "//:default")
@@ -577,7 +604,11 @@ pub async fn get_task_lists(
 
 /// Resolve all dependencies for a list of tasks
 /// Iteratively discovers path hints by loading tasks and their dependencies
-pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
+pub async fn resolve_depends_with_no_cache(
+    config: &Arc<Config>,
+    tasks: Vec<Task>,
+    no_cache: bool,
+) -> Result<Vec<Task>> {
     // Iteratively discover all path hints by loading tasks and their dependencies
     // This handles chains like: //A:B -> :C -> :D -> //E:F where we need to discover E
     let mut all_path_hints = HashSet::new();
@@ -617,7 +648,9 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
             load_all: false,
         });
 
-        let loaded_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+        let loaded_tasks = config
+            .tasks_with_context_no_cache(ctx.as_ref(), no_cache)
+            .await?;
 
         // Find new tasks that haven't been processed yet
         tasks_to_process = loaded_tasks
@@ -637,14 +670,35 @@ pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<V
         None
     };
 
-    let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
+    let all_tasks = config
+        .tasks_with_context_no_cache(ctx.as_ref(), no_cache)
+        .await?;
 
-    tasks
-        .into_iter()
-        .map(|t| {
-            let depends = t.all_depends(&all_tasks)?;
-            Ok(once(t).chain(depends).collect::<Vec<_>>())
-        })
-        .flatten_ok()
-        .collect()
+    let resolve = |all_tasks: &BTreeMap<String, Task>| {
+        tasks
+            .iter()
+            .cloned()
+            .map(|task| {
+                let depends = task.all_depends(all_tasks)?;
+                Ok(once(task).chain(depends).collect::<Vec<_>>())
+            })
+            .flatten_ok()
+            .collect::<Result<Vec<_>>>()
+    };
+
+    match resolve(&all_tasks) {
+        Ok(tasks) => Ok(tasks),
+        Err(error)
+            if error
+                .downcast_ref::<crate::task::TaskNotFoundError>()
+                .is_some() =>
+        {
+            let resolved_tasks = TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(config, &all_tasks)
+                .await?;
+            resolve(&resolved_tasks)
+        }
+        Err(error) => Err(error),
+    }
 }

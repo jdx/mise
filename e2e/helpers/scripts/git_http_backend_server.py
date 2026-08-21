@@ -14,8 +14,10 @@ import socketserver
 from pathlib import Path
 
 class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
-    def __init__(self, *args, repo_dir=None, **kwargs):
+    def __init__(self, *args, repo_dir=None, request_log=None, upload_pack_count_file=None, **kwargs):
         self.repo_dir = repo_dir
+        self.request_log = request_log
+        self.upload_pack_count_file = upload_pack_count_file
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
@@ -25,6 +27,10 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         self.handle_git_request()
 
     def handle_git_request(self):
+        if self.request_log:
+            with open(self.request_log, 'a') as log:
+                log.write(f'{self.command} {self.path}\n')
+
         # Set up environment for git-http-backend
         env = os.environ.copy()
         env['GIT_PROJECT_ROOT'] = str(self.repo_dir)
@@ -46,6 +52,14 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         # Read request body for POST
         content_length = int(self.headers.get('Content-Length', 0))
         request_body = self.rfile.read(content_length) if content_length > 0 else b''
+
+        if (
+            self.command == 'POST'
+            and path_info.endswith('/git-upload-pack')
+            and self.upload_pack_count_file is not None
+        ):
+            with self.upload_pack_count_file.open('a') as count_file:
+                count_file.write('1\n')
 
         # Set content type if provided
         if 'Content-Type' in self.headers:
@@ -102,7 +116,7 @@ class GitHTTPHandler(http.server.BaseHTTPRequestHandler):
         except Exception as e:
             self.send_error(500, f"Server error: {str(e)}")
 
-def create_test_repo(repo_path):
+def create_test_repo(repo_path, server_port):
     """Create a minimal test repository"""
     # Create a regular (non-bare) repository
     subprocess.run(['git', 'init', repo_path], check=True)
@@ -119,6 +133,54 @@ def create_test_repo(repo_path):
     remote_task_file.write_text('#!/usr/bin/env bash\necho "remote task executed"\n')
     remote_task_file.chmod(0o755)
 
+    remote_task_dir = Path(repo_path) / 'xtasks' / 'remote'
+    remote_task_dir.mkdir(parents=True)
+    remote_metadata_file = remote_task_dir / 'remote_metadata.toml'
+    remote_metadata_file.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE description="remote git metadata"\n'
+        '#MISE tools={dummy="1.0.0"}\n'
+        '#MISE env._.file="remote.env"\n'
+        'echo "remote path: $0"\n'
+        'echo "$REMOTE_RELATIVE_ENV"\n'
+        'dummy\n'
+    )
+    remote_metadata_file.chmod(0o755)
+    (remote_task_dir / 'remote.env').write_text('REMOTE_RELATIVE_ENV="relative env loaded"\n')
+    nested_remote_file = remote_task_dir / 'nested'
+    nested_remote_file.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "nested remote task executed"\n'
+    )
+    nested_remote_file.chmod(0o755)
+
+    snapshot_root = Path(repo_path) / 'xtasks' / 'snapshot'
+    snapshot_parent = snapshot_root / 'parent' / 'snapshot_parent'
+    snapshot_parent.parent.mkdir(parents=True)
+    snapshot_parent.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE depends=["snapshot_child"]\n'
+        'echo "snapshot parent checkout: ${0%%/xtasks/*}"\n'
+    )
+    snapshot_parent.chmod(0o755)
+
+    snapshot_child = snapshot_root / 'child' / 'snapshot_child'
+    snapshot_child.parent.mkdir(parents=True)
+    snapshot_child.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "snapshot child checkout: ${0%%/xtasks/*}"\n'
+    )
+    snapshot_child.chmod(0o755)
+
+    snapshot_failure = snapshot_root / 'failure' / 'snapshot_failure'
+    snapshot_failure.parent.mkdir(parents=True)
+    snapshot_failure.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo "snapshot failure"\n'
+        'exit 1\n'
+    )
+    snapshot_failure.chmod(0o755)
+
     # A toml task file colocated with the executable scripts. Keys are task
     # names; values are the run command (or a table). Used by tests covering
     # remote toml task includes.
@@ -129,6 +191,9 @@ def create_test_repo(repo_path):
         '[toml_table_task]\n'
         'run = "echo toml_table_task executed"\n'
         'description = "TOML task with table form"\n'
+        '\n'
+        '[nested_remote]\n'
+        f'file = "git::http://localhost:{server_port}/repo.git//xtasks/remote/nested"\n'
     )
 
     # A standalone toml file in a sibling directory to test the
@@ -165,18 +230,29 @@ def start_server(port=0):
     # Create temp directory
     temp_dir = Path(tempfile.mkdtemp(prefix='mise_git_http_'))
     repo_path = temp_dir / 'repo'
-
-    print(f"Creating test repository at {repo_path}")
-    create_test_repo(str(repo_path))
+    upload_pack_count_path = os.environ.get('MISE_GIT_HTTP_UPLOAD_PACK_COUNT_FILE')
+    upload_pack_count_file = Path(upload_pack_count_path) if upload_pack_count_path else None
+    request_log = os.environ.get('MISE_GIT_HTTP_REQUEST_LOG')
+    if upload_pack_count_file is not None:
+        upload_pack_count_file.parent.mkdir(parents=True, exist_ok=True)
+        upload_pack_count_file.write_text('')
 
     # Create handler with repo directory
     def handler(*args, **kwargs):
-        return GitHTTPHandler(*args, repo_dir=temp_dir, **kwargs)
+        return GitHTTPHandler(
+            *args,
+            repo_dir=temp_dir,
+            request_log=request_log,
+            upload_pack_count_file=upload_pack_count_file,
+            **kwargs,
+        )
 
     # Let the OS assign an available port if port=0
     # This avoids race conditions between finding and binding
     with socketserver.TCPServer(("", port), handler) as httpd:
         actual_port = httpd.server_address[1]
+        print(f"Creating test repository at {repo_path}")
+        create_test_repo(str(repo_path), actual_port)
         print(f"Git HTTP server running on port {actual_port}")
         print(f"Repository URL: http://localhost:{actual_port}/repo.git")
 
@@ -206,6 +282,8 @@ def start_server(port=0):
             port_file.unlink(missing_ok=True)
             info_file.unlink(missing_ok=True)
             ready_file.unlink(missing_ok=True)
+            if upload_pack_count_file is not None:
+                upload_pack_count_file.unlink(missing_ok=True)
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 0

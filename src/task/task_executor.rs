@@ -280,6 +280,7 @@ pub struct TaskExecutorConfig {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub no_cache: bool,
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
@@ -305,6 +306,7 @@ pub struct TaskExecutor {
     pub continue_on_error: bool,
     pub dry_run: bool,
     pub skip_deps: bool,
+    pub no_cache: bool,
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
@@ -358,6 +360,7 @@ impl TaskExecutor {
             continue_on_error: config.continue_on_error,
             dry_run: config.dry_run,
             skip_deps: config.skip_deps,
+            no_cache: config.no_cache,
             task_cache: config.task_cache,
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
@@ -1011,17 +1014,24 @@ impl TaskExecutor {
             let (name, _) = split_task_spec(s);
             name
         }));
-        let tasks = config.tasks_with_context(Some(&ctx)).await?;
-        let tasks_map: BTreeMap<String, Task> = tasks
-            .values()
-            .flat_map(|t| {
-                t.aliases
-                    .iter()
-                    .map(|a| (a.to_string(), t.clone()))
-                    .chain(once((t.name.clone(), t.clone())))
-                    .collect::<Vec<_>>()
-            })
-            .collect();
+        let tasks = config
+            .tasks_with_context_no_cache(Some(&ctx), self.no_cache)
+            .await?;
+        let mut resolved_tasks = tasks.as_ref().clone();
+        let needs_remote_aliases = {
+            let tasks_map = crate::task::build_task_ref_map(resolved_tasks.iter());
+            specs.iter().try_fold(false, |missing, spec| {
+                let (name, _) = split_task_spec(spec);
+                Ok::<_, eyre::Report>(missing || tasks_map.get_matching(name)?.is_empty())
+            })?
+        };
+        if needs_remote_aliases {
+            resolved_tasks = crate::task::task_fetcher::TaskFetcher::new(false)
+                .require_trust_before_fetch()
+                .fetch_task_map(config, &resolved_tasks)
+                .await?;
+        }
+        let tasks_map = crate::task::build_task_ref_map(resolved_tasks.iter());
         let mut to_run: Vec<Task> = vec![];
         for spec in specs {
             let (name, args) = split_task_spec(spec);
@@ -1063,7 +1073,8 @@ impl TaskExecutor {
                 to_run.push(t);
             }
         }
-        let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
+        let sub_deps =
+            Deps::new_pruned_with_no_cache(config, to_run, completion_state, self.no_cache).await?;
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
