@@ -9106,6 +9106,7 @@ fn validate_installed_cask_topology_with_metadata(
                     artifacts,
                     &appdir,
                     version_dir,
+                    binary,
                     &target,
                     recorded_targets,
                 )?
@@ -9172,14 +9173,18 @@ fn recorded_guarded_flight_symlink_is_owned(
     artifacts: &CaskArtifacts,
     appdir: &Path,
     version_dir: &Path,
+    binary: &BinaryArtifact,
     target: &Path,
     recorded_targets: Option<&[CaskTargetRecord]>,
 ) -> Result<bool> {
-    let declared = artifacts
+    let Some(records) = recorded_targets else {
+        return Ok(false);
+    };
+    let guarded_backlink_is_current = artifacts
         .preflight_steps
         .iter()
         .chain(&artifacts.postflight_steps)
-        .any(|step| match step {
+        .filter_map(|step| match step {
             FlightStep::Symlink {
                 target: declared,
                 guards,
@@ -9191,21 +9196,22 @@ fn recorded_guarded_flight_symlink_is_owned(
                 )
             }) =>
             {
-                resolve_flight_path_with_context(cask, declared, version_dir, appdir)
-                    .is_ok_and(|declared| declared == target)
+                resolve_flight_path_with_context(cask, declared, version_dir, appdir).ok()
             }
-            _ => false,
+            _ => None,
+        })
+        .any(|declared| {
+            records.iter().any(|record| {
+                record.path == declared
+                    && record.fingerprint.kind == CaskTargetKind::Symlink
+                    && cask_target_present(record)
+            })
         });
-    if !declared {
+    if !guarded_backlink_is_current {
         return Ok(false);
     }
-    Ok(recorded_targets.is_some_and(|records| {
-        records.iter().any(|record| {
-            record.path == target
-                && record.fingerprint.kind == CaskTargetKind::Symlink
-                && cask_target_present(record)
-        })
-    }))
+    let declared_source = version_dir.join(&binary.source);
+    Ok(declared_source.is_file() && file::same_file(target, &declared_source))
 }
 
 fn declared_appdir_symlink_is_owned(
@@ -17083,13 +17089,20 @@ mod tests {
     #[test]
     fn guarded_flight_binary_requires_current_receipt_fingerprint() -> Result<()> {
         let tmp = tempfile::tempdir()?;
-        let source = tmp.path().join("declared");
+        let source = tmp.path().join("installed");
+        let backlink = tmp.path().join("google-cloud-sdk");
         let other = tmp.path().join("other");
         let target = tmp.path().join("binary");
-        file::write(&source, "declared")?;
+        file::create_dir_all(source.join("bin"))?;
+        file::write(source.join("bin/tool"), "declared")?;
         file::write(&other, "other")?;
-        std::os::unix::fs::symlink(&source, &target)?;
+        std::os::unix::fs::symlink(&source, &backlink)?;
+        std::os::unix::fs::symlink(source.join("bin/tool"), &target)?;
         let cask = test_cask("external", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "google-cloud-sdk/bin/tool".to_string(),
+            target: Some("binary".to_string()),
+        };
         let artifacts = CaskArtifacts {
             postflight_steps: vec![FlightStep::Symlink {
                 source: FlightPath {
@@ -17098,7 +17111,7 @@ mod tests {
                 },
                 target: FlightPath {
                     base: FlightPathBase::Literal,
-                    path: target.to_string_lossy().into_owned(),
+                    path: backlink.to_string_lossy().into_owned(),
                 },
                 force: false,
                 uninstall: true,
@@ -17106,7 +17119,7 @@ mod tests {
                 sudo: FlightSudo::Never,
                 guards: vec![FlightGuard::UnlessExists(FlightPath {
                     base: FlightPathBase::Literal,
-                    path: target.to_string_lossy().into_owned(),
+                    path: backlink.to_string_lossy().into_owned(),
                 })],
             }],
             ..Default::default()
@@ -17116,12 +17129,13 @@ mod tests {
             &artifacts,
             Path::new("/Applications"),
             tmp.path(),
+            &binary,
             &target,
             None,
         )?);
         let records = vec![CaskTargetRecord {
-            path: target.clone(),
-            fingerprint: cask_target_fingerprint(&target)?,
+            path: backlink.clone(),
+            fingerprint: cask_target_fingerprint(&backlink)?,
             uninstall: Some(true),
         }];
         assert!(recorded_guarded_flight_symlink_is_owned(
@@ -17129,6 +17143,7 @@ mod tests {
             &artifacts,
             Path::new("/Applications"),
             tmp.path(),
+            &binary,
             &target,
             Some(&records),
         )?);
@@ -17139,6 +17154,7 @@ mod tests {
             &artifacts,
             Path::new("/Applications"),
             tmp.path(),
+            &binary,
             &target,
             Some(&records),
         )?);
