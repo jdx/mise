@@ -508,7 +508,7 @@ impl Backend for NPMBackend {
                     NpmOptions::npm_lifecycle_script_args(allow_builds, supports_allow_scripts);
                 let skipped_lifecycle_scripts =
                     Self::effective_npm_ignore_scripts(default_ignore_scripts, &npm_args);
-                let mut cmd =
+                let mut cmd = Self::npm_command(
                     CmdLineRunner::new(self.spawn_program(&ctx.config, Some(&ctx.ts), "npm").await)
                         .arg("install")
                         .arg("-g")
@@ -519,14 +519,14 @@ impl Backend for NPMBackend {
                         .with_pr(ctx.pr.as_ref())
                         .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
                         .env_values(tv.install_env())
-                        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
                         .prepend_path(ctx.ts.list_paths(&ctx.config).await)?
                         .prepend_path(
                             self.dependency_toolset(&ctx.config)
                                 .await?
                                 .list_paths(&ctx.config)
                                 .await,
-                        )?;
+                        )?,
+                );
                 cmd = cmd.args(lifecycle_script_args);
                 if let Some(args) = &npm_args {
                     cmd = cmd.args(args);
@@ -613,23 +613,9 @@ impl NPMBackend {
         self.ensure_npm_for_version_check(config).await;
         timeout::run_with_timeout_async(
             async || {
-                let env = self.dependency_env(config).await?;
-                let prefix = Self::npm_meta_prefix()?;
-                let npm = self.spawn_program(config, None, "npm").await;
-
-                let raw = cmd!(
-                    &npm,
-                    "view",
-                    self.tool_name(),
-                    "versions",
-                    "time",
-                    "--json",
-                    "--prefix",
-                    &prefix
-                )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()?;
+                let raw = self
+                    .npm_view(config, self.tool_name(), &["versions", "time"], true)
+                    .await?;
                 let data: Value = serde_json::from_str(&raw)?;
                 let versions = npm_view_versions_time(&data)?;
 
@@ -638,19 +624,9 @@ impl NPMBackend {
                 // intentionally pays for a second query so its resolution
                 // semantics match the default HTTP registry client.
                 let deprecated_query = npm_deprecated_query(&self.tool_name(), &versions);
-                let deprecated_raw = cmd!(
-                    &npm,
-                    "view",
-                    deprecated_query,
-                    "version",
-                    "deprecated",
-                    "--json=false",
-                    "--prefix",
-                    &prefix
-                )
-                .full_env(&env)
-                .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-                .read()?;
+                let deprecated_raw = self
+                    .npm_view(config, deprecated_query, &["version", "deprecated"], false)
+                    .await?;
                 let deprecated_versions =
                     npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
 
@@ -663,39 +639,17 @@ impl NPMBackend {
 
     /// Legacy `npm view` dist-tags lookup, see [`Self::list_remote_versions_npm_view`].
     async fn latest_dist_tag_npm_view(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
-        let prefix = Self::npm_meta_prefix()?;
-        let npm = self.spawn_program(config, None, "npm").await;
-        let raw = cmd!(
-            &npm,
-            "view",
-            self.tool_name(),
-            "versions",
-            "dist-tags",
-            "--json",
-            "--prefix",
-            &prefix
-        )
-        .full_env(self.dependency_env(config).await?)
-        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-        .read()?;
+        let raw = self
+            .npm_view(config, self.tool_name(), &["versions", "dist-tags"], true)
+            .await?;
         let data: Value = serde_json::from_str(&raw)?;
         let versions = npm_view_versions_time(&data)?;
         let latest = npm_view_latest_dist_tag(&data)?;
 
         let deprecated_query = npm_deprecated_query(&self.tool_name(), &versions);
-        let deprecated_raw = cmd!(
-            &npm,
-            "view",
-            deprecated_query,
-            "version",
-            "deprecated",
-            "--json=false",
-            "--prefix",
-            &prefix
-        )
-        .full_env(self.dependency_env(config).await?)
-        .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-        .read()?;
+        let deprecated_raw = self
+            .npm_view(config, deprecated_query, &["version", "deprecated"], false)
+            .await?;
         let deprecated_versions = npm_view_deprecated_versions(&self.tool_name(), &deprecated_raw);
 
         Ok(filter_deprecated_latest_dist_tag(
@@ -861,10 +815,14 @@ impl NPMBackend {
             }
         };
         let npm = self.spawn_program(config, None, "npm").await;
-        let output = match cmd!(npm, "--version")
-            .full_env(env)
-            .env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
-            .read()
+        let output = match Self::npm_command(
+            CmdLineRunner::new(npm)
+                .arg("--version")
+                .env_clear()
+                .envs(env),
+        )
+        .read()
+        .await
         {
             Ok(s) => s,
             Err(e) => {
@@ -883,6 +841,35 @@ impl NPMBackend {
         let dir = crate::dirs::CACHE.join("npm-meta");
         crate::file::create_dir_all(&dir)?;
         Ok(dir)
+    }
+
+    /// Apply environment required by every npm subprocess.
+    fn npm_command<'a>(cmd: CmdLineRunner<'a>) -> CmdLineRunner<'a> {
+        cmd.env("NPM_CONFIG_UPDATE_NOTIFIER", "false")
+    }
+
+    /// Run an isolated `npm view` query with mise's required npm environment.
+    async fn npm_view(
+        &self,
+        config: &Arc<Config>,
+        package: impl AsRef<std::ffi::OsStr>,
+        fields: &[&str],
+        json: bool,
+    ) -> eyre::Result<String> {
+        let npm = self.spawn_program(config, None, "npm").await;
+        Self::npm_command(
+            CmdLineRunner::new(npm)
+                .arg("view")
+                .arg(package)
+                .args(fields)
+                .arg(format!("--json={json}"))
+                .arg("--prefix")
+                .arg(Self::npm_meta_prefix()?)
+                .env_clear()
+                .envs(self.dependency_env(config).await?),
+        )
+        .read()
+        .await
     }
 
     /// Check dependencies for version checking (always needs npm)
