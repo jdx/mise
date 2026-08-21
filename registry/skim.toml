@@ -1,4 +1,4 @@
-backends = ["aqua:skim-rs/skim"]
+backends = ["aqua:skim-rs/skim", "github:skim-rs/skim"]
 bins = ["sk"]
 description = "Fuzzy Finder in rust"
 test = { cmd = "sk --version", expected = "sk {{version}}" }
