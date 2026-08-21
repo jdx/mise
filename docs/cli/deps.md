@@ -63,20 +63,20 @@ Skip specific deps rule(s)
 - [`mise deps install [FLAGS] [PROVIDER]`](/cli/deps/install.md)
 - [`mise deps remove <PACKAGES>…`](/cli/deps/remove.md)
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise deps[22m                    # Install all project dependencies
-[1mmise deps install[22m            # Same as bare `mise deps`
-[1mmise deps install --force[22m    # Force reinstall even if fresh
-[1mmise deps install --dry-run[22m  # Show what would run
-[1mmise deps --monorepo[22m         # Install deps from explicit monorepo config roots
-[1mmise deps add npm:react[22m      # Add a dependency
-[1mmise deps add -D npm:vitest[22m  # Add a dev dependency
-[1mmise deps remove npm:lodash[22m  # Remove a dependency
+mise deps                    # Install all project dependencies
+mise deps install            # Same as bare `mise deps`
+mise deps install --force    # Force reinstall even if fresh
+mise deps install --dry-run  # Show what would run
+mise deps --monorepo         # Install deps from explicit monorepo config roots
+mise deps add npm:react      # Add a dependency
+mise deps add -D npm:vitest  # Add a dev dependency
+mise deps remove npm:lodash  # Remove a dependency
 ```
 
-[1m[4mConfiguration:[22m[24m
+Configuration:
 
 ```toml
 # Built-in npm provider (auto-detects lockfile)

@@ -95,12 +95,12 @@ Install tool(s) to the system-wide shared directory
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise install node@20.0.0[22m  # install specific node version
-[1mmise install node@20[22m      # install fuzzy node version
-[1mmise install node[22m         # install version specified in mise.toml
-[1mmise install[22m              # installs everything specified in mise.toml
-[1mmise install --include-task-tools[22m # also install tools required by tasks
+mise install node@20.0.0  # install specific node version
+mise install node@20      # install fuzzy node version
+mise install node         # install version specified in mise.toml
+mise install              # installs everything specified in mise.toml
+mise install --include-task-tools # also install tools required by tasks
 ```

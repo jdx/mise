@@ -35,18 +35,18 @@ Display dependencies in DOT format
 
 Show hidden tasks
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # Show dependencies for all tasks
-$ [1mmise tasks deps[22m
+$ mise tasks deps
 
 # Show dependencies for the "lint", "test" and "check" tasks
-$ [1mmise tasks deps lint test check[22m
+$ mise tasks deps lint test check
 
 # Show dependencies in DOT format
-$ [1mmise tasks deps --dot[22m
+$ mise tasks deps --dot
 
 # Collapse repeated dependencies
-$ [1mmise tasks deps --compact[22m
+$ mise tasks deps --compact
 ```

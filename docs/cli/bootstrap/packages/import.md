@@ -43,11 +43,11 @@ Print the config change without writing config
 
 Write to this config file or directory
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap packages import --manager brew[22m
-[1mmise bootstrap packages import --manager brew --all[22m
-[1mmise bootstrap packages import --manager brew --global[22m
-[1mmise bootstrap packages import --manager brew --dry-run[22m
+mise bootstrap packages import --manager brew
+mise bootstrap packages import --manager brew --all
+mise bootstrap packages import --manager brew --global
+mise bootstrap packages import --manager brew --dry-run
 ```

@@ -76,19 +76,19 @@ Display versions matching this prefix
 
 List only tools that can be pruned with `mise prune`
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise ls[22m
+$ mise ls
 node    20.0.0 ~/src/myapp/.tool-versions latest
 python  3.11.0 ~/.tool-versions           3.10
 python  3.10.0
 
-$ [1mmise ls --current[22m
+$ mise ls --current
 node    20.0.0 ~/src/myapp/.tool-versions 20
 python  3.11.0 ~/.tool-versions           3.11.0
 
-$ [1mmise ls --json[22m
+$ mise ls --json
 {
   "node": [
     {
@@ -103,7 +103,7 @@ $ [1mmise ls --json[22m
   "python": [...]
 }
 
-$ [1mmise ls --all-sources[22m
+$ mise ls --all-sources
 node    20.0.0  ~/src/myapp/mise.toml  20
                 ~/.config/mise/config.toml  latest
 ```

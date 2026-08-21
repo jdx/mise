@@ -41,14 +41,14 @@ If not provided, the nearest mise.toml file will be used
 
 **Default:** `infer`
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise config set tools.python 3.12[22m
-$ [1mmise config set settings.always_keep_download true[22m
-$ [1mmise config set env.TEST_ENV_VAR ABC[22m
-$ [1mmise config set settings.disable_tools node,rust[22m
+$ mise config set tools.python 3.12
+$ mise config set settings.always_keep_download true
+$ mise config set env.TEST_ENV_VAR ABC
+$ mise config set settings.disable_tools node,rust
 
 # Type for `settings` is inferred
-$ [1mmise config set settings.jobs 4[22m
+$ mise config set settings.jobs 4
 ```

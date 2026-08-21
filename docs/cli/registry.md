@@ -39,14 +39,14 @@ Requires --json. Security info is de-duplicated across
 all of a tool's backends. This can add noticeable time for large
 listings since each backend's security info is resolved individually.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise registry[22m
+$ mise registry
 node    core:node
 poetry  asdf:mise-plugins/mise-poetry
 ubi     cargo:ubi-cli
 
-$ [1mmise registry poetry[22m
+$ mise registry poetry
 asdf:mise-plugins/mise-poetry
 ```

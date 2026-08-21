@@ -17,10 +17,10 @@ These are defined in `mise.toml` under the `[shell_alias]` section.
 
 Don't show table header
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise shell-alias ls[22m
+$ mise shell-alias ls
 alias    command
 ll       ls -la
 gs       git status

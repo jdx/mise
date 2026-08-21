@@ -43,12 +43,12 @@ Which hook to generate (saves to .git/hooks/$hook)
 
 **Default:** `pre-commit`
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise generate git-pre-commit --write --task=pre-commit[22m
-$ [1mgit commit -m "feat: add new feature"[22m [2m# runs `mise run pre-commit`[22m
+$ mise generate git-pre-commit --write --task=pre-commit
+$ git commit -m "feat: add new feature" # runs `mise run pre-commit`
 
-[2m# config lives in a subdirectory, so the hook has to change into it first[22m
-$ [1mmise generate git-pre-commit --write -- -C subdir[22m
+# config lives in a subdirectory, so the hook has to change into it first
+$ mise generate git-pre-commit --write -- -C subdir
 ```

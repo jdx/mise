@@ -9,8 +9,8 @@ Disable mise for current shell session
 
 This can be used to temporarily disable mise in a shell session.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise deactivate[22m
+mise deactivate
 ```

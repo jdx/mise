@@ -28,10 +28,10 @@ the name of the workflow to generate
 
 **Default:** `ci`
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise generate github-action --write --task=ci[22m
-[1mgit commit -m "feat: add new feature"[22m
-[1mgit push[22m [2m# runs `mise run ci` on GitHub[22m
+mise generate github-action --write --task=ci
+git commit -m "feat: add new feature"
+git push # runs `mise run ci` on GitHub
 ```

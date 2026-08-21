@@ -39,8 +39,8 @@ Also test tools not defined in registry/, guessing how to test it
 Connect backend install command stdin/stdout/stderr directly to the terminal
 Implies --jobs=1
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise test-tool ripgrep[22m
+mise test-tool ripgrep
 ```

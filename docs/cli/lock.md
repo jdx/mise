@@ -96,13 +96,13 @@ combined with tool arguments.
 Examples:
 
 ```
-[1mmise lock[22m                       # update lockfile for all common platforms
-[1mmise lock node python[22m           # update only node and python
-[1mmise lock --platform linux-x64[22m  # update only linux-x64 platform
-[1mmise lock --dry-run[22m             # show what would be updated
-[1mmise lock --bump[22m                # re-resolve selectors like "latest" or "20" to the latest matching versions
-[1mmise lock --bump --dry-run --json[22m   # list available updates as JSON without writing
-[1mmise lock --minimum-release-age 2024-01-01[22m   # lock latest/fuzzy versions released before 2024-01-01
-[1mmise lock --local[22m               # update mise.local.lock for local configs
-[1mmise lock --global[22m              # update only global config lockfiles
+mise lock                       # update lockfile for all common platforms
+mise lock node python           # update only node and python
+mise lock --platform linux-x64  # update only linux-x64 platform
+mise lock --dry-run             # show what would be updated
+mise lock --bump                # re-resolve selectors like "latest" or "20" to the latest matching versions
+mise lock --bump --dry-run --json   # list available updates as JSON without writing
+mise lock --minimum-release-age 2024-01-01   # lock latest/fuzzy versions released before 2024-01-01
+mise lock --local               # update mise.local.lock for local configs
+mise lock --global              # update only global config lockfiles
 ```

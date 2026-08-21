@@ -20,9 +20,9 @@ The tool/backend to remove the alias from
 
 The alias to remove
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise tool-alias unset maven[22m
-[1mmise tool-alias unset node lts-jod[22m
+mise tool-alias unset maven
+mise tool-alias unset node lts-jod
 ```

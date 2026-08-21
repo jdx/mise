@@ -24,11 +24,11 @@ Output in JSON format
 Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap dotfiles status[22m
-[1mmise bootstrap dotfiles status ~/.zshrc[22m
-[1mmise bootstrap dotfiles status --json[22m
-[1mmise bootstrap dotfiles status --missing[22m # exit 1 if anything is out of sync
+mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 ```

@@ -40,18 +40,18 @@ cached tokens keep their original access until they expire
 
 Show the full unmasked token
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise token github[22m
+$ mise token github
 github.com: ghp_…xxxx (source: GITHUB_TOKEN)
 
-$ [1mmise token github --unmask[22m
+$ mise token github --unmask
 github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)
 
-$ [1mmise token github github.mycompany.com[22m
+$ mise token github github.mycompany.com
 github.mycompany.com: (none)
 
-$ [1mmise token github --oauth --refresh[22m
+$ mise token github --oauth --refresh
 github.com: gho_…xxxx (source: GitHub OAuth)
 ```

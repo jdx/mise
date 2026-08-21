@@ -22,10 +22,10 @@ Do not print table header
 
 List all tracked config files
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise config ls[22m
+$ mise config ls
 Path                        Tools
 ~/.config/mise/config.toml  pitchfork
 ~/src/mise/mise.toml        actionlint, bun, cargo-binstall, cargo:cargo-insta

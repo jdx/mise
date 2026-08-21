@@ -29,11 +29,11 @@ Retained for compatibility with older completion generators.
 
 usage-rs's built-in bash script is self-contained, so this is now a no-op.
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise[22m
-[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise[22m
-[1mmise completion fish > ~/.config/fish/completions/mise.fish[22m
-[1mmise completion powershell >> $PROFILE[22m
+mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
+mise completion zsh  > /usr/local/share/zsh/site-functions/_mise
+mise completion fish > ~/.config/fish/completions/mise.fish
+mise completion powershell >> $PROFILE
 ```

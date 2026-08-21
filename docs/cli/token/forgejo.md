@@ -24,15 +24,15 @@ Forgejo hostname
 
 Show the full unmasked token
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise token forgejo[22m
+$ mise token forgejo
 codeberg.org: a180…61f6 (source: FORGEJO_TOKEN)
 
-$ [1mmise token forgejo --unmask[22m
+$ mise token forgejo --unmask
 codeberg.org: a18099ca69064be387fbe37b8ad1d333758361f6 (source: FORGEJO_TOKEN)
 
-$ [1mmise token forgejo forgejo.mycompany.com[22m
+$ mise token forgejo forgejo.mycompany.com
 forgejo.mycompany.com: (none)
 ```

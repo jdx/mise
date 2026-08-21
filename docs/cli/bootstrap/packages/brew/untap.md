@@ -28,8 +28,8 @@ Print the config change without writing it
 
 Write to this config file or directory
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap packages brew untap railwaycat/emacsmacport[22m
+mise bootstrap packages brew untap railwaycat/emacsmacport
 ```

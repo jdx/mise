@@ -52,18 +52,18 @@ the rules above.
 
 Do not also prune the installed version
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # will uninstall specific version
-$ [1mmise unuse node@18.0.0[22m
+$ mise unuse node@18.0.0
 
 # will uninstall specific version from global config
-$ [1mmise unuse -g node@18.0.0[22m
+$ mise unuse -g node@18.0.0
 
 # will uninstall specific version from .mise.local.toml
-$ [1mmise unuse --env local node@20[22m
+$ mise unuse --env local node@20
 
 # will uninstall specific version from .mise.staging.toml
-$ [1mmise unuse --env staging node@20[22m
+$ mise unuse --env staging node@20
 ```

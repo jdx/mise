@@ -21,15 +21,15 @@ Explain provider attribution for inferred projects and tasks
 
 Do not print table headers
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # Inspect projects and their dependency edges
-$ [1mmise tasks graph[22m
+$ mise tasks graph
 
 # Emit the project graph as JSON
-$ [1mmise tasks graph --json[22m
+$ mise tasks graph --json
 
 # Explain where inferred projects and task fields came from
-$ [1mmise tasks graph --explain[22m
+$ mise tasks graph --explain
 ```

@@ -755,20 +755,20 @@ This shows the manual page for Watchexec, if the output is a terminal and the 'm
 is available. If not, the manual page is printed to stdout in ROFF format (suitable for
 writing to a watchexec.1 file).
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise watch build[22m
+$ mise watch build
 Runs the "build" tasks. Will re-run the tasks when any of its sources change.
 Uses "sources" from the tasks definition to determine which files to watch.
 
-$ [1mmise watch build --glob src/**/*.rs[22m
+$ mise watch build --glob src/**/*.rs
 Runs the "build" tasks but specify the files to watch with a glob pattern.
 This overrides the "sources" from the tasks definition.
 
-$ [1mmise watch build --clear[22m
+$ mise watch build --clear
 Extra arguments are passed to watchexec. See `watchexec --help` for details.
 
-$ [1mmise watch serve --watch src --exts rs --restart[22m
+$ mise watch serve --watch src --exts rs --restart
 Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
 ```

@@ -29,9 +29,9 @@ Show aliases for &lt;TOOL>
 
 Don't show table header
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise tool-alias ls[22m
+$ mise tool-alias ls
 node  lts-jod      22
 ```

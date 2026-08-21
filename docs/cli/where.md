@@ -19,16 +19,16 @@ if "@&lt;PREFIX>" is specified, it will show the latest installed version
 that matches the prefix
 otherwise, it will show the current, active installed version
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # Show the latest installed version of node
 # If it is is not installed, errors
-$ [1mmise where node@20[22m
+$ mise where node@20
 /home/jdx/.local/share/mise/installs/node/20.0.0
 
 # Show the current, active install directory of node
 # Errors if node is not referenced in any .tool-version file
-$ [1mmise where node[22m
+$ mise where node
 /home/jdx/.local/share/mise/installs/node/20.0.0
 ```

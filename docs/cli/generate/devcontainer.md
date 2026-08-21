@@ -25,8 +25,8 @@ The name of the devcontainer
 
 write to .devcontainer/devcontainer.json
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise generate devcontainer[22m
+mise generate devcontainer
 ```

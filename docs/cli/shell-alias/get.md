@@ -13,9 +13,9 @@ Show the command for a shell alias
 
 The alias to show
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise shell-alias get ll[22m
+$ mise shell-alias get ll
 ls -la
 ```

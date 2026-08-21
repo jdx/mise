@@ -69,12 +69,12 @@ PATH="$HOME/.local/share/mise/shims:$PATH"
 `mise activate --shims` does not support all the features of `mise activate`.
 See <https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path> for more information
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1meval "$(mise activate bash)"[22m
-[1meval "$(mise activate zsh)"[22m
-[1mmise activate fish | source[22m
-[1mexecx($(mise activate xonsh))[22m
-[1m(&mise activate pwsh) | Out-String | Invoke-Expression[22m
+eval "$(mise activate bash)"
+eval "$(mise activate zsh)"
+mise activate fish | source
+execx($(mise activate xonsh))
+(&mise activate pwsh) | Out-String | Invoke-Expression
 ```

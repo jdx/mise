@@ -18,11 +18,11 @@ If the version is out of date, it will display a warning.
 
 Print the version information in JSON format
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise version[22m
-[1mmise --version[22m
-[1mmise -v[22m
-[1mmise -V[22m
+mise version
+mise --version
+mise -v
+mise -V
 ```

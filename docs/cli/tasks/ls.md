@@ -68,8 +68,8 @@ Sort order. Default is asc.
 - `asc`
 - `desc`
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise tasks ls[22m
+mise tasks ls
 ```

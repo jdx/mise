@@ -18,10 +18,10 @@ Output in JSON format
 
 Exit with code 1 if any configured packages are not in their desired state
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap packages status[22m
-[1mmise bootstrap packages status --json[22m
-[1mmise bootstrap packages status --missing[22m # exit 1 if anything is out of sync
+mise bootstrap packages status
+mise bootstrap packages status --json
+mise bootstrap packages status --missing # exit 1 if anything is out of sync
 ```

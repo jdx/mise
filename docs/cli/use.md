@@ -114,23 +114,23 @@ Implies `--jobs=1`
 
 Remove the tool(s) from config file
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
 # run with no arguments to use the interactive selector
-$ [1mmise use[22m
+$ mise use
 
 # set the current version of node to 20.x in mise.toml of current directory
 # will write the fuzzy version (e.g.: 20)
-$ [1mmise use node@20[22m
+$ mise use node@20
 
 # set the current version of node to 20.x in ~/.config/mise/config.toml
 # will write the precise version (e.g.: 20.0.0)
-$ [1mmise use -g --pin node@20[22m
+$ mise use -g --pin node@20
 
 # sets .mise.local.toml (which is intended not to be committed to a project)
-$ [1mmise use --env local node@20[22m
+$ mise use --env local node@20
 
 # sets .mise.staging.toml (which is used if MISE_ENV=staging)
-$ [1mmise use --env staging node@20[22m
+$ mise use --env staging node@20
 ```

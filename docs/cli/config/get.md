@@ -23,9 +23,9 @@ Can be a file path or directory. If a directory is provided, the config file in 
 
 If not provided, the nearest mise.toml file will be used
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-$ [1mmise toml get tools.python[22m
+$ mise toml get tools.python
 3.12
 ```

@@ -49,17 +49,17 @@ Output in JSON format with sources
 - [`mise settings set [-l --local] <SETTING> [VALUE]`](/cli/settings/set.md)
 - [`mise settings unset [-l --local] <KEY>`](/cli/settings/unset.md)
 
-[1m[4mExamples:[22m[24m
+Examples:
 ```
 # list all settings
-$ [1mmise settings[22m
+$ mise settings
 
 # get the value of the setting "always_keep_download"
-$ [1mmise settings always_keep_download[22m
+$ mise settings always_keep_download
 
 # set the value of the setting "always_keep_download" to "true"
-$ [1mmise settings always_keep_download=true[22m
+$ mise settings always_keep_download=true
 
 # set the value of the setting "node.mirror_url" to "https://npmmirror.com/mirrors/node/"
-$ [1mmise settings node.mirror_url https://npmmirror.com/mirrors/node/[22m
+$ mise settings node.mirror_url https://npmmirror.com/mirrors/node/
 ```

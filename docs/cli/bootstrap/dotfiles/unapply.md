@@ -31,11 +31,11 @@ Print the actions that would run without writing anything
 
 Skip the confirmation prompt
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise bootstrap dotfiles unapply[22m
-[1mmise bootstrap dotfiles unapply ~/.zshrc[22m
-[1mmise bootstrap dotfiles unapply --dry-run[22m
-[1mmise bootstrap dotfiles unapply --force --yes[22m
+mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply --dry-run
+mise bootstrap dotfiles unapply --force --yes
 ```

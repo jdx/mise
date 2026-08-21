@@ -24,8 +24,8 @@ Remove all plugins
 
 Also remove the plugin's installs, downloads, and cache
 
-[1m[4mExamples:[22m[24m
+Examples:
 
 ```
-[1mmise plugins uninstall cmake[22m
+mise plugins uninstall cmake
 ```
