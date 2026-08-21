@@ -213,7 +213,7 @@ fn remove_all_atomically_validated_inner(
         crate::rand::random_string(32)
     );
     let parent = File::open(parent)?;
-    let detached = Dir::openat(
+    let mut detached = Dir::openat(
         &parent,
         file_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
@@ -260,10 +260,9 @@ fn remove_all_atomically_validated_inner(
         );
     }
     after_validate(&quarantine)?;
-    // POSIX has no portable unlink-by-handle operation. Retain the complete, validated tombstone
-    // rather than re-resolving any descendant pathname for deletion. `.mise-delete-` entries are
-    // excluded from formula version discovery and can be reclaimed only by a later operation that
-    // establishes fresh ownership authority for the entire detached tree.
+    remove_dir_contents(&mut detached)?;
+    // POSIX has no portable unlink-by-handle operation. Retain only the empty validated tombstone;
+    // never re-resolve its mutable root name after descriptor-bound reclamation.
     Ok(())
 }
 
@@ -285,7 +284,6 @@ fn restore_dir_atomically_validated_inner(
     before_cleanup: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
     use nix::dir::Dir;
-    use nix::errno::Errno;
     use nix::fcntl::{AtFlags, OFlag};
     use nix::sys::stat::{Mode, fstat, fstatat};
 
@@ -310,42 +308,33 @@ fn restore_dir_atomically_validated_inner(
     validate(identity.st_dev as u64, identity.st_ino as u64)?;
     after_validate(from)?;
 
-    // Keep the public recovery backup discoverable until the restored keg is durably published.
-    // Clone through retained descriptors so replacement of either pathname cannot redirect I/O.
-    let staging_name = format!(".mise-restore-{}", crate::rand::random_string(32));
-    nix::sys::stat::mkdirat(
+    // Populate the final keg through its retained descriptor. POSIX cannot conditionally rename a
+    // directory by descriptor, so publishing a staged pathname would recreate the source-name
+    // validation race this helper exists to remove.
+    nix::sys::stat::mkdirat(&parent, to_name, Mode::from_bits_truncate(0o700))?;
+    let installed_dir = Dir::openat(
         &parent,
-        staging_name.as_str(),
-        Mode::from_bits_truncate(0o700),
-    )?;
-    let staged = Dir::openat(
-        &parent,
-        staging_name.as_str(),
+        to_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
-    let staged_path_identity =
-        fstatat(&parent, staging_name.as_str(), AtFlags::AT_SYMLINK_NOFOLLOW)?;
-    let staged_identity = fstat(&staged)?;
-    if (staged_path_identity.st_dev, staged_path_identity.st_ino)
-        != (staged_identity.st_dev, staged_identity.st_ino)
+    let installed_path_identity = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    let installed_identity = fstat(&installed_dir)?;
+    if (
+        installed_path_identity.st_dev,
+        installed_path_identity.st_ino,
+    ) != (installed_identity.st_dev, installed_identity.st_ino)
     {
-        bail!("restore staging path changed before clone");
+        bail!("restore destination changed before clone");
     }
-    if let Err(error) = clone_dir_from_fd(&retained, &staged) {
+    if let Err(error) = clone_dir_from_fd(&retained, &installed_dir) {
         return Err(error).wrap_err("failed to clone retained recovery backup");
     }
-
-    atomic_rename_noreplace(&parent, staging_name.as_ref(), to_name).map_err(|error| {
-        if error == Errno::EEXIST {
-            eyre::eyre!("restore destination appeared before commit")
-        } else {
-            error.into()
-        }
-    })?;
     let installed = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-    if (installed.st_dev, installed.st_ino) != (staged_identity.st_dev, staged_identity.st_ino) {
-        bail!("staged restore identity changed during commit");
+    if (installed.st_dev, installed.st_ino)
+        != (installed_identity.st_dev, installed_identity.st_ino)
+    {
+        bail!("restore destination identity changed during clone");
     }
 
     // Publication completed the restore transaction. Only now may the still-discoverable backup
@@ -369,13 +358,30 @@ fn restore_dir_atomically_validated_inner(
 
 #[cfg(unix)]
 fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Result<()> {
+    clone_dir_from_fd_inner(
+        source,
+        destination,
+        destination,
+        Path::new(""),
+        &mut HashMap::new(),
+    )
+}
+
+#[cfg(unix)]
+fn clone_dir_from_fd_inner(
+    source: &nix::dir::Dir,
+    destination: &nix::dir::Dir,
+    destination_root: &nix::dir::Dir,
+    relative: &Path,
+    hardlinks: &mut HashMap<(u64, u64), PathBuf>,
+) -> Result<()> {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
 
     use nix::dir::Dir;
     use nix::fcntl::{AtFlags, OFlag, openat, readlinkat};
     use nix::sys::stat::{Mode, SFlag, fchmod, fstat, fstatat, mkdirat};
-    use nix::unistd::symlinkat;
+    use nix::unistd::{LinkatFlags, linkat, symlinkat};
 
     let mut entries = Dir::openat(
         source,
@@ -398,6 +404,7 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
         .collect::<nix::Result<Vec<_>>>()?;
     for name in names {
         let name = OsStr::from_bytes(&name);
+        let destination_relative = relative.join(name);
         let metadata = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
         let kind = SFlag::from_bits_truncate(metadata.st_mode);
         if kind.contains(SFlag::S_IFLNK) {
@@ -422,7 +429,13 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
             )?;
             let destination_path = fstatat(destination, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
             ensure_same_native_identity(&destination_path, &fstat(&destination_child)?, name)?;
-            clone_dir_from_fd(&source_child, &destination_child)?;
+            clone_dir_from_fd_inner(
+                &source_child,
+                &destination_child,
+                destination_root,
+                &destination_relative,
+                hardlinks,
+            )?;
         } else if kind.contains(SFlag::S_IFREG) {
             let source_file = openat(
                 source,
@@ -432,22 +445,40 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
             )?;
             let mut source_file = File::from(source_file);
             ensure_same_native_identity(&metadata, &fstat(&source_file)?, name)?;
-            let destination_file = openat(
-                destination,
-                name,
-                OFlag::O_WRONLY
-                    | OFlag::O_CREAT
-                    | OFlag::O_EXCL
-                    | OFlag::O_NOFOLLOW
-                    | OFlag::O_CLOEXEC,
-                Mode::from_bits_truncate(0o600),
-            )?;
-            let mut destination_file = File::from(destination_file);
-            std::io::copy(&mut source_file, &mut destination_file)?;
-            fchmod(
-                &destination_file,
-                Mode::from_bits_truncate(metadata.st_mode),
-            )?;
+            let hardlink_identity = (metadata.st_dev as u64, metadata.st_ino as u64);
+            if metadata.st_nlink > 1
+                && let Some(first) = hardlinks.get(&hardlink_identity)
+            {
+                linkat(
+                    destination_root,
+                    first,
+                    destination_root,
+                    &destination_relative,
+                    LinkatFlags::empty(),
+                )?;
+            } else {
+                let destination_file = openat(
+                    destination,
+                    name,
+                    OFlag::O_WRONLY
+                        | OFlag::O_CREAT
+                        | OFlag::O_EXCL
+                        | OFlag::O_NOFOLLOW
+                        | OFlag::O_CLOEXEC,
+                    Mode::from_bits_truncate(0o600),
+                )?;
+                let mut destination_file = File::from(destination_file);
+                std::io::copy(&mut source_file, &mut destination_file)?;
+                fchmod(
+                    &destination_file,
+                    Mode::from_bits_truncate(metadata.st_mode),
+                )?;
+                preserve_fd_times(&destination_file, &metadata)?;
+                preserve_fd_xattrs(&source_file, &destination_file)?;
+                if metadata.st_nlink > 1 {
+                    hardlinks.insert(hardlink_identity, destination_relative);
+                }
+            }
         } else {
             bail!(
                 "unsupported recovery backup entry: {}",
@@ -457,6 +488,181 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
     }
     let metadata = fstat(source)?;
     fchmod(destination, Mode::from_bits_truncate(metadata.st_mode))?;
+    preserve_fd_times(destination, &metadata)?;
+    preserve_fd_xattrs(source, destination)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn preserve_fd_times(fd: &impl std::os::fd::AsFd, metadata: &nix::libc::stat) -> Result<()> {
+    use nix::sys::stat::futimens;
+    use nix::sys::time::TimeSpec;
+
+    let atime = TimeSpec::new(metadata.st_atime, metadata.st_atime_nsec);
+    let mtime = TimeSpec::new(metadata.st_mtime, metadata.st_mtime_nsec);
+    futimens(fd, &atime, &mtime)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn preserve_fd_xattrs(
+    source: &impl std::os::fd::AsRawFd,
+    destination: &impl std::os::fd::AsRawFd,
+) -> Result<()> {
+    use std::ffi::CString;
+
+    let size = fd_list_xattrs(source.as_raw_fd(), std::ptr::null_mut(), 0)?;
+    let mut names = vec![0_u8; size];
+    if size > 0 {
+        fd_list_xattrs(source.as_raw_fd(), names.as_mut_ptr().cast(), size)?;
+    }
+    for name in names
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        let name = CString::new(name)?;
+        let size = fd_get_xattr(source.as_raw_fd(), name.as_ptr(), std::ptr::null_mut(), 0)?;
+        let mut value = vec![0_u8; size];
+        if size > 0 {
+            fd_get_xattr(
+                source.as_raw_fd(),
+                name.as_ptr(),
+                value.as_mut_ptr().cast(),
+                size,
+            )?;
+        }
+        fd_set_xattr(
+            destination.as_raw_fd(),
+            name.as_ptr(),
+            value.as_ptr().cast(),
+            size,
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn fd_list_xattrs(fd: i32, list: *mut nix::libc::c_char, size: usize) -> Result<usize> {
+    let result = unsafe { nix::libc::flistxattr(fd, list, size) };
+    if result < 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(result as usize)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn fd_list_xattrs(fd: i32, list: *mut nix::libc::c_char, size: usize) -> Result<usize> {
+    let result = unsafe { nix::libc::flistxattr(fd, list, size, 0) };
+    if result < 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(result as usize)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn fd_get_xattr(
+    fd: i32,
+    name: *const nix::libc::c_char,
+    value: *mut nix::libc::c_void,
+    size: usize,
+) -> Result<usize> {
+    let result = unsafe { nix::libc::fgetxattr(fd, name, value, size) };
+    if result < 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(result as usize)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn fd_get_xattr(
+    fd: i32,
+    name: *const nix::libc::c_char,
+    value: *mut nix::libc::c_void,
+    size: usize,
+) -> Result<usize> {
+    let result = unsafe { nix::libc::fgetxattr(fd, name, value, size, 0, 0) };
+    if result < 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(result as usize)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn fd_set_xattr(
+    fd: i32,
+    name: *const nix::libc::c_char,
+    value: *const nix::libc::c_void,
+    size: usize,
+) -> Result<()> {
+    let result = unsafe { nix::libc::fsetxattr(fd, name, value, size, 0) };
+    if result < 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn fd_set_xattr(
+    fd: i32,
+    name: *const nix::libc::c_char,
+    value: *const nix::libc::c_void,
+    size: usize,
+) -> Result<()> {
+    let result = unsafe { nix::libc::fsetxattr(fd, name, value, size, 0, 0) };
+    if result < 0 {
+        Err(std::io::Error::last_os_error().into())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::Mode;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+
+    let names = dir
+        .iter()
+        .filter_map(|entry| match entry {
+            Ok(entry)
+                if entry.file_name().to_bytes() != b"."
+                    && entry.file_name().to_bytes() != b".." =>
+            {
+                Some(Ok(entry.file_name().to_bytes().to_vec()))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<nix::Result<Vec<_>>>()?;
+    for name in names {
+        let name = OsStr::from_bytes(&name);
+        match Dir::openat(
+            &*dir,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(mut child) => {
+                remove_dir_contents(&mut child)?;
+                unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
+            }
+            Err(Errno::ENOTDIR | Errno::ELOOP) => {
+                unlinkat(&*dir, name, UnlinkatFlags::NoRemoveDir)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
     Ok(())
 }
 
@@ -3465,10 +3671,7 @@ mod tests {
             fs::read_to_string(foreign.join("must-survive")).unwrap(),
             "foreign"
         );
-        assert_eq!(
-            fs::read_to_string(displaced.join("expected")).unwrap(),
-            "expected"
-        );
+        assert!(displaced.read_dir().unwrap().next().is_none());
     }
 
     #[cfg(unix)]
@@ -3600,6 +3803,77 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn recovery_clone_preserves_hardlinks_and_timestamps() {
+        use std::os::unix::fs::MetadataExt;
+
+        use nix::dir::Dir;
+        use nix::fcntl::OFlag;
+        use nix::sys::stat::Mode;
+
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let destination = root.path().join("destination");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(source.join("first"), "expected").unwrap();
+        fs::hard_link(source.join("first"), source.join("second")).unwrap();
+        let timestamp = FileTime::from_unix_time(1_234_567_890, 123_456_789);
+        set_file_times(source.join("first"), timestamp, timestamp).unwrap();
+        let source = Dir::open(
+            &source,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+        let destination_fd = Dir::open(
+            &destination,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW,
+            Mode::empty(),
+        )
+        .unwrap();
+
+        clone_dir_from_fd(&source, &destination_fd).unwrap();
+
+        let first = fs::metadata(destination.join("first")).unwrap();
+        let second = fs::metadata(destination.join("second")).unwrap();
+        assert_eq!(first.ino(), second.ino());
+        assert_eq!(FileTime::from_last_modification_time(&first), timestamp);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn restore_never_overwrites_preempting_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("backup");
+        let destination = root.path().join("keg");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("expected"), "expected").unwrap();
+
+        restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |_| {
+                fs::create_dir(&destination)?;
+                fs::write(destination.join("must-survive"), "foreign")?;
+                Ok(())
+            },
+            |_| Ok(()),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            fs::read_to_string(destination.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert_eq!(
+            fs::read_to_string(source.join("expected")).unwrap(),
+            "expected"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn atomically_validated_removal_never_unlinks_replacement_root() {
         use std::os::unix::fs::MetadataExt;
 
@@ -3634,10 +3908,7 @@ mod tests {
                     .to_string_lossy()
                     .starts_with(".mise-delete-"))
         );
-        assert_eq!(
-            fs::read_to_string(displaced.join("expected")).unwrap(),
-            "expected"
-        );
+        assert!(displaced.read_dir().unwrap().next().is_none());
     }
 
     #[cfg(unix)]
