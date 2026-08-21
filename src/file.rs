@@ -3691,9 +3691,11 @@ mod tests {
     #[test]
     fn atomically_validated_removal_rejects_path_replacement() {
         let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("backup");
-        let displaced = root.path().join("displaced-backup");
-        let replacement = root.path().join("replacement");
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let path = rack.join("backup");
+        let displaced = rack.join("displaced-backup");
+        let replacement = rack.join("replacement");
         fs::create_dir(&path).unwrap();
         fs::write(path.join("expected"), "expected").unwrap();
 
@@ -3719,8 +3721,7 @@ mod tests {
                 .to_string()
                 .contains("refusing to remove changed path")
         );
-        let foreign = root
-            .path()
+        let foreign = rack
             .read_dir()
             .unwrap()
             .find_map(|entry| {
@@ -3742,8 +3743,10 @@ mod tests {
     #[test]
     fn atomically_validated_removal_does_not_follow_quarantine_replacement() {
         let root = tempfile::tempdir().unwrap();
-        let path = root.path().join("backup");
-        let displaced = root.path().join("displaced-quarantine");
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let path = rack.join("backup");
+        let displaced = rack.join("displaced-quarantine");
         fs::create_dir(&path).unwrap();
         fs::write(path.join("expected"), "expected").unwrap();
 
@@ -3757,11 +3760,10 @@ mod tests {
                 Ok(())
             },
         )
-        .unwrap();
+        .unwrap_err();
 
         assert!(!path.exists());
-        let foreign = root
-            .path()
+        let foreign = rack
             .read_dir()
             .unwrap()
             .find_map(|entry| {
@@ -3773,10 +3775,7 @@ mod tests {
             fs::read_to_string(foreign.join("must-survive")).unwrap(),
             "foreign"
         );
-        assert_eq!(
-            fs::read_to_string(displaced.join("expected")).unwrap(),
-            "expected"
-        );
+        assert!(displaced.read_dir().unwrap().next().is_none());
     }
 
     #[cfg(unix)]
@@ -4161,6 +4160,7 @@ mod tests {
         }
         assert!(rack.read_dir().unwrap().next().is_none());
     }
+    #[cfg(unix)]
     #[test]
     fn test_desymlink_path_preserves_absolute_target() {
         use std::os::unix::fs::symlink;
