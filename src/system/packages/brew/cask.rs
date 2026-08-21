@@ -5687,6 +5687,9 @@ fn find_completion_source(
     if let Some(source) = appdir_artifact_source(source, apps)? {
         return Ok(Some(source));
     }
+    if let Some(source) = flight_copied_artifact(cask, stage, &cask_appdir(apps)?, source)? {
+        return Ok(Some(source));
+    }
     if let Some(source) = absolute_prefixed_source(source).filter(|source| source.is_file()) {
         return Ok(Some(source));
     }
@@ -5706,6 +5709,40 @@ fn find_completion_source(
                         .join(", ")
                 )
             }
+        }
+    }
+    Ok(None)
+}
+
+fn flight_copied_artifact(
+    cask: &Cask,
+    staged_path: &Path,
+    appdir: &Path,
+    artifact: &str,
+) -> Result<Option<PathBuf>> {
+    let artifacts = parse_cask_artifacts(cask, false)?;
+    for step in artifacts
+        .preflight_steps
+        .iter()
+        .chain(&artifacts.postflight_steps)
+    {
+        let FlightStep::Copy {
+            source,
+            target,
+            source_glob: false,
+            ..
+        } = step
+        else {
+            continue;
+        };
+        let source_root = source.path.strip_suffix("/.").unwrap_or(&source.path);
+        let Ok(relative) = Path::new(artifact).strip_prefix(source_root) else {
+            continue;
+        };
+        let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
+        let candidate = target.join(relative);
+        if candidate.is_file() {
+            return Ok(Some(candidate));
         }
     }
     Ok(None)
@@ -16948,6 +16985,49 @@ mod tests {
         assert_eq!(cask_step_home(&first), cask_step_home(&same_transaction));
         assert_ne!(cask_step_home(&first), cask_step_home(&next_version));
         assert!(cask_step_home(&first).starts_with(caskroom_tmp_dir(&first)));
+    }
+
+    #[test]
+    fn completion_resolves_only_declared_flight_copy_destination() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let prefix = tmp.path().join("homebrew");
+        let _guard = BrewPrefixGuard::set(&prefix);
+        let copied = prefix.join("share/google-cloud-sdk/completion.bash.inc");
+        file::create_dir_all(copied.parent().unwrap())?;
+        file::write(&copied, "complete")?;
+        let mut cask = test_cask("gcloud-cli", "581.0.0");
+        cask.artifacts = serde_json::json!([{
+            "postflight_steps": [{"steps": [{
+                "type": "copy",
+                "source": {"base": "staged_path", "path": "google-cloud-sdk/."},
+                "target": {"base": "homebrew_prefix", "path": "share/google-cloud-sdk"},
+                "recursive": true
+            }]}]
+        }])
+        .as_array()
+        .unwrap()
+        .clone();
+
+        assert_eq!(
+            flight_copied_artifact(
+                &cask,
+                tmp.path(),
+                Path::new("/Applications"),
+                "google-cloud-sdk/completion.bash.inc",
+            )?,
+            Some(copied)
+        );
+        assert_eq!(
+            flight_copied_artifact(
+                &cask,
+                tmp.path(),
+                Path::new("/Applications"),
+                "other/completion.bash.inc",
+            )?,
+            None
+        );
+        Ok(())
     }
 
     #[test]
