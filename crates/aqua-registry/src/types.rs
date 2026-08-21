@@ -132,6 +132,21 @@ struct AquaRuntime<'a> {
     libc: Option<&'a str>,
 }
 
+/// A platform-specific package override with selectors mise can evaluate at runtime.
+#[derive(Debug, Clone)]
+pub struct AquaPackagePlatformOverride {
+    /// Package after applying this platform override.
+    pub package: AquaPackage,
+    /// Aqua GOOS selector.
+    pub goos: Option<String>,
+    /// Aqua GOARCH selector.
+    pub goarch: Option<String>,
+    /// Aqua environment selectors.
+    pub envs: Vec<String>,
+    /// Normalized libc selector, when present.
+    pub libc: Option<String>,
+}
+
 /// Variable definition for Aqua templates
 #[derive(Debug, Deserialize, Archive, RkyvDeserialize, RkyvSerialize, Clone, Default)]
 pub struct AquaVar {
@@ -418,25 +433,68 @@ impl AquaPackage {
         self.with_unconditional_overrides_runtime(os, arch, AquaRuntime { libc })
     }
 
+    /// Apply a catch-all version fallback when the root package is explicitly disabled.
+    ///
+    /// The boolean indicates whether the root package remains the effective
+    /// package. Conditional roots are preserved because determining whether
+    /// they match requires a concrete version.
+    pub fn with_unconditional_version_override(mut self) -> (AquaPackage, bool) {
+        if self.version_constraint.trim() != "false" {
+            return (self, true);
+        }
+        if let Some(version_override) = self
+            .version_overrides
+            .iter()
+            .find(|version_override| {
+                matches!(version_override.version_constraint.trim(), "" | "true")
+            })
+            .cloned()
+        {
+            self = apply_override(self, &version_override);
+            (self, false)
+        } else {
+            (self, false)
+        }
+    }
+
+    /// Return platform overrides after applying them to this package.
+    ///
+    /// Overrides containing runtime variants mise does not understand are
+    /// omitted because they can never match in the Aqua resolver either.
+    pub fn platform_overrides(&self) -> Vec<AquaPackagePlatformOverride> {
+        self.overrides
+            .iter()
+            .filter_map(|package_override| {
+                let mut libc = None;
+                for variant in &package_override.variants {
+                    if variant.key != "libc" {
+                        return None;
+                    }
+                    let variant_libc = normalize_libc(Some(&variant.value))?.to_string();
+                    if libc.as_ref().is_some_and(|libc| libc != &variant_libc) {
+                        return None;
+                    }
+                    libc = Some(variant_libc);
+                }
+                Some(AquaPackagePlatformOverride {
+                    package: apply_override(self.clone(), &package_override.pkg),
+                    goos: package_override.goos.clone(),
+                    goarch: package_override.goarch.clone(),
+                    envs: package_override.envs.clone(),
+                    libc,
+                })
+            })
+            .collect()
+    }
+
     fn with_unconditional_overrides_runtime(
-        mut self,
+        self,
         os: &str,
         arch: &str,
         runtime: AquaRuntime<'_>,
     ) -> AquaPackage {
-        let root_is_unconditional = matches!(self.version_constraint.trim(), "" | "true");
-        if !root_is_unconditional
-            && let Some(version_override) = self
-                .version_overrides
-                .iter()
-                .find(|version_override| {
-                    matches!(version_override.version_constraint.trim(), "" | "true")
-                })
-                .cloned()
-        {
-            self = apply_override(self, &version_override);
-        }
-        self.with_platform_runtime(os, arch, runtime)
+        let (package, _) = self.with_unconditional_version_override();
+        package.with_platform_runtime(os, arch, runtime)
     }
 
     fn with_version_runtime(
@@ -2872,6 +2930,50 @@ packages:
 
         assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
         assert_eq!(pkg.crate_name, None);
+    }
+
+    #[test]
+    fn test_conditional_root_does_not_apply_version_fallback_without_version() {
+        let yml = r#"
+packages:
+  - type: go_install
+    version_constraint: semver(">= 1.2.0")
+    version_overrides:
+      - version_constraint: "true"
+        type: github_release
+"#;
+        let (pkg, root_package) = first_registry_package(yml).with_unconditional_version_override();
+
+        assert_eq!(pkg.package_type(), AquaPackageType::GoInstall);
+        assert!(root_package);
+    }
+
+    #[test]
+    fn test_platform_overrides_expose_normalized_libc_selector() {
+        let yml = r#"
+packages:
+  - type: github_release
+    overrides:
+      - goos: linux
+        variants:
+          - key: libc
+            value: glibc
+        type: cargo
+        crate: platform-tool
+"#;
+        let pkg = first_registry_package(yml);
+        let package_override = pkg.platform_overrides().into_iter().next().unwrap();
+
+        assert_eq!(package_override.goos.as_deref(), Some("linux"));
+        assert_eq!(package_override.libc.as_deref(), Some("gnu"));
+        assert_eq!(
+            package_override.package.package_type(),
+            AquaPackageType::Cargo
+        );
+        assert_eq!(
+            package_override.package.crate_name.as_deref(),
+            Some("platform-tool")
+        );
     }
 
     #[test]

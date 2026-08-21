@@ -15,6 +15,7 @@ assert "mise search --match-type equal jq" "jq  Command-line JSON processor. htt
 assert_contains "mise search 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type contains 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type equal 7zip" "aqua:ip7z/7zip"
+assert_contains "mise search aqua:ip7z/7zip" "aqua:ip7z/7zip"
 
 # Backend prefixes are identifiers, not broad search terms
 assert_not_contains "mise search cargo" "cargo:broot"
@@ -23,8 +24,18 @@ assert_not_contains "mise search aqua" "aqua:"
 # Aqua Cargo and GoInstall packages use runnable backends in search results
 assert_contains "mise search --match-type equal broot" "cargo:broot"
 assert_not_contains "mise search --match-type equal broot" "aqua:crates.io/broot"
+assert_contains "mise search cargo:broot" "cargo:broot"
 assert_contains "mise search --match-type equal benchstat" "go:golang.org/x/perf/cmd/benchstat"
 assert_not_contains "mise search --match-type equal benchstat" "aqua:golang.org/x/perf/cmd/benchstat"
+assert_contains "mise search go:golang.org/x/perf/cmd/benchstat" "go:golang.org/x/perf/cmd/benchstat"
+
+# Pathless and conditional-root GoInstall packages use the repository fallback
+assert_contains "mise search --match-type equal mapotf" "go:github.com/Azure/mapotf"
+assert_contains "mise search --match-type equal ifacemaker" "go:github.com/vburenin/ifacemaker"
+
+# Runtime platform settings select precomputed platform overrides
+assert_contains "MISE_OS=macos mise search --match-type equal rhit" "cargo:rhit"
+assert_contains "MISE_OS=macos mise search --match-type equal dockfmt" "go:github.com/jessfraz/dockfmt"
 
 # Aqua GoBuild packages are excluded from search
 assert_fail "mise search --match-type equal ycat" "not found in registry"
@@ -37,3 +48,4 @@ assert_not_contains "mise search --match-type equal tokei" "cargo:tokei"
 
 # Version-templated GoInstall paths cannot form runnable suggestions
 assert_fail "mise search --match-type equal mosint" "not found in registry"
+assert_fail "mise search --match-type equal gorename" "not found in registry"

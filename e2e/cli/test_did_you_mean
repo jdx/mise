@@ -17,6 +17,8 @@ assert_not_contains "mise use broot 2>&1 || true" "aqua:crates.io/broot"
 assert_fail "mise use broot" "cargo:broot"
 assert_not_contains "mise use benchstat 2>&1 || true" "aqua:golang.org/x/perf/cmd/benchstat"
 assert_fail "mise use benchstat" "go:golang.org/x/perf/cmd/benchstat"
+assert_fail "mise use mapotf" "go:github.com/Azure/mapotf"
+assert_fail "mise use ifacemaker" "go:github.com/vburenin/ifacemaker"
 
 # Test: Aqua GoBuild packages should not appear in suggestions
 assert_not_contains "mise use ycat 2>&1 || true" "aqua:goccy/go-yaml/ycat"

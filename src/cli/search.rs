@@ -163,23 +163,27 @@ impl Search {
         crate::aqua::aqua_registry_wrapper::aqua_search_entries()
             .filter_map(|entry| {
                 let tool_name = entry.name();
-                let score = match self.match_type {
-                    MatchType::Equal => {
-                        if tool_name == name || entry.id == name || entry.backend_matches(name) {
-                            Some(0)
-                        } else {
-                            None
+                let score = if entry.backend_matches(name) {
+                    Some(0)
+                } else {
+                    match self.match_type {
+                        MatchType::Equal => {
+                            if tool_name == name || entry.id == name {
+                                Some(0)
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    MatchType::Contains => {
-                        if tool_name.contains(name) || entry.id.contains(name) {
-                            Some(0)
-                        } else {
-                            None
+                        MatchType::Contains => {
+                            if tool_name.contains(name) || entry.id.contains(name) {
+                                Some(0)
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    MatchType::Fuzzy => {
-                        fuzzy_matcher.score_pattern(&tool_name.to_lowercase(), fuzzy_pattern)
+                        MatchType::Fuzzy => {
+                            fuzzy_matcher.score_pattern(&tool_name.to_lowercase(), fuzzy_pattern)
+                        }
                     }
                 }?;
 

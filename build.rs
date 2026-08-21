@@ -37,6 +37,16 @@ struct AquaPackageRegistry {
     content: Vec<u8>,
     aliases: Vec<String>,
     search_backend: Option<String>,
+    search_overrides: Vec<AquaSearchOverrideRegistry>,
+}
+
+#[derive(Debug)]
+struct AquaSearchOverrideRegistry {
+    goos: Option<String>,
+    goarch: Option<String>,
+    envs: Vec<String>,
+    libc: Option<String>,
+    backend: Option<String>,
 }
 
 /// Generate a raw string literal that safely contains the given content.
@@ -482,7 +492,6 @@ fn codegen_aqua_standard_registry() -> Result<()> {
 fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
     let mut registries = Vec::new();
     let mut canonical_ids = HashMap::new();
-    let (target_os, target_arch, target_libc) = aqua_target_platform();
     for (index, row) in rows.iter().enumerate() {
         let package = &row.package;
         let Some(id) = aqua_canonical_package_id(package) else {
@@ -497,23 +506,39 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
             ));
         }
         let content = encode_package_rkyv(package)?;
-        let effective_package = package.clone().with_unconditional_overrides_libc(
-            &target_os,
-            &target_arch,
-            target_libc.as_deref(),
-        );
-        let search_backend = aqua_search_backend(&effective_package);
+        let (effective_package, root_package) =
+            package.clone().with_unconditional_version_override();
+        let allow_go_repo_fallback = root_package;
+        let search_backend = aqua_search_backend(&effective_package, allow_go_repo_fallback);
+        let mut search_overrides = effective_package
+            .platform_overrides()
+            .into_iter()
+            .map(|package_override| AquaSearchOverrideRegistry {
+                goos: package_override.goos,
+                goarch: package_override.goarch,
+                envs: package_override.envs,
+                libc: package_override.libc,
+                backend: aqua_search_backend(&package_override.package, allow_go_repo_fallback),
+            })
+            .collect::<Vec<_>>();
+        if search_overrides
+            .iter()
+            .all(|package_override| package_override.backend == search_backend)
+        {
+            search_overrides.clear();
+        }
         registries.push(AquaPackageRegistry {
             id,
             content,
             aliases: row.aliases.clone(),
             search_backend,
+            search_overrides,
         });
     }
     Ok(registries)
 }
 
-fn aqua_search_backend(package: &AquaPackage) -> Option<String> {
+fn aqua_search_backend(package: &AquaPackage, allow_go_repo_fallback: bool) -> Option<String> {
     match package.package_type() {
         AquaPackageType::Cargo => package
             .crate_name
@@ -532,6 +557,14 @@ fn aqua_search_backend(package: &AquaPackage) -> Option<String> {
             .as_deref()
             .filter(|path| !is_aqua_template(path))
             .map(|path| format!("go:{path}"))
+            .or_else(|| {
+                (allow_go_repo_fallback
+                    && !package.repo_owner.is_empty()
+                    && !package.repo_name.is_empty()
+                    && !is_aqua_template(&package.repo_owner)
+                    && !is_aqua_template(&package.repo_name))
+                .then(|| format!("go:github.com/{}/{}", package.repo_owner, package.repo_name))
+            })
             .or(Some(String::new())),
         AquaPackageType::GoBuild => Some(String::new()),
         AquaPackageType::GithubArchive
@@ -543,32 +576,6 @@ fn aqua_search_backend(package: &AquaPackage) -> Option<String> {
 
 fn is_aqua_template(value: &str) -> bool {
     value.contains("{{") || value.contains("}}")
-}
-
-fn aqua_target_platform() -> (String, String, Option<String>) {
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| env::consts::OS.to_string());
-    let target_os = match target_os.as_str() {
-        "macos" => "darwin",
-        other => other,
-    }
-    .to_string();
-
-    let target_arch =
-        env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| env::consts::ARCH.to_string());
-    let target_arch = match target_arch.as_str() {
-        "x86" => "386",
-        "x86_64" => "amd64",
-        "aarch64" => "arm64",
-        "powerpc64" => "ppc64",
-        other => other,
-    }
-    .to_string();
-
-    let target_libc = env::var("CARGO_CFG_TARGET_ENV")
-        .ok()
-        .filter(|target_env| !target_env.is_empty());
-
-    (target_os, target_arch, target_libc)
 }
 
 fn aqua_registry_files_code(
@@ -657,13 +664,47 @@ fn aqua_registry_search_code(registries: &[AquaPackageRegistry]) -> String {
     let entries = registries
         .iter()
         .filter_map(|registry| {
-            registry
-                .search_backend
-                .as_ref()
-                .map(|backend| (registry.id.clone(), backend.clone()))
+            if registry.search_backend.is_none() && registry.search_overrides.is_empty() {
+                return None;
+            }
+            let overrides = registry
+                .search_overrides
+                .iter()
+                .map(|package_override| {
+                    let envs = package_override
+                        .envs
+                        .iter()
+                        .map(|env| format!("{env:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        "AquaSearchBackendOverride {{ goos: {}, goarch: {}, envs: &[{envs}], libc: {}, backend: {} }}",
+                        rust_option_str(package_override.goos.as_deref()),
+                        rust_option_str(package_override.goarch.as_deref()),
+                        rust_option_str(package_override.libc.as_deref()),
+                        rust_option_str(package_override.backend.as_deref()),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Some((
+                registry.id.clone(),
+                format!(
+                    "AquaSearchBackends {{ default: {}, overrides: &[{overrides}] }}",
+                    rust_option_str(registry.search_backend.as_deref()),
+                ),
+            ))
         })
         .collect::<Vec<_>>();
-    aqua_registry_string_map_code(&entries)
+    let mut map = phf_codegen::Map::new();
+    for (key, value) in &entries {
+        map.entry(key, value);
+    }
+    map.build().to_string()
+}
+
+fn rust_option_str(value: Option<&str>) -> String {
+    value.map_or_else(|| "None".to_string(), |value| format!("Some({value:?})"))
 }
 
 fn aqua_registry_string_map_code(entries: &[(String, String)]) -> String {
