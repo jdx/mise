@@ -9034,8 +9034,8 @@ fn validate_installed_cask_topology_with_metadata(
                             target.display()
                         )
                     })?;
-                if !cask_target_record_matches(record)? {
-                    bail!("tracked app changed: {}", target.display());
+                if !cask_target_present(record) {
+                    bail!("tracked app is missing: {}", target.display());
                 }
             }
             continue;
@@ -9767,18 +9767,11 @@ fn validate_legacy_cask(cask: &Cask, state: InstalledCaskState) -> Result<Instal
             "recorded artifact inventory does not match the installed-version catalog",
         ));
     }
-    let targets_match = legacy
-        .targets
-        .iter()
-        .map(cask_target_record_matches)
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .all(|matches| matches);
-    if !targets_match {
+    if !legacy.targets.iter().all(cask_target_present) {
         return Ok(legacy_needs_repair(
             cask,
             &legacy.version,
-            "recorded target fingerprint changed",
+            "recorded target is missing or has changed kind or symlink destination",
         ));
     }
     match pkg_ids_installed(&legacy.pkg_ids) {
@@ -10654,6 +10647,37 @@ fn cask_target_record_matches(record: &CaskTargetRecord) -> Result<bool> {
         return Ok(false);
     };
     Ok(actual == record.fingerprint)
+}
+
+/// Whether a receipt target still exists at the recorded path and kind.
+///
+/// Directory and file targets ignore content drift so status/apply stay cheap
+/// and do not reinstall app bundles (which resets macOS TCC grants). Symlink
+/// targets still compare the recorded link destination — that is a cheap
+/// `readlink` — and require the link to resolve, so dangling or retargeted
+/// binaries/completions stay repairable on apply.
+fn cask_target_present(record: &CaskTargetRecord) -> bool {
+    let Ok(metadata) = record.path.symlink_metadata() else {
+        return false;
+    };
+    match record.fingerprint.kind {
+        CaskTargetKind::Symlink => {
+            if !metadata.file_type().is_symlink() {
+                return false;
+            }
+            let Ok(target) = std::fs::read_link(&record.path) else {
+                return false;
+            };
+            let digest = hex::encode(Sha256::digest(target.as_os_str().as_encoded_bytes()));
+            if digest != record.fingerprint.digest {
+                return false;
+            }
+            // Follow the link so a dangling binary/completion is not "present".
+            std::fs::metadata(&record.path).is_ok()
+        }
+        CaskTargetKind::File => metadata.is_file(),
+        CaskTargetKind::Directory => metadata.is_dir(),
+    }
 }
 
 fn cask_target_fingerprint(path: &Path) -> Result<CaskTargetFingerprint> {
@@ -14257,7 +14281,7 @@ mod tests {
     }
 
     #[test]
-    fn adopted_app_requires_exact_fingerprint_and_detects_later_drift() -> Result<()> {
+    fn adopted_app_requires_exact_fingerprint_but_ignores_later_content_drift() -> Result<()> {
         let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = trusted_tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
@@ -14321,8 +14345,10 @@ mod tests {
         file::write(target.join("Contents/version"), "foreign drift")?;
         assert!(matches!(
             installed_cask_status(&request)?.state,
-            PackageState::NeedsRepair { reason, .. } if reason.contains("tracked app changed")
+            PackageState::Installed { version } if version == cask.version
         ));
+        // Adoption remains fingerprint-bound; only post-adoption health ignores
+        // app content drift to avoid replacing the bundle and resetting TCC.
         assert!(validate_adoptable_apps(&stage, &artifacts.apps, &metadata_only_apps).is_err());
         Ok(())
     }
@@ -14448,19 +14474,16 @@ mod tests {
     }
 
     #[test]
-    fn legacy_receipt_classifies_before_backfill_even_if_payload_later_drifts() -> Result<()> {
+    fn legacy_receipt_ignores_app_bundle_content_drift() -> Result<()> {
         let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
-        let cask = test_cask("example", "1.0.0");
-        let app = AppArtifact {
-            source: "Example.app".to_string(),
-            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
-        };
-        let artifacts = CaskArtifacts {
-            apps: vec![app.clone()],
-            ..Default::default()
-        };
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = serde_json::from_value(serde_json::json!([
+            {"app": ["Example.app"], "target": "$HOMEBREW_PREFIX/Applications/Example.app"}
+        ]))?;
+        let artifacts = cask_artifacts(&cask)?;
+        let app = artifacts.apps[0].clone();
         let app_target = app_target_path(app.target_name())?;
         file::create_dir_all(app_target.join("Contents"))?;
         crate::file::write(app_target.join("Contents/app"), "original")?;
@@ -14480,9 +14503,157 @@ mod tests {
             Some(cask.version.clone())
         );
         crate::file::write(app_target.join("Contents/app"), "changed")?;
+        // Content drift must not look like "missing" — that would reinstall the
+        // app on the next apply and revoke macOS TCC grants.
         assert_eq!(
             installed_cask_version(&cask, &artifacts)?,
             Some(cask.version.clone())
+        );
+        assert!(!cask_target_record_matches(
+            read_receipt(&caskroom)?
+                .expect("receipt")
+                .targets
+                .first()
+                .expect("app target")
+        )?);
+        assert!(matches!(
+            validate_legacy_cask(&cask, installed_cask_state(&cask, &artifacts)?)?,
+            InstalledCaskState::LegacyMise(_)
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn completed_receipt_missing_app_is_not_installed() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = serde_json::from_value(serde_json::json!([
+            {"app": ["Example.app"], "target": "$HOMEBREW_PREFIX/Applications/Example.app"}
+        ]))?;
+        let artifacts = cask_artifacts(&cask)?;
+        let app = artifacts.apps[0].clone();
+        let app_target = app_target_path(app.target_name())?;
+        file::create_dir_all(app_target.join("Contents"))?;
+        crate::file::write(app_target.join("Contents/app"), "original")?;
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &BTreeSet::new(),
+        )?;
+        file::remove_all(&app_target)?;
+        assert!(matches!(
+            validate_legacy_cask(&cask, installed_cask_state(&cask, &artifacts)?)?,
+            InstalledCaskState::NeedsRepair { reason, .. }
+                if reason.contains("recorded target is missing")
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dest = tmp.path().join("bin/tool");
+        file::create_dir_all(dest.parent().unwrap())?;
+        crate::file::write(&dest, "tool")?;
+        let link = tmp.path().join("prefix/bin/tool");
+        file::create_dir_all(link.parent().unwrap())?;
+        file::make_symlink(&dest, &link)?;
+        let record = CaskTargetRecord {
+            path: link.clone(),
+            fingerprint: cask_target_fingerprint(&link)?,
+            uninstall: None,
+        };
+        assert!(cask_target_present(&record));
+
+        file::remove_file(&dest)?;
+        assert!(
+            !cask_target_present(&record),
+            "dangling symlink must not count as present"
+        );
+
+        crate::file::write(&dest, "tool")?;
+        let other = tmp.path().join("bin/other");
+        crate::file::write(&other, "other")?;
+        file::remove_file(&link)?;
+        file::make_symlink(&other, &link)?;
+        assert!(
+            !cask_target_present(&record),
+            "retargeted symlink must not count as present"
+        );
+
+        file::remove_file(&link)?;
+        crate::file::write(&link, "not a symlink")?;
+        assert!(
+            !cask_target_present(&record),
+            "file replacing a symlink must not count as present"
+        );
+
+        let font = tmp.path().join("fonts/Example.ttf");
+        file::create_dir_all(font.parent().unwrap())?;
+        crate::file::write(&font, "font")?;
+        let file_record = CaskTargetRecord {
+            path: font.clone(),
+            fingerprint: cask_target_fingerprint(&font)?,
+            uninstall: None,
+        };
+        assert!(cask_target_present(&file_record));
+        crate::file::write(&font, "changed font bytes")?;
+        assert!(
+            cask_target_present(&file_record),
+            "file content drift is ignored for install health"
+        );
+        file::remove_file(&font)?;
+        file::create_dir_all(&font)?;
+        assert!(
+            !cask_target_present(&file_record),
+            "directory replacing a file must not count as present"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn self_updating_receipt_accepts_app_bundle_drift() -> Result<()> {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("self-updating", "1.0.0");
+        cask.auto_updates = true;
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let artifacts = CaskArtifacts {
+            apps: vec![app.clone()],
+            ..Default::default()
+        };
+        let app_target = app_target_path(app.target_name())?;
+        file::create_dir_all(app_target.join("Contents"))?;
+        crate::file::write(app_target.join("Contents/app"), "downloaded")?;
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &BTreeSet::new(),
+        )?;
+
+        crate::file::write(app_target.join("Contents/app"), "updated by app")?;
+        cask.version = "2.0.0".to_string();
+        assert_eq!(
+            installed_cask_version(&cask, &artifacts)?,
+            Some("1.0.0".to_string())
         );
         Ok(())
     }

@@ -13,10 +13,15 @@ cat <<'EOF' >~/.config/mise/tasks/myglobalfile
 echo myglobalfile
 EOF
 chmod +x ~/.config/mise/tasks/myglobalfile
-mkdir -p ~/.config/mise/conf.d
+mkdir -p ~/.config/mise/conf.d ~/lower-global-tasks
+cat <<'EOF' >~/lower-global-tasks/lower-global-only
+#!/usr/bin/env bash
+echo lower-global-only
+EOF
+chmod +x ~/lower-global-tasks/lower-global-only
 cat <<'TOML' >~/.config/mise/conf.d/relative-overlay.toml
 [task_config]
-includes = ["empty-global-tasks"]
+includes = ["lower-global-tasks"]
 
 [tasks.relative-meta]
 file = ".config/mise/tasks/relative-meta"
@@ -79,3 +84,4 @@ assert "mise run customglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run systemglobalfile" "PROJECT_ROOT=$PWD"
 assert "mise run relative-meta" "RELATIVE_OVERLAY=applied"
 assert "mise run templated-meta" "TEMPLATED_OVERLAY=applied"
+assert_fail "mise run lower-global-only" "no task lower-global-only found"

@@ -211,6 +211,17 @@ metadata and validates its recorded artifacts before adopting, repairing, or
 removing the cask. Missing, malformed, foreign, or incomplete ownership state
 fails closed before mutation.
 
+Status treats a cask as installed when its receipt and recorded targets are
+still present. App and font content fingerprints are kept for prune and adopt
+safety, but content drift inside an existing app or font does **not** mark the
+cask missing or trigger a reinstall on apply — replacing `/Applications/*.app`
+resets macOS Privacy & Security (TCC) grants. Binary and completion symlinks
+still require the recorded link destination (a cheap `readlink`) and a
+resolvable target, so dangling or retargeted links stay repairable. Missing or
+unknown receipts and pending transactions are still reported as unhealthy so
+the next apply can reconcile them. Version upgrades and an explicit remove +
+apply still replace the app when you want a fresh pour.
+
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
 `aqua:` or `github:`: their bottles are built against fixed install paths and
