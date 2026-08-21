@@ -2702,8 +2702,9 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         let predecessor_identity = predecessor_identity.as_ref().ok_or_else(|| {
             eyre::eyre!("brew:{name}: recovery backup has no bound predecessor identity")
         })?;
-        validate_install_identity(name, &backup, predecessor_identity)?;
-        crate::file::remove_all(backup)?;
+        crate::file::remove_all_atomically_validated(&backup, |detached| {
+            validate_install_identity(name, detached, predecessor_identity)
+        })?;
     }
     let incarnation_marker = keg.join(FINALIZATION_INCARNATION_MARKER);
     if metadata_if_exists(&incarnation_marker)?.is_some() {
@@ -3206,8 +3207,9 @@ pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
                 let predecessor = state.predecessor_identity.as_ref().ok_or_else(|| {
                     eyre::eyre!("completed formula finalization has no predecessor identity")
                 })?;
-                validate_install_identity(&state.formula, &backup, predecessor)?;
-                crate::file::remove_all(backup)?;
+                crate::file::remove_all_atomically_validated(&backup, |detached| {
+                    validate_install_identity(&state.formula, detached, predecessor)
+                })?;
             }
             crate::file::remove_file(marker)?;
         }
@@ -3257,7 +3259,12 @@ pub(super) fn complete_interrupted_finalization(keg: &Path) -> Result<bool> {
     state.quiesced_links.clear();
     write_finalization_state(keg, &state)?;
     if has_backup {
-        crate::file::remove_all(backup)?;
+        let predecessor = state.predecessor_identity.as_ref().ok_or_else(|| {
+            eyre::eyre!("completed formula finalization has no predecessor identity")
+        })?;
+        crate::file::remove_all_atomically_validated(&backup, |detached| {
+            validate_install_identity(&state.formula, detached, predecessor)
+        })?;
     }
     let marker = keg.join(FINALIZATION_INCARNATION_MARKER);
     if metadata_if_exists(&marker)?.is_some() {
@@ -3351,8 +3358,9 @@ pub(super) async fn resume_source_finalization(
             eyre::eyre!("completed source finalization has no predecessor identity")
         })?;
         validate_install_identity(&linked_state.formula, keg, replacement)?;
-        validate_install_identity(&linked_state.formula, &backup, predecessor)?;
-        crate::file::remove_all(backup)?;
+        crate::file::remove_all_atomically_validated(&backup, |detached| {
+            validate_install_identity(&linked_state.formula, detached, predecessor)
+        })?;
     }
     let marker = keg.join(FINALIZATION_INCARNATION_MARKER);
     if metadata_if_exists(&marker)?.is_some() {

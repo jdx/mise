@@ -179,6 +179,36 @@ pub fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
     retry_remove_all(|| remove_all(path))
 }
 
+/// Atomically detach a directory from its public pathname, validate the detached object, then
+/// remove it. This prevents a concurrent pathname replacement between identity validation and
+/// recursive deletion from redirecting cleanup to a different directory.
+pub fn remove_all_atomically_validated(
+    path: &Path,
+    validate: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("cannot quarantine path without parent: {}", path.display()))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("cannot quarantine unnamed path: {}", path.display()))?;
+    let quarantine = parent.join(format!(
+        ".{}.mise-delete-{}",
+        file_name.to_string_lossy(),
+        crate::rand::random_string(32)
+    ));
+    fs::rename(path, &quarantine)
+        .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
+    if let Err(error) = validate(&quarantine) {
+        if fs::symlink_metadata(path).is_err() {
+            let _ = fs::rename(&quarantine, path);
+        }
+        return Err(error)
+            .wrap_err_with(|| format!("refusing to remove changed path: {}", display_path(path)));
+    }
+    remove_all(&quarantine)
+}
+
 fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
     const MAX_RETRIES: u32 = 4;
 
@@ -3031,6 +3061,45 @@ mod tests {
         assert_ne!(
             desymlink_path(&unresolved),
             desymlink_path(&canonical_root.join("target"))
+        );
+    }
+
+    #[test]
+    fn atomically_validated_removal_rejects_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("backup");
+        let displaced = root.path().join("displaced-backup");
+        let replacement = root.path().join("replacement");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("expected"), "expected").unwrap();
+
+        // Model a replacement in the gap after the caller validated `path`.
+        fs::rename(&path, &displaced).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(replacement.join("must-survive"), "foreign").unwrap();
+        fs::rename(&replacement, &path).unwrap();
+
+        let error = remove_all_atomically_validated(&path, |detached| {
+            if same_file::is_same_file(detached, &displaced).unwrap_or(false) {
+                Ok(())
+            } else {
+                bail!("backup identity changed")
+            }
+        })
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to remove changed path")
+        );
+        assert_eq!(
+            fs::read_to_string(path.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert_eq!(
+            fs::read_to_string(displaced.join("expected")).unwrap(),
+            "expected"
         );
     }
 
