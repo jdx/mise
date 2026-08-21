@@ -20,7 +20,7 @@ fn join_path(_lua: &Lua, args: MultiValue) -> mlua::Result<String> {
     Ok(parts.join(&sep.to_string()))
 }
 
-pub fn mod_file(lua: &Lua) -> Result<()> {
+pub(crate) fn mod_file(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     Ok(loaded.set(

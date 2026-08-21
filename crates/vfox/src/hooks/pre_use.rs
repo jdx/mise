@@ -7,7 +7,7 @@ use crate::{Plugin, Vfox};
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct PreUseContext {
+pub(crate) struct PreUseContext {
     pub installed_sdks: IndexMap<String, SdkInfo>,
 }
 

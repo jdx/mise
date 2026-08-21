@@ -3,7 +3,7 @@ use mlua::{ExternalResult, Lua, MultiValue, Table, Value};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-pub fn mod_archiver(lua: &Lua) -> Result<()> {
+pub(crate) fn mod_archiver(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     Ok(loaded.set(
