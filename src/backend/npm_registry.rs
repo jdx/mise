@@ -69,6 +69,13 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
         .await?)
 }
 
+fn all_versions_deprecated(packument: &aube_registry::Packument) -> bool {
+    packument
+        .versions
+        .values()
+        .all(|metadata| metadata.deprecated.is_some())
+}
+
 /// List a package's versions as [`VersionInfo`], semver-ascending with publish
 /// timestamps. npm registry versions are strict semver (the registry enforces
 /// it) but the packument's `versions` map is keyed lexically, so the keys are
@@ -77,10 +84,7 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
 /// stable position at the end.
 pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
     let packument = fetch_packument(name).await?;
-    let all_versions_deprecated = packument
-        .versions
-        .values()
-        .all(|metadata| metadata.deprecated.is_some());
+    let all_versions_deprecated = all_versions_deprecated(&packument);
     let versions = packument.versions.iter().filter_map(|(version, metadata)| {
         (all_versions_deprecated || metadata.deprecated.is_none()).then_some(version)
     });
@@ -114,10 +118,7 @@ fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a Stri
 /// Resolve the `latest` dist-tag for a package, if the registry publishes one.
 pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
     let packument = fetch_packument(name).await?;
-    let all_versions_deprecated = packument
-        .versions
-        .values()
-        .all(|metadata| metadata.deprecated.is_some());
+    let all_versions_deprecated = all_versions_deprecated(&packument);
     Ok(packument
         .dist_tags
         .get("latest")
