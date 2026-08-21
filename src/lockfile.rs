@@ -1977,6 +1977,8 @@ pub(crate) fn update_lockfiles(
 
 /// Resolved tool versions grouped first by config source and then by tool short name.
 type ToolsBySource = HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>>;
+/// Membership-only keep-sets of opaque version strings; never iterate them —
+/// iteration order is unspecified and lockfile output must stay deterministic.
 type LockfileVersionsByPath = HashMap<PathBuf, HashMap<String, HashSet<String>>>;
 
 /// Groups resolved and newly installed versions by their contributing config source.
@@ -3062,7 +3064,8 @@ enum AbsentEntryPolicy<'a> {
     /// Keep every absent entry because sibling ownership is unknown.
     PreserveAll,
     /// Keep only absent entries whose concrete version remains in the union;
-    /// `None` means the union contains no version for this short.
+    /// `None` means the union contains no version for this short. The set is
+    /// membership-only (versions are opaque strings) and must never be iterated.
     PreserveVersions(Option<&'a HashSet<String>>),
 }
 
@@ -3811,6 +3814,20 @@ mod tests {
         assert_eq!(tools_by_source[&source_a]["tool"][0].version, "release-a");
         assert_eq!(tools_by_source[&source_b]["tool"].len(), 1);
         assert_eq!(tools_by_source[&source_b]["tool"][0].version, "release-b");
+    }
+
+    #[test]
+    fn test_tools_by_source_for_update_last_duplicate_request_version_wins() {
+        let source = ToolSource::MiseToml(PathBuf::from("/repo/mise.toml"));
+        let new_versions = vec![
+            basic_tv_from_source("aqua:example/tool", "stable", "release-old", source.clone()),
+            basic_tv_from_source("aqua:example/tool", "stable", "release-new", source.clone()),
+        ];
+
+        let tools_by_source = tools_by_source_for_update(&Toolset::default(), &new_versions);
+
+        assert_eq!(tools_by_source[&source]["tool"].len(), 1);
+        assert_eq!(tools_by_source[&source]["tool"][0].version, "release-new");
     }
 
     fn tool_with_conda_dep(
