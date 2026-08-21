@@ -213,7 +213,7 @@ fn remove_all_atomically_validated_inner(
         crate::rand::random_string(32)
     );
     let parent = File::open(parent)?;
-    let mut detached = Dir::openat(
+    let detached = Dir::openat(
         &parent,
         file_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
@@ -260,10 +260,10 @@ fn remove_all_atomically_validated_inner(
         );
     }
     after_validate(&quarantine)?;
-    remove_dir_contents(&mut detached)?;
-    // Never resolve the quarantine name again after validation. It may now denote a concurrent
-    // replacement. Empty `.mise-delete-` tombstones are deliberately left excluded from formula
-    // version discovery; reclaiming one by pathname would recreate the validation/delete race.
+    // POSIX has no portable unlink-by-handle operation. Retain the complete, validated tombstone
+    // rather than re-resolving any descendant pathname for deletion. `.mise-delete-` entries are
+    // excluded from formula version discovery and can be reclaimed only by a later operation that
+    // establishes fresh ownership authority for the entire detached tree.
     Ok(())
 }
 
@@ -522,84 +522,6 @@ fn atomic_rename_noreplace(
     } else {
         Ok(())
     }
-}
-
-#[cfg(unix)]
-fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
-    use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
-
-    use nix::dir::Dir;
-    use nix::errno::Errno;
-    use nix::fcntl::{AtFlags, OFlag, renameat};
-    use nix::sys::stat::{Mode, fstat, fstatat};
-    use nix::unistd::{UnlinkatFlags, unlinkat};
-
-    let names = dir
-        .iter()
-        .filter_map(|entry| match entry {
-            Ok(entry)
-                if entry.file_name().to_bytes() != b"."
-                    && entry.file_name().to_bytes() != b".." =>
-            {
-                Some(Ok(entry.file_name().to_bytes().to_vec()))
-            }
-            Ok(_) => None,
-            Err(error) => Some(Err(error)),
-        })
-        .collect::<nix::Result<Vec<_>>>()?;
-    for name in names {
-        let name = OsStr::from_bytes(&name);
-        let expected = fstatat(&*dir, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-        match Dir::openat(
-            &*dir,
-            name,
-            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
-            Mode::empty(),
-        ) {
-            Ok(mut child) => {
-                let retained = fstat(&child)?;
-                ensure_same_native_identity(&expected, &retained, name)?;
-                remove_dir_contents(&mut child)?;
-                let current = fstatat(&*dir, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
-                ensure_same_native_identity(&retained, &current, name)?;
-                unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
-            }
-            Err(Errno::ENOTDIR | Errno::ELOOP) => {
-                let quarantine_name =
-                    format!(".mise-delete-entry-{}", crate::rand::random_string(32));
-                renameat(&*dir, name, &*dir, quarantine_name.as_str())?;
-                let quarantined = fstatat(
-                    &*dir,
-                    quarantine_name.as_str(),
-                    AtFlags::AT_SYMLINK_NOFOLLOW,
-                )?;
-                if let Err(error) = ensure_same_native_identity(&expected, &quarantined, name) {
-                    if let Err(restore_error) =
-                        atomic_rename_noreplace(&*dir, quarantine_name.as_ref(), name)
-                    {
-                        if restore_error != Errno::EEXIST {
-                            return Err(restore_error.into());
-                        }
-                        let preserved_name = format!(
-                            "{}.mise-preserved-{}",
-                            name.to_string_lossy(),
-                            crate::rand::random_string(32)
-                        );
-                        atomic_rename_noreplace(
-                            &*dir,
-                            quarantine_name.as_ref(),
-                            preserved_name.as_ref(),
-                        )?;
-                    }
-                    return Err(error);
-                }
-                unlinkat(&*dir, quarantine_name.as_str(), UnlinkatFlags::NoRemoveDir)?;
-            }
-            Err(error) => return Err(error.into()),
-        }
-    }
-    Ok(())
 }
 
 fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
@@ -3543,7 +3465,10 @@ mod tests {
             fs::read_to_string(foreign.join("must-survive")).unwrap(),
             "foreign"
         );
-        assert!(displaced.read_dir().unwrap().next().is_none());
+        assert_eq!(
+            fs::read_to_string(displaced.join("expected")).unwrap(),
+            "expected"
+        );
     }
 
     #[cfg(unix)]
@@ -3709,7 +3634,10 @@ mod tests {
                     .to_string_lossy()
                     .starts_with(".mise-delete-"))
         );
-        assert!(displaced.read_dir().unwrap().next().is_none());
+        assert_eq!(
+            fs::read_to_string(displaced.join("expected")).unwrap(),
+            "expected"
+        );
     }
 
     #[cfg(unix)]
