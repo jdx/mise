@@ -660,6 +660,7 @@ impl PIPXBackend {
                 dry_run: false,
                 locked: false,
                 before_date: None,
+                dependency_context: Default::default(),
             };
             b.install_version(ctx, tv).await?;
         }
