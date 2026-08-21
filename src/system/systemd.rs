@@ -14,7 +14,7 @@ use serde::Deserialize;
 const SYSTEMCTL_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct SystemdTomlConfig {
+pub(crate) struct SystemdTomlConfig {
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -72,13 +72,13 @@ pub struct SystemdTomlConfig {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SystemdUnitKind {
+pub(crate) enum SystemdUnitKind {
     Service,
     Timer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SystemdRequest {
+pub(crate) struct SystemdRequest {
     pub name: String,
     pub unit: String,
     pub kind: SystemdUnitKind,
@@ -112,7 +112,7 @@ pub struct SystemdRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SystemdState {
+pub(crate) enum SystemdState {
     Active,
     Inactive,
     Differs,
@@ -120,7 +120,7 @@ pub enum SystemdState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SystemdStatus {
+pub(crate) struct SystemdStatus {
     pub request: SystemdRequest,
     pub path: PathBuf,
     pub active: bool,
@@ -129,7 +129,7 @@ pub struct SystemdStatus {
 }
 
 impl SystemdStatus {
-    pub fn is_desired(&self) -> bool {
+    pub(crate) fn is_desired(&self) -> bool {
         match self.state {
             SystemdState::Active => self.request.start,
             SystemdState::Inactive => !self.request.start,
@@ -139,7 +139,7 @@ impl SystemdStatus {
 }
 
 impl SystemdRequest {
-    pub fn from_toml(name: String, config: SystemdTomlConfig) -> Result<Self> {
+    pub(crate) fn from_toml(name: String, config: SystemdTomlConfig) -> Result<Self> {
         if !valid_name(&name) {
             bail!("unit name '{name}' must contain only letters, numbers, '.', '_', '-', or '@'");
         }
@@ -248,14 +248,14 @@ impl std::fmt::Display for SystemdRequest {
     }
 }
 
-pub fn is_available() -> bool {
+pub(crate) fn is_available() -> bool {
     cfg!(target_os = "linux")
         && crate::file::which("systemctl").is_some()
         && sudo_invoking_user().is_none()
         && user_manager_available()
 }
 
-pub fn unavailable_reason() -> String {
+pub(crate) fn unavailable_reason() -> String {
     if !cfg!(target_os = "linux") {
         "only available on linux".to_string()
     } else if crate::file::which("systemctl").is_none() {
@@ -269,7 +269,7 @@ pub fn unavailable_reason() -> String {
     }
 }
 
-pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
+pub(crate) async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
     let mut out = vec![];
     for req in requests {
         let path = unit_path(req);
@@ -322,7 +322,7 @@ pub async fn status(requests: &[SystemdRequest]) -> Result<Vec<SystemdStatus>> {
     Ok(out)
 }
 
-pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
+pub(crate) async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
     if dry_run {
         for req in requests {
             miseprintln!(
@@ -448,7 +448,7 @@ pub async fn apply(requests: &[SystemdRequest], dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn render_unit(request: &SystemdRequest) -> String {
+pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     let mut out = String::new();
     out.push_str("[Unit]\n");
     if let Some(description) = &request.description {

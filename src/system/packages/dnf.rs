@@ -9,10 +9,10 @@ use crate::result::Result;
 use crate::system::sudo;
 
 /// RedHat-family (Fedora, RHEL, CentOS, Rocky, Alma) via dnf
-pub struct DnfManager {}
+pub(crate) struct DnfManager {}
 
 impl DnfManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 }

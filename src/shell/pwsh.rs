@@ -8,7 +8,7 @@ use indoc::formatdoc;
 use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
-pub struct Pwsh {}
+pub(super) struct Pwsh {}
 
 impl Pwsh {}
 

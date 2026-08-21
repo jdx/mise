@@ -271,7 +271,7 @@ fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> 
 }
 
 /// Configuration for TaskExecutor
-pub struct TaskExecutorConfig {
+pub(crate) struct TaskExecutorConfig {
     pub force: bool,
     pub cd: Option<PathBuf>,
     pub shell: Option<String>,
@@ -289,7 +289,7 @@ pub struct TaskExecutorConfig {
 }
 
 /// Executes tasks with proper context, environment, and output handling
-pub struct TaskExecutor {
+pub(crate) struct TaskExecutor {
     pub context_builder: TaskContextBuilder,
     pub output_handler: OutputHandler,
     pub failed_tasks: FailedTasks,
@@ -313,7 +313,7 @@ pub struct TaskExecutor {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TaskRunOutcome {
+pub(crate) struct TaskRunOutcome {
     pub did_work: bool,
     pub cache_key: Option<String>,
 }
@@ -339,7 +339,7 @@ impl TaskCacheStats {
 }
 
 impl TaskExecutor {
-    pub fn new(
+    pub(crate) fn new(
         context_builder: TaskContextBuilder,
         output_handler: OutputHandler,
         config: TaskExecutorConfig,
@@ -366,15 +366,15 @@ impl TaskExecutor {
         }
     }
 
-    pub fn is_stopping(&self) -> bool {
+    pub(crate) fn is_stopping(&self) -> bool {
         self.is_interrupted() || !self.failed_tasks.lock().unwrap().is_empty()
     }
 
-    pub fn is_interrupted(&self) -> bool {
+    pub(crate) fn is_interrupted(&self) -> bool {
         self.interrupted.load(Ordering::Relaxed)
     }
 
-    pub fn mark_interrupted(&self) {
+    pub(crate) fn mark_interrupted(&self) {
         self.interrupted.store(true, Ordering::Relaxed);
     }
 
@@ -385,7 +385,7 @@ impl TaskExecutor {
         Ok(())
     }
 
-    pub fn add_failed_task(&self, task: Task, status: Option<i32>) {
+    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) {
         let mut failed = self.failed_tasks.lock().unwrap();
         failed.push((task, status.or(Some(1))));
     }
@@ -491,7 +491,7 @@ impl TaskExecutor {
         Ok(sandbox)
     }
 
-    pub fn task_timings(&self, task: Option<&Task>) -> bool {
+    pub(crate) fn task_timings(&self, task: Option<&Task>) -> bool {
         // Resolve the style/verbosity for *this* task so a per-task `output`
         // override is honored (e.g. a task with `output = "interleave"` must not
         // get a timing line just because the global default is `prefix`).
@@ -508,7 +508,7 @@ impl TaskExecutor {
 
     /// Run a task, returning whether it did work and any stable artifact identity
     /// it produced or reused.
-    pub async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
+    pub(crate) async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
         let TaskRunContext {
             task,
             config,
@@ -1861,7 +1861,11 @@ impl TaskExecutor {
     /// Validate a task invocation before the scheduler starts any task commands.
     /// Runtime execution repeats this work so configuration changes made while
     /// dependencies run are still detected.
-    pub async fn preflight_task_usage(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+    pub(crate) async fn preflight_task_usage(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+    ) -> Result<()> {
         if task.should_bypass_usage_parser() {
             return Ok(());
         }

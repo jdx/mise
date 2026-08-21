@@ -4,7 +4,7 @@ use crate::config::settings::Settings;
 use crate::toolset::tool_version::ResolveOptions;
 
 #[derive(Debug, Clone)]
-pub struct InstallOptions {
+pub(crate) struct InstallOptions {
     pub reason: String,
     pub force: bool,
     pub jobs: Option<usize>,

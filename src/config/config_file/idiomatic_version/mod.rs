@@ -8,10 +8,10 @@ use crate::config::config_file::ConfigFile;
 use crate::file;
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource};
 
-pub mod package_json;
+pub(crate) mod package_json;
 
 #[derive(Debug, Clone)]
-pub struct IdiomaticVersionFile {
+pub(crate) struct IdiomaticVersionFile {
     path: PathBuf,
     tools: ToolRequestSet,
 }
@@ -26,7 +26,7 @@ impl IdiomaticVersionFile {
         }
     }
 
-    pub async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
+    pub(crate) async fn parse(path: PathBuf, plugins: BackendList) -> Result<Self> {
         let source = ToolSource::IdiomaticVersionFile(path.clone());
         let mut tools = ToolRequestSet::new();
 

@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, ValueEnum)]
-pub enum MatchType {
+pub(super) enum MatchType {
     Equal,
     Contains,
     Fuzzy,
@@ -30,7 +30,7 @@ pub enum MatchType {
 /// non-fuzzy matches, use the `--match-type` flag.
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct Search {
+pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
 
@@ -48,7 +48,7 @@ pub struct Search {
 }
 
 impl Search {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if self.interactive {
             self.interactive()?;
         } else {

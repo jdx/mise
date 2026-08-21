@@ -8,12 +8,12 @@ use super::ProviderBase;
 
 /// Deps provider for user-defined custom rules from mise.toml [deps.*]
 #[derive(Debug)]
-pub struct CustomDepsProvider {
+pub(crate) struct CustomDepsProvider {
     base: ProviderBase,
 }
 
 impl CustomDepsProvider {
-    pub fn new(id: String, config: DepsProviderConfig, project_root: &Path) -> Self {
+    pub(crate) fn new(id: String, config: DepsProviderConfig, project_root: &Path) -> Self {
         Self {
             base: ProviderBase::new(id, project_root, config),
         }

@@ -14,7 +14,7 @@ macro_rules! parse_error {
     }};
 }
 
-pub fn dedup_toml_array(array: &toml_edit::Array) -> toml_edit::Array {
+pub(crate) fn dedup_toml_array(array: &toml_edit::Array) -> toml_edit::Array {
     let mut seen = HashSet::new();
     let mut deduped = toml_edit::Array::new();
     for item in array.iter() {

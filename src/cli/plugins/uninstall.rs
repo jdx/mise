@@ -9,7 +9,7 @@ use crate::{backend, plugins};
 /// Removes a plugin
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
-pub struct PluginsUninstall {
+pub(super) struct PluginsUninstall {
     /// Plugin(s) to remove
     #[clap(verbatim_doc_comment)]
     plugin: Vec<String>,
@@ -24,7 +24,7 @@ pub struct PluginsUninstall {
 }
 
 impl PluginsUninstall {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let mpr = MultiProgressReport::get();
 
         let plugins = match self.all {

@@ -9,7 +9,7 @@ use crate::ui::table::MiseTable;
 /// Show the status of system packages from `[bootstrap.packages]`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemStatus {
+pub(crate) struct SystemStatus {
     /// Output in JSON format
     #[clap(long, short = 'J')]
     json: bool,
@@ -20,7 +20,7 @@ pub struct SystemStatus {
 }
 
 impl SystemStatus {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let mgrs = system::packages_from_config(&config);
         let mut any_missing = false;

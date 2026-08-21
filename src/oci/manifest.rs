@@ -7,22 +7,24 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-pub const OCI_LAYOUT_VERSION: &str = "1.0.0";
+pub(crate) const OCI_LAYOUT_VERSION: &str = "1.0.0";
 
-pub const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
-pub const MEDIA_TYPE_OCI_CONFIG: &str = "application/vnd.oci.image.config.v1+json";
-pub const MEDIA_TYPE_OCI_INDEX: &str = "application/vnd.oci.image.index.v1+json";
-pub const MEDIA_TYPE_OCI_LAYER_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
+pub(crate) const MEDIA_TYPE_OCI_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
+pub(crate) const MEDIA_TYPE_OCI_CONFIG: &str = "application/vnd.oci.image.config.v1+json";
+pub(crate) const MEDIA_TYPE_OCI_INDEX: &str = "application/vnd.oci.image.index.v1+json";
+pub(crate) const MEDIA_TYPE_OCI_LAYER_GZIP: &str = "application/vnd.oci.image.layer.v1.tar+gzip";
 
-pub const MEDIA_TYPE_DOCKER_MANIFEST: &str = "application/vnd.docker.distribution.manifest.v2+json";
-pub const MEDIA_TYPE_DOCKER_CONFIG: &str = "application/vnd.docker.container.image.v1+json";
-pub const MEDIA_TYPE_DOCKER_LAYER_GZIP: &str = "application/vnd.docker.image.rootfs.diff.tar.gzip";
-pub const MEDIA_TYPE_DOCKER_MANIFEST_LIST: &str =
+pub(crate) const MEDIA_TYPE_DOCKER_MANIFEST: &str =
+    "application/vnd.docker.distribution.manifest.v2+json";
+pub(crate) const MEDIA_TYPE_DOCKER_CONFIG: &str = "application/vnd.docker.container.image.v1+json";
+pub(crate) const MEDIA_TYPE_DOCKER_LAYER_GZIP: &str =
+    "application/vnd.docker.image.rootfs.diff.tar.gzip";
+pub(crate) const MEDIA_TYPE_DOCKER_MANIFEST_LIST: &str =
     "application/vnd.docker.distribution.manifest.list.v2+json";
 
 /// `oci-layout` marker file (written at the root of an image layout directory).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OciLayout {
+pub(crate) struct OciLayout {
     #[serde(rename = "imageLayoutVersion")]
     pub image_layout_version: String,
 }
@@ -37,7 +39,7 @@ impl Default for OciLayout {
 
 /// `index.json` at the root of an image layout — lists the manifest(s).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageIndex {
+pub(crate) struct ImageIndex {
     #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
     #[serde(rename = "mediaType")]
@@ -47,7 +49,7 @@ pub struct ImageIndex {
 
 /// Descriptor referencing a blob by digest.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Descriptor {
+pub(crate) struct Descriptor {
     #[serde(rename = "mediaType")]
     pub media_type: String,
     pub size: u64,
@@ -59,7 +61,7 @@ pub struct Descriptor {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Platform {
+pub(crate) struct Platform {
     pub architecture: String,
     pub os: String,
     #[serde(
@@ -76,7 +78,7 @@ pub struct Platform {
 
 /// Image manifest JSON blob.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ImageManifest {
+pub(crate) struct ImageManifest {
     #[serde(rename = "schemaVersion")]
     pub schema_version: u32,
     #[serde(rename = "mediaType")]
@@ -89,7 +91,7 @@ pub struct ImageManifest {
 
 /// Image config JSON blob (what `docker inspect` surfaces as `.Config`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ImageConfig {
+pub(crate) struct ImageConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,7 +108,7 @@ pub struct ImageConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Config {
+pub(crate) struct Config {
     #[serde(default, rename = "Env", skip_serializing_if = "Vec::is_empty")]
     pub env: Vec<String>,
     #[serde(default, rename = "Cmd", skip_serializing_if = "Option::is_none")]
@@ -148,7 +150,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RootFs {
+pub(crate) struct RootFs {
     #[serde(rename = "type")]
     pub type_: String,
     pub diff_ids: Vec<String>,
@@ -164,7 +166,7 @@ impl Default for RootFs {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct History {
+pub(crate) struct History {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -180,7 +182,7 @@ pub struct History {
 /// Normalize a Docker media type to the OCI equivalent. We pass base-image
 /// layers through byte-for-byte, so we keep whatever media type they came with
 /// — but when building our own manifest we always emit OCI types.
-pub fn media_type_to_oci(mt: &str) -> &str {
+pub(crate) fn media_type_to_oci(mt: &str) -> &str {
     match mt {
         MEDIA_TYPE_DOCKER_MANIFEST => MEDIA_TYPE_OCI_MANIFEST,
         MEDIA_TYPE_DOCKER_CONFIG => MEDIA_TYPE_OCI_CONFIG,

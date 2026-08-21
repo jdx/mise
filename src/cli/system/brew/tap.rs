@@ -11,7 +11,7 @@ use crate::system::packages::brew::default_tap_url;
 /// Add a Homebrew tap URL to [bootstrap.brew.taps]
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemBrewTap {
+pub(crate) struct SystemBrewTap {
     /// Tap name, e.g. `owner/repo`
     tap: String,
 
@@ -39,7 +39,7 @@ pub struct SystemBrewTap {
 }
 
 impl SystemBrewTap {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         let url = match self.url {
             Some(url) => url,
             None => default_tap_url(&self.tap)?,

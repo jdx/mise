@@ -8,10 +8,10 @@ use crate::result::Result;
 use crate::system::sudo;
 
 /// Alpine Linux via apk
-pub struct ApkManager {}
+pub(crate) struct ApkManager {}
 
 impl ApkManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 }

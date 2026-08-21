@@ -13,7 +13,7 @@ type TaskPrMap = Arc<Mutex<IndexMap<Task, Arc<Box<dyn SingleReport>>>>>;
 type TimedOutputMap = Arc<Mutex<IndexMap<String, (SystemTime, Vec<String>)>>>;
 
 /// A single line of output, tagged by stream.
-pub enum KeepOrderLine {
+pub(crate) enum KeepOrderLine {
     Stdout(String, String), // (prefix, line)
     Stderr(String, String), // (prefix, line)
 }
@@ -24,7 +24,7 @@ pub enum KeepOrderLine {
 /// Other tasks buffer their output. When the active task finishes,
 /// any already-finished tasks' buffers are flushed, then the next
 /// running task with buffered output is promoted to stream live.
-pub struct KeepOrderState {
+pub(crate) struct KeepOrderState {
     /// The task whose output is currently being streamed live
     active: Option<Task>,
     /// Buffered output for non-active tasks (insertion order preserved)
@@ -36,7 +36,7 @@ pub struct KeepOrderState {
 }
 
 impl KeepOrderState {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             active: None,
             buffers: IndexMap::new(),
@@ -45,7 +45,7 @@ impl KeepOrderState {
         }
     }
 
-    pub fn init_task(&mut self, task: &Task) {
+    pub(crate) fn init_task(&mut self, task: &Task) {
         self.buffers.entry(task.clone()).or_default();
     }
 
@@ -61,7 +61,7 @@ impl KeepOrderState {
     }
 
     /// Called when a stdout line is produced by a task's process.
-    pub fn on_stdout(&mut self, task: &Task, prefix: String, line: String) {
+    pub(crate) fn on_stdout(&mut self, task: &Task, prefix: String, line: String) {
         if self.done || self.is_active(task) {
             self.active = Some(task.clone());
             print_stdout(&prefix, &line);
@@ -75,7 +75,7 @@ impl KeepOrderState {
 
     /// Called when a stderr line is produced by a task's process,
     /// or when metadata (command echo, timing) is emitted for a task.
-    pub fn on_stderr(&mut self, task: &Task, prefix: String, line: String) {
+    pub(crate) fn on_stderr(&mut self, task: &Task, prefix: String, line: String) {
         if self.done || self.is_active(task) {
             self.active = Some(task.clone());
             print_stderr(&prefix, &line);
@@ -88,7 +88,7 @@ impl KeepOrderState {
     }
 
     /// Called when a task finishes execution.
-    pub fn on_task_finished(&mut self, task: &Task) {
+    pub(crate) fn on_task_finished(&mut self, task: &Task) {
         if !self.buffers.contains_key(task) {
             return; // Not a keep-order task
         }
@@ -145,7 +145,7 @@ impl KeepOrderState {
 
     /// Safety-net: flush any remaining output (called at the very end).
     /// After this, any further output prints directly.
-    pub fn flush_all(&mut self) {
+    pub(crate) fn flush_all(&mut self) {
         self.active = None;
         self.flush_finished();
         for (_, lines) in self.buffers.drain(..) {
@@ -172,7 +172,7 @@ fn print_stderr(prefix: &str, line: &str) {
 }
 
 /// Configuration for OutputHandler
-pub struct OutputHandlerConfig {
+pub(crate) struct OutputHandlerConfig {
     pub output: Option<TaskOutput>,
     pub silent: bool,
     pub quiet: bool,
@@ -182,7 +182,7 @@ pub struct OutputHandlerConfig {
 }
 
 /// Handles task output routing, formatting, and display
-pub struct OutputHandler {
+pub(crate) struct OutputHandler {
     pub keep_order_state: Arc<Mutex<KeepOrderState>>,
     pub task_prs: TaskPrMap,
     pub timed_outputs: TimedOutputMap,
@@ -214,7 +214,7 @@ impl Clone for OutputHandler {
 
 impl OutputHandler {
     /// Get or lazily create a progress reporter for a task in Replacing mode.
-    pub fn get_or_init_task_pr(&self, task: &Task) -> Arc<Box<dyn SingleReport>> {
+    pub(crate) fn get_or_init_task_pr(&self, task: &Task) -> Arc<Box<dyn SingleReport>> {
         let mut prs = self.task_prs.lock().unwrap();
         if let Some(pr) = prs.get(task) {
             pr.clone()
@@ -228,7 +228,7 @@ impl OutputHandler {
 
     /// Return the task prefix's ANSI opening sequence when the selected output
     /// path actually preserves the styled prefix.
-    pub fn task_prefix_color(&self, task: &Task) -> String {
+    pub(crate) fn task_prefix_color(&self, task: &Task) -> String {
         if self.quiet(Some(task)) {
             return String::new();
         }
@@ -252,7 +252,7 @@ fn displays_colored_task_prefix(output: TaskOutput) -> bool {
 }
 
 impl OutputHandler {
-    pub fn new(config: OutputHandlerConfig) -> Self {
+    pub(crate) fn new(config: OutputHandlerConfig) -> Self {
         Self {
             keep_order_state: Arc::new(Mutex::new(KeepOrderState::new())),
             task_prs: Arc::new(Mutex::new(IndexMap::new())),
@@ -267,7 +267,7 @@ impl OutputHandler {
     }
 
     /// Initialize output handling for a task
-    pub fn init_task(&mut self, task: &Task) {
+    pub(crate) fn init_task(&mut self, task: &Task) {
         match self.output(Some(task)) {
             TaskOutput::KeepOrder if task_needs_permit(task) => {
                 // Only add tasks that produce output (not orchestrator-only tasks)
@@ -288,7 +288,7 @@ impl OutputHandler {
     /// quietness combine freely (e.g. `output = "prefix"` + `quiet = true` prints
     /// prefixed task lines with none of mise's own chatter). Full-silent is the
     /// one verbosity level that still shows up here, because it nulls both streams.
-    pub fn output(&self, task: Option<&Task>) -> TaskOutput {
+    pub(crate) fn output(&self, task: Option<&Task>) -> TaskOutput {
         // Full-silent (null BOTH streams) is terminal. This must stay distinct
         // from *partial* per-task silent (`silent = "stdout"`/`"stderr"`), which
         // falls through to a real style and is nulled per-stream in the executor —
@@ -333,7 +333,7 @@ impl OutputHandler {
     /// Print error/metadata message for a task.
     /// For keep-order mode, routes through the streaming state so messages
     /// stay ordered with the task's stdout/stderr.
-    pub fn eprint(&self, task: &Task, prefix: &str, line: &str) {
+    pub(crate) fn eprint(&self, task: &Task, prefix: &str, line: &str) {
         match self.output(Some(task)) {
             TaskOutput::KeepOrder => {
                 self.keep_order_state.lock().unwrap().on_stderr(
@@ -440,13 +440,13 @@ impl OutputHandler {
             || Settings::get().task.output.is_some_and(|o| o.is_silent())
     }
 
-    pub fn silent(&self, task: Option<&Task>) -> bool {
+    pub(crate) fn silent(&self, task: Option<&Task>) -> bool {
         self.silent_bool()
             || task.is_some_and(|t| t.silent.is_silent())
             || task.is_some_and(|t| t.output.is_some_and(|o| o.is_silent()))
     }
 
-    pub fn quiet(&self, task: Option<&Task>) -> bool {
+    pub(crate) fn quiet(&self, task: Option<&Task>) -> bool {
         self.quiet
             || Settings::get().quiet
             || self.output.is_some_and(|o| o.is_quiet())
@@ -456,14 +456,14 @@ impl OutputHandler {
             || self.silent(task)
     }
 
-    pub fn raw(&self, task: Option<&Task>) -> bool {
+    pub(crate) fn raw(&self, task: Option<&Task>) -> bool {
         // Interactive tasks are treated as raw for I/O (stdin/stdout/stderr inherit).
         // This means CmdLineRunner will also acquire its internal RAW_LOCK — that's
         // intentional and harmless since TASK_RUNTIME_LOCK already provides exclusivity.
         self.raw || Settings::get().raw || task.is_some_and(|t| t.raw || t.interactive)
     }
 
-    pub fn jobs(&self) -> usize {
+    pub(crate) fn jobs(&self) -> usize {
         if self.raw {
             1
         } else {

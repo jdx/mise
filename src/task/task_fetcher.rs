@@ -63,17 +63,21 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 }
 
 /// Handles fetching remote task files and converting them to local paths
-pub struct TaskFetcher {
+pub(crate) struct TaskFetcher {
     no_cache: bool,
 }
 
 impl TaskFetcher {
-    pub fn new(no_cache: bool) -> Self {
+    pub(crate) fn new(no_cache: bool) -> Self {
         Self { no_cache }
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
-    pub async fn fetch_tasks(&self, config: &Arc<Config>, tasks: &mut Vec<Task>) -> Result<()> {
+    pub(crate) async fn fetch_tasks(
+        &self,
+        config: &Arc<Config>,
+        tasks: &mut Vec<Task>,
+    ) -> Result<()> {
         let no_cache = self.no_cache || Settings::get().task.remote_no_cache.unwrap_or(false);
         let task_file_providers = TaskFileProvidersBuilder::new()
             .with_cache(!no_cache)
@@ -156,7 +160,7 @@ impl TaskFetcher {
     }
 
     /// Check if a source path is a remote task file (git or http/https)
-    pub fn is_remote_source(source: &str) -> bool {
+    pub(crate) fn is_remote_source(source: &str) -> bool {
         source.starts_with("git::")
             || source.starts_with("http://")
             || source.starts_with("https://")

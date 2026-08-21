@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 
-pub async fn parallel<T, F, Fut, U>(input: Vec<T>, f: F) -> Result<Vec<U>>
+pub(crate) async fn parallel<T, F, Fut, U>(input: Vec<T>, f: F) -> Result<Vec<U>>
 where
     T: Send + 'static,
     U: Send + 'static,

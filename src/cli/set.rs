@@ -25,7 +25,7 @@ use tabled::Tabled;
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Set {
+pub(crate) struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
     #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
@@ -113,7 +113,7 @@ impl Set {
             Ok(value.to_string())
         }
     }
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.complete {
             return self.complete().await;
         }

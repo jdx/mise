@@ -30,7 +30,7 @@ use crate::install_context::InstallContext;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions, Toolset};
 
 #[derive(Debug)]
-pub struct CargoBackend {
+pub(crate) struct CargoBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -356,7 +356,7 @@ impl Backend for CargoBackend {
 }
 
 /// Returns install-time-only option keys for Cargo backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "features".into(),
         "default-features".into(),
@@ -367,7 +367,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl CargoBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 

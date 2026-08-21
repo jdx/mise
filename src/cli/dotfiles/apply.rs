@@ -11,7 +11,7 @@ use crate::system;
 /// mise doesn't otherwise own.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesApply {
+pub(crate) struct DotfilesApply {
     /// Only apply these targets
     #[clap(value_name = "TARGET")]
     targets: Vec<String>,
@@ -68,7 +68,7 @@ impl DotfilesApply {
         Ok((files, edits))
     }
 
-    pub async fn run(self) -> Result<bool> {
+    pub(crate) async fn run(self) -> Result<bool> {
         let config = Config::get().await?;
         let (files, edits) = self.requests(&config)?;
         if files.is_empty() && edits.is_empty() {

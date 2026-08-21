@@ -17,7 +17,7 @@ use crate::result::Result;
 use crate::toolset::{ConfigScope, ToolsetBuilder};
 
 #[derive(Debug)]
-pub struct PackagePluginManager {
+pub(crate) struct PackagePluginManager {
     name: String,
     plugin: Arc<VfoxPlugin>,
     config: MisePluginTomlPackageManagerConfig,
@@ -25,7 +25,7 @@ pub struct PackagePluginManager {
 }
 
 impl PackagePluginManager {
-    pub fn new(name: String) -> Result<Self> {
+    pub(crate) fn new(name: String) -> Result<Self> {
         let plugin_path = crate::dirs::PLUGINS.join(name.to_kebab_case());
         let config =
             MisePluginToml::from_file(&plugin_path.join("mise.plugin.toml"))?.package_manager;

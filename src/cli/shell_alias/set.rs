@@ -8,7 +8,7 @@ use crate::config::config_file::ConfigFile;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ShellAliasSet {
+pub(super) struct ShellAliasSet {
     /// The alias name
     #[clap(name = "shell_alias")]
     pub alias: String,
@@ -17,7 +17,7 @@ pub struct ShellAliasSet {
 }
 
 impl ShellAliasSet {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let (alias, command) = match self.command {
             Some(v) => (self.alias, v),
             None => {

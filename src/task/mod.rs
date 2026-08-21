@@ -39,49 +39,51 @@ pub(crate) fn reset() {
 }
 
 /// Type alias for tracking failed tasks with their exit codes
-pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
+pub(crate) type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
 mod deps;
-pub mod task_cache;
+pub(crate) mod task_cache;
 mod task_cache_audit;
 mod task_cache_store;
-pub mod task_confirm;
-pub mod task_context_builder;
+pub(crate) mod task_confirm;
+pub(crate) mod task_context_builder;
 mod task_dep;
-pub mod task_executor;
-pub mod task_fetcher;
-pub mod task_file_providers;
-pub mod task_helpers;
-pub mod task_list;
+pub(crate) mod task_executor;
+pub(crate) mod task_fetcher;
+pub(crate) mod task_file_providers;
+pub(crate) mod task_helpers;
+pub(crate) mod task_list;
 mod task_load_context;
-pub mod task_output;
-pub mod task_output_handler;
-pub mod task_results_display;
-pub mod task_scheduler;
+pub(crate) mod task_output;
+pub(crate) mod task_output_handler;
+pub(crate) mod task_results_display;
+pub(crate) mod task_scheduler;
 mod task_script_parser;
-pub mod task_source_checker;
-pub mod task_sources;
-pub mod task_template;
-pub mod task_tool_installer;
+pub(crate) mod task_source_checker;
+pub(crate) mod task_sources;
+pub(crate) mod task_template;
+pub(crate) mod task_tool_installer;
 // Some graph traversal APIs are currently consumed only by tests and follow-up
 // workspace-task features.
 #[allow(dead_code)]
-pub mod workspace;
+pub(crate) mod workspace;
 
 pub(crate) use task_cache::TaskCacheOutput;
-pub use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
+pub(crate) use task_cache::{TaskArtifactCache, TaskCacheConfig, TaskCacheMode};
 pub(crate) use task_cache_audit::TaskCacheAudit;
-pub use task_confirm::TaskConfirm;
+pub(crate) use task_confirm::TaskConfirm;
 pub(crate) use task_load_context::monorepo_scope;
-pub use task_load_context::{TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task};
-pub use task_output::TaskOutput;
-pub use task_script_parser::{has_any_args_defined, has_any_usage_spec};
-pub use task_template::TaskTemplate;
+pub(crate) use task_load_context::{
+    TaskLoadContext, expand_colon_task_syntax, is_workspace_project_task,
+};
+pub(crate) use task_output::TaskOutput;
+pub(crate) use task_script_parser::{has_any_args_defined, has_any_usage_spec};
+pub(crate) use task_template::TaskTemplate;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(rename_all = "snake_case")]
 #[doc(hidden)]
-pub enum TaskRunPhase {
+pub(crate) enum TaskRunPhase {
     #[default]
     Normal,
     Post,
@@ -113,7 +115,7 @@ use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
 use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, Toolset};
 use crate::ui::style;
-pub use deps::{Deps, TaskCompletionState, TaskCycleError, TaskDependencyState, TaskKey};
+pub(crate) use deps::{Deps, TaskCompletionState, TaskCycleError, TaskDependencyState, TaskKey};
 use task_dep::TaskDep;
 use task_sources::{RawOutputTemplates, TaskOutputs};
 
@@ -122,7 +124,7 @@ use task_sources::{RawOutputTemplates, TaskOutputs};
 /// (e.g., { version = "1.0.0", targets = ["x86_64"] })
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
-pub enum TaskToolValue {
+pub(crate) enum TaskToolValue {
     String(String),
     Map(TaskToolValueMap),
 }
@@ -170,7 +172,7 @@ impl<'de> Deserialize<'de> for TaskToolValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
-pub struct TaskToolValueMap {
+pub(crate) struct TaskToolValueMap {
     pub version: String,
     #[serde(flatten)]
     pub opts: IndexMap<String, toml::Value>,
@@ -204,7 +206,7 @@ impl TaskToolValue {
         }
     }
 
-    pub fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
+    pub(crate) fn to_tool_arg(&self, tool: &str) -> Result<ToolArg> {
         match self {
             Self::String(version) => format!("{tool}@{version}").parse(),
             Self::Map(map) => {
@@ -297,7 +299,7 @@ impl TaskToolValue {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum RunEntry {
+pub(crate) enum RunEntry {
     /// Shell script entry
     Script(String),
     /// Run a single task with optional args and env
@@ -339,7 +341,11 @@ impl std::hash::Hash for RunEntry {
 }
 
 impl RunEntry {
-    pub fn render(&self, tera: &mut TeraEngine, tera_ctx: &tera::Context) -> crate::Result<Self> {
+    pub(crate) fn render(
+        &self,
+        tera: &mut TeraEngine,
+        tera_ctx: &tera::Context,
+    ) -> crate::Result<Self> {
         match self {
             RunEntry::Script(s) => Ok(RunEntry::Script(s.clone())),
             RunEntry::SingleTask { task, args, env } => {
@@ -389,7 +395,7 @@ impl RunEntry {
         }
     }
 
-    pub fn has_tera_template(&self) -> bool {
+    pub(crate) fn has_tera_template(&self) -> bool {
         match self {
             RunEntry::Script(_) => false,
             RunEntry::SingleTask { task, args, env } => {
@@ -403,7 +409,7 @@ impl RunEntry {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-pub enum Silent {
+pub(crate) enum Silent {
     #[default]
     Off,
     Bool(bool),
@@ -440,19 +446,19 @@ impl TaskTomlBoolPresence {
 }
 
 impl Silent {
-    pub fn is_silent(&self) -> bool {
+    pub(crate) fn is_silent(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stdout | Silent::Stderr)
     }
 
-    pub fn suppresses_stdout(&self) -> bool {
+    pub(crate) fn suppresses_stdout(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stdout)
     }
 
-    pub fn suppresses_stderr(&self) -> bool {
+    pub(crate) fn suppresses_stderr(&self) -> bool {
         matches!(self, Silent::Bool(true) | Silent::Stderr)
     }
 
-    pub fn suppresses_both(&self) -> bool {
+    pub(crate) fn suppresses_both(&self) -> bool {
         matches!(self, Silent::Bool(true))
     }
 }
@@ -561,7 +567,7 @@ impl Display for RunEntry {
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
-pub struct TaskWatchOptions {
+pub(crate) struct TaskWatchOptions {
     /// Ignore VCS ignore files such as `.gitignore` when running `mise watch`.
     pub no_vcs_ignore: bool,
 }
@@ -583,7 +589,7 @@ impl Default for TaskRustCacheOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskRustCacheConfig {
+pub(crate) struct TaskRustCacheConfig {
     pub enabled: bool,
     pub verify: bool,
 }
@@ -641,7 +647,7 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Task {
+pub(crate) struct Task {
     /// Internal execution occurrence. A task referenced as both a regular and
     /// post dependency must run once in each phase.
     #[serde(skip)]
@@ -1272,7 +1278,7 @@ fn usage_flag_takes_value(cmd: &usage::SpecCommand, flag: &str) -> bool {
 }
 
 impl Task {
-    pub fn add_config_source(&mut self, source: &Path) {
+    pub(crate) fn add_config_source(&mut self, source: &Path) {
         if source != self.config_source
             && !self
                 .additional_config_sources
@@ -1283,7 +1289,7 @@ impl Task {
         }
     }
 
-    pub fn config_sources(&self) -> Vec<&Path> {
+    pub(crate) fn config_sources(&self) -> Vec<&Path> {
         once(self.config_source.as_path())
             .chain(self.additional_config_sources.iter().map(PathBuf::as_path))
             .collect()
@@ -1296,7 +1302,7 @@ impl Task {
             .collect()
     }
 
-    pub fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
+    pub(crate) fn new(path: &Path, prefix: &Path, config_root: &Path) -> Result<Task> {
         Ok(Self {
             name: name_from_path(prefix, path)?,
             config_source: path.to_path_buf(),
@@ -1305,7 +1311,7 @@ impl Task {
         })
     }
 
-    pub async fn from_path(
+    pub(crate) async fn from_path(
         config: &Arc<Config>,
         path: &Path,
         prefix: &Path,
@@ -1314,7 +1320,7 @@ impl Task {
         Self::from_path_with_cf(config, path, prefix, config_root, None).await
     }
 
-    pub async fn from_path_with_cf(
+    pub(crate) async fn from_path_with_cf(
         config: &Arc<Config>,
         path: &Path,
         prefix: &Path,
@@ -1484,7 +1490,7 @@ impl Task {
 
     /// Add env vars that were inherited from parent tasks (e.g., via `run = [{ task = "..." }]`)
     /// These do NOT affect task identity/deduplication
-    pub fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
+    pub(crate) fn derive_env(&self, env_directives: &[EnvDirective]) -> Self {
         let mut new_task = self.clone();
         new_task.inherited_env.0.extend_from_slice(env_directives);
         new_task
@@ -1492,14 +1498,14 @@ impl Task {
 
     /// Add env vars specified in dependency declarations (e.g., `depends = ["FOO=bar task"]`)
     /// These DO affect task identity/deduplication
-    pub fn with_dependency_env(&self, env_directives: &[EnvDirective]) -> Self {
+    pub(crate) fn with_dependency_env(&self, env_directives: &[EnvDirective]) -> Self {
         let mut new_task = self.clone();
         new_task.env.0.extend_from_slice(env_directives);
         new_task
     }
 
     /// prints the task name without an extension
-    pub fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
+    pub(crate) fn display_name(&self, all_tasks: &BTreeMap<String, Task>) -> String {
         // For task names, only strip extensions after the last colon (:)
         // This handles monorepo task names like "//projects/my.app:build.sh"
         // where we want to strip ".sh" but keep "my.app" intact
@@ -1526,7 +1532,7 @@ impl Task {
         }
     }
 
-    pub fn is_match(&self, pat: &str) -> bool {
+    pub(crate) fn is_match(&self, pat: &str) -> bool {
         if self.name == pat || self.aliases.contains(&pat.to_string()) {
             return true;
         }
@@ -1559,19 +1565,19 @@ impl Task {
         matches || self.aliases.contains(&pat.to_string())
     }
 
-    pub async fn task_dir() -> Result<PathBuf> {
+    pub(crate) async fn task_dir() -> Result<PathBuf> {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);
         config::task_creation_dir_for_dir(&project_root, &config.config_files)
     }
 
-    pub fn with_args(mut self, args: Vec<String>) -> Self {
+    pub(crate) fn with_args(mut self, args: Vec<String>) -> Self {
         self.args = args;
         self
     }
 
-    pub fn prefix(&self) -> String {
+    pub(crate) fn prefix(&self) -> String {
         let max_width = 40;
         let inner = if self.show_args_in_prefix && !self.args.is_empty() {
             let s = format!("{} {}", self.display_name, self.args.join(" "));
@@ -1582,7 +1588,7 @@ impl Task {
         format!("[{}]", console::truncate_str(&inner, max_width, "…"))
     }
 
-    pub fn run(&self) -> &Vec<RunEntry> {
+    pub(crate) fn run(&self) -> &Vec<RunEntry> {
         if cfg!(windows) && !self.run_windows.is_empty() {
             &self.run_windows
         } else {
@@ -1591,7 +1597,7 @@ impl Task {
     }
 
     /// Returns only the script strings from the run entries (without rendering)
-    pub fn run_script_strings(&self) -> Vec<String> {
+    pub(crate) fn run_script_strings(&self) -> Vec<String> {
         self.run()
             .iter()
             .filter_map(|e| match e {
@@ -1601,7 +1607,7 @@ impl Task {
             .collect()
     }
 
-    pub fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
+    pub(crate) fn all_depends(&self, tasks: &BTreeMap<String, Task>) -> Result<Vec<Task>> {
         let tasks_ref = build_task_ref_map(tasks.iter());
         let mut visited = HashSet::from([self.name.clone()]);
         self.all_depends_recursive(&tasks_ref, &mut visited)
@@ -1640,7 +1646,7 @@ impl Task {
         Ok(depends)
     }
 
-    pub async fn resolve_depends(
+    pub(crate) async fn resolve_depends(
         &self,
         config: &Arc<Config>,
         tasks_to_run: &[Task],
@@ -1871,7 +1877,7 @@ impl Task {
     ///
     /// The `--` separator is the boundary between mise parsing and task
     /// parsing, so task-side help flags remain literal task arguments.
-    pub fn should_bypass_usage_parser(&self) -> bool {
+    pub(crate) fn should_bypass_usage_parser(&self) -> bool {
         if self.raw_args {
             return true;
         }
@@ -1882,7 +1888,7 @@ impl Task {
 
     /// Reconstruct the command-line separator clap consumed before populating
     /// `trailing_args` when the active usage command requires it.
-    pub fn args_for_usage_parser(&self, spec: &usage::Spec, args: &[String]) -> Vec<String> {
+    pub(crate) fn args_for_usage_parser(&self, spec: &usage::Spec, args: &[String]) -> Vec<String> {
         if self.trailing_args.is_empty() {
             return args.to_vec();
         }
@@ -1958,7 +1964,7 @@ impl Task {
             }
         }
     }
-    pub async fn parse_usage_spec_with_vars(
+    pub(crate) async fn parse_usage_spec_with_vars(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
@@ -2007,7 +2013,10 @@ impl Task {
     }
 
     /// Parse usage spec for display purposes without expensive environment rendering
-    pub async fn parse_usage_spec_for_display(&self, config: &Arc<Config>) -> Result<usage::Spec> {
+    pub(crate) async fn parse_usage_spec_for_display(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<usage::Spec> {
         let dir = self.dir(config).await?;
         let mut spec = if let Some(file) = self.file_path(config).await? {
             parse_task_script_usage(&file)
@@ -2060,7 +2069,7 @@ impl Task {
         TaskScriptParser::new(self.config_root.clone()).validate_template_syntax(self, input)
     }
 
-    pub async fn render_run_scripts_with_args(
+    pub(crate) async fn render_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
         cwd: Option<PathBuf>,
@@ -2105,7 +2114,7 @@ impl Task {
         }
     }
 
-    pub async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
+    pub(crate) async fn render_markdown(&self, config: &Arc<Config>) -> Result<String> {
         let mut spec = self.parse_usage_spec_for_display(config).await?;
         if spec.about.is_some() && spec.cmd.help.as_deref() == Some(self.description.as_str()) {
             spec.cmd.help = None;
@@ -2116,11 +2125,11 @@ impl Task {
         Ok(ctx.render_spec()?)
     }
 
-    pub fn estyled_prefix(&self) -> String {
+    pub(crate) fn estyled_prefix(&self) -> String {
         style::prefix(self.prefix(), &self.display_name, true)
     }
 
-    pub async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+    pub(crate) async fn dir(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(dir) = self.dir.clone().or_else(|| {
             self.cf(config)
                 .as_ref()
@@ -2147,7 +2156,7 @@ impl Task {
         }
     }
 
-    pub async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
+    pub(crate) async fn file_path(&self, config: &Arc<Config>) -> Result<Option<PathBuf>> {
         if let Some(file) = &self.file {
             let file_str = file.to_string_lossy().to_string();
             let rendered = if contains_template_syntax(&file_str) {
@@ -2185,7 +2194,7 @@ impl Task {
         })
     }
 
-    pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
+    pub(crate) async fn tera_ctx(&self, config: &Arc<Config>) -> Result<tera::Context> {
         self.build_tera_ctx(config, false).await
     }
 
@@ -2417,7 +2426,7 @@ impl Task {
         Ok(vars)
     }
 
-    pub fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
+    pub(crate) fn cf<'a>(&'a self, config: &'a Config) -> Option<&'a Arc<dyn ConfigFile>> {
         // For monorepo tasks, use the stored config file reference
         if let Some(ref cf) = self.cf {
             return Some(cf);
@@ -2429,7 +2438,7 @@ impl Task {
     /// Check if this task is a remote task (loaded from git:// or http:// URL)
     /// Remote tasks should not use monorepo config file context because they need
     /// access to tools from the full config hierarchy, not just the local config file
-    pub fn is_remote(&self) -> bool {
+    pub(crate) fn is_remote(&self) -> bool {
         // Check the stored remote file source (set before file is replaced with local path)
         if let Some(source) = &self.remote_file_source {
             return source.starts_with("git::")
@@ -2439,7 +2448,7 @@ impl Task {
         false
     }
 
-    pub fn shell(&self) -> eyre::Result<Option<Vec<String>>> {
+    pub(crate) fn shell(&self) -> eyre::Result<Option<Vec<String>>> {
         let Some(shell) = self.shell.as_ref() else {
             return Ok(None);
         };
@@ -2471,7 +2480,7 @@ impl Task {
     /// [`overlay_vars`] alongside the overlay's own config path, so path-based
     /// directives (e.g. `_.file = ".env"`) keep resolving relative to the
     /// TOML file they were written in rather than the file task's script path.
-    pub fn merge_toml_overlay(&mut self, other: Task) {
+    pub(crate) fn merge_toml_overlay(&mut self, other: Task) {
         for source in other.config_sources() {
             self.add_config_source(source);
         }
@@ -2661,7 +2670,7 @@ impl Task {
         Ok(())
     }
 
-    pub async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
+    pub(crate) async fn render(&mut self, config: &Arc<Config>, config_root: &Path) -> Result<()> {
         if !self.has_render_templates() {
             self.store_raw_render_inputs();
             self.parse_plain_depends()?;
@@ -2736,7 +2745,7 @@ impl Task {
     /// Re-render dependency templates with usage args/flags from the parent task.
     /// This allows `depends = ["child {{usage.app}}"]` to resolve when the parent
     /// task receives `--app=foo` from the CLI.
-    pub async fn render_depends_with_usage(
+    pub(crate) async fn render_depends_with_usage(
         &mut self,
         config: &Arc<Config>,
         usage_values: &IndexMap<String, tera::Value>,
@@ -2785,11 +2794,11 @@ impl Task {
         Ok(())
     }
 
-    pub fn name_to_path(&self) -> PathBuf {
+    pub(crate) fn name_to_path(&self) -> PathBuf {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
-    pub async fn render_env(
+    pub(crate) async fn render_env(
         &self,
         config: &Arc<Config>,
         ts: &Toolset,
@@ -3265,7 +3274,7 @@ impl TreeItem for (&Graph<Task, ()>, NodeIndex) {
     }
 }
 
-pub trait GetMatchingExt<T> {
+pub(crate) trait GetMatchingExt<T> {
     fn get_matching(&self, pat: &str) -> Result<Vec<&T>>;
 }
 
@@ -3551,7 +3560,7 @@ fn tera_tag_has_usage_ref(tag: &str) -> bool {
 /// Parse a task's usage spec against its current args and return a map of named
 /// arg/flag values preserving their Tera types (e.g., strings and booleans).
 /// Used to provide `{{usage.*}}` context when rendering dependency templates.
-pub async fn parse_usage_values_from_task(
+pub(crate) async fn parse_usage_values_from_task(
     config: &Arc<Config>,
     task: &Task,
 ) -> Result<IndexMap<String, tera::Value>> {

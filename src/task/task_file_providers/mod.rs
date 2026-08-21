@@ -16,7 +16,7 @@ use remote_task_git::RemoteTaskGitBuilder;
 use remote_task_http::RemoteTaskHttpBuilder;
 
 #[async_trait]
-pub trait TaskFileProvider: Debug + Send + Sync {
+pub(crate) trait TaskFileProvider: Debug + Send + Sync {
     fn is_match(&self, file: &str) -> bool;
     async fn get_local_path(&self, file: &str) -> Result<PathBuf>;
 
@@ -75,7 +75,7 @@ fn retry_remove_temporary_artifact(mut remove: impl FnMut() -> io::Result<()>) -
 }
 
 #[derive(Debug, Clone)]
-pub struct TaskFileArtifact {
+pub(crate) struct TaskFileArtifact {
     pub path: PathBuf,
     cleanup: Option<Arc<TaskFileArtifactCleanup>>,
 }
@@ -107,31 +107,31 @@ impl TaskFileArtifact {
     }
 }
 
-pub struct TaskFileProvidersBuilder {
+pub(crate) struct TaskFileProvidersBuilder {
     use_cache: bool,
 }
 
 impl TaskFileProvidersBuilder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { use_cache: false }
     }
 
-    pub fn with_cache(mut self, use_cache: bool) -> Self {
+    pub(crate) fn with_cache(mut self, use_cache: bool) -> Self {
         self.use_cache = use_cache;
         self
     }
 
-    pub fn build(self) -> TaskFileProviders {
+    pub(crate) fn build(self) -> TaskFileProviders {
         TaskFileProviders::new(self.use_cache)
     }
 }
 
-pub struct TaskFileProviders {
+pub(crate) struct TaskFileProviders {
     use_cache: bool,
 }
 
 impl TaskFileProviders {
-    pub fn new(use_cache: bool) -> Self {
+    pub(crate) fn new(use_cache: bool) -> Self {
         Self { use_cache }
     }
 
@@ -151,7 +151,7 @@ impl TaskFileProviders {
         ]
     }
 
-    pub fn get_provider(&self, file: &str) -> Option<Box<dyn TaskFileProvider>> {
+    pub(crate) fn get_provider(&self, file: &str) -> Option<Box<dyn TaskFileProvider>> {
         self.get_providers().into_iter().find(|p| p.is_match(file))
     }
 }

@@ -5,7 +5,7 @@ mod gitlab;
 /// Display git provider tokens mise will use
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct Token {
+pub(crate) struct Token {
     #[clap(subcommand)]
     subcommand: Commands,
 }
@@ -21,7 +21,7 @@ enum Commands {
 }
 
 impl Token {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         match self.subcommand {
             Commands::Forgejo(cmd) => cmd.run(),
             Commands::Github(cmd) => cmd.run(),

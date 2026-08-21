@@ -29,7 +29,7 @@ use url::Url;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct NodePlugin {
+pub(super) struct NodePlugin {
     ba: Arc<BackendArg>,
 }
 
@@ -39,7 +39,7 @@ enum FetchOutcome {
 }
 
 impl NodePlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("node").into(),
         }

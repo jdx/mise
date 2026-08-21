@@ -14,7 +14,7 @@ use crate::git::Git;
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
-pub struct GitPreCommit {
+pub(super) struct GitPreCommit {
     /// The task to run when the pre-commit hook is triggered
     #[clap(long, short, default_value = "pre-commit")]
     task: String,
@@ -34,7 +34,7 @@ pub struct GitPreCommit {
 }
 
 impl GitPreCommit {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(super) async fn run(self) -> eyre::Result<()> {
         let output = self.generate();
         if self.write {
             let quiet = Settings::get().quiet;

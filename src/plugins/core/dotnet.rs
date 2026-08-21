@@ -21,7 +21,7 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env, file, plugins};
 
 #[derive(Debug)]
-pub struct DotnetPlugin {
+pub(super) struct DotnetPlugin {
     ba: Arc<BackendArg>,
 }
 
@@ -55,7 +55,7 @@ impl<'a> DotnetOptions<'a> {
 }
 
 impl DotnetPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: plugins::core::new_backend_arg("dotnet").into(),
         }

@@ -15,7 +15,7 @@ const REUSE_BUFFER_SECS: i64 = 300;
 static REFRESH_TOKEN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[derive(Debug, Clone)]
-pub struct TokenRequest {
+pub(crate) struct TokenRequest {
     pub host: String,
     /// Whether the device-code authorization flow may be triggered when no
     /// reusable cached or refreshed token is available. When false, an
@@ -88,7 +88,7 @@ struct TokenCache {
 #[cfg(test)]
 static TEST_CACHE_PATH: std::sync::RwLock<Option<PathBuf>> = std::sync::RwLock::new(None);
 
-pub fn resolve_token(host: &str) -> Option<String> {
+pub(crate) fn resolve_token(host: &str) -> Option<String> {
     let settings = Settings::get();
     if settings.github.oauth_client_id.trim().is_empty()
         || !host_matches_settings(host, &settings.github.oauth_api_url)
@@ -104,7 +104,7 @@ pub fn resolve_token(host: &str) -> Option<String> {
     .ok()
 }
 
-pub fn cached_access_token_for_host(host: &str) -> Option<String> {
+pub(crate) fn cached_access_token_for_host(host: &str) -> Option<String> {
     let settings = Settings::get();
     let client_id = settings.github.oauth_client_id.trim();
     if client_id.is_empty() || !host_matches_settings(host, &settings.github.oauth_api_url) {
@@ -128,7 +128,7 @@ pub fn cached_access_token_for_host(host: &str) -> Option<String> {
 /// inject it into the env map under the configured variable name. Never
 /// triggers the device-code flow, so this is safe to call from shell hook
 /// paths like `mise hook-env`, `mise env`, and `mise exec`.
-pub fn inject_token_env(env: &mut EnvMap) {
+pub(crate) fn inject_token_env(env: &mut EnvMap) {
     let settings = Settings::get();
     let var_name = settings.github.oauth_export_env.trim();
     if var_name.is_empty() || settings.github.oauth_client_id.trim().is_empty() {
@@ -145,11 +145,11 @@ pub fn inject_token_env(env: &mut EnvMap) {
     }
 }
 
-pub fn token(req: TokenRequest) -> Result<String> {
+pub(crate) fn token(req: TokenRequest) -> Result<String> {
     block_on(token_async(req))
 }
 
-pub async fn refresh_cached_token_for_host(
+pub(crate) async fn refresh_cached_token_for_host(
     host: &str,
     stale_access_token: &str,
 ) -> Result<Option<String>> {

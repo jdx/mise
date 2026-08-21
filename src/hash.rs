@@ -14,13 +14,13 @@ use sha1::Sha1;
 use sha2::{Sha224, Sha256, Sha384, Sha512};
 use siphasher::sip::SipHasher;
 
-pub fn hash_to_str<T: Hash>(t: &T) -> String {
+pub(crate) fn hash_to_str<T: Hash>(t: &T) -> String {
     let mut s = SipHasher::new();
     t.hash(&mut s);
     format!("{:x}", s.finish())
 }
 
-pub fn hash_sha256_to_str(s: &str) -> String {
+pub(crate) fn hash_sha256_to_str(s: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(s);
     hasher
@@ -30,7 +30,7 @@ pub fn hash_sha256_to_str(s: &str) -> String {
         .collect()
 }
 
-pub fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+pub(crate) fn file_hash_sha256(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
     let use_external_hasher = file::size(path).unwrap_or_default() > 50 * 1024 * 1024;
     if use_external_hasher && file::which("sha256sum").is_some() {
         let out = cmd!("sha256sum", path).read()?;
@@ -64,13 +64,13 @@ where
     Ok(hash.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-pub fn hash_blake3_to_str(s: &str) -> String {
+pub(crate) fn hash_blake3_to_str(s: &str) -> String {
     let mut hasher = Blake3Hasher::new();
     hasher.update(s.as_bytes());
     hasher.finalize().to_hex().to_string()
 }
 
-pub fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
+pub(crate) fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<String> {
     let mut file = file::open(path)?;
     if let Some(pr) = pr {
         pr.set_length(file.metadata()?.len());
@@ -91,7 +91,7 @@ pub fn file_hash_blake3(path: &Path, pr: Option<&dyn SingleReport>) -> Result<St
     Ok(format!("{}", hash.to_hex()))
 }
 
-pub fn ensure_checksum(
+pub(crate) fn ensure_checksum(
     path: &Path,
     checksum: &str,
     pr: Option<&dyn SingleReport>,
@@ -139,7 +139,7 @@ pub fn ensure_checksum(
     Ok(())
 }
 
-pub fn parse_shasums(text: &str) -> HashMap<String, String> {
+pub(crate) fn parse_shasums(text: &str) -> HashMap<String, String> {
     text.lines()
         .filter_map(|l| {
             let mut parts = l.split_whitespace();

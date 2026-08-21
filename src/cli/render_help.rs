@@ -12,10 +12,10 @@ const IDIOMATIC_FILES_END: &str = "<!-- mise:idiomatic-version-files:end -->";
 /// internal command to generate markdown from help
 #[derive(Debug, clap::Args)]
 #[clap(hide = true)]
-pub struct RenderHelp {}
+pub(crate) struct RenderHelp {}
 
 impl RenderHelp {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         xx::file::mkdirp("docs/.vitepress")?;
 
         file::write("docs/.vitepress/cli_commands.ts", render_command_ts())?;

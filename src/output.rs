@@ -139,7 +139,7 @@ macro_rules! warn {
     }};
 }
 
-pub static WARNED_ONCE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+pub(crate) static WARNED_ONCE: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
 macro_rules! warn_once {
     ($($arg:tt)*) => {{
         let msg = format!($($arg)*);
@@ -157,7 +157,8 @@ macro_rules! error {
     }};
 }
 
-pub static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(Default::default);
+pub(crate) static DEPRECATED: LazyLock<Mutex<HashSet<&'static str>>> =
+    LazyLock::new(Default::default);
 
 #[macro_export]
 macro_rules! deprecated {

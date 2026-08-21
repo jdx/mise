@@ -2,7 +2,7 @@ use crate::env;
 use crate::ui::{style, time};
 use std::time::{Duration, Instant};
 
-pub fn start(module: &str) -> impl FnOnce() {
+pub(crate) fn start(module: &str) -> impl FnOnce() {
     let start = Instant::now();
     let module = module.to_string();
     move || {
@@ -13,7 +13,7 @@ pub fn start(module: &str) -> impl FnOnce() {
 
 static START: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
 
-pub fn get_time_diff(module: &str) -> String {
+pub(crate) fn get_time_diff(module: &str) -> String {
     if *env::MISE_TIMINGS == 0 {
         return "".to_string();
     }

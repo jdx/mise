@@ -10,7 +10,7 @@ use crate::result::Result;
 use crate::ui::progress_report::SingleReport;
 
 /// Download a bottle to the mise cache (or reuse a verified cached copy).
-pub async fn fetch_bottle(
+pub(super) async fn fetch_bottle(
     name: &str,
     pkg_version: &str,
     bottle: &BottleFile,

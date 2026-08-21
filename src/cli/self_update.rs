@@ -36,7 +36,7 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
     None
 }
 
-pub fn upgrade_instructions_text() -> Option<String> {
+pub(crate) fn upgrade_instructions_text() -> Option<String> {
     if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
         && let Some(msg) = read_instructions_file(path)
     {
@@ -52,17 +52,17 @@ pub fn upgrade_instructions_text() -> Option<String> {
 /// `MISE_SELF_UPDATE_AVAILABLE=false`. The wording stays neutral about which of
 /// those applies — being unable to self-update is not by itself proof that a
 /// package manager owns the install.
-pub const SELF_UPDATE_DISABLED_HINT: &str =
+pub(crate) const SELF_UPDATE_DISABLED_HINT: &str =
     "self-update is disabled for this install, update mise the same way you installed it";
 
 /// How to update mise when `mise self-update` is not available: the packager's
 /// instructions when they shipped some, otherwise the generic hint.
-pub fn upgrade_instructions_or_hint() -> String {
+pub(crate) fn upgrade_instructions_or_hint() -> String {
     upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
 }
 
 /// Appends self-update guidance and packaging instructions (if any) to a message.
-pub fn append_self_update_instructions(mut message: String) -> String {
+pub(crate) fn append_self_update_instructions(mut message: String) -> String {
     if SelfUpdate::is_available() {
         message.push_str("\nRun `mise self-update` to update mise");
     }
@@ -87,7 +87,7 @@ pub fn append_self_update_instructions(mut message: String) -> String {
 /// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 #[derive(Debug, Default, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct SelfUpdate {
+pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
@@ -222,7 +222,7 @@ fn current_exe_stem() -> Option<String> {
 }
 
 impl SelfUpdate {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
             if let Some(instructions) = upgrade_instructions_text() {
                 warn!("{}", instructions);
@@ -448,7 +448,7 @@ impl SelfUpdate {
         Ok(())
     }
 
-    pub fn is_available() -> bool {
+    pub(crate) fn is_available() -> bool {
         if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
             return b;
         }

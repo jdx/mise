@@ -13,7 +13,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DirenvDiff {
+pub(crate) struct DirenvDiff {
     #[serde(default, rename = "p")]
     pub old: HashMap<String, String>,
     #[serde(default, rename = "n")]
@@ -21,7 +21,7 @@ pub struct DirenvDiff {
 }
 
 impl DirenvDiff {
-    pub fn parse(input: &str) -> Result<DirenvDiff> {
+    pub(crate) fn parse(input: &str) -> Result<DirenvDiff> {
         if input.is_empty() {
             return Ok(DirenvDiff {
                 old: HashMap::new(),
@@ -39,7 +39,7 @@ impl DirenvDiff {
         Ok(serde_json::from_slice(&writer[..])?)
     }
 
-    pub fn new_path(&self) -> Vec<PathBuf> {
+    pub(crate) fn new_path(&self) -> Vec<PathBuf> {
         let path = self.new.get(&*PATH_KEY);
         match path {
             Some(path) => split_paths(path).collect(),
@@ -47,7 +47,7 @@ impl DirenvDiff {
         }
     }
 
-    pub fn old_path(&self) -> Vec<PathBuf> {
+    pub(crate) fn old_path(&self) -> Vec<PathBuf> {
         let path = self.old.get(&*PATH_KEY);
         match path {
             Some(path) => split_paths(path).collect(),
@@ -59,7 +59,10 @@ impl DirenvDiff {
     /// the purpose is to trick direnv into thinking that this path has always been there
     /// that way it does not remove it when it modifies PATH
     /// it returns the old and new paths as vectors
-    pub fn add_path_to_old_and_new(&mut self, path: &Path) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+    pub(crate) fn add_path_to_old_and_new(
+        &mut self,
+        path: &Path,
+    ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
         let mut old = self.old_path();
         let mut new = self.new_path();
 
@@ -78,7 +81,7 @@ impl DirenvDiff {
         Ok((old, new))
     }
 
-    pub fn remove_path_from_old_and_new(
+    pub(crate) fn remove_path_from_old_and_new(
         &mut self,
         path: &Path,
     ) -> Result<(Vec<PathBuf>, Vec<PathBuf>)> {
@@ -101,7 +104,7 @@ impl DirenvDiff {
         Ok((old, new))
     }
 
-    pub fn dump(&self) -> Result<String> {
+    pub(crate) fn dump(&self) -> Result<String> {
         let mut gz = ZlibEncoder::new(Vec::new(), Compression::fast());
         gz.write_all(&serde_json::to_vec(self)?)?;
         Ok(BASE64_URL_SAFE.encode(gz.finish()?))

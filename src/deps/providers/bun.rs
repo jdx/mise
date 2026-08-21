@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for bun (bun.lockb or bun.lock)
 #[derive(Debug)]
-pub struct BunDepsProvider {
+pub(crate) struct BunDepsProvider {
     base: ProviderBase,
 }
 
 impl BunDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("bun", project_root, config),
         }

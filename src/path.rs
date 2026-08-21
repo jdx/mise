@@ -1,4 +1,4 @@
-pub use std::path::*;
+pub(crate) use std::path::*;
 
 use crate::dirs;
 
@@ -17,7 +17,7 @@ use crate::dirs;
 /// there would change identity, not presentation.
 ///
 /// Off Windows this returns its input: `\` is an ordinary filename character there.
-pub fn settle_display_separators(s: String) -> String {
+pub(crate) fn settle_display_separators(s: String) -> String {
     match cfg!(windows) {
         true => s.replace('/', "\\"),
         false => s,
@@ -67,7 +67,7 @@ fn simplify_verbatim_unc(shown: String) -> String {
     shown
 }
 
-pub trait PathExt {
+pub(crate) trait PathExt {
     /// replaces $HOME with "~", and drops a Windows extended-length prefix
     fn display_user(&self) -> String;
     fn mount(&self, on: &Path) -> PathBuf;
@@ -154,7 +154,7 @@ impl PathExt for Path {
 ///   is resolved by bash to the same executable as `/usr/bin`, so no remapping is needed
 ///   for PATH-resolution to succeed.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn windows_path_list_to_unix(path_list: &str, drive_prefix: &str) -> String {
+pub(crate) fn windows_path_list_to_unix(path_list: &str, drive_prefix: &str) -> String {
     let mut out = String::with_capacity(path_list.len());
     let mut first = true;
     for entry in path_list.split(WINDOWS_PATH_SEP) {
@@ -213,7 +213,7 @@ fn append_single_windows_path_to_unix(out: &mut String, entry: &str, drive_prefi
 ///
 /// Returns `None` only when `program` is not valid UTF-8.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn program_stem(program: &Path) -> Option<String> {
+pub(crate) fn program_stem(program: &Path) -> Option<String> {
     let s = program.to_str()?;
     let basename = s.rsplit(['/', '\\']).next().unwrap_or(s);
     let stem = match basename.rsplit_once('.') {
@@ -227,7 +227,7 @@ pub fn program_stem(program: &Path) -> Option<String> {
 /// expects a Unix-style PATH. Used on Windows to decide whether to convert the
 /// child's PATH before spawning.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn is_posix_shell_program(program: &Path) -> bool {
+pub(crate) fn is_posix_shell_program(program: &Path) -> bool {
     const POSIX_SHELLS: &[&str] = &["bash", "sh", "zsh", "fish", "ksh", "dash"];
     let Some(stem) = program_stem(program) else {
         return false;
@@ -242,14 +242,14 @@ pub fn is_posix_shell_program(program: &Path) -> bool {
 /// the `\"` escaping std emits for inner double quotes, so that quoting mangles
 /// commands like `python -c "import x"`. See discussion #9355.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn is_cmd_shell_program(program: &Path) -> bool {
+pub(crate) fn is_cmd_shell_program(program: &Path) -> bool {
     program_stem(program).as_deref() == Some("cmd")
 }
 
 /// Returns true if `program` is PowerShell (`pwsh` / PowerShell Core) or Windows
 /// PowerShell (`powershell`), with or without a directory prefix or `.exe`
 /// extension.
-pub fn is_powershell_program(program: &Path) -> bool {
+pub(crate) fn is_powershell_program(program: &Path) -> bool {
     matches!(
         program_stem(program).as_deref(),
         Some("pwsh" | "powershell")
@@ -274,7 +274,7 @@ pub fn is_powershell_program(program: &Path) -> bool {
 /// abbreviations (`-nop`, `-NoProfile`, `/noprofile`, …). `-NoProfileLoadTime`
 /// is deliberately *not* treated as suppressing the profile — it only affects
 /// startup timing output — so it does not block injection.
-pub fn inject_powershell_no_profile(shell: &mut Vec<String>) {
+pub(crate) fn inject_powershell_no_profile(shell: &mut Vec<String>) {
     let Some(program) = shell.first() else {
         return;
     };
@@ -322,7 +322,11 @@ pub fn inject_powershell_no_profile(shell: &mut Vec<String>) {
 /// the outer pair (cmd passes those inner quotes through untouched) — preserving
 /// the spaces-in-forwarded-args fix from #6744 instead of splitting them.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn cmd_verbatim_args(shell_flags: &[String], script: &str, args: &[String]) -> Vec<String> {
+pub(crate) fn cmd_verbatim_args(
+    shell_flags: &[String],
+    script: &str,
+    args: &[String],
+) -> Vec<String> {
     let mut body = script.to_string();
     for arg in args {
         body.push(' ');
@@ -423,7 +427,7 @@ pub fn cmd_verbatim_command(
 /// explicit shell path with spaces (when double-quoted) or with backslashes
 /// reaches the spawn verbatim instead of being mangled. Returns `Err` only on
 /// an unbalanced double quote (Windows) or a `shell_words` parse error (Unix).
-pub fn split_shell_command(s: &str) -> eyre::Result<Vec<String>> {
+pub(crate) fn split_shell_command(s: &str) -> eyre::Result<Vec<String>> {
     #[cfg(windows)]
     {
         split_shell_command_windows(s)
@@ -491,7 +495,7 @@ fn split_shell_command_windows(s: &str) -> eyre::Result<Vec<String>> {
 /// `my-cygwinish-tools`) does not trip it. `MSYSTEM` is deliberately not consulted —
 /// PowerShell-launched mise inherits none, so it is not a reliable signal.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn is_cygwin_shell(program: &Path) -> bool {
+pub(crate) fn is_cygwin_shell(program: &Path) -> bool {
     let Some(s) = program.to_str() else {
         return false;
     };
@@ -514,7 +518,7 @@ pub fn is_cygwin_shell(program: &Path) -> bool {
 /// skip such entries; symmetric with the forward converter, which leaves
 /// non-default mount discovery to `MISE_CYGDRIVE_PREFIX` rather than fstab.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn unix_path_to_windows(entry: &str) -> Option<String> {
+pub(crate) fn unix_path_to_windows(entry: &str) -> Option<String> {
     // UNC round-trip: bash represents `\\server\share` as `//server/share`.
     if let Some(rest) = entry.strip_prefix("//")
         && !rest.is_empty()

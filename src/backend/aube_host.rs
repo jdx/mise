@@ -74,7 +74,7 @@ static INIT: Once = Once::new();
 ///
 /// aube's registration is itself first-write-wins, so the [`Once`] is only to
 /// keep repeat calls off the hot path.
-pub fn init() {
+pub(crate) fn init() {
     INIT.call_once(|| {
         // No setting defaults: mise passes every install-scoped knob it cares
         // about (release age, trust-policy excludes, build allowlist) through

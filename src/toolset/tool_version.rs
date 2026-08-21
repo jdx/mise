@@ -29,13 +29,13 @@ static INSTALL_PATH_CACHE: LazyLock<DashMap<ToolVersion, PathBuf>> = LazyLock::n
 
 /// Clear the install_path cache. Called when install state is reset
 /// to avoid stale paths (e.g. shared dir paths after a new install).
-pub fn reset_install_path_cache() {
+pub(super) fn reset_install_path_cache() {
     INSTALL_PATH_CACHE.clear();
 }
 
 /// represents a single version of a tool for a particular plugin
 #[derive(Debug, Clone)]
-pub struct ToolVersion {
+pub(crate) struct ToolVersion {
     pub request: ToolRequest,
     pub version: String,
     /// Effective install-before cutoff used to resolve this version.
@@ -76,7 +76,7 @@ impl ToolVersion {
         eyre::eyre!(msg)
     }
 
-    pub fn new(request: ToolRequest, version: String) -> Self {
+    pub(crate) fn new(request: ToolRequest, version: String) -> Self {
         ToolVersion {
             request,
             version,
@@ -93,7 +93,7 @@ impl ToolVersion {
         }
     }
 
-    pub async fn resolve(
+    pub(crate) async fn resolve(
         config: &Arc<Config>,
         request: ToolRequest,
         opts: &ResolveOptions,
@@ -178,19 +178,19 @@ impl ToolVersion {
         self.resolved_from_lockfile
     }
 
-    pub fn ba(&self) -> &BackendArg {
+    pub(crate) fn ba(&self) -> &BackendArg {
         self.request.ba()
     }
 
-    pub fn backend(&self) -> Result<ABackend> {
+    pub(crate) fn backend(&self) -> Result<ABackend> {
         self.ba().backend()
     }
 
-    pub fn short(&self) -> &str {
+    pub(crate) fn short(&self) -> &str {
         &self.ba().short
     }
 
-    pub fn install_path(&self) -> PathBuf {
+    pub(crate) fn install_path(&self) -> PathBuf {
         if let Some(p) = &self.install_path {
             return p.clone();
         }
@@ -236,11 +236,11 @@ impl ToolVersion {
         path
     }
 
-    pub fn install_env(&self) -> IndexMap<String, EnvValue> {
+    pub(crate) fn install_env(&self) -> IndexMap<String, EnvValue> {
         self.request.options().core.install_env
     }
 
-    pub fn runtime_path(&self) -> PathBuf {
+    pub(crate) fn runtime_path(&self) -> PathBuf {
         if self.locked {
             return self.install_path();
         }
@@ -270,18 +270,18 @@ impl ToolVersion {
 
         self.install_path()
     }
-    pub fn cache_path(&self) -> PathBuf {
+    pub(crate) fn cache_path(&self) -> PathBuf {
         self.ba().cache_path.join(self.tv_pathname())
     }
-    pub fn download_path(&self) -> PathBuf {
+    pub(crate) fn download_path(&self) -> PathBuf {
         self.request.ba().downloads_path.join(self.tv_pathname())
     }
-    pub async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
+    pub(crate) async fn latest_version(&self, config: &Arc<Config>) -> Result<String> {
         self.latest_version_with_opts(config, &ResolveOptions::default())
             .await
     }
 
-    pub async fn latest_version_with_opts(
+    pub(crate) async fn latest_version_with_opts(
         &self,
         config: &Arc<Config>,
         base_opts: &ResolveOptions,
@@ -304,14 +304,14 @@ impl ToolVersion {
         let tv = self.request.resolve(config, &opts).await?;
         Ok(tv.version)
     }
-    pub fn style(&self) -> String {
+    pub(crate) fn style(&self) -> String {
         format!(
             "{}{}",
             style(&self.ba().short).blue().for_stderr(),
             style(&format!("@{}", self.version)).for_stderr()
         )
     }
-    pub fn tv_pathname(&self) -> String {
+    pub(crate) fn tv_pathname(&self) -> String {
         match &self.request {
             ToolRequest::Version { .. } => self.version.to_string(),
             ToolRequest::Prefix { .. } => self.version.to_string(),
@@ -831,7 +831,7 @@ impl Hash for ToolVersion {
 }
 
 #[derive(Debug, Clone)]
-pub struct ResolveOptions {
+pub(crate) struct ResolveOptions {
     pub latest_versions: bool,
     pub use_locked_version: bool,
     /// Resolve rolling channels to their current concrete version even when
@@ -882,7 +882,7 @@ impl ResolveOptions {
     /// A cutoff pre-resolved by the caller keeps its provenance flag; cutoffs
     /// resolved here are flagged by source so installed-version fast paths
     /// can ignore the built-in default.
-    pub fn apply_before_date_for_tool(
+    pub(crate) fn apply_before_date_for_tool(
         &mut self,
         backend_arg: &BackendArg,
         minimum_release_age: Option<&str>,

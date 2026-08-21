@@ -84,7 +84,7 @@ async fn join_plugin_tasks(
 
 #[derive(Debug, clap::Args)]
 #[clap(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
-pub struct Plugins {
+pub(crate) struct Plugins {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -128,7 +128,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+    pub(crate) async fn run(self, config: &Arc<Config>) -> Result<()> {
         match self {
             Self::Install(cmd) => cmd.run(config).await,
             Self::Link(cmd) => cmd.run().await,
@@ -141,7 +141,7 @@ impl Commands {
 }
 
 impl Plugins {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let cmd = self.command.unwrap_or(Commands::Ls(ls::PluginsLs {
             all: self.all,

@@ -47,7 +47,7 @@ use std::{
 use url::Url;
 
 #[derive(Debug)]
-pub struct AquaBackend {
+pub(crate) struct AquaBackend {
     ba: Arc<BackendArg>,
     id: String,
     version_tags_cache: CacheManager<Vec<(String, String)>>,
@@ -1914,7 +1914,7 @@ impl AquaBackend {
         Ok(())
     }
 
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         let full = ba.full_without_opts();
         let mut id = full.split_once(":").unwrap_or(("", &full)).1;
         if !id.contains("/") {
@@ -3526,11 +3526,11 @@ fn complete_windows_dst_ext(
 /// flat top-level keys whose names are declared by the registry package. The
 /// flat names are not statically knowable here, so `is_install_time_option_key`
 /// handles the precise filtering rule.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec!["vars".into()]
 }
 
-pub fn is_install_time_option_key(key: &str) -> bool {
+pub(crate) fn is_install_time_option_key(key: &str) -> bool {
     key != "symlink_bins"
 }
 
@@ -4978,7 +4978,7 @@ fn asset_name_tokens(name: &str) -> Vec<String> {
         .collect()
 }
 
-pub fn os() -> &'static str {
+pub(crate) fn os() -> &'static str {
     if cfg!(target_os = "macos") {
         "darwin"
     } else {
@@ -4986,7 +4986,7 @@ pub fn os() -> &'static str {
     }
 }
 
-pub fn arch() -> &'static str {
+pub(crate) fn arch() -> &'static str {
     if cfg!(target_arch = "x86_64") {
         "amd64"
     } else if cfg!(target_arch = "arm") {

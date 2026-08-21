@@ -9,19 +9,19 @@ use crate::config::{Config, Settings};
 use crate::env;
 use crate::file::display_filename;
 
-pub use engine::{DepsEngine, DepsOptions, DepsStepResult};
-pub use rule::DepsConfig;
+pub(crate) use engine::{DepsEngine, DepsOptions, DepsStepResult};
+pub(crate) use rule::DepsConfig;
 pub(crate) use rule::DepsTemplateContext;
 
 pub(crate) mod deps_ordering;
 mod engine;
-pub mod providers;
+pub(crate) mod providers;
 mod rule;
-pub mod state;
+pub(crate) mod state;
 
 /// Result of a freshness check for a deps provider
 #[derive(Debug, Clone)]
-pub enum FreshnessResult {
+pub(crate) enum FreshnessResult {
     /// Outputs are up to date with sources
     Fresh,
     /// One or more output paths don't exist
@@ -36,14 +36,14 @@ pub enum FreshnessResult {
 
 /// Whether a configured deps provider can run in its current project.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DepsProviderApplicability {
+pub(crate) enum DepsProviderApplicability {
     Applicable,
     Inactive(String),
 }
 
 impl DepsProviderApplicability {
     /// Require a provider-specific file to exist.
-    pub fn require_file(path: &Path) -> Self {
+    pub(crate) fn require_file(path: &Path) -> Self {
         if path.is_file() {
             Self::Applicable
         } else {
@@ -53,7 +53,7 @@ impl DepsProviderApplicability {
     }
 
     /// Require one of several provider-specific files to exist.
-    pub fn require_any_file(paths: &[&Path]) -> Self {
+    pub(crate) fn require_any_file(paths: &[&Path]) -> Self {
         if paths.iter().any(|path| path.is_file()) {
             Self::Applicable
         } else {
@@ -67,7 +67,7 @@ impl DepsProviderApplicability {
     }
 
     /// Require a file to exist and contain data.
-    pub fn require_nonempty_file(path: &Path) -> Self {
+    pub(crate) fn require_nonempty_file(path: &Path) -> Self {
         let name = display_filename(path);
         if !path.is_file() {
             return Self::Inactive(format!("missing {name}"));
@@ -80,7 +80,7 @@ impl DepsProviderApplicability {
     }
 
     /// Require a custom provider to define a non-empty run command.
-    pub fn require_run(run: Option<&str>) -> Self {
+    pub(crate) fn require_run(run: Option<&str>) -> Self {
         match run {
             Some(run) if !run.trim().is_empty() => Self::Applicable,
             Some(_) => Self::Inactive("run command is empty".to_string()),
@@ -91,12 +91,12 @@ impl DepsProviderApplicability {
 
 impl FreshnessResult {
     /// Returns true if the provider should be considered fresh (no work needed)
-    pub fn is_fresh(&self) -> bool {
+    pub(crate) fn is_fresh(&self) -> bool {
         matches!(self, FreshnessResult::Fresh | FreshnessResult::NoSources)
     }
 
     /// Human-readable reason string for display
-    pub fn reason(&self) -> &str {
+    pub(crate) fn reason(&self) -> &str {
         match self {
             FreshnessResult::Fresh => "outputs are up to date",
             FreshnessResult::OutputsMissing => "outputs missing",
@@ -109,7 +109,7 @@ impl FreshnessResult {
 
 /// A command to execute for dependency management
 #[derive(Debug, Clone)]
-pub struct DepsCommand {
+pub(crate) struct DepsCommand {
     /// The program to execute
     pub program: String,
     /// Arguments to pass to the program
@@ -127,7 +127,7 @@ impl DepsCommand {
     ///
     /// Wraps the command with `sh -c` (matching task execution behavior)
     /// so shell features like pipes, redirects, and `&&` work.
-    pub fn from_string(
+    pub(crate) fn from_string(
         run: &str,
         project_root: &Path,
         config: &rule::DepsProviderConfig,
@@ -193,7 +193,7 @@ impl DepsCommand {
 }
 
 /// Trait for deps providers that can check and install dependencies
-pub trait DepsProvider: Debug + Send + Sync {
+pub(crate) trait DepsProvider: Debug + Send + Sync {
     /// Access the shared base (project root + config)
     fn base(&self) -> &providers::ProviderBase;
 
@@ -288,7 +288,7 @@ pub trait DepsProvider: Debug + Send + Sync {
 }
 
 /// Warn if any auto-enabled deps providers are stale
-pub fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, String>) {
+pub(crate) fn notify_if_stale(config: &Arc<Config>, effective_env: &BTreeMap<String, String>) {
     // Skip in shims or quiet mode
     if *env::__MISE_SHIM || Settings::get().quiet {
         return;
@@ -320,14 +320,14 @@ static STALE_OUTPUTS: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
 /// Mark a directory as freshly created (stale for deps purposes)
-pub fn mark_output_stale(path: PathBuf) {
+pub(crate) fn mark_output_stale(path: PathBuf) {
     if let Ok(mut set) = STALE_OUTPUTS.lock() {
         set.insert(path);
     }
 }
 
 /// Check if a directory was created this session
-pub fn is_output_stale(path: &PathBuf) -> bool {
+pub(crate) fn is_output_stale(path: &PathBuf) -> bool {
     STALE_OUTPUTS
         .lock()
         .map(|set| set.contains(path))
@@ -335,7 +335,7 @@ pub fn is_output_stale(path: &PathBuf) -> bool {
 }
 
 /// Clear stale status for a path (after deps runs successfully)
-pub fn clear_output_stale(path: &PathBuf) {
+pub(crate) fn clear_output_stale(path: &PathBuf) {
     if let Ok(mut set) = STALE_OUTPUTS.lock() {
         set.remove(path);
     }
@@ -344,7 +344,7 @@ pub fn clear_output_stale(path: &PathBuf) {
 /// Detect which built-in deps providers are applicable for a given directory
 ///
 /// This checks if the lockfiles/config files for each provider exist.
-pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
+pub(crate) fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
     use DepsProviderApplicability::Applicable;
 
     use providers::*;
@@ -434,7 +434,7 @@ pub fn detect_applicable_providers(project_root: &Path) -> Vec<String> {
 ///
 /// If a `Config` is provided, looks up user-defined settings (env, dir, timeout)
 /// from the `[deps.<ecosystem>]` section. Falls back to defaults otherwise.
-pub fn create_provider(
+pub(crate) fn create_provider(
     ecosystem: &str,
     project_root: &Path,
     config: Option<&crate::config::Config>,

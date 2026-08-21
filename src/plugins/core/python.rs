@@ -57,7 +57,7 @@ struct PypyFile {
 }
 
 #[derive(Debug)]
-pub struct PythonPlugin {
+pub(crate) struct PythonPlugin {
     ba: Arc<BackendArg>,
 }
 
@@ -90,7 +90,7 @@ impl<'a> PythonOptions<'a> {
     }
 }
 
-pub fn python_path(tv: &ToolVersion) -> PathBuf {
+pub(crate) fn python_path(tv: &ToolVersion) -> PathBuf {
     if cfg!(windows) {
         tv.install_path().join("python.exe")
     } else {
@@ -195,7 +195,7 @@ fn python_version_sort_key(
 }
 
 impl PythonPlugin {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let ba = Arc::new(plugins::core::new_backend_arg("python"));
         Self { ba }
     }

@@ -32,12 +32,12 @@ const ATTESTATION_HELP: &str = "To disable attestation verification, set MISE_RU
     or add `ruby.github_attestations = false` under [settings] in mise.toml";
 
 #[derive(Debug)]
-pub struct RubyPlugin {
+pub(super) struct RubyPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl RubyPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("ruby")),
         }

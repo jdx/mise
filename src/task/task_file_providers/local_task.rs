@@ -7,7 +7,7 @@ use crate::Result;
 use super::TaskFileProvider;
 
 #[derive(Debug)]
-pub struct LocalTask;
+pub(super) struct LocalTask;
 
 #[async_trait]
 impl TaskFileProvider for LocalTask {

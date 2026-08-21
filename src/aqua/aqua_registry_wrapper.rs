@@ -15,10 +15,10 @@ static AQUA_REGISTRY_PATH: Lazy<PathBuf> = Lazy::new(|| dirs::CACHE.join("aqua-r
 static AQUA_DEFAULT_REGISTRY_URL: &str = "https://github.com/aquaproj/aqua-registry";
 pub(crate) const DEFAULT_AQUA_REGISTRY_CACHE_TTL: duration::Duration = duration::WEEKLY;
 
-pub static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(AquaRegistry::from_settings);
+pub(crate) static AQUA_REGISTRY: Lazy<AquaRegistry> = Lazy::new(AquaRegistry::from_settings);
 
 #[derive(Debug)]
-pub struct AquaRegistry {
+pub(crate) struct AquaRegistry {
     registries: Vec<RegistrySource>,
 }
 
@@ -169,7 +169,7 @@ impl ActiveRegistry {
 }
 
 impl AquaRegistry {
-    pub async fn package(&self, id: &str) -> Result<AquaPackage> {
+    pub(crate) async fn package(&self, id: &str) -> Result<AquaPackage> {
         static CACHE: Lazy<Mutex<HashMap<String, AquaPackage>>> =
             Lazy::new(|| Mutex::new(HashMap::new()));
 
@@ -494,7 +494,7 @@ static AQUA_SUGGESTIONS_CACHE: Lazy<AquaSuggestionsCache> = Lazy::new(|| {
 
 /// Search aqua packages by tool name, returning "owner/name" IDs
 /// where the name part is similar to the query.
-pub fn aqua_suggest(query: &str) -> Vec<String> {
+pub(crate) fn aqua_suggest(query: &str) -> Vec<String> {
     let cache = &*AQUA_SUGGESTIONS_CACHE;
 
     // Use a higher threshold (0.8) to avoid noisy suggestions
@@ -516,7 +516,7 @@ pub fn aqua_suggest(query: &str) -> Vec<String> {
 }
 
 // Re-export types and static for compatibility
-pub use aqua_registry::{
+pub(crate) use aqua_registry::{
     AquaChecksum, AquaChecksumType, AquaCosign, AquaGithubArtifactAttestations, AquaMinisign,
     AquaMinisignType, AquaPackage, AquaPackageType,
 };

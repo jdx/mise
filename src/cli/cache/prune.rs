@@ -14,7 +14,7 @@ use std::time::Duration;
 /// Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "p")]
-pub struct CachePrune {
+pub(super) struct CachePrune {
     /// Tool(s) to prune cache for
     /// e.g.: node, python
     tool: Option<Vec<String>>,
@@ -29,7 +29,7 @@ pub struct CachePrune {
 }
 
 impl CachePrune {
-    pub fn run(self) -> Result<()> {
+    pub(super) fn run(self) -> Result<()> {
         let settings = Settings::get();
         let opts = PruneOptions {
             dry_run: self.dry_run,

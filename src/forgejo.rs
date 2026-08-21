@@ -16,7 +16,7 @@ use tokio::sync::RwLockReadGuard;
 use xx::regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ForgejoRelease {
+pub(crate) struct ForgejoRelease {
     pub id: u64,
     pub tag_name: String,
     pub draft: bool,
@@ -26,7 +26,7 @@ pub struct ForgejoRelease {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ForgejoAsset {
+pub(crate) struct ForgejoAsset {
     pub id: u64,
     pub name: String,
     // pub size: u64,
@@ -70,7 +70,7 @@ async fn get_release_cache<'a>(key: &str) -> RwLockReadGuard<'a, CacheGroup<Forg
 /// always filtered out. The cache stores this non-draft superset so callers can
 /// apply the current `prerelease` option at read time without invalidating
 /// cached release metadata.
-pub async fn list_releases_including_prereleases_from_url(
+pub(crate) async fn list_releases_including_prereleases_from_url(
     api_url: &str,
     repo: &str,
 ) -> Result<Vec<ForgejoRelease>> {
@@ -124,7 +124,11 @@ fn is_published_release(release: &ForgejoRelease) -> bool {
     !release.draft
 }
 
-pub async fn get_release_for_url(api_url: &str, repo: &str, tag: &str) -> Result<ForgejoRelease> {
+pub(crate) async fn get_release_for_url(
+    api_url: &str,
+    repo: &str,
+    tag: &str,
+) -> Result<ForgejoRelease> {
     let key = format!("{api_url}-{repo}-{tag}").to_kebab_case();
     let cache = get_release_cache(&key).await;
     let cache = cache.get(&key).unwrap();
@@ -160,7 +164,7 @@ fn cache_dir() -> PathBuf {
     dirs::CACHE.join("forgejo")
 }
 
-pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
+pub(crate) fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     // An invalid URL just means no auth headers; the real error surfaces when the
     // request is made. Avoid panicking here. See #3547.
@@ -186,7 +190,7 @@ pub fn get_headers<U: IntoUrl>(url: U, api_url: &str) -> HeaderMap {
 
 /// The source from which a Forgejo token was resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenSource {
+pub(crate) enum TokenSource {
     EnvVar(&'static str),
     TokensFile,
     FjCli,
@@ -236,7 +240,7 @@ pub(crate) mod test_support {
 /// 4. `forgejo_tokens.toml` (per-host)
 /// 5. fj CLI token (from `keys.json`)
 /// 6. `git credential fill` (if enabled)
-pub fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
+pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     #[cfg(test)]
     if let Some(token) = test_support::lookup_tokens_file_override(host) {
         return Some((token, TokenSource::TokensFile));

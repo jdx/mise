@@ -30,7 +30,7 @@ struct VersionOutputAll {
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
 )]
-pub struct LsRemote {
+pub(crate) struct LsRemote {
     /// Tool to get versions for
     #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
     pub plugin: Option<ToolArg>,
@@ -81,7 +81,7 @@ pub struct LsRemote {
 }
 
 impl LsRemote {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if self.prerelease {
             Settings::override_with(|s| s.prereleases = Some(true));
         }

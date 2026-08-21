@@ -7,7 +7,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 
 #[derive(Debug, Clone, Eq, PartialEq, strum::EnumIs)]
-pub enum TaskOutputs {
+pub(crate) enum TaskOutputs {
     Files(Vec<String>),
     NoFiles,
     Auto,
@@ -16,7 +16,7 @@ pub enum TaskOutputs {
 /// Stores raw (pre-render) output templates and the original env context so they
 /// can be re-rendered when dependency env overrides are applied after initial rendering.
 #[derive(Debug, Clone, Default)]
-pub struct RawOutputTemplates {
+pub(crate) struct RawOutputTemplates {
     pub templates: Option<Vec<String>>,
     pub original_env: Option<std::collections::BTreeMap<String, String>>,
 }
@@ -28,21 +28,21 @@ impl Default for TaskOutputs {
 }
 
 impl TaskOutputs {
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         match self {
             TaskOutputs::Files(files) => files.is_empty(),
             TaskOutputs::NoFiles | TaskOutputs::Auto => false,
         }
     }
 
-    pub fn patterns(&self) -> Vec<String> {
+    pub(crate) fn patterns(&self) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),
             TaskOutputs::NoFiles | TaskOutputs::Auto => vec![],
         }
     }
 
-    pub fn paths(&self, task: &Task, root: &Path) -> Vec<String> {
+    pub(crate) fn paths(&self, task: &Task, root: &Path) -> Vec<String> {
         match self {
             TaskOutputs::Files(files) => files.clone(),
             TaskOutputs::NoFiles => vec![],
@@ -50,14 +50,14 @@ impl TaskOutputs {
         }
     }
 
-    pub fn has_tera_template(&self) -> bool {
+    pub(crate) fn has_tera_template(&self) -> bool {
         match self {
             TaskOutputs::Files(files) => files.iter().any(|file| contains_template_syntax(file)),
             TaskOutputs::NoFiles | TaskOutputs::Auto => false,
         }
     }
 
-    pub fn raw_templates_without_env(&self) -> RawOutputTemplates {
+    pub(crate) fn raw_templates_without_env(&self) -> RawOutputTemplates {
         match self {
             TaskOutputs::Files(files) => RawOutputTemplates {
                 templates: Some(files.clone()),
@@ -80,7 +80,7 @@ impl TaskOutputs {
             .to_string()
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &mut self,
         tera: &mut TeraEngine,
         ctx: &tera::Context,
@@ -107,7 +107,7 @@ impl TaskOutputs {
 
     /// Re-render output templates with additional env vars injected into the
     /// tera context. Used after dependency env overrides are applied.
-    pub fn re_render_with_env(
+    pub(crate) fn re_render_with_env(
         &mut self,
         raw: &RawOutputTemplates,
         env: &indexmap::IndexMap<String, String>,

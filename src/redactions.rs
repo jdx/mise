@@ -3,7 +3,7 @@ use indexmap::IndexSet;
 use std::sync::Arc;
 
 #[derive(Default, Clone, Debug, serde::Deserialize)]
-pub struct Redactions(pub IndexSet<String>);
+pub(crate) struct Redactions(pub IndexSet<String>);
 
 /// A redactor that uses Aho-Corasick for efficient multi-pattern string replacement.
 ///
@@ -11,7 +11,7 @@ pub struct Redactions(pub IndexSet<String>);
 /// for each one, especially when there are many patterns. Aho-Corasick finds all
 /// matches in a single pass through the text - O(n + z) vs O(n * m).
 #[derive(Clone)]
-pub struct Redactor {
+pub(crate) struct Redactor {
     patterns: Arc<IndexSet<String>>,
     automaton: Option<Arc<AhoCorasick>>,
 }
@@ -27,7 +27,7 @@ impl Default for Redactor {
 
 impl Redactor {
     /// Create a new redactor from a set of patterns to redact.
-    pub fn new(patterns: impl IntoIterator<Item = String>) -> Self {
+    pub(crate) fn new(patterns: impl IntoIterator<Item = String>) -> Self {
         let patterns: IndexSet<String> = patterns.into_iter().filter(|p| !p.is_empty()).collect();
         let automaton = if patterns.is_empty() {
             None
@@ -42,7 +42,7 @@ impl Redactor {
     }
 
     /// Create a new redactor by adding more patterns to an existing one.
-    pub fn with_additional(&self, additional: impl IntoIterator<Item = String>) -> Self {
+    pub(crate) fn with_additional(&self, additional: impl IntoIterator<Item = String>) -> Self {
         let mut patterns = (*self.patterns).clone();
         for p in additional {
             if !p.is_empty() {
@@ -53,7 +53,7 @@ impl Redactor {
     }
 
     /// Returns the patterns as an Arc for efficient sharing.
-    pub fn patterns_arc(&self) -> Arc<IndexSet<String>> {
+    pub(crate) fn patterns_arc(&self) -> Arc<IndexSet<String>> {
         Arc::clone(&self.patterns)
     }
 
@@ -61,7 +61,7 @@ impl Redactor {
     ///
     /// This is O(n + z) where n is the input length and z is the number of matches,
     /// compared to O(n * m) for the naive approach of iterating through m patterns.
-    pub fn redact(&self, input: &str) -> String {
+    pub(crate) fn redact(&self, input: &str) -> String {
         match &self.automaton {
             Some(ac) => {
                 // Each pattern needs its own replacement string

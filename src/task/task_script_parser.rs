@@ -24,21 +24,21 @@ type TeraSpecParsingResult = (
 
 type TaskTemplateResult = std::result::Result<JsonValue, String>;
 
-pub struct TaskScriptParser {
+pub(super) struct TaskScriptParser {
     dir: Option<PathBuf>,
     /// Extra vars to inject into the tera context (for monorepo task vars resolution)
     extra_vars: Option<IndexMap<String, String>>,
 }
 
 impl TaskScriptParser {
-    pub fn new(dir: Option<PathBuf>) -> Self {
+    pub(super) fn new(dir: Option<PathBuf>) -> Self {
         TaskScriptParser {
             dir,
             extra_vars: None,
         }
     }
 
-    pub fn with_extra_vars(mut self, vars: IndexMap<String, String>) -> Self {
+    pub(super) fn with_extra_vars(mut self, vars: IndexMap<String, String>) -> Self {
         self.extra_vars = Some(vars);
         self
     }
@@ -554,7 +554,7 @@ impl TaskScriptParser {
         (tera, arg_order, input_args, input_flags)
     }
 
-    pub async fn parse_run_scripts_for_spec_only(
+    pub(super) async fn parse_run_scripts_for_spec_only(
         &self,
         config: &Arc<Config>,
         task: &Task,
@@ -564,7 +564,7 @@ impl TaskScriptParser {
             .await
     }
 
-    pub async fn parse_run_scripts_for_preflight(
+    pub(super) async fn parse_run_scripts_for_preflight(
         &self,
         config: &Arc<Config>,
         task: &Task,
@@ -657,7 +657,7 @@ impl TaskScriptParser {
         Ok(spec)
     }
 
-    pub async fn parse_run_scripts(
+    pub(super) async fn parse_run_scripts(
         &self,
         config: &Arc<Config>,
         task: &Task,
@@ -728,7 +728,7 @@ impl TaskScriptParser {
         Ok((scripts, spec))
     }
 
-    pub async fn parse_run_scripts_with_args(
+    pub(super) async fn parse_run_scripts_with_args(
         &self,
         config: &Arc<Config>,
         task: &Task,
@@ -881,7 +881,9 @@ impl TaskScriptParser {
     /// references don't error during the initial template render (which is only
     /// used for deprecated spec collection — actual execution re-renders via
     /// `parse_run_scripts_with_args` with real parsed values).
-    pub fn make_usage_ctx_from_spec_defaults(spec: &usage::Spec) -> HashMap<String, tera::Value> {
+    pub(super) fn make_usage_ctx_from_spec_defaults(
+        spec: &usage::Spec,
+    ) -> HashMap<String, tera::Value> {
         let mut usage_ctx: HashMap<String, tera::Value> = HashMap::new();
 
         fn collect_cmd_defaults(cmd: &usage::SpecCommand, ctx: &mut HashMap<String, tera::Value>) {
@@ -935,7 +937,7 @@ impl TaskScriptParser {
     }
 }
 
-pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
+pub(crate) fn has_any_args_defined(spec: &usage::Spec) -> bool {
     !spec.cmd.args.is_empty() || !spec.cmd.flags.is_empty() || !spec.cmd.subcommands.is_empty()
 }
 
@@ -945,7 +947,7 @@ pub fn has_any_args_defined(spec: &usage::Spec) -> bool {
 ///
 /// Note: before_help_long is excluded because populate_spec_metadata()
 /// sets it automatically for tasks with dependencies.
-pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
+pub(crate) fn has_any_usage_spec(spec: &usage::Spec) -> bool {
     has_any_args_defined(spec)
         || spec.about.is_some()
         || spec.about_long.is_some()
@@ -961,7 +963,7 @@ pub fn has_any_usage_spec(spec: &usage::Spec) -> bool {
 
 /// Extract the selected subcommand name from parsed commands.
 /// `cmds[0]` is the root command; subsequent entries are subcommands.
-pub fn subcommand_name_from_parse(cmds: &[usage::SpecCommand]) -> Option<String> {
+pub(super) fn subcommand_name_from_parse(cmds: &[usage::SpecCommand]) -> Option<String> {
     if cmds.len() > 1 {
         let names: Vec<String> = cmds.iter().skip(1).map(|c| c.name.clone()).collect();
         Some(names.join(" "))

@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for npm (package-lock.json)
 #[derive(Debug)]
-pub struct NpmDepsProvider {
+pub(crate) struct NpmDepsProvider {
     base: ProviderBase,
 }
 
 impl NpmDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("npm", project_root, config),
         }
