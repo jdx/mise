@@ -3011,24 +3011,31 @@ fn preserve_absent_tool_entries(
 }
 
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
-    // Create a cache key from the config file paths
-    let monorepo_root = config.monorepo_lockfile_root();
-    let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
-    let cache_key: Vec<PathBuf> = config
-        .config_files
-        .keys()
-        .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
-        .chain(legacy_lockfiles.iter().cloned())
-        .unique()
-        .collect();
-
+    // Derived once per config: this runs on every backend-identity lookup, and
+    // walking each config path plus deduping the results dominated those calls.
+    let cache_key = config.lockfile_cache_key(|| {
+        let monorepo_root = config.monorepo_lockfile_root();
+        let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
+        config
+            .config_files
+            .keys()
+            .map(|path| lockfile_path_for_config(path, monorepo_root.as_deref()).0)
+            .chain(legacy_lockfiles.iter().cloned())
+            .unique()
+            .collect()
+    });
     // Use unwrap_or_else to recover from poisoned mutex (thread panicked while holding lock)
     let mut cache = ALL_LOCKFILES_CACHE
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    if let Some(cached) = cache.get(&cache_key) {
+    if let Some(cached) = cache.get(cache_key.as_ref()) {
         return Arc::clone(cached);
     }
+
+    // Only the miss path needs these; the hit path above is what runs hundreds
+    // of times per invocation.
+    let monorepo_root = config.monorepo_lockfile_root();
+    let legacy_lockfiles = monorepo_legacy_lockfile_paths(config);
 
     let mut seen_roots: HashSet<PathBuf> = HashSet::new();
     let mut all: Vec<Lockfile> = Vec::new();
@@ -3096,7 +3103,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     });
 
     let result = Arc::new(result);
-    cache.insert(cache_key, Arc::clone(&result));
+    cache.insert(cache_key.as_ref().clone(), Arc::clone(&result));
     result
 }
 
