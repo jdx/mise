@@ -815,11 +815,16 @@ fn formula_from_internal(
         .chars()
         .next()
         .ok_or_else(|| eyre!("empty signed formula name"))?;
-    let mut aliases: Vec<String> = index
-        .formula_aliases
+    let mut aliases: Vec<String> = signed
+        .aliases
         .iter()
-        .filter_map(|(alias, canonical)| (canonical == name).then_some(alias.clone()))
-        .chain(signed.aliases.iter().cloned())
+        .cloned()
+        .chain(
+            index
+                .formula_aliases
+                .iter()
+                .filter_map(|(alias, canonical)| (canonical == name).then_some(alias.clone())),
+        )
         .collect();
     let mut seen = HashSet::new();
     aliases.retain(|alias| seen.insert(alias.clone()));
@@ -1287,7 +1292,7 @@ mod tests {
                 "hello": {
                     "stable_version": "2.12.3",
                     "revision": 1,
-                    "aliases": ["hi"],
+                    "aliases": ["z-alias", "a-alias"],
                     "oldnames": ["old-hi"],
                     "stable_url_args": ["https://trusted.example/hello.tar.gz"],
                     "stable_checksum": source_sha,
@@ -1321,7 +1326,7 @@ mod tests {
         assert!(formula.keg_only);
         assert_eq!(formula.dependencies, ["runtime-z", "runtime-a"]);
         assert_eq!(formula.build_dependencies, ["builder"]);
-        assert_eq!(formula.aliases, ["hi"]);
+        assert_eq!(formula.aliases, ["z-alias", "a-alias", "hi"]);
         assert_eq!(formula.tap_git_head.as_deref(), Some("signed-core-head"));
         assert_eq!(
             formula.ruby_source_path.as_deref(),
