@@ -75,6 +75,11 @@ impl PackageJsonData {
     /// Extract a package manager version and checksum from the same declaration.
     /// Checks devEngines.packageManager first, then falls back to the packageManager field.
     fn package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
+        self.dev_engine_package_manager_spec(tool_name)
+            .or_else(|| self.top_level_package_manager_spec(tool_name))
+    }
+
+    fn dev_engine_package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
         self.dev_engines
             .as_ref()
             .and_then(|de| de.package_manager.as_ref())
@@ -82,14 +87,29 @@ impl PackageJsonData {
             .and_then(|pm| pm.version.as_deref())
             .filter(|v| !v.is_empty())
             .and_then(parse_package_manager_version)
-            .or_else(|| {
-                let pm_field = self.package_manager.as_deref()?;
-                let (name, rest) = pm_field.split_once('@')?;
-                if name != tool_name {
-                    return None;
-                }
-                parse_package_manager_version(rest)
-            })
+    }
+
+    fn top_level_package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
+        let pm_field = self.package_manager.as_deref()?;
+        let (name, rest) = pm_field.split_once('@')?;
+        if name != tool_name {
+            return None;
+        }
+        parse_package_manager_version(rest)
+    }
+
+    fn package_manager_checksum_for_version(
+        &self,
+        tool_name: &str,
+        version: &str,
+    ) -> Option<String> {
+        [
+            self.dev_engine_package_manager_spec(tool_name),
+            self.top_level_package_manager_spec(tool_name),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(|(candidate, checksum)| (candidate == version).then_some(checksum).flatten())
     }
 
     #[cfg(test)]
@@ -127,13 +147,7 @@ pub fn parse_with_options(
         "bun" => pkg
             .runtime_version(tool_name)
             .map(|version| {
-                let checksum = pkg.package_manager_spec(tool_name).and_then(
-                    |(package_manager_version, checksum)| {
-                        (package_manager_version == version)
-                            .then_some(checksum)
-                            .flatten()
-                    },
-                );
+                let checksum = pkg.package_manager_checksum_for_version(tool_name, &version);
                 (version, checksum)
             })
             .or_else(|| pkg.package_manager_spec(tool_name)),
@@ -330,6 +344,40 @@ mod tests {
         assert_eq!(
             parse_with_options(&path, "bun").unwrap(),
             vec![("1.3.14".to_string(), None)]
+        );
+    }
+
+    #[test]
+    fn test_bun_runtime_uses_unshadowed_matching_checksum() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "runtime": {
+                        "name": "bun",
+                        "version": "1.3.14"
+                    },
+                    "packageManager": {
+                        "name": "bun",
+                        "version": "1.3.13+sha224.unrelated"
+                    }
+                },
+                "packageManager": "bun@1.3.14+sha224.abcdef"
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = parse_with_options(&path, "bun").unwrap();
+        assert_eq!(parsed[0].0, "1.3.14");
+        assert_eq!(
+            parsed[0]
+                .1
+                .as_ref()
+                .and_then(|options| options.opts.get("package_manager_checksum"))
+                .and_then(toml::Value::as_str),
+            Some("sha224:abcdef")
         );
     }
 
