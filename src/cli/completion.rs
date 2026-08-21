@@ -25,14 +25,71 @@ pub struct Completion {
     /// Completions now always use usage-rs's built-in protocol, so this is a no-op.
     #[arg(long, verbatim_doc_comment, hide = true)]
     usage: bool,
+
+    /// Install the script where this shell looks for it, instead of printing it
+    ///
+    /// Writes the script file and nothing else: no shell rc file and no PowerShell profile is
+    /// edited. Where a shell needs a one-time line of its own — zsh's `fpath+=`, PowerShell's
+    /// dot-source — it is printed for you to add.
+    #[arg(long, verbatim_doc_comment, effect = "write")]
+    install: bool,
+
+    /// Replace a file at the target path that mise did not write
+    #[arg(long, requires = "--install", effect = "write")]
+    force: bool,
 }
 
 impl Completion {
     pub(crate) async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
+        if self.install {
+            return self.install_script(shell.into());
+        }
         let script = Cli::completion_script(shell.into());
         miseprintln!("{}", script.trim());
 
+        Ok(())
+    }
+
+    /// Put the script where this shell looks for it, and say what is left to do.
+    ///
+    /// The location comes from usage rather than from a table here, so `mise completion zsh
+    /// --install` and `usage g completion zsh mise --install` cannot disagree about where a mise
+    /// completion lives.
+    fn install_script(&self, shell: usage_rs::complete::Shell) -> Result<()> {
+        use usage_rs::install::{self, OnForeign, Wrote};
+
+        let on_foreign = if self.force {
+            OnForeign::Overwrite
+        } else {
+            OnForeign::Refuse
+        };
+        // The environment is described from this process rather than reached for inside the
+        // resolver, which is what lets a test point the same code path somewhere harmless.
+        let done = Cli::install_completion(shell, &install::Env::from_process(), on_foreign)
+            .map_err(|err| match &err {
+                install::Error::Foreign { .. } => eyre::eyre!(
+                    "{err}\n\nPass --force to replace it, or redirect the script yourself."
+                ),
+                _ => eyre::Report::new(err),
+            })?;
+
+        // Everything here goes to stderr, so stdout stays empty under `--install`. The examples
+        // below document `mise completion zsh > …`, and prose on stdout would land in that file.
+        eprintln!("installing to {}", done.plan.path.display());
+        if done.wrote == Wrote::Unchanged {
+            eprintln!("already up to date");
+        }
+        if let Some(line) = done.plan.loading.instruction() {
+            let file = match &done.plan.loading {
+                install::Loading::Manual { file, .. } => file.as_str(),
+                _ => "your shell's startup file",
+            };
+            eprintln!("\nadd this to {file}, once:\n\n{line}\n");
+        }
+        if let Some(note) = done.plan.note {
+            eprintln!("note: {note}");
+        }
         Ok(())
     }
 }
@@ -40,7 +97,11 @@ impl Completion {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise</bold>
+    # put it where the shell looks, and print any one-time line it still needs
+    $ <bold>mise completion zsh --install</bold>
+
+    # or choose the path yourself
+    $ <bold>mise completion bash > ~/.local/share/bash-completion/completions/mise</bold>
     $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
     $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
     $ <bold>mise completion powershell >> $PROFILE</bold>

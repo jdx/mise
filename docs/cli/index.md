@@ -165,7 +165,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise cache path`](/cli/cache/path.md)
 - [`mise cache prune [-v --verbose…] [--dry-run] [TOOL]…`](/cli/cache/prune.md)
 - [`mise cache task [-J --json] <TASK>`](/cli/cache/task.md)
-- [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
+- [`mise completion [FLAGS] [SHELL]`](/cli/completion.md)
 - [`mise config [FLAGS] <SUBCOMMAND>`](/cli/config.md)
 - [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 - [`mise config ls [FLAGS]`](/cli/config/ls.md)
