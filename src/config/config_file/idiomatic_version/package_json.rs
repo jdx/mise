@@ -72,51 +72,39 @@ impl PackageJsonData {
             .map(str::to_string)
     }
 
-    /// Extract a package manager version for the given tool name.
+    /// Extract a package manager version and checksum from the same declaration.
     /// Checks devEngines.packageManager first, then falls back to the packageManager field.
-    fn package_manager_version(&self, tool_name: &str) -> Option<String> {
-        // Try devEngines.packageManager first
+    fn package_manager_spec(&self, tool_name: &str) -> Option<(String, Option<String>)> {
         self.dev_engines
             .as_ref()
             .and_then(|de| de.package_manager.as_ref())
             .filter(|pm| pm.name.as_deref() == Some(tool_name))
             .and_then(|pm| pm.version.as_deref())
             .filter(|v| !v.is_empty())
-            .map(version_without_checksum)
+            .and_then(parse_package_manager_version)
             .or_else(|| {
-                // Fall back to packageManager field (e.g. "pnpm@9.1.0+sha256.abc")
                 let pm_field = self.package_manager.as_deref()?;
                 let (name, rest) = pm_field.split_once('@')?;
                 if name != tool_name {
                     return None;
                 }
-                let version = version_without_checksum(rest);
-                if version.is_empty() {
-                    return None;
-                }
-                Some(version)
+                parse_package_manager_version(rest)
             })
     }
 
-    fn package_manager_checksum(&self, tool_name: &str) -> Option<String> {
-        self.dev_engines
-            .as_ref()
-            .and_then(|de| de.package_manager.as_ref())
-            .filter(|pm| pm.name.as_deref() == Some(tool_name))
-            .and_then(|pm| pm.version.as_deref())
-            .and_then(checksum_from_version)
-            .or_else(|| {
-                let raw = self.package_manager.as_deref()?;
-                let (name, version) = raw.split_once('@')?;
-                (name == tool_name)
-                    .then(|| checksum_from_version(version))
-                    .flatten()
-            })
+    #[cfg(test)]
+    fn package_manager_version(&self, tool_name: &str) -> Option<String> {
+        self.package_manager_spec(tool_name)
+            .map(|(version, _)| version)
     }
 }
 
-fn version_without_checksum(raw: &str) -> String {
-    raw.split('+').next().unwrap_or(raw).trim().to_string()
+fn parse_package_manager_version(raw: &str) -> Option<(String, Option<String>)> {
+    let version = raw.split('+').next().unwrap_or(raw).trim();
+    if version.is_empty() {
+        return None;
+    }
+    Some((version.to_string(), checksum_from_version(raw)))
 }
 
 fn checksum_from_version(raw: &str) -> Option<String> {
@@ -132,19 +120,23 @@ pub fn parse_with_options(
     tool_name: &str,
 ) -> Result<Vec<(String, Option<ToolVersionOptions>)>> {
     let pkg = PackageJsonData::parse(path)?;
-    let version = match tool_name {
-        "node" | "deno" => pkg.runtime_version(tool_name),
+    let (version, checksum) = match tool_name {
+        "node" | "deno" => pkg
+            .runtime_version(tool_name)
+            .map(|version| (version, None)),
         "bun" => pkg
             .runtime_version(tool_name)
-            .or_else(|| pkg.package_manager_version(tool_name)),
-        "npm" | "yarn" | "pnpm" => pkg.package_manager_version(tool_name),
+            .map(|version| (version, None))
+            .or_else(|| pkg.package_manager_spec(tool_name)),
+        "npm" | "yarn" | "pnpm" => pkg.package_manager_spec(tool_name),
         _ => None,
-    };
-    let Some(version) = version else {
+    }
+    .unwrap_or_default();
+    if version.is_empty() {
         return Ok(vec![]);
-    };
+    }
 
-    let options = pkg.package_manager_checksum(tool_name).map(|checksum| {
+    let options = checksum.map(|checksum| {
         let mut options = ToolVersionOptions::default();
         options.opts.insert(
             "package_manager_checksum".to_string(),
@@ -254,6 +246,28 @@ mod tests {
                 .and_then(toml::Value::as_str),
             Some("sha512:abcdef")
         );
+    }
+
+    #[test]
+    fn test_package_manager_checksum_uses_selected_declaration() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        fs::write(
+            &path,
+            r#"{
+                "devEngines": {
+                    "packageManager": {
+                        "name": "pnpm",
+                        "version": "10.0.0"
+                    }
+                },
+                "packageManager": "pnpm@9.0.0+sha224.unrelated"
+            }"#,
+        )
+        .unwrap();
+
+        let parsed = parse_with_options(&path, "pnpm").unwrap();
+        assert_eq!(parsed, vec![("10.0.0".to_string(), None)]);
     }
 
     #[test]

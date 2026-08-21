@@ -96,6 +96,10 @@ fn package_manager_checksum_backend(
                 options
                     .opts
                     .insert("bin".to_string(), toml::Value::String("yarn".to_string()));
+                options.opts.insert(
+                    "windows_script_interpreter".to_string(),
+                    toml::Value::String("node".to_string()),
+                );
                 "http:yarn"
             }
         }
@@ -284,6 +288,13 @@ mod tests {
                 assert_eq!(
                     options.opts.get("bin").and_then(toml::Value::as_str),
                     Some("yarn")
+                );
+                assert_eq!(
+                    options
+                        .opts
+                        .get("windows_script_interpreter")
+                        .and_then(toml::Value::as_str),
+                    Some("node")
                 );
             }
         }

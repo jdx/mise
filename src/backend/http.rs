@@ -192,6 +192,10 @@ impl<'a> HttpOptions<'a> {
         self.values.platform_string("bin_path")
     }
 
+    fn windows_script_interpreter(&self) -> Option<String> {
+        self.values.platform_string("windows_script_interpreter")
+    }
+
     fn checksum_expr(&self) -> Option<&'a str> {
         self.values.str("checksum_expr")
     }
@@ -335,6 +339,13 @@ impl HttpBackend {
             if let Some(bin_path) = opts.bin_path() {
                 parts.push(format!("binpath_{bin_path}"));
             }
+        }
+
+        if let Some(interpreter) = opts.windows_script_interpreter() {
+            parts.push(format!(
+                "windows_script_interpreter_{}",
+                hash::hash_blake3_to_str(&interpreter)
+            ));
         }
 
         let key = parts.join("_");
@@ -620,6 +631,10 @@ impl HttpBackend {
         file::copy(file_path, &dest_file)?;
 
         file::make_executable(&dest_file)?;
+        #[cfg(windows)]
+        if let Some(interpreter) = opts.windows_script_interpreter() {
+            write_windows_script_launcher(&dest_file, &interpreter)?;
+        }
         Ok(ExtractionType::RawFile { filename })
     }
 
@@ -969,6 +984,27 @@ impl HttpBackend {
     }
 }
 
+#[cfg(any(windows, test))]
+fn windows_script_launcher(interpreter: &str) -> Result<String> {
+    ensure_plain_bin_name("windows_script_interpreter", interpreter)?;
+    if interpreter.is_empty()
+        || !interpreter
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    {
+        eyre::bail!("windows_script_interpreter: {interpreter:?} must be a plain executable name");
+    }
+    Ok(format!("@echo off\r\n{interpreter} \"%~dpn0\" %*\r\n"))
+}
+
+#[cfg(windows)]
+fn write_windows_script_launcher(script: &Path, interpreter: &str) -> Result<()> {
+    file::write(
+        script.with_extension("cmd"),
+        windows_script_launcher(interpreter)?,
+    )
+}
+
 /// Returns install-time-only option keys for HTTP backend.
 pub fn install_time_option_keys() -> Vec<String> {
     vec![
@@ -980,6 +1016,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_expr".into(),
         "format".into(),
         "rename_exe".into(),
+        "windows_script_interpreter".into(),
         "checksum_url".into(),
         "checksum_expr".into(),
     ]
@@ -1289,6 +1326,15 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
+
+    #[test]
+    fn windows_script_launcher_invokes_extensionless_script() {
+        assert_eq!(
+            windows_script_launcher("node").unwrap(),
+            "@echo off\r\nnode \"%~dpn0\" %*\r\n"
+        );
+        assert!(windows_script_launcher("node & echo injected").is_err());
+    }
 
     fn http_test_tv(version: &str) -> ToolVersion {
         http_test_tv_with_installs(version, None)
