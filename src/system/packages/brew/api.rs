@@ -87,6 +87,12 @@ pub struct Formula {
     /// homebrew/core commit this API snapshot was generated from
     #[serde(default)]
     pub tap_git_head: Option<String>,
+    /// Authenticated third-party tap repository identity. Private mise state
+    /// persists this with the metadata/source commits; Homebrew receipts do not.
+    #[serde(skip)]
+    pub tap_repository: Option<String>,
+    #[serde(skip)]
+    pub tap_metadata_commit: Option<String>,
     #[serde(default)]
     pub post_install_steps: Vec<Value>,
     #[serde(default)]
@@ -868,6 +874,8 @@ fn formula_from_internal(
         ruby_source_path: Some(format!("Formula/{first}/{name}.rb")),
         ruby_source_checksum: ruby_checksum,
         tap_git_head: Some(index.formula_tap_git_head.clone()),
+        tap_repository: None,
+        tap_metadata_commit: None,
         post_install_defined: false,
         post_install_steps: signed.post_install_steps.clone(),
         install_policy: FormulaInstallPolicy {
@@ -1100,37 +1108,99 @@ pub(super) async fn formula_with_tap_snapshot_mode(
 ) -> Result<Formula> {
     let (owner, repo) = raw_github_repository(&snapshot.repository_raw_base)
         .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    let repository = format!("https://github.com/{owner}/{repo}");
     let repository_api_base = format!("https://api.github.com/repos/{owner}/{repo}");
-    formula_with_tap_snapshot_from(name, snapshot, &repository_api_base, mode).await
+    formula_with_tap_snapshot_from(name, snapshot, &repository, &repository_api_base, mode).await
 }
 
 async fn formula_with_tap_snapshot_from(
     name: &str,
     snapshot: &TapSnapshot,
+    repository: &str,
     repository_api_base: &str,
     mode: FetchMode,
 ) -> Result<Formula> {
     let formula_name = split_tap_name(name)
         .map(|(_, _, formula)| formula)
         .unwrap_or(name);
-    let url = format!(
-        "{}/contents/api/formula/{formula_name}.json?ref={}",
-        repository_api_base.trim_end_matches('/'),
-        snapshot.metadata_commit
-    );
-    let content = match mode {
-        FetchMode::Cached => HTTP_FETCH.json_cached::<GithubContent, _>(url).await,
-        FetchMode::Fresh => HTTP_FETCH.json::<GithubContent, _>(url).await,
-    }
+    let bytes = fetch_github_content_from(
+        &format!("api/formula/{formula_name}.json"),
+        &snapshot.metadata_commit,
+        repository_api_base,
+        mode,
+    )
+    .await
     .wrap_err_with(|| {
         format!(
             "failed to fetch Homebrew tap formula '{name}' from immutable commit {}",
             snapshot.metadata_commit
         )
     })?;
+    let mut formula: Formula = serde_json::from_slice(&bytes)
+        .wrap_err_with(|| format!("brew: tap formula '{name}' metadata is not valid JSON"))?;
+    let source_commit = formula
+        .tap_git_head
+        .clone()
+        .ok_or_else(|| eyre!("brew: tap formula '{name}' metadata has no tap_git_head"))?;
+    validate_git_commit(&source_commit, "tap source commit")?;
+    let (owner, repo) = github_repository(repository)
+        .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    formula.tap_repository = Some(format!("https://github.com/{owner}/{repo}"));
+    formula.tap_metadata_commit = Some(snapshot.metadata_commit.clone());
+    Ok(formula)
+}
+
+pub(super) async fn fetch_github_content(
+    repository: &str,
+    path: &str,
+    commit: &str,
+    mode: FetchMode,
+) -> Result<Vec<u8>> {
+    let (owner, repo) = github_repository(repository)
+        .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    validate_git_commit(commit, "tap content commit")?;
+    fetch_github_content_from(
+        path,
+        commit,
+        &format!("https://api.github.com/repos/{owner}/{repo}"),
+        mode,
+    )
+    .await
+}
+
+async fn fetch_github_content_from(
+    path: &str,
+    commit: &str,
+    repository_api_base: &str,
+    mode: FetchMode,
+) -> Result<Vec<u8>> {
+    if path.is_empty()
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        bail!("brew: invalid tap repository content path {path:?}")
+    }
+    let mut url =
+        url::Url::parse(repository_api_base).wrap_err("invalid GitHub repository API URL")?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| eyre!("GitHub repository API URL cannot contain path segments"))?;
+        segments.push("contents");
+        for part in path.split('/') {
+            segments.push(part);
+        }
+    }
+    url.query_pairs_mut().append_pair("ref", commit);
+    let content = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<GithubContent, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<GithubContent, _>(url).await,
+    }
+    .wrap_err_with(|| format!("failed to fetch authenticated tap content {path:?} at {commit}"))?;
     if content.encoding != "base64" {
         bail!(
-            "brew: tap formula '{name}' metadata uses unsupported GitHub content encoding {:?}",
+            "brew: tap content {path:?} uses unsupported GitHub content encoding {:?}",
             content.encoding
         );
     }
@@ -1142,15 +1212,8 @@ async fn formula_with_tap_snapshot_from(
                 .filter(|byte| !byte.is_ascii_whitespace())
                 .collect::<Vec<_>>(),
         )
-        .wrap_err_with(|| format!("brew: tap formula '{name}' metadata is not valid base64"))?;
-    let formula: Formula = serde_json::from_slice(&bytes)
-        .wrap_err_with(|| format!("brew: tap formula '{name}' metadata is not valid JSON"))?;
-    let source_commit = formula
-        .tap_git_head
-        .as_deref()
-        .ok_or_else(|| eyre!("brew: tap formula '{name}' metadata has no tap_git_head"))?;
-    validate_git_commit(source_commit, "tap source commit")?;
-    Ok(formula)
+        .wrap_err_with(|| format!("brew: tap content {path:?} is not valid base64"))?;
+    Ok(bytes)
 }
 
 pub(super) fn bind_tap_source_commit(snapshot: &mut TapSnapshot, formula: &Formula) -> Result<()> {
@@ -1320,10 +1383,15 @@ mod tests {
         )
         .await
         .unwrap();
-        let formula =
-            formula_with_tap_snapshot_from("widget", &snapshot, &server.url(), FetchMode::Fresh)
-                .await
-                .unwrap();
+        let formula = formula_with_tap_snapshot_from(
+            "widget",
+            &snapshot,
+            "https://github.com/owner/homebrew-tools",
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap();
         bind_tap_source_commit(&mut snapshot, &formula).unwrap();
         assert_eq!(snapshot.metadata_commit, metadata_commit);
         assert_eq!(snapshot.source_commit.as_deref(), Some(source_commit));

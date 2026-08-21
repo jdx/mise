@@ -1416,16 +1416,31 @@ async fn fetch_formula_rb(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    let raw_base = rf
-        .tap_raw_base
-        .as_deref()
-        .map(|base| base.trim_end_matches("/HEAD"))
-        .unwrap_or(HOMEBREW_CORE_RAW);
-    let url = format!("{raw_base}/{commit}/{rb_path}");
     pr.set_message(format!("download {rb_path}"));
-    let response = HTTP_FETCH.get_async(&url).await?;
-    let verified =
-        super::fetch::VerifiedArtifact::from_response(response, &dest, sha256, Some(pr)).await?;
+    let verified = if let Some(repository) = formula.tap_repository.as_deref() {
+        let expected_raw = super::api::github_raw_base(repository)
+            .ok_or_else(|| eyre::eyre!("invalid authenticated tap repository identity"))?;
+        if rf.tap_raw_base.as_deref() != Some(expected_raw.trim_end_matches("/HEAD"))
+            && rf.tap_raw_base.as_deref() != Some(expected_raw.as_str())
+        {
+            bail!("resolved tap repository authority changed before formula source fetch")
+        }
+        let bytes = super::api::fetch_github_content(
+            repository,
+            rb_path,
+            commit,
+            super::api::FetchMode::Fresh,
+        )
+        .await?;
+        crate::file::create_dir_all(&cache_dir)?;
+        crate::file::write_atomic(&dest, bytes)?;
+        super::fetch::VerifiedArtifact::from_path(&dest, sha256, Some(pr))?
+            .ok_or_else(|| eyre::eyre!("formula checksum mismatch for authenticated tap content"))?
+    } else {
+        let url = format!("{HOMEBREW_CORE_RAW}/{commit}/{rb_path}");
+        let response = HTTP_FETCH.get_async(&url).await?;
+        super::fetch::VerifiedArtifact::from_response(response, &dest, sha256, Some(pr)).await?
+    };
     verified.publish_cache(&dest)?;
     Ok(verified)
 }
@@ -1758,6 +1773,8 @@ mod tests {
                 sha256: Some("1".repeat(64)),
             }),
             tap_git_head: Some("abc123".to_string()),
+            tap_repository: None,
+            tap_metadata_commit: None,
             post_install_steps: vec![],
             post_install_defined: false,
             install_policy: Default::default(),

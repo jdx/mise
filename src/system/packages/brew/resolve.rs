@@ -101,12 +101,7 @@ async fn resolve_closure_pairs(
     let mut on_request: HashSet<FormulaKey> = HashSet::new();
     let mut queue: Vec<(FormulaKey, bool)> = roots
         .iter()
-        .map(|(name, tap_name, tap_url)| {
-            (
-                FormulaKey::new(name.clone(), tap_name.clone(), tap_url.clone()),
-                true,
-            )
-        })
+        .map(|root| (root_formula_key(root, &tap_urls), true))
         .collect();
     while let Some((key, requested)) = queue.pop() {
         validate_formula_key(&key)?;
@@ -231,6 +226,20 @@ async fn resolve_closure_pairs(
         visit(&key, &mut visit_ctx)?;
     }
     Ok(sorted)
+}
+
+fn root_formula_key(
+    root: &(String, Option<String>, Option<String>),
+    tap_urls: &HashMap<String, String>,
+) -> FormulaKey {
+    let (name, tap_name, tap_url) = root;
+    let logical_tap = api::tap_name(name).or_else(|| tap_name.clone());
+    let canonical_url = logical_tap
+        .as_ref()
+        .and_then(|tap| tap_urls.get(tap))
+        .cloned()
+        .or_else(|| tap_url.clone());
+    FormulaKey::new(name.clone(), tap_name.clone(), canonical_url)
 }
 
 /// Validate every formula-controlled value that may become a filesystem path
@@ -516,6 +525,15 @@ mod tests {
         );
         let unconfigured = dependency_key("other/tap/helper", &parent, &taps);
         assert!(unconfigured.tap_url.is_none());
+        let equivalent = (
+            "owner/two/other".to_string(),
+            Some("owner/two".to_string()),
+            Some("https://github.com/owner/homebrew-two".to_string()),
+        );
+        assert_eq!(
+            root_formula_key(&roots[1], &taps),
+            root_formula_key(&equivalent, &taps)
+        );
     }
 
     fn formula(name: &str, version: &str, tap: Option<&str>, aliases: &[&str]) -> Formula {

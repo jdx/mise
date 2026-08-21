@@ -36,7 +36,15 @@ pub(super) struct PreparedFormulaLifecycle {
     formula: String,
     keg: PathBuf,
     formula_snapshot_sha256: Option<String>,
+    tap_provenance: Option<LifecycleTapProvenance>,
     steps: Vec<PreparedStep>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct LifecycleTapProvenance {
+    repository: String,
+    metadata_commit: String,
+    source_commit: String,
 }
 
 impl PreparedFormulaLifecycle {
@@ -268,6 +276,10 @@ struct LifecycleInstallIdentity {
     formula: String,
     receipt: LifecycleReceiptIdentity,
     formula_snapshot_sha256: String,
+    #[serde(default)]
+    tap_provenance: Option<LifecycleTapProvenance>,
+    #[serde(default)]
+    identity_nonce: Option<String>,
     incarnation: String,
 }
 
@@ -495,6 +507,32 @@ pub(super) fn prepare(formula: &Formula, keg: &Path) -> Result<PreparedFormulaLi
         })?;
         steps.push(prepared);
     }
+    let tap_provenance = match formula.tap.as_deref() {
+        Some(tap) if tap != "homebrew/core" => Some(LifecycleTapProvenance {
+            repository: formula.tap_repository.clone().ok_or_else(|| {
+                eyre!(
+                    "brew:{} has no authenticated tap repository identity",
+                    formula.name
+                )
+            })?,
+            metadata_commit: formula.tap_metadata_commit.clone().ok_or_else(|| {
+                eyre!(
+                    "brew:{} has no authenticated tap metadata commit",
+                    formula.name
+                )
+            })?,
+            source_commit: formula.tap_git_head.clone().ok_or_else(|| {
+                eyre!(
+                    "brew:{} has no authenticated tap source commit",
+                    formula.name
+                )
+            })?,
+        }),
+        _ => None,
+    };
+    if let Some(provenance) = &tap_provenance {
+        validate_tap_provenance(provenance)?;
+    }
     Ok(PreparedFormulaLifecycle {
         formula: formula.name.clone(),
         keg: keg.to_path_buf(),
@@ -502,6 +540,7 @@ pub(super) fn prepare(formula: &Formula, keg: &Path) -> Result<PreparedFormulaLi
             .ruby_source_checksum
             .as_ref()
             .and_then(|checksum| checksum.sha256.clone()),
+        tap_provenance,
         steps,
     })
 }
@@ -1046,15 +1085,16 @@ fn capture_install_identity(
     )?;
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
-        .as_nanos();
-    let incarnation = crate::hash::hash_sha256_to_str(&format!(
-        "{}\0{}\0{}\0{}\0{}",
-        prepared.keg.display(),
-        serde_json::to_string(&receipt)?,
-        formula_snapshot_sha256,
-        std::process::id(),
-        nonce
-    ));
+        .as_nanos()
+        .to_string();
+    let incarnation = install_identity_incarnation(
+        &prepared.keg,
+        &formula,
+        &receipt,
+        &formula_snapshot_sha256,
+        prepared.tap_provenance.as_ref(),
+        &nonce,
+    )?;
     let marker = identity_marker_path(&prepared.keg);
     let temporary = tempfile::Builder::new()
         .prefix(".mise-lifecycle-incarnation-")
@@ -1068,6 +1108,8 @@ fn capture_install_identity(
         formula,
         receipt,
         formula_snapshot_sha256,
+        tap_provenance: prepared.tap_provenance.clone(),
+        identity_nonce: Some(nonce),
         incarnation,
     })
 }
@@ -1078,6 +1120,21 @@ fn validate_install_identity(keg: &Path, state: &LifecycleState) -> Result<()> {
         .install_identity
         .as_ref()
         .ok_or_else(|| eyre!("lifecycle state has no bound install identity"))?;
+    if let Some(provenance) = &expected.tap_provenance {
+        validate_tap_provenance(provenance)?;
+    }
+    if let Some(nonce) = expected.identity_nonce.as_deref()
+        && install_identity_incarnation(
+            keg,
+            &expected.formula,
+            &expected.receipt,
+            &expected.formula_snapshot_sha256,
+            expected.tap_provenance.as_ref(),
+            nonce,
+        )? != expected.incarnation
+    {
+        bail!("lifecycle install identity provenance was modified")
+    }
     if formula_name_from_keg(keg)? != expected.formula {
         bail!("lifecycle state formula does not match current keg")
     }
@@ -1097,6 +1154,42 @@ fn validate_install_identity(keg: &Path, state: &LifecycleState) -> Result<()> {
     let snapshot = keg.join(".brew").join(format!("{}.rb", expected.formula));
     if immutable_file_sha256(&snapshot, "formula snapshot")? != expected.formula_snapshot_sha256 {
         bail!("lifecycle formula snapshot does not match current keg")
+    }
+    Ok(())
+}
+
+fn install_identity_incarnation(
+    keg: &Path,
+    formula: &str,
+    receipt: &LifecycleReceiptIdentity,
+    formula_snapshot_sha256: &str,
+    tap_provenance: Option<&LifecycleTapProvenance>,
+    nonce: &str,
+) -> Result<String> {
+    Ok(crate::hash::hash_sha256_to_str(&format!(
+        "{}\0{}\0{}\0{}\0{}\0{}",
+        keg.display(),
+        formula,
+        serde_json::to_string(receipt)?,
+        formula_snapshot_sha256,
+        serde_json::to_string(&tap_provenance)?,
+        nonce
+    )))
+}
+
+fn validate_tap_provenance(provenance: &LifecycleTapProvenance) -> Result<()> {
+    if super::api::normalize_github_repository_url(&provenance.repository).as_deref()
+        != Some(provenance.repository.as_str())
+    {
+        bail!("lifecycle tap repository identity is not canonical")
+    }
+    for (label, commit) in [
+        ("metadata", provenance.metadata_commit.as_str()),
+        ("source", provenance.source_commit.as_str()),
+    ] {
+        if commit.len() != 40 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            bail!("lifecycle tap {label} commit is invalid")
+        }
     }
     Ok(())
 }
@@ -1816,6 +1909,7 @@ pub(super) fn preflight_repair(
         validate_legacy_formula_snapshot(prepared)?;
         return Ok(true);
     };
+    validate_prepared_tap_provenance(prepared, &state)?;
     validate_install_identity(keg, &state).wrap_err_with(|| {
         format!(
             "brew:{} requires reinstall: lifecycle state belongs to another install",
@@ -1839,6 +1933,23 @@ pub(super) fn preflight_repair(
     validate_repair_journal(keg, &state, &journal)?;
     preflight_repair_effects(&journal.effects)?;
     Ok(true)
+}
+
+fn validate_prepared_tap_provenance(
+    prepared: &PreparedFormulaLifecycle,
+    state: &LifecycleState,
+) -> Result<()> {
+    let installed = state
+        .install_identity
+        .as_ref()
+        .and_then(|identity| identity.tap_provenance.as_ref());
+    if installed != prepared.tap_provenance.as_ref() {
+        bail!(
+            "brew:{} requires reinstall: authenticated tap provenance changed",
+            prepared.formula
+        );
+    }
+    Ok(())
 }
 
 pub(super) fn requires_legacy_snapshot_evidence(prepared: &PreparedFormulaLifecycle) -> bool {
@@ -9202,6 +9313,70 @@ printf confined > "$1"
         crate::file::make_symlink(&replacement, &target)?;
         remove_lifecycle_symlinks(&state)?;
         assert_eq!(fs::read_link(target)?, replacement);
+        Ok(())
+    }
+
+    #[test]
+    fn tap_provenance_tamper_changes_identity_and_blocks_repair() -> Result<()> {
+        let installed = LifecycleTapProvenance {
+            repository: "https://github.com/owner/homebrew-tools".into(),
+            metadata_commit: "1".repeat(40),
+            source_commit: "2".repeat(40),
+        };
+        let mut tampered = installed.clone();
+        tampered.source_commit = "3".repeat(40);
+        let receipt = LifecycleReceiptIdentity::default();
+        let keg = Path::new("/tmp/Cellar/widget/1");
+        let original = install_identity_incarnation(
+            keg,
+            "widget",
+            &receipt,
+            "snapshot",
+            Some(&installed),
+            "nonce",
+        )?;
+        let changed = install_identity_incarnation(
+            keg,
+            "widget",
+            &receipt,
+            "snapshot",
+            Some(&tampered),
+            "nonce",
+        )?;
+        assert_ne!(original, changed);
+
+        let prepared = PreparedFormulaLifecycle {
+            formula: "widget".into(),
+            keg: keg.into(),
+            formula_snapshot_sha256: Some("snapshot".into()),
+            tap_provenance: Some(installed),
+            steps: vec![],
+        };
+        let state = LifecycleState {
+            complete: true,
+            phase: LifecyclePhase::Complete,
+            install_identity: Some(LifecycleInstallIdentity {
+                formula: "widget".into(),
+                receipt,
+                formula_snapshot_sha256: "snapshot".into(),
+                tap_provenance: Some(tampered),
+                identity_nonce: Some("nonce".into()),
+                incarnation: changed,
+            }),
+            shared_state: vec![],
+            symlinks: vec![],
+            required_paths: vec![],
+            run_files: vec![],
+            absent_patterns: vec![],
+            permissions: vec![],
+            repair: None,
+        };
+        assert!(
+            validate_prepared_tap_provenance(&prepared, &state)
+                .unwrap_err()
+                .to_string()
+                .contains("requires reinstall")
+        );
         Ok(())
     }
 
