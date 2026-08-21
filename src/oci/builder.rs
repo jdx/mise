@@ -277,7 +277,7 @@ impl Builder {
         let owner_str = format!("{}:{}", owner.uid, owner.gid);
         let python_relocations: Vec<PythonRelocation> = versions
             .iter()
-            .filter(|(_, tv)| tv.ba().short == "python")
+            .filter(|(backend, _)| is_python_backend(backend.as_ref()))
             .map(|(_, tv)| PythonRelocation {
                 version: tv.version.clone(),
                 host: tv.install_path(),
@@ -1179,6 +1179,10 @@ fn tool_layer_relocation_key(tv: &ToolVersion, pythons: &[PythonRelocation]) -> 
     }
 }
 
+fn is_python_backend(backend: &dyn crate::backend::Backend) -> bool {
+    backend.get_type() == BackendType::Core && backend.tool_name() == "python"
+}
+
 fn python_relocation_fingerprint(pythons: &[PythonRelocation]) -> String {
     let mut pythons = pythons.to_vec();
     pythons.sort_by(|a, b| (&a.version, &a.host, &a.image).cmp(&(&b.version, &b.host, &b.image)));
@@ -1293,6 +1297,14 @@ mod tests {
                 .collect(),
             platform: None,
         }
+    }
+
+    #[test]
+    fn recognizes_an_alias_resolved_to_core_python() {
+        let alias =
+            crate::cli::args::BackendArg::new("py".to_string(), Some("core:python".to_string()));
+        let backend = crate::backend::arg_to_backend(alias).unwrap();
+        assert!(is_python_backend(backend.as_ref()));
     }
 
     #[test]

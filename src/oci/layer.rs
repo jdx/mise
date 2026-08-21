@@ -676,9 +676,11 @@ fn rebase_symlink_target(
 
 fn relocate_absolute_path(raw: &Path, relocation: Option<&ToolRelocation>) -> Option<PathBuf> {
     let relocation = relocation?;
+    let canonical_raw = std::fs::canonicalize(raw).unwrap_or_else(|_| raw.to_path_buf());
     relocation.paths.iter().find_map(|(host, image)| {
         let canonical_host = std::fs::canonicalize(host).unwrap_or_else(|_| host.clone());
-        raw.strip_prefix(&canonical_host)
+        canonical_raw
+            .strip_prefix(&canonical_host)
             .ok()
             .map(|rel| image.join(rel))
     })
@@ -1359,6 +1361,27 @@ mod tests {
             EntryKind::Symlink(target) => assert_eq!(target, Path::new("/usr/bin/python3.13")),
             kind => panic!("expected symlink, got {kind:?}"),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relocation_matches_canonicalized_source_paths() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("real");
+        let alias = dir.path().join("alias");
+        fs::create_dir_all(real.join("venv")).unwrap();
+        symlink(&real, &alias).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            alias.clone(),
+            PathBuf::from("/mise/installs/pipx-tool/1.0.0"),
+        )]);
+        assert_eq!(
+            relocate_absolute_path(&alias.join("venv"), Some(&relocation)),
+            Some(PathBuf::from("/mise/installs/pipx-tool/1.0.0/venv"))
+        );
     }
 
     #[cfg(unix)]
