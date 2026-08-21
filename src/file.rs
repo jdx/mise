@@ -271,12 +271,9 @@ fn restore_dir_atomically_validated_inner(
         .file_name()
         .ok_or_else(|| eyre::eyre!("unnamed destination"))?;
     let parent = File::open(parent)?;
-    let source_tombstone_name = format!(".mise-restore-source-{}", crate::rand::random_string(32));
-    renameat(&parent, from_name, &parent, source_tombstone_name.as_str())?;
-    let source_tombstone = from.with_file_name(&source_tombstone_name);
     let retained = Dir::openat(
         &parent,
-        source_tombstone_name.as_str(),
+        from_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
@@ -284,9 +281,8 @@ fn restore_dir_atomically_validated_inner(
     validate(identity.st_dev as u64, identity.st_ino as u64)?;
     after_validate(from)?;
 
-    // The source pathname is attacker-controlled after validation. Clone through the retained
-    // descriptor instead, then publish only our private staging directory. Child lookup remains
-    // relative to the already-open directory even when `from_name` is concurrently replaced.
+    // Keep the public recovery backup discoverable until the restored keg is durably published.
+    // Clone through retained descriptors so replacement of either pathname cannot redirect I/O.
     let staging_name = format!(".mise-restore-{}", crate::rand::random_string(32));
     nix::sys::stat::mkdirat(
         &parent,
@@ -315,16 +311,20 @@ fn restore_dir_atomically_validated_inner(
         bail!("staged restore identity changed during commit");
     }
 
-    // Publication completed the restore transaction. Reclamation is best effort and can no
-    // longer make a retry consume a partially deleted predecessor: its public backup name was
-    // detached before validation and the excluded tombstone is never used as recovery input.
-    let mut retained = retained;
-    if let Err(error) =
-        before_cleanup(&source_tombstone).and_then(|_| remove_dir_contents(&mut retained))
-    {
+    // Publication completed the restore transaction. Only now may the still-discoverable backup
+    // be detached and reclaimed, through the same identity-validated cleanup primitive used by
+    // normal finalization. Cleanup failure cannot invalidate the restored keg.
+    if let Err(error) = before_cleanup(from).and_then(|_| {
+        remove_all_atomically_validated(from, |device, inode| {
+            if (device, inode) != (identity.st_dev as u64, identity.st_ino as u64) {
+                bail!("recovery backup identity changed before cleanup");
+            }
+            Ok(())
+        })
+    }) {
         warn!(
             "failed to reclaim restored recovery backup {}: {error:#}",
-            source_tombstone.display()
+            from.display()
         );
     }
     Ok(())
@@ -3414,6 +3414,7 @@ mod tests {
         let source = root.path().join("backup");
         let destination = root.path().join("keg");
         let replacement = root.path().join("replacement");
+        let displaced = root.path().join("displaced-backup");
         fs::create_dir(&source).unwrap();
         fs::write(source.join("expected"), "expected").unwrap();
         let expected = fs::metadata(&source).unwrap();
@@ -3428,6 +3429,7 @@ mod tests {
                 Ok(())
             },
             |source| {
+                fs::rename(source, &displaced)?;
                 fs::rename(&replacement, source)?;
                 Ok(())
             },
@@ -3439,10 +3441,51 @@ mod tests {
             fs::read_to_string(destination.join("expected")).unwrap(),
             "expected"
         );
+        let foreign = root
+            .path()
+            .read_dir()
+            .unwrap()
+            .filter_map(Result::ok)
+            .find(|entry| entry.path().join("must-survive").is_file())
+            .unwrap();
         assert_eq!(
-            fs::read_to_string(source.join("must-survive")).unwrap(),
+            fs::read_to_string(foreign.path().join("must-survive")).unwrap(),
             "foreign"
         );
+        assert_eq!(
+            fs::read_to_string(displaced.join("expected")).unwrap(),
+            "expected"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_restore_keeps_backup_discoverable() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join(".mise-backup-1.0");
+        let destination = root.path().join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("expected"), "expected").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |_| bail!("injected pre-publication failure"),
+            |_| Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("injected pre-publication failure")
+        );
+        assert_eq!(
+            fs::read_to_string(source.join("expected")).unwrap(),
+            "expected"
+        );
+        assert!(!destination.exists());
     }
 
     #[cfg(unix)]
@@ -3556,21 +3599,8 @@ mod tests {
             fs::read_to_string(destination.join("expected")).unwrap(),
             "expected"
         );
-        assert!(source.symlink_metadata().is_err());
-        let tombstone = root
-            .path()
-            .read_dir()
-            .unwrap()
-            .filter_map(Result::ok)
-            .find(|entry| {
-                entry
-                    .file_name()
-                    .to_string_lossy()
-                    .starts_with(".mise-restore-source-")
-            })
-            .unwrap();
         assert_eq!(
-            fs::read_to_string(tombstone.path().join("expected")).unwrap(),
+            fs::read_to_string(source.join("expected")).unwrap(),
             "expected"
         );
     }
