@@ -9180,6 +9180,7 @@ fn recorded_guarded_flight_symlink_is_owned(
     let Some(records) = recorded_targets else {
         return Ok(false);
     };
+    let declared_source = version_dir.join(&binary.source);
     let guarded_backlink_is_current = artifacts
         .preflight_steps
         .iter()
@@ -9201,16 +9202,16 @@ fn recorded_guarded_flight_symlink_is_owned(
             _ => None,
         })
         .any(|declared| {
-            records.iter().any(|record| {
-                record.path == declared
-                    && record.fingerprint.kind == CaskTargetKind::Symlink
-                    && cask_target_present(record)
-            })
+            declared_source.starts_with(&declared)
+                && records.iter().any(|record| {
+                    record.path == declared
+                        && record.fingerprint.kind == CaskTargetKind::Symlink
+                        && cask_target_present(record)
+                })
         });
     if !guarded_backlink_is_current {
         return Ok(false);
     }
-    let declared_source = version_dir.join(&binary.source);
     Ok(declared_source.is_file() && file::same_file(target, &declared_source))
 }
 
@@ -12642,6 +12643,7 @@ fn execute_homebrew_uninstall_action(
     _quit_was_running: bool,
     pkg_plans: &BTreeMap<String, Vec<PkgRemovalPlan>>,
 ) -> Result<()> {
+    let trash = matches!(&action, HomebrewUninstallAction::Trash(_));
     match action {
         HomebrewUninstallAction::Pkgutil(id) => {
             let plans = pkg_plans.get(&id).ok_or_else(|| {
@@ -12674,8 +12676,8 @@ fn execute_homebrew_uninstall_action(
                     expanded.display()
                 );
             }
-            validate_cask_delete_pattern(&candidate.token, expanded)?;
-            for target in expand_cask_delete_pattern(expanded)? {
+            let targets = validated_cask_delete_targets(&candidate.token, expanded)?;
+            for target in targets {
                 if target.starts_with("/System") {
                     if target.symlink_metadata().is_ok() {
                         bail!(
@@ -12686,7 +12688,11 @@ fn execute_homebrew_uninstall_action(
                     }
                     continue;
                 }
-                remove_artifact_target_elevating(&target)?;
+                if trash {
+                    trash_artifact_target(&target)?;
+                } else {
+                    remove_artifact_target_elevating(&target)?;
+                }
             }
         }
         HomebrewUninstallAction::Quit(bundle_id) => {
@@ -13015,11 +13021,13 @@ fn validate_cask_delete_pattern(token: &str, path: &Path) -> Result<()> {
         );
     }
     let raw = path.to_string_lossy();
-    if raw.contains(['*', '?', '[']) {
+    if raw.contains(['*', '?', '[', '{']) {
         let parent = path
             .parent()
             .ok_or_else(|| eyre!("brew-cask:{token}: uninstall glob has no parent"))?;
-        if parent.to_string_lossy().contains(['*', '?', '[']) || cask_path_is_undeletable(parent) {
+        if parent.to_string_lossy().contains(['*', '?', '[', '{'])
+            || cask_path_is_undeletable(parent)
+        {
             bail!(
                 "brew-cask:{token}: uninstall glob has an ambiguous or protected parent: {}",
                 path.display()
@@ -13027,6 +13035,69 @@ fn validate_cask_delete_pattern(token: &str, path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn validated_cask_delete_targets(token: &str, pattern: &Path) -> Result<Vec<PathBuf>> {
+    validate_cask_delete_pattern(token, pattern)?;
+    let targets = expand_cask_delete_pattern(pattern)?;
+    for target in &targets {
+        if !target.is_absolute()
+            || target
+                .components()
+                .any(|component| matches!(component, Component::ParentDir))
+            || cask_path_is_undeletable(target)
+        {
+            bail!(
+                "brew-cask:{token}: refusing expanded uninstall target {}",
+                target.display()
+            );
+        }
+    }
+    Ok(targets)
+}
+
+#[cfg(target_os = "macos")]
+fn trash_artifact_target(path: &Path) -> Result<()> {
+    if path.symlink_metadata().is_err() {
+        return Ok(());
+    }
+    const SCRIPT: &str = r#"
+'use strict';
+ObjC.import('Foundation');
+function run(argv) {
+  const manager = $.NSFileManager.defaultManager;
+  const source = $.NSURL.fileURLWithPath(argv[0]);
+  const error = Ref();
+  if (!manager.trashItemAtURLResultingItemURLError(source, null, error)) {
+    throw ObjC.unwrap(error[0].localizedDescription);
+  }
+}
+"#;
+    let output = std::process::Command::new("/usr/bin/osascript")
+        .args(["-l", "JavaScript", "-e", SCRIPT, "--"])
+        .arg(path)
+        .stdin(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        bail!(
+            "brew-cask: failed to trash {}: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    if path.symlink_metadata().is_ok() {
+        bail!("brew-cask: trash operation did not move {}", path.display());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn trash_artifact_target(path: &Path) -> Result<()> {
+    bail!(
+        "brew-cask: Homebrew-compatible trash is unavailable on {} for {}",
+        std::env::consts::OS,
+        path.display()
+    )
 }
 
 fn expand_cask_delete_pattern(pattern: &Path) -> Result<Vec<PathBuf>> {
@@ -13235,13 +13306,14 @@ fn preflight_homebrew_uninstall_actions(
                     Some(&candidate.version),
                 );
                 let expanded = Path::new(&expanded);
-                validate_cask_delete_pattern(&candidate.token, expanded)?;
-                if expanded.starts_with("/System") && expanded.symlink_metadata().is_ok() {
-                    bail!(
-                        "brew-cask:{}: protected uninstall target appeared before mutation: {}",
-                        candidate.token,
-                        expanded.display()
-                    );
+                for target in validated_cask_delete_targets(&candidate.token, expanded)? {
+                    if target.starts_with("/System") && target.symlink_metadata().is_ok() {
+                        bail!(
+                            "brew-cask:{}: protected uninstall target appeared before mutation: {}",
+                            candidate.token,
+                            target.display()
+                        );
+                    }
                 }
             }
             HomebrewUninstallAction::Script {
@@ -17092,11 +17164,13 @@ mod tests {
         let source = tmp.path().join("installed");
         let backlink = tmp.path().join("google-cloud-sdk");
         let other = tmp.path().join("other");
+        let unrelated_backlink = tmp.path().join("unrelated");
         let target = tmp.path().join("binary");
         file::create_dir_all(source.join("bin"))?;
         file::write(source.join("bin/tool"), "declared")?;
         file::write(&other, "other")?;
         std::os::unix::fs::symlink(&source, &backlink)?;
+        std::os::unix::fs::symlink(&other, &unrelated_backlink)?;
         std::os::unix::fs::symlink(source.join("bin/tool"), &target)?;
         let cask = test_cask("external", "1.0.0");
         let binary = BinaryArtifact {
@@ -17132,6 +17206,41 @@ mod tests {
             &binary,
             &target,
             None,
+        )?);
+        let unrelated_records = vec![CaskTargetRecord {
+            path: unrelated_backlink.clone(),
+            fingerprint: cask_target_fingerprint(&unrelated_backlink)?,
+            uninstall: Some(true),
+        }];
+        let mut unrelated_artifacts = artifacts.clone();
+        unrelated_artifacts
+            .postflight_steps
+            .push(FlightStep::Symlink {
+                source: FlightPath {
+                    base: FlightPathBase::Literal,
+                    path: other.to_string_lossy().into_owned(),
+                },
+                target: FlightPath {
+                    base: FlightPathBase::Literal,
+                    path: unrelated_backlink.to_string_lossy().into_owned(),
+                },
+                force: false,
+                uninstall: true,
+                source_glob: false,
+                sudo: FlightSudo::Never,
+                guards: vec![FlightGuard::UnlessExists(FlightPath {
+                    base: FlightPathBase::Literal,
+                    path: unrelated_backlink.to_string_lossy().into_owned(),
+                })],
+            });
+        assert!(!recorded_guarded_flight_symlink_is_owned(
+            &cask,
+            &unrelated_artifacts,
+            Path::new("/Applications"),
+            tmp.path(),
+            &binary,
+            &target,
+            Some(&unrelated_records),
         )?);
         let records = vec![CaskTargetRecord {
             path: backlink.clone(),
@@ -19001,6 +19110,54 @@ end
             Path::new("/System/Library/ScriptingAdditions/BartenderSystemHelper.osax"),
         )?;
         assert!(validate_cask_delete_pattern("example", Path::new("/System")).is_err());
+        assert!(
+            validated_cask_delete_targets("example", Path::new("/{,tmp}"))
+                .unwrap_err()
+                .to_string()
+                .contains("protected")
+        );
+        assert!(
+            validated_cask_delete_targets("example", Path::new("/Applications/{,Example.app}"),)
+                .is_err()
+        );
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn trash_moves_to_macos_trash_instead_of_deleting() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let basename = format!(
+            "mise-cask-trash-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        );
+        let source = tmp.path().join(&basename);
+        file::write(&source, "recoverable")?;
+
+        trash_artifact_target(&source)?;
+
+        assert!(!source.exists());
+        let destination = nix::unistd::User::from_uid(nix::unistd::getuid())?
+            .ok_or_else(|| eyre!("current user is unavailable"))?
+            .dir
+            .join(".Trash")
+            .join(basename);
+        assert_eq!(file::read_to_string(&destination)?, "recoverable");
+        file::remove_file(destination)?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn trash_fails_closed_instead_of_deleting() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let source = tmp.path().join("mise-cask-trash-test");
+        file::write(&source, "recoverable")?;
+
+        assert!(trash_artifact_target(&source).is_err());
+        assert_eq!(file::read_to_string(source)?, "recoverable");
         Ok(())
     }
 
