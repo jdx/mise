@@ -61,12 +61,12 @@ the version of mise that was current when the script was created.
 ## Project-local task entrypoints
 
 If you want contributors to run project tasks without installing mise first, pair
-[`mise generate bootstrap`](/cli/generate/bootstrap.html) with
+[`mise generate install-script`](/cli/generate/install-script.html) with
 [`mise generate task-stubs`](/cli/generate/task-stubs.html):
 
 ```sh
 mkdir -p bin
-mise generate bootstrap --localize --write bin/mise
+mise generate install-script --localize --write bin/mise
 mise generate task-stubs --mise-bin ./bin/mise
 ./bin/test
 ```
@@ -75,7 +75,7 @@ The generated task stubs behave like small project commands, while `bin/mise`
 downloads and runs the pinned mise binary for the project.
 
 If contributors work on Windows, add `--windows`. Windows cannot execute a shebang script, so
-`mise generate bootstrap --write ./bin/mise --windows` writes `bin/mise.cmd` alongside it and they
+`mise generate install-script --write ./bin/mise --windows` writes `bin/mise.cmd` alongside it and they
 run `.\bin\mise.cmd`. The launcher downloads the standalone `mise.exe` for the release and checks it
 against a checksum embedded when the script was generated, so it needs nothing beyond what Windows
 already ships.

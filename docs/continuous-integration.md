@@ -24,10 +24,10 @@ Alternatively, you can add the [shims](/dev-tools/shims.md) directory to your `P
 
 ### Bootstrapping
 
-An alternative to calling `curl https://mise.run | sh` is to use [`mise generate bootstrap`](/cli/generate/bootstrap.html) to generate a script that runs and install `mise`.
+An alternative to calling `curl https://mise.run | sh` is to use [`mise generate install-script`](/cli/generate/install-script.html) to generate a script that runs and install `mise`.
 
 ```shell
-mise generate bootstrap -l -w
+mise generate install-script -l -w
 ```
 
 Add the `.mise/` to your `.gitignore` and commit the generated `./bin/mise` file. You can now use `./bin/mise` to install and run `mise` directly in CI.
@@ -134,10 +134,10 @@ build-job:
 
 ### Example with the bootstrap script
 
-An alternative is to use [`mise generate bootstrap`](/cli/generate/bootstrap.html) to easily [bootstrap](#bootstrapping) `mise` on GitLab CI.
+An alternative is to use [`mise generate install-script`](/cli/generate/install-script.html) to easily [bootstrap](#bootstrapping) `mise` on GitLab CI.
 
 ```
-mise generate bootstrap -l -w
+mise generate install-script -l -w
 ```
 
 You can now use a generic docker image such as this one to run and install `mise` in CI.
