@@ -2,8 +2,9 @@
 //!
 //! System package managers and declarative system mutations that require
 //! root use this. Every elevated command logs its full argv before running,
-//! never prompts for a password without a TTY, and can be disabled entirely
-//! with `system_packages.sudo = false`.
+//! never prompts for a password without a TTY, suspends the progress display
+//! while it owns the terminal, and can be disabled entirely with
+//! `system_packages.sudo = false`.
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
@@ -13,6 +14,7 @@ use eyre::bail;
 use crate::cmd::CmdLineRunner;
 use crate::config::Settings;
 use crate::result::Result;
+use crate::ui::multi_progress_report::{MultiProgressReport, ProgressPauseGuard};
 
 pub(crate) fn is_root() -> bool {
     #[cfg(unix)]
@@ -71,6 +73,41 @@ pub(crate) fn subprocess_mode() -> &'static str {
     }
 }
 
+/// Whether an elevated child that inherits the terminal must first suspend the
+/// progress display. True exactly when sudo may prompt on the controlling TTY.
+///
+/// Already root: no sudo, no prompt. Elevation disabled: the call fails before
+/// spawning anything. Unattended: [`ensure_elevation_available`] has already
+/// required passwordless sudo, so no prompt can appear — and there is no
+/// animated renderer to collide with either.
+fn should_pause_progress(is_root: bool, sudo_enabled: bool, attended: bool) -> bool {
+    !is_root && sudo_enabled && attended
+}
+
+/// Suspend the animated progress display while an elevated child owns the
+/// terminal.
+///
+/// Every elevated helper here inherits stdio so that sudo's `Password:` prompt
+/// reaches the user. The progress renderer repaints on its own interval, though,
+/// so without this it overwrites the prompt on the next frame and the command
+/// reads as hung — stdin is connected and typing the password blind works, but
+/// nothing on screen says mise is waiting.
+///
+/// Held for the child's whole lifetime rather than just the prompt: with stdio
+/// inherited the child owns the terminal, so its own output would corrupt the
+/// display too. This is what `--raw` already does by disabling the renderer
+/// outright.
+fn pause_progress_for_tty() -> Option<ProgressPauseGuard> {
+    if !should_pause_progress(
+        is_root(),
+        Settings::get().system_packages.sudo,
+        console::user_attended_stderr(),
+    ) {
+        return None;
+    }
+    MultiProgressReport::try_get().map(|report| report.pause_progress())
+}
+
 /// Run `program args...`, elevating with sudo when not running as root.
 ///
 /// - root: runs the command directly (containers/CI)
@@ -92,6 +129,7 @@ pub(crate) fn run(program: &str, args: &[String], envs: &[(String, String)]) -> 
     manual.extend(args.iter().cloned());
     let manual_cmd = manual.join(" ");
     ensure_elevation_available(&manual_cmd)?;
+    let _progress_pause = pause_progress_for_tty();
     info!("$ {}", argv.join(" "));
     let mut cmd = CmdLineRunner::new(&argv[0]);
     for arg in &argv[1..] {
@@ -135,6 +173,7 @@ pub(crate) fn run_in_dir<Fd: std::os::fd::AsFd>(
         .collect::<Vec<_>>()
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
+    let _progress_pause = pause_progress_for_tty();
     info!("$ {}", argv.join(" "));
     let raw = dir.as_fd().as_raw_fd();
     let mut cmd = Command::new(&argv[0]);
@@ -175,6 +214,7 @@ pub(crate) fn output(program: &str, args: &[String], envs: &[(String, String)]) 
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
     if !is_root() && Settings::get().system_packages.sudo && console::user_attended_stderr() {
+        let _progress_pause = pause_progress_for_tty();
         CmdLineRunner::new("sudo").arg("-v").raw(true).execute()?;
     }
     info!("$ {}", argv.join(" "));
@@ -196,6 +236,7 @@ pub(crate) fn run_with_input(program: &str, args: &[String], input: &[u8]) -> Re
         .collect::<Vec<_>>()
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
+    let _progress_pause = pause_progress_for_tty();
     info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
         .args(&argv[1..])
@@ -229,6 +270,7 @@ pub(crate) fn run_with_input_output(
         .collect::<Vec<_>>()
         .join(" ");
     ensure_elevation_available(&manual_cmd)?;
+    let _progress_pause = pause_progress_for_tty();
     info!("$ {}", argv.join(" "));
     let mut child = Command::new(&argv[0])
         .args(&argv[1..])
@@ -279,4 +321,23 @@ fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The tiers mirror [`subprocess_mode`]: only the "interactive" case where
+    /// mise itself does the elevating can produce a password prompt that the
+    /// progress renderer would paint over.
+    #[test]
+    fn progress_is_suspended_only_when_sudo_can_prompt() {
+        assert!(should_pause_progress(false, true, true));
+        // already root: the command runs directly, sudo is never invoked
+        assert!(!should_pause_progress(true, true, true));
+        // elevation disabled: the call errors out before spawning anything
+        assert!(!should_pause_progress(false, false, true));
+        // unattended: passwordless sudo was already required, so no prompt
+        assert!(!should_pause_progress(false, true, false));
+    }
 }
