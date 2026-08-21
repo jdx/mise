@@ -2343,7 +2343,10 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         Ok(version) => version,
         Err(error) => {
             if staged_keg == keg {
-                restore_uncommitted_keg(keg, existing_backup.as_deref())?;
+                return Err(with_rollback_context(
+                    error,
+                    restore_uncommitted_keg(keg, existing_backup.as_deref()),
+                ));
             }
             return Err(error);
         }
@@ -2352,7 +2355,10 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         Ok(complete) => complete,
         Err(error) => {
             if staged_keg == keg {
-                restore_uncommitted_keg(keg, existing_backup.as_deref())?;
+                return Err(with_rollback_context(
+                    error,
+                    restore_uncommitted_keg(keg, existing_backup.as_deref()),
+                ));
             }
             return Err(error);
         }
@@ -2461,7 +2467,10 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         Ok(prepared) => prepared,
         Err(error) => {
             if staged_keg == keg {
-                restore_uncommitted_keg(keg, existing_backup.as_deref())?;
+                return Err(with_rollback_context(
+                    error,
+                    restore_uncommitted_keg(keg, existing_backup.as_deref()),
+                ));
             }
             return Err(error);
         }
@@ -2473,7 +2482,10 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
     };
     if let Err(error) = write_receipt(rf, tag, staged_keg, report, closure, &provenance) {
         if staged_keg == keg {
-            restore_uncommitted_keg(keg, existing_backup.as_deref())?;
+            return Err(with_rollback_context(
+                error,
+                restore_uncommitted_keg(keg, existing_backup.as_deref()),
+            ));
         }
         return Err(error);
     }
@@ -2532,8 +2544,11 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
             Ok(identities) => identities,
             Err(error) => {
                 if staged_keg == keg {
-                    restore_uncommitted_keg(keg, existing_backup.as_deref())?;
-                    restore_finalization_state(keg, previous_finalization_state.as_deref())?;
+                    let rollback = restore_uncommitted_keg(keg, existing_backup.as_deref())
+                        .and_then(|_| {
+                            restore_finalization_state(keg, previous_finalization_state.as_deref())
+                        });
+                    return Err(with_rollback_context(error, rollback));
                 }
                 return Err(error);
             }
@@ -2557,8 +2572,11 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
     };
     if let Err(error) = write_finalization_state(keg, &receipt_state) {
         if staged_keg == keg {
-            restore_uncommitted_keg(keg, existing_backup.as_deref())?;
-            restore_finalization_state(keg, previous_finalization_state.as_deref())?;
+            let rollback =
+                restore_uncommitted_keg(keg, existing_backup.as_deref()).and_then(|_| {
+                    restore_finalization_state(keg, previous_finalization_state.as_deref())
+                });
+            return Err(with_rollback_context(error, rollback));
         }
         return Err(error);
     }
@@ -2566,9 +2584,9 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         && receipt_state.predecessor_identity.is_some()
         && let Err(error) = quiesce_keg_links(keg, &mut receipt_state)
     {
-        restore_quiesced_links(&receipt_state)?;
-        restore_finalization_state(keg, previous_finalization_state.as_deref())?;
-        return Err(error);
+        let rollback = restore_quiesced_links(&receipt_state)
+            .and_then(|_| restore_finalization_state(keg, previous_finalization_state.as_deref()));
+        return Err(with_rollback_context(error, rollback));
     }
     let quiesced_links = receipt_state.quiesced_links.clone();
 
@@ -2578,21 +2596,25 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
         let backup = match backup_existing_keg(keg) {
             Ok(backup) => backup,
             Err(error) => {
-                restore_finalization_state(keg, previous_finalization_state.as_deref())?;
-                return Err(error);
+                return Err(with_rollback_context(
+                    error,
+                    restore_finalization_state(keg, previous_finalization_state.as_deref()),
+                ));
             }
         };
         if let Err(error) = crate::file::rename(staged_keg, keg) {
-            restore_bound_keg_backup(keg, backup.as_deref())?;
-            restore_finalization_state(keg, previous_finalization_state.as_deref())?;
-            return Err(error);
+            let rollback = restore_bound_keg_backup(keg, backup.as_deref()).and_then(|_| {
+                restore_finalization_state(keg, previous_finalization_state.as_deref())
+            });
+            return Err(with_rollback_context(error, rollback));
         }
         backup
     };
     if backup != planned_backup {
-        restore_bound_keg_backup(keg, backup.as_deref())?;
-        restore_finalization_state(keg, previous_finalization_state.as_deref())?;
-        bail!("brew:{name}: finalization recovery backup changed during commit");
+        let error = eyre::eyre!("brew:{name}: finalization recovery backup changed during commit");
+        let rollback = restore_bound_keg_backup(keg, backup.as_deref())
+            .and_then(|_| restore_finalization_state(keg, previous_finalization_state.as_deref()));
+        return Err(with_rollback_context(error, rollback));
     }
     if let Err(error) = write_finalization_state(
         keg,
@@ -2614,9 +2636,9 @@ pub(super) async fn finalize_formula(input: FormulaFinalizer<'_>) -> Result<()> 
             quiesced_links: quiesced_links.clone(),
         },
     ) {
-        restore_bound_keg_backup(keg, backup.as_deref())?;
-        restore_finalization_state(keg, previous_finalization_state.as_deref())?;
-        return Err(error);
+        let rollback = restore_bound_keg_backup(keg, backup.as_deref())
+            .and_then(|_| restore_finalization_state(keg, previous_finalization_state.as_deref()));
+        return Err(with_rollback_context(error, rollback));
     }
 
     pr.set_message("link".to_string());
