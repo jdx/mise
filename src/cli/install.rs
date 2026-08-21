@@ -103,6 +103,11 @@ pub struct Install {
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// May require elevated permissions (e.g. sudo).
+    ///
+    /// This shares the install location between users; it does not put binaries on
+    /// PATH for use without mise. Every user still needs mise to run these tools.
+    /// For binaries usable without mise, see `mise install-into` or
+    /// `[bootstrap.packages]`.
     #[clap(long, verbatim_doc_comment, conflicts_with = "shared")]
     system: bool,
 
