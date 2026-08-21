@@ -245,24 +245,26 @@ fn remove_all_atomically_validated_inner(
 }
 
 #[cfg(unix)]
-pub fn rename_dir_atomically_validated(
+pub fn restore_dir_atomically_validated(
     from: &Path,
     to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
 ) -> Result<()> {
-    rename_dir_atomically_validated_inner(from, to, validate, |_| Ok(()))
+    restore_dir_atomically_validated_inner(from, to, validate, |_| Ok(()))
 }
 
 #[cfg(unix)]
-fn rename_dir_atomically_validated_inner(
+fn restore_dir_atomically_validated_inner(
     from: &Path,
     to: &Path,
     validate: impl FnOnce(u64, u64) -> Result<()>,
     after_validate: impl FnOnce(&Path) -> Result<()>,
 ) -> Result<()> {
     use nix::dir::Dir;
-    use nix::fcntl::{OFlag, renameat};
+    use nix::errno::Errno;
+    use nix::fcntl::{AtFlags, OFlag, renameat};
     use nix::sys::stat::{Mode, fstat, fstatat};
+    use nix::unistd::{UnlinkatFlags, unlinkat};
 
     let parent = from
         .parent()
@@ -284,11 +286,122 @@ fn rename_dir_atomically_validated_inner(
     let identity = fstat(&retained)?;
     validate(identity.st_dev as u64, identity.st_ino as u64)?;
     after_validate(from)?;
-    renameat(&parent, from_name, &parent, to_name)?;
-    let installed = fstatat(&parent, to_name, nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW)?;
-    if installed.st_dev != identity.st_dev || installed.st_ino != identity.st_ino {
-        bail!("renamed directory identity changed during commit");
+
+    // The source pathname is attacker-controlled after validation. Clone through the retained
+    // descriptor instead, then publish only our private staging directory. Child lookup remains
+    // relative to the already-open directory even when `from_name` is concurrently replaced.
+    let staging_name = format!(".mise-restore-{}", crate::rand::random_string(32));
+    let staging = from.with_file_name(&staging_name);
+    fs::create_dir(&staging)?;
+    if let Err(error) = clone_dir_from_fd(&retained, &staging) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(error).wrap_err("failed to clone retained recovery backup");
     }
+
+    let staged = Dir::openat(
+        &parent,
+        staging_name.as_str(),
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let staged_identity = fstat(&staged)?;
+    match fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Err(Errno::ENOENT) => {}
+        Ok(_) => bail!("restore destination appeared before commit"),
+        Err(error) => return Err(error.into()),
+    }
+    renameat(&parent, staging_name.as_str(), &parent, to_name)?;
+    let installed = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    if (installed.st_dev, installed.st_ino) != (staged_identity.st_dev, staged_identity.st_ino) {
+        bail!("staged restore identity changed during commit");
+    }
+
+    // Reclaim contents through the retained descriptor. Remove the public backup name only when
+    // it still denotes that same object; a concurrent foreign replacement remains untouched.
+    let mut retained = retained;
+    remove_dir_contents(&mut retained)?;
+    match fstatat(&parent, from_name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(current) if (current.st_dev, current.st_ino) == (identity.st_dev, identity.st_ino) => {
+            unlinkat(&parent, from_name, UnlinkatFlags::RemoveDir)?;
+        }
+        Ok(_) | Err(Errno::ENOENT) => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &Path) -> Result<()> {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::PermissionsExt;
+
+    use nix::dir::Dir;
+    use nix::fcntl::{AtFlags, OFlag, openat, readlinkat};
+    use nix::sys::stat::{Mode, SFlag, fstat, fstatat};
+
+    let mut entries = Dir::openat(
+        source,
+        ".",
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let names = entries
+        .iter()
+        .filter_map(|entry| match entry {
+            Ok(entry)
+                if entry.file_name().to_bytes() != b"."
+                    && entry.file_name().to_bytes() != b".." =>
+            {
+                Some(Ok(entry.file_name().to_bytes().to_vec()))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<nix::Result<Vec<_>>>()?;
+    for name in names {
+        let name = OsStr::from_bytes(&name);
+        let destination_path = destination.join(name);
+        let metadata = fstatat(source, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        let kind = SFlag::from_bits_truncate(metadata.st_mode);
+        if kind.contains(SFlag::S_IFLNK) {
+            make_symlink(Path::new(&readlinkat(source, name)?), &destination_path)?;
+        } else if kind.contains(SFlag::S_IFDIR) {
+            fs::create_dir(&destination_path)?;
+            let child = Dir::openat(
+                source,
+                name,
+                OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?;
+            clone_dir_from_fd(&child, &destination_path)?;
+        } else if kind.contains(SFlag::S_IFREG) {
+            let source_file = openat(
+                source,
+                name,
+                OFlag::O_RDONLY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                Mode::empty(),
+            )?;
+            let mut source_file = File::from(source_file);
+            let mut destination_file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&destination_path)?;
+            std::io::copy(&mut source_file, &mut destination_file)?;
+            destination_file
+                .set_permissions(fs::Permissions::from_mode(metadata.st_mode as u32))?;
+        } else {
+            bail!(
+                "unsupported recovery backup entry: {}",
+                destination_path.display()
+            );
+        }
+    }
+    let metadata = fstat(source)?;
+    fs::set_permissions(
+        destination,
+        fs::Permissions::from_mode(metadata.st_mode as u32),
+    )?;
     Ok(())
 }
 
@@ -3283,7 +3396,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn atomically_validated_rename_detects_source_replacement() {
+    fn atomically_validated_restore_ignores_source_replacement() {
         use std::os::unix::fs::MetadataExt;
 
         let root = tempfile::tempdir().unwrap();
@@ -3297,7 +3410,7 @@ mod tests {
         fs::create_dir(&replacement).unwrap();
         fs::write(replacement.join("must-survive"), "foreign").unwrap();
 
-        let error = rename_dir_atomically_validated_inner(
+        restore_dir_atomically_validated_inner(
             &source,
             &destination,
             |device, inode| {
@@ -3310,17 +3423,17 @@ mod tests {
                 Ok(())
             },
         )
-        .unwrap_err();
+        .unwrap();
 
-        assert!(error.to_string().contains("identity changed"));
         assert_eq!(
-            fs::read_to_string(destination.join("must-survive")).unwrap(),
-            "foreign"
-        );
-        assert_eq!(
-            fs::read_to_string(displaced.join("expected")).unwrap(),
+            fs::read_to_string(destination.join("expected")).unwrap(),
             "expected"
         );
+        assert_eq!(
+            fs::read_to_string(source.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert!(displaced.read_dir().unwrap().next().is_none());
     }
 
     #[cfg(unix)]

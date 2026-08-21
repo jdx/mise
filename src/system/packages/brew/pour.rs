@@ -2268,7 +2268,7 @@ pub(super) fn restore_keg_backup(keg: &Path, backup: Option<&Path>) -> Result<()
             eyre::eyre!("formula recovery backup disappeared: {}", backup.display())
         })?;
         let expected = capture_path_identity(backup)?;
-        crate::file::rename_dir_atomically_validated(backup, keg, |device, inode| {
+        crate::file::restore_dir_atomically_validated(backup, keg, |device, inode| {
             if (device, inode) != (expected.device, expected.inode) {
                 bail!("formula recovery backup identity changed before restore");
             }
