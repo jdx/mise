@@ -6062,7 +6062,32 @@ fn find_artifact_matching(
             case_insensitive = Some(entry.into_path());
         }
     }
-    case_insensitive
+    if let Some(found) = case_insensitive {
+        return Some(found);
+    }
+    // `WalkDir` defaults to `follow_links = false`, so the walk above never
+    // descends into a symlink a flight step created: gcloud-cli's last
+    // preflight step links `staged_path/google-cloud-sdk` at the SDK it copied
+    // into the prefix, and every `binary` beneath it was unreachable. Resolving
+    // `name` as an exact path under `root` traverses the link. Kept as a
+    // fallback rather than a fast path so the walk's exact-then-case-insensitive
+    // precedence is unchanged on case-insensitive filesystems.
+    relative_artifact_path(root, name_path).filter(|path| pred(path))
+}
+
+/// `name` resolved against `root`, or `None` when `name` cannot be interpreted
+/// as a path contained by `root`.
+fn relative_artifact_path(root: &Path, name: &Path) -> Option<PathBuf> {
+    if name.as_os_str().is_empty() || name.is_absolute() {
+        return None;
+    }
+    if name
+        .components()
+        .any(|component| matches!(component, Component::ParentDir))
+    {
+        return None;
+    }
+    Some(root.join(name))
 }
 
 /// True when `path`'s trailing components match `suffix` with ASCII
@@ -10476,6 +10501,64 @@ end
 
         assert_eq!(find_app(tmp.path(), "yaak.app"), Some(app));
         Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn artifact_lookup_resolves_through_a_flight_created_symlink() -> Result<()> {
+        // gcloud-cli's last preflight step symlinks
+        // `staged_path/google-cloud-sdk` at the SDK copied into the prefix, so
+        // every `binary` source resolves only by traversing that link. The walk
+        // cannot enter it.
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let installed = tmp.path().join("share/google-cloud-sdk");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(installed.join("bin"))?;
+        crate::file::write(
+            installed.join("bin/git-credential-gcloud.sh"),
+            "credential helper",
+        )?;
+        std::os::unix::fs::symlink(&installed, stage.join("google-cloud-sdk"))?;
+
+        assert_eq!(
+            find_file_artifact(&stage, "google-cloud-sdk/bin/git-credential-gcloud.sh"),
+            Some(stage.join("google-cloud-sdk/bin/git-credential-gcloud.sh"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_lookup_rejects_sources_that_escape_the_root() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        crate::file::write(tmp.path().join("outside"), "not ours")?;
+
+        assert_eq!(find_file_artifact(&stage, "../outside"), None);
+        assert_eq!(
+            find_file_artifact(&stage, &tmp.path().join("outside").to_string_lossy()),
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn relative_artifact_path_refuses_names_it_cannot_contain() {
+        let root = Path::new("/stage");
+
+        assert_eq!(
+            relative_artifact_path(root, Path::new("bin/op")),
+            Some(PathBuf::from("/stage/bin/op"))
+        );
+        // An empty name would otherwise resolve to `root` itself.
+        assert_eq!(relative_artifact_path(root, Path::new("")), None);
+        assert_eq!(relative_artifact_path(root, Path::new("../op")), None);
+        assert_eq!(
+            relative_artifact_path(root, Path::new("bin/../../op")),
+            None
+        );
+        assert_eq!(relative_artifact_path(root, Path::new("/etc/passwd")), None);
     }
 
     #[test]
