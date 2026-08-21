@@ -781,6 +781,15 @@ pub struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Config file that declared a remote task. The fetched task's local path
+    /// is not the trust authority for its metadata.
+    #[serde(skip)]
+    pub remote_config_source: Option<PathBuf>,
+
+    /// Whether the fetched remote header contributed tool requirements.
+    #[serde(skip)]
+    pub remote_metadata_has_tools: bool,
+
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -1050,6 +1059,16 @@ pub(crate) fn file_has_decoded_template(path: &Path, body: &str) -> bool {
             .filter_map(|entry| entry.parse_toml().ok())
             .any(|value| toml_value_has_template(&value))
     }
+}
+
+/// Check decoded remote script header values regardless of the fetched path's
+/// extension. A remote script may legitimately end in `.toml`.
+pub(crate) fn script_header_has_decoded_template(body: &str) -> bool {
+    use crate::config::config_file::mise_toml::toml_value_has_template;
+    scan_mise_header_entries(file::strip_utf8_bom(body))
+        .into_iter()
+        .filter_map(|entry| entry.parse_toml().ok())
+        .any(|value| toml_value_has_template(&value))
 }
 
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
@@ -3147,6 +3166,8 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            remote_config_source: None,
+            remote_metadata_has_tools: false,
             deny_all: false,
             deny_read: false,
             deny_write: false,
