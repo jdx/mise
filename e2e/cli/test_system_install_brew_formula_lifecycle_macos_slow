@@ -40,8 +40,12 @@ cleanup_formula_fixtures() {
 }
 
 cleanup_formula_oracle() {
-  cleanup_formula_fixtures
+  local status=$?
+  if [[ $status != 0 ]]; then
+    cleanup_formula_fixtures
+  fi
   brew_oracle_remove_runtime_bridge
+  return "$status"
 }
 
 # The explicit capability authorizes displacement of these exact fixtures on
@@ -86,6 +90,57 @@ mise bootstrap --yes
 assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
 assert_contains "mise bootstrap packages status" "installed"
 
+homebrew_require_formula() {
+  local formula=$1 keg info
+  keg=$(readlink -f "$MISE_SYSTEM_BREW_PREFIX/opt/$formula") ||
+    brew_oracle_fail "Homebrew opt record does not resolve for $formula"
+  case "$keg" in
+    "$MISE_SYSTEM_BREW_PREFIX/Cellar/$formula"/*) ;;
+    *) brew_oracle_fail "Homebrew opt record escapes the $formula rack: $keg" ;;
+  esac
+  [[ -s $keg/INSTALL_RECEIPT.json ]] ||
+    brew_oracle_fail "native Homebrew receipt is missing for $formula"
+  jq -e '.poured_from_bottle == true and (.installed_on_request | type == "boolean") and (.installed_as_dependency | type == "boolean")' \
+    "$keg/INSTALL_RECEIPT.json" >/dev/null ||
+    brew_oracle_fail "native Homebrew receipt is incomplete for $formula"
+  "$brew" list --formula --versions "$formula" | grep -Eq "^${formula//+/\\+} [^[:space:]]+" ||
+    brew_oracle_fail "pinned Homebrew does not list mise-installed $formula"
+  info=$("$brew" info --json=v2 --formula "$formula") ||
+    brew_oracle_fail "pinned Homebrew cannot inspect mise-installed $formula"
+  jq -e --arg formula "$formula" \
+    '.formulae | length == 1 and .[0].name == $formula and (.[0].installed | length > 0)' \
+    <<<"$info" >/dev/null ||
+    brew_oracle_fail "pinned Homebrew reports no installed keg for $formula"
+}
+
+for formula in "${formula_fixtures[@]}"; do
+  homebrew_require_formula "$formula"
+done
+
+# Remove dependents before dependencies. This is the interoperability boundary:
+# the pinned official Homebrew runtime, not mise or test cleanup, must remove the
+# mise-created native formula state successfully.
+for formula in kimi-code node openssl@3 ca-certificates; do
+  "$brew" uninstall --formula --force --ignore-dependencies "$formula"
+done
+for formula in "${formula_fixtures[@]}"; do
+  brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/Cellar/$formula" "$formula rack after Homebrew uninstall"
+  brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/opt/$formula" "$formula opt record after Homebrew uninstall"
+  brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula" "$formula linked-keg record after Homebrew uninstall"
+done
+# Official Homebrew deliberately preserves formula-managed configuration across
+# uninstall. Prove mise-created shared state has the same lifecycle, remains
+# usable after the kegs are gone, then remove only these audited fixture paths
+# so the disposable runner is returned to fresh state.
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem'"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/openssl.cnf'"
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "readlink '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'" "ca-certificates/cert.pem"
+for path in "${shared_fixture_paths[@]}"; do
+  rm -rf "$path"
+  brew_oracle_require_absent_path "$path" "shared formula fixture cleanup"
+done
+
 # Python's venv templates require Homebrew's typed `set_permissions u+w` step.
 # Damage one recorded path, prove offline health detection, then repair only
 # that idempotent permission effect.
@@ -110,3 +165,12 @@ find "$python_scripts" -mindepth 1 -exec stat -f '%Lp\t%N' {} + | LC_ALL=C sort 
 awk '$1 !~ /^[2367]/ { print > "/dev/stderr"; bad=1 } END { exit bad }' "$python_modes" ||
   brew_oracle_fail "Python venv lifecycle left a path without owner-write permission"
 assert_contains "mise bootstrap packages status" "installed"
+
+homebrew_require_formula "$permission_fixture"
+"$brew" uninstall --formula --force --ignore-dependencies "$permission_fixture"
+brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/Cellar/$permission_fixture" "$permission_fixture rack after Homebrew uninstall"
+brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/opt/$permission_fixture" "$permission_fixture opt record after Homebrew uninstall"
+brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$permission_fixture" "$permission_fixture linked-keg record after Homebrew uninstall"
+
+brew_oracle_remove_runtime_bridge
+trap - EXIT

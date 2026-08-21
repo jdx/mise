@@ -18,6 +18,9 @@ env:
   MISE_EXPERIMENTAL: 1
   MISE_LOCKFILE: 1
   RUST_BACKTRACE: 1
+  MISE_GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+  FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
 
 permissions:
   contents: read
@@ -31,7 +34,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          persist-credentials: false
           fetch-depth: 0
       - name: Classify changes
         id: classify
@@ -62,8 +64,6 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -111,8 +111,6 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
@@ -121,7 +119,7 @@ jobs:
         run: |
           cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
           cargo build -p mise-shim
-          Add-Content $env:GITHUB_PATH (Join-Path $env:GITHUB_WORKSPACE 'target\debug')
+          Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
           - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -140,9 +138,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
-          ref: ${{ github.head_ref || github.ref_name }}
-          persist-credentials: false
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.head_ref }}
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -566,42 +563,6 @@ jobs:
             MISE_AUTO_INSTALL="$MISE_AUTO_INSTALL" \
             mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_source_slow
 
-  brew-interop-ci:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
-    timeout-minutes: 1
-    needs:
-      - classify-changes
-      - brew-interop-build-macos
-      - brew-interop-macos
-      - brew-oracle-macos
-      - brew-oracle-linux
-      - brew-oracle-linux-source
-    if: ${{ always() && !cancelled() && needs.classify-changes.outputs.full-ci == 'true' }}
-    steps:
-      - name: Check brew interoperability job results
-        run: |
-          if [ "${{ needs.brew-interop-build-macos.result }}" != "success" ]; then
-            echo "brew-interop-build-macos failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.brew-interop-macos.result }}" != "success" ]; then
-            echo "brew-interop-macos failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.brew-oracle-macos.result }}" != "success" ]; then
-            echo "brew-oracle-macos failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.brew-oracle-linux.result }}" != "success" ]; then
-            echo "brew-oracle-linux failed or was skipped"
-            exit 1
-          fi
-          if [ "${{ needs.brew-oracle-linux-source.result }}" != "success" ]; then
-            echo "brew-oracle-linux-source failed or was skipped"
-            exit 1
-          fi
-          echo "Homebrew interoperability jobs completed successfully"
-
   nightly:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
     timeout-minutes: 15
@@ -612,7 +573,6 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-          persist-credentials: false
       - run: rustup default nightly
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
@@ -644,8 +604,6 @@ jobs:
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - parallel:
           - name: Install mold
             run: sudo apt-get update && sudo apt-get install -y mold
@@ -726,7 +684,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-          persist-credentials: false
       # Fetch sequentially so the pool can rotate its cursor between requests.
       # Each token is also rejected by the action when its core budget is empty.
       - name: Fetch token 0
@@ -845,8 +802,6 @@ jobs:
     if: needs.classify-changes.outputs.full-ci == 'true'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-ubuntu-latest
@@ -865,8 +820,6 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
         with:
           shared-key: build
@@ -896,14 +849,12 @@ jobs:
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: mise-windows-latest
           path: target/debug
       - run: ls target\debug
-      - run: Add-Content $env:GITHUB_PATH (Join-Path $env:GITHUB_WORKSPACE 'target\debug')
+      - run: Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - uses: ./.github/actions/mise-tools
       - name: e2e
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
@@ -927,6 +878,7 @@ jobs:
       - bootstrap-linux-host
       - windows-unit
       - windows-e2e
+      - brew-interop-build-macos
       - brew-interop-macos
       - brew-oracle-macos
       - brew-oracle-linux
@@ -962,6 +914,10 @@ jobs:
           fi
 
           if [ "$full_ci" == "true" ]; then
+            if [ "${{ needs.brew-interop-build-macos.result }}" != "success" ]; then
+              echo "brew-interop-build-macos failed or was skipped"
+              exit 1
+            fi
             if [ "${{ needs.build-windows.result }}" != "success" ]; then
               echo "build-windows failed or was skipped"
               exit 1
@@ -1015,6 +971,7 @@ jobs:
               "${{ needs.bootstrap-linux-host.result }}" \
               "${{ needs.windows-unit.result }}" \
               "${{ needs.windows-e2e.result }}" \
+              "${{ needs.brew-interop-build-macos.result }}" \
               "${{ needs.brew-interop-macos.result }}" \
               "${{ needs.brew-oracle-macos.result }}" \
               "${{ needs.brew-oracle-linux.result }}" \
