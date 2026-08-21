@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
 use std::fs::File;
@@ -383,11 +383,12 @@ static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 /// happens when a caller genuinely needs the full list ([`list`]).
 static TOOLS_INCLUDE_INSTALLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
-/// Shorts seeded by [`load_tools`] (core tools and registry entries with
-/// idiomatic files). An installed tool takes precedence over these — it carries
-/// the recorded install identity — but must not displace an entry [`get`]
-/// resolved later, which may carry command-scoped options.
-static TOOLS_SEEDED_SHORTS: Mutex<Option<Arc<HashSet<String>>>> = Mutex::new(None);
+/// The map [`load_tools`] seeded (core tools and registry entries with idiomatic
+/// files). An installed tool takes precedence over these — it carries the
+/// recorded install identity — but must not displace an entry [`get`] resolved
+/// later, which may carry command-scoped options. Held as the seed map itself so
+/// recording it costs one Arc clone rather than a copy of every short.
+static TOOLS_SEEDED: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
 pub async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
@@ -422,7 +423,7 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
     let tools = Arc::new(tools);
-    *TOOLS_SEEDED_SHORTS.lock().unwrap() = Some(Arc::new(tools.keys().cloned().collect()));
+    *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
     *TOOLS.lock().unwrap() = Some(tools.clone());
     time!("load_tools done");
     Ok(tools)
@@ -436,8 +437,8 @@ pub async fn load_tools() -> Result<Arc<BackendMap>> {
 /// (e.g. an asdf/vfox `node` install over core node). Now that installed tools
 /// are added later, preserve that precedence over seeds while leaving entries
 /// [`get`] resolved afterwards alone: those can carry command-scoped options.
-fn installed_replaces(seeded: &HashSet<String>, short: &str) -> bool {
-    seeded.contains(short)
+fn installed_replaces<V>(seeded: &BTreeMap<String, V>, short: &str) -> bool {
+    seeded.contains_key(short)
 }
 
 /// Extend TOOLS with a backend for every installed tool. Installed tools are
@@ -457,11 +458,7 @@ fn ensure_installed_tools_loaded() {
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
-    let seeded = TOOLS_SEEDED_SHORTS
-        .lock()
-        .unwrap()
-        .clone()
-        .unwrap_or_default();
+    let seeded = TOOLS_SEEDED.lock().unwrap().clone().unwrap_or_default();
     let mut next = current.deref().clone();
     for backend in install_state::list_tools()
         .values()
@@ -488,6 +485,10 @@ fn ensure_installed_tools_loaded() {
 
 pub fn list() -> BackendList {
     ensure_installed_tools_loaded();
+    eprintln!(
+        "BLIST {}",
+        TOOLS.lock().unwrap().as_ref().map(|t| t.len()).unwrap_or(0)
+    );
     TOOLS
         .lock()
         .unwrap()
@@ -505,16 +506,22 @@ pub fn list() -> BackendList {
 /// invocation, so enumerating all installed tools here would put the full
 /// installs-dir scan back on the hot path for entries that contribute nothing.
 pub fn alias_backends() -> BackendList {
+    // Reuse what load_tools already built rather than constructing backends:
+    // building one is not cheap (registry lookup, path derivation), and this
+    // runs during every config load. Core tools are already seeded there, so
+    // only plugin-backed shorts that are absent need constructing.
+    let seeded = TOOLS.lock().unwrap().clone().unwrap_or_default();
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
-    CORE_PLUGINS
+    seeded
         .values()
         .cloned()
         .chain(
             install_state::try_list_plugins()
                 .unwrap_or_default()
                 .keys()
+                .filter(|short| !seeded.contains_key(*short))
                 .filter_map(|short| arg_to_backend(short.as_str().into())),
         )
         .filter(|backend| {
@@ -841,7 +848,8 @@ mod tests {
 
     #[test]
     fn test_installed_replaces_seed_but_not_later_entry() {
-        let seeded: HashSet<String> = ["node".to_string()].into_iter().collect();
+        // Only key presence matters, so this stands in for the seeded BackendMap.
+        let seeded: BTreeMap<String, ()> = [("node".to_string(), ())].into_iter().collect();
         // A core/registry seed yields to the installed tool's recorded identity.
         assert!(installed_replaces(&seeded, "node"));
         // An entry `get` resolved after load_tools may carry command-scoped
@@ -5269,7 +5277,7 @@ pub async fn reset() -> Result<()> {
     {
         let mut tools = TOOLS.lock().unwrap();
         *tools = None;
-        *TOOLS_SEEDED_SHORTS.lock().unwrap() = None;
+        *TOOLS_SEEDED.lock().unwrap() = None;
         TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
     }
     load_tools().await?;

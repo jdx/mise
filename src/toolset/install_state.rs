@@ -6,7 +6,7 @@ use crate::lock_file::LockFile;
 use crate::plugins::PluginType;
 use crate::toolset::{EPHEMERAL_OPT_KEYS, parse_tool_options};
 use crate::{dirs, env, file, runtime_symlinks};
-use eyre::{Ok, Result};
+use eyre::{Ok, Result, WrapErr};
 use heck::ToKebabCase;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -228,12 +228,13 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 
 /// Versions present in a tool's install dir, sorted. One readdir plus stats
 /// per version.
-fn scan_versions(dir: &Path) -> Vec<String> {
-    file::dir_subdirs(dir)
-        .unwrap_or_else(|err| {
-            warn!("reading versions in {} failed: {err:?}", display_path(dir));
-            Default::default()
-        })
+///
+/// An unreadable dir is an error, not an empty list: dropping the tool would
+/// make an incomplete scan look like a complete one, and shim rebuilding
+/// deletes every shim it cannot account for. Callers that are explicitly
+/// best-effort (read-only shared dirs) downgrade this to a warning.
+fn scan_versions(dir: &Path) -> Result<Vec<String>> {
+    Ok(file::dir_subdirs(dir)?
         .into_iter()
         .filter(|v| !v.starts_with('.'))
         .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))
@@ -242,7 +243,16 @@ fn scan_versions(dir: &Path) -> Vec<String> {
             let normalized = normalize_version_for_sort(v);
             (Versioning::new(normalized), v.to_string())
         })
-        .collect()
+        .collect())
+}
+
+/// [`scan_versions`] for read-only shared install dirs, where a unreadable
+/// entry is reported and skipped rather than failing the whole scan.
+fn scan_versions_best_effort(dir: &Path) -> Vec<String> {
+    scan_versions(dir).unwrap_or_else(|err| {
+        warn!("reading versions in {} failed: {err:?}", display_path(dir));
+        Default::default()
+    })
 }
 
 /// Identity and versions for one primary install dir: the sidecar wins, then
@@ -256,7 +266,14 @@ fn scan_tool_dir(
     dir_name: &str,
     dir: &Path,
     manifest: &Manifest,
-) -> Option<(InstallStateTool, Option<ManifestTool>)> {
+) -> Result<Option<(InstallStateTool, Option<ManifestTool>)>> {
+    // Nothing is installed here, so skip the sidecar read, the legacy probes and
+    // the version scan. Per-tool lookups ask about tools that are usually *not*
+    // installed (every short mentioned in a config or the registry), so this is
+    // the common path for them; the full scan only passes dirs that exist.
+    if !dir.is_dir() {
+        return Ok(None);
+    }
     let tool_manifest = read_tool_manifest_from(&dir.join(".mise.backend.toml"));
     let manifest_tool = tool_manifest.as_ref().or_else(|| manifest.get(dir_name));
     let legacy_meta = if manifest_tool.is_none() {
@@ -264,9 +281,9 @@ fn scan_tool_dir(
     } else {
         None
     };
-    let versions = scan_versions(dir);
+    let versions = scan_versions(dir)?;
     if versions.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let mut migrate = None;
@@ -315,7 +332,7 @@ fn scan_tool_dir(
         opts,
         installs_path: Some(dir.to_path_buf()),
     };
-    Some((tool, migrate))
+    Ok(Some((tool, migrate)))
 }
 
 /// Merge the versions (and missing identity) of a shared-dir install into an
@@ -330,7 +347,7 @@ fn merge_shared_tool(
     let manifest_tool = tool_manifest
         .as_ref()
         .or_else(|| shared_manifest.get(dir_name));
-    let versions = scan_versions(dir);
+    let versions = scan_versions_best_effort(dir);
     if versions.is_empty() {
         return;
     }
@@ -381,7 +398,8 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         return Ok(tools);
     }
     measure!("install_state full_scan_tools", {
-        let manifest = read_manifest();
+        // Shared with the per-tool path so the manifest is parsed once.
+        let manifest = root_manifest();
         let subdirs = file::dir_subdirs(&dirs::INSTALLS)?;
 
         // Only clone the manifest for mutation if we actually need to migrate
@@ -390,12 +408,14 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         let mut tools = BTreeMap::new();
         for dir_name in subdirs {
             let dir = dirs::INSTALLS.join(&dir_name);
-            let Some((tool, migrate)) = scan_tool_dir(&dir_name, &dir, &manifest) else {
+            let Some((tool, migrate)) = scan_tool_dir(&dir_name, &dir, manifest.as_ref())
+                .wrap_err_with(|| format!("failed to scan {}", display_path(&dir)))?
+            else {
                 continue;
             };
             if let Some(mt) = migrate {
                 updated_manifest
-                    .get_or_insert_with(|| manifest.clone())
+                    .get_or_insert_with(|| manifest.as_ref().clone())
                     .insert(dir_name.clone(), mt);
             }
             tools.insert(tool.short.clone(), tool);
@@ -441,6 +461,27 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
     })
 }
 
+/// short name -> manifest dir, for the manifest entries whose dir is not just
+/// the kebab-cased short. Lets a per-tool lookup skip walking every entry.
+static MANIFEST_BY_SHORT: Mutex<Option<Arc<HashMap<String, String>>>> = Mutex::new(None);
+
+fn manifest_dir_for_short(short: &str) -> Option<String> {
+    let mut memo = MANIFEST_BY_SHORT
+        .lock()
+        .expect("MANIFEST_BY_SHORT lock failed");
+    memo.get_or_insert_with(|| {
+        Arc::new(
+            root_manifest()
+                .iter()
+                .filter(|(d, mt)| **d != mt.short.to_kebab_case())
+                .map(|(d, mt)| (mt.short.clone(), d.clone()))
+                .collect(),
+        )
+    })
+    .get(short)
+    .cloned()
+}
+
 fn root_manifest() -> Arc<Manifest> {
     let mut memo = ROOT_MANIFEST_MEMO
         .lock()
@@ -479,24 +520,64 @@ pub fn get_tool(short: &str) -> Option<InstallStateTool> {
         }
     }
     let tool = load_tool(short);
-    // A concurrent add_tool_version may have recorded a fresh install while the
-    // (lock-free) disk read above was in flight. It saw the install and this
-    // read did not, so it wins — inserting unconditionally here would hide the
-    // new version from the rest of the process.
+    // The disk read above runs without the memo lock, so add_tool_version may
+    // have landed meanwhile. Neither side is authoritative: this one scanned
+    // every version on disk, that one knows about an install that may have
+    // completed after the scan. Picking either loses versions, so merge.
     let mut memo = INSTALL_STATE_TOOL_MEMO
         .lock()
         .expect("INSTALL_STATE_TOOL_MEMO lock failed");
-    memo.get_or_insert_with(Default::default)
+    match memo
+        .get_or_insert_with(Default::default)
         .entry(short.to_string())
-        .or_insert(tool)
-        .clone()
+    {
+        std::collections::hash_map::Entry::Vacant(v) => v.insert(tool).clone(),
+        std::collections::hash_map::Entry::Occupied(mut o) => {
+            match (o.get_mut(), tool) {
+                (Some(recorded), Some(scanned)) => merge_scanned_into(recorded, scanned),
+                (slot, Some(scanned)) if slot.is_none() => *slot = Some(scanned),
+                // A scan that found nothing does not disprove an install that
+                // was just recorded.
+                _ => {}
+            }
+            o.get().clone()
+        }
+    }
+}
+
+/// Fold a directory scan into an entry an installer already recorded. The
+/// recorded identity wins — it was just written — and any version either side
+/// saw is kept.
+fn merge_scanned_into(recorded: &mut InstallStateTool, scanned: InstallStateTool) {
+    for v in scanned.versions {
+        if !recorded.versions.contains(&v) {
+            recorded.versions.push(v);
+        }
+    }
+    if recorded.full.is_none() {
+        recorded.full = scanned.full;
+    }
+    if recorded.opts.is_empty() {
+        recorded.opts = scanned.opts;
+    }
+    if recorded.installs_path.is_none() {
+        recorded.installs_path = scanned.installs_path;
+    }
 }
 
 fn load_tool(short: &str) -> Option<InstallStateTool> {
     let manifest = root_manifest();
     let dir_name = short.to_kebab_case();
     let scan_named = |dir_name: &str| {
-        scan_tool_dir(dir_name, &dirs::INSTALLS.join(dir_name), &manifest)
+        let dir = dirs::INSTALLS.join(dir_name);
+        scan_tool_dir(dir_name, &dir, &manifest)
+            .unwrap_or_else(|err| {
+                // Enumerating callers get this as a hard error from the full
+                // scan; a single lookup degrades to "not found" so one bad dir
+                // cannot break resolution of unrelated tools.
+                warn!("failed to scan {}: {err:#}", display_path(&dir));
+                None
+            })
             .map(|(tool, _migrate)| tool)
             .filter(|tool| tool.short == short)
     };
@@ -504,10 +585,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
     if tool.is_none() {
         // The manifest may record this short under a dir that doesn't
         // kebab-match it (e.g. a renamed or hand-migrated install).
-        tool = manifest
-            .iter()
-            .find(|(d, mt)| mt.short == short && **d != dir_name)
-            .and_then(|(d, _)| scan_named(d));
+        tool = manifest_dir_for_short(short).and_then(|d| scan_named(&d));
     }
 
     // Shared install directories can add versions or supply the whole tool.
@@ -588,8 +666,33 @@ fn is_banned_plugin(path: &Path) -> bool {
     false
 }
 
+/// Run `f` against one tool's state without cloning it.
+///
+/// The state lives behind a mutex, so a caller that only needs one field would
+/// otherwise clone the whole entry — versions vec, opts map and paths — to read
+/// it. Backend resolution and `list_installed_versions` do that per backend, so
+/// the copies add up on enumerating commands.
+fn with_tool<T>(short: &str, f: impl FnOnce(&InstallStateTool) -> T) -> Option<T> {
+    if let Some(tools) = INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed")
+        .as_ref()
+    {
+        return tools.get(short).map(f);
+    }
+    {
+        let memo = INSTALL_STATE_TOOL_MEMO
+            .lock()
+            .expect("INSTALL_STATE_TOOL_MEMO lock failed");
+        if let Some(hit) = memo.as_ref().and_then(|m| m.get(short)) {
+            return hit.as_ref().map(f);
+        }
+    }
+    get_tool(short).as_ref().map(f)
+}
+
 pub fn get_tool_full(short: &str) -> Option<String> {
-    get_tool(short).and_then(|t| t.full.clone())
+    with_tool(short, |t| t.full.clone()).flatten()
 }
 
 pub fn get_plugin_type(short: &str) -> Option<PluginType> {
@@ -620,10 +723,12 @@ pub fn list_tools() -> Arc<BTreeMap<String, InstallStateTool>> {
 }
 
 pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
-    let backend_type = get_tool(short).and_then(|ist| ist.full).and_then(|full| {
-        full.split_once(':')
-            .map(|(backend, _)| BackendType::guess(backend))
-    });
+    let backend_type = with_tool(short, |ist| ist.full.clone())
+        .flatten()
+        .and_then(|full| {
+            full.split_once(':')
+                .map(|(backend, _)| BackendType::guess(backend))
+        });
     if let Some(BackendType::Unknown) = backend_type
         && let Some((plugin_name, _)) = short.split_once(':')
         && let Some(PluginType::VfoxBackend) = get_plugin_type(plugin_name)
@@ -634,9 +739,7 @@ pub fn backend_type(short: &str) -> Result<Option<BackendType>> {
 }
 
 pub fn list_versions(short: &str) -> Vec<String> {
-    get_tool(short)
-        .map(|tool| tool.versions)
-        .unwrap_or_default()
+    with_tool(short, |tool| tool.versions.clone()).unwrap_or_default()
 }
 
 pub fn add_tool_version(ba: &BackendArg, install_path: &Path, version: &str) {
@@ -864,6 +967,9 @@ pub fn reset() {
     *ROOT_MANIFEST_MEMO
         .lock()
         .expect("ROOT_MANIFEST_MEMO lock failed") = None;
+    *MANIFEST_BY_SHORT
+        .lock()
+        .expect("MANIFEST_BY_SHORT lock failed") = None;
     super::tool_version::reset_install_path_cache();
 }
 
