@@ -435,6 +435,15 @@ impl BackendArg {
             return env_value;
         }
 
+        // An explicitly resolved full backend must not be replaced by a short-name
+        // alias or lockfile entry. This is also used by package.json checksum
+        // declarations, which require the backend that publishes the verified artifact.
+        if self.resolution.explicit
+            && let Some(full) = &self.full
+        {
+            return full.clone();
+        }
+
         if config::is_loaded() {
             if let Some(full) = Config::get_()
                 .all_aliases

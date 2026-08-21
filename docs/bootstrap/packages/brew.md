@@ -128,6 +128,34 @@ The `Current` column is the version recorded in the cask receipt; the live app
 may have updated itself to a different version. JSON status keeps the stable
 `"state": "installed"` value and adds `"auto_updates": true`.
 
+### macOS Privacy & Security (TCC)
+
+Replacing an app bundle under `/Applications` (or your configured appdir) is
+the same class of operation as `brew reinstall --cask`: macOS may revoke
+Privacy & Security grants for that app (Accessibility, Screen Recording, Full
+Disk Access, Automation, and similar). mise does not manage TCC; after a
+replace you may need to re-grant permissions in System Settings.
+
+When migrating a machine that already has casks installed (for example from
+Homebrew or a nix-darwin brew integration), prefer adoption so mise records
+ownership without swapping the live bundle:
+
+```toml
+[bootstrap.brew]
+adopt = true
+```
+
+Or adopt selectively:
+
+```toml
+[bootstrap.packages]
+"brew-cask:firefox" = { version = "latest", adopt = true }
+```
+
+mise prints a warning whenever it replaces an existing `.app`. Version
+upgrades still replace the bundle when upstream publishes a new cask version —
+expect to re-confirm TCC prompts after those upgrades, just as with Homebrew.
+
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
 Homebrew's cask DSL, documented in the

@@ -13,6 +13,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tokio::sync::OnceCell;
 
 /// Install a tool version to a specific path
 ///
@@ -59,6 +60,7 @@ impl InstallInto {
             dry_run: false,
             locked: false, // install-into doesn't support locked mode
             before_date,
+            dependency_context: OnceCell::new(),
         };
         tv.install_path = Some(install_path.clone());
         tv.install_path_is_exact = true;
