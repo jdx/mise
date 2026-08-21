@@ -136,11 +136,9 @@ impl InstallDependencyContext {
         for (backend, dependency) in toolset.list_current_versions() {
             if !backend.is_version_installed(config, &dependency, true) {
                 let unresolved = match &dependency.request {
-                    ToolRequest::Prefix { .. } | ToolRequest::Sub { .. } => {
-                        dependency.version.matches('.').count() < 2
-                            && !backend.is_exact_version(&dependency.version)
-                    }
-                    ToolRequest::Version { .. } => {
+                    ToolRequest::Prefix { .. }
+                    | ToolRequest::Sub { .. }
+                    | ToolRequest::Version { .. } => {
                         dependency.version.matches('.').count() < 2
                             && !backend.is_exact_version(&dependency.version)
                     }

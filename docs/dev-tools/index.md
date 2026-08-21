@@ -265,7 +265,7 @@ The `depends` field accepts either a single string or an array of strings:
 "pipx:ruff" = { version = "latest", depends = ["python", "pipx"] }
 ```
 
-User-specified `depends` adds ordering constraints and makes matching tools available to install hooks. Backend declarations such as vfox `PLUGIN.depends` and `[tools].depends` are combined into the same install dependency context.
+User-specified `[tools].depends` adds ordering constraints and makes matching tools available to install hooks. Backend declarations such as vfox `PLUGIN.depends` are combined with these user declarations in the same install dependency context.
 
 Dependency declarations do not add tools to the configuration or install them automatically. When a matching tool is configured, its selected version must resolve and already be installed (or finish successfully earlier in the same install batch). A declaration with no matching configured tool may still be satisfied by an executable on the existing system or configuration `PATH`.
 
