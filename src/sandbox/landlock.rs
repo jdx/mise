@@ -34,7 +34,7 @@ fn formula_execution_writable_access() -> BitFlags<AccessFs> {
 /// command enters `pre_exec`. Errors returned from `pre_exec` lose their
 /// structured message in Rust's spawn protocol and otherwise surface as a
 /// synthetic `EINVAL`, hiding an unsupported confinement environment.
-pub fn ensure_landlock_available() -> Result<()> {
+pub(super) fn ensure_landlock_available() -> Result<()> {
     Ruleset::default()
         .set_compatibility(CompatLevel::HardRequirement)
         .handle_access(production_access())
