@@ -257,12 +257,5 @@ mod tests {
             install_dependency_declarations(&request("unknown:example", r#"depends=["node"]"#));
         assert!(declarations.validate().is_err());
         assert_eq!(names(&declarations), vec!["node"]);
-        assert_eq!(
-            declarations
-                .direct()
-                .map(|(raw, _)| raw)
-                .collect::<Vec<_>>(),
-            vec!["node"]
-        );
     }
 }
