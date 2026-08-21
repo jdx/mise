@@ -31,7 +31,7 @@ use std::path::Path;
 use mise_sigstore::sources::github::GitHubSource;
 use mise_sigstore::{ArtifactRef, AttestationClient, AttestationSource, FetchParams, RetryConfig};
 
-pub use mise_sigstore::{AttestationError, SlsaArtifact};
+pub(crate) use mise_sigstore::{AttestationError, SlsaArtifact};
 
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
@@ -103,7 +103,7 @@ fn attestation_client(api_url: &str) -> AttestationResult<AttestationClient> {
 ///
 /// Applies configured URL replacements to the API base URL before dispatching to
 /// [`mise_sigstore::verify_github_attestation_with_base_url`].
-pub async fn verify_attestation(
+pub(crate) async fn verify_attestation(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
@@ -181,7 +181,7 @@ pub async fn verify_attestation(
 ///
 /// The versions-host cache is keyed by digest only, so predicate-filtered
 /// requests go directly to the GitHub attestations API.
-pub async fn verify_attestation_with_predicate_type(
+pub(crate) async fn verify_attestation_with_predicate_type(
     artifact_path: &Path,
     owner: &str,
     repo: &str,
@@ -229,7 +229,7 @@ pub async fn verify_attestation_with_predicate_type(
 /// pre-wrapper code at `src/backend/github.rs` emitted different messages for each; the
 /// wrapper keeps that signal instead of flattening both into one error string.
 #[derive(Debug)]
-pub enum DetectError {
+pub(crate) enum DetectError {
     /// Attestation source/client construction rejected the base URL.
     SourceCreation(AttestationError),
     /// The attestations endpoint returned an error (403 rate-limit, 5xx, network failure).
@@ -259,7 +259,7 @@ impl std::error::Error for DetectError {
 /// Returns `Ok(true)` if any attestations exist for the digest. Used at lock time to decide
 /// whether `ProvenanceType::GithubAttestations` should be recorded before committing to a
 /// full download + verify.
-pub async fn detect_attestations(
+pub(crate) async fn detect_attestations(
     owner: &str,
     repo: &str,
     api_url: &str,
@@ -296,7 +296,7 @@ pub async fn detect_attestations(
 ///
 /// The versions-host cache is keyed by digest only, so predicate-filtered
 /// requests go directly to the GitHub attestations API.
-pub async fn detect_attestations_with_predicate_type(
+pub(crate) async fn detect_attestations_with_predicate_type(
     owner: &str,
     repo: &str,
     api_url: &str,
@@ -340,7 +340,7 @@ fn use_versions_host_for_attestations(api_url: Option<&str>, use_versions_host: 
 }
 
 /// Verify SLSA provenance for an already-downloaded artifact. Passthrough — no token needed.
-pub async fn verify_slsa_provenance(
+pub(crate) async fn verify_slsa_provenance(
     artifact_path: &Path,
     provenance_path: &Path,
     min_level: u8,
@@ -349,7 +349,7 @@ pub async fn verify_slsa_provenance(
     mise_sigstore::verify_slsa_provenance(artifact_path, provenance_path, min_level).await
 }
 
-pub async fn verify_slsa_provenance_artifacts(
+pub(crate) async fn verify_slsa_provenance_artifacts(
     provenance_path: &Path,
     artifacts: &[SlsaArtifact],
     min_level: u8,
@@ -358,16 +358,16 @@ pub async fn verify_slsa_provenance_artifacts(
     mise_sigstore::verify_slsa_provenance_artifacts(provenance_path, artifacts, min_level).await
 }
 
-pub fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
+pub(crate) fn is_slsa_subject_mismatch(error: &AttestationError) -> bool {
     mise_sigstore::is_slsa_subject_mismatch(error)
 }
 
-pub fn is_api_failure(error: &AttestationError) -> bool {
+pub(crate) fn is_api_failure(error: &AttestationError) -> bool {
     matches!(error, AttestationError::Api(_) | AttestationError::Http(_))
 }
 
 /// Verify a keyless Cosign signature or bundle. Passthrough — no token needed.
-pub async fn verify_cosign_signature(
+pub(crate) async fn verify_cosign_signature(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
 ) -> AttestationResult<bool> {
@@ -376,7 +376,7 @@ pub async fn verify_cosign_signature(
 }
 
 /// Verify a Cosign signature against a public key. Passthrough — no token needed.
-pub async fn verify_cosign_signature_with_key(
+pub(crate) async fn verify_cosign_signature_with_key(
     artifact_path: &Path,
     sig_or_bundle_path: &Path,
     public_key_path: &Path,

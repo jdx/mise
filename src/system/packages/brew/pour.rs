@@ -24,20 +24,20 @@ struct RecordRepair {
     destination: PathBuf,
 }
 
-pub fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
+pub(super) fn keg_path(name: &str, pkg_version: &str) -> PathBuf {
     prefix::cellar().join(name).join(pkg_version)
 }
 
 /// is this keg fully poured and linked? Every pour ends by creating the
 /// `opt/<name>` symlink (even for keg-only formulae), so a Cellar directory
 /// without it is a remnant of a failed install and must not block a retry.
-pub fn keg_installed(name: &str, pkg_version: &str) -> bool {
+pub(super) fn keg_installed(name: &str, pkg_version: &str) -> bool {
     keg_path(name, pkg_version).exists() && linked_version(name).as_deref() == Some(pkg_version)
 }
 
 /// the version `opt/<name>` points at, if the symlink resolves to an
 /// existing keg
-pub fn linked_version(name: &str) -> Option<String> {
+pub(super) fn linked_version(name: &str) -> Option<String> {
     let opt = prefix::prefix().join("opt").join(name);
     record_keg(name, &opt).map(|(version, _)| version)
 }
@@ -165,7 +165,7 @@ fn symlink_points_to(link: &Path, target: &Path) -> bool {
 
 /// installed versions of this formula; the active keg (per the `opt`
 /// symlink, like brew) first, the rest name-sorted
-pub fn installed_versions(name: &str) -> Vec<String> {
+pub(super) fn installed_versions(name: &str) -> Vec<String> {
     let dir = prefix::cellar().join(name);
     let mut versions: Vec<String> = crate::file::ls(&dir)
         .unwrap_or_default()
@@ -188,7 +188,7 @@ pub fn installed_versions(name: &str) -> Vec<String> {
     versions
 }
 
-pub async fn pour(
+pub(super) async fn pour(
     rf: &ResolvedFormula,
     tag: &str,
     bottle: &BottleFile,
@@ -300,7 +300,7 @@ fn bottled_by_homebrew_at_least(keg: &Path, min: (u64, u64, u64)) -> bool {
 /// adopts these kegs (brew list/upgrade/uninstall all work). Written for
 /// both poured bottles and source-built kegs; `poured_from_bottle`
 /// distinguishes them the same way brew's own tab does.
-pub fn write_receipt(
+pub(super) fn write_receipt(
     rf: &ResolvedFormula,
     tag: &str,
     keg: &Path,
@@ -547,7 +547,7 @@ fn materialize_brew_dirs(dest: &Path) -> Result<()> {
 /// into the prefix. Conflicts are detected before anything is touched, and a
 /// failure partway through removes the links already created — the caller
 /// rolls the keg back on error, and nothing may be left dangling into it.
-pub fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
+pub(super) fn link_keg(name: &str, pkg_version: &str, keg_only: bool) -> Result<()> {
     let prefix_path = prefix::prefix();
     let keg = keg_path(name, pkg_version);
     if keg_only {

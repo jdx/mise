@@ -42,7 +42,7 @@ use xx::regex;
 const UV_EXCLUDE_NEWER_VERSION: &str = "0.2.22";
 
 #[derive(Debug)]
-pub struct PIPXBackend {
+pub(crate) struct PIPXBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -428,7 +428,7 @@ impl Backend for PIPXBackend {
 }
 
 /// Returns install-time-only option keys for PIPX backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "extras".into(),
         "package_name".into(),
@@ -571,7 +571,7 @@ impl PIPXBackend {
         }
     }
 
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 
@@ -643,7 +643,7 @@ impl PIPXBackend {
         Ok(registry_url)
     }
 
-    pub async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
+    pub(crate) async fn reinstall_all(config: &Arc<Config>) -> Result<()> {
         let ts = Arc::new(ToolsetBuilder::new().build(config).await?);
         let pipx_tools = ts
             .list_installed_versions(config)
@@ -660,6 +660,7 @@ impl PIPXBackend {
                 dry_run: false,
                 locked: false,
                 before_date: None,
+                dependency_context: Default::default(),
             };
             b.install_version(ctx, tv).await?;
         }

@@ -30,7 +30,7 @@ use itertools::Itertools;
 /// Customize status output with `status` settings.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Activate {
+pub(crate) struct Activate {
     /// Shell type to generate the script for
     #[clap()]
     shell_type: Option<ShellType>,
@@ -68,7 +68,7 @@ pub struct Activate {
 }
 
 impl Activate {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         let shell = require_shell(
             self.shell_type.or(self.shell),
             &format!("Name the shell: `mise activate {EXAMPLE_SHELL}`."),

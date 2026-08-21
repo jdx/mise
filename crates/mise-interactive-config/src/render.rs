@@ -10,7 +10,7 @@ use crate::picker::PickerState;
 
 /// What kind of picker is currently active
 #[derive(Debug, Clone)]
-pub enum PickerKind {
+pub(crate) enum PickerKind {
     /// Picking a tool from registry to add
     Tool(usize), // section_idx
     /// Picking a backend type for a tool
@@ -29,7 +29,7 @@ pub enum PickerKind {
 
 /// State for version selection mode
 #[derive(Debug, Clone)]
-pub struct VersionSelectState {
+pub(crate) struct VersionSelectState {
     /// Tool name being edited
     #[allow(dead_code)]
     pub tool: String,
@@ -44,7 +44,12 @@ pub struct VersionSelectState {
 
 impl VersionSelectState {
     /// Create a new version select state
-    pub fn new(tool: String, variants: Vec<String>, section_idx: usize, entry_idx: usize) -> Self {
+    pub(crate) fn new(
+        tool: String,
+        variants: Vec<String>,
+        section_idx: usize,
+        entry_idx: usize,
+    ) -> Self {
         Self {
             tool,
             variants,
@@ -55,19 +60,19 @@ impl VersionSelectState {
     }
 
     /// Get the currently selected version
-    pub fn current(&self) -> &str {
+    pub(crate) fn current(&self) -> &str {
         &self.variants[self.selected]
     }
 
     /// Move to previous variant (more general)
-    pub fn prev(&mut self) {
+    pub(crate) fn prev(&mut self) {
         if self.selected > 0 {
             self.selected -= 1;
         }
     }
 
     /// Move to next variant (more specific)
-    pub fn next(&mut self) {
+    pub(crate) fn next(&mut self) {
         if self.selected + 1 < self.variants.len() {
             self.selected += 1;
         }
@@ -76,7 +81,7 @@ impl VersionSelectState {
 
 /// State for boolean selection mode
 #[derive(Debug, Clone)]
-pub struct BooleanSelectState {
+pub(crate) struct BooleanSelectState {
     /// Key being set
     pub key: String,
     /// Currently selected value (true or false)
@@ -91,7 +96,7 @@ pub struct BooleanSelectState {
 
 impl BooleanSelectState {
     /// Create a new boolean select state for a new entry
-    pub fn new_entry(key: String, section_idx: usize) -> Self {
+    pub(crate) fn new_entry(key: String, section_idx: usize) -> Self {
         Self {
             key,
             selected: true, // Default to true
@@ -102,7 +107,12 @@ impl BooleanSelectState {
     }
 
     /// Create a new boolean select state for editing existing entry
-    pub fn edit_entry(key: String, current: bool, section_idx: usize, entry_idx: usize) -> Self {
+    pub(crate) fn edit_entry(
+        key: String,
+        current: bool,
+        section_idx: usize,
+        entry_idx: usize,
+    ) -> Self {
         Self {
             key,
             selected: current,
@@ -113,7 +123,7 @@ impl BooleanSelectState {
     }
 
     /// Create a new boolean select state for editing an inline table field
-    pub fn edit_inline_table_field(
+    pub(crate) fn edit_inline_table_field(
         key: String,
         current: bool,
         section_idx: usize,
@@ -130,19 +140,19 @@ impl BooleanSelectState {
     }
 
     /// Toggle the selection
-    pub fn toggle(&mut self) {
+    pub(crate) fn toggle(&mut self) {
         self.selected = !self.selected;
     }
 
     /// Get the current selection as a string
-    pub fn value_str(&self) -> &'static str {
+    pub(crate) fn value_str(&self) -> &'static str {
         if self.selected { "true" } else { "false" }
     }
 }
 
 /// Editor mode
 #[derive(Debug, Clone)]
-pub enum Mode {
+pub(crate) enum Mode {
     /// Navigating the document
     Navigate,
     /// Editing a value inline
@@ -197,7 +207,7 @@ impl RenderStyles {
 }
 
 /// Renderer for the interactive config editor
-pub struct Renderer {
+pub(crate) struct Renderer {
     term: Term,
     /// Number of lines rendered in the last frame
     last_rendered_lines: usize,
@@ -209,7 +219,7 @@ pub struct Renderer {
 
 impl Renderer {
     /// Create a new renderer
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let term = Term::stderr();
         let (height, _) = term.size();
         Self {
@@ -221,12 +231,12 @@ impl Renderer {
     }
 
     /// Get terminal reference
-    pub fn term(&self) -> &Term {
+    pub(crate) fn term(&self) -> &Term {
         &self.term
     }
 
     /// Clear previously rendered lines
-    pub fn clear(&mut self) -> io::Result<()> {
+    pub(crate) fn clear(&mut self) -> io::Result<()> {
         if self.last_rendered_lines > 0 {
             self.term.clear_last_lines(self.last_rendered_lines)?;
         }
@@ -235,13 +245,13 @@ impl Renderer {
     }
 
     /// Update viewport height
-    pub fn update_size(&mut self) {
+    pub(crate) fn update_size(&mut self) {
         let (height, _) = self.term.size();
         self.visible_height = height.saturating_sub(6) as usize;
     }
 
     /// Render the document
-    pub fn render(
+    pub(crate) fn render(
         &mut self,
         doc: &TomlDocument,
         cursor: &Cursor,
@@ -838,7 +848,7 @@ impl Renderer {
     }
 
     /// Show a message briefly
-    pub fn flash_message(&mut self, message: &str) -> io::Result<()> {
+    pub(crate) fn flash_message(&mut self, message: &str) -> io::Result<()> {
         let style = Style::new().yellow().bold();
         writeln!(self.term, "{}", style.apply_to(message))?;
         self.term.flush()?;
@@ -848,7 +858,12 @@ impl Renderer {
     }
 
     /// Render a loading indicator
-    pub fn render_loading(&mut self, message: &str, title: &str, path: &str) -> io::Result<()> {
+    pub(crate) fn render_loading(
+        &mut self,
+        message: &str,
+        title: &str,
+        path: &str,
+    ) -> io::Result<()> {
         self.clear()?;
 
         let mut output = Vec::new();
@@ -884,7 +899,7 @@ impl Renderer {
     }
 
     /// Render the picker overlay
-    pub fn render_picker(
+    pub(crate) fn render_picker(
         &mut self,
         picker: &PickerState,
         kind: &PickerKind,

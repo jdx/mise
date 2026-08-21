@@ -1,4 +1,5 @@
 // eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
+#![deny(unreachable_pub)]
 #![allow(semicolon_in_expressions_from_macros)]
 
 //! Aqua Registry

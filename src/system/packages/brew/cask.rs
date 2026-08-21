@@ -41,7 +41,7 @@ const DEFAULT_APP_DIR: &str = "/Applications";
 /// docs/bootstrap/packages/brew.md
 const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 
-pub struct BrewCaskManager {}
+pub(crate) struct BrewCaskManager {}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct CaskUrlSpecs {
@@ -337,7 +337,7 @@ struct CaskTransactionJournal<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct CaskPruneCandidate {
+pub(crate) struct CaskPruneCandidate {
     pub token: String,
     pub version: String,
     version_dir: PathBuf,
@@ -345,25 +345,25 @@ pub struct CaskPruneCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CaskPruneSkip {
+pub(crate) struct CaskPruneSkip {
     pub token: String,
     pub reason: String,
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct CaskPrunePlan {
+pub(crate) struct CaskPrunePlan {
     pub remove: Vec<CaskPruneCandidate>,
     pub skipped: Vec<CaskPruneSkip>,
 }
 
 impl CaskPrunePlan {
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.remove.is_empty()
     }
 }
 
 impl BrewCaskManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 
@@ -1360,6 +1360,18 @@ fn activate_app_at(
     caskroom_app: &Path,
     logical_target: &Path,
 ) -> Result<()> {
+    if exists_at(&parent.fd, name)? {
+        // Same class of pain as `brew reinstall --cask`: TCC is keyed to the
+        // app identity at this path, so an atomic bundle swap clears grants.
+        warn!(
+            "brew-cask: replacing {} — macOS may revoke Privacy & Security \
+             permissions for this app (Accessibility, Screen Recording, Full \
+             Disk Access, etc.); re-grant them in System Settings if prompted. \
+             To take over an existing app without replacing it, set adopt = true \
+             or [bootstrap.brew] adopt = true",
+            logical_target.display()
+        );
+    }
     swap_app_at(parent, name, tmp_name, old_name)?;
     replace_caskroom_app_with_symlink(caskroom_app, logical_target)
 }
@@ -1818,7 +1830,17 @@ fn install_generic_artifact(
         );
     }
     let target = generic_artifact_target_path(&artifact.target)?;
-    let relative_source = source.strip_prefix(stage)?;
+    // Not a lexical `strip_prefix`: the lookup resolves symlinks it had to
+    // traverse, so a source reached that way can be contained by the stage
+    // without sharing its literal prefix — as it is whenever `stage` itself
+    // has a symlinked ancestor. `staged_relative_path` retries against the
+    // resolved stage, matching the containment check above.
+    let relative_source = staged_relative_path(stage, &source).ok_or_else(|| {
+        eyre!(
+            "brew-cask: generic artifact source is not contained by the extraction root: {}",
+            source.display()
+        )
+    })?;
     let caskroom_source = temporary_caskroom.join(relative_source);
     if !path_starts_with_resolved_root(&caskroom_source, temporary_caskroom) {
         bail!(
@@ -4570,11 +4592,23 @@ fn stage_binary(
         file::make_symlink(&app_binary, &caskroom_binary)?;
     } else {
         let source = find_binary_source(stage, caskroom, cask, binary)?;
-        if source.starts_with(stage) || source.starts_with(caskroom) {
+        // Ephemeral stage content has to be copied into the caskroom before the
+        // stage is torn down; a durable location is linked instead, so a CLI
+        // that derives its own root from the resolved path of `$0` still finds
+        // its tree. Resolve both sides: gcloud-cli's preflight leaves
+        // `staged_path/google-cloud-sdk` as a link to the SDK it installed under
+        // the prefix, and a lexical comparison would read that as stage content
+        // and copy the launcher out of the tree it needs.
+        if path_starts_with_resolved_root(&source, stage)
+            || path_starts_with_resolved_root(&source, caskroom)
+        {
             file::copy(&source, &caskroom_binary)?;
             file::make_executable(&caskroom_binary)?;
         } else {
-            file::make_symlink(&source, &caskroom_binary)?;
+            file::make_symlink(
+                &durable_binary_link_target(&source, stage, caskroom),
+                &caskroom_binary,
+            )?;
         }
     }
     Ok(())
@@ -4680,6 +4714,26 @@ fn find_binary_source(
                 binary.source
             )
         })
+}
+
+/// Where to point a caskroom binary link whose source is not stage content.
+///
+/// A source handed to us under the stage or the temporary caskroom, yet
+/// resolving outside it, has to be linked at its real location: a link at the
+/// literal path dangles as soon as staging tears that directory down. This is
+/// reachable both from the walk, which returns a symlink entry it matched by
+/// name, and from `generated_caskroom_artifact`, which maps a hook-generated
+/// path onto either root.
+///
+/// Sources that already sit outside both roots — the absolute paths a pkg
+/// installer creates, for instance — are linked verbatim, so the recorded
+/// target stays the path the cask metadata named.
+fn durable_binary_link_target(source: &Path, stage: &Path, caskroom: &Path) -> PathBuf {
+    if source.starts_with(stage) || source.starts_with(caskroom) {
+        file::desymlink_path(source)
+    } else {
+        source.to_path_buf()
+    }
 }
 
 fn absolute_binary_source(source: &str) -> Option<PathBuf> {
@@ -6050,7 +6104,48 @@ fn find_artifact_matching(
             case_insensitive = Some(entry.into_path());
         }
     }
-    case_insensitive
+    if let Some(found) = case_insensitive {
+        return Some(found);
+    }
+    // `WalkDir` defaults to `follow_links = false`, so the walk above never
+    // descends into a symlink a flight step created: gcloud-cli's last
+    // preflight step links `staged_path/google-cloud-sdk` at the SDK it copied
+    // into the prefix, and every `binary` beneath it was unreachable. Resolving
+    // `name` as an exact path under `root` traverses the link.
+    //
+    // This only ever fires for that symlinked case. When `root/name` is
+    // reachable without traversing a link, its own relative path ends with
+    // `name`, so the walk already returned it — which is also why the result is
+    // desymlinked: the artifact's real location is what callers need to tell
+    // ephemeral stage content apart from a durable directory that outlives the
+    // install. Kept as a fallback rather than a fast path so the walk's
+    // exact-then-case-insensitive precedence is unchanged on case-insensitive
+    // filesystems.
+    relative_artifact_path(root, name_path)
+        .filter(|path| pred(path))
+        .map(|path| file::desymlink_path(&path))
+}
+
+/// `name` resolved against `root`, or `None` when `name` cannot be interpreted
+/// as a path contained by `root`.
+fn relative_artifact_path(root: &Path, name: &Path) -> Option<PathBuf> {
+    if name.is_absolute() {
+        return None;
+    }
+    let mut named = false;
+    for component in name.components() {
+        match component {
+            // `.` alone would resolve to `root` itself, and `install_app` would
+            // then take the whole extraction root as the bundle.
+            Component::Normal(component) if component != "__MACOSX" => named = true,
+            // The walk skips `__MACOSX` resource-fork copies; an exact-path hit
+            // must not reintroduce them.
+            Component::Normal(_) => return None,
+            Component::CurDir => {}
+            _ => return None,
+        }
+    }
+    named.then(|| root.join(name))
 }
 
 /// True when `path`'s trailing components match `suffix` with ASCII
@@ -6486,23 +6581,13 @@ fn installed_cask_version_in(
                 return Ok(None);
             }
             if receipt.schema_version >= 2 {
-                let targets_match = receipt
-                    .targets
-                    .iter()
-                    .map(|record| {
-                        if (cask.auto_updates || receipt.auto_updates)
-                            && receipt.apps.contains(&record.path)
-                        {
-                            Ok(record.path.is_dir())
-                        } else {
-                            cask_target_record_matches(record)
-                        }
-                    })
-                    .collect::<Result<Vec<_>>>()?
-                    .into_iter()
-                    .all(|matches| matches);
+                // Presence only. Content fingerprints are for prune/adopt safety
+                // and must not mark a cask "missing": replacing an .app because a
+                // file inside it changed resets macOS TCC grants, and hashing
+                // every app tree on status/apply is expensive.
+                let targets_present = receipt.targets.iter().all(cask_target_present);
                 let pkgs_installed = pkg_ids_installed(&receipt.pkg_ids)?;
-                return Ok((targets_match && pkgs_installed).then_some(receipt.version));
+                return Ok((targets_present && pkgs_installed).then_some(receipt.version));
             }
 
             // Legacy receipts remain usable only from the historical facts they
@@ -6640,6 +6725,37 @@ fn cask_target_record_matches(record: &CaskTargetRecord) -> Result<bool> {
         return Ok(false);
     };
     Ok(actual == record.fingerprint)
+}
+
+/// Whether a receipt target still exists at the recorded path and kind.
+///
+/// Directory and file targets ignore content drift so status/apply stay cheap
+/// and do not reinstall app bundles (which resets macOS TCC grants). Symlink
+/// targets still compare the recorded link destination — that is a cheap
+/// `readlink` — and require the link to resolve, so dangling or retargeted
+/// binaries/completions stay repairable on apply.
+fn cask_target_present(record: &CaskTargetRecord) -> bool {
+    let Ok(metadata) = record.path.symlink_metadata() else {
+        return false;
+    };
+    match record.fingerprint.kind {
+        CaskTargetKind::Symlink => {
+            if !metadata.file_type().is_symlink() {
+                return false;
+            }
+            let Ok(target) = std::fs::read_link(&record.path) else {
+                return false;
+            };
+            let digest = hex::encode(Sha256::digest(target.as_os_str().as_encoded_bytes()));
+            if digest != record.fingerprint.digest {
+                return false;
+            }
+            // Follow the link so a dangling binary/completion is not "present".
+            std::fs::metadata(&record.path).is_ok()
+        }
+        CaskTargetKind::File => metadata.is_file(),
+        CaskTargetKind::Directory => metadata.is_dir(),
+    }
 }
 
 fn cask_target_fingerprint(path: &Path) -> Result<CaskTargetFingerprint> {
@@ -6794,7 +6910,7 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
         .wrap_err_with(|| format!("failed to parse {}", path.display()))
 }
 
-pub async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
+pub(crate) async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
     let mut keep = BTreeSet::new();
     for request in configured {
         keep.insert(fetch_cask(request).await?.token);
@@ -7030,7 +7146,7 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
     Ok(plan)
 }
 
-pub fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
+pub(crate) fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
     apply_cask_prune_plan_in(plan, dry_run, &crate::dirs::STATE)
 }
 
@@ -7720,7 +7836,7 @@ mod tests {
     }
 
     #[test]
-    fn completed_receipt_detects_app_bundle_drift() -> Result<()> {
+    fn completed_receipt_ignores_app_bundle_content_drift() -> Result<()> {
         let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
@@ -7752,7 +7868,114 @@ mod tests {
             Some(cask.version.clone())
         );
         crate::file::write(app_target.join("Contents/app"), "changed")?;
+        // Content drift must not look like "missing" — that would reinstall the
+        // app on the next apply and revoke macOS TCC grants.
+        assert_eq!(
+            installed_cask_version(&cask, &artifacts)?,
+            Some(cask.version.clone())
+        );
+        assert!(!cask_target_record_matches(
+            read_receipt(&caskroom)?
+                .expect("receipt")
+                .targets
+                .first()
+                .expect("app target")
+        )?);
+        Ok(())
+    }
+
+    #[test]
+    fn completed_receipt_missing_app_is_not_installed() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("example", "1.0.0");
+        let app = AppArtifact {
+            source: "Example.app".to_string(),
+            target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
+        };
+        let artifacts = CaskArtifacts {
+            apps: vec![app.clone()],
+            ..Default::default()
+        };
+        let app_target = app_target_path(app.target_name())?;
+        file::create_dir_all(app_target.join("Contents"))?;
+        crate::file::write(app_target.join("Contents/app"), "original")?;
+        let caskroom = caskroom_version_dir(&cask.token, &cask.version);
+        file::create_dir_all(&caskroom)?;
+        write_receipt_with_flight_targets(
+            &caskroom,
+            &cask,
+            &artifacts,
+            &[],
+            &BTreeMap::new(),
+            &[],
+            &[],
+        )?;
+        file::remove_all(&app_target)?;
         assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn cask_target_present_checks_symlink_destination_and_kinds() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dest = tmp.path().join("bin/tool");
+        file::create_dir_all(dest.parent().unwrap())?;
+        crate::file::write(&dest, "tool")?;
+        let link = tmp.path().join("prefix/bin/tool");
+        file::create_dir_all(link.parent().unwrap())?;
+        file::make_symlink(&dest, &link)?;
+        let record = CaskTargetRecord {
+            path: link.clone(),
+            fingerprint: cask_target_fingerprint(&link)?,
+            uninstall: None,
+        };
+        assert!(cask_target_present(&record));
+
+        file::remove_file(&dest)?;
+        assert!(
+            !cask_target_present(&record),
+            "dangling symlink must not count as present"
+        );
+
+        crate::file::write(&dest, "tool")?;
+        let other = tmp.path().join("bin/other");
+        crate::file::write(&other, "other")?;
+        file::remove_file(&link)?;
+        file::make_symlink(&other, &link)?;
+        assert!(
+            !cask_target_present(&record),
+            "retargeted symlink must not count as present"
+        );
+
+        file::remove_file(&link)?;
+        crate::file::write(&link, "not a symlink")?;
+        assert!(
+            !cask_target_present(&record),
+            "file replacing a symlink must not count as present"
+        );
+
+        let font = tmp.path().join("fonts/Example.ttf");
+        file::create_dir_all(font.parent().unwrap())?;
+        crate::file::write(&font, "font")?;
+        let file_record = CaskTargetRecord {
+            path: font.clone(),
+            fingerprint: cask_target_fingerprint(&font)?,
+            uninstall: None,
+        };
+        assert!(cask_target_present(&file_record));
+        crate::file::write(&font, "changed font bytes")?;
+        assert!(
+            cask_target_present(&file_record),
+            "file content drift is ignored for install health"
+        );
+        file::remove_file(&font)?;
+        file::create_dir_all(&font)?;
+        assert!(
+            !cask_target_present(&file_record),
+            "directory replacing a file must not count as present"
+        );
         Ok(())
     }
 
@@ -10466,6 +10689,86 @@ end
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn artifact_lookup_resolves_through_a_flight_created_symlink() -> Result<()> {
+        // gcloud-cli's last preflight step symlinks
+        // `staged_path/google-cloud-sdk` at the SDK copied into the prefix, so
+        // every `binary` source resolves only by traversing that link. The walk
+        // cannot enter it.
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        let installed = tmp.path().join("share/google-cloud-sdk");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(installed.join("bin"))?;
+        crate::file::write(
+            installed.join("bin/git-credential-gcloud.sh"),
+            "credential helper",
+        )?;
+        std::os::unix::fs::symlink(&installed, stage.join("google-cloud-sdk"))?;
+
+        // The artifact's real location, not the path through the link: callers
+        // decide copy-vs-symlink from it, and the stage does not outlive the
+        // install.
+        assert_eq!(
+            find_file_artifact(&stage, "google-cloud-sdk/bin/git-credential-gcloud.sh"),
+            Some(file::desymlink_path(
+                &installed.join("bin/git-credential-gcloud.sh")
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn artifact_lookup_rejects_sources_that_escape_the_root() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        crate::file::write(tmp.path().join("outside"), "not ours")?;
+
+        assert_eq!(find_file_artifact(&stage, "../outside"), None);
+        assert_eq!(
+            find_file_artifact(&stage, &tmp.path().join("outside").to_string_lossy()),
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn relative_artifact_path_refuses_names_it_cannot_contain() {
+        let root = Path::new("/stage");
+
+        assert_eq!(
+            relative_artifact_path(root, Path::new("bin/op")),
+            Some(PathBuf::from("/stage/bin/op"))
+        );
+        assert_eq!(
+            relative_artifact_path(root, Path::new("./bin/op")),
+            Some(PathBuf::from("/stage/./bin/op"))
+        );
+        // Names that would resolve to `root` itself, which `find_app`'s
+        // directory predicate would accept as the bundle.
+        assert_eq!(relative_artifact_path(root, Path::new("")), None);
+        assert_eq!(relative_artifact_path(root, Path::new(".")), None);
+        assert_eq!(relative_artifact_path(root, Path::new("./")), None);
+        // Escapes.
+        assert_eq!(relative_artifact_path(root, Path::new("../op")), None);
+        assert_eq!(
+            relative_artifact_path(root, Path::new("bin/../../op")),
+            None
+        );
+        assert_eq!(relative_artifact_path(root, Path::new("/etc/passwd")), None);
+        // Resource-fork copies the walk skips.
+        assert_eq!(
+            relative_artifact_path(root, Path::new("__MACOSX/Yaak.app")),
+            None
+        );
+        assert_eq!(
+            relative_artifact_path(root, Path::new("payload/__MACOSX/op")),
+            None
+        );
+    }
+
     #[test]
     fn path_ends_with_ignore_ascii_case_matches_components() {
         assert!(path_ends_with_ignore_ascii_case(
@@ -12746,6 +13049,160 @@ end
             crate::file::read_to_string(caskroom.join("bin/op"))?,
             "hook"
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_rather_than_copies_a_binary_behind_a_flight_symlink() -> Result<()> {
+        // gcloud-cli's preflight installs the SDK under the prefix and leaves
+        // `staged_path/google-cloud-sdk` as a link to it. The launcher derives
+        // CLOUDSDK_ROOT_DIR from the resolved path of `$0`, so copying it into
+        // the caskroom — out of the tree holding `lib/` — would stage a broken
+        // binary. It has to be linked, like Homebrew does.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let installed = tmp.path().join("share/google-cloud-sdk");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(installed.join("bin"))?;
+        file::create_dir_all(installed.join("lib"))?;
+        crate::file::write(installed.join("bin/gcloud"), "launcher")?;
+        std::os::unix::fs::symlink(&installed, stage.join("google-cloud-sdk"))?;
+        let caskroom = caskroom_version_dir("gcloud-cli", "531.0.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("gcloud-cli", "531.0.0");
+        let binary = BinaryArtifact {
+            source: "google-cloud-sdk/bin/gcloud".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/gcloud".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+
+        let staged = caskroom.join("bin/gcloud");
+        assert_eq!(
+            std::fs::read_link(&staged)?,
+            file::desymlink_path(&installed.join("bin/gcloud")),
+            "must link into the SDK tree, not copy the launcher out of it"
+        );
+        // Still resolves, and `lib/` is a sibling of the link target.
+        assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
+        assert!(
+            std::fs::read_link(&staged)?
+                .parent()
+                .and_then(Path::parent)
+                .is_some_and(|root| root.join("lib").is_dir())
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn links_a_stage_symlink_at_its_target_so_it_survives_teardown() -> Result<()> {
+        // The walk matches symlink entries by name and `is_file` follows them,
+        // so a stage-local link to a durable binary comes back as a stage path
+        // that resolves outside the stage. Linking the caskroom entry at that
+        // literal path would dangle the moment staging tears the stage down.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        let durable = tmp.path().join("opt/vendor/tool");
+        file::create_dir_all(&stage)?;
+        file::create_dir_all(durable.parent().unwrap())?;
+        crate::file::write(&durable, "durable")?;
+        std::os::unix::fs::symlink(&durable, stage.join("tool"))?;
+        let caskroom = caskroom_version_dir("linked-binary", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("linked-binary", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "tool".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/tool".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+
+        let staged = caskroom.join("bin/tool");
+        assert_eq!(
+            std::fs::read_link(&staged)?,
+            file::desymlink_path(&durable),
+            "must link the real location, not the path through the stage"
+        );
+        // The decisive check: staging is over, so the stage is gone.
+        file::remove_all(&stage)?;
+        assert_eq!(crate::file::read_to_string(&staged)?, "durable");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stages_generic_artifact_through_a_symlinked_stage() -> Result<()> {
+        // The lookup resolves links it traverses, so the source can be
+        // contained by the stage without sharing its literal prefix. A lexical
+        // strip would fail here even though the containment check passes.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let real_stage = tmp.path().join("real-stage");
+        let payload = real_stage.join("libcblite-4.1.0/include/cbl");
+        file::create_dir_all(&payload)?;
+        file::write(payload.join("CouchbaseLite.h"), "header")?;
+        std::os::unix::fs::symlink(
+            real_stage.join("libcblite-4.1.0"),
+            real_stage.join("current"),
+        )?;
+        let stage = tmp.path().join("stage");
+        std::os::unix::fs::symlink(&real_stage, &stage)?;
+        let artifact = GenericArtifact {
+            source: "current/include/cbl".to_string(),
+            target: "$HOMEBREW_PREFIX/include/cbl".to_string(),
+        };
+
+        let mut targets = FlightTargetTransaction::default();
+        let temporary_caskroom = tmp.path().join("Caskroom/example/.mise-tmp");
+        install_generic_artifact(&stage, &temporary_caskroom, &artifact, &mut targets)?;
+
+        assert_eq!(
+            file::read_to_string(tmp.path().join("include/cbl/CouchbaseLite.h"))?,
+            "header"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn copies_a_binary_whose_link_stays_inside_a_symlinked_stage() -> Result<()> {
+        // Mirror of the case above with the link pointing back into the stage,
+        // reached through a stage path that is itself a symlink (a symlinked
+        // `~/Library/Caches`). The resolved source then differs lexically from
+        // `stage`, and treating that as a durable location would leave a
+        // dangling binary once the stage is torn down.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let real_stage = tmp.path().join("real-stage");
+        file::create_dir_all(real_stage.join("payload/bin"))?;
+        crate::file::write(real_stage.join("payload/bin/tool"), "tool")?;
+        std::os::unix::fs::symlink(real_stage.join("payload"), real_stage.join("link"))?;
+        let stage = tmp.path().join("stage");
+        std::os::unix::fs::symlink(&real_stage, &stage)?;
+        let caskroom = caskroom_version_dir("linked-stage", "1.0.0");
+        file::create_dir_all(&caskroom)?;
+        let cask = test_cask("linked-stage", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "link/bin/tool".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/tool".to_string()),
+        };
+
+        stage_binary(&stage, &caskroom, &cask, &[], &binary)?;
+
+        let staged = caskroom.join("bin/tool");
+        assert!(
+            !staged.is_symlink(),
+            "stage content must be copied, not linked"
+        );
+        assert_eq!(crate::file::read_to_string(&staged)?, "tool");
         Ok(())
     }
 

@@ -14,7 +14,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub struct RemoteTomlConfig {
+pub(crate) struct RemoteTomlConfig {
     pub source: Option<PathBuf>,
     pub mise_env: Option<Vec<String>>,
     #[serde(default)]
@@ -28,7 +28,7 @@ pub struct RemoteTomlConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct RemoteHostTomlConfig {
+pub(crate) struct RemoteHostTomlConfig {
     pub host: String,
     pub user: Option<String>,
     pub port: Option<u16>,
@@ -50,7 +50,7 @@ pub struct RemoteHostTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct RemoteHost {
+pub(crate) struct RemoteHost {
     pub name: String,
     pub host: String,
     pub user: Option<String>,
@@ -69,7 +69,7 @@ pub struct RemoteHost {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct RemoteOverrides {
+pub(crate) struct RemoteOverrides {
     pub source: Option<PathBuf>,
     pub mise_env: Option<Vec<String>>,
     pub copy_links: bool,
@@ -84,7 +84,7 @@ pub struct RemoteOverrides {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct RemoteRunOptions {
+pub(crate) struct RemoteRunOptions {
     pub dry_run: bool,
     pub yes: bool,
     pub update: bool,
@@ -97,7 +97,7 @@ pub struct RemoteRunOptions {
 }
 
 #[derive(Default)]
-pub struct RemoteArtifactResolver {
+pub(crate) struct RemoteArtifactResolver {
     directory: Option<tempfile::TempDir>,
     manifest: Option<ReleaseManifest>,
     artifacts: IndexMap<String, PathBuf>,
@@ -116,7 +116,7 @@ struct RemotePlatform {
     libc: Option<LibcFlavor>,
 }
 
-pub fn hosts_from_config(
+pub(crate) fn hosts_from_config(
     config: &Config,
     layered_excludes: &[String],
 ) -> Result<IndexMap<String, RemoteHost>> {
@@ -172,7 +172,7 @@ pub fn hosts_from_config(
     Ok(hosts)
 }
 
-pub fn excludes_from_config(config: &Config) -> Vec<String> {
+pub(crate) fn excludes_from_config(config: &Config) -> Vec<String> {
     config
         .config_files
         .values()
@@ -181,7 +181,7 @@ pub fn excludes_from_config(config: &Config) -> Vec<String> {
         .collect()
 }
 
-pub fn ad_hoc_host(
+pub(crate) fn ad_hoc_host(
     destination: &str,
     source: PathBuf,
     config_excludes: &[String],
@@ -217,7 +217,7 @@ pub fn ad_hoc_host(
 }
 
 impl RemoteHost {
-    pub fn apply_overrides(&mut self, overrides: &RemoteOverrides) -> Result<()> {
+    pub(crate) fn apply_overrides(&mut self, overrides: &RemoteOverrides) -> Result<()> {
         if let Some(source) = &overrides.source {
             self.source = absolutize(source)?;
         }
@@ -255,7 +255,7 @@ impl RemoteHost {
         self.validate()
     }
 
-    pub fn destination(&self) -> String {
+    pub(crate) fn destination(&self) -> String {
         match &self.user {
             Some(user) => format!("{user}@{}", self.host),
             None => self.host.clone(),
@@ -342,7 +342,7 @@ impl RemoteHost {
     }
 }
 
-pub async fn run(
+pub(crate) async fn run(
     host: &RemoteHost,
     options: &RemoteRunOptions,
     artifacts: &mut RemoteArtifactResolver,

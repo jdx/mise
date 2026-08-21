@@ -30,7 +30,7 @@ use super::trust::Trust;
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Prune {
+pub(crate) struct Prune {
     /// Prune only these tools
     #[clap()]
     pub installed_tool: Option<Vec<ToolArg>>,
@@ -63,7 +63,7 @@ impl Prune {
         self.dry_run || self.dry_run_code
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if self.monorepo {
             unimplemented!("mise prune --monorepo is not implemented yet");
         }
@@ -111,7 +111,7 @@ impl Prune {
     }
 }
 
-pub async fn prunable_tools(
+pub(super) async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
@@ -147,7 +147,11 @@ pub async fn prunable_tools(
     Ok(to_delete.into_values().collect())
 }
 
-pub async fn prune(config: &Arc<Config>, tools: Vec<&BackendArg>, dry_run: bool) -> Result<()> {
+pub(super) async fn prune(
+    config: &Arc<Config>,
+    tools: Vec<&BackendArg>,
+    dry_run: bool,
+) -> Result<()> {
     let to_delete = prunable_tools(config, tools).await?;
     delete(config, dry_run, to_delete).await
 }

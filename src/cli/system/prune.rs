@@ -19,7 +19,7 @@ use crate::ui::prompt;
 /// tracked configs.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemPrune {
+pub(crate) struct SystemPrune {
     /// Only prune packages for this manager
     #[clap(long, short, default_value = "brew", value_parser = ["brew", "brew-cask"])]
     manager: String,
@@ -34,7 +34,7 @@ pub struct SystemPrune {
 }
 
 impl SystemPrune {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if Settings::get()
             .system_packages
             .managers

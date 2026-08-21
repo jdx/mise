@@ -15,7 +15,7 @@ mod seccomp;
 /// `allow_*` fields imply their corresponding `deny_*` (e.g., `allow_write` implies `deny_write`
 /// for everything not in the allow list).
 #[derive(Debug, Clone, Default)]
-pub struct SandboxConfig {
+pub(crate) struct SandboxConfig {
     pub deny_read: bool,
     pub deny_write: bool,
     pub deny_net: bool,
@@ -56,7 +56,7 @@ fn env_pattern_matches(pattern: &str, key: &str) -> bool {
 
 impl SandboxConfig {
     /// Build sandbox configuration by combining persistent deny settings with CLI options.
-    pub fn from_settings_and_cli(
+    pub(crate) fn from_settings_and_cli(
         settings: &crate::config::settings::SettingsSandbox,
         cli_deny_all: bool,
         mut cli: Self,
@@ -69,7 +69,7 @@ impl SandboxConfig {
     }
 
     /// Returns true if any sandbox restriction is configured.
-    pub fn is_active(&self) -> bool {
+    pub(crate) fn is_active(&self) -> bool {
         self.deny_read
             || self.deny_write
             || self.deny_net
@@ -81,7 +81,7 @@ impl SandboxConfig {
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
-    pub fn resolve_paths(&mut self) {
+    pub(crate) fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
         let resolve = |paths: &mut Vec<PathBuf>| {
             paths.retain(|p| !p.as_os_str().is_empty());
@@ -102,21 +102,21 @@ impl SandboxConfig {
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
     #[cfg_attr(windows, allow(dead_code))]
-    pub fn effective_deny_read(&self) -> bool {
+    pub(crate) fn effective_deny_read(&self) -> bool {
         self.deny_read || !self.allow_read.is_empty()
     }
 
     #[cfg_attr(windows, allow(dead_code))]
-    pub fn effective_deny_write(&self) -> bool {
+    pub(crate) fn effective_deny_write(&self) -> bool {
         self.deny_write || !self.allow_write.is_empty()
     }
 
     #[cfg_attr(windows, allow(dead_code))]
-    pub fn effective_deny_net(&self) -> bool {
+    pub(crate) fn effective_deny_net(&self) -> bool {
         self.deny_net || !self.allow_net.is_empty()
     }
 
-    pub fn effective_deny_env(&self) -> bool {
+    pub(crate) fn effective_deny_env(&self) -> bool {
         self.deny_env || !self.allow_env.is_empty()
     }
 
@@ -125,7 +125,7 @@ impl SandboxConfig {
     /// When deny_env is active, starts with the mise-computed env (tool paths etc.),
     /// keeps only essential vars + allow_env entries, and also pulls in allow_env
     /// vars from the parent process environment if not already present.
-    pub fn filter_env(
+    pub(crate) fn filter_env(
         &self,
         env: &std::collections::BTreeMap<String, String>,
     ) -> std::collections::BTreeMap<String, String> {
@@ -185,7 +185,7 @@ impl SandboxConfig {
     #[cfg(not(test))]
     #[cfg_attr(windows, allow(dead_code))]
     #[allow(unused_variables)]
-    pub async fn apply(
+    pub(crate) async fn apply(
         &self,
         program: &str,
         args: &[String],
@@ -254,7 +254,7 @@ impl SandboxConfig {
 #[cfg(not(test))]
 #[cfg_attr(windows, allow(dead_code))]
 #[derive(Debug)]
-pub struct SandboxedCommand {
+pub(crate) struct SandboxedCommand {
     pub program: String,
     pub args: Vec<String>,
 }
@@ -263,19 +263,19 @@ pub struct SandboxedCommand {
 
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
-pub fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
+pub(crate) fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
     landlock::apply_landlock(config)
 }
 
 /// Apply seccomp network filter (Linux only).
 #[cfg(target_os = "linux")]
-pub fn seccomp_apply() -> eyre::Result<()> {
+pub(crate) fn seccomp_apply() -> eyre::Result<()> {
     seccomp::apply_seccomp_net_filter()
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub async fn macos_generate_profile(config: &SandboxConfig) -> String {
+pub(crate) async fn macos_generate_profile(config: &SandboxConfig) -> String {
     macos::generate_seatbelt_profile(config).await
 }
 

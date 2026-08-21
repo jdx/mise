@@ -18,21 +18,21 @@ static AZURE_DEVOPS_HTTPS_GIT_REGEX: Lazy<Regex> = Lazy::new(|| {
 });
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemoteGitSource {
+pub(crate) struct RemoteGitSource {
     pub url: String,
     pub path: String,
     pub git_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RemoteHttpSource {
+pub(crate) struct RemoteHttpSource {
     pub url: String,
 }
 
-pub struct RemoteSource;
+pub(crate) struct RemoteSource;
 
 impl RemoteSource {
-    pub fn parse_git(file: &str) -> Option<RemoteGitSource> {
+    pub(crate) fn parse_git(file: &str) -> Option<RemoteGitSource> {
         Self::parse_git_ssh(file).or_else(|| Self::parse_git_https(file))
     }
 
@@ -46,7 +46,7 @@ impl RemoteSource {
             .or_else(|| parse_git_with(&AZURE_DEVOPS_HTTPS_GIT_REGEX, file))
     }
 
-    pub fn parse_http(file: &str) -> Option<RemoteHttpSource> {
+    pub(crate) fn parse_http(file: &str) -> Option<RemoteHttpSource> {
         let url = url::Url::parse(file).ok()?;
         ((url.scheme() == "http" || url.scheme() == "https")
             && url.path().len() > 1

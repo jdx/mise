@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for uv (uv.lock)
 #[derive(Debug)]
-pub struct UvDepsProvider {
+pub(crate) struct UvDepsProvider {
     base: ProviderBase,
 }
 
 impl UvDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("uv", project_root, config),
         }

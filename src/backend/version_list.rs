@@ -19,7 +19,7 @@ use regex::Regex;
 use std::collections::HashSet;
 
 /// Fetch and parse versions from a version list URL
-pub async fn fetch_versions(
+pub(crate) async fn fetch_versions(
     version_list_url: &str,
     version_regex: Option<&str>,
     version_json_path: Option<&str>,
@@ -43,7 +43,7 @@ pub async fn fetch_versions(
 }
 
 /// Parse version list from content using optional regex pattern, JSON path, or expr
-pub fn parse_version_list(
+pub(crate) fn parse_version_list(
     content: &str,
     version_regex: Option<&str>,
     version_json_path: Option<&str>,

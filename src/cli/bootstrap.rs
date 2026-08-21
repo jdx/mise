@@ -30,10 +30,10 @@ use clap::{Subcommand, ValueEnum};
 /// Set up a machine for the current config in one command
 // The wrapper defers construction of bootstrap's large nested command tree
 // until the user actually invokes `mise bootstrap`.
-pub struct DeferredBootstrap(Bootstrap);
+pub(crate) struct DeferredBootstrap(Bootstrap);
 
 impl DeferredBootstrap {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         self.0.run().await
     }
 }
@@ -172,7 +172,7 @@ fn deferred_flags(command: clap::Command) -> clap::Command {
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
-pub struct Bootstrap {
+pub(super) struct Bootstrap {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -1122,7 +1122,7 @@ struct BootstrapUserStatus {
 }
 
 impl Bootstrap {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         if let Some(command) = self.command {
             return command.run().await;
         }

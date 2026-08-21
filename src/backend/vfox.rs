@@ -28,7 +28,7 @@ use crate::toolset::{ToolOptions, ToolVersion, Toolset, install_state};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 #[derive(Debug)]
-pub struct VfoxBackend {
+pub(crate) struct VfoxBackend {
     ba: Arc<BackendArg>,
     plugin: Arc<VfoxPlugin>,
     plugin_enum: PluginEnum,
@@ -285,7 +285,7 @@ impl Backend for VfoxBackend {
         // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
         // whose `.versions` are empty until `resolve()` runs *after* installs, so its
         // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
-        // `install_dependency_toolset` is resolved offline and includes both backend deps
+        // `install_dependency_context` is resolved offline and includes both backend deps
         // and the per-tool mise.toml `depends` option (`gcloud = { depends =
         // ["python"] }`) with real install paths, and is install-safe (it uses
         // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
@@ -294,8 +294,8 @@ impl Backend for VfoxBackend {
         // `dependency_env`. (#10282, follow-up to #10432)
         {
             let base: EnvMap = cmd_env.clone().into_iter().collect();
-            let tool_vals = match self.install_dependency_toolset(&ctx.config, &tv).await {
-                Ok(dep_ts) => dep_ts.tool_val_env(&ctx.config, &base).await,
+            let tool_vals = match self.install_dependency_context(ctx, &tv).await {
+                Ok(dependencies) => dependencies.toolset.tool_val_env(&ctx.config, &base).await,
                 Err(e) => Err(e),
             };
             match tool_vals {
@@ -622,7 +622,7 @@ impl VfoxBackend {
         options
     }
 
-    pub fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg, backend_plugin_name: Option<String>) -> Self {
         let pathname = match &backend_plugin_name {
             Some(plugin_name) => plugin_name.clone(),
             None => ba.short.to_kebab_case(),

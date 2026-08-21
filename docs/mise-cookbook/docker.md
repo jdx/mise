@@ -39,6 +39,10 @@ For toolbox containers or bastion hosts where tools should be pre-installed for 
 use `mise install --system` to install tools into `/usr/local/share/mise/installs`.
 Each user's mise will automatically find these system-level tools without any configuration.
 
+`--system` shares the install location between users; it does not put binaries on `PATH`
+for use without mise. If you want tools other users can run with no mise involved, see
+[How do I install tools other users can run without mise?](/faq.html#how-do-i-install-tools-other-users-can-run-without-mise)
+
 The following example also shows installing using `extrepo` on Debian/Ubuntu image.
 With this approach you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
 

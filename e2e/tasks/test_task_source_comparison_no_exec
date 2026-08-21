@@ -49,7 +49,7 @@ file = "{{ '/definitely/missing' | hash_file }}"
 [tasks.same-vars]
 file = "{{ vars.comparison_path }}"
 vars = { comparison_path = "$HOME/other-vars-script" }
-env = { LOWER_OVERLAY = "must-not-apply" }
+env = { LOWER_OVERLAY = "applied-from-lower-fragment" }
 EOF
 
 if ! mise tasks >/dev/null; then
@@ -59,7 +59,7 @@ if [[ -e $marker ]]; then
   fail "task source comparison executed a deferred file template"
 fi
 
-# The active config's vars must not resolve a different task's deferred file
-# path. The task-local value points elsewhere, so treating this as the same
-# source would incorrectly apply the lower overlay to the discovered script.
-assert "mise run same-vars" "LOWER_OVERLAY=<unset>"
+# Global fragments compose like project-local fragments. The higher effective
+# include selects the executable file, while the lower same-name inline task
+# decorates it without evaluating or replacing it with its deferred file path.
+assert "mise run same-vars" "LOWER_OVERLAY=applied-from-lower-fragment"

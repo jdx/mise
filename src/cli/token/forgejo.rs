@@ -7,7 +7,7 @@ use crate::tokens;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Forgejo {
+pub(super) struct Forgejo {
     /// Forgejo hostname
     #[clap(default_value = "codeberg.org")]
     host: String,
@@ -18,7 +18,7 @@ pub struct Forgejo {
 }
 
 impl Forgejo {
-    pub fn run(self) -> eyre::Result<()> {
+    pub(super) fn run(self) -> eyre::Result<()> {
         match forgejo::resolve_token(&self.host) {
             Some((token, source)) => {
                 let display_token = if self.unmask {

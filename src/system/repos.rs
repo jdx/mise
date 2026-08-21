@@ -22,7 +22,7 @@ use url::Url;
 use crate::file;
 
 #[derive(Debug, Default, Clone, Deserialize)]
-pub struct RepoTomlConfig {
+pub(crate) struct RepoTomlConfig {
     #[serde(default)]
     pub url: Option<String>,
     #[serde(default, rename = "ref")]
@@ -30,7 +30,7 @@ pub struct RepoTomlConfig {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoRequest {
+pub(crate) struct RepoRequest {
     pub path_raw: String,
     pub path: PathBuf,
     pub url: String,
@@ -38,7 +38,7 @@ pub struct RepoRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RepoState {
+pub(crate) enum RepoState {
     Current,
     Missing,
     Differs,
@@ -47,7 +47,7 @@ pub enum RepoState {
 }
 
 impl RepoState {
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::Current => "current",
             Self::Missing => "missing",
@@ -57,13 +57,13 @@ impl RepoState {
         }
     }
 
-    pub fn is_current(&self) -> bool {
+    pub(crate) fn is_current(&self) -> bool {
         matches!(self, Self::Current)
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RepoStatus {
+pub(crate) struct RepoStatus {
     pub request: RepoRequest,
     pub origin: Option<String>,
     pub current_ref: Option<String>,
@@ -72,7 +72,7 @@ pub struct RepoStatus {
 }
 
 impl RepoRequest {
-    pub fn from_toml(
+    pub(crate) fn from_toml(
         path_raw: String,
         config: RepoTomlConfig,
         project_root: Option<&Path>,
@@ -150,11 +150,11 @@ impl std::fmt::Display for RepoRequest {
     }
 }
 
-pub fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
+pub(crate) fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
     requests.iter().map(status_one).collect()
 }
 
-pub fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
+pub(crate) fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
     for status in statuses {
         match &status.state {
             RepoState::Dirty => {
@@ -205,7 +205,7 @@ pub(crate) fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<
     Ok(())
 }
 
-pub fn exec(
+pub(crate) fn exec(
     requests: &[RepoRequest],
     command: &[String],
     dry_run: bool,

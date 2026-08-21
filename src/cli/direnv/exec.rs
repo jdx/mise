@@ -11,7 +11,7 @@ use crate::toolset::ToolsetBuilder;
 /// for direnv to consume.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true)]
-pub struct DirenvExec {}
+pub(super) struct DirenvExec {}
 
 #[derive(Debug, Default, Deserialize)]
 struct DirenvWatches {
@@ -20,7 +20,7 @@ struct DirenvWatches {
 }
 
 impl DirenvExec {
-    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+    pub(super) async fn run(self, config: &Arc<Config>) -> Result<()> {
         let ts = ToolsetBuilder::new().build(config).await?;
 
         let mut cmd = env_cmd();

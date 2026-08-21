@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fmt};
 
 /// Represents a target platform for lockfile operations
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Platform {
+pub(crate) struct Platform {
     pub os: String,
     pub arch: String,
     pub qualifier: Option<String>,
@@ -13,7 +13,7 @@ pub struct Platform {
 impl Platform {
     /// Parse a platform string in the format "os-arch" or "os-arch-qualifier"
     /// Qualifier may contain hyphens (e.g., "musl-baseline")
-    pub fn parse(platform_str: &str) -> Result<Self> {
+    pub(crate) fn parse(platform_str: &str) -> Result<Self> {
         let parts: Vec<&str> = platform_str.split('-').collect();
 
         match parts.len() {
@@ -40,7 +40,7 @@ impl Platform {
 
     /// Get the current platform from system information.
     /// On Linux, detects musl vs glibc at runtime and sets the qualifier accordingly.
-    pub fn current() -> Self {
+    pub(crate) fn current() -> Self {
         let settings = Settings::get();
         let os = settings.os().to_string();
         let qualifier = if os == "linux" {
@@ -60,7 +60,7 @@ impl Platform {
         }
     }
 
-    pub fn libc(&self) -> Option<&str> {
+    pub(crate) fn libc(&self) -> Option<&str> {
         self.qualifier
             .as_deref()?
             .split('-')
@@ -72,7 +72,7 @@ impl Platform {
     }
 
     /// Validate that this platform is supported
-    pub fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         // Validate OS
         match self.os.as_str() {
             "linux" | "macos" | "windows" | "android" => {}
@@ -106,7 +106,7 @@ impl Platform {
     }
 
     /// Convert to platform key format used in lockfiles
-    pub fn to_key(&self) -> String {
+    pub(crate) fn to_key(&self) -> String {
         match &self.qualifier {
             Some(qualifier) => format!("{}-{}-{}", self.os, self.arch, qualifier),
             None => format!("{}-{}", self.os, self.arch),
@@ -114,7 +114,7 @@ impl Platform {
     }
 
     /// Parse multiple platform strings, validating each one
-    pub fn parse_multiple(platform_strings: &[String]) -> Result<Vec<Self>> {
+    pub(crate) fn parse_multiple(platform_strings: &[String]) -> Result<Vec<Self>> {
         let mut platforms = Vec::new();
 
         for platform_str in platform_strings {
@@ -131,7 +131,7 @@ impl Platform {
     }
 
     /// Get a list of commonly supported platforms
-    pub fn common_platforms() -> Vec<Self> {
+    pub(crate) fn common_platforms() -> Vec<Self> {
         vec![
             Platform::parse("linux-x64").unwrap(),
             Platform::parse("linux-x64-musl").unwrap(),
@@ -144,17 +144,17 @@ impl Platform {
     }
 
     /// Check if this is a Windows platform
-    pub fn is_windows(&self) -> bool {
+    pub(crate) fn is_windows(&self) -> bool {
         self.os == "windows"
     }
 
     /// Check if this is a macOS platform
-    pub fn is_macos(&self) -> bool {
+    pub(crate) fn is_macos(&self) -> bool {
         self.os == "macos"
     }
 
     /// Check if this is a Linux platform
-    pub fn is_linux(&self) -> bool {
+    pub(crate) fn is_linux(&self) -> bool {
         self.os == "linux"
     }
 }
@@ -184,7 +184,7 @@ impl From<&str> for Platform {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LinuxOsRelease {
+pub(crate) struct LinuxOsRelease {
     pub id: String,
     pub version_id: String,
     pub id_like: Vec<String>,
@@ -222,7 +222,7 @@ impl LinuxOsRelease {
     }
 }
 
-pub fn linux_os_release() -> Option<&'static LinuxOsRelease> {
+pub(crate) fn linux_os_release() -> Option<&'static LinuxOsRelease> {
     use std::sync::LazyLock;
     static OS_RELEASE: LazyLock<Option<LinuxOsRelease>> =
         LazyLock::new(|| read_linux_os_release("/etc/os-release"));
@@ -270,7 +270,7 @@ fn parse_os_release_value(value: &str) -> String {
 ///   3. Compile-time target (`target_env`) — for scratch/busybox containers
 ///      with no linker files.
 #[cfg(target_os = "linux")]
-pub fn detect_libc() -> Option<&'static str> {
+pub(crate) fn detect_libc() -> Option<&'static str> {
     use std::sync::LazyLock;
     static DETECTED: LazyLock<Option<&'static str>> = LazyLock::new(|| {
         if linux_os_release().is_some_and(linux_os_release_is_musl) {
@@ -298,7 +298,7 @@ pub fn detect_libc() -> Option<&'static str> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn detect_libc() -> Option<&'static str> {
+pub(crate) fn detect_libc() -> Option<&'static str> {
     None
 }
 

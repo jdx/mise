@@ -59,6 +59,7 @@ EOF
 mkdir -p projects/frontend/.mise/conf.d
 echo 'env.DEV_CONF_D = "dev-conf-d"' >projects/frontend/.mise/conf.d/frontend.dev.toml
 echo 'env.PROD_CONF_D = "prod-conf-d"' >projects/frontend/.mise/conf.d/frontend.prod.toml
+export MISE_ENV_CONF_D=true
 
 # Create backend project
 mkdir -p projects/backend

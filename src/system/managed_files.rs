@@ -14,7 +14,7 @@ use crate::config::{Config, ConfigMap};
 use crate::system::resources::{ResourceAction, ResourceId, ResourceOrigin, ResourcePlan};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ManagedFileTomlConfig {
+pub(crate) struct ManagedFileTomlConfig {
     pub source: Option<String>,
     pub content: Option<String>,
     pub owner: Option<String>,
@@ -31,7 +31,7 @@ pub struct ManagedFileTomlConfig {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-pub struct ManagedDirectoryTomlConfig {
+pub(crate) struct ManagedDirectoryTomlConfig {
     pub owner: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
@@ -47,14 +47,14 @@ pub struct ManagedDirectoryTomlConfig {
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum ManagedState {
+pub(crate) enum ManagedState {
     #[default]
     Present,
     Absent,
 }
 
 #[derive(Clone, Debug)]
-pub struct ManagedFileRequest {
+pub(crate) struct ManagedFileRequest {
     pub path: PathBuf,
     pub content: Option<String>,
     pub owner: Option<String>,
@@ -68,7 +68,7 @@ pub struct ManagedFileRequest {
 }
 
 #[derive(Clone, Debug)]
-pub struct ManagedDirectoryRequest {
+pub(crate) struct ManagedDirectoryRequest {
     pub path: PathBuf,
     pub owner: Option<String>,
     pub group: Option<String>,
@@ -83,7 +83,7 @@ pub struct ManagedDirectoryRequest {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum PrivilegedAction {
+pub(crate) enum PrivilegedAction {
     WriteFile {
         path: PathBuf,
         content: String,
@@ -109,16 +109,16 @@ pub enum PrivilegedAction {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct PrivilegedPlan {
+pub(crate) struct PrivilegedPlan {
     pub actions: Vec<PrivilegedAction>,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ApplyReport {
+pub(crate) struct ApplyReport {
     pub notified_services: super::services::ServiceNotifications,
 }
 
-pub fn pending_notifications(
+pub(crate) fn pending_notifications(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
 ) -> Result<super::services::ServiceNotifications> {
@@ -178,7 +178,7 @@ enum ManagedPathKind {
     Other,
 }
 
-pub fn requests_from_config(
+pub(crate) fn requests_from_config(
     config: &Config,
     secrets: &super::secrets::SecretValues,
 ) -> Result<(Vec<ManagedFileRequest>, Vec<ManagedDirectoryRequest>)> {
@@ -187,7 +187,7 @@ pub fn requests_from_config(
     Ok((files, directories))
 }
 
-pub fn status_requests_from_config(
+pub(crate) fn status_requests_from_config(
     config: &Config,
     secrets: &super::secrets::SecretValues,
 ) -> Result<(
@@ -240,7 +240,7 @@ pub fn status_requests_from_config(
     Ok((files, directories, unavailable))
 }
 
-pub fn prepare_requests_from_config(
+pub(crate) fn prepare_requests_from_config(
     config: &Config,
     secrets: &super::secrets::SecretValues,
 ) -> Result<(Vec<ManagedFileRequest>, Vec<ManagedDirectoryRequest>)> {
@@ -321,7 +321,7 @@ fn clear_ignored_principals(
     }
 }
 
-pub fn inspect_requests(
+pub(crate) fn inspect_requests(
     files: &mut [ManagedFileRequest],
     directories: &mut [ManagedDirectoryRequest],
 ) -> Result<()> {
@@ -586,7 +586,7 @@ impl ManagedFileRequest {
         })
     }
 
-    pub fn plan(&self) -> Result<ResourcePlan> {
+    pub(crate) fn plan(&self) -> Result<ResourcePlan> {
         plan_file(self).map(|plan| plan.with_origin(self.origin.clone()))
     }
 
@@ -654,7 +654,7 @@ impl ManagedDirectoryRequest {
         })
     }
 
-    pub fn plan(&self) -> Result<ResourcePlan> {
+    pub(crate) fn plan(&self) -> Result<ResourcePlan> {
         plan_directory(self).map(|plan| plan.with_origin(self.origin.clone()))
     }
 
@@ -713,7 +713,7 @@ impl PrivilegedPlan {
     }
 }
 
-pub fn apply_with_accounts(
+pub(crate) fn apply_with_accounts(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
     accounts: Option<&super::accounts::AccountRequests>,
@@ -830,7 +830,7 @@ pub fn apply_with_accounts(
 }
 
 #[cfg(unix)]
-pub fn validate_principals(
+pub(crate) fn validate_principals(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
     accounts: Option<&super::accounts::AccountRequests>,
@@ -894,7 +894,7 @@ pub fn validate_principals(
 }
 
 #[cfg(not(unix))]
-pub fn validate_principals(
+pub(crate) fn validate_principals(
     files: &[ManagedFileRequest],
     directories: &[ManagedDirectoryRequest],
     _accounts: Option<&super::accounts::AccountRequests>,
@@ -961,7 +961,7 @@ fn replacement_is_not(path: &Path, expected: ManagedPathKind) -> Result<bool> {
     }
 }
 
-pub fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
     let plan: PrivilegedPlan = serde_json::from_reader(std::io::stdin().lock())?;
     for action in plan.actions {
         action.apply()?;
@@ -969,7 +969,7 @@ pub fn apply_privileged_plan_from_stdin() -> Result<()> {
     Ok(())
 }
 
-pub fn inspect_privileged_files_from_stdin() -> Result<()> {
+pub(crate) fn inspect_privileged_files_from_stdin() -> Result<()> {
     let plan: PrivilegedInspectionPlan = serde_json::from_reader(std::io::stdin().lock())?;
     let inspections = plan
         .paths

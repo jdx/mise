@@ -21,9 +21,11 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
+pub(super) const CARGO_TARGET_ENV: &str = "MISE_CACHE_CARGO_TARGET_DIR";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
 pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
 pub(super) const TASK_ENV: &str = "MISE_CACHE_TASK";
+pub(super) const TASK_ROOT_ENV: &str = "MISE_CACHE_TASK_ROOT";
 pub(super) const VERIFY_ENV: &str = "MISE_CACHE_RUST_VERIFY";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -37,9 +39,11 @@ pub(crate) struct CacheSessionEnvironment {
 }
 
 impl CacheSessionEnvironment {
+    /// Adds the Rust action-cache environment for an enabled task.
     pub(crate) async fn apply(
         &self,
         task: &Task,
+        task_root: &Path,
         environment: &mut BTreeMap<String, String>,
     ) -> Option<TaskActionRun> {
         if !task.rust_cache.as_ref().is_some_and(|cache| cache.enabled) {
@@ -62,6 +66,13 @@ impl CacheSessionEnvironment {
         environment.insert(SOCKET_ENV.into(), self.socket.clone());
         environment.insert(STAGING_ENV.into(), self.staging.clone());
         environment.insert(TASK_ENV.into(), protocol_task);
+        environment.insert(
+            TASK_ROOT_ENV.into(),
+            task_root.to_string_lossy().into_owned(),
+        );
+        if let Some(target) = environment.get("CARGO_TARGET_DIR").cloned() {
+            environment.insert(CARGO_TARGET_ENV.into(), target);
+        }
         if task.rust_cache.as_ref().is_some_and(|cache| cache.verify) {
             environment.insert(VERIFY_ENV.into(), "1".into());
         } else {
@@ -832,8 +843,13 @@ mod tests {
             agent: CacheAgent::new(cache.path(), VERSION),
         };
         let mut task = Task::default();
-        let mut values = BTreeMap::from([("RUSTC_WRAPPER".into(), "existing".into())]);
-        let run = environment.apply(&task, &mut values).await;
+        let mut values = BTreeMap::from([
+            ("CARGO_TARGET_DIR".into(), "target".into()),
+            ("RUSTC_WRAPPER".into(), "existing".into()),
+        ]);
+        let task_directory = tempfile::tempdir().unwrap();
+        let task_root = task_directory.path();
+        let run = environment.apply(&task, task_root, &mut values).await;
         assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
@@ -841,7 +857,7 @@ mod tests {
             enabled: false,
             ..TaskRustCacheConfig::default()
         });
-        let run = environment.apply(&task, &mut values).await;
+        let run = environment.apply(&task, task_root, &mut values).await;
         assert!(run.is_none());
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "existing");
 
@@ -849,11 +865,16 @@ mod tests {
             verify: true,
             ..TaskRustCacheConfig::default()
         });
-        let run = environment.apply(&task, &mut values).await;
+        let run = environment.apply(&task, task_root, &mut values).await;
         assert!(run.is_some());
         assert_eq!(values.get(SOCKET_ENV).unwrap(), "socket");
         assert_eq!(values.get(STAGING_ENV).unwrap(), "staging");
         assert_eq!(values.get(TASK_ENV).unwrap().len(), 64);
+        assert_eq!(values.get(CARGO_TARGET_ENV).unwrap(), "target");
+        assert_eq!(
+            values.get(TASK_ROOT_ENV).unwrap(),
+            &task_root.to_string_lossy()
+        );
         assert_eq!(values.get("RUSTC_WRAPPER").unwrap(), "shim");
         assert_eq!(values.get(PREVIOUS_RUSTC_WRAPPER_ENV).unwrap(), "existing");
         assert_eq!(values.get("CARGO_INCREMENTAL").unwrap(), "0");

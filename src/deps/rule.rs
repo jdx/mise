@@ -18,7 +18,7 @@ pub(crate) struct DepsTemplateContext {
 }
 
 /// List of built-in provider names that have specialized implementations
-pub const BUILTIN_PROVIDERS: &[&str] = &[
+pub(super) const BUILTIN_PROVIDERS: &[&str] = &[
     "npm",
     "yarn",
     "pnpm",
@@ -42,7 +42,7 @@ pub const BUILTIN_PROVIDERS: &[&str] = &[
 /// Custom providers require explicit sources, outputs, and run.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct DepsProviderConfig {
+pub(crate) struct DepsProviderConfig {
     /// Whether to auto-run this provider before mise x/run (default: false)
     #[serde(default)]
     pub auto: bool,
@@ -133,7 +133,7 @@ impl DepsProviderConfig {
         Ok(())
     }
 
-    pub fn render_strings(
+    pub(crate) fn render_strings(
         &mut self,
         mut render: impl FnMut(&str, &str, bool) -> Result<String>,
     ) -> Result<()> {
@@ -231,7 +231,7 @@ fn expand_shell_vars(input: &str, env_vars: &BTreeMap<String, String>) -> String
 /// - `[deps.npm]` - built-in npm provider
 /// - `[deps.codegen]` - custom provider
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct DepsConfig {
+pub(crate) struct DepsConfig {
     /// List of provider IDs to disable at runtime
     #[serde(default)]
     pub disable: Vec<String>,

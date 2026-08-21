@@ -11,7 +11,7 @@ MISE_ENV=ci assert "mise ls dummy" "dummy  3 (missing)  ~/workdir/mise.ci.toml  
 MISE_ENV=ci,test assert "mise ls dummy" "dummy  2.0.0 (missing)  ~/workdir/mise.test.toml  2"
 MISE_ENV=test,ci assert "mise ls dummy" "dummy  3 (missing)  ~/workdir/mise.ci.toml  3"
 
-# conf.d fragments follow the same environment and local filename conventions
+# Dotted conf.d fragments remain unconditional by default during migration.
 mkdir -p .mise/conf.d
 cat >.mise/conf.d/00-base.toml <<'EOF'
 [env]
@@ -40,9 +40,15 @@ cat >.mise/conf.d/99-inactive.inactive.toml <<'EOF'
 CONF_D_INACTIVE = "loaded"
 EOF
 
-assert "mise env --json | jq -r '[.CONF_D_COMMON, .CONF_D_ENV, .CONF_D_ALWAYS_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'base\tbase\tlocal\t'
-MISE_ENV=test assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'test\ttest-local\t'
-MISE_ENV=test,ci assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL] | @tsv'" $'ci\ttest-local'
+assert_contains "mise env 2>&1" "deprecated [dotted_conf_d_filename]"
+assert_not_contains "MISE_ENV_CONF_D=false mise env 2>&1" "deprecated [dotted_conf_d_filename]"
+assert "mise env --json | jq -r '[.CONF_D_COMMON, .CONF_D_ENV, .CONF_D_ALWAYS_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'base\tci\tlocal\tloaded'
+MISE_ENV=test assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'ci\ttest-local\tloaded'
+
+# Users can opt into environment-specific conf.d filenames immediately.
+MISE_ENV_CONF_D=true assert "mise env --json | jq -r '[.CONF_D_COMMON, .CONF_D_ENV, .CONF_D_ALWAYS_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'base\tbase\tlocal\t'
+MISE_ENV_CONF_D=true MISE_ENV=test assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'test\ttest-local\t'
+MISE_ENV_CONF_D=true MISE_ENV=test,ci assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL] | @tsv'" $'ci\ttest-local'
 
 # Environment names are matched literally and by the complete suffix after the first dot
 cat >'.mise/conf.d/30-literal.qa*.toml' <<'EOF'
@@ -62,6 +68,6 @@ cat >.mise/conf.d/41-prod.prod.toml <<'EOF'
 CONF_D_PROD = "prod"
 EOF
 
-MISE_ENV='qa*' assert "mise env --json | jq -r '[.CONF_D_LITERAL, .CONF_D_UNRELATED] | @tsv'" $'literal\t'
-MISE_ENV=prod assert "mise env --json | jq -r '[.CONF_D_DOTTED, .CONF_D_PROD] | @tsv'" $'\tprod'
-MISE_ENV=qa.prod assert "mise env --json | jq -r '[.CONF_D_DOTTED, .CONF_D_PROD] | @tsv'" $'dotted\t'
+MISE_ENV_CONF_D=true MISE_ENV='qa*' assert "mise env --json | jq -r '[.CONF_D_LITERAL, .CONF_D_UNRELATED] | @tsv'" $'literal\t'
+MISE_ENV_CONF_D=true MISE_ENV=prod assert "mise env --json | jq -r '[.CONF_D_DOTTED, .CONF_D_PROD] | @tsv'" $'\tprod'
+MISE_ENV_CONF_D=true MISE_ENV=qa.prod assert "mise env --json | jq -r '[.CONF_D_DOTTED, .CONF_D_PROD] | @tsv'" $'dotted\t'

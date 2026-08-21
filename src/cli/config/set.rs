@@ -10,7 +10,7 @@ use std::path::PathBuf;
 /// Set the value of a setting in a mise.toml file
 #[derive(Debug, clap::Args)]
 #[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ConfigSet {
+pub(super) struct ConfigSet {
     /// The path of the config to display
     pub key: String,
 
@@ -30,7 +30,7 @@ pub struct ConfigSet {
 }
 
 #[derive(ValueEnum, Default, Clone, Debug)]
-pub enum TomlValueTypes {
+pub(super) enum TomlValueTypes {
     #[default]
     Infer,
     #[value()]
@@ -48,7 +48,7 @@ pub enum TomlValueTypes {
 }
 
 impl ConfigSet {
-    pub fn run(self) -> eyre::Result<()> {
+    pub(super) fn run(self) -> eyre::Result<()> {
         let (full_key, value) = match self.value {
             Some(v) => (self.key, v),
             None => {

@@ -15,7 +15,7 @@ pub(crate) fn monorepo_scope(monorepo_root: &Path, dir: &Path) -> Option<String>
 }
 
 /// Whether a task uses the stable `<provider>:<project>#<task>` workspace identity.
-pub fn is_workspace_project_task(task: &str) -> bool {
+pub(crate) fn is_workspace_project_task(task: &str) -> bool {
     task.split_once('#').is_some_and(|(project, name)| {
         !project.starts_with('/')
             && !project.starts_with(':')
@@ -26,7 +26,7 @@ pub fn is_workspace_project_task(task: &str) -> bool {
 
 /// Context for loading tasks with optional filtering hints
 #[derive(Debug, Clone, Default, Hash, Eq, PartialEq)]
-pub struct TaskLoadContext {
+pub(crate) struct TaskLoadContext {
     /// Specific paths to load tasks from
     /// e.g., ["foo/bar", "baz/qux"] from patterns "//foo/bar:task" and "//baz/qux:task"
     pub path_hints: Vec<String>,
@@ -38,7 +38,7 @@ pub struct TaskLoadContext {
 
 impl TaskLoadContext {
     /// Create a new context that loads all tasks
-    pub fn all() -> Self {
+    pub(crate) fn all() -> Self {
         Self {
             path_hints: vec![],
             load_all: true,
@@ -46,7 +46,7 @@ impl TaskLoadContext {
     }
 
     /// Create a context from a task pattern like "//foo/bar:task" or "//foo/bar/..."
-    pub fn from_pattern(pattern: &str) -> Self {
+    pub(crate) fn from_pattern(pattern: &str) -> Self {
         if let Some(hint) = Self::extract_path_hint(pattern) {
             Self {
                 path_hints: vec![hint],
@@ -61,7 +61,7 @@ impl TaskLoadContext {
     }
 
     /// Create a context from multiple patterns, merging their path hints
-    pub fn from_patterns<'a>(patterns: impl Iterator<Item = &'a str>) -> Self {
+    pub(crate) fn from_patterns<'a>(patterns: impl Iterator<Item = &'a str>) -> Self {
         use std::collections::HashSet;
 
         let mut path_hints_set = HashSet::new();
@@ -126,7 +126,7 @@ impl TaskLoadContext {
     }
 
     /// Check if a subdirectory should be loaded based on the context
-    pub fn should_load_subdir(&self, subdir: &str, _monorepo_root: &str) -> bool {
+    pub(crate) fn should_load_subdir(&self, subdir: &str, _monorepo_root: &str) -> bool {
         use std::path::Path;
 
         // If load_all is true, load everything
@@ -176,7 +176,7 @@ impl TaskLoadContext {
 /// # Returns
 /// * `Ok(String)` - The expanded task pattern (e.g., "//project:build")
 /// * `Err` - If monorepo is not configured or current directory is outside monorepo root
-pub fn expand_colon_task_syntax(
+pub(crate) fn expand_colon_task_syntax(
     task: &str,
     config: &crate::config::Config,
 ) -> eyre::Result<String> {

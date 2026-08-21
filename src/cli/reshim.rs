@@ -24,7 +24,7 @@ use crate::toolset::ToolsetBuilder;
 /// currently active in mise.toml.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Reshim {
+pub(crate) struct Reshim {
     #[clap(hide = true)]
     pub tool: Option<String>,
     #[clap(hide = true)]
@@ -36,7 +36,7 @@ pub struct Reshim {
 }
 
 impl Reshim {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
 

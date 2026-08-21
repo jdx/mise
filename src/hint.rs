@@ -22,9 +22,9 @@ macro_rules! hint {
     }};
 }
 
-pub static HINTS_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::STATE.join("hints"));
+pub(crate) static HINTS_DIR: Lazy<PathBuf> = Lazy::new(|| dirs::STATE.join("hints"));
 
-pub static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
+pub(crate) static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
     let mut hints = HashSet::new();
 
     for file in xx::file::ls(&*HINTS_DIR).unwrap_or_default() {
@@ -42,7 +42,7 @@ pub static DISPLAYED_HINTS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| {
 /// Would `hint!` display this id? Unlike [`should_display_hint`], this does
 /// not mark the hint as displayed — use it to skip expensive work whose only
 /// purpose is feeding a hint.
-pub fn hint_would_display(id: &str) -> bool {
+pub(crate) fn hint_would_display(id: &str) -> bool {
     if cfg!(test) || !console::user_attended() || !console::user_attended_stderr() {
         return false;
     }
@@ -56,7 +56,7 @@ pub fn hint_would_display(id: &str) -> bool {
     !DISPLAYED_HINTS.lock().unwrap().contains(id)
 }
 
-pub fn should_display_hint(id: &str) -> bool {
+pub(crate) fn should_display_hint(id: &str) -> bool {
     if cfg!(test) || !console::user_attended() || !console::user_attended_stderr() {
         return false;
     }

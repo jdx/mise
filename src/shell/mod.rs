@@ -16,7 +16,7 @@ mod xonsh;
 mod zsh;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub enum ShellType {
+pub(crate) enum ShellType {
     Bash,
     Elvish,
     Fish,
@@ -37,7 +37,7 @@ pub enum ShellType {
 }
 
 impl ShellType {
-    pub fn as_shell(&self) -> Box<dyn Shell> {
+    pub(crate) fn as_shell(&self) -> Box<dyn Shell> {
         match self {
             Self::Bash => Box::<bash::Bash>::default(),
             Self::Elvish => Box::<elvish::Elvish>::default(),
@@ -91,7 +91,7 @@ impl FromStr for ShellType {
     }
 }
 
-pub trait Shell: Display {
+pub(crate) trait Shell: Display {
     fn activate(&self, opts: ActivateOptions) -> String;
     fn deactivate(&self) -> String;
     fn set_env(&self, k: &str, v: &str) -> String;
@@ -135,7 +135,7 @@ pub trait Shell: Display {
     }
 }
 
-pub enum ActivatePrelude {
+pub(crate) enum ActivatePrelude {
     Set(String, String),
     Prepend(String, String),
     /// Like Prepend but moves existing entries to the front (for fish --move).
@@ -143,14 +143,14 @@ pub enum ActivatePrelude {
     MovePrepend(String, String),
 }
 
-pub struct ActivateOptions {
+pub(crate) struct ActivateOptions {
     pub exe: PathBuf,
     pub flags: String,
     pub no_hook_env: bool,
     pub prelude: Vec<ActivatePrelude>,
 }
 
-pub fn build_deactivation_script(shell: &dyn Shell) -> String {
+pub(crate) fn build_deactivation_script(shell: &dyn Shell) -> String {
     if !env::is_activated() {
         return String::new();
     }
@@ -161,7 +161,7 @@ pub fn build_deactivation_script(shell: &dyn Shell) -> String {
     out
 }
 
-pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
+pub(crate) fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
     shell.or(*env::MISE_SHELL).map(|st| st.as_shell())
 }
 
@@ -170,9 +170,9 @@ pub fn get_shell(shell: Option<ShellType>) -> Option<Box<dyn Shell>> {
 /// The old messages said `zsh` on every platform, which on Windows points at something the reader
 /// almost certainly does not have.
 #[cfg(windows)]
-pub const EXAMPLE_SHELL: &str = "pwsh";
+pub(crate) const EXAMPLE_SHELL: &str = "pwsh";
 #[cfg(not(windows))]
-pub const EXAMPLE_SHELL: &str = "zsh";
+pub(crate) const EXAMPLE_SHELL: &str = "zsh";
 
 /// The shell mise should generate for, or an error saying how to name one.
 ///
@@ -183,7 +183,7 @@ pub const EXAMPLE_SHELL: &str = "zsh";
 ///
 /// `how` is the caller's own instruction, because the commands differ: `mise activate` takes the
 /// shell as an argument, `mise hook-env` takes `--shell`, and `mise shell` takes neither.
-pub fn require_shell(shell: Option<ShellType>, how: &str) -> eyre::Result<Box<dyn Shell>> {
+pub(crate) fn require_shell(shell: Option<ShellType>, how: &str) -> eyre::Result<Box<dyn Shell>> {
     get_shell(shell).ok_or_else(|| eyre::eyre!(no_shell_error(how)))
 }
 

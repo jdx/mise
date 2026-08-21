@@ -8,7 +8,7 @@ mod set;
 /// Manage config files
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "cfg", alias = "toml")]
-pub struct Config {
+pub(crate) struct Config {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -25,7 +25,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Get(cmd) => cmd.run(),
             Self::Ls(cmd) => cmd.run().await,
@@ -35,7 +35,7 @@ impl Commands {
 }
 
 impl Config {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(self.ls));
 
         cmd.run().await

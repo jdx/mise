@@ -42,7 +42,7 @@ use crate::{config, env, exit, file};
 /// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "u", after_long_help = AFTER_LONG_HELP)]
-pub struct Use {
+pub(crate) struct Use {
     /// Tool(s) to add to config file
     ///
     /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
@@ -132,7 +132,7 @@ impl Use {
         self.dry_run || self.dry_run_code
     }
 
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.tool.is_empty() && self.remove.is_empty() {
             self.tool = vec![self.tool_selector()?];
         }

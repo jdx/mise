@@ -11,7 +11,7 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 /// By default, this command modifies `mise.toml` in the current directory.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Unset {
+pub(crate) struct Unset {
     /// Environment variable(s) to remove
     /// e.g.: NODE_ENV
     #[clap(verbatim_doc_comment, value_name = "ENV_KEY")]
@@ -43,7 +43,7 @@ const AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 impl Unset {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let filename = resolve_target_config_path(ConfigPathOptions {
             global: self.global,
             path: self.file.clone(),

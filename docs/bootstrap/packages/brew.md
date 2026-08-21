@@ -128,6 +128,34 @@ The `Current` column is the version recorded in the cask receipt; the live app
 may have updated itself to a different version. JSON status keeps the stable
 `"state": "installed"` value and adds `"auto_updates": true`.
 
+### macOS Privacy & Security (TCC)
+
+Replacing an app bundle under `/Applications` (or your configured appdir) is
+the same class of operation as `brew reinstall --cask`: macOS may revoke
+Privacy & Security grants for that app (Accessibility, Screen Recording, Full
+Disk Access, Automation, and similar). mise does not manage TCC; after a
+replace you may need to re-grant permissions in System Settings.
+
+When migrating a machine that already has casks installed (for example from
+Homebrew or a nix-darwin brew integration), prefer adoption so mise records
+ownership without swapping the live bundle:
+
+```toml
+[bootstrap.brew]
+adopt = true
+```
+
+Or adopt selectively:
+
+```toml
+[bootstrap.packages]
+"brew-cask:firefox" = { version = "latest", adopt = true }
+```
+
+mise prints a warning whenever it replaces an existing `.app`. Version
+upgrades still replace the bundle when upstream publishes a new cask version —
+expect to re-confirm TCC prompts after those upgrades, just as with Homebrew.
+
 On Linux, initial cask support is limited to font-only casks without lifecycle
 hooks or structured `preflight_steps` or `postflight_steps` — concepts from
 Homebrew's cask DSL, documented in the
@@ -180,9 +208,16 @@ Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
 receipts. If Homebrew metadata already exists for a cask, mise preserves it and
 fails before mutation rather than taking over Homebrew's lifecycle state.
-Status uses recorded installation facts rather than reconstructing them from a
-newer cask definition; missing or unknown receipts and pending transactions are
-reported as unhealthy so the next apply can reconcile them.
+Status treats a cask as installed when its receipt and recorded targets are
+still present. App and font content fingerprints are kept for prune and adopt
+safety, but content drift inside an existing app or font does **not** mark the
+cask missing or trigger a reinstall on apply — replacing `/Applications/*.app`
+resets macOS Privacy & Security (TCC) grants. Binary and completion symlinks
+still require the recorded link destination (a cheap `readlink`) and a
+resolvable target, so dangling or retargeted links stay repairable. Missing or
+unknown receipts and pending transactions are still reported as unhealthy so
+the next apply can reconcile them. Version upgrades and an explicit remove +
+apply still replace the app when you want a fresh pour.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like

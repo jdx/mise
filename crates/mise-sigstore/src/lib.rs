@@ -1,3 +1,5 @@
+#![deny(unreachable_pub)]
+
 use std::path::Path;
 use std::time::Duration;
 

@@ -13,7 +13,7 @@ use std::fmt::{Display, Formatter};
     PartialOrd,
 )]
 #[strum(serialize_all = "snake_case")]
-pub enum BackendType {
+pub(crate) enum BackendType {
     Aqua,
     Asdf,
     Cargo,
@@ -47,7 +47,7 @@ impl Display for BackendType {
 }
 
 impl BackendType {
-    pub fn disable_key(&self) -> Option<&str> {
+    pub(crate) fn disable_key(&self) -> Option<&str> {
         match self {
             BackendType::Unknown => None,
             BackendType::VfoxBackend(plugin_name) => Some(plugin_name),
@@ -55,7 +55,7 @@ impl BackendType {
         }
     }
 
-    pub fn guess(s: &str) -> BackendType {
+    pub(crate) fn guess(s: &str) -> BackendType {
         let prefix = s.split(':').next().unwrap_or(s);
 
         match prefix {
@@ -83,7 +83,7 @@ impl BackendType {
     }
 
     /// Returns true if this backend is still gated behind experimental mode.
-    pub fn is_experimental(&self) -> bool {
+    pub(crate) fn is_experimental(&self) -> bool {
         use super::{dotnet, pkgx, s3, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,

@@ -14,14 +14,14 @@ use super::parse_package_spec;
 /// Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct DepsRemove {
+pub(super) struct DepsRemove {
     /// Package(s) to remove (e.g., npm:lodash)
     #[clap(required = true)]
     pub packages: Vec<String>,
 }
 
 impl DepsRemove {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("deps")?;
 
         let mut config = Config::get().await?;

@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
 //! Build script to generate schema data from mise.json
 
 use serde_json::Value;

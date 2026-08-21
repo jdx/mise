@@ -4,6 +4,7 @@ use std::sync::Arc;
 use eyre::Result;
 use indexmap::IndexSet;
 use itertools::Itertools;
+use tokio::sync::OnceCell;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
 
@@ -25,7 +26,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config, hooks, runtime_symlinks};
 
 impl Toolset {
-    pub async fn should_install_missing_registry_bin_provider(
+    pub(crate) async fn should_install_missing_registry_bin_provider(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -585,12 +586,13 @@ impl Toolset {
             dry_run: opts.dry_run,
             locked: opts.locked || config.tool_config_locked(tr.source()),
             before_date,
+            dependency_context: OnceCell::new(),
         };
 
         backend.install_version(ctx, tv).await
     }
 
-    pub async fn install_missing_bin(
+    pub(crate) async fn install_missing_bin(
         &mut self,
         config: &mut Arc<Config>,
         bin_name: &str,
@@ -687,7 +689,7 @@ impl Toolset {
     }
 
     /// Install all plugins defined in [plugins] config section
-    pub async fn ensure_config_plugins_installed(
+    pub(crate) async fn ensure_config_plugins_installed(
         config: &Arc<Config>,
         dry_run: bool,
     ) -> Result<()> {
@@ -695,7 +697,7 @@ impl Toolset {
     }
 
     /// Install all plugins from an explicit plugin URL map.
-    pub async fn ensure_config_plugins_installed_from_urls(
+    pub(crate) async fn ensure_config_plugins_installed_from_urls(
         config: &Arc<Config>,
         repo_urls: &HashMap<String, String>,
         dry_run: bool,

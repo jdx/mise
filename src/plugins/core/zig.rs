@@ -26,7 +26,7 @@ use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct ZigPlugin {
+pub(super) struct ZigPlugin {
     ba: Arc<BackendArg>,
 }
 
@@ -35,7 +35,7 @@ const REQUEST_SUFFIX: &str = "?source=mise-en-place";
 const MIRRORS_FILENAME: &str = "community-mirrors.txt";
 
 impl ZigPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("zig")),
         }

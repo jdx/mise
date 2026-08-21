@@ -29,13 +29,13 @@ use crate::env;
 /// endpoint treats it the same as a password grant, so we don't special-case
 /// it beyond passing it through.
 #[derive(Debug, Clone)]
-pub struct Credential {
+pub(crate) struct Credential {
     pub username: String,
     pub secret: String,
 }
 
 impl Credential {
-    pub fn basic_auth_header(&self) -> String {
+    pub(crate) fn basic_auth_header(&self) -> String {
         let raw = format!("{}:{}", self.username, self.secret);
         format!("Basic {}", BASE64_STANDARD.encode(raw))
     }
@@ -67,7 +67,7 @@ struct AuthEntry {
 /// Resolve credentials for `registry` (a bare host like `ghcr.io` or
 /// `docker.io`). Returns `None` when no credential source has an entry —
 /// the caller should proceed anonymously.
-pub fn resolve_credential(registry: &str) -> Result<Option<Credential>> {
+pub(crate) fn resolve_credential(registry: &str) -> Result<Option<Credential>> {
     for path in auth_file_paths() {
         if !path.is_file() {
             continue;

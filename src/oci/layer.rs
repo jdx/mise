@@ -11,7 +11,7 @@
 //! input tree, which is required for the "swap one tool → swap one layer"
 //! caching story.
 
-use std::io::Write;
+use std::io::{BufRead, Cursor, Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -26,9 +26,42 @@ use jdx_tar::{Builder, EntryType, Header};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
+/// Host-to-image path mappings used while packaging an installed tool.
+///
+/// Most tools are relocatable as-is, but virtual environments commonly embed
+/// their host install path in launcher shebangs and interpreter symlinks.
+/// Keeping the mappings here lets the layer writer fix those references while
+/// retaining the one-layer-per-tool layout.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ToolRelocation {
+    paths: Vec<(PathBuf, PathBuf)>,
+    pythons: Vec<PythonRelocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PythonRelocation {
+    pub version: String,
+    pub host: PathBuf,
+    pub image: PathBuf,
+}
+
+impl ToolRelocation {
+    pub(crate) fn new(paths: Vec<(PathBuf, PathBuf)>) -> Self {
+        Self {
+            paths,
+            pythons: Vec::new(),
+        }
+    }
+
+    pub(crate) fn with_pythons(mut self, pythons: Vec<PythonRelocation>) -> Self {
+        self.pythons = pythons;
+        self
+    }
+}
+
 /// The result of building a layer blob.
 #[derive(Debug, Clone)]
-pub struct LayerBlob {
+pub(crate) struct LayerBlob {
     /// sha256 digest of the gzipped tar (the "blob digest"; what the manifest
     /// descriptor's `digest` field references).
     pub digest: String,
@@ -43,13 +76,13 @@ pub struct LayerBlob {
 
 /// Numeric owner to write into every tar header in a generated OCI layer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LayerOwner {
+pub(crate) struct LayerOwner {
     pub uid: u32,
     pub gid: u32,
 }
 
 impl LayerOwner {
-    pub const fn new(uid: u32, gid: u32) -> Self {
+    pub(crate) const fn new(uid: u32, gid: u32) -> Self {
         Self { uid, gid }
     }
 }
@@ -91,7 +124,7 @@ fn parse_owner_id(value: &str, name: &str) -> std::result::Result<u32, String> {
 ///
 /// `src_dir` must exist and be a directory. Symlinks are preserved; their
 /// targets are NOT followed. `owner` is applied to every emitted tar entry.
-pub fn build_layer_from_dir(
+pub(crate) fn build_layer_from_dir(
     src_dir: &Path,
     target_prefix: &str,
     owner: LayerOwner,
@@ -100,14 +133,29 @@ pub fn build_layer_from_dir(
         eyre::bail!("not a directory: {}", src_dir.display());
     }
 
-    let entries = collect_sorted_entries(src_dir, false, owner)?;
-    build_layer_from_entries(&entries, target_prefix, owner)
+    let entries = collect_sorted_entries(src_dir, false, owner, None)?;
+    build_layer_from_entries(&entries, target_prefix, owner, None)
+}
+
+/// Build a tool layer while rebasing host paths embedded by its installer.
+pub(crate) fn build_relocated_tool_layer_from_dir(
+    src_dir: &Path,
+    target_prefix: &str,
+    owner: LayerOwner,
+    relocation: &ToolRelocation,
+) -> Result<LayerBlob> {
+    if !src_dir.is_dir() {
+        eyre::bail!("not a directory: {}", src_dir.display());
+    }
+
+    let entries = collect_sorted_entries(src_dir, false, owner, Some(relocation))?;
+    build_layer_from_entries(&entries, target_prefix, owner, Some(relocation))
 }
 
 /// Build a reproducible layer from one host file, symlink, or directory.
 /// Directory contents are placed under `image_path`; a file or symlink is
 /// placed at `image_path` itself.
-pub fn build_layer_from_path(
+pub(crate) fn build_layer_from_path(
     host_path: &Path,
     image_path: &str,
     owner: LayerOwner,
@@ -168,11 +216,11 @@ pub fn build_layer_from_path(
         owner,
         size,
     };
-    build_layer_from_entries(&[entry], &prefix, owner)
+    build_layer_from_entries(&[entry], &prefix, owner, None)
 }
 
 /// Build a layer from a source directory, preserving uid/gid/mode from disk.
-pub fn build_layer_from_dir_preserve_metadata(
+pub(crate) fn build_layer_from_dir_preserve_metadata(
     src_dir: &Path,
     target_prefix: &str,
 ) -> Result<LayerBlob> {
@@ -180,14 +228,14 @@ pub fn build_layer_from_dir_preserve_metadata(
         eyre::bail!("not a directory: {}", src_dir.display());
     }
 
-    let entries = collect_sorted_entries(src_dir, true, LayerOwner::default())?;
-    build_layer_from_entries(&entries, target_prefix, LayerOwner::default())
+    let entries = collect_sorted_entries(src_dir, true, LayerOwner::default(), None)?;
+    build_layer_from_entries(&entries, target_prefix, LayerOwner::default(), None)
 }
 
 /// Build a layer from an in-memory list of (path_in_tar, content) pairs.
 /// Useful for layers that don't correspond to a real directory (e.g. the
 /// synthesized config layer). `owner` is applied to every emitted tar entry.
-pub fn build_layer_from_files(
+pub(crate) fn build_layer_from_files(
     files: &[(String, Vec<u8>, u32)],
     owner: LayerOwner,
 ) -> Result<LayerBlob> {
@@ -195,7 +243,7 @@ pub fn build_layer_from_files(
 }
 
 /// Build a layer from in-memory file and directory entries.
-pub fn build_layer_from_files_and_dirs(
+pub(crate) fn build_layer_from_files_and_dirs(
     files: &[(String, Vec<u8>, u32)],
     dirs: &[String],
     owner: LayerOwner,
@@ -265,6 +313,7 @@ fn collect_sorted_entries(
     src_dir: &Path,
     preserve_metadata: bool,
     owner: LayerOwner,
+    relocation: Option<&ToolRelocation>,
 ) -> Result<Vec<Entry>> {
     // Canonicalize once so we can match symlink targets that traverse via
     // different path spellings (e.g. with `..` components or through
@@ -290,7 +339,8 @@ fn collect_sorted_entries(
             (EntryKind::Dir, mode, 0u64)
         } else if file_type.is_symlink() {
             let raw_target = std::fs::read_link(entry.path())?;
-            let target = rebase_symlink_target(&raw_target, &abs, &canonical_src, src_dir);
+            let target =
+                rebase_symlink_target(&raw_target, &abs, &canonical_src, src_dir, relocation);
             let mode = if preserve_metadata {
                 mode_from_metadata(&md)
             } else {
@@ -332,6 +382,7 @@ fn build_layer_from_entries(
     entries: &[Entry],
     target_prefix: &str,
     owner: LayerOwner,
+    relocation: Option<&ToolRelocation>,
 ) -> Result<LayerBlob> {
     let prefix = target_prefix.trim_matches('/');
 
@@ -369,13 +420,20 @@ fn build_layer_from_entries(
                     let mut header = Header::new_gnu(EntryType::File);
                     header.set_mode(e.mode);
                     apply_owner(&mut header, e.owner);
-                    header.set_size(e.size);
                     header.set_mtime(0);
-                    let f = std::fs::File::open(&e.abs)
-                        .wrap_err_with(|| format!("opening {}", e.abs.display()))?;
-                    builder
-                        .append_data(&mut header, &path_in_tar, f)
-                        .wrap_err_with(|| format!("writing {path_in_tar}"))?;
+                    if let Some(mut contents) = relocated_file_contents(e, relocation)? {
+                        header.set_size(contents.size);
+                        builder
+                            .append_data(&mut header, &path_in_tar, &mut contents.reader)
+                            .wrap_err_with(|| format!("writing {path_in_tar}"))?;
+                    } else {
+                        header.set_size(e.size);
+                        let f = std::fs::File::open(&e.abs)
+                            .wrap_err_with(|| format!("opening {}", e.abs.display()))?;
+                        builder
+                            .append_data(&mut header, &path_in_tar, f)
+                            .wrap_err_with(|| format!("writing {path_in_tar}"))?;
+                    }
                 }
                 EntryKind::Symlink(target) => {
                     let mut header = Header::new_gnu(EntryType::Symlink);
@@ -559,14 +617,16 @@ fn file_is_executable(path: &Path, _md: &std::fs::Metadata) -> bool {
 /// install tree, rewrite it to a *relative* symlink so it stays valid after
 /// the layer extracts to a different prefix inside the container.
 ///
-/// Absolute targets that fall outside the tool tree are left alone with a
-/// warning — they'd be dangling inside the container either way, and
-/// rewriting them requires knowledge we don't have at layer-build time.
+/// Known cross-tool targets are rebased to their in-image install path. Pipx
+/// venv interpreter links may also use a compatible configured Python, as
+/// identified by the venv's pyvenv.cfg. Other absolute targets outside the
+/// tool tree are left alone with a warning.
 fn rebase_symlink_target(
     raw: &Path,
     link_abs_path: &Path,
     canonical_src: &Path,
     src_dir: &Path,
+    relocation: Option<&ToolRelocation>,
 ) -> PathBuf {
     if !raw.is_absolute() {
         return raw.to_path_buf();
@@ -582,6 +642,12 @@ fn rebase_symlink_target(
         r.to_path_buf()
     } else if let Ok(r) = raw.strip_prefix(src_dir) {
         r.to_path_buf()
+    } else if let Some(target) = relocate_absolute_path(&target_canon, relocation) {
+        return target;
+    } else if is_python_interpreter_link(link_abs_path)
+        && let Some(target) = compatible_python(link_abs_path, relocation)
+    {
+        return target.image.join("bin/python");
     } else {
         warn!(
             "oci layer: symlink {} → {} has an absolute target outside the tool's install dir; \
@@ -606,6 +672,223 @@ fn rebase_symlink_target(
     }
     out.push(rel_target);
     out
+}
+
+fn relocate_absolute_path(raw: &Path, relocation: Option<&ToolRelocation>) -> Option<PathBuf> {
+    let relocation = relocation?;
+    let canonical_raw = std::fs::canonicalize(raw).unwrap_or_else(|_| raw.to_path_buf());
+    relocation.paths.iter().find_map(|(host, image)| {
+        let canonical_host = std::fs::canonicalize(host).unwrap_or_else(|_| host.clone());
+        canonical_raw
+            .strip_prefix(&canonical_host)
+            .ok()
+            .map(|rel| image.join(rel))
+    })
+}
+
+fn is_python_interpreter_link(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| {
+            name == "python"
+                || name == "python3"
+                || name
+                    .strip_prefix("python3.")
+                    .is_some_and(|minor| minor.chars().all(|c| c.is_ascii_digit()))
+        })
+}
+
+struct RelocatedFileContents {
+    size: u64,
+    reader: Box<dyn Read>,
+}
+
+fn relocated_file_contents(
+    entry: &Entry,
+    relocation: Option<&ToolRelocation>,
+) -> Result<Option<RelocatedFileContents>> {
+    if entry
+        .abs
+        .file_name()
+        .is_some_and(|name| name == "pyvenv.cfg")
+    {
+        return relocated_pyvenv_contents(entry, relocation);
+    }
+    relocated_script_contents(entry, relocation)
+}
+
+fn relocated_script_contents(
+    entry: &Entry,
+    relocation: Option<&ToolRelocation>,
+) -> Result<Option<RelocatedFileContents>> {
+    if entry.mode & 0o111 == 0 {
+        return Ok(None);
+    }
+    let Some(relocation) = relocation else {
+        return Ok(None);
+    };
+
+    let mut file = std::fs::File::open(&entry.abs)
+        .wrap_err_with(|| format!("opening executable {}", entry.abs.display()))?;
+    if entry.size < 2 {
+        return Ok(None);
+    }
+    let mut magic = [0; 2];
+    file.read_exact(&mut magic)?;
+    if magic != *b"#!" {
+        return Ok(None);
+    }
+
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = b"#!".to_vec();
+    reader.read_until(b'\n', &mut line)?;
+    if !line.ends_with(b"\n") {
+        return Ok(None);
+    }
+
+    let mut shebang = String::from_utf8_lossy(&line).into_owned();
+    let original = shebang.clone();
+    for (host, image) in &relocation.paths {
+        shebang = shebang.replace(
+            &host.to_string_lossy().to_string(),
+            &image.to_string_lossy(),
+        );
+    }
+    if shebang == original {
+        return Ok(None);
+    }
+
+    let Some(size) = entry
+        .size
+        .checked_sub(line.len() as u64)
+        .and_then(|rest| rest.checked_add(shebang.len() as u64))
+    else {
+        // The file changed after collect_sorted_entries recorded its size.
+        // Let the ordinary file path detect a short read instead of creating
+        // a relocated tar header with a wrapped size.
+        return Ok(None);
+    };
+    let contents = Cursor::new(shebang.into_bytes()).chain(reader);
+    Ok(Some(RelocatedFileContents {
+        size,
+        reader: Box::new(contents),
+    }))
+}
+
+fn relocated_pyvenv_contents(
+    entry: &Entry,
+    relocation: Option<&ToolRelocation>,
+) -> Result<Option<RelocatedFileContents>> {
+    let Some(python) = compatible_python(&entry.abs, relocation) else {
+        return Ok(None);
+    };
+    let original = std::fs::read_to_string(&entry.abs)
+        .wrap_err_with(|| format!("reading {}", entry.abs.display()))?;
+    let venv_image = entry
+        .abs
+        .parent()
+        .and_then(|path| relocate_absolute_path(path, relocation));
+    let mut changed = false;
+    let mut output = String::with_capacity(original.len());
+    for line in original.split_inclusive('\n') {
+        let newline = if line.ends_with('\n') { "\n" } else { "" };
+        let line = line.trim_end_matches('\n').trim_end_matches('\r');
+        let key = line.split_once('=').map(|(key, _)| key.trim());
+        let replacement = match key {
+            Some("home") => Some(format!("home = {}", python.image.join("bin").display())),
+            Some("executable") => Some(format!(
+                "executable = {}",
+                python.image.join("bin/python").display()
+            )),
+            Some("command") => venv_image.as_ref().map(|venv| {
+                format!(
+                    "command = {} -m venv {}",
+                    python.image.join("bin/python").display(),
+                    venv.display()
+                )
+            }),
+            _ => None,
+        };
+        if let Some(replacement) = replacement {
+            changed |= replacement != line;
+            output.push_str(&replacement);
+        } else {
+            output.push_str(line);
+        }
+        output.push_str(newline);
+    }
+    if !changed {
+        return Ok(None);
+    }
+    let bytes = output.into_bytes();
+    Ok(Some(RelocatedFileContents {
+        size: bytes.len() as u64,
+        reader: Box::new(Cursor::new(bytes)),
+    }))
+}
+
+fn compatible_python<'a>(
+    path: &Path,
+    relocation: Option<&'a ToolRelocation>,
+) -> Option<&'a PythonRelocation> {
+    let relocation = relocation?;
+    let version = pyvenv_version(path)?;
+    if let Some(exact) = relocation
+        .pythons
+        .iter()
+        .find(|python| python.version == version)
+    {
+        return Some(exact);
+    }
+    if let Some(requested) = python_release(&version) {
+        let mut compatible = relocation
+            .pythons
+            .iter()
+            .filter(|python| python_release(&python.version) == Some(requested));
+        if let Some(candidate) = compatible.next()
+            && compatible.next().is_none()
+        {
+            return Some(candidate);
+        }
+    }
+    let requested = python_major_minor(&version)?;
+    let mut compatible = relocation
+        .pythons
+        .iter()
+        .filter(|python| python_major_minor(&python.version) == Some(requested));
+    let candidate = compatible.next()?;
+    compatible.next().is_none().then_some(candidate)
+}
+
+fn python_release(version: &str) -> Option<(&str, &str, &str)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    let patch = parts.next()?;
+    [major, minor, patch]
+        .iter()
+        .all(|part| part.chars().all(|c| c.is_ascii_digit()))
+        .then_some((major, minor, patch))
+}
+
+fn pyvenv_version(path: &Path) -> Option<String> {
+    let cfg = path.ancestors().find_map(|dir| {
+        let cfg = dir.join("pyvenv.cfg");
+        cfg.is_file().then_some(cfg)
+    })?;
+    let contents = std::fs::read_to_string(cfg).ok()?;
+    contents.lines().find_map(|line| {
+        let (key, value) = line.split_once('=')?;
+        matches!(key.trim(), "version" | "version_info").then(|| value.trim().to_string())
+    })
+}
+
+fn python_major_minor(version: &str) -> Option<(&str, &str)> {
+    let mut parts = version.split('.');
+    let major = parts.next()?;
+    let minor = parts.next()?;
+    (major.chars().all(|c| c.is_ascii_digit()) && minor.chars().all(|c| c.is_ascii_digit()))
+        .then_some((major, minor))
 }
 
 pub(crate) fn hex_encode(bytes: &[u8]) -> String {
@@ -787,7 +1070,7 @@ mod tests {
             },
         ];
 
-        let blob = build_layer_from_entries(&entries, "", LayerOwner::default()).unwrap();
+        let blob = build_layer_from_entries(&entries, "", LayerOwner::default(), None).unwrap();
 
         assert_layer_mode(&blob, "bin", 0o1777);
         assert_layer_mode(&blob, "bin/helper", 0o4755);
@@ -914,7 +1197,7 @@ mod tests {
         // as-is with a warning; we only assert it doesn't panic).
         symlink("/usr/bin/false", src.join("bin/external")).unwrap();
 
-        let entries = collect_sorted_entries(src, false, LayerOwner::default()).unwrap();
+        let entries = collect_sorted_entries(src, false, LayerOwner::default(), None).unwrap();
         let npm = entries
             .iter()
             .find(|e| e.rel == Path::new("bin/npm"))
@@ -941,6 +1224,168 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn relocates_pipx_shebangs_and_python_links() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let dir = tempdir().unwrap();
+        let installs = dir.path().join("installs");
+        let python = installs.join("python/3.14.3");
+        let pipx = installs.join("pipx-gitlabcis/1.20.0");
+        fs::create_dir_all(python.join("bin")).unwrap();
+        fs::create_dir_all(installs.join("python")).unwrap();
+        fs::create_dir_all(pipx.join("gitlabcis/bin")).unwrap();
+        fs::create_dir_all(pipx.join("bin")).unwrap();
+        fs::write(python.join("bin/python"), b"python").unwrap();
+        symlink("./3.14.3", installs.join("python/latest")).unwrap();
+
+        // uv-created venvs can point either through a mise runtime alias or
+        // at the host interpreter uv selected during installation.
+        symlink(
+            installs.join("python/latest/bin/python"),
+            pipx.join("gitlabcis/bin/python3"),
+        )
+        .unwrap();
+        symlink("/usr/sbin/python", pipx.join("gitlabcis/bin/python")).unwrap();
+        fs::write(
+            pipx.join("gitlabcis/pyvenv.cfg"),
+            "home = /usr/sbin\nimplementation = CPython\nversion_info = 3.14.3.final.0\nexecutable = /usr/sbin/python\ncommand = /usr/sbin/python -m venv /tmp/host-venv\n",
+        )
+        .unwrap();
+
+        let launcher = pipx.join("bin/gitlabcis");
+        fs::write(
+            &launcher,
+            format!(
+                "#!{}\nfrom gitlabcis.cli.main import main\n",
+                pipx.join("gitlabcis/bin/python").display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let image_pipx = PathBuf::from("/mise/installs/pipx-gitlabcis/1.20.0");
+        let image_python = PathBuf::from("/mise/installs/python/3.14.3");
+        let relocation = ToolRelocation::new(vec![
+            (pipx.clone(), image_pipx.clone()),
+            (python.clone(), image_python.clone()),
+        ])
+        .with_pythons(vec![
+            PythonRelocation {
+                version: "3.14.2".to_string(),
+                host: installs.join("python/3.14.2"),
+                image: PathBuf::from("/mise/installs/python/3.14.2"),
+            },
+            PythonRelocation {
+                version: "3.14.3".to_string(),
+                host: python,
+                image: image_python.clone(),
+            },
+        ]);
+        let blob = build_relocated_tool_layer_from_dir(
+            &pipx,
+            "mise/installs/pipx-gitlabcis/1.20.0",
+            LayerOwner::default(),
+            &relocation,
+        )
+        .unwrap();
+
+        let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());
+        let mut archive = Archive::new(decoder);
+        let mut launcher_contents = String::new();
+        let mut pyvenv_contents = String::new();
+        let mut links = std::collections::BTreeMap::new();
+        for entry in archive.entries().unwrap() {
+            let mut entry = entry.unwrap();
+            let path = entry.path().unwrap().to_string_lossy().into_owned();
+            if path.ends_with("bin/gitlabcis") {
+                entry.read_to_string(&mut launcher_contents).unwrap();
+            }
+            if path.ends_with("gitlabcis/pyvenv.cfg") {
+                entry.read_to_string(&mut pyvenv_contents).unwrap();
+            }
+            if let Some(target) = entry.header().link_name() {
+                links.insert(path, target.into_owned());
+            }
+        }
+
+        assert!(
+            launcher_contents
+                .starts_with("#!/mise/installs/pipx-gitlabcis/1.20.0/gitlabcis/bin/python\n")
+        );
+        assert_eq!(
+            links["mise/installs/pipx-gitlabcis/1.20.0/gitlabcis/bin/python"],
+            image_python.join("bin/python")
+        );
+        assert_eq!(
+            links["mise/installs/pipx-gitlabcis/1.20.0/gitlabcis/bin/python3"],
+            image_python.join("bin/python")
+        );
+        assert!(pyvenv_contents.contains("home = /mise/installs/python/3.14.3/bin\n"));
+        assert!(pyvenv_contents.contains("executable = /mise/installs/python/3.14.3/bin/python\n"));
+        assert!(pyvenv_contents.contains(
+            "command = /mise/installs/python/3.14.3/bin/python -m venv /mise/installs/pipx-gitlabcis/1.20.0/gitlabcis\n"
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_relocate_pipx_to_an_incompatible_python() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let pipx = dir.path().join("pipx-tool/1.0.0");
+        fs::create_dir_all(pipx.join("venv/bin")).unwrap();
+        fs::write(
+            pipx.join("venv/pyvenv.cfg"),
+            "home = /usr/bin\nversion_info = 3.13.9\nexecutable = /usr/bin/python3.13\n",
+        )
+        .unwrap();
+        symlink("/usr/bin/python3.13", pipx.join("venv/bin/python")).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            pipx.clone(),
+            PathBuf::from("/mise/installs/pipx-tool/1.0.0"),
+        )])
+        .with_pythons(vec![PythonRelocation {
+            version: "3.14.3".to_string(),
+            host: PathBuf::from("/host/python/3.14.3"),
+            image: PathBuf::from("/mise/installs/python/3.14.3"),
+        }]);
+        let entries =
+            collect_sorted_entries(&pipx, false, LayerOwner::default(), Some(&relocation)).unwrap();
+        let python = entries
+            .iter()
+            .find(|entry| entry.rel == Path::new("venv/bin/python"))
+            .unwrap();
+        match &python.kind {
+            EntryKind::Symlink(target) => assert_eq!(target, Path::new("/usr/bin/python3.13")),
+            kind => panic!("expected symlink, got {kind:?}"),
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relocation_matches_canonicalized_source_paths() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let real = dir.path().join("real");
+        let alias = dir.path().join("alias");
+        fs::create_dir_all(real.join("venv")).unwrap();
+        symlink(&real, &alias).unwrap();
+
+        let relocation = ToolRelocation::new(vec![(
+            alias.clone(),
+            PathBuf::from("/mise/installs/pipx-tool/1.0.0"),
+        )]);
+        assert_eq!(
+            relocate_absolute_path(&alias.join("venv"), Some(&relocation)),
+            Some(PathBuf::from("/mise/installs/pipx-tool/1.0.0/venv"))
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn long_symlink_target_written_via_gnu_longlink() {
         use std::os::unix::fs::symlink;
 
@@ -958,8 +1403,8 @@ mod tests {
         );
         symlink(&long_target, src.join("bin/cli")).unwrap();
 
-        let entries = collect_sorted_entries(src, false, LayerOwner::default()).unwrap();
-        let blob = build_layer_from_entries(&entries, "mise", LayerOwner::default()).unwrap();
+        let entries = collect_sorted_entries(src, false, LayerOwner::default(), None).unwrap();
+        let blob = build_layer_from_entries(&entries, "mise", LayerOwner::default(), None).unwrap();
 
         // The GNU @LongLink extension must round-trip back to the full target.
         let decoder = flate2::read::GzDecoder::new(blob.bytes.as_slice());

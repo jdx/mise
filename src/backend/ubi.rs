@@ -27,7 +27,7 @@ use ubi::{ForgeType, UbiBuilder};
 use xx::regex;
 
 #[derive(Debug)]
-pub struct UbiBackend {
+pub(crate) struct UbiBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -460,7 +460,7 @@ impl Backend for UbiBackend {
 }
 
 /// Returns install-time-only option keys for UBI backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "exe".into(),
         "matching".into(),
@@ -470,7 +470,7 @@ pub fn install_time_option_keys() -> Vec<String> {
 }
 
 impl UbiBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 }

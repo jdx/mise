@@ -14,13 +14,13 @@ use crate::tera::{BASE_CONTEXT, get_tera_v2, render_str_v2};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
-pub enum SecretTomlConfig {
+pub(crate) enum SecretTomlConfig {
     Env(String),
     Options(SecretOptionsTomlConfig),
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct SecretOptionsTomlConfig {
+pub(crate) struct SecretOptionsTomlConfig {
     pub env: String,
     pub description: Option<String>,
     #[serde(default)]
@@ -28,7 +28,7 @@ pub struct SecretOptionsTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct SecretDeclaration {
+pub(crate) struct SecretDeclaration {
     pub name: String,
     pub env: String,
     pub description: Option<String>,
@@ -37,7 +37,7 @@ pub struct SecretDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum SecretState {
+pub(crate) enum SecretState {
     Available,
     Missing,
     Empty,
@@ -56,7 +56,7 @@ impl std::fmt::Display for SecretState {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct SecretStatus {
+pub(crate) struct SecretStatus {
     pub name: String,
     pub env: String,
     pub state: SecretState,
@@ -73,7 +73,7 @@ struct SecretResolution {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct SecretValues {
+pub(crate) struct SecretValues {
     resolution: Arc<Mutex<SecretResolution>>,
     prompt: bool,
 }
@@ -86,7 +86,7 @@ struct SecretUnavailable {
     details: String,
 }
 
-pub fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
+pub(crate) fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration>> {
     let mut merged = IndexMap::new();
     for cf in config.config_files.values() {
         if let Some(bootstrap) = cf.bootstrap_config() {
@@ -101,7 +101,7 @@ pub fn declarations_from_config(config: &Config) -> Result<Vec<SecretDeclaration
         .collect()
 }
 
-pub fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
+pub(crate) fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
     Ok(declarations_from_config(config)?
         .into_iter()
         .map(|declaration| SecretStatus {
@@ -113,7 +113,7 @@ pub fn statuses(config: &Config) -> Result<Vec<SecretStatus>> {
         .collect())
 }
 
-pub fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
+pub(crate) fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
     let declarations = declarations_from_config(config)?
         .into_iter()
         .map(|declaration| (declaration.name.clone(), declaration))
@@ -128,7 +128,7 @@ pub fn resolve(config: &Config, prompt: bool) -> Result<SecretValues> {
 }
 
 impl SecretValues {
-    pub fn used_statuses(&self) -> Result<Vec<SecretStatus>> {
+    pub(crate) fn used_statuses(&self) -> Result<Vec<SecretStatus>> {
         let resolution = self
             .resolution
             .lock()
@@ -153,7 +153,7 @@ impl SecretValues {
             .collect())
     }
 
-    pub fn render(
+    pub(crate) fn render(
         &self,
         config: &Config,
         input: &str,
@@ -256,7 +256,7 @@ impl SecretValues {
     }
 }
 
-pub fn is_unavailable(error: &eyre::Report) -> bool {
+pub(crate) fn is_unavailable(error: &eyre::Report) -> bool {
     error
         .chain()
         .any(|cause| cause.downcast_ref::<SecretUnavailable>().is_some())

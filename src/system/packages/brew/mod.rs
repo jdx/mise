@@ -38,12 +38,12 @@ mod resolve;
 mod source;
 mod tag;
 
-pub struct BrewManager {}
-pub use cask::{BrewCaskManager, apply_cask_prune_plan, cask_prune_plan};
-pub use maintenance::{apply_prune_plan, default_tap_url, linked_formulae, prune_plan};
+pub(crate) struct BrewManager {}
+pub(crate) use cask::{BrewCaskManager, apply_cask_prune_plan, cask_prune_plan};
+pub(crate) use maintenance::{apply_prune_plan, default_tap_url, linked_formulae, prune_plan};
 
 impl BrewManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 

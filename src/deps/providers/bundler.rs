@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for Ruby Bundler (Gemfile.lock)
 #[derive(Debug)]
-pub struct BundlerDepsProvider {
+pub(crate) struct BundlerDepsProvider {
     base: ProviderBase,
 }
 
 impl BundlerDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("bundler", project_root, config),
         }

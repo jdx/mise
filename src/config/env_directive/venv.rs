@@ -18,7 +18,7 @@ use std::{
 };
 
 #[derive(Clone, Debug)]
-pub struct Venv {
+pub(crate) struct Venv {
     pub venv_path: PathBuf,
     pub env: HashMap<String, String>,
 }

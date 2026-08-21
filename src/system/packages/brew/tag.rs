@@ -39,7 +39,7 @@ static MACOS_MAJOR: Lazy<u32> = Lazy::new(|| {
 });
 
 /// Bottle tags acceptable on this machine, in preference order
-pub fn candidates() -> Vec<String> {
+pub(super) fn candidates() -> Vec<String> {
     let mut tags: Vec<String> = if cfg!(target_os = "macos") {
         MACOS_VERSIONS
             .iter()
@@ -57,14 +57,14 @@ pub fn candidates() -> Vec<String> {
 
 /// Pick the best bottle for this machine from a formula's `files` map.
 /// Returns the tag and the bottle entry.
-pub fn select(files: &HashMap<String, BottleFile>) -> Option<(String, &BottleFile)> {
+pub(super) fn select(files: &HashMap<String, BottleFile>) -> Option<(String, &BottleFile)> {
     candidates()
         .into_iter()
         .find_map(|tag| files.get(&tag).map(|f| (tag, f)))
 }
 
 /// The host's exact preferred tag (for `variations` lookups)
-pub fn host_tag() -> String {
+pub(super) fn host_tag() -> String {
     candidates()
         .into_iter()
         .next()
