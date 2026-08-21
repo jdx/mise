@@ -781,6 +781,7 @@ impl Config {
                 .build(self)
                 .await?;
             union.unknown_tools.extend(root_trs.unknown_tools.clone());
+            union.filtered_tools.extend(root_trs.filtered_tools.clone());
             for (_ba, requests, source) in root_trs.iter() {
                 for request in requests {
                     let already_present = union.tools.get(request.ba()).is_some_and(|existing| {
@@ -796,6 +797,7 @@ impl Config {
         }
 
         union.unknown_tools = union.unknown_tools.into_iter().unique().collect();
+        union.filtered_tools = union.filtered_tools.into_iter().unique().collect();
         let repo_urls = load_plugins(&config_files)?;
         Ok(MonorepoUnion {
             config_files,
@@ -6359,6 +6361,7 @@ config_roots = ["apps/api", "apps/web"]
             r#"
 [tools]
 "github:jdx/mise-test-fixtures" = "2"
+missing-monorepo-sibling = "1"
 "#,
         )?;
 
@@ -6407,6 +6410,16 @@ config_roots = ["apps/api", "apps/web"]
             .unwrap_or_default();
 
         assert_eq!(fixture_versions, vec!["1", "2"]);
+        assert!(
+            trs.unknown_tools
+                .iter()
+                .any(|ba| ba.short == "missing-monorepo-sibling")
+        );
+        assert!(
+            trs.filtered_tools
+                .iter()
+                .any(|ba| ba.short == "missing-monorepo-sibling")
+        );
         Ok(())
     }
 

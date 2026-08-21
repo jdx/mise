@@ -20,6 +20,8 @@ pub struct ToolRequestSet {
     pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
     /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
     pub unknown_tools: Vec<Arc<BackendArg>>,
+    /// Tools omitted because their backend, platform, or settings disabled them.
+    pub filtered_tools: Vec<Arc<BackendArg>>,
 }
 
 impl ToolRequestSet {
@@ -185,8 +187,17 @@ impl ToolRequestSetBuilder {
             trs = self.load_runtime_args(trs)?;
         }
 
+        self.filter_disabled_tools(&mut trs);
+
+        time!("tool_request_set::build");
+        Ok(trs)
+    }
+
+    /// Removes disabled tools while retaining metadata about the incomplete request set.
+    fn filter_disabled_tools(&self, trs: &mut ToolRequestSet) {
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
+                trs.filtered_tools.push(ba.clone());
                 if trs
                     .tools
                     .get(&ba)
@@ -198,9 +209,6 @@ impl ToolRequestSetBuilder {
                 trs.sources.remove(&ba);
             }
         }
-
-        time!("tool_request_set::build");
-        Ok(trs)
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
@@ -651,5 +659,62 @@ mod tests {
         };
 
         assert!(!builder.should_report_unknown_tool(&ba, &requests));
+    }
+
+    #[tokio::test]
+    async fn test_filter_disabled_tools_records_unknown_backend() {
+        crate::toolset::install_state::init().await.unwrap();
+        let builder = ToolRequestSetBuilder::default();
+        let (ba, requests) = unknown_tool_request(None);
+        let mut trs = ToolRequestSet::new();
+        for request in requests {
+            trs.add_version(request, &ToolSource::Unknown);
+        }
+
+        builder.filter_disabled_tools(&mut trs);
+
+        assert!(trs.tools.is_empty());
+        assert_eq!(trs.unknown_tools, vec![ba.clone()]);
+        assert_eq!(trs.filtered_tools, vec![ba]);
+    }
+
+    #[tokio::test]
+    async fn test_filter_disabled_tools_records_registry_os_gate() {
+        crate::toolset::install_state::init().await.unwrap();
+        let short = if crate::cli::version::OS.as_str() == "macos" {
+            "systemctl-tui"
+        } else {
+            "tart"
+        };
+        let ba = Arc::new(BackendArg::from(short));
+        assert!(!ba.is_os_supported());
+        let request = ToolRequest::new(ba.clone(), "latest", ToolSource::Unknown).unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(request, &ToolSource::Unknown);
+
+        ToolRequestSetBuilder::default().filter_disabled_tools(&mut trs);
+
+        assert!(trs.tools.is_empty());
+        assert!(trs.unknown_tools.is_empty());
+        assert_eq!(trs.filtered_tools, vec![ba]);
+    }
+
+    #[tokio::test]
+    async fn test_filter_disabled_tools_records_settings_exclusion() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("node"));
+        let request = ToolRequest::new(ba.clone(), "22", ToolSource::Unknown).unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(request, &ToolSource::Unknown);
+        let builder = ToolRequestSetBuilder {
+            disable_tools: BTreeSet::from([BackendArg::from("node")]),
+            ..Default::default()
+        };
+
+        builder.filter_disabled_tools(&mut trs);
+
+        assert!(trs.tools.is_empty());
+        assert!(trs.unknown_tools.is_empty());
+        assert_eq!(trs.filtered_tools, vec![ba]);
     }
 }

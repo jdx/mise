@@ -15,8 +15,9 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, Toolset, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
+    ConfigScope, InstallOptions, ResolveOptions, ToolRequestSet, ToolSource, ToolVersion, Toolset,
+    ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
+    get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -582,7 +583,7 @@ impl Upgrade {
 
         let monorepo_ts = if config.monorepo_lockfile_root().is_some() {
             match config.monorepo_union_tool_request_set().await {
-                Ok(requests) => {
+                Ok(requests) if monorepo_request_set_can_prune(&requests) => {
                     let mut ts: Toolset = requests.into();
                     match ts.resolve(config).await {
                         Ok(()) if monorepo_toolset_is_complete(&ts) => Some(ts),
@@ -599,6 +600,12 @@ impl Upgrade {
                             None
                         }
                     }
+                }
+                Ok(_) => {
+                    warn!(
+                        "the monorepo toolset omitted unavailable or disabled tools for lockfile update; preserving existing sibling entries"
+                    );
+                    None
                 }
                 Err(err) => {
                     warn!(
@@ -868,6 +875,14 @@ fn upgrade_lockfile_update(monorepo_ts: Option<&Toolset>) -> UpgradeLockfileUpda
     }
 }
 
+/// Returns whether the request union retained every configured tool needed for safe pruning.
+fn monorepo_request_set_can_prune(requests: &ToolRequestSet) -> bool {
+    // unknown_tools is checked independently as a fail-safe for request sets
+    // constructed outside ToolRequestSetBuilder, while filtered_tools covers
+    // unknown backends, registry OS gates, and enable/disable settings.
+    requests.unknown_tools.is_empty() && requests.filtered_tools.is_empty()
+}
+
 /// Returns whether every monorepo request can safely contribute to the preservation keep-set.
 fn monorepo_toolset_is_complete(ts: &Toolset) -> bool {
     // Toolset::resolve warns and retains a partially resolved list for ordinary
@@ -1052,11 +1067,13 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 mod tests {
     use super::{
         UpgradeLockfileUpdate, current_version_satisfies_hidden_release,
-        format_hidden_release_details, monorepo_toolset_is_complete, release_is_eligible_at,
-        upgrade_lockfile_update,
+        format_hidden_release_details, monorepo_request_set_can_prune,
+        monorepo_toolset_is_complete, release_is_eligible_at, upgrade_lockfile_update,
     };
     use crate::cli::args::BackendArg;
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset, parse_tool_options};
+    use crate::toolset::{
+        ToolRequest, ToolRequestSet, ToolSource, ToolVersion, Toolset, parse_tool_options,
+    };
     use jiff::tz::TimeZone;
     use std::sync::Arc;
 
@@ -1071,6 +1088,18 @@ mod tests {
             upgrade_lockfile_update(None),
             UpgradeLockfileUpdate::Active
         ));
+    }
+
+    #[test]
+    fn test_unknown_or_filtered_monorepo_request_forces_preserve_all_fallback() {
+        let ba = Arc::new(BackendArg::from("missing-sibling-tool"));
+        let mut requests = ToolRequestSet::new();
+        requests.unknown_tools.push(ba.clone());
+        assert!(!monorepo_request_set_can_prune(&requests));
+
+        requests.unknown_tools.clear();
+        requests.filtered_tools.push(ba);
+        assert!(!monorepo_request_set_can_prune(&requests));
     }
 
     #[tokio::test]
