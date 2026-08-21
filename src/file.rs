@@ -305,9 +305,9 @@ struct FormulaRestoreJournal {
     phase: FormulaRestorePhase,
     published_device: u64,
     published_inode: u64,
-    tombstone_device: u64,
-    tombstone_inode: u64,
-    tombstone_name: String,
+    tombstone_device: Option<u64>,
+    tombstone_inode: Option<u64>,
+    tombstone_name: Option<String>,
 }
 
 #[cfg(unix)]
@@ -316,15 +316,24 @@ fn persist_formula_restore_journal(
     parent: &File,
     journal: &FormulaRestoreJournal,
 ) -> Result<()> {
+    if let Ok(metadata) = path.symlink_metadata()
+        && (!metadata.is_file() || metadata.file_type().is_symlink())
+    {
+        bail!("formula restore journal is not a regular file");
+    }
+    let temporary = path.with_file_name(format!(
+        ".mise-restore-journal-{}.tmp",
+        crate::rand::random_string(32)
+    ));
     let mut file = fs::OpenOptions::new()
         .write(true)
-        .create(true)
-        .truncate(true)
+        .create_new(true)
         .mode(0o600)
         .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
-        .open(path)?;
+        .open(&temporary)?;
     file.write_all(&serde_json::to_vec(journal)?)?;
     file.sync_all()?;
+    fs::rename(&temporary, path)?;
     parent.sync_all()?;
     Ok(())
 }
@@ -418,9 +427,9 @@ fn restore_dir_atomically_validated_inner(
                 phase: FormulaRestorePhase::Intent,
                 published_device: identity.st_dev as u64,
                 published_inode: identity.st_ino as u64,
-                tombstone_device: current_identity.st_dev as u64,
-                tombstone_inode: current_identity.st_ino,
-                tombstone_name: quarantine_name.clone(),
+                tombstone_device: Some(current_identity.st_dev as u64),
+                tombstone_inode: Some(current_identity.st_ino),
+                tombstone_name: Some(quarantine_name.clone()),
             };
             persist_formula_restore_journal(&journal_path, &parent, &journal)?;
             checkpoint("intent", &parent_path.join(&quarantine_name))?;
@@ -444,6 +453,18 @@ fn restore_dir_atomically_validated_inner(
         Err(Errno::ENOENT) => None,
         Err(error) => return Err(error.into()),
     };
+    if displaced.is_none() {
+        let journal = FormulaRestoreJournal {
+            phase: FormulaRestorePhase::Intent,
+            published_device: identity.st_dev as u64,
+            published_inode: identity.st_ino as u64,
+            tombstone_device: None,
+            tombstone_inode: None,
+            tombstone_name: None,
+        };
+        persist_formula_restore_journal(&journal_path, &parent, &journal)?;
+        checkpoint("intent", &journal_path)?;
+    }
     if let Err(original) = atomic_rename_noreplace(&parent, from_name, to_name) {
         if displaced.is_some() {
             let rollback = atomic_rename_noreplace(&parent, quarantine_name.as_ref(), to_name);
@@ -461,12 +482,10 @@ fn restore_dir_atomically_validated_inner(
         bail!("formula restore identity changed while package lock was held");
     }
     parent.sync_all()?;
-    if displaced.is_some() {
-        let mut journal: FormulaRestoreJournal = serde_json::from_slice(&fs::read(&journal_path)?)?;
-        journal.phase = FormulaRestorePhase::Published;
-        persist_formula_restore_journal(&journal_path, &parent, &journal)?;
-        checkpoint("published", &parent_path.join(&quarantine_name))?;
-    }
+    let mut journal: FormulaRestoreJournal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+    journal.phase = FormulaRestorePhase::Published;
+    persist_formula_restore_journal(&journal_path, &parent, &journal)?;
+    checkpoint("published", &parent_path.join(&quarantine_name))?;
     // The shared Homebrew/mise formula lock is the cooperative namespace boundary. POSIX cannot
     // defend against a malicious same-UID process that deliberately ignores that lock; cleanup
     // remains descriptor-rooted so cooperative actors cannot redirect descendant deletion.
@@ -495,6 +514,9 @@ fn restore_dir_atomically_validated_inner(
         )?;
         parent.sync_all()?;
         checkpoint("cleanup", &parent_path.join(&quarantine_name))?;
+        remove_formula_restore_journal(&journal_path, &parent)?;
+    } else {
+        checkpoint("cleanup", &journal_path)?;
         remove_formula_restore_journal(&journal_path, &parent)?;
     }
     Ok(())
@@ -529,8 +551,23 @@ fn reconcile_formula_restore(
         }
     };
     let published = (journal.published_device, journal.published_inode);
-    let displaced = (journal.tombstone_device, journal.tombstone_inode);
-    let tombstone_name = std::ffi::OsStr::new(&journal.tombstone_name);
+    let displaced = journal.tombstone_device.zip(journal.tombstone_inode);
+    let tombstone_name = journal.tombstone_name.as_deref().map(std::ffi::OsStr::new);
+
+    if displaced.is_none() && tombstone_name.is_none() {
+        if identity(from_name)? == Some(published) && identity(to_name)?.is_none() {
+            atomic_rename_noreplace(parent, from_name, to_name)?;
+            parent.sync_all()?;
+            journal.phase = FormulaRestorePhase::Published;
+            persist_formula_restore_journal(journal_path, parent, &journal)?;
+        }
+        if identity(from_name)?.is_none() && identity(to_name)? == Some(published) {
+            return remove_formula_restore_journal(journal_path, parent);
+        }
+        bail!("formula restore journal does not match absent-destination namespace state");
+    }
+    let displaced = displaced.ok_or_else(|| eyre::eyre!("incomplete tombstone identity"))?;
+    let tombstone_name = tombstone_name.ok_or_else(|| eyre::eyre!("missing tombstone name"))?;
 
     if identity(from_name)? == Some(published)
         && identity(to_name)? == Some(displaced)
@@ -3925,6 +3962,85 @@ mod tests {
                 "boundary {boundary}"
             );
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_recovers_absent_destination_wal_boundaries() {
+        for boundary in ["intent", "published", "cleanup"] {
+            let root = tempfile::tempdir().unwrap();
+            let rack = root.path().join("Cellar/foo");
+            fs::create_dir_all(&rack).unwrap();
+            let source = rack.join(".mise-backup-1.0");
+            let destination = rack.join("1.0");
+            fs::create_dir(&source).unwrap();
+            fs::write(source.join("predecessor"), "old").unwrap();
+
+            restore_dir_atomically_validated_inner(
+                &source,
+                &destination,
+                |_, _| Ok(()),
+                |phase, _| {
+                    if phase == boundary {
+                        bail!("crash at absent {boundary}")
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+            assert!(formula_restore_pending(&destination));
+
+            restore_dir_atomically_validated(&source, &destination, |_, _| {
+                bail!("absent WAL retry must not restart validation")
+            })
+            .unwrap();
+            assert!(
+                !formula_restore_pending(&destination),
+                "boundary {boundary}"
+            );
+            assert_eq!(
+                fs::read_to_string(destination.join("predecessor")).unwrap(),
+                "old"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_ignores_torn_journal_temp_on_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |phase, _| {
+                if phase == "quarantined" {
+                    fs::write(rack.join(".mise-restore-journal-torn.tmp"), b"{")?;
+                    bail!("crash with torn temp")
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        restore_dir_atomically_validated(&source, &destination, |_, _| {
+            bail!("retry must use authoritative journal")
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+        assert!(rack.join(".mise-restore-journal-torn.tmp").is_file());
     }
 
     #[cfg(unix)]
