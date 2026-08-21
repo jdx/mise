@@ -313,6 +313,28 @@ pub fn auto_env_setting() -> Option<bool> {
     }
 }
 
+/// The tri-state env_conf_d setting: MISE_ENV_CONF_D env var > .miserc.toml > unset.
+pub fn env_conf_d_setting() -> Option<bool> {
+    if var_is_true("MISE_ENV_CONF_D") {
+        Some(true)
+    } else if var_is_false("MISE_ENV_CONF_D") {
+        Some(false)
+    } else {
+        miserc::get_env_conf_d()
+    }
+}
+
+/// Keep dotted conf.d fragments unconditional through the deprecation window.
+pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
+    *v >= versions::Versioning::new("2027.8.10").unwrap()
+}
+
+/// Whether `conf.d` filenames carry environment suffixes, resolving the
+/// setting against the version-gated default.
+pub fn env_conf_d() -> bool {
+    env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::cli::version::V))
+}
+
 /// Default for auto_env when the setting is unset: off until mise 2027.6.0
 pub(crate) fn auto_env_default_for_version(v: &versions::Versioning) -> bool {
     *v >= versions::Versioning::new("2027.6.0").unwrap()
@@ -1223,6 +1245,14 @@ mod tests {
         assert!(!auto_env_default_for_version(&v("2027.5.9")));
         assert!(auto_env_default_for_version(&v("2027.6.0")));
         assert!(auto_env_default_for_version(&v("2028.1.0")));
+    }
+
+    #[test]
+    fn test_env_conf_d_default_for_version() {
+        let v = |s: &str| versions::Versioning::new(s).unwrap();
+        assert!(!env_conf_d_default_for_version(&v("2026.8.10")));
+        assert!(!env_conf_d_default_for_version(&v("2027.8.9")));
+        assert!(env_conf_d_default_for_version(&v("2027.8.10")));
     }
 
     #[test]
