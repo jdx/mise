@@ -81,8 +81,8 @@ Dots in unconditional fragment names are deprecated. Rename them to use hyphens,
 an environment.
 :::
 
-Set `env_conf_d = true` in `.miserc.toml`, or set `MISE_ENV_CONF_D=true`, to opt into the new
-behavior now. Files in `.mise/conf.d` and `.config/mise/conf.d` will then use the same environment
+Set `env_conf_d = true` in any `miserc.toml` file (the locations listed above), or set
+`MISE_ENV_CONF_D=true`, to opt into the new behavior now. Files in `.mise/conf.d` and `.config/mise/conf.d` will then use the same environment
 suffixes as other config files:
 
 ```text
@@ -92,8 +92,8 @@ suffixes as other config files:
 .mise/conf.d/tools.development.local.toml # MISE_ENV=development, usually gitignored
 ```
 
-Because this setting controls config discovery, it must be set in `.miserc.toml` or the environment;
-setting it in `mise.toml` is too late. Set `env_conf_d = false` explicitly to retain the old behavior
+Because this setting controls config discovery, it must be set in a `miserc.toml` file or the
+environment; setting it in `mise.toml` is too late. Set `env_conf_d = false` explicitly to retain the old behavior
 without the deprecation warning during the migration window.
 
 Use `mise config` to see which files are being used.

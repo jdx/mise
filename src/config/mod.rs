@@ -1700,6 +1700,8 @@ fn env_config_patterns(env: &str) -> Vec<String> {
     env_config_patterns_with_conf_d(env, env::env_conf_d())
 }
 
+/// `env_config_patterns` with the `env_conf_d` decision injected, so tests can
+/// cover both sides of the migration without touching global state.
 fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     let env = glob::Pattern::escape(env);
     let mut patterns = vec![
@@ -1841,16 +1843,21 @@ fn is_environment_conf_d_file(path: &Path) -> bool {
     conf_d_file_environment(path).is_some()
 }
 
+/// Warn about a dotted `conf.d` fragment whose name will become an environment
+/// selector once `env_conf_d` defaults to on. Only fires inside the migration
+/// window: the setting is unset (so the meaning is still going to change) and
+/// the version default is still legacy (so it hasn't changed yet).
 fn warn_on_dotted_conf_d_file(path: &Path) {
     if settings::is_loaded()
         && env::env_conf_d_setting().is_none()
+        && !env::env_conf_d()
         && is_environment_conf_d_file(path)
     {
         deprecated_at!(
             "2026.8.10",
             "2027.8.10",
             "dotted_conf_d_filename",
-            "dots in unconditional conf.d filenames are deprecated because the suffix will become an environment selector; rename fragments such as `node.tools.toml` to `node-tools.toml`, or set `env_conf_d = true` in .miserc.toml to opt in now"
+            "dots in unconditional conf.d filenames are deprecated because the suffix will become an environment selector; rename fragments such as `node.tools.toml` to `node-tools.toml`, or set `env_conf_d = true` in a miserc.toml file to opt in now"
         );
     }
 }

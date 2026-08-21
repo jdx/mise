@@ -329,6 +329,8 @@ pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
     *v >= versions::Versioning::new("2027.8.10").unwrap()
 }
 
+/// Whether `conf.d` filenames carry environment suffixes, resolving the
+/// setting against the version-gated default.
 pub fn env_conf_d() -> bool {
     env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::cli::version::V))
 }
