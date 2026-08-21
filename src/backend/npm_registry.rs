@@ -12,8 +12,7 @@
 //! authenticate mise-owned metadata queries. User-level `~/.npmrc` (or
 //! `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` env vars still apply.
 
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
 
 use aube_registry::NetworkMode;
@@ -70,6 +69,13 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
         .await?)
 }
 
+fn all_versions_deprecated(packument: &aube_registry::Packument) -> bool {
+    packument
+        .versions
+        .values()
+        .all(|metadata| metadata.deprecated.is_some())
+}
+
 /// List a package's versions as [`VersionInfo`], semver-ascending with publish
 /// timestamps. npm registry versions are strict semver (the registry enforces
 /// it) but the packument's `versions` map is keyed lexically, so the keys are
@@ -78,7 +84,11 @@ async fn fetch_packument(name: &str) -> Result<aube_registry::Packument> {
 /// stable position at the end.
 pub async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
     let packument = fetch_packument(name).await?;
-    Ok(sort_versions(packument.versions.keys())
+    let all_versions_deprecated = all_versions_deprecated(&packument);
+    let versions = packument.versions.iter().filter_map(|(version, metadata)| {
+        (all_versions_deprecated || metadata.deprecated.is_none()).then_some(version)
+    });
+    Ok(sort_versions(versions)
         .into_iter()
         .map(|version| VersionInfo {
             version: version.clone(),
@@ -108,7 +118,18 @@ fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a Stri
 /// Resolve the `latest` dist-tag for a package, if the registry publishes one.
 pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
     let packument = fetch_packument(name).await?;
-    Ok(packument.dist_tags.get("latest").cloned())
+    let all_versions_deprecated = all_versions_deprecated(&packument);
+    Ok(packument
+        .dist_tags
+        .get("latest")
+        .filter(|version| {
+            all_versions_deprecated
+                || packument
+                    .versions
+                    .get(*version)
+                    .is_none_or(|metadata| metadata.deprecated.is_none())
+        })
+        .cloned())
 }
 
 /// Download the exact npm registry tarball for a package version, honoring
