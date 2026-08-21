@@ -485,12 +485,11 @@ fn ensure_same_native_identity(
 
 #[cfg(unix)]
 fn atomic_rename_noreplace(
-    parent: &File,
+    parent: &impl std::os::fd::AsRawFd,
     from: &std::ffi::OsStr,
     to: &std::ffi::OsStr,
 ) -> nix::Result<()> {
     use std::ffi::CString;
-    use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
 
     let from = CString::new(from.as_bytes()).map_err(|_| nix::errno::Errno::EINVAL)?;
@@ -532,7 +531,7 @@ fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
 
     use nix::dir::Dir;
     use nix::errno::Errno;
-    use nix::fcntl::{AtFlags, OFlag};
+    use nix::fcntl::{AtFlags, OFlag, renameat};
     use nix::sys::stat::{Mode, fstat, fstatat};
     use nix::unistd::{UnlinkatFlags, unlinkat};
 
@@ -551,6 +550,7 @@ fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
         .collect::<nix::Result<Vec<_>>>()?;
     for name in names {
         let name = OsStr::from_bytes(&name);
+        let expected = fstatat(&*dir, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
         match Dir::openat(
             &*dir,
             name,
@@ -559,13 +559,42 @@ fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
         ) {
             Ok(mut child) => {
                 let retained = fstat(&child)?;
+                ensure_same_native_identity(&expected, &retained, name)?;
                 remove_dir_contents(&mut child)?;
                 let current = fstatat(&*dir, name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
                 ensure_same_native_identity(&retained, &current, name)?;
                 unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
             }
             Err(Errno::ENOTDIR | Errno::ELOOP) => {
-                unlinkat(&*dir, name, UnlinkatFlags::NoRemoveDir)?;
+                let quarantine_name =
+                    format!(".mise-delete-entry-{}", crate::rand::random_string(32));
+                renameat(&*dir, name, &*dir, quarantine_name.as_str())?;
+                let quarantined = fstatat(
+                    &*dir,
+                    quarantine_name.as_str(),
+                    AtFlags::AT_SYMLINK_NOFOLLOW,
+                )?;
+                if let Err(error) = ensure_same_native_identity(&expected, &quarantined, name) {
+                    if let Err(restore_error) =
+                        atomic_rename_noreplace(&*dir, quarantine_name.as_ref(), name)
+                    {
+                        if restore_error != Errno::EEXIST {
+                            return Err(restore_error.into());
+                        }
+                        let preserved_name = format!(
+                            "{}.mise-preserved-{}",
+                            name.to_string_lossy(),
+                            crate::rand::random_string(32)
+                        );
+                        atomic_rename_noreplace(
+                            &*dir,
+                            quarantine_name.as_ref(),
+                            preserved_name.as_ref(),
+                        )?;
+                    }
+                    return Err(error);
+                }
+                unlinkat(&*dir, quarantine_name.as_str(), UnlinkatFlags::NoRemoveDir)?;
             }
             Err(error) => return Err(error.into()),
         }
