@@ -288,7 +288,11 @@ fn restore_dir_atomically_validated_inner(
     // descriptor instead, then publish only our private staging directory. Child lookup remains
     // relative to the already-open directory even when `from_name` is concurrently replaced.
     let staging_name = format!(".mise-restore-{}", crate::rand::random_string(32));
-    nix::sys::stat::mkdirat(&parent, staging_name.as_str(), Mode::from_bits_truncate(0o700))?;
+    nix::sys::stat::mkdirat(
+        &parent,
+        staging_name.as_str(),
+        Mode::from_bits_truncate(0o700),
+    )?;
     let staged = Dir::openat(
         &parent,
         staging_name.as_str(),
@@ -387,14 +391,24 @@ fn clone_dir_from_fd(source: &nix::dir::Dir, destination: &nix::dir::Dir) -> Res
             let destination_file = openat(
                 destination,
                 name,
-                OFlag::O_WRONLY | OFlag::O_CREAT | OFlag::O_EXCL | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+                OFlag::O_WRONLY
+                    | OFlag::O_CREAT
+                    | OFlag::O_EXCL
+                    | OFlag::O_NOFOLLOW
+                    | OFlag::O_CLOEXEC,
                 Mode::from_bits_truncate(0o600),
             )?;
             let mut destination_file = File::from(destination_file);
             std::io::copy(&mut source_file, &mut destination_file)?;
-            fchmod(&destination_file, Mode::from_bits_truncate(metadata.st_mode))?;
+            fchmod(
+                &destination_file,
+                Mode::from_bits_truncate(metadata.st_mode),
+            )?;
         } else {
-            bail!("unsupported recovery backup entry: {}", name.to_string_lossy());
+            bail!(
+                "unsupported recovery backup entry: {}",
+                name.to_string_lossy()
+            );
         }
     }
     let metadata = fstat(source)?;

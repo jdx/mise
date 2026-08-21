@@ -468,7 +468,8 @@ struct InternalFormula {
     #[serde(default)]
     aliases: Vec<String>,
     #[serde(default)]
-    oldnames: Vec<String>,
+    #[serde(rename = "oldnames")]
+    _oldnames: Vec<String>,
     #[serde(default)]
     stable_url_args: Vec<Value>,
     #[serde(default)]
@@ -814,13 +815,14 @@ fn formula_from_internal(
         .chars()
         .next()
         .ok_or_else(|| eyre!("empty signed formula name"))?;
-    let aliases = index
+    let mut aliases: Vec<String> = index
         .formula_aliases
         .iter()
         .filter_map(|(alias, canonical)| (canonical == name).then_some(alias.clone()))
         .chain(signed.aliases.iter().cloned())
-        .chain(signed.oldnames.iter().cloned())
         .collect();
+    let mut seen = HashSet::new();
+    aliases.retain(|alias| seen.insert(alias.clone()));
     let disable = signed.disable_args.as_ref();
     let deprecate = signed.deprecate_args.as_ref();
     Ok(Formula {
@@ -1206,11 +1208,13 @@ mod tests {
             "disabled": true,
             "disable_date": "not-a-date"
         }));
-        assert!(formula
-            .validate_install_policy()
-            .unwrap_err()
-            .to_string()
-            .contains("invalid Homebrew lifecycle policy date"));
+        assert!(
+            formula
+                .validate_install_policy()
+                .unwrap_err()
+                .to_string()
+                .contains("invalid Homebrew lifecycle policy date")
+        );
     }
 
     #[test]
@@ -1283,6 +1287,8 @@ mod tests {
                 "hello": {
                     "stable_version": "2.12.3",
                     "revision": 1,
+                    "aliases": ["hi"],
+                    "oldnames": ["old-hi"],
                     "stable_url_args": ["https://trusted.example/hello.tar.gz"],
                     "stable_checksum": source_sha,
                     "stable_dependencies": ["runtime-z", "runtime-a", "runtime-z", {"builder": ":build"}],
