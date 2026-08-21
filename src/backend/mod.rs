@@ -3248,7 +3248,7 @@ pub trait Backend: Debug + Send + Sync {
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
         // hook, resolved against this tool's already-installed dependencies. The
         // config env added above is resolved without tools (`NonToolsOnly`), so it
-        // omits these; `install_dependency_toolset` is fully resolved (offline) so
+        // omits these; `install_dependency_context` is fully resolved (offline) so
         // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
         // unresolved install toolset during a combined install. PATH stays owned by
         // `path_env` below. Best-effort: any resolution error leaves the tool-less

@@ -255,13 +255,15 @@ mod tests {
         assert_eq!(rx.try_recv().unwrap(), Some(dependent));
     }
 
-    #[test]
-    fn backend_dependency_graph_edge_is_preserved() {
+    #[tokio::test]
+    async fn backend_dependency_graph_edge_is_preserved() {
+        let _config = Config::get().await.unwrap();
         assert_dependency_edge(request("elixir", ""), request("erlang", ""));
     }
 
-    #[test]
-    fn per_tool_dependency_graph_edge_is_preserved() {
+    #[tokio::test]
+    async fn per_tool_dependency_graph_edge_is_preserved() {
+        let _config = Config::get().await.unwrap();
         assert_dependency_edge(
             request("needs-dummy", "depends=dummy"),
             request("dummy", ""),

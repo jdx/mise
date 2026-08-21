@@ -133,11 +133,13 @@ impl InstallDependencyContext {
             requests,
             toolset,
         };
+        debug_assert_eq!(context.requests.tools.len(), context.toolset.versions.len());
         debug_assert!(
             context
-                .requests
-                .iter()
-                .all(|(ba, ..)| context.declarations.matches(ba))
+                .toolset
+                .versions
+                .keys()
+                .all(|backend| context.declarations.matches(backend))
         );
         Ok(context)
     }
@@ -152,10 +154,13 @@ pub struct InstallContext {
     /// require lockfile URLs to be present; fail if not
     pub locked: bool,
     pub before_date: Option<Timestamp>,
+    /// One install context belongs to exactly one tool request, so this cache is
+    /// intentionally unkeyed. Every caller must use that same request.
     pub(crate) dependency_context: OnceCell<InstallDependencyContext>,
 }
 
 impl InstallContext {
+    /// Resolve the dependency context for this install's single tool request.
     pub(crate) async fn dependency_context(
         &self,
         request: &ToolRequest,
@@ -243,5 +248,21 @@ mod tests {
         declarations.validate().unwrap();
         assert!(!declarations.matches(&BackendArg::from("cargo-binstall")));
         assert_eq!(names(&declarations), vec!["rust", "sccache"]);
+    }
+
+    #[tokio::test]
+    async fn metadata_errors_preserve_direct_dependencies() {
+        let _config = Config::get().await.unwrap();
+        let declarations =
+            install_dependency_declarations(&request("unknown:example", r#"depends=["node"]"#));
+        assert!(declarations.validate().is_err());
+        assert_eq!(names(&declarations), vec!["node"]);
+        assert_eq!(
+            declarations
+                .direct()
+                .map(|(raw, _)| raw)
+                .collect::<Vec<_>>(),
+            vec!["node"]
+        );
     }
 }
