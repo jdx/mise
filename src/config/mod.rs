@@ -4,7 +4,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub use settings::{CompilePurpose, Settings};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
@@ -775,6 +775,9 @@ impl Config {
                 root_config_files.entry(path).or_insert(cf);
             }
 
+            // TODO: this uses the active Config's resolved environment and vars when
+            // rendering every sibling. Root-dependent templates can therefore select
+            // the wrong version for install, ls, and upgrade's preservation keep-set.
             let root_trs = ToolRequestSetBuilder::new()
                 .with_config_files(root_config_files)
                 .without_runtime_args()
@@ -3359,6 +3362,7 @@ pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
     config: &Arc<Config>,
     ts: &Toolset,
     monorepo_ts: &Toolset,
+    omitted_shorts: &HashSet<String>,
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
@@ -3367,7 +3371,10 @@ pub async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
         ts,
         new_versions,
         lockfile_update_mode,
-        lockfile::LockfileUpdateScope::MonorepoUnion(monorepo_ts),
+        lockfile::LockfileUpdateScope::MonorepoUnion {
+            toolset: monorepo_ts,
+            omitted_shorts,
+        },
     )
     .await
 }

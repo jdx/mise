@@ -1505,8 +1505,11 @@ impl LockfileUpdateMode {
 pub enum LockfileUpdateScope<'a> {
     /// Preserve entries that may belong to unloaded sibling projects.
     Active,
-    /// Preserve only concrete versions present in the resolved monorepo union.
-    MonorepoUnion(&'a Toolset),
+    /// Preserve union versions plus all entries for tools omitted while loading it.
+    MonorepoUnion {
+        toolset: &'a Toolset,
+        omitted_shorts: &'a HashSet<String>,
+    },
 }
 
 pub fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
@@ -1703,11 +1706,17 @@ pub fn update_lockfiles(
     // complete monorepo union is used below solely to decide which existing
     // sibling versions remain configured and must be preserved.
     let tools_by_source = tools_by_source_for_update(ts, new_versions);
-    let monorepo_versions = match scope {
-        LockfileUpdateScope::Active => None,
-        LockfileUpdateScope::MonorepoUnion(ts) => {
-            let tools = tools_by_source_for_update(ts, new_versions);
-            Some(lockfile_versions_by_path(config, &tools))
+    let (monorepo_versions, omitted_shorts) = match scope {
+        LockfileUpdateScope::Active => (None, None),
+        LockfileUpdateScope::MonorepoUnion {
+            toolset,
+            omitted_shorts,
+        } => {
+            let tools = tools_by_source_for_update(toolset, new_versions);
+            (
+                Some(lockfile_versions_by_path(config, &tools)),
+                Some(omitted_shorts),
+            )
         }
     };
     let empty_versions = BTreeSet::new();
@@ -1907,20 +1916,14 @@ pub fn update_lockfiles(
             } else {
                 build_rekey_decisions(versions, existing_lockfile.tools.get(&short))
             };
-            let absent_entry_policy = if !is_monorepo_root_lockfile {
-                AbsentEntryPolicy::Drop
-            } else if let Some(monorepo_versions) = &monorepo_versions {
-                // "Complete" means complete for the config roots currently matched
-                // by [monorepo].config_roots. Entries from roots removed from those
-                // globs have no attribution in the lockfile and may be pruned.
-                let keep_versions = monorepo_versions
-                    .get(&lockfile_path)
-                    .and_then(|tools| tools.get(&short))
-                    .unwrap_or(&empty_versions);
-                AbsentEntryPolicy::PreserveVersions(keep_versions)
-            } else {
-                AbsentEntryPolicy::PreserveAll
-            };
+            let absent_entry_policy = absent_entry_policy_for_update(
+                is_monorepo_root_lockfile,
+                omitted_shorts,
+                monorepo_versions.as_ref(),
+                &lockfile_path,
+                &short,
+                &empty_versions,
+            );
             let mut merged_tools = merge_tool_entries_for_update(
                 entries,
                 existing_lockfile.tools.get(&short),
@@ -1968,12 +1971,16 @@ pub fn update_lockfiles(
 
 /// Resolved tool versions grouped first by config source and then by tool short name.
 type ToolsBySource = HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>>;
+type LockfileVersionsByPath = HashMap<PathBuf, HashMap<String, BTreeSet<String>>>;
 
 /// Groups resolved and newly installed versions by their contributing config source.
 fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> ToolsBySource {
     let mut tools_by_source: ToolsBySource = HashMap::new();
     for (ba, tvl) in &ts.versions {
         for tv in &tvl.versions {
+            // Group by each request's source, never tvl.source. The union keeps the
+            // first-seen source per short in ToolRequestSet::add_version, so tvl.source
+            // would misattribute later sibling requests to that first config.
             tools_by_source
                 .entry(tv.request.source().clone())
                 .or_default()
@@ -2002,8 +2009,8 @@ fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> Too
 fn lockfile_versions_by_path(
     config: &Config,
     tools_by_source: &ToolsBySource,
-) -> HashMap<PathBuf, HashMap<String, BTreeSet<String>>> {
-    let mut versions_by_path: HashMap<PathBuf, HashMap<String, BTreeSet<String>>> = HashMap::new();
+) -> LockfileVersionsByPath {
+    let mut versions_by_path = LockfileVersionsByPath::new();
     for (source, tools) in tools_by_source {
         let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, source) else {
             continue;
@@ -3047,6 +3054,35 @@ enum AbsentEntryPolicy<'a> {
     PreserveAll,
     /// Keep only absent entries whose concrete version remains in the union.
     PreserveVersions(&'a BTreeSet<String>),
+}
+
+/// Chooses how one tool's absent entries are handled for the current update scope.
+fn absent_entry_policy_for_update<'a>(
+    is_monorepo_root_lockfile: bool,
+    omitted_shorts: Option<&HashSet<String>>,
+    monorepo_versions: Option<&'a LockfileVersionsByPath>,
+    lockfile_path: &Path,
+    short: &str,
+    empty_versions: &'a BTreeSet<String>,
+) -> AbsentEntryPolicy<'a> {
+    if !is_monorepo_root_lockfile {
+        AbsentEntryPolicy::Drop
+    } else if omitted_shorts.is_some_and(|omitted| omitted.contains(short)) {
+        AbsentEntryPolicy::PreserveAll
+    } else if let Some(monorepo_versions) = monorepo_versions {
+        // "Complete" means complete for the config roots currently matched
+        // exactly by [monorepo].config_roots. Discovery is not recursive:
+        // nested undeclared configs still write to the root lockfile but are
+        // invisible here, as are roots removed from the configured globs.
+        // Their unattributed entries may be pruned when this short is updated.
+        let keep_versions = monorepo_versions
+            .get(lockfile_path)
+            .and_then(|tools| tools.get(short))
+            .unwrap_or(empty_versions);
+        AbsentEntryPolicy::PreserveVersions(keep_versions)
+    } else {
+        AbsentEntryPolicy::PreserveAll
+    }
 }
 
 /// Merges current entries and applies the selected absent-entry preservation policy.
@@ -4268,6 +4304,70 @@ options = { exe = "rg" }
                 .map(|tool| tool.version.as_str())
                 .collect_vec(),
             vec!["1.8.2", "2.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_monorepo_update_preserves_only_omitted_shorts() {
+        let lockfile_path = PathBuf::from("/repo/mise.lock");
+        let keep_versions = LockfileVersionsByPath::from([(
+            lockfile_path.clone(),
+            HashMap::from([(
+                "unaffected".to_string(),
+                BTreeSet::from(["2.0.0".to_string()]),
+            )]),
+        )]);
+        let omitted_shorts = HashSet::from(["omitted".to_string()]);
+        let empty_versions = BTreeSet::new();
+        let existing = vec![basic_tool("1.0.0", "aqua:example/tool")];
+
+        let omitted_policy = absent_entry_policy_for_update(
+            true,
+            Some(&omitted_shorts),
+            Some(&keep_versions),
+            &lockfile_path,
+            "omitted",
+            &empty_versions,
+        );
+        assert!(matches!(omitted_policy, AbsentEntryPolicy::PreserveAll));
+        let omitted = merge_tool_entries_for_update(
+            vec![basic_tool("2.0.0", "aqua:example/tool")],
+            Some(&existing),
+            omitted_policy,
+            |_, _| None,
+        );
+        assert_eq!(
+            omitted
+                .iter()
+                .map(|tool| tool.version.as_str())
+                .collect_vec(),
+            vec!["1.0.0", "2.0.0"]
+        );
+
+        let unaffected_policy = absent_entry_policy_for_update(
+            true,
+            Some(&omitted_shorts),
+            Some(&keep_versions),
+            &lockfile_path,
+            "unaffected",
+            &empty_versions,
+        );
+        assert!(matches!(
+            unaffected_policy,
+            AbsentEntryPolicy::PreserveVersions(_)
+        ));
+        let unaffected = merge_tool_entries_for_update(
+            vec![basic_tool("2.0.0", "aqua:example/tool")],
+            Some(&existing),
+            unaffected_policy,
+            |_, _| None,
+        );
+        assert_eq!(
+            unaffected
+                .iter()
+                .map(|tool| tool.version.as_str())
+                .collect_vec(),
+            vec!["2.0.0"]
         );
     }
 
