@@ -137,6 +137,12 @@ pub(crate) struct Config {
     tool_request_set: OnceCell<ToolRequestSet>,
     toolset: OnceCell<Toolset>,
     vars_results: OnceCell<EnvResults>,
+    /// The lockfile paths this config resolves to (which key the shared
+    /// lockfile cache) plus the monorepo discovery behind them. Deriving them
+    /// walks every config path and dedups the results, and backend-identity
+    /// lookups ask for them hundreds of times per invocation, so derive once
+    /// per config.
+    lockfile_discovery: std::sync::OnceLock<Arc<crate::lockfile::LockfileDiscovery>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -230,7 +236,19 @@ impl Config {
             tera_files: self.tera_files.clone(),
             vars: self.vars.clone(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         })
+    }
+
+    /// Lockfile paths and monorepo discovery this config resolves to, derived
+    /// once. See [`Self::lockfile_discovery`]'s field docs.
+    pub(crate) fn lockfile_discovery(
+        &self,
+        derive: impl FnOnce() -> crate::lockfile::LockfileDiscovery,
+    ) -> Arc<crate::lockfile::LockfileDiscovery> {
+        self.lockfile_discovery
+            .get_or_init(|| Arc::new(derive()))
+            .clone()
     }
 
     pub(crate) fn with_tool_request_set(&self, tool_request_set: ToolRequestSet) -> Arc<Self> {
@@ -307,6 +325,7 @@ impl Config {
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
         let vars_config = Arc::new(Self {
             tera_ctx: config.tera_ctx.clone(),
@@ -328,6 +347,7 @@ impl Config {
             tera_files: config.tera_files.clone(),
             vars: config.vars.clone(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         });
         let vars_results = measure!("config::load vars_results", {
             let results = load_vars(&vars_config).await?;
@@ -908,7 +928,7 @@ impl Config {
 
     fn load_all_aliases(&self) -> AliasMap {
         let mut aliases: AliasMap = self.aliases.clone();
-        let plugin_aliases: Vec<_> = backend::list()
+        let plugin_aliases: Vec<_> = backend::alias_backends()
             .into_iter()
             .map(|backend| {
                 let aliases = backend.get_aliases().unwrap_or_else(|err| {
@@ -6054,6 +6074,7 @@ mod tests {
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
         config.tool_request_set.set(trs).ok();
         let config = Arc::new(config);
@@ -6133,6 +6154,7 @@ mod tests {
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
         config.tool_request_set.set(trs).ok();
         let config = Arc::new(config);
@@ -6216,6 +6238,7 @@ mod tests {
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
         config.tool_request_set.set(trs).ok();
         let config = Arc::new(config);
@@ -6301,6 +6324,7 @@ mod tests {
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
         config.tool_request_set.set(trs).ok();
         let config = Arc::new(config);
@@ -6361,6 +6385,7 @@ mod tests {
                 tera_files: Default::default(),
                 vars: Default::default(),
                 vars_results: OnceCell::new(),
+                lockfile_discovery: Default::default(),
             };
             config.tool_request_set.set(ToolRequestSet::new()).ok();
             let config = Arc::new(config);
@@ -6446,6 +6471,7 @@ config_roots = ["apps/api", "apps/web"]
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
         let config = Arc::new(config);
 
@@ -6619,6 +6645,7 @@ config_roots = ["apps/api", "apps/web"]
             tera_files: Default::default(),
             vars: Default::default(),
             vars_results: OnceCell::new(),
+            lockfile_discovery: Default::default(),
         };
 
         assert_eq!(

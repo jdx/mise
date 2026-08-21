@@ -378,6 +378,17 @@ pub(crate) enum SecurityFeature {
 }
 
 static TOOLS: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
+/// Whether TOOLS has been extended with every installed tool. Enumerating the
+/// installs dir costs a readdir per tool plus stats per version, so it only
+/// happens when a caller genuinely needs the full list ([`list`]).
+static TOOLS_INCLUDE_INSTALLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+/// The map [`load_tools`] seeded (core tools and registry entries with idiomatic
+/// files). An installed tool takes precedence over these — it carries the
+/// recorded install identity — but must not displace an entry [`get`] resolved
+/// later, which may carry command-scoped options. Held as the seed map itself so
+/// recording it costs one Arc clone rather than a copy of every short.
+static TOOLS_SEEDED: Mutex<Option<Arc<BackendMap>>> = Mutex::new(None);
 
 pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
     if let Some(memo_tools) = TOOLS.lock().unwrap().clone() {
@@ -395,13 +406,6 @@ pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
             .filter_map(|rt| arg_to_backend(rt.short.into())),
     );
     time!("load_tools core");
-    tools.extend(
-        install_state::list_tools()
-            .values()
-            .filter(|ist| ist.full.is_some())
-            .flat_map(|ist| arg_to_backend(ist.clone().into())),
-    );
-    time!("load_tools install_state");
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
@@ -419,12 +423,79 @@ pub(crate) async fn load_tools() -> Result<Arc<BackendMap>> {
         .map(|backend| (backend.ba().short.clone(), backend))
         .collect();
     let tools = Arc::new(tools);
-    *TOOLS.lock().unwrap() = Some(tools.clone());
+    // Two tasks can race past the memo check above and both build seed maps.
+    // Committing unconditionally would let the loser replace a map list() may
+    // already have extended with installed tools — and TOOLS_INCLUDE_INSTALLED
+    // stays set, so those entries would never be restored. First publisher
+    // wins; everyone else adopts the published map.
+    {
+        let mut cached = TOOLS.lock().unwrap();
+        if let Some(existing) = cached.as_ref() {
+            return Ok(existing.clone());
+        }
+        *TOOLS_SEEDED.lock().unwrap() = Some(tools.clone());
+        *cached = Some(tools.clone());
+    }
     time!("load_tools done");
     Ok(tools)
 }
 
+/// Whether an installed tool should displace the TOOLS entry for `short`.
+///
+/// `load_tools` collected core tools, then registry entries with idiomatic
+/// files, then installed tools into one map — so an installed tool sharing a
+/// short with a core/registry entry won, keeping its recorded install identity
+/// (e.g. an asdf/vfox `node` install over core node). Now that installed tools
+/// are added later, preserve that precedence over seeds while leaving entries
+/// [`get`] resolved afterwards alone: those can carry command-scoped options.
+fn installed_replaces<V>(seeded: &BTreeMap<String, V>, short: &str) -> bool {
+    seeded.contains_key(short)
+}
+
+/// Extend TOOLS with a backend for every installed tool. Installed tools are
+/// otherwise loaded one at a time through [`get`]; enumerating callers need
+/// them all, which means a full installs-dir scan.
+fn ensure_installed_tools_loaded() {
+    let mut tools = TOOLS.lock().unwrap();
+    if TOOLS_INCLUDE_INSTALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let Some(current) = tools.as_ref() else {
+        // load_tools has not run; the flag stays set and list() callers go
+        // through load_tools first, which ends up here again.
+        TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+        return;
+    };
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    let seeded = TOOLS_SEEDED.lock().unwrap().clone().unwrap_or_default();
+    let mut next = current.deref().clone();
+    for backend in install_state::list_tools()
+        .values()
+        .filter(|ist| ist.full.is_some())
+        .flat_map(|ist| arg_to_backend(ist.clone().into()))
+    {
+        if !tool_enabled(
+            enable_tools.as_ref(),
+            &disable_tools,
+            &backend.id().to_string(),
+        ) || is_disabled_backend_type(&backend.get_type())
+        {
+            continue;
+        }
+        let short = backend.ba().short.clone();
+        if installed_replaces(&seeded, &short) {
+            next.insert(short, backend);
+        } else {
+            next.entry(short).or_insert(backend);
+        }
+    }
+    *tools = Some(Arc::new(next));
+}
+
 pub(crate) fn list() -> BackendList {
+    ensure_installed_tools_loaded();
     TOOLS
         .lock()
         .unwrap()
@@ -432,6 +503,41 @@ pub(crate) fn list() -> BackendList {
         .unwrap()
         .values()
         .cloned()
+        .collect()
+}
+
+/// Backends that can contribute version aliases.
+///
+/// Only core tools and asdf/vfox plugins override `get_aliases`; every other
+/// backend returns the default empty map. Config loading calls this on every
+/// invocation, so enumerating all installed tools here would put the full
+/// installs-dir scan back on the hot path for entries that contribute nothing.
+pub(crate) fn alias_backends() -> BackendList {
+    // Reuse what load_tools already built rather than constructing backends:
+    // building one is not cheap (registry lookup, path derivation), and this
+    // runs during every config load. Core tools are already seeded there, so
+    // only plugin-backed shorts that are absent need constructing.
+    let seeded = TOOLS.lock().unwrap().clone().unwrap_or_default();
+    let settings = Settings::get();
+    let enable_tools = settings.enable_tools();
+    let disable_tools = settings.disable_tools();
+    seeded
+        .values()
+        .cloned()
+        .chain(
+            install_state::try_list_plugins()
+                .unwrap_or_default()
+                .keys()
+                .filter(|short| !seeded.contains_key(*short))
+                .filter_map(|short| arg_to_backend(short.as_str().into())),
+        )
+        .filter(|backend| {
+            tool_enabled(
+                enable_tools.as_ref(),
+                &disable_tools,
+                &backend.id().to_string(),
+            ) && !is_disabled_backend_type(&backend.get_type())
+        })
         .collect()
 }
 
@@ -774,6 +880,17 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn test_installed_replaces_seed_but_not_later_entry() {
+        // Only key presence matters, so this stands in for the seeded BackendMap.
+        let seeded: BTreeMap<String, ()> = [("node".to_string(), ())].into_iter().collect();
+        // A core/registry seed yields to the installed tool's recorded identity.
+        assert!(installed_replaces(&seeded, "node"));
+        // An entry `get` resolved after load_tools may carry command-scoped
+        // options, so it is left alone.
+        assert!(!installed_replaces(&seeded, "mytool"));
+    }
 
     fn create_test_backend_arg(tool: &str) -> Arc<BackendArg> {
         Arc::new(BackendArg::new_raw(
@@ -5158,7 +5275,12 @@ impl Ord for dyn Backend {
 
 pub(crate) async fn reset() -> Result<()> {
     install_state::reset();
-    *TOOLS.lock().unwrap() = None;
+    {
+        let mut tools = TOOLS.lock().unwrap();
+        *tools = None;
+        *TOOLS_SEEDED.lock().unwrap() = None;
+        TOOLS_INCLUDE_INSTALLED.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     load_tools().await?;
     Ok(())
 }

@@ -210,6 +210,12 @@ impl Toolset {
         &self,
         _config: &Arc<Config>,
     ) -> Result<Vec<TVTuple>> {
+        // Surface an unreadable installs dir as an error rather than as an empty
+        // list. Shim rebuilding derives its desired set from this and deletes
+        // every shim it cannot account for, so "scan failed" must not be
+        // indistinguishable from "nothing is installed". (A missing installs dir
+        // is not an error — that is genuinely empty.)
+        install_state::try_list_tools()?;
         let current_versions: HashMap<(PathBuf, String), TVTuple> = self
             .list_current_versions()
             .into_iter()
