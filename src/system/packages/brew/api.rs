@@ -399,13 +399,8 @@ fn policy_detail(
 /// Fetch formula metadata by name (or alias — brew's API redirects aliases
 /// to the canonical formula).
 pub(super) async fn formula_with_mode(name: &str, mode: FetchMode) -> Result<Formula> {
-    internal_formula_source(name).await?;
-    let url = format!("{API_BASE}/formula/{name}.json");
-    let result = match mode {
-        FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
-        FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
-    };
-    result.wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+    let _ = mode;
+    internal_formula(name).await
 }
 
 #[derive(Deserialize)]
@@ -433,9 +428,140 @@ struct InternalApiProtectedHeader {
     crit: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 struct InternalFormulaIndex {
-    formulae: HashMap<String, serde_json::Value>,
+    formulae: HashMap<String, InternalFormula>,
+    #[serde(default)]
+    formula_aliases: HashMap<String, String>,
+    #[serde(default)]
+    formula_renames: HashMap<String, String>,
+    formula_tap_git_head: String,
+    metadata: InternalMetadata,
+}
+
+#[derive(Debug, Deserialize)]
+struct InternalMetadata {
+    bottle_tag: String,
+}
+
+/// Homebrew's signed, host-projected install record. Keep this exhaustive so
+/// a new upstream field cannot silently acquire installation semantics.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalFormula {
+    stable_version: Option<String>,
+    #[serde(default)]
+    revision: u32,
+    #[serde(default)]
+    #[serde(rename = "version_scheme")]
+    _version_scheme: u64,
+    #[serde(default)]
+    aliases: Vec<String>,
+    #[serde(default)]
+    oldnames: Vec<String>,
+    #[serde(default)]
+    stable_url_args: Vec<Value>,
+    #[serde(default)]
+    stable_checksum: Option<String>,
+    #[serde(default)]
+    stable_dependencies: Vec<Value>,
+    #[serde(default)]
+    stable_uses_from_macos: Vec<Value>,
+    #[serde(default)]
+    stable_patches: Vec<Value>,
+    #[serde(default)]
+    bottle_checksum: Option<String>,
+    #[serde(default)]
+    bottle_cellar: Option<String>,
+    #[serde(default)]
+    bottle_rebuild: u32,
+    #[serde(default)]
+    bottle_tag: Option<String>,
+    #[serde(default)]
+    ruby_source_checksum: Option<String>,
+    #[serde(default)]
+    keg_only_args: Vec<Value>,
+    #[serde(default)]
+    disable_args: Option<InternalLifecyclePolicy>,
+    #[serde(default)]
+    deprecate_args: Option<InternalLifecyclePolicy>,
+    #[serde(default)]
+    pour_bottle_args: Option<InternalPourPolicy>,
+    #[serde(default)]
+    conflicts: Vec<(String, InternalConflictPolicy)>,
+    #[serde(default)]
+    link_overwrite_paths: Vec<String>,
+    #[serde(default)]
+    post_install_steps: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "desc")]
+    _desc: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "executables")]
+    _executables: Vec<String>,
+    #[serde(default)]
+    #[serde(rename = "homepage")]
+    _homepage: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "license")]
+    _license: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "caveats")]
+    _caveats: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "head_dependencies")]
+    _head_dependencies: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "head_url_args")]
+    _head_url_args: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "head_uses_from_macos")]
+    _head_uses_from_macos: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "no_autobump_args")]
+    _no_autobump_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_args")]
+    _service_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_name_args")]
+    _service_name_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_run_args")]
+    _service_run_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_run_kwargs")]
+    _service_run_kwargs: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "versioned_formulae")]
+    _versioned_formulae: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalLifecyclePolicy {
+    #[serde(default, rename = ":date")]
+    date: Option<String>,
+    #[serde(default, rename = ":because")]
+    reason: Option<String>,
+    #[serde(default, rename = ":replacement_formula")]
+    replacement_formula: Option<String>,
+    #[serde(default, rename = ":replacement_cask")]
+    replacement_cask: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalPourPolicy {
+    #[serde(rename = ":only_if")]
+    only_if: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalConflictPolicy {
+    #[serde(default, rename = ":because")]
+    reason: Option<String>,
 }
 
 static INTERNAL_FORMULAE: tokio::sync::OnceCell<
@@ -542,7 +668,7 @@ fn der_value<'a>(input: &mut &'a [u8], expected_tag: u8) -> Result<&'a [u8]> {
     Ok(value)
 }
 
-async fn internal_formula_source(name: &str) -> Result<String> {
+async fn internal_formula(name: &str) -> Result<Formula> {
     let url = format!(
         "{API_BASE}/internal/packages.{}.jws.json",
         super::tag::host_tag()
@@ -562,10 +688,257 @@ async fn internal_formula_source(name: &str) -> Result<String> {
     let index = result
         .as_ref()
         .map_err(|err| eyre!("failed to load Homebrew internal formula API: {err}"))?;
-    if !index.formulae.contains_key(name) {
-        bail!("Homebrew internal API has no formula '{name}'");
+    let canonical = canonical_internal_name(index, name)?;
+    let signed = index
+        .formulae
+        .get(&canonical)
+        .ok_or_else(|| eyre!("Homebrew internal API has no formula '{name}'"))?;
+    formula_from_internal(index, &canonical, signed, &url)
+}
+
+fn canonical_internal_name(index: &InternalFormulaIndex, requested: &str) -> Result<String> {
+    let mut current = requested;
+    for _ in 0..3 {
+        if index.formulae.contains_key(current) {
+            return Ok(current.to_string());
+        }
+        let Some(next) = index
+            .formula_aliases
+            .get(current)
+            .or_else(|| index.formula_renames.get(current))
+        else {
+            bail!("Homebrew internal API has no formula '{requested}'");
+        };
+        current = next;
     }
-    Ok(url)
+    bail!("Homebrew internal API has a cyclic alias or rename for '{requested}'")
+}
+
+fn formula_from_internal(
+    index: &InternalFormulaIndex,
+    name: &str,
+    signed: &InternalFormula,
+    _source: &str,
+) -> Result<Formula> {
+    validate_formula_name(name)?;
+    if !signed.stable_patches.is_empty() {
+        bail!("brew:{name} has signed source patches that mise cannot apply safely");
+    }
+    let mut dependencies = Vec::new();
+    let mut build_dependencies = Vec::new();
+    for dependency in &signed.stable_dependencies {
+        parse_internal_dependency(dependency, &mut dependencies, &mut build_dependencies)?;
+    }
+    if cfg!(target_os = "linux") {
+        for dependency in &signed.stable_uses_from_macos {
+            parse_uses_from_macos_dependency(
+                dependency,
+                &mut dependencies,
+                &mut build_dependencies,
+            )?;
+        }
+    }
+    dependencies.sort();
+    dependencies.dedup();
+    build_dependencies.sort();
+    build_dependencies.dedup();
+
+    let stable_url = parse_internal_source(name, signed)?;
+    let bottle_tag = signed
+        .bottle_tag
+        .as_deref()
+        .unwrap_or(&index.metadata.bottle_tag);
+    if bottle_tag != index.metadata.bottle_tag {
+        bail!("brew:{name} signed bottle tag disagrees with the signed index metadata");
+    }
+    let mut bottle = HashMap::new();
+    if let Some(checksum) = signed.bottle_checksum.as_deref() {
+        validate_sha256("bottle", checksum)?;
+        let file = BottleFile {
+            cellar: signed
+                .bottle_cellar
+                .clone()
+                .unwrap_or_else(|| ":any_skip_relocation".to_string()),
+            url: format!("https://ghcr.io/v2/homebrew/core/{name}/blobs/sha256:{checksum}"),
+            sha256: checksum.to_string(),
+        };
+        bottle.insert(
+            "stable".to_string(),
+            BottleSpec {
+                rebuild: signed.bottle_rebuild,
+                files: HashMap::from([(bottle_tag.to_string(), file)]),
+            },
+        );
+    }
+
+    let ruby_checksum = signed
+        .ruby_source_checksum
+        .as_deref()
+        .map(|checksum| {
+            validate_sha256("formula source", checksum)?;
+            Ok::<_, eyre::Report>(RubySourceChecksum {
+                sha256: Some(checksum.to_string()),
+            })
+        })
+        .transpose()?;
+    let first = name
+        .chars()
+        .next()
+        .ok_or_else(|| eyre!("empty signed formula name"))?;
+    let aliases = index
+        .formula_aliases
+        .iter()
+        .filter_map(|(alias, canonical)| (canonical == name).then_some(alias.clone()))
+        .chain(signed.aliases.iter().cloned())
+        .chain(signed.oldnames.iter().cloned())
+        .collect();
+    let disable = signed.disable_args.as_ref();
+    let deprecate = signed.deprecate_args.as_ref();
+    Ok(Formula {
+        name: name.to_string(),
+        tap: Some("homebrew/core".to_string()),
+        aliases,
+        versions: Versions {
+            stable: signed.stable_version.clone(),
+        },
+        revision: signed.revision,
+        keg_only: !signed.keg_only_args.is_empty(),
+        dependencies,
+        build_dependencies,
+        bottle,
+        variations: HashMap::new(),
+        urls: stable_url
+            .map(|url| HashMap::from([("stable".to_string(), url)]))
+            .unwrap_or_default(),
+        ruby_source_path: Some(format!("Formula/{first}/{name}.rb")),
+        ruby_source_checksum: ruby_checksum,
+        tap_git_head: Some(index.formula_tap_git_head.clone()),
+        post_install_defined: !signed.post_install_steps.is_empty(),
+        post_install_steps: signed.post_install_steps.clone(),
+        install_policy: FormulaInstallPolicy {
+            disabled: disable.is_some(),
+            disable_date: disable.and_then(|p| p.date.clone()),
+            disable_reason: disable.and_then(|p| p.reason.clone()),
+            disable_replacement_formula: disable.and_then(|p| p.replacement_formula.clone()),
+            disable_replacement_cask: disable.and_then(|p| p.replacement_cask.clone()),
+            deprecated: deprecate.is_some(),
+            deprecation_date: deprecate.and_then(|p| p.date.clone()),
+            deprecation_reason: deprecate.and_then(|p| p.reason.clone()),
+            deprecation_replacement_formula: deprecate.and_then(|p| p.replacement_formula.clone()),
+            deprecation_replacement_cask: deprecate.and_then(|p| p.replacement_cask.clone()),
+            requirements: Vec::new(),
+            pour_bottle_only_if: signed.pour_bottle_args.as_ref().map(|p| p.only_if.clone()),
+            conflicts_with: signed
+                .conflicts
+                .iter()
+                .map(|(name, _)| name.clone())
+                .collect(),
+            conflicts_with_reasons: signed
+                .conflicts
+                .iter()
+                .map(|(_, policy)| policy.reason.clone())
+                .collect(),
+            link_overwrite: signed.link_overwrite_paths.clone(),
+        },
+    })
+}
+
+fn validate_formula_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"@+._-".contains(&byte))
+    {
+        bail!("Homebrew internal API has an unsafe formula name {name:?}");
+    }
+    Ok(())
+}
+
+fn validate_sha256(kind: &str, checksum: &str) -> Result<()> {
+    if checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("signed Homebrew {kind} checksum is not a sha256");
+    }
+    Ok(())
+}
+
+fn parse_internal_source(name: &str, signed: &InternalFormula) -> Result<Option<SourceUrl>> {
+    if signed.stable_url_args.is_empty() {
+        if signed.stable_checksum.is_some() {
+            bail!("brew:{name} has a signed source checksum without a source URL");
+        }
+        return Ok(None);
+    }
+    let url = signed.stable_url_args[0]
+        .as_str()
+        .ok_or_else(|| eyre!("brew:{name} signed source URL is not a string"))?;
+    let checksum = signed.stable_checksum.as_deref();
+    if let Some(checksum) = checksum {
+        validate_sha256("source", checksum)?;
+    }
+    // Additional URL arguments describe VCS strategies, tags, revisions, or
+    // other download behavior. Preserve the URL for diagnostics but mark the
+    // strategy unsupported instead of guessing at Homebrew DSL semantics.
+    let using = (signed.stable_url_args.len() > 1).then(|| "signed URL options".to_string());
+    Ok(Some(SourceUrl {
+        url: url.to_string(),
+        checksum: checksum.map(str::to_string),
+        using,
+    }))
+}
+
+fn parse_internal_dependency(
+    value: &Value,
+    runtime: &mut Vec<String>,
+    build: &mut Vec<String>,
+) -> Result<()> {
+    if let Some(name) = value.as_str() {
+        validate_formula_name(name)?;
+        runtime.push(name.to_string());
+        return Ok(());
+    }
+    let object = value
+        .as_object()
+        .filter(|object| object.len() == 1)
+        .ok_or_else(|| eyre!("unsupported signed Homebrew dependency shape: {value}"))?;
+    let (name, qualifier) = object.iter().next().unwrap();
+    validate_formula_name(name)?;
+    let qualifiers = match qualifier {
+        Value::String(value) => vec![value.as_str()],
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                value.as_str().ok_or_else(|| {
+                    eyre!("unsupported signed Homebrew dependency qualifier: {qualifier}")
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        _ => bail!("unsupported signed Homebrew dependency qualifier: {qualifier}"),
+    };
+    if qualifiers.contains(&":build") {
+        build.push(name.clone());
+    } else if qualifiers
+        .iter()
+        .all(|q| *q == ":test" || *q == ":optional")
+    {
+        // Test and opt-in dependencies are not part of a default installation.
+    } else if qualifiers.iter().all(|q| *q == ":recommended") {
+        runtime.push(name.clone());
+    } else {
+        bail!("unsupported signed Homebrew dependency qualifier: {qualifier}");
+    }
+    Ok(())
+}
+
+fn parse_uses_from_macos_dependency(
+    value: &Value,
+    runtime: &mut Vec<String>,
+    build: &mut Vec<String>,
+) -> Result<()> {
+    let dependency = value
+        .as_array()
+        .and_then(|values| values.first())
+        .ok_or_else(|| eyre!("unsupported signed uses_from_macos shape: {value}"))?;
+    parse_internal_dependency(dependency, runtime, build)
 }
 
 pub(super) async fn formula_with_tap_name_mode(
@@ -826,5 +1199,130 @@ mod tests {
         assert_eq!(formula.conflict_reason("other"), Some("same binary"));
         assert_eq!(formula.conflict_reason("third"), None);
         assert_eq!(formula.link_overwrite(), ["bin/tool", "share/tool/*"]);
+    }
+
+    fn signed_index(value: Value) -> InternalFormulaIndex {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn signed_core_entry_is_the_authoritative_install_record() {
+        let bottle_sha = "a".repeat(64);
+        let source_sha = "b".repeat(64);
+        let ruby_sha = "c".repeat(64);
+        let index = signed_index(json!({
+            "formulae": {
+                "hello": {
+                    "stable_version": "2.12.3",
+                    "revision": 1,
+                    "stable_url_args": ["https://trusted.example/hello.tar.gz"],
+                    "stable_checksum": source_sha,
+                    "stable_dependencies": ["runtime", {"builder": ":build"}],
+                    "bottle_checksum": bottle_sha,
+                    "bottle_cellar": ":any_skip_relocation",
+                    "ruby_source_checksum": ruby_sha,
+                    "keg_only_args": [":versioned_formula"],
+                    "conflicts": [["other", {":because": "same binary"}]],
+                    "link_overwrite_paths": ["bin/hello"],
+                    "deprecate_args": {":because": ":unmaintained"}
+                }
+            },
+            "formula_aliases": {"hi": "hello"},
+            "formula_renames": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "x86_64_linux"}
+        }));
+        let canonical = canonical_internal_name(&index, "hi").unwrap();
+        let formula = formula_from_internal(
+            &index,
+            &canonical,
+            index.formulae.get(&canonical).unwrap(),
+            "signed-index-url",
+        )
+        .unwrap();
+
+        assert_eq!(formula.name, "hello");
+        assert_eq!(formula.pkg_version().unwrap(), "2.12.3_1");
+        assert!(formula.keg_only);
+        assert_eq!(formula.dependencies, ["runtime"]);
+        assert_eq!(formula.build_dependencies, ["builder"]);
+        assert_eq!(formula.aliases, ["hi"]);
+        assert_eq!(formula.tap_git_head.as_deref(), Some("signed-core-head"));
+        assert_eq!(
+            formula.ruby_source_path.as_deref(),
+            Some("Formula/h/hello.rb")
+        );
+        let bottle = &formula.bottle["stable"].files["x86_64_linux"];
+        assert_eq!(
+            bottle.url,
+            format!("https://ghcr.io/v2/homebrew/core/hello/blobs/sha256:{bottle_sha}")
+        );
+        assert_eq!(bottle.sha256, bottle_sha);
+        assert_eq!(
+            formula.stable_url().unwrap().url,
+            "https://trusted.example/hello.tar.gz"
+        );
+        assert_eq!(
+            formula.stable_url().unwrap().checksum.as_deref(),
+            Some(source_sha.as_str())
+        );
+        assert_eq!(formula.conflicts_with(), ["other"]);
+        assert_eq!(formula.conflict_reason("other"), Some("same binary"));
+        assert_eq!(formula.link_overwrite(), ["bin/hello"]);
+    }
+
+    #[test]
+    fn signed_core_schema_rejects_unknown_or_unsupported_install_shapes() {
+        let unknown = json!({
+            "stable_version": "1",
+            "attacker_artifact_url": "https://evil.example/tool.tar.gz"
+        });
+        assert!(serde_json::from_value::<InternalFormula>(unknown).is_err());
+
+        let index = signed_index(json!({
+            "formulae": {
+                "patched": {
+                    "stable_version": "1",
+                    "stable_patches": [{"url": "https://example.test/patch"}]
+                }
+            },
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        let err = formula_from_internal(
+            &index,
+            "patched",
+            &index.formulae["patched"],
+            "signed-index-url",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("signed source patches"));
+    }
+
+    #[test]
+    fn signed_core_rejects_malformed_digest_and_non_archive_source_options() {
+        let malformed: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "1",
+            "bottle_checksum": "not-a-digest"
+        }))
+        .unwrap();
+        let index = signed_index(json!({
+            "formulae": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        assert!(formula_from_internal(&index, "tool", &malformed, "signed-index-url").is_err());
+
+        let vcs: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "1",
+            "stable_url_args": ["https://example.test/tool.git", {":tag": "v1"}]
+        }))
+        .unwrap();
+        let formula = formula_from_internal(&index, "tool", &vcs, "signed-index-url").unwrap();
+        assert_eq!(
+            formula.stable_url().unwrap().using.as_deref(),
+            Some("signed URL options")
+        );
     }
 }
