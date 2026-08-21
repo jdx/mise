@@ -281,17 +281,6 @@ fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-fn remove_all_atomically_validated_inner(
-    path: &Path,
-    validate: impl FnOnce(&Path, &fs::Metadata) -> Result<()>,
-    after_validate: impl FnOnce(&Path) -> Result<()>,
-) -> Result<()> {
-    validate(path, &fs::metadata(path)?)?;
-    after_validate(path)?;
-    remove_all(path)
-}
-
 fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
     const MAX_RETRIES: u32 = 4;
 
