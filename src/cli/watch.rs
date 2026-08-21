@@ -23,13 +23,18 @@ use std::path::{Path, PathBuf};
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[command(
+    visible_alias = "w",
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP,
+    unknown_flags = "value"
+)]
 pub struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
     /// Defaults to `default`
-    #[arg(double_dash = "automatic", verbatim_doc_comment)]
+    #[arg(verbatim_doc_comment)]
     task: Option<String>,
 
     /// Tasks to run
@@ -1445,6 +1450,7 @@ mod tests {
         WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
         relativize_source, source_watch_dir, tasks_disable_vcs_ignores, wrap_process_args,
     };
+    use crate::cli::{Cli, Commands};
     use crate::task::{Task, TaskWatchOptions};
     use std::path::{Path, PathBuf};
 
@@ -1464,6 +1470,21 @@ mod tests {
         assert_eq!(WrapMode::Group.to_string(), "group");
         assert_eq!(WrapMode::Session.to_string(), "session");
         assert_eq!(WrapMode::None.to_string(), "none");
+    }
+
+    #[test]
+    fn watch_flags_after_the_task_still_belong_to_watch() {
+        let argv =
+            ["mise", "watch", "default", "--postpone", "--poll=100ms"].map(std::ffi::OsStr::new);
+        let cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Watch(watch)) = cli.command else {
+            panic!("expected the watch command");
+        };
+
+        assert_eq!(watch.task.as_deref(), Some("default"));
+        assert!(watch.args.is_empty());
+        assert!(watch.watchexec.postpone);
+        assert_eq!(watch.watchexec.poll.as_deref(), Some("100ms"));
     }
 
     #[test]

@@ -4226,7 +4226,7 @@ If the version is out of date, it will display a warning.
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise version\u{1b}[22m\n    $ \u{1b}[1mmise --version\u{1b}[22m\n    $ \u{1b}[1mmise -v\u{1b}[22m\n    $ \u{1b}[1mmise -V\u{1b}[22m\n"
     flag "-J --json" help="Print the version information in JSON format"
 }
-cmd watch help="Run task(s) and watch for changes to rerun it" {
+cmd watch help="Run task(s) and watch for changes to rerun it" unknown_flags=value {
     alias w
     long_help #"""
 Run task(s) and watch for changes to rerun it
@@ -5005,7 +5005,7 @@ Tasks to run
 Can specify multiple tasks by separating with `:::`
 e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
 Defaults to `default`
-"""# required=#false double_dash=automatic
+"""# required=#false
     arg "[ARGS]…" help="Task and arguments to run" required=#false double_dash=automatic var=#true
     complete path type=path
     complete directory type=dir
