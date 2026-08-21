@@ -77,21 +77,32 @@ fn retry_remove_temporary_artifact(mut remove: impl FnMut() -> io::Result<()>) -
 #[derive(Debug, Clone)]
 pub struct TaskFileArtifact {
     pub path: PathBuf,
-    _cleanup: Option<Arc<TaskFileArtifactCleanup>>,
+    cleanup: Option<Arc<TaskFileArtifactCleanup>>,
 }
 
 impl TaskFileArtifact {
     pub(crate) fn persistent(path: PathBuf) -> Self {
         Self {
             path,
-            _cleanup: None,
+            cleanup: None,
         }
     }
 
     pub(crate) fn temporary(path: PathBuf, cleanup_path: PathBuf) -> Self {
         Self {
             path,
-            _cleanup: Some(Arc::new(TaskFileArtifactCleanup { path: cleanup_path })),
+            cleanup: Some(Arc::new(TaskFileArtifactCleanup { path: cleanup_path })),
+        }
+    }
+
+    pub(crate) fn cleanup_path(&self) -> Option<&Path> {
+        self.cleanup.as_ref().map(|cleanup| cleanup.path.as_path())
+    }
+
+    pub(crate) fn with_path(&self, path: PathBuf) -> Self {
+        Self {
+            path,
+            cleanup: self.cleanup.clone(),
         }
     }
 }
