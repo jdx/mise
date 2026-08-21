@@ -1074,7 +1074,12 @@ impl BrewCaskManager {
                 link_completion(&cask, &artifacts, &caskroom, &stage, target)?;
             }
             write_homebrew_metadata(&caskroom, &cask, &runtime_dependencies, true)?;
-            if cask.auto_updates || !metadata_only_apps.is_empty() {
+            if requires_auxiliary_cask_receipt(
+                cask.auto_updates,
+                &metadata_only_apps,
+                flight_targets.installed_targets(),
+                &flight_targets.installed_directories,
+            ) {
                 write_auxiliary_cask_receipt_with_flight_targets(
                     &cask,
                     &artifacts,
@@ -6867,35 +6872,23 @@ fn validate_platform_support(cask: &Cask, artifacts: &CaskArtifacts) -> Result<(
             cask.token
         );
     }
-    if let Some(step) = artifacts
-        .preflight_steps
-        .iter()
-        .chain(&artifacts.postflight_steps)
-        .find(|step| match step {
-            FlightStep::Copy { target, guards, .. }
-            | FlightStep::Symlink { target, guards, .. } => {
-                target.base != FlightPathBase::StagedPath
-                    && guards.iter().any(|guard| {
-                        matches!(
-                            guard,
-                            FlightGuard::IfExists(_) | FlightGuard::UnlessExists(_)
-                        )
-                    })
-            }
-            _ => false,
-        })
-    {
-        bail!(
-            "brew-cask:{}: external structured {} with state-dependent guards is unsupported because native Homebrew receipts do not record executed effects",
-            cask.token,
-            step.kind()
-        );
-    }
     let dirs = configured_cask_dirs()?;
     for wrapper in &artifacts.command_wrappers {
         render_command_wrapper(&dirs.appdir, cask, wrapper)?;
     }
     Ok(())
+}
+
+fn requires_auxiliary_cask_receipt(
+    auto_updates: bool,
+    metadata_only_apps: &BTreeSet<PathBuf>,
+    executed_flight_targets: &[PathBuf],
+    executed_flight_directories: &[PathBuf],
+) -> bool {
+    auto_updates
+        || !metadata_only_apps.is_empty()
+        || !executed_flight_targets.is_empty()
+        || !executed_flight_directories.is_empty()
 }
 
 fn validate_catalog_platform_support(cask: &Cask) -> Result<()> {
@@ -20743,12 +20736,12 @@ end
     }
 
     #[test]
-    fn external_state_dependent_guard_fails_fresh_preflight() -> Result<()> {
-        let mut cask = test_cask("guarded-copy", "1.0.0");
+    fn guarded_external_symlink_requires_receipt_only_when_executed() -> Result<()> {
+        let mut cask = test_cask("guarded-symlink", "1.0.0");
         cask.artifacts = serde_json::json!([
             {"app": "Example.app"},
             {"postflight_steps": [{"steps": [{
-                "type": "copy",
+                "type": "symlink",
                 "source": {"base": "staged_path", "path": "config"},
                 "target": {"base": "homebrew_prefix", "path": "share/example/config"},
                 "guards": [{
@@ -20763,11 +20756,21 @@ end
         .clone();
 
         let artifacts = cask_artifacts(&cask)?;
-        let err = validate_platform_support(&cask, &artifacts)
-            .unwrap_err()
-            .to_string();
-        assert!(err.contains("state-dependent guards"));
-        assert!(err.contains("native Homebrew receipts do not record executed effects"));
+        validate_platform_support(&cask, &artifacts)?;
+
+        let executed = PathBuf::from("/opt/homebrew/share/example/config");
+        assert!(requires_auxiliary_cask_receipt(
+            false,
+            &BTreeSet::new(),
+            std::slice::from_ref(&executed),
+            &[],
+        ));
+        assert!(!requires_auxiliary_cask_receipt(
+            false,
+            &BTreeSet::new(),
+            &[],
+            &[],
+        ));
         Ok(())
     }
 
