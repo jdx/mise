@@ -9,7 +9,7 @@ use crate::tera::{TeraEngine, contains_template_syntax, get_tera, render_str};
 use crate::ui::tree::TreeItem;
 use crate::{dirs, env, file};
 use console::{measure_text_width, truncate_str};
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -107,7 +107,7 @@ impl Task {
     }
 }
 
-use crate::config::config_file::ConfigFile;
+use crate::config::config_file::{ConfigFile, trust_check};
 use crate::env_diff::EnvMap;
 use crate::file::display_path;
 use crate::fuzzy::{FuzzyMatcher, FuzzyPattern};
@@ -1309,6 +1309,21 @@ impl Task {
     }
 
     pub(crate) fn tool_args(&self) -> Result<Vec<ToolArg>> {
+        if self.remote_metadata_has_tools {
+            let remote_source = self.remote_file_source.as_deref().unwrap_or(&self.name);
+            let config_source = self.remote_config_source.as_deref().ok_or_else(|| {
+                eyre!(
+                    "remote task {remote_source} has tool metadata without defining config provenance"
+                )
+            })?;
+            trust_check(config_source).wrap_err_with(|| {
+                format!(
+                    "tool metadata from remote task {} requires its defining config {} to be trusted",
+                    remote_source,
+                    display_path(config_source)
+                )
+            })?;
+        }
         self.tools
             .iter()
             .map(|(tool, value)| value.to_tool_arg(tool))
@@ -2835,7 +2850,7 @@ impl Task {
         env_directives.extend(self.overlay_env.iter().cloned());
 
         // Resolve environment directives using the same system as global env
-        let env_results = EnvResults::resolve(
+        let env_results = EnvResults::resolve_with_trust_source(
             config,
             tera_ctx.clone(),
             &env,
@@ -2845,6 +2860,7 @@ impl Task {
                 tools: ToolsFilter::Both,
                 warn_on_missing_required: false,
             },
+            self.remote_config_source.as_deref(),
         )
         .await?;
         // Register task-specific redactions with the global redactor

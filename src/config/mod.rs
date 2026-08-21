@@ -1211,6 +1211,7 @@ impl Config {
                 tool_add_paths: Vec::new(),
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
+                trust_source: None,
             };
             let redact_keys = self
                 .redaction_keys()

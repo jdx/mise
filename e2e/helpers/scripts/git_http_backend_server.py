@@ -135,6 +135,18 @@ def create_test_repo(repo_path, server_port):
 
     remote_task_dir = Path(repo_path) / 'xtasks' / 'remote'
     remote_task_dir.mkdir(parents=True)
+    remote_metadata_file = remote_task_dir / 'remote_metadata.toml'
+    remote_metadata_file.write_text(
+        '#!/usr/bin/env bash\n'
+        '#MISE description="remote git metadata"\n'
+        '#MISE tools={dummy="1.0.0"}\n'
+        '#MISE env._.file="remote.env"\n'
+        'echo "remote path: $0"\n'
+        'echo "$REMOTE_RELATIVE_ENV"\n'
+        'dummy\n'
+    )
+    remote_metadata_file.chmod(0o755)
+    (remote_task_dir / 'remote.env').write_text('REMOTE_RELATIVE_ENV="relative env loaded"\n')
     nested_remote_file = remote_task_dir / 'nested'
     nested_remote_file.write_text(
         '#!/usr/bin/env bash\n'
