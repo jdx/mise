@@ -57,6 +57,7 @@ pub struct AquaPackage {
     pub repo_owner: String,
     pub repo_name: String,
     pub name: Option<String>,
+    /// Cargo package name used when Aqua delegates installation to Cargo.
     #[serde(rename = "crate")]
     pub crate_name: Option<String>,
     pub asset: String,
@@ -397,6 +398,47 @@ impl AquaPackage {
         self.with_version_runtime(versions, os, arch, AquaRuntime { libc })
     }
 
+    /// Apply Aqua's unconditional version fallback and platform overrides.
+    ///
+    /// This resolves the package shape that can be determined without knowing a
+    /// concrete version. It is intended for offline metadata consumers, not for
+    /// installing a particular version.
+    pub fn with_unconditional_overrides(self, os: &str, arch: &str) -> AquaPackage {
+        self.with_unconditional_overrides_runtime(os, arch, AquaRuntime::default())
+    }
+
+    /// Apply Aqua's unconditional version fallback and platform overrides for
+    /// a libc runtime variant.
+    pub fn with_unconditional_overrides_libc(
+        self,
+        os: &str,
+        arch: &str,
+        libc: Option<&str>,
+    ) -> AquaPackage {
+        self.with_unconditional_overrides_runtime(os, arch, AquaRuntime { libc })
+    }
+
+    fn with_unconditional_overrides_runtime(
+        mut self,
+        os: &str,
+        arch: &str,
+        runtime: AquaRuntime<'_>,
+    ) -> AquaPackage {
+        let root_is_unconditional = matches!(self.version_constraint.trim(), "" | "true");
+        if !root_is_unconditional
+            && let Some(version_override) = self
+                .version_overrides
+                .iter()
+                .find(|version_override| {
+                    matches!(version_override.version_constraint.trim(), "" | "true")
+                })
+                .cloned()
+        {
+            self = apply_override(self, &version_override);
+        }
+        self.with_platform_runtime(os, arch, runtime)
+    }
+
     fn with_version_runtime(
         mut self,
         versions: &[&str],
@@ -411,6 +453,15 @@ impl AquaPackage {
         {
             self = apply_override(self, &version_override);
         }
+        self.with_platform_runtime(os, arch, runtime)
+    }
+
+    fn with_platform_runtime(
+        mut self,
+        os: &str,
+        arch: &str,
+        runtime: AquaRuntime<'_>,
+    ) -> AquaPackage {
         self.apply_format_override(os);
         if let Some(pkg) = self
             .overrides
@@ -2786,6 +2837,66 @@ packages:
             musl.url("1.0.0", "linux", "amd64").unwrap(),
             "https://example.com/tool-1.0.0-linux-amd64-musl"
         );
+    }
+
+    #[test]
+    fn test_unconditional_override_resolves_package_type_without_version() {
+        let yml = r#"
+packages:
+  - type: github_release
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.0.0"
+        type: cargo
+        crate: historical-tool
+      - version_constraint: "true"
+        type: go_build
+"#;
+        let pkg = first_registry_package(yml).with_unconditional_overrides("linux", "amd64");
+
+        assert_eq!(pkg.package_type(), AquaPackageType::GoBuild);
+        assert_eq!(pkg.crate_name, None);
+    }
+
+    #[test]
+    fn test_unconditional_root_does_not_apply_version_fallback() {
+        let yml = r#"
+packages:
+  - type: github_release
+    version_overrides:
+      - version_constraint: "true"
+        type: cargo
+        crate: tool
+"#;
+        let pkg = first_registry_package(yml).with_unconditional_overrides("linux", "amd64");
+
+        assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(pkg.crate_name, None);
+    }
+
+    #[test]
+    fn test_unconditional_override_applies_matching_platform_type() {
+        let yml = r#"
+packages:
+  - type: github_release
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        overrides:
+          - envs:
+              - darwin
+              - windows
+            type: cargo
+            crate: platform-tool
+"#;
+        let pkg = first_registry_package(yml);
+        let linux = pkg.clone().with_unconditional_overrides("linux", "amd64");
+        let darwin = pkg.with_unconditional_overrides("darwin", "arm64");
+
+        assert_eq!(linux.package_type(), AquaPackageType::GithubRelease);
+        assert_eq!(linux.crate_name, None);
+        assert_eq!(darwin.package_type(), AquaPackageType::Cargo);
+        assert_eq!(darwin.crate_name.as_deref(), Some("platform-tool"));
     }
 
     #[test]

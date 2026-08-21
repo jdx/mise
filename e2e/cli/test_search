@@ -28,3 +28,12 @@ assert_not_contains "mise search --match-type equal benchstat" "aqua:golang.org/
 
 # Aqua GoBuild packages are excluded from search
 assert_fail "mise search --match-type equal ycat" "not found in registry"
+assert_fail "mise search --match-type equal kics" "not found in registry"
+
+# A standard shorthand still takes precedence over a translated Cargo fallback
+assert_contains "mise search --match-type equal tokei" "tokei  Count your code"
+assert_not_contains "mise search --match-type equal tokei" "aqua:XAMPPRocky/tokei"
+assert_not_contains "mise search --match-type equal tokei" "cargo:tokei"
+
+# Version-templated GoInstall paths cannot form runnable suggestions
+assert_fail "mise search --match-type equal mosint" "not found in registry"

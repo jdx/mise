@@ -482,6 +482,7 @@ fn codegen_aqua_standard_registry() -> Result<()> {
 fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackageRegistry>> {
     let mut registries = Vec::new();
     let mut canonical_ids = HashMap::new();
+    let (target_os, target_arch, target_libc) = aqua_target_platform();
     for (index, row) in rows.iter().enumerate() {
         let package = &row.package;
         let Some(id) = aqua_canonical_package_id(package) else {
@@ -496,19 +497,12 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
             ));
         }
         let content = encode_package_rkyv(package)?;
-        let search_backend = match package.package_type() {
-            AquaPackageType::Cargo => package
-                .name
-                .as_deref()
-                .and_then(|name| name.strip_prefix("crates.io/"))
-                .map(|name| format!("cargo:{name}")),
-            AquaPackageType::GoInstall => package.path.as_ref().map(|path| format!("go:{path}")),
-            AquaPackageType::GoBuild => Some(String::new()),
-            AquaPackageType::GithubArchive
-            | AquaPackageType::GithubContent
-            | AquaPackageType::GithubRelease
-            | AquaPackageType::Http => None,
-        };
+        let effective_package = package.clone().with_unconditional_overrides_libc(
+            &target_os,
+            &target_arch,
+            target_libc.as_deref(),
+        );
+        let search_backend = aqua_search_backend(&effective_package);
         registries.push(AquaPackageRegistry {
             id,
             content,
@@ -517,6 +511,64 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
         });
     }
     Ok(registries)
+}
+
+fn aqua_search_backend(package: &AquaPackage) -> Option<String> {
+    match package.package_type() {
+        AquaPackageType::Cargo => package
+            .crate_name
+            .as_deref()
+            .or_else(|| {
+                package
+                    .name
+                    .as_deref()
+                    .and_then(|name| name.strip_prefix("crates.io/"))
+            })
+            .filter(|name| !is_aqua_template(name))
+            .map(|name| format!("cargo:{name}"))
+            .or(Some(String::new())),
+        AquaPackageType::GoInstall => package
+            .path
+            .as_deref()
+            .filter(|path| !is_aqua_template(path))
+            .map(|path| format!("go:{path}"))
+            .or(Some(String::new())),
+        AquaPackageType::GoBuild => Some(String::new()),
+        AquaPackageType::GithubArchive
+        | AquaPackageType::GithubContent
+        | AquaPackageType::GithubRelease
+        | AquaPackageType::Http => None,
+    }
+}
+
+fn is_aqua_template(value: &str) -> bool {
+    value.contains("{{") || value.contains("}}")
+}
+
+fn aqua_target_platform() -> (String, String, Option<String>) {
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_else(|_| env::consts::OS.to_string());
+    let target_os = match target_os.as_str() {
+        "macos" => "darwin",
+        other => other,
+    }
+    .to_string();
+
+    let target_arch =
+        env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| env::consts::ARCH.to_string());
+    let target_arch = match target_arch.as_str() {
+        "x86" => "386",
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        "powerpc64" => "ppc64",
+        other => other,
+    }
+    .to_string();
+
+    let target_libc = env::var("CARGO_CFG_TARGET_ENV")
+        .ok()
+        .filter(|target_env| !target_env.is_empty());
+
+    (target_os, target_arch, target_libc)
 }
 
 fn aqua_registry_files_code(
