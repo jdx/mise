@@ -93,6 +93,7 @@ async fn resolve_closure_pairs(
     let host_tag = tag::host_tag();
     let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
     let mut raw_bases: HashMap<FormulaKey, Option<String>> = HashMap::new();
+    let mut tap_snapshots: HashMap<String, api::TapSnapshot> = HashMap::new();
     // alias (or canonical name) -> canonical name, so repeated alias
     // occurrences in the dep graph don't re-fetch from the API
     let mut canonical: HashMap<FormulaKey, FormulaKey> = HashMap::new();
@@ -112,32 +113,13 @@ async fn resolve_closure_pairs(
         let canonical_key = match known {
             Some(c) => c,
             None => {
-                let (formula, effective_tap_name, effective_tap_url) = match fetch_formula(
-                    &key, requested, mode,
-                )
-                .await
-                {
-                    Ok(formula) => {
-                        let effective_tap_name = match formula.tap.as_deref() {
-                            Some("homebrew/core") => None,
-                            Some(tap) => Some(tap.to_string()),
-                            None => expected_tap_name(&key),
-                        };
-                        let effective_tap_url =
-                            effective_tap_name.as_ref().and(key.tap_url.clone());
-                        (formula, effective_tap_name, effective_tap_url)
-                    }
-                    Err(err)
-                        if key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() =>
-                    {
-                        debug!(
-                            "brew: {} unavailable in tap metadata ({err}); falling back to core metadata",
-                            key.name
-                        );
-                        (api::formula_with_mode(&key.name, mode).await?, None, None)
-                    }
-                    Err(err) => return Err(err),
+                let formula = fetch_formula(&key, requested, mode, &mut tap_snapshots).await?;
+                let effective_tap_name = match formula.tap.as_deref() {
+                    Some("homebrew/core") => None,
+                    Some(tap) => Some(tap.to_string()),
+                    None => expected_tap_name(&key),
                 };
+                let effective_tap_url = effective_tap_name.as_ref().and(key.tap_url.clone());
                 validate_formula_response_identity(&key, requested, &formula)?;
                 let c = formula.name.clone();
                 let canonical_key = FormulaKey::new(
@@ -162,7 +144,12 @@ async fn resolve_closure_pairs(
                     for dep in install_deps(&formula, &tag) {
                         queue.push((dependency_key(dep, &canonical_key), false));
                     }
-                    raw_bases.insert(canonical_key.clone(), tap_raw_base(&canonical_key));
+                    let raw_base = effective_tap_name
+                        .as_ref()
+                        .and_then(|tap| tap_snapshots.get(tap))
+                        .map(|snapshot| snapshot.repository_raw_base.clone())
+                        .or_else(|| tap_raw_base(&canonical_key));
+                    raw_bases.insert(canonical_key.clone(), raw_base);
                     formulae.insert(canonical_key.clone(), formula);
                 }
                 canonical_key
@@ -400,7 +387,12 @@ fn validate_formula_response_identity(
     Ok(())
 }
 
-async fn fetch_formula(key: &FormulaKey, requested: bool, mode: api::FetchMode) -> Result<Formula> {
+async fn fetch_formula(
+    key: &FormulaKey,
+    requested: bool,
+    mode: api::FetchMode,
+    tap_snapshots: &mut HashMap<String, api::TapSnapshot>,
+) -> Result<Formula> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
         match api::formula_with_mode(&key.name, mode).await {
             Ok(formula) => return Ok(formula),
@@ -412,13 +404,20 @@ async fn fetch_formula(key: &FormulaKey, requested: bool, mode: api::FetchMode) 
             }
         }
     }
-    api::formula_with_tap_name_mode(
-        &key.name,
-        key.tap_name.as_deref(),
-        key.tap_url.as_deref(),
-        mode,
-    )
-    .await
+    let Some(tap_name) = expected_tap_name(key) else {
+        return api::formula_with_tap_name_mode(&key.name, None, None, mode).await;
+    };
+    if tap_name == "homebrew/core" {
+        return api::formula_with_mode(formula_reference_name(&key.name), mode).await;
+    }
+    if !tap_snapshots.contains_key(&tap_name) {
+        let snapshot = api::resolve_tap_snapshot(&tap_name, key.tap_url.as_deref(), mode).await?;
+        tap_snapshots.insert(tap_name.clone(), snapshot);
+    }
+    let snapshot = tap_snapshots.get(&tap_name).unwrap().clone();
+    let formula = api::formula_with_tap_snapshot_mode(&key.name, &snapshot, mode).await?;
+    api::bind_tap_source_commit(tap_snapshots.get_mut(&tap_name).unwrap(), &formula)?;
+    Ok(formula)
 }
 
 fn tap_raw_base(key: &FormulaKey) -> Option<String> {

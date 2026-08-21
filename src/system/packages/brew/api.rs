@@ -34,6 +34,19 @@ pub(super) enum FetchMode {
     Fresh,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct TapSnapshot {
+    pub tap_name: String,
+    pub repository_raw_base: String,
+    pub metadata_commit: String,
+    pub source_commit: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GithubCommit {
+    sha: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Formula {
     pub name: String,
@@ -1008,6 +1021,9 @@ pub(super) async fn formula_with_tap_name_mode(
     if owner == "homebrew" && tap == "core" {
         return formula_with_mode(formula_name, mode).await;
     }
+    if owner != "homebrew" || tap != "core" {
+        bail!("brew: third-party tap formula '{name}' requires an immutable tap snapshot");
+    }
     let Some(url) = tap_formula_api_url(owner, tap, formula_name, tap_url) else {
         bail!(
             "brew: tapped formula '{name}' needs a GitHub tap URL in [bootstrap.brew.taps] \
@@ -1025,6 +1041,108 @@ pub(super) async fn formula_with_tap_name_mode(
                  mise will not proxy to the brew CLI"
         )
     })
+}
+
+pub(super) async fn resolve_tap_snapshot(
+    tap_name: &str,
+    tap_url: Option<&str>,
+    mode: FetchMode,
+) -> Result<TapSnapshot> {
+    let tap_url = tap_url.ok_or_else(|| {
+        eyre!(
+            "brew: third-party tap '{tap_name}' must be configured with a GitHub URL in [bootstrap.brew.taps]"
+        )
+    })?;
+    let (owner, repo) = github_repository(tap_url).ok_or_else(|| {
+        eyre!(
+            "brew: third-party tap '{tap_name}' must use an https://github.com/owner/repository URL"
+        )
+    })?;
+    resolve_tap_snapshot_from(
+        tap_name,
+        &format!("https://api.github.com/repos/{owner}/{repo}/commits/HEAD"),
+        &format!("https://raw.githubusercontent.com/{owner}/{repo}"),
+        mode,
+    )
+    .await
+}
+
+async fn resolve_tap_snapshot_from(
+    tap_name: &str,
+    commit_url: &str,
+    repository_raw_base: &str,
+    mode: FetchMode,
+) -> Result<TapSnapshot> {
+    let commit = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<GithubCommit, _>(commit_url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<GithubCommit, _>(commit_url).await,
+    }
+    .wrap_err_with(|| format!("failed to resolve immutable GitHub commit for tap '{tap_name}'"))?;
+    validate_git_commit(&commit.sha, "tap metadata commit")?;
+    Ok(TapSnapshot {
+        tap_name: tap_name.to_string(),
+        repository_raw_base: repository_raw_base.trim_end_matches('/').to_string(),
+        metadata_commit: commit.sha,
+        source_commit: None,
+    })
+}
+
+pub(super) async fn formula_with_tap_snapshot_mode(
+    name: &str,
+    snapshot: &TapSnapshot,
+    mode: FetchMode,
+) -> Result<Formula> {
+    let formula_name = split_tap_name(name)
+        .map(|(_, _, formula)| formula)
+        .unwrap_or(name);
+    let url = format!(
+        "{}/{}/api/formula/{formula_name}.json",
+        snapshot.repository_raw_base, snapshot.metadata_commit
+    );
+    let formula = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
+    }
+    .wrap_err_with(|| {
+        format!(
+            "failed to fetch Homebrew tap formula '{name}' from immutable commit {}",
+            snapshot.metadata_commit
+        )
+    })?;
+    let source_commit = formula
+        .tap_git_head
+        .as_deref()
+        .ok_or_else(|| eyre!("brew: tap formula '{name}' metadata has no tap_git_head"))?;
+    validate_git_commit(source_commit, "tap source commit")?;
+    Ok(formula)
+}
+
+pub(super) fn bind_tap_source_commit(snapshot: &mut TapSnapshot, formula: &Formula) -> Result<()> {
+    let source_commit = formula.tap_git_head.as_deref().ok_or_else(|| {
+        eyre!(
+            "brew: tap formula '{}' metadata has no tap_git_head",
+            formula.name
+        )
+    })?;
+    validate_git_commit(source_commit, "tap source commit")?;
+    if let Some(expected) = snapshot.source_commit.as_deref()
+        && expected != source_commit
+    {
+        bail!(
+            "brew: tap '{}' metadata has inconsistent source commits: expected {expected}, formula '{}' names {source_commit}",
+            snapshot.tap_name,
+            formula.name
+        );
+    }
+    snapshot.source_commit = Some(source_commit.to_string());
+    Ok(())
+}
+
+fn validate_git_commit(commit: &str, label: &str) -> Result<()> {
+    if commit.len() != 40 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("brew: invalid {label} {commit:?}: expected a full 40-character Git commit");
+    }
+    Ok(())
 }
 
 pub(super) fn tap_name(name: &str) -> Option<String> {
@@ -1079,18 +1197,19 @@ pub(super) fn tap_raw_base(owner: &str, tap: &str, tap_url: Option<&str>) -> Opt
 }
 
 pub(super) fn github_raw_base(url: &str) -> Option<String> {
-    let url = url.trim_end_matches(".git").trim_end_matches('/');
+    let (owner, repo) = github_repository(url)?;
+    Some(format!(
+        "https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
+    ))
+}
+
+fn github_repository(url: &str) -> Option<(&str, &str)> {
+    let url = url.trim_end_matches('/').trim_end_matches(".git");
     let rest = url.strip_prefix("https://github.com/")?;
     let mut parts = rest.split('/');
     let owner = parts.next()?;
     let repo = parts.next()?;
-    if parts.next().is_some() || owner.is_empty() || repo.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
-        ))
-    }
+    (parts.next().is_none() && !owner.is_empty() && !repo.is_empty()).then_some((owner, repo))
 }
 
 #[cfg(test)]
@@ -1098,6 +1217,68 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::*;
+
+    #[tokio::test]
+    async fn third_party_metadata_is_bound_to_immutable_snapshot() {
+        let mut server = mockito::Server::new_async().await;
+        let metadata_commit = "1111111111111111111111111111111111111111";
+        let source_commit = "2222222222222222222222222222222222222222";
+        let head = server
+            .mock("GET", "/repos/owner/homebrew-tools/commits/HEAD")
+            .with_body(format!(r#"{{"sha":"{metadata_commit}"}}"#))
+            .create_async()
+            .await;
+        let metadata = server
+            .mock(
+                "GET",
+                format!("/{metadata_commit}/api/formula/widget.json").as_str(),
+            )
+            .with_body(format!(
+                r#"{{"name":"widget","tap":"owner/tools","versions":{{"stable":"1.0"}},"tap_git_head":"{source_commit}"}}"#
+            ))
+            .create_async()
+            .await;
+        let mut snapshot = resolve_tap_snapshot_from(
+            "owner/tools",
+            &format!("{}/repos/owner/homebrew-tools/commits/HEAD", server.url()),
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap();
+        let formula = formula_with_tap_snapshot_mode("widget", &snapshot, FetchMode::Fresh)
+            .await
+            .unwrap();
+        bind_tap_source_commit(&mut snapshot, &formula).unwrap();
+        assert_eq!(snapshot.metadata_commit, metadata_commit);
+        assert_eq!(snapshot.source_commit.as_deref(), Some(source_commit));
+        head.assert_async().await;
+        metadata.assert_async().await;
+    }
+
+    #[test]
+    fn tap_snapshot_rejects_inconsistent_source_commits() {
+        let mut snapshot = TapSnapshot {
+            tap_name: "owner/tools".to_string(),
+            repository_raw_base: "https://raw.githubusercontent.com/owner/homebrew-tools"
+                .to_string(),
+            metadata_commit: "1".repeat(40),
+            source_commit: None,
+        };
+        let first: Formula = serde_json::from_value(json!({
+            "name": "one", "versions": {"stable": "1"}, "tap_git_head": "2222222222222222222222222222222222222222"
+        })).unwrap();
+        let second: Formula = serde_json::from_value(json!({
+            "name": "two", "versions": {"stable": "1"}, "tap_git_head": "3333333333333333333333333333333333333333"
+        })).unwrap();
+        bind_tap_source_commit(&mut snapshot, &first).unwrap();
+        assert!(
+            bind_tap_source_commit(&mut snapshot, &second)
+                .unwrap_err()
+                .to_string()
+                .contains("inconsistent source commits")
+        );
+    }
 
     const TEST_SPKI_B64: &str = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwIWspWJVE51stHOwJaaOdZnrECZuI3LH+tzYwTrFaAkcPvC9XEZuV/HX/fV2pFXR6HTjwl1UyIihJ1zGpfaMmy+SYfImuDincSaNQGpJsuLb5xesPilOsP46eu5JwJ7zbzRpMyIntlqZEe6zoNRYnJXxna2hZnauDGrldtYDtj/MSaES0gNIVQemuzSG14L7JFuhK9Pkuh+xW9x5xcIBvk/38B4QC8yMOGB1WWryV+QREC/Zzm3jcSs4GoYVbpakGhVYYHvQvN+HRjDA1CcwGCgJPhNZ76RkOP47da0pSXh9ibrKUVQpLgyN7mC/1ypwELrL7FPmYwjsJqoViC4LYwIDAQAB";
     const TEST_PROTECTED: &str = "eyJhbGciOiJQUzUxMiIsImI2NCI6ZmFsc2UsImNyaXQiOlsiYjY0Il19";
