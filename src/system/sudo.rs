@@ -306,3 +306,35 @@ fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each elevated helper binds the guard for the rest of its body, so the
+    /// renderer stays suspended until the child exits rather than only while
+    /// the guard is constructed. Nested acquisitions — a `with_sudo_fallback`
+    /// retry inside a flight step — must not resume it early either.
+    #[test]
+    fn pause_progress_for_child_suspends_until_every_guard_drops() {
+        let report = MultiProgressReport::get();
+        let baseline = report.progress_suspension_depth();
+
+        let outer = pause_progress_for_child();
+        assert!(outer.is_some(), "a live report must hand back a guard");
+        assert_eq!(report.progress_suspension_depth(), baseline + 1);
+
+        let inner = pause_progress_for_child();
+        assert_eq!(report.progress_suspension_depth(), baseline + 2);
+
+        drop(inner);
+        assert_eq!(
+            report.progress_suspension_depth(),
+            baseline + 1,
+            "the outer child still owns the terminal"
+        );
+
+        drop(outer);
+        assert_eq!(report.progress_suspension_depth(), baseline);
+    }
+}
