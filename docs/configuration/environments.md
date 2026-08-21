@@ -70,8 +70,20 @@ If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, that will be used instead of all of 
 You can also use paths like `mise/config.{MISE_ENV}.toml` or `.config/mise.{MISE_ENV}.toml` Those rules
 follow the order in [Configuration](/configuration).
 
-Files in `.mise/conf.d` and `.config/mise/conf.d` use the same environment suffixes. This allows a
-configuration to stay split into named fragments:
+## conf.d environments
+
+::: warning Migration in progress
+Environment-specific `conf.d` filenames are opt-in until mise 2027.8.10. By default, all non-hidden
+TOML fragments still load unconditionally, including names such as `node.tools.toml`.
+
+Dots in unconditional fragment names are deprecated. Rename them to use hyphens, for example
+`node-tools.toml`, before mise 2027.8.10. At that point, the suffix after the first dot will select
+an environment.
+:::
+
+Set `env_conf_d = true` in `.miserc.toml`, or set `MISE_ENV_CONF_D=true`, to opt into the new
+behavior now. Files in `.mise/conf.d` and `.config/mise/conf.d` will then use the same environment
+suffixes as other config files:
 
 ```text
 .mise/conf.d/tools.toml                   # always loaded
@@ -80,8 +92,9 @@ configuration to stay split into named fragments:
 .mise/conf.d/tools.development.local.toml # MISE_ENV=development, usually gitignored
 ```
 
-An extra filename component before `.toml` is reserved for the environment, so use hyphens rather
-than dots inside an unconditional fragment name: `node-tools.toml`, not `node.tools.toml`.
+Because this setting controls config discovery, it must be set in `.miserc.toml` or the environment;
+setting it in `mise.toml` is too late. Set `env_conf_d = false` explicitly to retain the old behavior
+without the deprecation warning during the migration window.
 
 Use `mise config` to see which files are being used.
 

@@ -67,6 +67,11 @@ pub fn get_auto_env() -> Option<bool> {
     get().auto_env
 }
 
+/// Get the env_conf_d value from miserc, if set.
+pub fn get_env_conf_d() -> Option<bool> {
+    get().env_conf_d
+}
+
 /// Get the ceiling_paths value from miserc, if set.
 pub fn get_ceiling_paths() -> Option<&'static BTreeSet<PathBuf>> {
     get().ceiling_paths.as_ref()
@@ -186,6 +191,9 @@ fn merge_settings(target: &mut MisercSettings, source: MisercSettings) {
     if source.auto_env.is_some() {
         target.auto_env = source.auto_env;
     }
+    if source.env_conf_d.is_some() {
+        target.env_conf_d = source.env_conf_d;
+    }
     if source.ceiling_paths.is_some() {
         target.ceiling_paths = source.ceiling_paths;
     }
@@ -266,23 +274,27 @@ mod tests {
     fn test_merge_settings() {
         let mut target = MisercSettings {
             env: Some(vec!["base".to_string()]),
+            env_conf_d: Some(false),
             ..Default::default()
         };
 
         let source = MisercSettings {
             env: Some(vec!["override".to_string()]),
+            env_conf_d: Some(true),
             ..Default::default()
         };
 
         merge_settings(&mut target, source);
 
         assert_eq!(target.env, Some(vec!["override".to_string()]));
+        assert_eq!(target.env_conf_d, Some(true));
     }
 
     #[test]
     fn test_parse_miserc() {
         let content = r#"
 env = ["development", "local"]
+env_conf_d = true
 ceiling_paths = ["/home/user"]
 "#;
         let settings: MisercSettings = toml::from_str(content).unwrap();
@@ -290,6 +302,7 @@ ceiling_paths = ["/home/user"]
             settings.env,
             Some(vec!["development".to_string(), "local".to_string()])
         );
+        assert_eq!(settings.env_conf_d, Some(true));
         assert!(settings.ceiling_paths.is_some());
     }
 
