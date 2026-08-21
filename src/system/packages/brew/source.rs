@@ -1417,7 +1417,7 @@ async fn fetch_formula_rb(
         Err(error) => return Err(error.into()),
     }
     pr.set_message(format!("download {rb_path}"));
-    let verified = if let Some(repository) = formula.tap_repository.as_deref() {
+    let (verified, published) = if let Some(repository) = formula.tap_repository.as_deref() {
         let expected_raw = super::api::github_raw_base(repository)
             .ok_or_else(|| eyre::eyre!("invalid authenticated tap repository identity"))?;
         if rf.tap_raw_base.as_deref() != Some(expected_raw.trim_end_matches("/HEAD"))
@@ -1432,16 +1432,40 @@ async fn fetch_formula_rb(
             super::api::FetchMode::Fresh,
         )
         .await?;
-        crate::file::create_dir_all(&cache_dir)?;
-        crate::file::write_atomic(&dest, bytes)?;
-        super::fetch::VerifiedArtifact::from_path(&dest, sha256, Some(pr))?
-            .ok_or_else(|| eyre::eyre!("formula checksum mismatch for authenticated tap content"))?
+        let verified = verify_and_publish_formula_bytes(bytes, &dest, sha256, Some(pr))?;
+        (verified, true)
     } else {
         let url = format!("{HOMEBREW_CORE_RAW}/{commit}/{rb_path}");
         let response = HTTP_FETCH.get_async(&url).await?;
-        super::fetch::VerifiedArtifact::from_response(response, &dest, sha256, Some(pr)).await?
+        (
+            super::fetch::VerifiedArtifact::from_response(response, &dest, sha256, Some(pr))
+                .await?,
+            false,
+        )
     };
-    verified.publish_cache(&dest)?;
+    if !published {
+        verified.publish_cache(&dest)?;
+    }
+    Ok(verified)
+}
+
+fn verify_and_publish_formula_bytes(
+    bytes: Vec<u8>,
+    dest: &Path,
+    sha256: &str,
+    pr: Option<&dyn SingleReport>,
+) -> Result<super::fetch::VerifiedArtifact> {
+    let cache_dir = dest
+        .parent()
+        .ok_or_else(|| eyre::eyre!("formula cache path has no parent"))?;
+    crate::file::create_dir_all(cache_dir)?;
+    let temporary = tempfile::Builder::new()
+        .prefix(".mise-formula-")
+        .tempfile_in(cache_dir)?;
+    crate::file::write(temporary.path(), bytes)?;
+    let verified = super::fetch::VerifiedArtifact::from_path(temporary.path(), sha256, pr)?
+        .ok_or_else(|| eyre::eyre!("formula checksum mismatch for authenticated tap content"))?;
+    verified.publish_cache(dest)?;
     Ok(verified)
 }
 
@@ -1775,6 +1799,7 @@ mod tests {
             tap_git_head: Some("abc123".to_string()),
             tap_repository: None,
             tap_metadata_commit: None,
+            tap_metadata_sha256: None,
             post_install_steps: vec![],
             post_install_defined: false,
             install_policy: Default::default(),
@@ -2747,6 +2772,21 @@ exit(system(ENV.fetch("INSTALL"), "-D", "-m", "755", ARGV.fetch(0), ARGV.fetch(1
             "foreign"
         );
         assert!(old_parent.join("build").symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn private_formula_source_publishes_only_after_checksum_verification() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dest = tmp.path().join("formula.rb");
+        let bytes = b"class Widget; end\n".to_vec();
+        assert!(
+            verify_and_publish_formula_bytes(bytes.clone(), &dest, &"0".repeat(64), None).is_err()
+        );
+        assert!(dest.symlink_metadata().is_err());
+        let sha256 = hex::encode(ring::digest::digest(&ring::digest::SHA256, &bytes).as_ref());
+        let _verified = verify_and_publish_formula_bytes(bytes.clone(), &dest, &sha256, None)?;
+        assert_eq!(std::fs::read(dest)?, bytes);
         Ok(())
     }
 }

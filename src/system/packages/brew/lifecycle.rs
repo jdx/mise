@@ -43,7 +43,10 @@ pub(super) struct PreparedFormulaLifecycle {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 struct LifecycleTapProvenance {
     repository: String,
+    /// Exact tap revision retained for audit. Repair equivalence uses the
+    /// formula metadata digest so unrelated tap commits do not force reinstall.
     metadata_commit: String,
+    metadata_sha256: String,
     source_commit: String,
 }
 
@@ -518,6 +521,12 @@ pub(super) fn prepare(formula: &Formula, keg: &Path) -> Result<PreparedFormulaLi
             metadata_commit: formula.tap_metadata_commit.clone().ok_or_else(|| {
                 eyre!(
                     "brew:{} has no authenticated tap metadata commit",
+                    formula.name
+                )
+            })?,
+            metadata_sha256: formula.tap_metadata_sha256.clone().ok_or_else(|| {
+                eyre!(
+                    "brew:{} has no authenticated formula metadata digest",
                     formula.name
                 )
             })?,
@@ -1133,7 +1142,7 @@ fn validate_install_identity(keg: &Path, state: &LifecycleState) -> Result<()> {
             nonce,
         )? != expected.incarnation
     {
-        bail!("lifecycle install identity provenance was modified")
+        bail!("lifecycle install identity consistency check failed")
     }
     if formula_name_from_keg(keg)? != expected.formula {
         bail!("lifecycle state formula does not match current keg")
@@ -1190,6 +1199,14 @@ fn validate_tap_provenance(provenance: &LifecycleTapProvenance) -> Result<()> {
         if commit.len() != 40 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             bail!("lifecycle tap {label} commit is invalid")
         }
+    }
+    if provenance.metadata_sha256.len() != 64
+        || !provenance
+            .metadata_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        bail!("lifecycle formula metadata digest is invalid")
     }
     Ok(())
 }
@@ -1943,7 +1960,16 @@ fn validate_prepared_tap_provenance(
         .install_identity
         .as_ref()
         .and_then(|identity| identity.tap_provenance.as_ref());
-    if installed != prepared.tap_provenance.as_ref() {
+    let equivalent = match (installed, prepared.tap_provenance.as_ref()) {
+        (None, None) => true,
+        (Some(installed), Some(prepared)) => {
+            installed.repository == prepared.repository
+                && installed.metadata_sha256 == prepared.metadata_sha256
+                && installed.source_commit == prepared.source_commit
+        }
+        _ => false,
+    };
+    if !equivalent {
         bail!(
             "brew:{} requires reinstall: authenticated tap provenance changed",
             prepared.formula
@@ -9321,6 +9347,7 @@ printf confined > "$1"
         let installed = LifecycleTapProvenance {
             repository: "https://github.com/owner/homebrew-tools".into(),
             metadata_commit: "1".repeat(40),
+            metadata_sha256: "4".repeat(64),
             source_commit: "2".repeat(40),
         };
         let mut tampered = installed.clone();
@@ -9377,6 +9404,17 @@ printf confined > "$1"
                 .to_string()
                 .contains("requires reinstall")
         );
+
+        let mut audit_only_change = prepared.tap_provenance.clone().unwrap();
+        audit_only_change.metadata_commit = "9".repeat(40);
+        let audit_state = LifecycleState {
+            install_identity: Some(LifecycleInstallIdentity {
+                tap_provenance: Some(audit_only_change),
+                ..state.install_identity.clone().unwrap()
+            }),
+            ..state
+        };
+        assert!(validate_prepared_tap_provenance(&prepared, &audit_state).is_ok());
         Ok(())
     }
 

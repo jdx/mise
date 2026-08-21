@@ -49,6 +49,11 @@ struct GithubCommit {
 
 #[derive(Deserialize)]
 struct GithubContent {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    kind: String,
+    sha: String,
     content: String,
     encoding: String,
 }
@@ -93,6 +98,8 @@ pub struct Formula {
     pub tap_repository: Option<String>,
     #[serde(skip)]
     pub tap_metadata_commit: Option<String>,
+    #[serde(skip)]
+    pub tap_metadata_sha256: Option<String>,
     #[serde(default)]
     pub post_install_steps: Vec<Value>,
     #[serde(default)]
@@ -876,6 +883,7 @@ fn formula_from_internal(
         tap_git_head: Some(index.formula_tap_git_head.clone()),
         tap_repository: None,
         tap_metadata_commit: None,
+        tap_metadata_sha256: None,
         post_install_defined: false,
         post_install_steps: signed.post_install_steps.clone(),
         install_policy: FormulaInstallPolicy {
@@ -1147,6 +1155,9 @@ async fn formula_with_tap_snapshot_from(
         .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
     formula.tap_repository = Some(format!("https://github.com/{owner}/{repo}"));
     formula.tap_metadata_commit = Some(snapshot.metadata_commit.clone());
+    formula.tap_metadata_sha256 = Some(hex::encode(
+        ring::digest::digest(&ring::digest::SHA256, &bytes).as_ref(),
+    ));
     Ok(formula)
 }
 
@@ -1213,6 +1224,16 @@ async fn fetch_github_content_from(
                 .collect::<Vec<_>>(),
         )
         .wrap_err_with(|| format!("brew: tap content {path:?} is not valid base64"))?;
+    let expected_name = path.rsplit('/').next().unwrap_or_default();
+    if content.kind != "file" || content.path != path || content.name != expected_name {
+        bail!("brew: GitHub Contents response identity does not match requested file {path:?}")
+    }
+    let mut git_blob = format!("blob {}\0", bytes.len()).into_bytes();
+    git_blob.extend_from_slice(&bytes);
+    let blob_sha = ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, &git_blob);
+    if hex::encode(blob_sha.as_ref()) != content.sha.to_ascii_lowercase() {
+        bail!("brew: GitHub Contents response blob SHA does not match decoded file {path:?}")
+    }
     Ok(bytes)
 }
 
@@ -1324,7 +1345,10 @@ fn github_repository(url: &str) -> Option<(String, String)> {
     let mut parts = path.split('/');
     let owner = parts.next()?;
     let repository = parts.next()?;
-    let repo = repository.strip_suffix(".git").unwrap_or(repository);
+    let repo = repository
+        .get(..repository.len().saturating_sub(4))
+        .filter(|_| repository.to_ascii_lowercase().ends_with(".git"))
+        .unwrap_or(repository);
     if parts.next().is_some()
         || owner.is_empty()
         || repo.is_empty()
@@ -1333,7 +1357,7 @@ fn github_repository(url: &str) -> Option<(String, String)> {
     {
         None
     } else {
-        Some((owner.to_string(), repo.to_string()))
+        Some((owner.to_ascii_lowercase(), repo.to_ascii_lowercase()))
     }
 }
 
@@ -1356,23 +1380,36 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let metadata_commit = "1111111111111111111111111111111111111111";
         let source_commit = "2222222222222222222222222222222222222222";
+        let formula_json = format!(
+            r#"{{"name":"widget","tap":"owner/tools","versions":{{"stable":"1.0"}},"tap_git_head":"{source_commit}"}}"#
+        );
+        let mut git_blob = format!("blob {}\0", formula_json.len()).into_bytes();
+        git_blob.extend_from_slice(formula_json.as_bytes());
+        let blob_sha = hex::encode(
+            ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, &git_blob).as_ref(),
+        );
         let head = server
             .mock("GET", "/repos/owner/homebrew-tools/commits/HEAD")
             .with_body(format!(r#"{{"sha":"{metadata_commit}"}}"#))
             .create_async()
             .await;
         let metadata = server
-            .mock(
-                "GET",
-                "/contents/api/formula/widget.json",
+            .mock("GET", "/contents/api/formula/widget.json")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "ref".into(),
+                metadata_commit.into(),
+            ))
+            .with_body(
+                serde_json::json!({
+                    "name": "widget.json",
+                    "path": "api/formula/widget.json",
+                    "type": "file",
+                    "sha": blob_sha,
+                    "encoding": "base64",
+                    "content": base64::engine::general_purpose::STANDARD.encode(&formula_json)
+                })
+                .to_string(),
             )
-            .match_query(mockito::Matcher::UrlEncoded("ref".into(), metadata_commit.into()))
-            .with_body(serde_json::json!({
-                "encoding": "base64",
-                "content": base64::engine::general_purpose::STANDARD.encode(format!(
-                    r#"{{"name":"widget","tap":"owner/tools","versions":{{"stable":"1.0"}},"tap_git_head":"{source_commit}"}}"#
-                ))
-            }).to_string())
             .create_async()
             .await;
         let mut snapshot = resolve_tap_snapshot_from(
@@ -1397,6 +1434,59 @@ mod tests {
         assert_eq!(snapshot.source_commit.as_deref(), Some(source_commit));
         head.assert_async().await;
         metadata.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn github_contents_rejects_path_and_blob_substitution() {
+        let mut server = mockito::Server::new_async().await;
+        let commit = "1".repeat(40);
+        let content = b"trusted";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(content);
+        let wrong_path = server
+            .mock("GET", "/contents/Formula/widget.rb")
+            .match_query(mockito::Matcher::UrlEncoded("ref".into(), commit.clone()))
+            .with_body(
+                json!({
+                    "name": "other.rb", "path": "Formula/other.rb", "type": "file",
+                    "sha": "0".repeat(40), "encoding": "base64", "content": encoded
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let error = fetch_github_content_from(
+            "Formula/widget.rb",
+            &commit,
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("identity does not match"));
+        wrong_path.assert_async().await;
+
+        let wrong_blob = server
+            .mock("GET", "/contents/Formula/widget.rb")
+            .match_query(mockito::Matcher::UrlEncoded("ref".into(), commit.clone()))
+            .with_body(
+                json!({
+                    "name": "widget.rb", "path": "Formula/widget.rb", "type": "file",
+                    "sha": "0".repeat(40), "encoding": "base64", "content": encoded
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let error = fetch_github_content_from(
+            "Formula/widget.rb",
+            &commit,
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("blob SHA"));
+        wrong_blob.assert_async().await;
     }
 
     #[test]
@@ -1446,6 +1536,10 @@ mod tests {
         }
         assert_eq!(
             normalize_github_repository_url("https://github.com/owner/repo.git/"),
+            Some("https://github.com/owner/repo".to_string())
+        );
+        assert_eq!(
+            normalize_github_repository_url("https://github.com/Owner/Repo.GIT"),
             Some("https://github.com/owner/repo".to_string())
         );
     }
