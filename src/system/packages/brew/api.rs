@@ -6,6 +6,7 @@ use std::sync::Arc;
 use base64::Engine;
 use base64::alphabet;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use chrono::{NaiveDate, Utc};
 use eyre::{WrapErr, bail, eyre};
 use ring::signature::{RSA_PSS_2048_8192_SHA512, UnparsedPublicKey};
 use serde::Deserialize;
@@ -182,7 +183,7 @@ impl Formula {
     /// until exact typed overwrite ownership exists.
     pub fn validate_install_policy(&self) -> Result<()> {
         let policy = &self.install_policy;
-        if policy.disabled {
+        if policy.disabled && lifecycle_policy_is_active(policy.disable_date.as_deref())? {
             let detail = policy_detail(
                 policy.disable_date.as_deref(),
                 policy.disable_reason.as_deref(),
@@ -230,7 +231,7 @@ impl Formula {
             );
         }
 
-        if policy.deprecated {
+        if policy.deprecated && lifecycle_policy_is_active(policy.deprecation_date.as_deref())? {
             let detail = policy_detail(
                 policy.deprecation_date.as_deref(),
                 policy.deprecation_reason.as_deref(),
@@ -306,6 +307,15 @@ impl Formula {
     pub fn stable_url(&self) -> Option<&SourceUrl> {
         self.urls.get("stable")
     }
+}
+
+fn lifecycle_policy_is_active(date: Option<&str>) -> Result<bool> {
+    let Some(date) = date else {
+        return Ok(true);
+    };
+    let effective = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .wrap_err_with(|| format!("invalid Homebrew lifecycle policy date {date:?}"))?;
+    Ok(effective <= Utc::now().date_naive())
 }
 
 impl FormulaRequirement {
@@ -1178,6 +1188,29 @@ mod tests {
         assert!(error.contains("disabled by Homebrew"));
         assert!(error.contains("does_not_build"));
         assert!(error.contains("replacement formula replacement"));
+    }
+
+    #[test]
+    fn future_formula_lifecycle_policy_is_not_yet_active() {
+        let formula = formula_with_policy(json!({
+            "disabled": true,
+            "disable_date": "2099-11-01",
+            "disable_reason": "deprecated_upstream"
+        }));
+        formula.validate_install_policy().unwrap();
+    }
+
+    #[test]
+    fn malformed_formula_lifecycle_policy_date_fails_closed() {
+        let formula = formula_with_policy(json!({
+            "disabled": true,
+            "disable_date": "not-a-date"
+        }));
+        assert!(formula
+            .validate_install_policy()
+            .unwrap_err()
+            .to_string()
+            .contains("invalid Homebrew lifecycle policy date"));
     }
 
     #[test]
