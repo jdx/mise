@@ -12,6 +12,7 @@
 //! authenticate mise-owned metadata queries. User-level `~/.npmrc` (or
 //! `NPM_CONFIG_USERCONFIG`) and `NPM_CONFIG_*` env vars still apply.
 
+use std::path::Path;
 use std::path::PathBuf;
 use std::sync::LazyLock as Lazy;
 
@@ -108,6 +109,18 @@ fn sort_versions<'a>(versions: impl Iterator<Item = &'a String>) -> Vec<&'a Stri
 pub async fn latest_dist_tag(name: &str) -> Result<Option<String>> {
     let packument = fetch_packument(name).await?;
     Ok(packument.dist_tags.get("latest").cloned())
+}
+
+/// Download the exact npm registry tarball for a package version, honoring
+/// user npm registry and authentication configuration.
+pub async fn download_tarball(name: &str, version: &str, path: &Path) -> Result<()> {
+    let metadata = CLIENT.fetch_single_version_metadata(name, version).await?;
+    let dist = metadata
+        .dist
+        .ok_or_else(|| eyre::eyre!("npm package {name}@{version} has no dist metadata"))?;
+    let bytes = CLIENT.fetch_tarball_bytes(&dist.tarball).await?;
+    crate::file::write(path, bytes)?;
+    Ok(())
 }
 
 #[cfg(test)]

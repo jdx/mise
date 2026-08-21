@@ -3,7 +3,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
+use crate::file::{
+    can_execute_directly, canonicalize_or_self, display_path, replace_path, strip_utf8_bom,
+};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
@@ -16,7 +18,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_scheduler::SchedMsg;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
-    remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
+    remove_auto_output, save_checksum, sources_are_fresh, task_cwd, task_source_match_root,
 };
 use crate::task::{
     Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
@@ -485,6 +487,8 @@ impl TaskExecutor {
                     "MISE_CACHE_SOCKET".into(),
                     "MISE_CACHE_STAGING_DIR".into(),
                     "MISE_CACHE_TASK".into(),
+                    "MISE_CACHE_CARGO_TARGET_DIR".into(),
+                    "MISE_CACHE_TASK_ROOT".into(),
                     "MISE_CACHE_RUST_VERIFY".into(),
                     "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
                     "RUSTC_WRAPPER".into(),
@@ -716,8 +720,12 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
-        let action_cache_run = if let Some(session) = self.cache_session.as_ref() {
-            session.apply(task, &mut env).await
+        let action_cache_run = if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
+            && let Some(session) = self.cache_session.as_ref()
+        {
+            let task_cwd = task_cwd(task, config).await?;
+            let task_root = canonicalize_or_self(&task_source_match_root(&task_cwd, config));
+            session.apply(task, &task_root, &mut env).await
         } else {
             None
         };
