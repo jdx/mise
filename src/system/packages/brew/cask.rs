@@ -9101,7 +9101,7 @@ fn validate_installed_cask_topology_with_metadata(
             declared_appdir_binary_symlink_is_owned(&binary.source, &artifacts.apps, &target)?
         } else {
             symlink_resolves_below(&target, version_dir)
-                || recorded_guarded_flight_symlink_is_owned(
+                || recorded_flight_symlink_is_owned(
                     cask,
                     artifacts,
                     &appdir,
@@ -9168,7 +9168,7 @@ fn validate_installed_cask_topology_with_metadata(
     Ok(())
 }
 
-fn recorded_guarded_flight_symlink_is_owned(
+fn recorded_flight_symlink_is_owned(
     cask: &Cask,
     artifacts: &CaskArtifacts,
     appdir: &Path,
@@ -9181,35 +9181,28 @@ fn recorded_guarded_flight_symlink_is_owned(
         return Ok(false);
     };
     let declared_source = version_dir.join(&binary.source);
-    let guarded_backlink_is_current = artifacts
+    let backlink_is_current = artifacts
         .preflight_steps
         .iter()
         .chain(&artifacts.postflight_steps)
         .filter_map(|step| match step {
-            FlightStep::Symlink {
-                target: declared,
-                guards,
-                ..
-            } if guards.iter().any(|guard| {
-                matches!(
-                    guard,
-                    FlightGuard::IfExists(_) | FlightGuard::UnlessExists(_)
-                )
-            }) =>
-            {
-                resolve_flight_path_with_context(cask, declared, version_dir, appdir).ok()
+            FlightStep::Symlink { source, target, .. } => {
+                resolve_flight_path_with_context(cask, target, version_dir, appdir)
+                    .ok()
+                    .zip(resolve_flight_path_with_context(cask, source, version_dir, appdir).ok())
             }
             _ => None,
         })
-        .any(|declared| {
-            declared_source.starts_with(&declared)
+        .any(|(declared_target, declared_link_source)| {
+            declared_source.starts_with(&declared_target)
+                && symlink_declares_target(&declared_target, &declared_link_source)
                 && records.iter().any(|record| {
-                    record.path == declared
+                    record.path == declared_target
                         && record.fingerprint.kind == CaskTargetKind::Symlink
                         && cask_target_present(record)
                 })
         });
-    if !guarded_backlink_is_current {
+    if !backlink_is_current {
         return Ok(false);
     }
     Ok(declared_source.is_file() && file::same_file(target, &declared_source))
@@ -17168,7 +17161,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn guarded_flight_binary_requires_current_receipt_fingerprint() -> Result<()> {
+    fn flight_binary_requires_exact_current_receipt_backlink() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let source = tmp.path().join("installed");
         let backlink = tmp.path().join("google-cloud-sdk");
@@ -17200,14 +17193,11 @@ mod tests {
                 uninstall: true,
                 source_glob: false,
                 sudo: FlightSudo::Never,
-                guards: vec![FlightGuard::UnlessExists(FlightPath {
-                    base: FlightPathBase::Literal,
-                    path: backlink.to_string_lossy().into_owned(),
-                })],
+                guards: vec![],
             }],
             ..Default::default()
         };
-        assert!(!recorded_guarded_flight_symlink_is_owned(
+        assert!(!recorded_flight_symlink_is_owned(
             &cask,
             &artifacts,
             Path::new("/Applications"),
@@ -17242,7 +17232,7 @@ mod tests {
                     path: unrelated_backlink.to_string_lossy().into_owned(),
                 })],
             });
-        assert!(!recorded_guarded_flight_symlink_is_owned(
+        assert!(!recorded_flight_symlink_is_owned(
             &cask,
             &unrelated_artifacts,
             Path::new("/Applications"),
@@ -17256,7 +17246,7 @@ mod tests {
             fingerprint: cask_target_fingerprint(&backlink)?,
             uninstall: Some(true),
         }];
-        assert!(recorded_guarded_flight_symlink_is_owned(
+        assert!(recorded_flight_symlink_is_owned(
             &cask,
             &artifacts,
             Path::new("/Applications"),
@@ -17267,7 +17257,7 @@ mod tests {
         )?);
         file::remove_file(&target)?;
         std::os::unix::fs::symlink(other, &target)?;
-        assert!(!recorded_guarded_flight_symlink_is_owned(
+        assert!(!recorded_flight_symlink_is_owned(
             &cask,
             &artifacts,
             Path::new("/Applications"),
