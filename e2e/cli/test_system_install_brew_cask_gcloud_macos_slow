@@ -54,10 +54,13 @@ assert_contains "'$launcher' version" "Google Cloud SDK 581.0.0"
 [[ -L $launcher ]] || brew_oracle_fail "gcloud launcher is not a symlink"
 launcher_target=$(readlink "$launcher")
 launcher_real=$(realpath "$launcher")
-[[ $launcher_target == "$sdk/bin/gcloud" && $launcher_real == "$sdk/bin/gcloud" ]] ||
+sdk_backlink="$room/581.0.0/google-cloud-sdk"
+[[ $launcher_target == "$sdk_backlink/bin/gcloud" && $launcher_real == "$sdk/bin/gcloud" ]] ||
   brew_oracle_fail "gcloud launcher does not target the durable SDK tree"
+[[ -L $sdk_backlink && $(realpath "$sdk_backlink") == "$sdk" ]] ||
+  brew_oracle_fail "gcloud Caskroom backlink does not target the durable SDK tree"
 case "$launcher_target" in
-  *mise*cache* | *Caskroom* | *staging* | *tmp*)
+  *mise*cache* | *staging* | *tmp*)
     brew_oracle_fail "gcloud launcher retained transient staging topology"
     ;;
 esac
