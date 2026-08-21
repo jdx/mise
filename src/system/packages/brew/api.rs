@@ -36,10 +36,8 @@ pub(super) enum FetchMode {
 
 #[derive(Debug, Clone)]
 pub(super) struct TapSnapshot {
-    pub tap_name: String,
     pub repository_raw_base: String,
     pub metadata_commit: String,
-    pub source_commit: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1102,10 +1100,8 @@ async fn resolve_tap_snapshot_from(
     .wrap_err_with(|| format!("failed to resolve immutable GitHub commit for tap '{tap_name}'"))?;
     validate_git_commit(&commit.sha, "tap metadata commit")?;
     Ok(TapSnapshot {
-        tap_name: tap_name.to_string(),
         repository_raw_base: repository_raw_base.trim_end_matches('/').to_string(),
         metadata_commit: commit.sha,
-        source_commit: None,
     })
 }
 
@@ -1237,7 +1233,7 @@ async fn fetch_github_content_from(
     Ok(bytes)
 }
 
-pub(super) fn bind_tap_source_commit(snapshot: &mut TapSnapshot, formula: &Formula) -> Result<()> {
+pub(super) fn validate_tap_source_commit(formula: &Formula) -> Result<()> {
     let source_commit = formula.tap_git_head.as_deref().ok_or_else(|| {
         eyre!(
             "brew: tap formula '{}' metadata has no tap_git_head",
@@ -1245,16 +1241,6 @@ pub(super) fn bind_tap_source_commit(snapshot: &mut TapSnapshot, formula: &Formu
         )
     })?;
     validate_git_commit(source_commit, "tap source commit")?;
-    if let Some(expected) = snapshot.source_commit.as_deref()
-        && expected != source_commit
-    {
-        bail!(
-            "brew: tap '{}' metadata has inconsistent source commits: expected {expected}, formula '{}' names {source_commit}",
-            snapshot.tap_name,
-            formula.name
-        );
-    }
-    snapshot.source_commit = Some(source_commit.to_string());
     Ok(())
 }
 
@@ -1412,7 +1398,7 @@ mod tests {
             )
             .create_async()
             .await;
-        let mut snapshot = resolve_tap_snapshot_from(
+        let snapshot = resolve_tap_snapshot_from(
             "owner/tools",
             &format!("{}/repos/owner/homebrew-tools/commits/HEAD", server.url()),
             &server.url(),
@@ -1429,9 +1415,9 @@ mod tests {
         )
         .await
         .unwrap();
-        bind_tap_source_commit(&mut snapshot, &formula).unwrap();
+        validate_tap_source_commit(&formula).unwrap();
         assert_eq!(snapshot.metadata_commit, metadata_commit);
-        assert_eq!(snapshot.source_commit.as_deref(), Some(source_commit));
+        assert_eq!(formula.tap_git_head.as_deref(), Some(source_commit));
         head.assert_async().await;
         metadata.assert_async().await;
     }
@@ -1490,27 +1476,16 @@ mod tests {
     }
 
     #[test]
-    fn tap_snapshot_rejects_inconsistent_source_commits() {
-        let mut snapshot = TapSnapshot {
-            tap_name: "owner/tools".to_string(),
-            repository_raw_base: "https://raw.githubusercontent.com/owner/homebrew-tools"
-                .to_string(),
-            metadata_commit: "1".repeat(40),
-            source_commit: None,
-        };
+    fn tap_snapshot_accepts_per_formula_source_commits() {
         let first: Formula = serde_json::from_value(json!({
             "name": "one", "versions": {"stable": "1"}, "tap_git_head": "2222222222222222222222222222222222222222"
         })).unwrap();
         let second: Formula = serde_json::from_value(json!({
             "name": "two", "versions": {"stable": "1"}, "tap_git_head": "3333333333333333333333333333333333333333"
         })).unwrap();
-        bind_tap_source_commit(&mut snapshot, &first).unwrap();
-        assert!(
-            bind_tap_source_commit(&mut snapshot, &second)
-                .unwrap_err()
-                .to_string()
-                .contains("inconsistent source commits")
-        );
+        validate_tap_source_commit(&first).unwrap();
+        validate_tap_source_commit(&second).unwrap();
+        assert_ne!(first.tap_git_head, second.tap_git_head);
     }
 
     #[test]

@@ -459,7 +459,7 @@ async fn fetch_formula(
     }
     let snapshot = tap_snapshots.get(&tap_name).unwrap().clone();
     let formula = api::formula_with_tap_snapshot_mode(&key.name, &snapshot, mode).await?;
-    api::bind_tap_source_commit(tap_snapshots.get_mut(&tap_name).unwrap(), &formula)?;
+    api::validate_tap_source_commit(&formula)?;
     Ok(formula)
 }
 

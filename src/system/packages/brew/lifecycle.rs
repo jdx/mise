@@ -9343,15 +9343,15 @@ printf confined > "$1"
     }
 
     #[test]
-    fn tap_provenance_tamper_changes_identity_and_blocks_repair() -> Result<()> {
+    fn tap_provenance_corruption_changes_identity_and_blocks_repair() -> Result<()> {
         let installed = LifecycleTapProvenance {
             repository: "https://github.com/owner/homebrew-tools".into(),
             metadata_commit: "1".repeat(40),
             metadata_sha256: "4".repeat(64),
             source_commit: "2".repeat(40),
         };
-        let mut tampered = installed.clone();
-        tampered.source_commit = "3".repeat(40);
+        let mut corrupted = installed.clone();
+        corrupted.source_commit = "3".repeat(40);
         let receipt = LifecycleReceiptIdentity::default();
         let keg = Path::new("/tmp/Cellar/widget/1");
         let original = install_identity_incarnation(
@@ -9367,7 +9367,7 @@ printf confined > "$1"
             "widget",
             &receipt,
             "snapshot",
-            Some(&tampered),
+            Some(&corrupted),
             "nonce",
         )?;
         assert_ne!(original, changed);
@@ -9386,7 +9386,7 @@ printf confined > "$1"
                 formula: "widget".into(),
                 receipt,
                 formula_snapshot_sha256: "snapshot".into(),
-                tap_provenance: Some(tampered),
+                tap_provenance: Some(corrupted),
                 identity_nonce: Some("nonce".into()),
                 incarnation: changed,
             }),

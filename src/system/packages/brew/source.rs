@@ -1399,6 +1399,7 @@ async fn fetch_formula_rb(
         .and_then(|c| c.sha256.as_deref())
         .unwrap();
     let commit = formula.tap_git_head.as_deref().unwrap();
+    let repository = validate_formula_repository_authority(rf)?;
     let cache_dir = crate::dirs::CACHE.join("system-brew").join("formula");
     let dest = cache_dir.join(format!("{}-{}.rb", formula.name, &sha256[..12]));
     match dest.symlink_metadata() {
@@ -1417,14 +1418,7 @@ async fn fetch_formula_rb(
         Err(error) => return Err(error.into()),
     }
     pr.set_message(format!("download {rb_path}"));
-    let (verified, published) = if let Some(repository) = formula.tap_repository.as_deref() {
-        let expected_raw = super::api::github_raw_base(repository)
-            .ok_or_else(|| eyre::eyre!("invalid authenticated tap repository identity"))?;
-        if rf.tap_raw_base.as_deref() != Some(expected_raw.trim_end_matches("/HEAD"))
-            && rf.tap_raw_base.as_deref() != Some(expected_raw.as_str())
-        {
-            bail!("resolved tap repository authority changed before formula source fetch")
-        }
+    let (verified, published) = if let Some(repository) = repository {
         let bytes = super::api::fetch_github_content(
             repository,
             rb_path,
@@ -1447,6 +1441,20 @@ async fn fetch_formula_rb(
         verified.publish_cache(&dest)?;
     }
     Ok(verified)
+}
+
+fn validate_formula_repository_authority(rf: &ResolvedFormula) -> Result<Option<&str>> {
+    let Some(repository) = rf.formula.tap_repository.as_deref() else {
+        return Ok(None);
+    };
+    let expected_raw = super::api::github_raw_base(repository)
+        .ok_or_else(|| eyre::eyre!("invalid authenticated tap repository identity"))?;
+    if rf.tap_raw_base.as_deref() != Some(expected_raw.trim_end_matches("/HEAD"))
+        && rf.tap_raw_base.as_deref() != Some(expected_raw.as_str())
+    {
+        bail!("resolved tap repository authority changed before formula source cache lookup")
+    }
+    Ok(Some(repository))
 }
 
 fn verify_and_publish_formula_bytes(
@@ -1804,6 +1812,42 @@ mod tests {
             post_install_defined: false,
             install_policy: Default::default(),
         }
+    }
+
+    fn tapped_resolved_formula(raw_base: &str) -> ResolvedFormula {
+        let mut formula = formula(&[]);
+        formula.tap = Some("owner/tools".into());
+        formula.tap_repository = Some("https://github.com/owner/homebrew-tools".into());
+        ResolvedFormula {
+            formula,
+            tap_name: "owner/tools".into(),
+            tap_raw_base: Some(raw_base.into()),
+            on_request: true,
+        }
+    }
+
+    #[test]
+    fn repository_authority_precedes_formula_cache_hit_and_miss() -> Result<()> {
+        let valid =
+            tapped_resolved_formula("https://raw.githubusercontent.com/owner/homebrew-tools");
+        assert_eq!(
+            validate_formula_repository_authority(&valid)?,
+            Some("https://github.com/owner/homebrew-tools")
+        );
+
+        // The same rejection is independent of whether the checksum-keyed
+        // cache destination later exists (hit) or is absent (miss).
+        let invalid =
+            tapped_resolved_formula("https://raw.githubusercontent.com/other/homebrew-tools");
+        for _cache_state in ["hit", "miss"] {
+            assert!(
+                validate_formula_repository_authority(&invalid)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("before formula source cache lookup")
+            );
+        }
+        Ok(())
     }
 
     fn run_shim_formula(
