@@ -1,6 +1,6 @@
 //! Client for the formulae.brew.sh JSON API (static JSON, no auth).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use base64::Engine;
@@ -767,10 +767,10 @@ fn formula_from_internal(
             )?;
         }
     }
-    dependencies.sort();
-    dependencies.dedup();
-    build_dependencies.sort();
-    build_dependencies.dedup();
+    let mut seen = HashSet::new();
+    dependencies.retain(|dependency| seen.insert(dependency.clone()));
+    seen.clear();
+    build_dependencies.retain(|dependency| seen.insert(dependency.clone()));
 
     let stable_url = parse_internal_source(name, signed)?;
     let bottle_tag = signed
@@ -1285,7 +1285,7 @@ mod tests {
                     "revision": 1,
                     "stable_url_args": ["https://trusted.example/hello.tar.gz"],
                     "stable_checksum": source_sha,
-                    "stable_dependencies": ["runtime", {"builder": ":build"}],
+                    "stable_dependencies": ["runtime-z", "runtime-a", "runtime-z", {"builder": ":build"}],
                     "bottle_checksum": bottle_sha,
                     "bottle_cellar": ":any_skip_relocation",
                     "bottle_tag": ":arm64_sequoia",
@@ -1313,7 +1313,7 @@ mod tests {
         assert_eq!(formula.name, "hello");
         assert_eq!(formula.pkg_version().unwrap(), "2.12.3_1");
         assert!(formula.keg_only);
-        assert_eq!(formula.dependencies, ["runtime"]);
+        assert_eq!(formula.dependencies, ["runtime-z", "runtime-a"]);
         assert_eq!(formula.build_dependencies, ["builder"]);
         assert_eq!(formula.aliases, ["hi"]);
         assert_eq!(formula.tap_git_head.as_deref(), Some("signed-core-head"));
