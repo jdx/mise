@@ -872,8 +872,8 @@ impl NPMBackend {
         .await
     }
 
-    /// Fetch deprecation metadata in bounded queries. An empty version history
-    /// needs no query; npm exits non-zero when a range matches no versions.
+    /// Fetch deprecation metadata in one combined query, or skip the lookup for
+    /// an empty version history because npm rejects ranges matching no versions.
     async fn npm_deprecated_versions(
         &self,
         config: &Arc<Config>,
