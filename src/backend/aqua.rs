@@ -3539,6 +3539,44 @@ mod tests {
     use super::*;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
 
+    #[test]
+    fn cargo_warning_uses_crate_name() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: cargo
+    repo_owner: example
+    repo_name: tool
+    crate: example-crate
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("example/tool").unwrap();
+
+        let error = validate(&pkg).unwrap_err().to_string();
+
+        assert!(error.ends_with("Use the cargo backend instead: cargo:example-crate."));
+    }
+
+    #[test]
+    fn cargo_warning_falls_back_to_crates_io_name() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: cargo
+    repo_owner: example
+    repo_name: tool
+    name: crates.io/example-crate
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("crates.io/example-crate").unwrap();
+
+        let error = validate(&pkg).unwrap_err().to_string();
+
+        assert!(error.ends_with("Use the cargo backend instead: cargo:example-crate."));
+    }
+
     fn aqua_var(name: &str, required: bool) -> AquaVar {
         AquaVar {
             name: name.to_string(),
@@ -4728,9 +4766,13 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
         AquaPackageType::Cargo => {
             bail!(
                 "package type `cargo` is not supported in the aqua backend. Use the cargo backend instead{}.",
-                pkg.name
-                    .as_ref()
-                    .and_then(|s| s.strip_prefix("crates.io/"))
+                pkg.crate_name
+                    .as_deref()
+                    .or_else(|| {
+                        pkg.name
+                            .as_deref()
+                            .and_then(|s| s.strip_prefix("crates.io/"))
+                    })
                     .map(|name| format!(": cargo:{name}"))
                     .unwrap_or_default()
             )
