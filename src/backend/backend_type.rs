@@ -25,6 +25,7 @@ pub enum BackendType {
     Github,
     Gitlab,
     Go,
+    Jar,
     Npm,
     Pipx,
     Pkgx,
@@ -70,6 +71,7 @@ impl BackendType {
             "github" => BackendType::Github,
             "gitlab" => BackendType::Gitlab,
             "go" => BackendType::Go,
+            "jar" => BackendType::Jar,
             "npm" => BackendType::Npm,
             "pipx" => BackendType::Pipx,
             "pkgx" => BackendType::Pkgx,
@@ -84,9 +86,10 @@ impl BackendType {
 
     /// Returns true if this backend is still gated behind experimental mode.
     pub fn is_experimental(&self) -> bool {
-        use super::{dotnet, pkgx, s3, spm};
+        use super::{dotnet, jar, pkgx, s3, spm};
         match self {
             BackendType::Dotnet => dotnet::EXPERIMENTAL,
+            BackendType::Jar => jar::EXPERIMENTAL,
             BackendType::Pkgx => pkgx::EXPERIMENTAL,
             BackendType::S3 => s3::EXPERIMENTAL,
             BackendType::Spm => spm::EXPERIMENTAL,

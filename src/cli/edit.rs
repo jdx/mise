@@ -80,6 +80,7 @@ impl BackendProvider for MiseBackendProvider {
                 BackendType::Github => ("github", Some("Install from GitHub releases")),
                 BackendType::Gitlab => ("gitlab", Some("Install from GitLab releases")),
                 BackendType::Go => ("go", Some("Install Go modules")),
+                BackendType::Jar => ("jar", Some("Install runnable JARs from Maven or URLs")),
                 BackendType::Npm => ("npm", Some("Install npm packages globally")),
                 BackendType::Pipx => ("pipx", Some("Install Python CLI tools")),
                 BackendType::Pkgx => ("pkgx", Some("Install pkgx pantry packages")),
