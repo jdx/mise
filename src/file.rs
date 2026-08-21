@@ -213,12 +213,9 @@ fn remove_all_atomically_validated_inner(
         crate::rand::random_string(32)
     );
     let parent = File::open(parent)?;
-    renameat(&parent, file_name, &parent, quarantine_name.as_str())
-        .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
-    let quarantine = path.with_file_name(&quarantine_name);
     let mut detached = Dir::openat(
         &parent,
-        quarantine_name.as_str(),
+        file_name,
         OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
         Mode::empty(),
     )?;
@@ -229,6 +226,31 @@ fn remove_all_atomically_validated_inner(
     ) {
         return Err(error)
             .wrap_err_with(|| format!("refusing to remove changed path: {}", display_path(path)));
+    }
+    renameat(&parent, file_name, &parent, quarantine_name.as_str())
+        .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
+    let quarantine = path.with_file_name(&quarantine_name);
+    let quarantined_identity = nix::sys::stat::fstatat(
+        &parent,
+        quarantine_name.as_str(),
+        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+    )?;
+    if (quarantined_identity.st_dev, quarantined_identity.st_ino)
+        != (detached_identity.st_dev, detached_identity.st_ino)
+    {
+        atomic_rename_noreplace(&parent, quarantine_name.as_ref(), file_name).wrap_err_with(
+            || {
+                format!(
+                    "cleanup target changed while quarantining {}; foreign replacement remains at {}",
+                    display_path(path),
+                    quarantine.display()
+                )
+            },
+        )?;
+        bail!(
+            "cleanup target changed while quarantining {}",
+            display_path(path)
+        );
     }
     after_validate(&quarantine)?;
     remove_dir_contents(&mut detached)?;
