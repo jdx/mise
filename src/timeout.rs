@@ -7,7 +7,7 @@ use color_eyre::eyre::{Report, Result};
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, Copy)]
-pub struct TimeoutError {
+pub(crate) struct TimeoutError {
     pub duration: Duration,
 }
 
@@ -19,7 +19,7 @@ impl Display for TimeoutError {
 
 impl std::error::Error for TimeoutError {}
 
-pub fn run_with_timeout<F, T>(f: F, timeout: Duration) -> Result<T>
+pub(crate) fn run_with_timeout<F, T>(f: F, timeout: Duration) -> Result<T>
 where
     F: FnOnce() -> Result<T> + Send,
     T: Send,
@@ -38,7 +38,7 @@ where
     })
 }
 
-pub async fn run_with_timeout_async<F, Fut, T>(f: F, timeout: Duration) -> Result<T>
+pub(crate) async fn run_with_timeout_async<F, Fut, T>(f: F, timeout: Duration) -> Result<T>
 where
     Fut: Future<Output = Result<T>> + Send,
     T: Send,

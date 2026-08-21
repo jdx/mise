@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for yarn (yarn.lock)
 #[derive(Debug)]
-pub struct YarnDepsProvider {
+pub(crate) struct YarnDepsProvider {
     base: ProviderBase,
 }
 
 impl YarnDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("yarn", project_root, config),
         }

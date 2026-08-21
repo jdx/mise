@@ -12,7 +12,7 @@ use crate::{config, duration, file};
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsSet {
+pub(super) struct SettingsSet {
     /// The setting to set
     #[clap()]
     pub setting: String,
@@ -24,7 +24,7 @@ pub struct SettingsSet {
 }
 
 impl SettingsSet {
-    pub fn run(self) -> Result<()> {
+    pub(super) fn run(self) -> Result<()> {
         match self.value {
             Some(value) => set(&self.setting, &value, false, self.local),
             None => {
@@ -39,7 +39,7 @@ impl SettingsSet {
     }
 }
 
-pub fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
+pub(super) fn set(mut key: &str, value: &str, add: bool, local: bool) -> Result<()> {
     let meta = match SETTINGS_META.get(key) {
         Some(meta) => meta,
         None => {

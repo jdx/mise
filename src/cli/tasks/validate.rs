@@ -20,7 +20,7 @@ use serde::Serialize;
 /// Validate tasks for common errors and issues
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksValidate {
+pub(super) struct TasksValidate {
     /// Tasks to validate
     /// If not specified, validates all tasks
     #[clap(verbatim_doc_comment)]
@@ -61,7 +61,7 @@ struct ValidationResults {
 }
 
 impl TasksValidate {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
 
         // Resolve all remote task files before validation

@@ -9,7 +9,7 @@ mod unset;
 
 #[derive(Debug, clap::Args)]
 #[clap(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
-pub struct Settings {
+pub(crate) struct Settings {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -32,7 +32,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => cmd.run(),
             Self::Get(cmd) => cmd.run(),
@@ -44,7 +44,7 @@ impl Commands {
 }
 
 impl Settings {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {
                 Commands::Set(set::SettingsSet {

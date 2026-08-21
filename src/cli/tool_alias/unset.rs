@@ -9,7 +9,7 @@ use crate::config::config_file::ConfigFile;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ToolAliasUnset {
+pub(super) struct ToolAliasUnset {
     /// The tool/backend to remove the alias from
     #[clap(value_name = "TOOL")]
     pub tool: BackendArg,
@@ -18,7 +18,7 @@ pub struct ToolAliasUnset {
 }
 
 impl ToolAliasUnset {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let mut global_config = Config::get().await?.global_config()?;
         match self.alias {
             None => {

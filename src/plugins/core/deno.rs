@@ -25,12 +25,12 @@ use crate::ui::progress_report::SingleReport;
 use crate::{file, plugins};
 
 #[derive(Debug)]
-pub struct DenoPlugin {
+pub(super) struct DenoPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl DenoPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("deno")),
         }

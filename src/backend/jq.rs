@@ -27,7 +27,7 @@ use eyre::Result;
 /// let data = json!([{"version": "v1.0.0"}, {"version": "v2.0.0"}]);
 /// assert_eq!(extract(&data, ".[].version").unwrap(), vec!["1.0.0", "2.0.0"]);
 /// ```
-pub fn extract(json: &serde_json::Value, path: &str) -> Result<Vec<String>> {
+pub(crate) fn extract(json: &serde_json::Value, path: &str) -> Result<Vec<String>> {
     let mut results = Vec::new();
     let path = path.trim();
 
@@ -47,7 +47,7 @@ pub fn extract(json: &serde_json::Value, path: &str) -> Result<Vec<String>> {
 }
 
 /// Extract values with auto-detection of common version patterns
-pub fn extract_auto(json: &serde_json::Value) -> Vec<String> {
+pub(crate) fn extract_auto(json: &serde_json::Value) -> Vec<String> {
     let mut results = Vec::new();
 
     match json {

@@ -15,7 +15,7 @@ use crate::{dirs, env};
 const ZSTD_COMPRESSION_LEVEL: i32 = 3;
 const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
 
-pub async fn create_age_directive(
+pub(crate) async fn create_age_directive(
     key: String,
     value: &str,
     recipients: &[Box<dyn Recipient + Send>],
@@ -55,7 +55,7 @@ pub async fn create_age_directive(
     })
 }
 
-pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
+pub(crate) async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
     Settings::get().ensure_experimental("age encryption")?;
     match directive {
         EnvDirective::Age { value, format, .. } => {
@@ -100,7 +100,7 @@ pub async fn decrypt_age_directive(directive: &EnvDirective) -> Result<String> {
     }
 }
 
-pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + Send>>> {
+pub(crate) async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + Send>>> {
     let mut recipients: IndexSet<String> = IndexSet::new();
 
     // Try to load from age key file
@@ -145,7 +145,9 @@ pub async fn load_recipients_from_defaults() -> Result<Vec<Box<dyn Recipient + S
     Ok(parsed_recipients)
 }
 
-pub async fn load_recipients_from_key_file(path: &Path) -> Result<Vec<Box<dyn Recipient + Send>>> {
+pub(crate) async fn load_recipients_from_key_file(
+    path: &Path,
+) -> Result<Vec<Box<dyn Recipient + Send>>> {
     let mut recipients: Vec<Box<dyn Recipient + Send>> = Vec::new();
 
     if !path.exists() {
@@ -178,7 +180,7 @@ pub async fn load_recipients_from_key_file(path: &Path) -> Result<Vec<Box<dyn Re
     Ok(recipients)
 }
 
-pub fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Recipient + Send>>> {
+pub(crate) fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Recipient + Send>>> {
     let trimmed = recipient_str.trim();
 
     if trimmed.starts_with("age1") {
@@ -197,7 +199,7 @@ pub fn parse_recipient(recipient_str: &str) -> Result<Option<Box<dyn Recipient +
     }
 }
 
-pub async fn load_ssh_recipient_from_path(path: &Path) -> Result<Box<dyn Recipient + Send>> {
+pub(crate) async fn load_ssh_recipient_from_path(path: &Path) -> Result<Box<dyn Recipient + Send>> {
     let content = file::read_to_string(path)?;
     let trimmed = content.trim();
 

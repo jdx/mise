@@ -27,7 +27,7 @@ use crate::ui::table::MiseTable;
 /// It's a useful command to get the current state of your tools.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Ls {
+pub(crate) struct Ls {
     /// Only show tool versions from [TOOL]
     #[clap(conflicts_with = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,
@@ -98,7 +98,7 @@ pub struct Ls {
 }
 
 impl Ls {
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         let config = Config::get().await?;
         self.installed_tool = self
             .installed_tool

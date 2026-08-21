@@ -8,7 +8,7 @@ use serde::Serialize;
 /// [experimental] Inspect the workspace project graph
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksGraph {
+pub(super) struct TasksGraph {
     /// Output the project graph as JSON
     #[clap(short = 'J', long, verbatim_doc_comment)]
     json: bool,
@@ -28,7 +28,7 @@ struct ProjectGraphOutput<'a> {
 }
 
 impl TasksGraph {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("workspace project graph")?;
         let config = Config::get().await?;
         let graph = config.workspace_project_graph()?;

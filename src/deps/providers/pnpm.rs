@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for pnpm (pnpm-lock.yaml)
 #[derive(Debug)]
-pub struct PnpmDepsProvider {
+pub(crate) struct PnpmDepsProvider {
     base: ProviderBase,
 }
 
 impl PnpmDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("pnpm", project_root, config),
         }

@@ -10,7 +10,7 @@ use std::path::MAIN_SEPARATOR_STR;
 /// The task will be created as a standalone script if it does not already exist.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksEdit {
+pub(super) struct TasksEdit {
     /// Task to edit
     #[clap()]
     task: String,
@@ -21,7 +21,7 @@ pub struct TasksEdit {
 }
 
 impl TasksEdit {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let cwd = dirs::CWD.clone().unwrap_or_default();
         let project_root = config.project_root.clone().unwrap_or(cwd);

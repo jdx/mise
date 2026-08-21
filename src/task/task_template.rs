@@ -11,7 +11,7 @@ use serde::Deserialize;
 /// A task template definition that can be extended by tasks via `extends`
 /// Templates are defined in [task_templates.*] sections of mise.toml
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct TaskTemplate {
+pub(crate) struct TaskTemplate {
     #[serde(default)]
     pub description: String,
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
@@ -103,7 +103,7 @@ impl Task {
     /// - dir: Local overrides; defaults to None if not in template
     /// - sources, outputs: Local overrides completely (if non-empty)
     /// - Other fields: Local overrides template (if set)
-    pub fn merge_template(&mut self, template: &TaskTemplate) {
+    pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
         // run: only use template if local is empty
         if self.run.is_empty() {
             self.run = template.run.clone();

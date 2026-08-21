@@ -15,14 +15,14 @@ use super::reconcile;
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SyncNode {
+pub(super) struct SyncNode {
     #[clap(flatten)]
     _type: SyncNodeType,
 }
 
 #[derive(Debug, clap::Args)]
 #[group(required = true, multiple = true)]
-pub struct SyncNodeType {
+pub(super) struct SyncNodeType {
     /// Get tool versions from Homebrew
     #[clap(long)]
     brew: bool,
@@ -37,7 +37,7 @@ pub struct SyncNodeType {
 }
 
 impl SyncNode {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let node = backend::get(&"node".into()).unwrap();
         let mut providers = vec![];
         if self._type.brew {

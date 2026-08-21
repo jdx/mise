@@ -65,7 +65,7 @@ fn add_path_rule(
 }
 
 /// Apply Landlock filesystem restrictions.
-pub fn apply_landlock(config: &SandboxConfig) -> Result<()> {
+pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
     let abi = ABI::V5;
 
     let read_access = AccessFs::from_read(abi);

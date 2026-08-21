@@ -20,7 +20,7 @@ use tokio::sync::OnceCell;
 /// Used for building a tool to a directory for use outside of mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct InstallInto {
+pub(crate) struct InstallInto {
     /// Tool to install
     /// e.g.: node@20
     #[clap(value_name = "TOOL@VERSION")]
@@ -32,7 +32,7 @@ pub struct InstallInto {
 }
 
 impl InstallInto {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let install_path = self.path.absolutize()?.into_owned();
         let config = Config::get().await?;
         let ts = Arc::new(

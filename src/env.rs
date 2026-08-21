@@ -8,7 +8,7 @@ use eyre::Context;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use log::LevelFilter;
-pub use std::env::*;
+pub(crate) use std::env::*;
 use std::process;
 use std::sync::LazyLock as Lazy;
 use std::sync::RwLock;
@@ -20,17 +20,18 @@ use std::{
 use std::{path::Path, string::ToString};
 use std::{path::PathBuf, sync::atomic::AtomicBool};
 
-pub static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
-pub static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
-pub const MISE_INSTALL_VERSION_ENV_VAR: &str = "MISE_INSTALL_VERSION";
-pub const MISE_TOOL_VERSION_ENV_VAR: &str = "MISE_TOOL_VERSION";
-pub const NON_TOOL_VERSION_ENV_VARS: &[&str] =
+pub(crate) static ARGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+pub(crate) static TOOL_ARGS: RwLock<Vec<ToolArg>> = RwLock::new(vec![]);
+pub(crate) const MISE_INSTALL_VERSION_ENV_VAR: &str = "MISE_INSTALL_VERSION";
+pub(crate) const MISE_TOOL_VERSION_ENV_VAR: &str = "MISE_TOOL_VERSION";
+pub(crate) const NON_TOOL_VERSION_ENV_VARS: &[&str] =
     &[MISE_INSTALL_VERSION_ENV_VAR, MISE_TOOL_VERSION_ENV_VAR];
 #[cfg(unix)]
-pub static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
+pub(crate) static SHELL: Lazy<String> = Lazy::new(|| var("SHELL").unwrap_or_else(|_| "sh".into()));
 #[cfg(windows)]
-pub static SHELL: Lazy<String> = Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
-pub static MISE_SHELL: Lazy<Option<ShellType>> =
+pub(crate) static SHELL: Lazy<String> =
+    Lazy::new(|| var("COMSPEC").unwrap_or_else(|_| "cmd.exe".into()));
+pub(crate) static MISE_SHELL: Lazy<Option<ShellType>> =
     Lazy::new(|| detect_shell(var("MISE_SHELL").ok(), var("SHELL").ok(), &SHELL));
 
 /// Which shell mise should speak, from the environment.
@@ -63,49 +64,49 @@ fn detect_shell(
     fallback.parse().ok()
 }
 #[cfg(unix)]
-pub static SHELL_COMMAND_FLAG: &str = "-c";
+pub(crate) static SHELL_COMMAND_FLAG: &str = "-c";
 #[cfg(windows)]
-pub static SHELL_COMMAND_FLAG: &str = "/c";
+pub(crate) static SHELL_COMMAND_FLAG: &str = "/c";
 
 // paths and directories
 #[cfg(test)]
-pub static HOME: Lazy<PathBuf> =
+pub(crate) static HOME: Lazy<PathBuf> =
     Lazy::new(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test"));
 #[cfg(not(test))]
-pub static HOME: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static HOME: Lazy<PathBuf> = Lazy::new(|| {
     homedir::my_home()
         .ok()
         .flatten()
         .unwrap_or_else(|| PathBuf::from("/"))
 });
 
-pub static EDITOR: Lazy<String> =
+pub(crate) static EDITOR: Lazy<String> =
     Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
 
 #[cfg(macos)]
-pub static XDG_CACHE_HOME: Lazy<PathBuf> =
+pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join("Library/Caches")));
 #[cfg(windows)]
-pub static XDG_CACHE_HOME: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> = Lazy::new(|| {
     var_path("XDG_CACHE_HOME")
         .or_else(|| var_path("TEMP"))
         .unwrap_or_else(temp_dir)
 });
 #[cfg(all(not(windows), not(macos)))]
-pub static XDG_CACHE_HOME: Lazy<PathBuf> =
+pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CACHE_HOME").unwrap_or_else(|| HOME.join(".cache")));
-pub static XDG_CONFIG_HOME: Lazy<PathBuf> =
+pub(crate) static XDG_CONFIG_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_CONFIG_HOME").unwrap_or_else(|| HOME.join(".config")));
 #[cfg(unix)]
-pub static XDG_DATA_HOME: Lazy<PathBuf> =
+pub(crate) static XDG_DATA_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_DATA_HOME").unwrap_or_else(|| HOME.join(".local").join("share")));
 #[cfg(windows)]
-pub static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static XDG_DATA_HOME: Lazy<PathBuf> = Lazy::new(|| {
     var_path("XDG_DATA_HOME")
         .or(var_path("LOCALAPPDATA"))
         .unwrap_or_else(|| HOME.join("AppData").join("Local"))
 });
-pub static XDG_STATE_HOME: Lazy<PathBuf> =
+pub(crate) static XDG_STATE_HOME: Lazy<PathBuf> =
     Lazy::new(|| var_path("XDG_STATE_HOME").unwrap_or_else(|| HOME.join(".local").join("state")));
 
 /// `%LOCALAPPDATA%`. What the `adrg/xdg` Go package resolves `XDG_CONFIG_HOME` to on Windows,
@@ -119,11 +120,11 @@ pub static XDG_STATE_HOME: Lazy<PathBuf> =
 /// An empty `%LOCALAPPDATA%` falls back rather than resolving to an empty path — see
 /// [`var_path`] — which is also what `adrg/xdg` does (`dir != "" && filepath.IsAbs(dir)`).
 #[cfg(windows)]
-pub static LOCAL_APPDATA: Lazy<PathBuf> =
+pub(crate) static LOCAL_APPDATA: Lazy<PathBuf> =
     Lazy::new(|| var_path("LOCALAPPDATA").unwrap_or_else(|| HOME.join("AppData").join("Local")));
 
 /// control display of "friendly" errors - defaults to release mode behavior unless overridden
-pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
+pub(crate) static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
     if var_is_true("MISE_FRIENDLY_ERROR") {
         true
     } else if var_is_false("MISE_FRIENDLY_ERROR") {
@@ -133,50 +134,52 @@ pub static MISE_FRIENDLY_ERROR: Lazy<bool> = Lazy::new(|| {
         !cfg!(debug_assertions) && log::max_level() < log::LevelFilter::Debug
     }
 });
-pub static MISE_TOOL_STUB: Lazy<bool> =
+pub(crate) static MISE_TOOL_STUB: Lazy<bool> =
     Lazy::new(|| ARGS.read().unwrap().get(1).map(|s| s.as_str()) == Some("tool-stub"));
-pub static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
-pub static MISE_NO_ENV: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_ENV"));
-pub static MISE_NO_HOOKS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_HOOKS"));
-pub static MISE_PROGRESS_TRACE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
-pub static MISE_CACHE_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
+pub(crate) static MISE_NO_ENV: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_ENV"));
+pub(crate) static MISE_NO_HOOKS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_HOOKS"));
+pub(crate) static MISE_PROGRESS_TRACE: Lazy<bool> =
+    Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
+pub(crate) static MISE_CACHE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CACHE_DIR").unwrap_or_else(|| XDG_CACHE_HOME.join("mise")));
-pub static MISE_CONFIG_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_CONFIG_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_CONFIG_DIR").unwrap_or_else(|| XDG_CONFIG_HOME.join("mise")));
 /// The default config directory location (XDG_CONFIG_HOME/mise), used to filter out
 /// configs from this location when MISE_CONFIG_DIR is set to a different path
-pub static MISE_DEFAULT_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| XDG_CONFIG_HOME.join("mise"));
+pub(crate) static MISE_DEFAULT_CONFIG_DIR: Lazy<PathBuf> =
+    Lazy::new(|| XDG_CONFIG_HOME.join("mise"));
 /// True if MISE_CONFIG_DIR was explicitly set to a non-default location
-pub static MISE_CONFIG_DIR_OVERRIDDEN: Lazy<bool> = Lazy::new(|| {
+pub(crate) static MISE_CONFIG_DIR_OVERRIDDEN: Lazy<bool> = Lazy::new(|| {
     var_path("MISE_CONFIG_DIR").is_some() && *MISE_CONFIG_DIR != *MISE_DEFAULT_CONFIG_DIR
 });
-pub static MISE_DATA_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_DATA_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_DATA_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("mise")));
-pub static MISE_STATE_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_STATE_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_STATE_DIR").unwrap_or_else(|| XDG_STATE_HOME.join("mise")));
-pub static MISE_TMP_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_TMP_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_TMP_DIR").unwrap_or_else(|| temp_dir().join("mise")));
-pub static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static MISE_SYSTEM_CONFIG_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_CONFIG_DIR")
         .or_else(|| var_path("MISE_SYSTEM_DIR"))
         .unwrap_or_else(|| PathBuf::from("/etc/mise"))
 });
 
 // data subdirs
-pub static MISE_INSTALLS_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_INSTALLS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_INSTALLS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("installs")));
-pub static MISE_DOWNLOADS_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_DOWNLOADS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_DOWNLOADS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("downloads")));
-pub static MISE_PLUGINS_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_PLUGINS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_PLUGINS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("plugins")));
-pub static MISE_SHIMS_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_SHIMS_DIR: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_SHIMS_DIR").unwrap_or_else(|| MISE_DATA_DIR.join("shims")));
 /// System-level data directory (like MISE_DATA_DIR but for system-wide tools).
-pub static MISE_SYSTEM_DATA_DIR: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static MISE_SYSTEM_DATA_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_DATA_DIR").unwrap_or_else(|| PathBuf::from("/usr/local/share/mise"))
 });
 /// System-level installs directory, derived from MISE_SYSTEM_DATA_DIR.
-pub static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> =
+pub(crate) static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> =
     Lazy::new(|| MISE_SYSTEM_DATA_DIR.join("installs"));
 
 /// Extra shared install directories parsed from the environment variable.
@@ -197,7 +200,7 @@ static MISE_SHARED_INSTALL_DIRS_ENV: Lazy<Vec<PathBuf>> = Lazy::new(|| {
 /// Includes the system installs dir (`MISE_SYSTEM_DATA_DIR/installs`) plus any
 /// user-configured dirs from Settings (config files) or the environment variable.
 /// The user's primary install dir is NOT included here — it is checked separately.
-pub fn shared_install_dirs() -> Vec<PathBuf> {
+pub(crate) fn shared_install_dirs() -> Vec<PathBuf> {
     use crate::config::Settings;
     let user_dirs = if let std::result::Result::Ok(settings) = Settings::try_get()
         && let Some(ref dirs) = settings.shared_install_dirs
@@ -219,7 +222,7 @@ pub fn shared_install_dirs() -> Vec<PathBuf> {
 }
 
 /// Early-boot variant used by install_state::init_tools() before Settings is loaded.
-pub fn shared_install_dirs_early() -> Vec<PathBuf> {
+pub(crate) fn shared_install_dirs_early() -> Vec<PathBuf> {
     let system = &*MISE_SYSTEM_INSTALLS_DIR;
     let mut result = Vec::new();
     if system.is_dir() && *system != *MISE_INSTALLS_DIR {
@@ -230,7 +233,7 @@ pub fn shared_install_dirs_early() -> Vec<PathBuf> {
 }
 
 /// Categorize an install path as system, shared, or local.
-pub fn install_path_category(path: &Path) -> InstallPathCategory {
+pub(crate) fn install_path_category(path: &Path) -> InstallPathCategory {
     if path.starts_with(&*MISE_SYSTEM_INSTALLS_DIR) {
         InstallPathCategory::System
     } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {
@@ -241,7 +244,7 @@ pub fn install_path_category(path: &Path) -> InstallPathCategory {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum InstallPathCategory {
+pub(crate) enum InstallPathCategory {
     /// Primary user install dir
     Local,
     /// System-level (/usr/local/share/mise/installs)
@@ -254,7 +257,7 @@ pub enum InstallPathCategory {
 /// `tool_dir_name` should be the kebab-cased directory name (e.g. from `ba.installs_path`).
 /// Returns the first shared path where `<shared_dir>/<tool_dir_name>/<pathname>` exists,
 /// or `primary_path` if not found in any shared directory.
-pub fn find_in_shared_installs(
+pub(crate) fn find_in_shared_installs(
     primary_path: PathBuf,
     tool_dir_name: &str,
     pathname: &str,
@@ -270,7 +273,7 @@ pub fn find_in_shared_installs(
     primary_path
 }
 
-pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
+pub(crate) static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME")
         .ok()
         .or(MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES
@@ -279,13 +282,13 @@ pub static MISE_DEFAULT_TOOL_VERSIONS_FILENAME: Lazy<String> = Lazy::new(|| {
         .or(var("MISE_DEFAULT_TOOL_VERSIONS_FILENAME").ok())
         .unwrap_or_else(|| ".tool-versions".into())
 });
-pub static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
+pub(crate) static MISE_DEFAULT_CONFIG_FILENAME: Lazy<String> = Lazy::new(|| {
     var("MISE_DEFAULT_CONFIG_FILENAME")
         .ok()
         .or(MISE_OVERRIDE_CONFIG_FILENAMES.first().cloned())
         .unwrap_or_else(|| "mise.toml".into())
 });
-pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
+pub(crate) static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>> =
     Lazy::new(|| match var("MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES") {
         Ok(v) if v == "none" => Some([].into()),
         Ok(v) => Some(split_colon_list(&v)),
@@ -293,17 +296,17 @@ pub static MISE_OVERRIDE_TOOL_VERSIONS_FILENAMES: Lazy<Option<IndexSet<String>>>
             miserc::get_override_tool_versions_filenames().map(|v| v.iter().cloned().collect())
         }
     });
-pub static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
+pub(crate) static MISE_OVERRIDE_CONFIG_FILENAMES: Lazy<IndexSet<String>> =
     Lazy::new(|| match var("MISE_OVERRIDE_CONFIG_FILENAMES") {
         Ok(v) => split_colon_list(&v),
         Err(_) => miserc::get_override_config_filenames()
             .map(|v| v.iter().cloned().collect())
             .unwrap_or_default(),
     });
-pub static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
+pub(crate) static MISE_ENV: Lazy<Vec<String>> = Lazy::new(|| environment(&ARGS.read().unwrap()));
 
 /// The tri-state auto_env setting: MISE_AUTO_ENV env var > .miserc.toml > unset
-pub fn auto_env_setting() -> Option<bool> {
+pub(crate) fn auto_env_setting() -> Option<bool> {
     if var_is_true("MISE_AUTO_ENV") {
         Some(true)
     } else if var_is_false("MISE_AUTO_ENV") {
@@ -314,7 +317,7 @@ pub fn auto_env_setting() -> Option<bool> {
 }
 
 /// The tri-state env_conf_d setting: MISE_ENV_CONF_D env var > .miserc.toml > unset.
-pub fn env_conf_d_setting() -> Option<bool> {
+pub(crate) fn env_conf_d_setting() -> Option<bool> {
     if var_is_true("MISE_ENV_CONF_D") {
         Some(true)
     } else if var_is_false("MISE_ENV_CONF_D") {
@@ -331,7 +334,7 @@ pub(crate) fn env_conf_d_default_for_version(v: &versions::Versioning) -> bool {
 
 /// Whether `conf.d` filenames carry environment suffixes, resolving the
 /// setting against the version-gated default.
-pub fn env_conf_d() -> bool {
+pub(crate) fn env_conf_d() -> bool {
     env_conf_d_setting().unwrap_or_else(|| env_conf_d_default_for_version(&crate::cli::version::V))
 }
 
@@ -343,7 +346,7 @@ pub(crate) fn auto_env_default_for_version(v: &versions::Versioning) -> bool {
 /// Platform-derived environment names, regardless of whether auto_env is enabled.
 /// Ordered least to most specific: os family ("unix"), os, "{os}-{arch}".
 /// On Windows the family equals the os so it dedupes to ["windows", "windows-{arch}"].
-pub fn platform_env_names() -> Vec<String> {
+pub(crate) fn platform_env_names() -> Vec<String> {
     let mut names: Vec<String> = vec![];
     for name in [
         consts::FAMILY.to_string(),
@@ -366,7 +369,7 @@ pub fn platform_env_names() -> Vec<String> {
 /// explicit environments keep their user-specified (higher) precedence.
 /// These are deliberately not part of MISE_ENV: they do not affect the
 /// `{{ mise_env }}` template variable or MISE_ENV propagation to subprocesses.
-pub static AUTO_ENV_NAMES: Lazy<Vec<String>> = Lazy::new(|| {
+pub(crate) static AUTO_ENV_NAMES: Lazy<Vec<String>> = Lazy::new(|| {
     let enabled =
         auto_env_setting().unwrap_or_else(|| auto_env_default_for_version(&crate::cli::version::V));
     if !enabled {
@@ -380,7 +383,7 @@ pub static AUTO_ENV_NAMES: Lazy<Vec<String>> = Lazy::new(|| {
 
 /// Auto platform envs followed by explicit MISE_ENV entries, for "later wins"
 /// consumers like config filename enumeration.
-pub static MISE_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
+pub(crate) static MISE_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
     AUTO_ENV_NAMES
         .iter()
         .chain(MISE_ENV.iter())
@@ -388,13 +391,13 @@ pub static MISE_ENV_WITH_AUTO: Lazy<Vec<String>> = Lazy::new(|| {
         .collect()
 });
 
-pub static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
+pub(crate) static MISE_GLOBAL_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_FILE").or_else(|| var_path("MISE_CONFIG_FILE")));
-pub static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
+pub(crate) static MISE_GLOBAL_CONFIG_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("MISE_GLOBAL_CONFIG_ROOT").unwrap_or_else(|| HOME.to_path_buf()));
-pub static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
+pub(crate) static MISE_SYSTEM_CONFIG_FILE: Lazy<Option<PathBuf>> =
     Lazy::new(|| var_path("MISE_SYSTEM_CONFIG_FILE"));
-pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
+pub(crate) static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
     let invocation_cwd = miserc::invocation_cwd()
         .map(Path::to_path_buf)
         .or_else(|| current_dir().ok())
@@ -409,7 +412,7 @@ pub static MISE_IGNORED_CONFIG_PATHS: Lazy<Vec<PathBuf>> = Lazy::new(|| {
         .or_else(|| miserc::get_ignored_config_paths().map(|paths| paths.iter().cloned().collect()))
         .unwrap_or_default()
 });
-pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
+pub(crate) static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
     var_os("MISE_CEILING_PATHS")
         .map(|v| {
             split_paths(&v)
@@ -423,12 +426,13 @@ pub static MISE_CEILING_PATHS: Lazy<HashSet<PathBuf>> = Lazy::new(|| {
         })
         .unwrap_or_default()
 });
-pub static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
-pub static MISE_LIST_ALL_VERSIONS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
-pub static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
-pub static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
-pub static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
-pub static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
+pub(crate) static MISE_USE_TOML: Lazy<bool> = Lazy::new(|| !var_is_false("MISE_USE_TOML"));
+pub(crate) static MISE_LIST_ALL_VERSIONS: Lazy<bool> =
+    Lazy::new(|| var_is_true("MISE_LIST_ALL_VERSIONS"));
+pub(crate) static ARGV0: Lazy<String> = Lazy::new(|| ARGS.read().unwrap()[0].to_string());
+pub(crate) static MISE_BIN_NAME: Lazy<&str> = Lazy::new(|| filename(&ARGV0));
+pub(crate) static MISE_LOG_FILE: Lazy<Option<PathBuf>> = Lazy::new(|| var_path("MISE_LOG_FILE"));
+pub(crate) static MISE_LOG_FILE_LEVEL: Lazy<Option<LevelFilter>> = Lazy::new(log_file_level);
 fn find_in_tree(base: &Path, rels: &[&[&str]]) -> Option<PathBuf> {
     for rel in rels {
         let mut p = base.to_path_buf();
@@ -449,7 +453,7 @@ fn mise_install_base() -> Option<PathBuf> {
         .and_then(|p| p.parent().map(|p| p.to_path_buf()))
 }
 
-pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
+pub(crate) static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
     if let Some(p) = var_path("MISE_SELF_UPDATE_INSTRUCTIONS") {
         return Some(p);
     }
@@ -465,7 +469,7 @@ pub static MISE_SELF_UPDATE_INSTRUCTIONS: Lazy<Option<PathBuf>> = Lazy::new(|| {
     )
 });
 #[cfg(feature = "self_update")]
-pub static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
+pub(crate) static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
     if var_is_true("MISE_SELF_UPDATE_AVAILABLE") {
         Some(true)
     } else if var_is_false("MISE_SELF_UPDATE_AVAILABLE") {
@@ -475,7 +479,7 @@ pub static MISE_SELF_UPDATE_AVAILABLE: Lazy<Option<bool>> = Lazy::new(|| {
     }
 });
 #[cfg(feature = "self_update")]
-pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
+pub(crate) static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| {
     let base = mise_install_base()?;
     find_in_tree(
         &base,
@@ -486,23 +490,24 @@ pub static MISE_SELF_UPDATE_DISABLED_PATH: Lazy<Option<PathBuf>> = Lazy::new(|| 
         ],
     )
 });
-pub static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
-pub static MISE_LOG_VERBOSE_DEPS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_VERBOSE_DEPS"));
+pub(crate) static MISE_LOG_HTTP: Lazy<bool> = Lazy::new(|| var_is_true("MISE_LOG_HTTP"));
+pub(crate) static MISE_LOG_VERBOSE_DEPS: Lazy<bool> =
+    Lazy::new(|| var_is_true("MISE_LOG_VERBOSE_DEPS"));
 
-pub static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
+pub(crate) static __USAGE: Lazy<Option<String>> = Lazy::new(|| var("__USAGE").ok());
 
 // true if running inside a shim
-pub static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
+pub(crate) static __MISE_SHIM: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SHIM"));
 
 /// Absolute path of the shim that delegated to mise. Unlike `MISE_SHIMS_DIR`,
 /// this remains reliable when a parent process preserves PATH but filters out
 /// mise's directory configuration variables.
-pub const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
-pub static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
+pub(crate) const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
+pub(crate) static MISE_SHIM_PATH: Lazy<RwLock<Option<PathBuf>>> =
     Lazy::new(|| RwLock::new(var_path(MISE_SHIM_PATH_ENV)));
 
 // true if the current process is running as a shim (not direct mise invocation)
-pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
+pub(crate) static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
     // When running tests, always treat as direct mise invocation
     // to avoid interfering with test expectations
     if cfg!(test) {
@@ -525,7 +530,7 @@ pub static IS_RUNNING_AS_SHIM: Lazy<bool> = Lazy::new(|| {
 /// same file as `mise.exe` and reaches `argv[0]` with whatever casing the caller wrote — and a
 /// case-sensitive test then sent mise through [`crate::shims::handle_shim`] against itself. On unix
 /// they are two different files, so a shim genuinely named `MISE` has to stay a shim.
-pub fn is_mise_binary(bin_name: &str) -> bool {
+pub(crate) fn is_mise_binary(bin_name: &str) -> bool {
     let is_mise = |s: &str| {
         if cfg!(windows) {
             s.eq_ignore_ascii_case("mise")
@@ -548,7 +553,7 @@ pub fn is_mise_binary(bin_name: &str) -> bool {
 /// [`crate::path::windows_path_list_to_unix`], so they stay unit-tested everywhere rather than only
 /// on the platform that runs them. Their callers are all `#[cfg(windows)]`, hence the allow.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub const SELF_REPLACE_SUFFIXES: [&str; 2] = [".__selfdelete__.exe", ".__relocated__.exe"];
+pub(crate) const SELF_REPLACE_SUFFIXES: [&str; 2] = [".__selfdelete__.exe", ".__relocated__.exe"];
 
 /// Whether `bin_name` is a copy of *this* executable that `self-replace` made while updating.
 ///
@@ -563,7 +568,7 @@ pub const SELF_REPLACE_SUFFIXES: [&str; 2] = [".__selfdelete__.exe", ".__relocat
 /// The random segment is checked too, because the caller that acts on this **deletes** the file:
 /// anything short of the generated shape is somebody else's and stays where it is.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub fn is_self_replace_helper(bin_name: &str, exe_stem: &str) -> bool {
+pub(crate) fn is_self_replace_helper(bin_name: &str, exe_stem: &str) -> bool {
     let prefix = format!(".{exe_stem}.");
     // Case-insensitively on Windows, and only for the stem. Measured: `current_exe()` hands back
     // whatever casing the caller used to start the process — `CASEPROBE.EXE` gives a stem of
@@ -591,7 +596,7 @@ pub fn is_self_replace_helper(bin_name: &str, exe_stem: &str) -> bool {
 /// `self-replace` fills this many characters from `fastrand`'s `lowercase()`:
 /// `for _ in 0..32 { file_name.push(rng.lowercase()) }` in `get_temp_executable_name`.
 #[cfg_attr(not(windows), allow(dead_code))]
-pub const SELF_REPLACE_RANDOM_LEN: usize = 32;
+pub(crate) const SELF_REPLACE_RANDOM_LEN: usize = 32;
 
 /// Exactly the segment that generator produces — nothing shorter, longer, or outside `a-z`.
 ///
@@ -614,7 +619,7 @@ fn is_self_replace_random_segment(s: &str) -> bool {
 /// from whatever spawned it, and the process asking is mise. Everything around the stem is still
 /// required: a leading `.`, then some stem, then the generated random segment and the suffix.
 #[cfg(windows)]
-pub fn invoked_as_self_replace_helper() -> bool {
+pub(crate) fn invoked_as_self_replace_helper() -> bool {
     let Some(invoked) = std::env::args_os().next() else {
         return false;
     };
@@ -639,10 +644,10 @@ pub fn invoked_as_self_replace_helper() -> bool {
 /// Gated to `None` under `#[cfg(test)]` (like `TERM_WIDTH`) so unit tests that
 /// build a table don't pick up a stray `COLUMNS`/`MISE_TERM_WIDTH` from the env.
 #[cfg(test)]
-pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| None);
+pub(crate) static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| None);
 
 #[cfg(not(test))]
-pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
+pub(crate) static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
     for key in ["MISE_TERM_WIDTH", "COLUMNS"] {
         if let Some(w) = var(key)
             .ok()
@@ -663,10 +668,10 @@ pub static TERM_WIDTH_OVERRIDE: Lazy<Option<usize>> = Lazy::new(|| {
 });
 
 #[cfg(test)]
-pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
+pub(crate) static TERM_WIDTH: Lazy<usize> = Lazy::new(|| 80);
 
 #[cfg(not(test))]
-pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
+pub(crate) static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
     if let Some(w) = *TERM_WIDTH_OVERRIDE {
         return w;
     }
@@ -678,21 +683,23 @@ pub static TERM_WIDTH: Lazy<usize> = Lazy::new(|| {
 
 /// true if inside a script like bin/exec-env or bin/install
 /// used to prevent infinite loops
-pub static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static MISE_BIN: Lazy<PathBuf> = Lazy::new(|| {
     var_path("__MISE_BIN")
         .or_else(|| current_exe().ok())
         .unwrap_or_else(|| "mise".into())
 });
-pub static MISE_TIMINGS: Lazy<u8> = Lazy::new(|| var_u8("MISE_TIMINGS"));
-pub static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
-pub static MISE_JOBS: Lazy<Option<usize>> =
+pub(crate) static MISE_TIMINGS: Lazy<u8> = Lazy::new(|| var_u8("MISE_TIMINGS"));
+pub(crate) static MISE_PID: Lazy<String> = Lazy::new(|| process::id().to_string());
+pub(crate) static MISE_JOBS: Lazy<Option<usize>> =
     Lazy::new(|| var("MISE_JOBS").ok().and_then(|v| v.parse::<usize>().ok()));
-pub static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
-pub static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
-pub static __MISE_ORIG_PATH: Lazy<Option<String>> = Lazy::new(|| var("__MISE_ORIG_PATH").ok());
-pub static __MISE_ZSH_PRECMD_RUN: Lazy<bool> = Lazy::new(|| !var_is_false("__MISE_ZSH_PRECMD_RUN"));
-pub static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
-pub static PREFER_OFFLINE: Lazy<AtomicBool> =
+pub(crate) static __MISE_SCRIPT: Lazy<bool> = Lazy::new(|| var_is_true("__MISE_SCRIPT"));
+pub(crate) static __MISE_DIFF: Lazy<EnvDiff> = Lazy::new(get_env_diff);
+pub(crate) static __MISE_ORIG_PATH: Lazy<Option<String>> =
+    Lazy::new(|| var("__MISE_ORIG_PATH").ok());
+pub(crate) static __MISE_ZSH_PRECMD_RUN: Lazy<bool> =
+    Lazy::new(|| !var_is_false("__MISE_ZSH_PRECMD_RUN"));
+pub(crate) static LINUX_DISTRO: Lazy<Option<String>> = Lazy::new(linux_distro);
+pub(crate) static PREFER_OFFLINE: Lazy<AtomicBool> =
     Lazy::new(|| prefer_offline(&ARGS.read().unwrap()).into());
 /// Commands whose explicit purpose is to enumerate remote versions/tags. Under
 /// `prefer_offline`, remote-version lookups are otherwise capped to a single
@@ -700,15 +707,15 @@ pub static PREFER_OFFLINE: Lazy<AtomicBool> =
 /// never stall. These commands opt out of that cap so they honor the full
 /// configured `fetch_remote_versions_timeout` even when `prefer_offline` is set
 /// (https://github.com/jdx/mise/discussions/11185).
-pub static REMOTE_FETCH_COMMAND: Lazy<AtomicBool> =
+pub(crate) static REMOTE_FETCH_COMMAND: Lazy<AtomicBool> =
     Lazy::new(|| remote_fetch_command(&ARGS.read().unwrap()).into());
-pub static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
-pub static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
+pub(crate) static OFFLINE: Lazy<bool> = Lazy::new(|| offline(&ARGS.read().unwrap()));
+pub(crate) static WARN_ON_MISSING_REQUIRED_ENV: Lazy<bool> =
     Lazy::new(|| warn_on_missing_required_env(&ARGS.read().unwrap()));
 /// essentially, this is whether we show spinners or build output on runtime install
-pub static PRISTINE_ENV: Lazy<EnvMap> =
+pub(crate) static PRISTINE_ENV: Lazy<EnvMap> =
     Lazy::new(|| get_pristine_env(&__MISE_DIFF, vars_safe().collect()));
-pub static PATH_KEY: Lazy<String> =
+pub(crate) static PATH_KEY: Lazy<String> =
     Lazy::new(|| path_key_from_env(vars_os().filter_map(|(k, _)| k.into_string().ok())));
 
 #[cfg(unix)]
@@ -722,15 +729,15 @@ fn path_key_from_env(keys: impl IntoIterator<Item = String>) -> String {
         .find(|k| k.eq_ignore_ascii_case("PATH"))
         .unwrap_or("PATH".into())
 }
-pub static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
+pub(crate) static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
     Some(path) => split_paths(path).collect(),
     None => vec![],
 });
-pub static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH_KEY) {
+pub(crate) static PATH_NON_PRISTINE: Lazy<Vec<PathBuf>> = Lazy::new(|| match var(&*PATH_KEY) {
     Ok(ref path) => split_paths(path).collect(),
     Err(_) => vec![],
 });
-pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
+pub(crate) static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").ok());
 
 /// GitHub token resolved from environment variables ONLY
 /// (`MISE_GITHUB_TOKEN`, `GITHUB_API_TOKEN`, `GITHUB_TOKEN`).
@@ -743,24 +750,25 @@ pub static DIRENV_DIFF: Lazy<Option<String>> = Lazy::new(|| var("DIRENV_DIFF").o
 /// `credential_command`, `github_tokens.toml`, gh CLI, and git credentials) or the
 /// [`crate::github::sigstore`] wrapper (which calls it internally). Passing this static
 /// to attestation verification is the original cause of the lock-time rate-limit bug.
-pub static GITHUB_TOKEN: Lazy<Option<String>> =
+pub(crate) static GITHUB_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITHUB_TOKEN", "GITHUB_API_TOKEN", "GITHUB_TOKEN"]));
-pub static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
+pub(crate) static MISE_GITHUB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITHUB_ENTERPRISE_TOKEN"]));
-pub static GITLAB_TOKEN: Lazy<Option<String>> =
+pub(crate) static GITLAB_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITLAB_TOKEN", "GITLAB_TOKEN"]));
-pub static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
+pub(crate) static MISE_GITLAB_ENTERPRISE_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_GITLAB_ENTERPRISE_TOKEN"]));
-pub static MISE_FORGEJO_ENTERPRISE_TOKEN: Lazy<Option<String>> =
+pub(crate) static MISE_FORGEJO_ENTERPRISE_TOKEN: Lazy<Option<String>> =
     Lazy::new(|| get_token(&["MISE_FORGEJO_ENTERPRISE_TOKEN"]));
 
-pub static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
-pub static TEST_TRANCHE_COUNT: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);
+pub(crate) static TEST_TRANCHE: Lazy<usize> = Lazy::new(|| var_u8("TEST_TRANCHE") as usize);
+pub(crate) static TEST_TRANCHE_COUNT: Lazy<usize> =
+    Lazy::new(|| var_u8("TEST_TRANCHE_COUNT") as usize);
 
-pub static CLICOLOR_FORCE: Lazy<Option<bool>> =
+pub(crate) static CLICOLOR_FORCE: Lazy<Option<bool>> =
     Lazy::new(|| var("CLICOLOR_FORCE").ok().map(|v| v != "0"));
 
-pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
+pub(crate) static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
     if *CLICOLOR_FORCE == Some(true) {
         Some(true)
     } else if *NO_COLOR || var_is_false("MISE_COLOR") {
@@ -773,22 +781,23 @@ pub static CLICOLOR: Lazy<Option<bool>> = Lazy::new(|| {
 });
 
 /// Disable color output - https://no-color.org/
-pub static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
+pub(crate) static NO_COLOR: Lazy<bool> = Lazy::new(|| var("NO_COLOR").is_ok_and(|v| !v.is_empty()));
 
 /// Force progress bars even in non-TTY (for debugging)
-pub static MISE_FORCE_PROGRESS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_FORCE_PROGRESS"));
+pub(crate) static MISE_FORCE_PROGRESS: Lazy<bool> =
+    Lazy::new(|| var_is_true("MISE_FORCE_PROGRESS"));
 
 // python
-pub static PYENV_ROOT: Lazy<PathBuf> =
+pub(crate) static PYENV_ROOT: Lazy<PathBuf> =
     Lazy::new(|| var_path("PYENV_ROOT").unwrap_or_else(|| HOME.join(".pyenv")));
-pub static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
+pub(crate) static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
 });
 
 #[cfg(unix)]
-pub const PATH_ENV_SEP: char = ':';
+pub(crate) const PATH_ENV_SEP: char = ':';
 #[cfg(windows)]
-pub const PATH_ENV_SEP: char = ';';
+pub(crate) const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
     let env = vars_safe().collect::<HashMap<_, _>>();
@@ -828,7 +837,7 @@ fn var_is_false(key: &str) -> bool {
     }
 }
 
-pub fn in_home_dir() -> bool {
+pub(crate) fn in_home_dir() -> bool {
     current_dir().is_ok_and(|d| d == *HOME)
 }
 
@@ -840,7 +849,7 @@ pub fn in_home_dir() -> bool {
 /// `mise`, and a forge CLI lookup read `gh/hosts.yml` out of whatever directory mise happened to
 /// be run from. Treating empty as unset is also what the tools mise mirrors here do: go-gh
 /// (`os.Getenv(x) != ""`) and `adrg/xdg` (`dir != "" && filepath.IsAbs(dir)`) both fall through.
-pub fn var_path(key: &str) -> Option<PathBuf> {
+pub(crate) fn var_path(key: &str) -> Option<PathBuf> {
     var_os(key)
         .map(PathBuf::from)
         .map(replace_path)
@@ -1099,11 +1108,11 @@ fn get_token(keys: &[&str]) -> Option<String> {
         .filter(|v| !v.trim().is_empty())
 }
 
-pub fn is_activated() -> bool {
+pub(crate) fn is_activated() -> bool {
     var("__MISE_DIFF").is_ok()
 }
 
-pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
+pub(crate) fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
     static MUTEX: Mutex<()> = Mutex::new(());
     let _mutex = MUTEX.lock().unwrap();
     unsafe {
@@ -1111,7 +1120,7 @@ pub fn set_var<K: AsRef<OsStr>, V: AsRef<OsStr>>(key: K, value: V) {
     }
 }
 
-pub fn remove_var<K: AsRef<OsStr>>(key: K) {
+pub(crate) fn remove_var<K: AsRef<OsStr>>(key: K) {
     static MUTEX: Mutex<()> = Mutex::new(());
     let _mutex = MUTEX.lock().unwrap();
     unsafe {
@@ -1120,14 +1129,14 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
 }
 
 /// Remove the env cache encryption key to force fresh env computation
-pub fn reset_env_cache_key() {
+pub(crate) fn reset_env_cache_key() {
     remove_var("__MISE_ENV_CACHE_KEY");
 }
 
 /// Safe wrapper around std::env::vars() that handles invalid UTF-8 gracefully.
 /// This function uses vars_os() and converts OsString to String, skipping any
 /// environment variables that contain invalid UTF-8 sequences.
-pub fn vars_safe() -> impl Iterator<Item = (String, String)> {
+pub(crate) fn vars_safe() -> impl Iterator<Item = (String, String)> {
     vars_os().filter_map(|(k, v)| {
         let k_str = k.to_str()?;
         let v_str = v.to_str()?;
@@ -1141,11 +1150,11 @@ pub fn vars_safe() -> impl Iterator<Item = (String, String)> {
 /// Unlike vars_safe() the conversion is lossy rather than skipping, so argument
 /// positions are preserved and a malformed argv yields a normal "unknown command"
 /// error instead of crashing.
-pub fn args_safe() -> Vec<String> {
+pub(crate) fn args_safe() -> Vec<String> {
     args_os().map(|a| a.to_string_lossy().to_string()).collect()
 }
 
-pub fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
+pub(crate) fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     trace!("cd {}", display_path(path));
     std::env::set_current_dir(path)

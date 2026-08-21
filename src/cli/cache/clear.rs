@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 /// Deletes all cache files in mise
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
-pub struct CacheClear {
+pub(super) struct CacheClear {
     /// Tool(s) to clear cache for
     /// e.g.: node, python
     tool: Option<Vec<String>>,
@@ -26,7 +26,7 @@ pub struct CacheClear {
 }
 
 impl CacheClear {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         if let Some(task_name) = &self.task {
             let (config, tasks) = super::task::resolve_tasks(task_name).await?;
             let mut entries = 0;

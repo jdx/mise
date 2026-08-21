@@ -79,7 +79,7 @@ fn netrc_path() -> PathBuf {
 /// Look up credentials for a given host from the netrc file
 ///
 /// Returns `Some((login, password))` if credentials are found, `None` otherwise
-pub fn get_credentials(host: &str) -> Option<(String, String)> {
+pub(crate) fn get_credentials(host: &str) -> Option<(String, String)> {
     let netrc = NETRC.as_ref()?;
 
     // First try exact host match

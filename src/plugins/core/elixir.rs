@@ -24,12 +24,12 @@ use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct ElixirPlugin {
+pub(super) struct ElixirPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl ElixirPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("elixir")),
         }

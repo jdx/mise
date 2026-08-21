@@ -12,14 +12,14 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
-pub enum AccountState {
+pub(crate) enum AccountState {
     #[default]
     Present,
     Absent,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub struct GroupTomlConfig {
+pub(crate) struct GroupTomlConfig {
     #[serde(default)]
     pub state: AccountState,
     pub gid: Option<u32>,
@@ -28,7 +28,7 @@ pub struct GroupTomlConfig {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
-pub struct UserTomlConfig {
+pub(crate) struct UserTomlConfig {
     #[serde(default)]
     pub state: AccountState,
     pub uid: Option<u32>,
@@ -49,7 +49,7 @@ pub struct UserTomlConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct GroupRequest {
+pub(crate) struct GroupRequest {
     pub name: String,
     pub state: AccountState,
     pub gid: Option<u32>,
@@ -58,7 +58,7 @@ pub struct GroupRequest {
 }
 
 #[derive(Clone, Debug)]
-pub struct UserRequest {
+pub(crate) struct UserRequest {
     pub name: String,
     pub state: AccountState,
     pub uid: Option<u32>,
@@ -76,7 +76,7 @@ pub struct UserRequest {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct AccountRequests {
+pub(crate) struct AccountRequests {
     pub groups: Vec<GroupRequest>,
     pub users: Vec<UserRequest>,
 }
@@ -160,7 +160,7 @@ struct AccountPlan {
     actions: Vec<AccountAction>,
 }
 
-pub fn requests_from_config(config: &Config) -> Result<AccountRequests> {
+pub(crate) fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     let mut groups = IndexMap::new();
     let mut users = IndexMap::new();
     for cf in config.config_files.values() {
@@ -191,7 +191,7 @@ pub fn requests_from_config(config: &Config) -> Result<AccountRequests> {
     Ok(AccountRequests { groups, users })
 }
 
-pub fn prepare_requests_from_config(config: &Config) -> Result<AccountRequests> {
+pub(crate) fn prepare_requests_from_config(config: &Config) -> Result<AccountRequests> {
     requests_from_config(config)
 }
 
@@ -236,7 +236,7 @@ impl GroupRequest {
         })
     }
 
-    pub fn plan(&self) -> ResourcePlan {
+    pub(crate) fn plan(&self) -> ResourcePlan {
         let id = ResourceId::new("group", &self.name);
         let desired = match (self.state, self.gid) {
             (AccountState::Absent, _) => "absent".to_string(),
@@ -405,7 +405,7 @@ impl UserRequest {
         })
     }
 
-    pub fn plan(&self) -> ResourcePlan {
+    pub(crate) fn plan(&self) -> ResourcePlan {
         let id = ResourceId::new("user", &self.name);
         let desired = self.desired();
         match (&self.inspection, self.state) {
@@ -495,7 +495,7 @@ impl UserRequest {
         }
     }
 
-    pub fn current_primary_group(&self) -> Option<&str> {
+    pub(crate) fn current_primary_group(&self) -> Option<&str> {
         match &self.inspection {
             UserInspection::Present { primary_group, .. } => Some(primary_group),
             UserInspection::Missing | UserInspection::IdCollision { .. } => None,
@@ -736,7 +736,7 @@ fn validate_account_path(name: &str, field: &str, path: &std::path::Path) -> Res
     Ok(())
 }
 
-pub fn plans(requests: &AccountRequests) -> Vec<ResourcePlan> {
+pub(crate) fn plans(requests: &AccountRequests) -> Vec<ResourcePlan> {
     requests
         .groups
         .iter()
@@ -745,7 +745,7 @@ pub fn plans(requests: &AccountRequests) -> Vec<ResourcePlan> {
         .collect()
 }
 
-pub fn apply(requests: &AccountRequests, dry_run: bool, yes: bool) -> Result<bool> {
+pub(crate) fn apply(requests: &AccountRequests, dry_run: bool, yes: bool) -> Result<bool> {
     let mut actions = vec![];
     let mut unknown = vec![];
     for group in requests
@@ -864,7 +864,7 @@ where
     Ok(())
 }
 
-pub fn apply_privileged_plan_from_stdin() -> Result<()> {
+pub(crate) fn apply_privileged_plan_from_stdin() -> Result<()> {
     if !cfg!(target_os = "linux") {
         bail!("bootstrap users and groups are only supported on Linux");
     }

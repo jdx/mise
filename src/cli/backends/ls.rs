@@ -5,10 +5,10 @@ use strum::IntoEnumIterator;
 /// List built-in backends
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct BackendsLs {}
+pub(super) struct BackendsLs {}
 
 impl BackendsLs {
-    pub fn run(self) -> Result<()> {
+    pub(super) fn run(self) -> Result<()> {
         let mut backends = BackendType::iter().collect::<Vec<BackendType>>();
         backends.retain(|f| !matches!(f, BackendType::Unknown));
 

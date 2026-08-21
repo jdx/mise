@@ -14,7 +14,7 @@ use crate::hash::{file_hash_blake3, hash_to_str};
 /// run and the output-rule identity used to select them.
 /// Persisted to `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
-pub struct DepsState {
+pub(crate) struct DepsState {
     /// provider_id → (relative_path → blake3_hex)
     #[serde(default)]
     pub providers: BTreeMap<String, BTreeMap<String, String>>,
@@ -35,7 +35,7 @@ pub struct DepsState {
 
 impl DepsState {
     /// Load state for a project, returning default if not found.
-    pub fn load(project_root: &Path) -> Self {
+    pub(crate) fn load(project_root: &Path) -> Self {
         let path = state_path(project_root);
         if !path.exists() {
             return Self::default();
@@ -56,7 +56,7 @@ impl DepsState {
     }
 
     /// Save state for a project.
-    pub fn save(&self, project_root: &Path) -> Result<()> {
+    pub(crate) fn save(&self, project_root: &Path) -> Result<()> {
         let path = state_path(project_root);
         file::create_dir_all(path.parent().unwrap())?;
         let contents = toml::to_string_pretty(self)?;
@@ -65,43 +65,43 @@ impl DepsState {
     }
 
     /// Get stored hashes for a provider, or None if not previously recorded.
-    pub fn get_hashes(&self, provider_id: &str) -> Option<&BTreeMap<String, String>> {
+    pub(crate) fn get_hashes(&self, provider_id: &str) -> Option<&BTreeMap<String, String>> {
         self.providers.get(provider_id)
     }
 
     /// Update stored hashes for a provider.
-    pub fn set_hashes(&mut self, provider_id: &str, hashes: BTreeMap<String, String>) {
+    pub(crate) fn set_hashes(&mut self, provider_id: &str, hashes: BTreeMap<String, String>) {
         self.providers.insert(provider_id.to_string(), hashes);
     }
 
     /// Get outputs that existed at the last successful run, or None if not
     /// previously recorded.
-    pub fn get_seen_outputs(&self, provider_id: &str) -> Option<&Vec<String>> {
+    pub(crate) fn get_seen_outputs(&self, provider_id: &str) -> Option<&Vec<String>> {
         self.seen_outputs.get(provider_id)
     }
 
     /// Record outputs that exist after a successful run.
-    pub fn set_seen_outputs(&mut self, provider_id: &str, outputs: Vec<String>) {
+    pub(crate) fn set_seen_outputs(&mut self, provider_id: &str, outputs: Vec<String>) {
         self.seen_outputs.insert(provider_id.to_string(), outputs);
     }
 
     /// Get the effective command hash recorded after the last successful run.
-    pub fn get_command_hash(&self, provider_id: &str) -> Option<&str> {
+    pub(crate) fn get_command_hash(&self, provider_id: &str) -> Option<&str> {
         self.command_hashes.get(provider_id).map(String::as_str)
     }
 
     /// Record the effective command hash after a successful run.
-    pub fn set_command_hash(&mut self, provider_id: &str, hash: String) {
+    pub(crate) fn set_command_hash(&mut self, provider_id: &str, hash: String) {
         self.command_hashes.insert(provider_id.to_string(), hash);
     }
 
     /// Get the output-rule identity used to record a provider's seen outputs.
-    pub fn get_output_rules(&self, provider_id: &str) -> Option<&String> {
+    pub(crate) fn get_output_rules(&self, provider_id: &str) -> Option<&String> {
         self.output_rule_hashes.get(provider_id)
     }
 
     /// Record the output-rule identity associated with a provider's outputs.
-    pub fn set_output_rules(&mut self, provider_id: &str, rules: String) {
+    pub(crate) fn set_output_rules(&mut self, provider_id: &str, rules: String) {
         self.output_rule_hashes
             .insert(provider_id.to_string(), rules);
     }
@@ -110,7 +110,7 @@ impl DepsState {
 /// Stringify a path relative to the project root using the same convention as
 /// the stored state (forward-slash relative path, falling back to the absolute
 /// path when the path is not under `project_root`).
-pub fn relative_str(path: &Path, project_root: &Path) -> String {
+pub(crate) fn relative_str(path: &Path, project_root: &Path) -> String {
     path.strip_prefix(project_root)
         .unwrap_or(path)
         .to_string_lossy()
@@ -121,7 +121,10 @@ pub fn relative_str(path: &Path, project_root: &Path) -> String {
 ///
 /// Returns a map of relative_path → blake3_hex. Directories are skipped
 /// (only regular files are hashed). Non-existent files are omitted.
-pub fn hash_sources(sources: &[PathBuf], project_root: &Path) -> Result<BTreeMap<String, String>> {
+pub(crate) fn hash_sources(
+    sources: &[PathBuf],
+    project_root: &Path,
+) -> Result<BTreeMap<String, String>> {
     let mut hashes = BTreeMap::new();
 
     for source in sources {

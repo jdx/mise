@@ -17,7 +17,7 @@ use crate::toolset::{ConfigScope, ToolsetBuilder};
 /// — the convention at the time of writing. If that convention ever inverts,
 /// this logic still picks the first value it sees and just changes which
 /// config wins; it won't silently drop fields or return garbage.
-pub fn merged_oci_config_from<'a>(
+pub(super) fn merged_oci_config_from<'a>(
     config_files: impl IntoIterator<
         Item = &'a std::sync::Arc<dyn crate::config::config_file::ConfigFile>,
     >,
@@ -44,7 +44,7 @@ fn resolve_copy_paths(oci: &mut OciConfig, base: &Path) {
 
 /// Convenience wrapper that merges `[oci]` across *all* loaded configs.
 /// Used when the caller has explicitly opted into global/system scope.
-pub fn merged_oci_config(config: &Config) -> OciConfig {
+pub(super) fn merged_oci_config(config: &Config) -> OciConfig {
     merged_oci_config_from(config.config_files.values())
 }
 
@@ -62,7 +62,7 @@ pub fn merged_oci_config(config: &Config) -> OciConfig {
 /// builder. See discussion #9690.
 ///
 /// Set `include_global = true` to revert to the merge-everything behavior.
-pub async fn perform_build(opts: BuildOptions, include_global: bool) -> Result<BuildOutput> {
+pub(super) async fn perform_build(opts: BuildOptions, include_global: bool) -> Result<BuildOutput> {
     let config = Config::get().await?;
     if include_global {
         let ts = ToolsetBuilder::new().build(&config).await?;
@@ -148,7 +148,7 @@ fn reject_unsupported_system_defaults(config_files: &ConfigMap) -> Result<()> {
     Ok(())
 }
 
-pub fn short_digest(d: &str) -> String {
+pub(super) fn short_digest(d: &str) -> String {
     let hex = d.trim_start_matches("sha256:");
     if hex.len() >= 12 {
         format!("sha256:{}", &hex[..12])

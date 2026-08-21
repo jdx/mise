@@ -14,7 +14,7 @@ use super::reconcile;
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SyncPython {
+pub(super) struct SyncPython {
     /// Get tool versions from pyenv
     #[clap(long)]
     pyenv: bool,
@@ -25,7 +25,7 @@ pub struct SyncPython {
 }
 
 impl SyncPython {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let python = backend::get(&"python".into()).unwrap();
         let mut providers = vec![];
         if self.pyenv {

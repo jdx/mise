@@ -16,7 +16,7 @@ use crate::{config, dirs, exit, file};
 /// This only removes the installed version, it does not modify mise.toml.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Uninstall {
+pub(crate) struct Uninstall {
     /// Tool(s) to remove
     #[clap(value_name = "INSTALLED_TOOL@VERSION", required_unless_present = "all")]
     installed_tool: Vec<ToolArg>,
@@ -41,7 +41,7 @@ impl Uninstall {
         self.dry_run || self.dry_run_code
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let tool_versions = if self.installed_tool.is_empty() && self.all {
             self.get_all_tool_versions(&config).await?

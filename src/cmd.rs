@@ -86,7 +86,7 @@ macro_rules! cmd {
 ///
 ///     assert_eq!("foo bar baz", output.unwrap());
 /// ```
-pub fn cmd<T, U>(program: T, args: U) -> Expression
+pub(crate) fn cmd<T, U>(program: T, args: U) -> Expression
 where
     T: IntoExecutablePath,
     U: IntoIterator,
@@ -107,7 +107,7 @@ where
 
 type OutputObserver<'a> = Box<dyn Fn(&str) + Send + 'a>;
 
-pub struct CmdLineRunner<'a> {
+pub(crate) struct CmdLineRunner<'a> {
     cmd: Command,
     pr: Option<&'a dyn SingleReport>,
     pr_arc: Option<Arc<Box<dyn SingleReport>>>,
@@ -286,7 +286,7 @@ fn kill_pids_immediately(pids: &HashSet<u32>) {
 /// while the PID registry was locked; a deadlocked panic hook would prevent the
 /// process from ever reaching abort.
 #[cfg(panic = "abort")]
-pub fn kill_all_on_panic() {
+pub(crate) fn kill_all_on_panic() {
     let pids = match RUNNING_PIDS.try_lock() {
         Ok(pids) => pids,
         Err(TryLockError::Poisoned(err)) => err.into_inner(),
@@ -530,7 +530,7 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    pub fn new<P: AsRef<OsStr>>(program: P) -> Self {
+    pub(crate) fn new<P: AsRef<OsStr>>(program: P) -> Self {
         let mut cmd = Command::new(program);
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::piped());
@@ -553,7 +553,7 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    pub fn with_sandbox(mut self, sandbox: crate::sandbox::SandboxConfig) -> Self {
+    pub(crate) fn with_sandbox(mut self, sandbox: crate::sandbox::SandboxConfig) -> Self {
         if sandbox.is_active() {
             self.sandbox = Some(sandbox);
         }
@@ -561,7 +561,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     #[cfg(unix)]
-    pub fn kill_all(signal: nix::sys::signal::Signal) {
+    pub(crate) fn kill_all(signal: nix::sys::signal::Signal) {
         let use_pgroup = should_use_pgroup();
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
@@ -589,7 +589,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     #[cfg(windows)]
-    pub fn kill_all() {
+    pub(crate) fn kill_all() {
         let pids = RUNNING_PIDS.lock().unwrap();
         for pid in pids.iter() {
             if let Err(e) = std::process::Command::new("taskkill")
@@ -604,32 +604,32 @@ impl<'a> CmdLineRunner<'a> {
         }
     }
 
-    pub fn stdin<T: Into<Stdio>>(mut self, cfg: T) -> Self {
+    pub(crate) fn stdin<T: Into<Stdio>>(mut self, cfg: T) -> Self {
         self.cmd.stdin(cfg);
         self
     }
 
-    pub fn stdout<T: Into<Stdio>>(mut self, cfg: T) -> Self {
+    pub(crate) fn stdout<T: Into<Stdio>>(mut self, cfg: T) -> Self {
         self.cmd.stdout(cfg);
         self
     }
 
-    pub fn stderr<T: Into<Stdio>>(mut self, cfg: T) -> Self {
+    pub(crate) fn stderr<T: Into<Stdio>>(mut self, cfg: T) -> Self {
         self.cmd.stderr(cfg);
         self
     }
 
-    pub fn redact(mut self, redactions: impl IntoIterator<Item = String>) -> Self {
+    pub(crate) fn redact(mut self, redactions: impl IntoIterator<Item = String>) -> Self {
         self.redactor = self.redactor.with_additional(redactions);
         self
     }
 
-    pub fn with_on_stdout<F: Fn(String) + Send + 'a>(mut self, on_stdout: F) -> Self {
+    pub(crate) fn with_on_stdout<F: Fn(String) + Send + 'a>(mut self, on_stdout: F) -> Self {
         self.on_stdout = Some(Box::new(on_stdout));
         self
     }
 
-    pub fn with_on_stderr<F: Fn(String) + Send + 'a>(mut self, on_stderr: F) -> Self {
+    pub(crate) fn with_on_stderr<F: Fn(String) + Send + 'a>(mut self, on_stderr: F) -> Self {
         self.on_stderr = Some(Box::new(on_stderr));
         self
     }
@@ -644,17 +644,17 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
+    pub(crate) fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
         self.cmd.current_dir(dir);
         self
     }
 
-    pub fn env_clear(mut self) -> Self {
+    pub(crate) fn env_clear(mut self) -> Self {
         self.cmd.env_clear();
         self
     }
 
-    pub fn env<K, V>(mut self, key: K, val: V) -> Self
+    pub(crate) fn env<K, V>(mut self, key: K, val: V) -> Self
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
@@ -663,7 +663,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn env_remove<K>(mut self, key: K) -> Self
+    pub(crate) fn env_remove<K>(mut self, key: K) -> Self
     where
         K: AsRef<OsStr>,
     {
@@ -671,7 +671,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn envs<I, K, V>(mut self, vars: I) -> Self
+    pub(crate) fn envs<I, K, V>(mut self, vars: I) -> Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -681,7 +681,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn env_values<I, K>(mut self, vars: I) -> Self
+    pub(crate) fn env_values<I, K>(mut self, vars: I) -> Self
     where
         I: IntoIterator<Item = (K, EnvValue)>,
         K: AsRef<OsStr>,
@@ -695,7 +695,7 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn prepend_path(mut self, paths: Vec<PathBuf>) -> eyre::Result<Self> {
+    pub(crate) fn prepend_path(mut self, paths: Vec<PathBuf>) -> eyre::Result<Self> {
         let existing = self
             .get_env(&PATH_KEY)
             .map(|c| c.to_owned())
@@ -717,7 +717,7 @@ impl<'a> CmdLineRunner<'a> {
         None
     }
 
-    pub fn opt_args<S: AsRef<OsStr>>(mut self, arg: &str, values: Option<Vec<S>>) -> Self {
+    pub(crate) fn opt_args<S: AsRef<OsStr>>(mut self, arg: &str, values: Option<Vec<S>>) -> Self {
         if let Some(values) = values {
             for value in values {
                 self.cmd.arg(arg);
@@ -727,12 +727,12 @@ impl<'a> CmdLineRunner<'a> {
         self
     }
 
-    pub fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+    pub(crate) fn arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         self.cmd.arg(arg.as_ref());
         self
     }
 
-    pub fn args<I, S>(mut self, args: I) -> Self
+    pub(crate) fn args<I, S>(mut self, args: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -747,7 +747,7 @@ impl<'a> CmdLineRunner<'a> {
     /// [`crate::path::cmd_verbatim_args`]) so inner double quotes survive — the
     /// same fix the inline-task path uses. Otherwise (Unix, or a non-cmd Windows
     /// shell) this is exactly `self.args(flags).arg(body)`. See #9355.
-    pub fn cmd_body_args(self, flags: &[String], body: &str) -> Self {
+    pub(crate) fn cmd_body_args(self, flags: &[String], body: &str) -> Self {
         #[cfg(windows)]
         {
             let program = std::path::PathBuf::from(self.cmd.as_std().get_program());
@@ -769,43 +769,43 @@ impl<'a> CmdLineRunner<'a> {
     /// must reach cmd unquoted. See `TaskExecutor::get_cmd_program_and_args`
     /// and discussion #9355.
     #[cfg(windows)]
-    pub fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
+    pub(crate) fn raw_arg<S: AsRef<OsStr>>(mut self, arg: S) -> Self {
         // tokio's `Command` exposes `raw_arg` as an inherent method, so the
         // `std::os::windows::process::CommandExt` trait import is unnecessary.
         self.cmd.raw_arg(arg);
         self
     }
 
-    pub fn with_pr(mut self, pr: &'a dyn SingleReport) -> Self {
+    pub(crate) fn with_pr(mut self, pr: &'a dyn SingleReport) -> Self {
         self.pr = Some(pr);
         self
     }
-    pub fn with_pr_arc(mut self, pr: Arc<Box<dyn SingleReport>>) -> Self {
+    pub(crate) fn with_pr_arc(mut self, pr: Arc<Box<dyn SingleReport>>) -> Self {
         self.pr_arc = Some(pr);
         self
     }
-    pub fn raw(mut self, raw: bool) -> Self {
+    pub(crate) fn raw(mut self, raw: bool) -> Self {
         self.raw = raw;
         self
     }
 
-    pub fn with_pass_signals(&mut self) -> &mut Self {
+    pub(crate) fn with_pass_signals(&mut self) -> &mut Self {
         self.pass_signals = true;
         self
     }
 
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+    pub(crate) fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = Some(timeout);
         self
     }
 
-    pub fn stdin_string(mut self, input: impl Into<String>) -> Self {
+    pub(crate) fn stdin_string(mut self, input: impl Into<String>) -> Self {
         self.cmd.stdin(Stdio::piped());
         self.stdin = Some(input.into());
         self
     }
 
-    pub fn execute(mut self) -> Result<()> {
+    pub(crate) fn execute(mut self) -> Result<()> {
         let read_lock = raw_read_lock_blocking();
         debug!("$ {self}");
         if Settings::get().raw || self.raw {
@@ -976,13 +976,13 @@ impl<'a> CmdLineRunner<'a> {
         Ok(())
     }
 
-    pub async fn execute_async(self) -> Result<()> {
+    pub(crate) async fn execute_async(self) -> Result<()> {
         self.execute_async_with_cancel_check(|| false).await
     }
 
     /// Execute a command while preventing cancellation from being lost between
     /// the pre-spawn check and PID registration.
-    pub async fn execute_async_with_cancel_check(
+    pub(crate) async fn execute_async_with_cancel_check(
         mut self,
         is_cancelled: impl Fn() -> bool + Send + Sync,
     ) -> Result<()> {
@@ -1189,7 +1189,10 @@ impl<'a> CmdLineRunner<'a> {
     /// Unlike `read`, this never buffers the complete output in memory. The
     /// combined byte limit also prevents commands that emit indefinitely from
     /// consuming unbounded resources.
-    pub async fn execute_hashes_async(self, max_output_bytes: usize) -> Result<(String, String)> {
+    pub(crate) async fn execute_hashes_async(
+        self,
+        max_output_bytes: usize,
+    ) -> Result<(String, String)> {
         self.execute_hashes_async_with_drain_timeout(max_output_bytes, PIPE_DRAIN_TIMEOUT)
             .await
     }
@@ -1379,7 +1382,7 @@ impl<'a> CmdLineRunner<'a> {
     }
 
     /// Run the command and return stdout, even when raw mode is enabled.
-    pub async fn read(mut self) -> Result<String> {
+    pub(crate) async fn read(mut self) -> Result<String> {
         let _read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
@@ -1530,7 +1533,7 @@ impl<'a> CmdLineRunner<'a> {
 
     /// Prepare sandbox restrictions on the command. Must be called before execute()
     /// when sandbox is configured. This is async because macOS DNS resolution is async.
-    pub async fn apply_sandbox(&mut self) -> eyre::Result<()> {
+    pub(crate) async fn apply_sandbox(&mut self) -> eyre::Result<()> {
         let Some(sandbox) = self.sandbox.take() else {
             return Ok(());
         };
@@ -1813,7 +1816,7 @@ enum ChildProcessOutput {
 /// `program` is `AsRef<OsStr>` rather than `&str` so callers can pass a resolved path
 /// straight through — `Backend::spawn_program` returns an `OsString`, and forcing it
 /// through `to_string_lossy()` here would mangle a Windows path that is not valid UTF-8.
-pub async fn cmd_read_async<P, I, K, V>(program: P, args: &[&str], env: I) -> Result<String>
+pub(crate) async fn cmd_read_async<P, I, K, V>(program: P, args: &[&str], env: I) -> Result<String>
 where
     P: AsRef<OsStr>,
     I: IntoIterator<Item = (K, V)>,
@@ -1855,7 +1858,7 @@ where
 /// only adding the provided extra variables on top.
 ///
 /// Use this for core plugins that need the ambient PATH / locale / etc.
-pub async fn cmd_read_async_inherited_env<I, K, V>(
+pub(crate) async fn cmd_read_async_inherited_env<I, K, V>(
     program: &str,
     args: &[&str],
     extra_env: I,

@@ -9,7 +9,7 @@ use std::str::FromStr;
 use crate::tera::{TeraEngine, contains_template_syntax, render_str};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct TaskDep {
+pub(crate) struct TaskDep {
     pub task: String,
     pub args: Vec<String>,
     pub env: IndexMap<String, String>,
@@ -17,7 +17,7 @@ pub struct TaskDep {
 }
 
 impl TaskDep {
-    pub fn render(
+    pub(crate) fn render(
         &mut self,
         tera: &mut TeraEngine,
         tera_ctx: &tera::Context,
@@ -50,7 +50,7 @@ impl TaskDep {
         Ok(true)
     }
 
-    pub fn parse_shell_style_env(&mut self) -> crate::Result<&mut Self> {
+    pub(crate) fn parse_shell_style_env(&mut self) -> crate::Result<&mut Self> {
         // Parse shell-style "FOO=bar BAZ=qux taskname arg1 arg2" if args/env not already set
         if self.args.is_empty() && self.env.is_empty() {
             let s = self.task.clone();

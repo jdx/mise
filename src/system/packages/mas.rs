@@ -13,12 +13,12 @@ use crate::config::Config;
 use crate::result::Result;
 
 /// Mac App Store apps via the `mas` CLI.
-pub struct MasManager {
+pub(crate) struct MasManager {
     bin: OnceCell<PathBuf>,
 }
 
 impl MasManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             bin: OnceCell::new(),
         }

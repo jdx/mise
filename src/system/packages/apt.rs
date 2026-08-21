@@ -9,10 +9,10 @@ use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPack
 use crate::result::Result;
 use crate::system::sudo;
 
-pub struct AptManager {}
+pub(crate) struct AptManager {}
 
 impl AptManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 

@@ -4,7 +4,7 @@ use unicode_width::UnicodeWidthStr;
 
 /// Inline text editor state
 #[derive(Debug, Clone)]
-pub struct InlineEdit {
+pub(crate) struct InlineEdit {
     /// The text being edited
     buffer: String,
     /// Cursor position (character index, not byte)
@@ -16,7 +16,7 @@ pub struct InlineEdit {
 
 impl InlineEdit {
     /// Create a new inline editor with initial value
-    pub fn new(initial: &str) -> Self {
+    pub(crate) fn new(initial: &str) -> Self {
         let len = initial.chars().count();
         Self {
             buffer: initial.to_string(),
@@ -26,37 +26,37 @@ impl InlineEdit {
     }
 
     /// Get the current buffer contents
-    pub fn buffer(&self) -> &str {
+    pub(crate) fn buffer(&self) -> &str {
         &self.buffer
     }
 
     /// Get the cursor position (character index)
-    pub fn cursor(&self) -> usize {
+    pub(crate) fn cursor(&self) -> usize {
         self.cursor
     }
 
     /// Get display width up to cursor position
     #[allow(dead_code)]
-    pub fn cursor_display_width(&self) -> usize {
+    pub(crate) fn cursor_display_width(&self) -> usize {
         let text_before_cursor: String = self.buffer.chars().take(self.cursor).collect();
         text_before_cursor.width()
     }
 
     /// Get the original value
     #[allow(dead_code)]
-    pub fn original(&self) -> &str {
+    pub(crate) fn original(&self) -> &str {
         &self.original
     }
 
     /// Move cursor left
-    pub fn left(&mut self) {
+    pub(crate) fn left(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
         }
     }
 
     /// Move cursor right
-    pub fn right(&mut self) {
+    pub(crate) fn right(&mut self) {
         let len = self.buffer.chars().count();
         if self.cursor < len {
             self.cursor += 1;
@@ -64,17 +64,17 @@ impl InlineEdit {
     }
 
     /// Move cursor to start
-    pub fn home(&mut self) {
+    pub(crate) fn home(&mut self) {
         self.cursor = 0;
     }
 
     /// Move cursor to end
-    pub fn end(&mut self) {
+    pub(crate) fn end(&mut self) {
         self.cursor = self.buffer.chars().count();
     }
 
     /// Insert a character at cursor position
-    pub fn insert(&mut self, c: char) {
+    pub(crate) fn insert(&mut self, c: char) {
         let byte_pos = self.cursor_byte_position();
         self.buffer.insert(byte_pos, c);
         self.cursor += 1;
@@ -82,14 +82,14 @@ impl InlineEdit {
 
     /// Insert a string at cursor position
     #[allow(dead_code)]
-    pub fn insert_str(&mut self, s: &str) {
+    pub(crate) fn insert_str(&mut self, s: &str) {
         let byte_pos = self.cursor_byte_position();
         self.buffer.insert_str(byte_pos, s);
         self.cursor += s.chars().count();
     }
 
     /// Delete character before cursor (backspace)
-    pub fn backspace(&mut self) {
+    pub(crate) fn backspace(&mut self) {
         if self.cursor > 0 {
             self.cursor -= 1;
             let byte_pos = self.cursor_byte_position();
@@ -102,7 +102,7 @@ impl InlineEdit {
     }
 
     /// Delete character at cursor (delete key)
-    pub fn delete(&mut self) {
+    pub(crate) fn delete(&mut self) {
         let len = self.buffer.chars().count();
         if self.cursor < len {
             let byte_pos = self.cursor_byte_position();
@@ -116,7 +116,7 @@ impl InlineEdit {
 
     /// Delete word before cursor (ctrl+backspace)
     #[allow(dead_code)]
-    pub fn delete_word(&mut self) {
+    pub(crate) fn delete_word(&mut self) {
         if self.cursor == 0 {
             return;
         }
@@ -143,25 +143,25 @@ impl InlineEdit {
 
     /// Clear the entire buffer
     #[allow(dead_code)]
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.buffer.clear();
         self.cursor = 0;
     }
 
     /// Confirm edit and return the final value
-    pub fn confirm(self) -> String {
+    pub(crate) fn confirm(self) -> String {
         self.buffer
     }
 
     /// Cancel edit and return the original value
     #[allow(dead_code)]
-    pub fn cancel(self) -> String {
+    pub(crate) fn cancel(self) -> String {
         self.original
     }
 
     /// Check if buffer has been modified
     #[allow(dead_code)]
-    pub fn is_modified(&self) -> bool {
+    pub(crate) fn is_modified(&self) -> bool {
         self.buffer != self.original
     }
 

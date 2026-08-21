@@ -41,20 +41,20 @@ const DT_STRSZ: i64 = 10;
 const DT_RPATH: i64 = 15;
 const DT_RUNPATH: i64 = 29;
 
-pub fn is_elf(content: &[u8]) -> bool {
+pub(super) fn is_elf(content: &[u8]) -> bool {
     content.len() >= 4 && content[..4] == [0x7f, b'E', b'L', b'F']
 }
 
 /// What to relocate to. `gcc_current` applies brew's `lib/gcc/<N>` ->
 /// `lib/gcc/current` rpath rewrite (disabled when pouring gcc itself).
-pub struct LinkageOpts {
+pub(super) struct LinkageOpts {
     pub prefix: String,
     pub cellar: String,
     pub gcc_current: bool,
 }
 
 impl LinkageOpts {
-    pub fn for_formula(name: &str) -> Self {
+    pub(super) fn for_formula(name: &str) -> Self {
         let is_gcc = name == "gcc" || name.starts_with("gcc@");
         LinkageOpts {
             prefix: super::prefix::prefix().to_string_lossy().to_string(),
@@ -188,7 +188,7 @@ fn round_up(v: u64, align: u64) -> u64 {
 
 /// Patch the interpreter and rpath of one ELF file in memory. Returns whether
 /// anything changed. No-op unless a bottling placeholder is present.
-pub fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> Result<bool> {
+pub(super) fn patch(content: &mut Vec<u8>, opts: &LinkageOpts, path: &Path) -> Result<bool> {
     if !is_elf(content) || content.len() < EHDR_SIZE {
         return Ok(false);
     }

@@ -25,7 +25,7 @@ mod source;
 pub(crate) mod venv;
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub enum RequiredValue {
+pub(crate) enum RequiredValue {
     #[default]
     False,
     True,
@@ -33,11 +33,11 @@ pub enum RequiredValue {
 }
 
 impl RequiredValue {
-    pub fn is_required(&self) -> bool {
+    pub(crate) fn is_required(&self) -> bool {
         !matches!(self, RequiredValue::False)
     }
 
-    pub fn help_text(&self) -> Option<&str> {
+    pub(crate) fn help_text(&self) -> Option<&str> {
         match self {
             RequiredValue::Help(text) => Some(text.as_str()),
             _ => None,
@@ -106,7 +106,7 @@ impl serde::Serialize for RequiredValue {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct EnvDirectiveOptions {
+pub(crate) struct EnvDirectiveOptions {
     #[serde(default)]
     pub(crate) tools: bool,
     #[serde(default)]
@@ -119,14 +119,14 @@ pub struct EnvDirectiveOptions {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
-pub enum EnvValue {
+pub(crate) enum EnvValue {
     String(String),
     Integer(i64),
     Boolean(bool),
 }
 
 impl EnvValue {
-    pub fn into_string(self) -> Option<String> {
+    pub(crate) fn into_string(self) -> Option<String> {
         match self {
             Self::String(value) => Some(value),
             Self::Integer(value) => Some(value.to_string()),
@@ -135,7 +135,7 @@ impl EnvValue {
         }
     }
 
-    pub fn into_default_string(self) -> Option<String> {
+    pub(crate) fn into_default_string(self) -> Option<String> {
         match self {
             Self::String(value) => Some(value),
             Self::Integer(value) => Some(value.to_string()),
@@ -192,7 +192,7 @@ impl From<EnvValue> for toml_edit::Value {
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum EnvDirective {
+pub(crate) enum EnvDirective {
     /// simple key/value pair
     Val(String, String, EnvDirectiveOptions),
     /// use a fallback value if the key is not already set
@@ -226,7 +226,7 @@ pub enum EnvDirective {
 }
 
 impl EnvDirective {
-    pub fn options(&self) -> &EnvDirectiveOptions {
+    pub(crate) fn options(&self) -> &EnvDirectiveOptions {
         match self {
             EnvDirective::Val(_, _, opts)
             | EnvDirective::Default(_, _, opts)
@@ -304,7 +304,7 @@ impl Display for EnvDirective {
 }
 
 #[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub enum AgeFormat {
+pub(crate) enum AgeFormat {
     #[serde(rename = "zstd")]
     Zstd,
     #[serde(rename = "raw")]
@@ -313,7 +313,7 @@ pub enum AgeFormat {
 }
 
 #[derive(Default, Clone)]
-pub struct EnvResults {
+pub(crate) struct EnvResults {
     pub env: IndexMap<String, (String, PathBuf)>,
     pub vars: IndexMap<String, (String, PathBuf)>,
     pub env_remove: BTreeSet<String>,
@@ -363,7 +363,7 @@ impl EnvDirectiveContext<'_> {
 }
 
 #[derive(Debug, Clone, Default)]
-pub enum ToolsFilter {
+pub(crate) enum ToolsFilter {
     ToolsOnly,
     #[default]
     NonToolsOnly,
@@ -376,7 +376,7 @@ pub enum ToolsFilter {
     ToolsOnlyVals,
 }
 
-pub struct EnvResolveOptions {
+pub(crate) struct EnvResolveOptions {
     pub vars: bool,
     pub tools: ToolsFilter,
     pub warn_on_missing_required: bool,
@@ -397,7 +397,7 @@ impl EnvResults {
     /// Value map for [`crate::config::Config::add_redactions_excluding`]: the values this
     /// resolution assigned, plus caller-supplied values for [`Self::caller_env_keys`], which
     /// are absent from [`Self::env`] because those directives never assign.
-    pub fn redactable_env(&self, caller_env: &EnvMap) -> EnvMap {
+    pub(crate) fn redactable_env(&self, caller_env: &EnvMap) -> EnvMap {
         let mut out: EnvMap = self
             .env
             .iter()
@@ -411,7 +411,7 @@ impl EnvResults {
         out
     }
 
-    pub async fn resolve(
+    pub(crate) async fn resolve(
         config: &Arc<Config>,
         ctx: tera::Context,
         initial: &EnvMap,
@@ -423,7 +423,7 @@ impl EnvResults {
 
     /// [`Self::resolve`] for callers that already have a resolved toolset. See
     /// [`EnvDirectiveContext::toolset`] for why a directive would want it.
-    pub async fn resolve_with_toolset(
+    pub(crate) async fn resolve_with_toolset(
         config: &Arc<Config>,
         mut ctx: tera::Context,
         initial: &EnvMap,
@@ -1037,7 +1037,7 @@ impl EnvResults {
         Ok(output)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.env.is_empty()
             && self.vars.is_empty()
             && self.env_remove.is_empty()

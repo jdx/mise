@@ -14,7 +14,7 @@ use clap::Command;
 use eyre::{Result, bail, eyre};
 use heck::ToKebabCase;
 use regex::Regex;
-pub use script_manager::{Script, ScriptManager};
+pub(crate) use script_manager::{Script, ScriptManager};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock as Lazy;
@@ -24,14 +24,14 @@ use std::{
     sync::Arc,
 };
 
-pub mod asdf_plugin;
-pub mod core;
-pub mod mise_plugin_toml;
-pub mod script_manager;
-pub mod vfox_plugin;
+pub(crate) mod asdf_plugin;
+pub(crate) mod core;
+pub(crate) mod mise_plugin_toml;
+pub(crate) mod script_manager;
+pub(crate) mod vfox_plugin;
 
 #[derive(Debug, Clone, Copy, PartialEq, strum::EnumString, strum::Display)]
-pub enum PluginType {
+pub(crate) enum PluginType {
     Asdf,
     Vfox,
     VfoxBackend,
@@ -39,7 +39,7 @@ pub enum PluginType {
 }
 
 #[derive(Debug)]
-pub enum PluginEnum {
+pub(crate) enum PluginEnum {
     Asdf(Arc<AsdfPlugin>),
     Vfox(Arc<VfoxPlugin>),
     VfoxBackend(Arc<VfoxPlugin>),
@@ -47,7 +47,7 @@ pub enum PluginEnum {
 }
 
 impl PluginEnum {
-    pub fn name(&self) -> &str {
+    pub(crate) fn name(&self) -> &str {
         match self {
             PluginEnum::Asdf(plugin) => plugin.name(),
             PluginEnum::Vfox(plugin) => plugin.name(),
@@ -56,7 +56,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn path(&self) -> PathBuf {
+    pub(crate) fn path(&self) -> PathBuf {
         match self {
             PluginEnum::Asdf(plugin) => plugin.path(),
             PluginEnum::Vfox(plugin) => plugin.path(),
@@ -65,7 +65,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn get_plugin_type(&self) -> PluginType {
+    pub(crate) fn get_plugin_type(&self) -> PluginType {
         match self {
             PluginEnum::Asdf(_) => PluginType::Asdf,
             PluginEnum::Vfox(_) => PluginType::Vfox,
@@ -74,7 +74,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn get_remote_url(&self) -> eyre::Result<Option<String>> {
+    pub(crate) fn get_remote_url(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.get_remote_url(),
             PluginEnum::Vfox(plugin) => plugin.get_remote_url(),
@@ -83,7 +83,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn set_remote_url(&self, url: String) {
+    pub(crate) fn set_remote_url(&self, url: String) {
         match self {
             PluginEnum::Asdf(plugin) => plugin.set_remote_url(url),
             PluginEnum::Vfox(plugin) => plugin.set_remote_url(url),
@@ -92,7 +92,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
+    pub(crate) fn current_abbrev_ref(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_abbrev_ref(),
             PluginEnum::Vfox(plugin) => plugin.current_abbrev_ref(),
@@ -101,7 +101,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn current_sha_short(&self) -> eyre::Result<Option<String>> {
+    pub(crate) fn current_sha_short(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.current_sha_short(),
             PluginEnum::Vfox(plugin) => plugin.current_sha_short(),
@@ -110,7 +110,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn remote_sha(&self) -> eyre::Result<Option<String>> {
+    pub(crate) fn remote_sha(&self) -> eyre::Result<Option<String>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.remote_sha(),
             PluginEnum::Vfox(plugin) => plugin.remote_sha(),
@@ -119,7 +119,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn external_commands(&self) -> eyre::Result<Vec<Command>> {
+    pub(crate) fn external_commands(&self) -> eyre::Result<Vec<Command>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),
@@ -128,7 +128,11 @@ impl PluginEnum {
         }
     }
 
-    pub fn execute_external_command(&self, command: &str, args: Vec<String>) -> eyre::Result<()> {
+    pub(crate) fn execute_external_command(
+        &self,
+        command: &str,
+        args: Vec<String>,
+    ) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.execute_external_command(command, args),
             PluginEnum::Vfox(plugin) => plugin.execute_external_command(command, args),
@@ -137,7 +141,11 @@ impl PluginEnum {
         }
     }
 
-    pub async fn update(&self, pr: &dyn SingleReport, gitref: Option<String>) -> eyre::Result<()> {
+    pub(crate) async fn update(
+        &self,
+        pr: &dyn SingleReport,
+        gitref: Option<String>,
+    ) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.update(pr, gitref).await,
             PluginEnum::Vfox(plugin) => plugin.update(pr, gitref).await,
@@ -146,7 +154,7 @@ impl PluginEnum {
         }
     }
 
-    pub async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
+    pub(crate) async fn uninstall(&self, pr: &dyn SingleReport) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.uninstall(pr).await,
             PluginEnum::Vfox(plugin) => plugin.uninstall(pr).await,
@@ -155,7 +163,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn is_installed(&self) -> bool {
+    pub(crate) fn is_installed(&self) -> bool {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed(),
             PluginEnum::Vfox(plugin) => plugin.is_installed(),
@@ -164,7 +172,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn is_installed_err(&self) -> eyre::Result<()> {
+    pub(crate) fn is_installed_err(&self) -> eyre::Result<()> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.is_installed_err(),
             PluginEnum::Vfox(plugin) => plugin.is_installed_err(),
@@ -173,7 +181,7 @@ impl PluginEnum {
         }
     }
 
-    pub async fn ensure_installed(
+    pub(crate) async fn ensure_installed(
         &self,
         config: &Arc<Config>,
         mpr: &MultiProgressReport,
@@ -194,7 +202,7 @@ impl PluginEnum {
 }
 
 impl PluginType {
-    pub fn from_full(full: &str) -> eyre::Result<Self> {
+    pub(crate) fn from_full(full: &str) -> eyre::Result<Self> {
         match full.split(':').next() {
             Some("asdf") => Ok(Self::Asdf),
             Some("vfox") => Ok(Self::Vfox),
@@ -204,7 +212,7 @@ impl PluginType {
         }
     }
 
-    pub fn from_plugin_config(key: &str) -> (Self, &str) {
+    pub(crate) fn from_plugin_config(key: &str) -> (Self, &str) {
         if let Some(name) = key.strip_prefix("vfox:") {
             (Self::Vfox, name)
         } else if let Some(name) = key.strip_prefix("vfox-backend:") {
@@ -219,7 +227,7 @@ impl PluginType {
         }
     }
 
-    pub fn from_plugin_path(path: &Path) -> Option<Self> {
+    pub(crate) fn from_plugin_path(path: &Path) -> Option<Self> {
         if path.join("metadata.lua").exists() {
             let hooks = path.join("hooks");
             if hooks.join("backend_install.lua").exists() {
@@ -238,7 +246,7 @@ impl PluginType {
         }
     }
 
-    pub fn plugin(&self, short: String) -> PluginEnum {
+    pub(crate) fn plugin(&self, short: String) -> PluginEnum {
         let path = dirs::PLUGINS.join(short.to_kebab_case());
         match self {
             PluginType::Asdf => PluginEnum::Asdf(Arc::new(AsdfPlugin::new(short, path))),
@@ -253,7 +261,7 @@ impl PluginType {
 
 /// Warn if a plugin is an env-only vfox plugin that shadows a registry entry.
 /// Env-only plugins have `hooks/mise_env.lua` but not `hooks/available.lua`.
-pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
+pub(crate) fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
     let hooks = plugin_path.join("hooks");
     let is_env_only = hooks.join("mise_env.lua").exists() && !hooks.join("available.lua").exists();
     if is_env_only && REGISTRY.contains_key(name) {
@@ -264,7 +272,7 @@ pub fn warn_if_env_plugin_shadows_registry(name: &str, plugin_path: &Path) {
     }
 }
 
-pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
+pub(crate) static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
     Regex::new(
         r"(?i)(^Available versions:|-src|[-\\.]dev|-latest|-stm|[-\\.]rc|-milestone|-alpha|-beta|[-\\.]pre|-next|-test|-nightly|-canary|-experimental|-insider|-edge|snapshot|SNAPSHOT|master|\d(?:alpha|beta|rc)\d*\b)"
     )
@@ -283,10 +291,10 @@ pub static VERSION_REGEX: Lazy<regex::Regex> = Lazy::new(|| {
 ///
 /// Only consulted by Python-flavored backends (currently `pipx`); other
 /// backends would false-positive on hex hashes like `f149714c1d54`.
-pub static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
+pub(crate) static PEP440_PRERELEASE_REGEX: Lazy<regex::Regex> =
     Lazy::new(|| Regex::new(r"(?i)[0-9](?:a|b|c|rc)[0-9]+(?:$|[^a-z0-9])").unwrap());
 
-pub fn get(short: &str) -> Result<PluginEnum> {
+pub(crate) fn get(short: &str) -> Result<PluginEnum> {
     let (name, full) = short.split_once(':').unwrap_or((short, short));
 
     // For plugin:tool format, look up the plugin by just the plugin name
@@ -312,7 +320,7 @@ pub fn get(short: &str) -> Result<PluginEnum> {
 
 #[allow(unused_variables)]
 #[async_trait]
-pub trait Plugin: Debug + Send {
+pub(crate) trait Plugin: Debug + Send {
     fn name(&self) -> &str;
     fn path(&self) -> PathBuf;
     fn get_remote_url(&self) -> eyre::Result<Option<String>>;
@@ -389,7 +397,7 @@ impl Display for PluginEnum {
 }
 
 #[derive(Debug, Clone)]
-pub enum PluginSource {
+pub(crate) enum PluginSource {
     /// Git repository with URL and optional ref
     Git {
         url: String,
@@ -401,7 +409,7 @@ pub enum PluginSource {
 }
 
 impl PluginSource {
-    pub fn parse(repository: &str) -> Self {
+    pub(crate) fn parse(repository: &str) -> Self {
         if let Some(source) = RemoteSource::parse_git(repository) {
             return PluginSource::Git {
                 url: source.url,
@@ -433,13 +441,13 @@ impl PluginSource {
     }
 }
 
-pub fn git_plugin_repo_path(plugin_name: &str) -> PathBuf {
+pub(crate) fn git_plugin_repo_path(plugin_name: &str) -> PathBuf {
     dirs::DATA
         .join("plugin-repos")
         .join(plugin_name.to_kebab_case())
 }
 
-pub fn managed_git_plugin_repo_path(
+pub(crate) fn managed_git_plugin_repo_path(
     plugin_name: &str,
     plugin_path: &Path,
 ) -> Result<Option<PathBuf>> {
@@ -460,7 +468,7 @@ pub fn managed_git_plugin_repo_path(
     Ok(target.starts_with(&repo_path).then_some(repo_path))
 }
 
-pub fn remove_git_plugin_source(
+pub(crate) fn remove_git_plugin_source(
     plugin_name: &str,
     plugin_path: &Path,
     pr: &dyn SingleReport,
@@ -473,7 +481,7 @@ pub fn remove_git_plugin_source(
     Ok(())
 }
 
-pub fn install_git_plugin_source(
+pub(crate) fn install_git_plugin_source(
     plugin_name: &str,
     plugin_path: &Path,
     repo_url: &str,
@@ -517,7 +525,7 @@ pub fn install_git_plugin_source(
     }
 }
 
-pub fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {
+pub(crate) fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {
     let path = PathBuf::from(repository);
     let source = PluginSource::parse(repository);
     if path.is_absolute() && path.is_dir() && matches!(&source, PluginSource::Zip { .. }) {
@@ -534,7 +542,7 @@ pub fn local_plugin_source_path(repository: &str) -> Option<PathBuf> {
     }
 }
 
-pub fn validate_local_plugin_source(source: &Path, plugin_path: &Path) -> Result<()> {
+pub(crate) fn validate_local_plugin_source(source: &Path, plugin_path: &Path) -> Result<()> {
     if !source.exists() {
         bail!(
             "local plugin directory does not exist: {}",
@@ -567,7 +575,7 @@ pub fn validate_local_plugin_source(source: &Path, plugin_path: &Path) -> Result
     Ok(())
 }
 
-pub fn install_local_plugin_source(
+pub(crate) fn install_local_plugin_source(
     plugin_path: &Path,
     source: &Path,
     pr: &dyn SingleReport,

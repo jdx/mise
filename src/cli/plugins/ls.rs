@@ -15,7 +15,7 @@ use crate::ui::table;
 /// Can also show remotely available plugins to install.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct PluginsLs {
+pub(super) struct PluginsLs {
     /// List all available remote plugins
     /// Same as `mise plugins ls-remote`
     #[clap(short, long, hide = true, verbatim_doc_comment)]
@@ -47,7 +47,7 @@ pub struct PluginsLs {
 }
 
 impl PluginsLs {
-    pub async fn run(self, config: &Config) -> Result<()> {
+    pub(super) async fn run(self, config: &Config) -> Result<()> {
         let mut plugins: BTreeMap<_, _> = install_state::list_plugins()
             .iter()
             .map(|(k, p)| (k.clone(), (*p, None)))

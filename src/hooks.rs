@@ -15,7 +15,7 @@ use tokio::sync::OnceCell;
 
 /// Represents installed tool info for hooks
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct InstalledToolInfo {
+pub(crate) struct InstalledToolInfo {
     pub name: String,
     pub version: String,
 }
@@ -43,7 +43,7 @@ impl From<&ToolVersion> for InstalledToolInfo {
     Hash,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum Hooks {
+pub(crate) enum Hooks {
     Enter,
     Leave,
     Cd,
@@ -53,7 +53,7 @@ pub enum Hooks {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
-pub enum HookScripts {
+pub(crate) enum HookScripts {
     One(String),
     Many(Vec<String>),
 }
@@ -69,7 +69,7 @@ impl HookScripts {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
-pub enum HookDef {
+pub(crate) enum HookDef {
     /// Array of hook definitions: `enter = ["echo hello", { task = "setup" }]`
     Array(Vec<HookDefItem>),
     One(HookDefItem),
@@ -77,7 +77,7 @@ pub enum HookDef {
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged, deny_unknown_fields)]
-pub enum HookDefItem {
+pub(crate) enum HookDefItem {
     /// Simple run string: `enter = "echo hello"`
     RunString(String),
     /// Table with run: `enter = { run = "echo hello" }`
@@ -97,7 +97,7 @@ pub enum HookDefItem {
 }
 
 #[derive(Debug, Clone)]
-pub struct HookRunTable {
+pub(crate) struct HookRunTable {
     run: Option<String>,
     run_windows: Option<String>,
     shell: Option<String>,
@@ -132,7 +132,7 @@ impl<'de> serde::Deserialize<'de> for HookRunTable {
 
 impl HookDef {
     /// Convert to a list of Hook structs with the given hook type
-    pub fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
+    pub(crate) fn into_hooks(self, hook_type: Hooks) -> Vec<Hook> {
         match self {
             HookDef::One(def) => vec![def.into_hook(hook_type)],
             HookDef::Array(arr) => arr
@@ -208,7 +208,7 @@ fn script_hook_action(
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct Hook {
+pub(crate) struct Hook {
     pub hook: Hooks,
     pub action: HookAction,
     /// Whether this hook comes from a global config (skip directory matching)
@@ -216,7 +216,7 @@ pub struct Hook {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum HookAction {
+pub(crate) enum HookAction {
     Run {
         run: Option<String>,
         run_windows: Option<String>,
@@ -234,7 +234,7 @@ pub enum HookAction {
 }
 
 impl Hook {
-    pub fn render_templates<F>(&mut self, mut render: F) -> Result<()>
+    pub(crate) fn render_templates<F>(&mut self, mut render: F) -> Result<()>
     where
         F: FnMut(&str) -> Result<String>,
     {
@@ -289,14 +289,14 @@ impl HookAction {
     }
 }
 
-pub static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
+pub(crate) static SCHEDULED_HOOKS: Lazy<Mutex<IndexSet<Hooks>>> = Lazy::new(Default::default);
 
-pub fn schedule_hook(hook: Hooks) {
+pub(crate) fn schedule_hook(hook: Hooks) {
     let mut mu = SCHEDULED_HOOKS.lock().unwrap();
     mu.insert(hook);
 }
 
-pub async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
+pub(crate) async fn run_all_hooks(config: &Arc<Config>, ts: &Toolset, shell: &dyn Shell) {
     if Settings::no_hooks() || Settings::get().no_hooks.unwrap_or(false) || Settings::get().safe {
         return;
     }
@@ -341,7 +341,7 @@ async fn all_hooks(config: &Arc<Config>) -> &'static Vec<(PathBuf, Option<PathBu
 }
 
 #[async_backtrace::framed]
-pub async fn run_one_hook(
+pub(crate) async fn run_one_hook(
     config: &Arc<Config>,
     ts: &Toolset,
     hook: Hooks,
@@ -353,7 +353,7 @@ pub async fn run_one_hook(
 
 /// Run a hook with optional installed tools context (for postinstall hooks)
 #[async_backtrace::framed]
-pub async fn run_one_hook_with_context(
+pub(crate) async fn run_one_hook_with_context(
     config: &Arc<Config>,
     ts: &Toolset,
     hook: Hooks,
@@ -438,7 +438,7 @@ pub async fn run_one_hook_with_context(
     }
 }
 
-pub async fn run_enter_hooks_for_newly_loaded_configs(
+pub(crate) async fn run_enter_hooks_for_newly_loaded_configs(
     config: &Arc<Config>,
     ts: &Toolset,
     shell: &dyn Shell,

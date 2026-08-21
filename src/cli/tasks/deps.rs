@@ -12,7 +12,7 @@ use petgraph::dot::Dot;
 /// Display a tree visualization of a dependency graph
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksDeps {
+pub(super) struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
     /// e.g.: mise tasks deps lint test check
@@ -33,7 +33,7 @@ pub struct TasksDeps {
 }
 
 impl TasksDeps {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let tasks = if self.tasks.is_none() {
             self.get_all_tasks(&config).await?

@@ -32,7 +32,7 @@ struct HostTokenEntry {
     token: Option<String>,
 }
 
-pub fn parse_tokens_toml(contents: &str) -> Option<HashMap<String, String>> {
+pub(crate) fn parse_tokens_toml(contents: &str) -> Option<HashMap<String, String>> {
     let file: HostTokensFile = toml::from_str(contents).ok()?;
     Some(
         file.tokens?
@@ -42,7 +42,7 @@ pub fn parse_tokens_toml(contents: &str) -> Option<HashMap<String, String>> {
     )
 }
 
-pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, String>> {
+pub(crate) fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, String>> {
     let path = env::MISE_CONFIG_DIR.join(filename);
     let contents = match std::fs::read_to_string(&path) {
         Ok(c) => c,
@@ -66,7 +66,11 @@ pub fn read_tokens_toml(filename: &str, label: &str) -> Option<HashMap<String, S
 /// `MISE_CREDENTIAL_PROVIDER`. Results are cached per `{provider}:{host}`
 /// for the lifetime of the process — repeated calls for the same host
 /// reuse the cached value (positive or negative).
-pub fn get_credential_command_token(provider: &str, cmd: &str, host: &str) -> Option<String> {
+pub(crate) fn get_credential_command_token(
+    provider: &str,
+    cmd: &str,
+    host: &str,
+) -> Option<String> {
     if credential_command_uses_legacy_host_arg(cmd) {
         deprecated_at!(
             "2026.11.0",
@@ -185,7 +189,7 @@ fn credential_command_uses_legacy_host_arg(cmd: &str) -> bool {
 /// Get a token by running `git credential fill`.
 ///
 /// Results are cached per provider+host so the subprocess is only spawned once.
-pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
+pub(crate) fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
     let cache_key = format!("{provider}:{host}");
     let mut cache = GIT_CREDENTIAL_CACHE
         .lock()
@@ -233,7 +237,7 @@ pub fn get_git_credential_token(provider: &str, host: &str) -> Option<String> {
     result
 }
 
-pub fn mask_token(token: &str) -> String {
+pub(crate) fn mask_token(token: &str) -> String {
     let len = token.chars().count();
     if len <= 4 {
         "*".repeat(len)
@@ -247,7 +251,7 @@ pub fn mask_token(token: &str) -> String {
     }
 }
 
-pub fn yaml_hosts_to_tokens(contents: &str) -> Option<HashMap<String, String>> {
+pub(crate) fn yaml_hosts_to_tokens(contents: &str) -> Option<HashMap<String, String>> {
     let yaml: Value = serde_yaml::from_str(contents).ok()?;
     let mut out = HashMap::new();
     if let Some(map) = yaml.as_mapping() {
@@ -329,7 +333,7 @@ fn token_from_entry(entry: &serde_yaml::Mapping) -> Option<String> {
 /// `is_file` rather than `exists`: every caller hands the result to `read_to_string`, so a
 /// directory that happens to be named `hosts.yml` must not shadow a real config further down the
 /// list. Symlinks are followed, so a symlinked config still matches.
-pub fn first_existing_file(candidates: Vec<PathBuf>, fallback: PathBuf) -> PathBuf {
+pub(crate) fn first_existing_file(candidates: Vec<PathBuf>, fallback: PathBuf) -> PathBuf {
     candidates
         .into_iter()
         .find(|p| p.is_file())

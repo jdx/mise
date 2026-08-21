@@ -13,7 +13,7 @@ const PYPROJECT_TOML: &str = "pyproject.toml";
 
 /// Discovers Python projects from uv workspace and local source metadata.
 #[derive(Debug, Default)]
-pub struct UvWorkspaceProvider;
+pub(crate) struct UvWorkspaceProvider;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]

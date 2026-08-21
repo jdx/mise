@@ -10,7 +10,7 @@ use crate::file::display_path;
 /// Remove Homebrew tap URLs from [bootstrap.brew.taps]
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
-pub struct SystemBrewUntap {
+pub(crate) struct SystemBrewUntap {
     /// Tap name(s), e.g. `owner/repo`
     #[clap(required = true)]
     taps: Vec<String>,
@@ -35,7 +35,7 @@ pub struct SystemBrewUntap {
 }
 
 impl SystemBrewUntap {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         let path = resolve_target_config_path(ConfigPathOptions {
             global: !self.local,
             path: self.path,

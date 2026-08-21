@@ -10,7 +10,7 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 /// and runs install commands if needed.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct DepsInstall {
+pub(super) struct DepsInstall {
     /// Provider to operate on (runs only this provider, or use with --explain)
     pub provider: Option<String>,
 
@@ -47,7 +47,7 @@ pub struct DepsInstall {
 }
 
 impl DepsInstall {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let monorepo_union = if self.monorepo {
             Some(config.monorepo_union().await?)

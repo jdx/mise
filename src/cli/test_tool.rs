@@ -15,7 +15,7 @@ use tokio::task::JoinSet;
 /// Test a tool installs and executes
 #[derive(Debug, Clone, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TestTool {
+pub(crate) struct TestTool {
     /// Tool(s) to test
     #[clap(required_unless_present_any = ["all", "all_config"])]
     pub tools: Option<Vec<ToolArg>>,
@@ -40,7 +40,7 @@ pub struct TestTool {
 }
 
 impl TestTool {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let mut errored = vec![];
         self.github_summary(vec![
             "Tool".to_string(),

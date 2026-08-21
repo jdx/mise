@@ -28,7 +28,7 @@ static INVOCATION_CWD: OnceLock<Option<PathBuf>> = OnceLock::new();
 /// Initialize miserc settings by loading .miserc.toml files.
 /// This must be called early in the initialization process, before
 /// MISE_ENV or other early settings are accessed.
-pub fn init() -> Result<()> {
+pub(crate) fn init() -> Result<()> {
     let _ = invocation_cwd();
     let settings = load_miserc_settings()?;
     let _ = MISERC.set(settings);
@@ -42,14 +42,14 @@ pub fn init() -> Result<()> {
 
 /// The working directory mise was invoked from, before settings such as `cd`
 /// change the process working directory.
-pub fn invocation_cwd() -> Option<&'static Path> {
+pub(crate) fn invocation_cwd() -> Option<&'static Path> {
     INVOCATION_CWD
         .get_or_init(|| std::env::current_dir().ok())
         .as_deref()
 }
 
 /// Get the loaded miserc settings, or default if not initialized.
-pub fn get() -> &'static MisercSettings {
+pub(crate) fn get() -> &'static MisercSettings {
     MISERC.get_or_init(|| {
         let settings = load_miserc_settings().unwrap_or_default();
         let _ = take_tera_accessed_files();
@@ -58,37 +58,37 @@ pub fn get() -> &'static MisercSettings {
 }
 
 /// Get the MISE_ENV value from miserc, if set.
-pub fn get_env() -> Option<&'static Vec<String>> {
+pub(crate) fn get_env() -> Option<&'static Vec<String>> {
     get().env.as_ref()
 }
 
 /// Get the auto_env value from miserc, if set.
-pub fn get_auto_env() -> Option<bool> {
+pub(crate) fn get_auto_env() -> Option<bool> {
     get().auto_env
 }
 
 /// Get the env_conf_d value from miserc, if set.
-pub fn get_env_conf_d() -> Option<bool> {
+pub(crate) fn get_env_conf_d() -> Option<bool> {
     get().env_conf_d
 }
 
 /// Get the ceiling_paths value from miserc, if set.
-pub fn get_ceiling_paths() -> Option<&'static BTreeSet<PathBuf>> {
+pub(crate) fn get_ceiling_paths() -> Option<&'static BTreeSet<PathBuf>> {
     get().ceiling_paths.as_ref()
 }
 
 /// Get the ignored_config_paths value from miserc, if set.
-pub fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
+pub(crate) fn get_ignored_config_paths() -> Option<&'static BTreeSet<PathBuf>> {
     get().ignored_config_paths.as_ref()
 }
 
 /// Get the override_config_filenames value from miserc, if set.
-pub fn get_override_config_filenames() -> Option<&'static Vec<String>> {
+pub(crate) fn get_override_config_filenames() -> Option<&'static Vec<String>> {
     get().override_config_filenames.as_ref()
 }
 
 /// Get the override_tool_versions_filenames value from miserc, if set.
-pub fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
+pub(crate) fn get_override_tool_versions_filenames() -> Option<&'static Vec<String>> {
     get().override_tool_versions_filenames.as_ref()
 }
 

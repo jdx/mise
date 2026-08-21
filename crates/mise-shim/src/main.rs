@@ -1,5 +1,8 @@
 // Based on https://github.com/iki/mise-shim by Jan Killian (MIT License)
 
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
 use std::env;
 use std::path::Path;
 use std::process::{Command, ExitCode};

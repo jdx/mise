@@ -14,7 +14,7 @@ fn syscall_number<T: Into<i64>>(number: T) -> i64 {
 ///
 /// Blocks AF_INET and AF_INET6 sockets while allowing AF_UNIX (needed by many tools).
 /// Based on the syscall list from OpenAI's codex-linux-sandbox.
-pub fn apply_seccomp_net_filter() -> Result<()> {
+pub(super) fn apply_seccomp_net_filter() -> Result<()> {
     // Must set PR_SET_NO_NEW_PRIVS before installing seccomp filter
     let ret = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
     if ret != 0 {

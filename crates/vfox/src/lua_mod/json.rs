@@ -1,6 +1,6 @@
 use mlua::{ExternalResult, Lua, LuaSerdeExt, Result, Table, Value};
 
-pub fn mod_json(lua: &Lua) -> Result<()> {
+pub(crate) fn mod_json(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
     loaded.set(

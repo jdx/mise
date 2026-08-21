@@ -13,7 +13,7 @@ mod tool_stub;
 /// Generate files for various tools/services
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "gen", alias = "g")]
-pub struct Generate {
+pub(crate) struct Generate {
     #[clap(subcommand)]
     command: Commands,
 }
@@ -36,7 +36,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         match self {
             Self::Bootstrap(cmd) => {
                 deprecated_at!(
@@ -60,7 +60,7 @@ impl Commands {
 }
 
 impl Generate {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         self.command.run().await
     }
 }

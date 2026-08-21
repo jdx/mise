@@ -11,7 +11,7 @@ const DEFAULT_HEAD: &str = "HEAD";
 
 /// Git revisions used to discover changed workspace paths.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WorkspaceGitRevisions {
+pub(crate) struct WorkspaceGitRevisions {
     pub base: String,
     pub head: String,
 }
@@ -19,7 +19,7 @@ pub struct WorkspaceGitRevisions {
 impl WorkspaceGitRevisions {
     /// Resolves explicit revisions, mise environment overrides, CI metadata,
     /// and finally the local `HEAD~1...HEAD` default, in that order.
-    pub fn resolve(base: Option<&str>, head: Option<&str>) -> Self {
+    pub(crate) fn resolve(base: Option<&str>, head: Option<&str>) -> Self {
         Self::resolve_with(base, head, |name| env::var(name).ok())
     }
 
@@ -42,7 +42,7 @@ impl WorkspaceGitRevisions {
     }
 
     /// Collects workspace-relative paths changed between the configured revisions.
-    pub fn changed_paths(&self, workspace_root: &Path) -> Result<BTreeSet<PathBuf>> {
+    pub(crate) fn changed_paths(&self, workspace_root: &Path) -> Result<BTreeSet<PathBuf>> {
         Git::new(workspace_root).changed_paths(&self.base, &self.head)
     }
 }

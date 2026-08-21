@@ -6,7 +6,7 @@ use indoc::formatdoc;
 use shell_escape::unix::escape;
 
 #[derive(Default)]
-pub struct Elvish {}
+pub(super) struct Elvish {}
 
 impl Shell for Elvish {
     fn activate(&self, opts: ActivateOptions) -> String {

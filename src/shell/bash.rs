@@ -7,7 +7,7 @@ use crate::config::Settings;
 use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
-pub struct Bash {}
+pub(super) struct Bash {}
 
 impl Bash {}
 

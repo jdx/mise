@@ -14,7 +14,7 @@ use crate::config::Settings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum BootstrapHookPhase {
+pub(crate) enum BootstrapHookPhase {
     PrePackages,
     PostPackages,
     PreRepos,
@@ -31,12 +31,12 @@ pub enum BootstrapHookPhase {
 }
 
 impl BootstrapHookPhase {
-    pub fn parse(raw: &str) -> Option<Self> {
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
         let normalized = raw.replace('_', "-");
         Self::iter().find(|phase| phase.as_str() == normalized)
     }
 
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::PrePackages => "pre-packages",
             Self::PostPackages => "post-packages",
@@ -62,13 +62,13 @@ impl fmt::Display for BootstrapHookPhase {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BootstrapHook {
+pub(crate) struct BootstrapHook {
     pub phase: BootstrapHookPhase,
     pub run: String,
 }
 
 impl BootstrapHook {
-    pub fn from_toml(phase_raw: &str, value: toml::Value) -> Result<Vec<Self>> {
+    pub(crate) fn from_toml(phase_raw: &str, value: toml::Value) -> Result<Vec<Self>> {
         let Some(phase) = BootstrapHookPhase::parse(phase_raw) else {
             let valid = BootstrapHookPhase::iter()
                 .map(|phase| phase.as_str())
@@ -118,7 +118,7 @@ fn string_array(values: Vec<toml::Value>, message: &str) -> Result<Vec<String>> 
     Ok(out)
 }
 
-pub async fn run_phase(
+pub(crate) async fn run_phase(
     hooks: &[BootstrapHook],
     phase: BootstrapHookPhase,
     dry_run: bool,

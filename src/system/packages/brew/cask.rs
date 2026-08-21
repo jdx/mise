@@ -41,7 +41,7 @@ const DEFAULT_APP_DIR: &str = "/Applications";
 /// docs/bootstrap/packages/brew.md
 const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
 
-pub struct BrewCaskManager {}
+pub(crate) struct BrewCaskManager {}
 
 #[derive(Debug, Clone, Default, Deserialize)]
 struct CaskUrlSpecs {
@@ -337,7 +337,7 @@ struct CaskTransactionJournal<'a> {
 }
 
 #[derive(Debug, Clone)]
-pub struct CaskPruneCandidate {
+pub(crate) struct CaskPruneCandidate {
     pub token: String,
     pub version: String,
     version_dir: PathBuf,
@@ -345,25 +345,25 @@ pub struct CaskPruneCandidate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CaskPruneSkip {
+pub(crate) struct CaskPruneSkip {
     pub token: String,
     pub reason: String,
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct CaskPrunePlan {
+pub(crate) struct CaskPrunePlan {
     pub remove: Vec<CaskPruneCandidate>,
     pub skipped: Vec<CaskPruneSkip>,
 }
 
 impl CaskPrunePlan {
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.remove.is_empty()
     }
 }
 
 impl BrewCaskManager {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {}
     }
 
@@ -6889,7 +6889,7 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
         .wrap_err_with(|| format!("failed to parse {}", path.display()))
 }
 
-pub async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
+pub(crate) async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
     let mut keep = BTreeSet::new();
     for request in configured {
         keep.insert(fetch_cask(request).await?.token);
@@ -7125,7 +7125,7 @@ fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Res
     Ok(plan)
 }
 
-pub fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
+pub(crate) fn apply_cask_prune_plan(plan: &CaskPrunePlan, dry_run: bool) -> Result<usize> {
     apply_cask_prune_plan_in(plan, dry_run, &crate::dirs::STATE)
 }
 

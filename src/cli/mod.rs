@@ -9,9 +9,9 @@ use eyre::{Report, bail};
 use std::path::PathBuf;
 
 mod activate;
-pub mod args;
+pub(crate) mod args;
 mod asdf;
-pub mod backends;
+pub(crate) mod backends;
 mod bin_paths;
 mod bootstrap;
 mod cache;
@@ -24,7 +24,7 @@ mod doctor;
 mod dotfiles;
 mod en;
 mod env;
-pub mod exec;
+pub(crate) mod exec;
 mod external;
 mod fmt;
 mod generate;
@@ -34,7 +34,7 @@ mod hook_env;
 mod hook_not_found;
 mod tool_alias;
 
-pub use hook_env::HookReason;
+pub(crate) use hook_env::HookReason;
 mod command_effects;
 mod deps;
 pub(crate) mod edit;
@@ -57,10 +57,10 @@ mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
 mod reshim;
-pub mod run;
+pub(crate) mod run;
 mod search;
 #[cfg_attr(not(feature = "self_update"), path = "self_update_stub.rs")]
-pub mod self_update;
+pub(crate) mod self_update;
 mod set;
 mod settings;
 mod shell;
@@ -72,7 +72,7 @@ mod tasks;
 mod test_tool;
 mod token;
 mod tool;
-pub mod tool_stub;
+pub(crate) mod tool_stub;
 mod trust;
 mod uninstall;
 mod unset;
@@ -81,14 +81,14 @@ mod unuse;
 mod upgrade;
 mod usage;
 mod r#use;
-pub mod version;
+pub(crate) mod version;
 mod watch;
 mod r#where;
 mod r#which;
 
 #[derive(clap::ValueEnum, Debug, Clone, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub enum LevelFilter {
+pub(crate) enum LevelFilter {
     Trace,
     Debug,
     Info,
@@ -98,7 +98,7 @@ pub enum LevelFilter {
 
 #[derive(clap::Parser)]
 #[clap(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true)]
-pub struct Cli {
+pub(crate) struct Cli {
     #[clap(subcommand)]
     pub command: Option<Commands>,
     /// Task to run
@@ -205,7 +205,7 @@ pub struct Cli {
 
 #[derive(Subcommand, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub enum Commands {
+pub(crate) enum Commands {
     Activate(activate::Activate),
     ToolAlias(Box<tool_alias::ToolAlias>),
     Asdf(asdf::Asdf),
@@ -295,7 +295,7 @@ impl Commands {
         )
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Activate(cmd) => cmd.run(),
             Self::ToolAlias(cmd) => cmd.run().await,
@@ -683,7 +683,7 @@ fn escape_task_args(cmd: &clap::Command, args: &[String]) -> Vec<String> {
 }
 
 /// Unescape task args that were escaped by escape_task_args
-pub fn unescape_task_args(args: &[String]) -> Vec<String> {
+pub(crate) fn unescape_task_args(args: &[String]) -> Vec<String> {
     args.iter()
         .map(|arg| {
             if let Some(stripped) = arg.strip_prefix(TASK_ARG_ESCAPE_PREFIX) {
@@ -732,7 +732,7 @@ fn preprocess_args_for_naked_run(cmd: &clap::Command, args: &[String]) -> Vec<St
 }
 
 impl Cli {
-    pub async fn run(args: &Vec<String>) -> Result<()> {
+    pub(crate) async fn run(args: &Vec<String>) -> Result<()> {
         run_with_exit_signal(Self::run_inner(args), ctrlc::exit_signal()).await
     }
 

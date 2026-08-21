@@ -5,14 +5,14 @@ use toml_edit::{DocumentMut, Formatted, Item, Table, Value};
 
 /// Represents a TOML document with navigable sections
 #[derive(Debug)]
-pub struct TomlDocument {
+pub(crate) struct TomlDocument {
     pub sections: Vec<Section>,
     pub modified: bool,
 }
 
 /// A section in the TOML document (e.g., [tools], [env])
 #[derive(Debug, Clone)]
-pub struct Section {
+pub(crate) struct Section {
     pub name: String,
     pub entries: Vec<Entry>,
     pub expanded: bool,
@@ -22,7 +22,7 @@ pub struct Section {
 
 /// An entry within a section (key = value)
 #[derive(Debug, Clone)]
-pub struct Entry {
+pub(crate) struct Entry {
     pub key: String,
     pub value: EntryValue,
     pub expanded: bool,
@@ -32,7 +32,7 @@ pub struct Entry {
 
 /// The value of an entry
 #[derive(Debug, Clone)]
-pub enum EntryValue {
+pub(crate) enum EntryValue {
     /// Simple string, number, or boolean value
     Simple(String),
     /// Array of values
@@ -43,12 +43,12 @@ pub enum EntryValue {
 
 impl TomlDocument {
     /// Create a new document with default sections
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self::new_with_deps(false)
     }
 
     /// Create a new document with default sections, optionally including deps
-    pub fn new_with_deps(include_deps: bool) -> Self {
+    pub(crate) fn new_with_deps(include_deps: bool) -> Self {
         let mut sections = vec![
             Section {
                 name: "tools".to_string(),
@@ -93,7 +93,7 @@ impl TomlDocument {
     }
 
     /// Parse a TOML document from a string
-    pub fn parse(content: &str) -> Result<Self, toml_edit::TomlError> {
+    pub(crate) fn parse(content: &str) -> Result<Self, toml_edit::TomlError> {
         let doc: DocumentMut = content.parse()?;
         let mut sections = Vec::new();
 
@@ -181,7 +181,7 @@ impl TomlDocument {
     }
 
     /// Load a TOML document from a file
-    pub fn load(path: &Path) -> std::io::Result<Self> {
+    pub(crate) fn load(path: &Path) -> std::io::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         Self::parse(&content).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
     }
@@ -299,7 +299,7 @@ impl TomlDocument {
     }
 
     /// Serialize the document to a TOML string
-    pub fn to_toml(&self) -> String {
+    pub(crate) fn to_toml(&self) -> String {
         let mut doc = DocumentMut::new();
 
         for section in &self.sections {
@@ -417,7 +417,7 @@ impl TomlDocument {
     /// the worst possible moment to find out.
     ///
     /// A bare relative name gives an empty parent, which `create_dir_all` treats as a no-op.
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+    pub(crate) fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -425,7 +425,7 @@ impl TomlDocument {
     }
 
     /// Add a new section
-    pub fn add_section(&mut self, name: String) {
+    pub(crate) fn add_section(&mut self, name: String) {
         if !self.sections.iter().any(|s| s.name == name) {
             self.sections.push(Section {
                 name,
@@ -438,12 +438,17 @@ impl TomlDocument {
     }
 
     /// Add an entry to a section with a simple string value
-    pub fn add_entry(&mut self, section_idx: usize, key: String, value: String) {
+    pub(crate) fn add_entry(&mut self, section_idx: usize, key: String, value: String) {
         self.add_entry_with_value(section_idx, key, EntryValue::Simple(value));
     }
 
     /// Add an entry to a section with a specific value type
-    pub fn add_entry_with_value(&mut self, section_idx: usize, key: String, value: EntryValue) {
+    pub(crate) fn add_entry_with_value(
+        &mut self,
+        section_idx: usize,
+        key: String,
+        value: EntryValue,
+    ) {
         if let Some(section) = self.sections.get_mut(section_idx) {
             section.entries.push(Entry {
                 key,
@@ -456,7 +461,7 @@ impl TomlDocument {
     }
 
     /// Delete an entry from a section
-    pub fn delete_entry(&mut self, section_idx: usize, entry_idx: usize) {
+    pub(crate) fn delete_entry(&mut self, section_idx: usize, entry_idx: usize) {
         if let Some(section) = self.sections.get_mut(section_idx)
             && entry_idx < section.entries.len()
         {
@@ -466,7 +471,7 @@ impl TomlDocument {
     }
 
     /// Update an entry's value
-    pub fn update_entry(&mut self, section_idx: usize, entry_idx: usize, value: String) {
+    pub(crate) fn update_entry(&mut self, section_idx: usize, entry_idx: usize, value: String) {
         if let Some(section) = self.sections.get_mut(section_idx)
             && let Some(entry) = section.entries.get_mut(entry_idx)
         {
@@ -476,7 +481,7 @@ impl TomlDocument {
     }
 
     /// Add an item to an array entry
-    pub fn add_array_item(&mut self, section_idx: usize, entry_idx: usize, value: String) {
+    pub(crate) fn add_array_item(&mut self, section_idx: usize, entry_idx: usize, value: String) {
         if let Some(section) = self.sections.get_mut(section_idx)
             && let Some(entry) = section.entries.get_mut(entry_idx)
             && let EntryValue::Array(ref mut items) = entry.value
@@ -487,7 +492,7 @@ impl TomlDocument {
     }
 
     /// Update an array item
-    pub fn update_array_item(
+    pub(crate) fn update_array_item(
         &mut self,
         section_idx: usize,
         entry_idx: usize,
@@ -505,7 +510,12 @@ impl TomlDocument {
     }
 
     /// Delete an array item
-    pub fn delete_array_item(&mut self, section_idx: usize, entry_idx: usize, array_idx: usize) {
+    pub(crate) fn delete_array_item(
+        &mut self,
+        section_idx: usize,
+        entry_idx: usize,
+        array_idx: usize,
+    ) {
         if let Some(section) = self.sections.get_mut(section_idx)
             && let Some(entry) = section.entries.get_mut(entry_idx)
             && let EntryValue::Array(ref mut items) = entry.value
@@ -517,14 +527,14 @@ impl TomlDocument {
     }
 
     /// Toggle section expanded state
-    pub fn toggle_section(&mut self, section_idx: usize) {
+    pub(crate) fn toggle_section(&mut self, section_idx: usize) {
         if let Some(section) = self.sections.get_mut(section_idx) {
             section.expanded = !section.expanded;
         }
     }
 
     /// Toggle entry expanded state (for arrays/inline tables)
-    pub fn toggle_entry(&mut self, section_idx: usize, entry_idx: usize) {
+    pub(crate) fn toggle_entry(&mut self, section_idx: usize, entry_idx: usize) {
         if let Some(section) = self.sections.get_mut(section_idx)
             && let Some(entry) = section.entries.get_mut(entry_idx)
         {
@@ -533,7 +543,7 @@ impl TomlDocument {
     }
 
     /// Delete a section
-    pub fn delete_section(&mut self, section_idx: usize) {
+    pub(crate) fn delete_section(&mut self, section_idx: usize) {
         if section_idx < self.sections.len() {
             self.sections.remove(section_idx);
             self.modified = true;
@@ -542,7 +552,7 @@ impl TomlDocument {
 
     /// Convert a simple entry value to an inline table with version key
     /// Returns true if conversion was successful
-    pub fn convert_to_inline_table(&mut self, section_idx: usize, entry_idx: usize) -> bool {
+    pub(crate) fn convert_to_inline_table(&mut self, section_idx: usize, entry_idx: usize) -> bool {
         if let Some(section) = self.sections.get_mut(section_idx)
             && let Some(entry) = section.entries.get_mut(entry_idx)
             && let EntryValue::Simple(value) = &entry.value
@@ -558,7 +568,7 @@ impl TomlDocument {
 
     /// Add a field to an inline table entry
     #[allow(dead_code)]
-    pub fn add_inline_table_field(
+    pub(crate) fn add_inline_table_field(
         &mut self,
         section_idx: usize,
         entry_idx: usize,
@@ -584,12 +594,12 @@ impl Default for TomlDocument {
 #[allow(dead_code)]
 impl EntryValue {
     /// Check if this is a complex value (array or inline table)
-    pub fn is_complex(&self) -> bool {
+    pub(crate) fn is_complex(&self) -> bool {
         !matches!(self, EntryValue::Simple(_))
     }
 
     /// Get the display string for this value
-    pub fn display(&self) -> String {
+    pub(crate) fn display(&self) -> String {
         match self {
             EntryValue::Simple(s) => s.clone(),
             EntryValue::Array(items) => format!("[{}]", items.join(", ")),
@@ -604,7 +614,7 @@ impl EntryValue {
     }
 
     /// Get item count for complex values
-    pub fn item_count(&self) -> Option<usize> {
+    pub(crate) fn item_count(&self) -> Option<usize> {
         match self {
             EntryValue::Simple(_) => None,
             EntryValue::Array(items) => Some(items.len()),

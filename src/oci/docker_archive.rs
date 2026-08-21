@@ -35,7 +35,7 @@ struct ManifestEntry {
 
 /// Stream the OCI layout at `image_dir` into `docker load`, tagging the
 /// loaded image as `tag`.
-pub fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
+pub(crate) fn load_into_docker(image_dir: &Path, tag: &str) -> Result<()> {
     let layout = ImageLayout {
         root: image_dir.to_path_buf(),
     };

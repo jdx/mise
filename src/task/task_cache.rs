@@ -38,7 +38,7 @@ static CLEANED_PARTIAL_CACHE_DIRS: LazyLock<Mutex<BTreeSet<PathBuf>>> =
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct TaskCacheConfig {
+pub(crate) struct TaskCacheConfig {
     pub enabled: bool,
     /// Report project files read or written outside the declared cache contract.
     pub audit: bool,
@@ -49,7 +49,7 @@ pub struct TaskCacheConfig {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
-pub enum TaskCacheMode {
+pub(crate) enum TaskCacheMode {
     /// Read cached results and write new results.
     #[default]
     ReadWrite,
@@ -198,7 +198,7 @@ impl fmt::Display for TaskCacheMissReason {
     }
 }
 
-pub struct TaskArtifactCache {
+pub(crate) struct TaskArtifactCache {
     root: PathBuf,
     cache_dir: PathBuf,
     store: Arc<dyn TaskCacheStore>,
@@ -492,7 +492,7 @@ pub(super) fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>> {
 }
 
 impl TaskArtifactCache {
-    pub fn key(&self) -> &str {
+    pub(crate) fn key(&self) -> &str {
         &self.key
     }
 
@@ -525,7 +525,7 @@ impl TaskArtifactCache {
         Some(manifest.output)
     }
 
-    pub fn mark_current(&self) -> Result<()> {
+    pub(crate) fn mark_current(&self) -> Result<()> {
         if let Some(parent) = self.state_path.parent() {
             file::create_dir_all(parent)?;
         }

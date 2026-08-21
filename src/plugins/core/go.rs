@@ -22,12 +22,12 @@ use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct GoPlugin {
+pub(super) struct GoPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl GoPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("go")),
         }

@@ -27,7 +27,7 @@ use crate::ui::progress_report::SingleReport;
 
 /// A parsed registry reference.
 #[derive(Debug, Clone)]
-pub struct Reference {
+pub(crate) struct Reference {
     pub registry: String,
     pub repository: String,
     pub tag: String,
@@ -42,7 +42,7 @@ impl Reference {
     ///
     /// Digest references (`name@sha256:…`) are handled before tag parsing so
     /// the `:` inside the digest isn't mistaken for a tag separator.
-    pub fn parse(s: &str) -> Result<Self> {
+    pub(crate) fn parse(s: &str) -> Result<Self> {
         // Split off `@sha256:...` (or any `@digest`) first — in the registry
         // v2 URL scheme the full `sha256:hex` string takes the place of the
         // tag for GET /v2/<name>/manifests/<reference>.
@@ -91,7 +91,7 @@ impl Reference {
         })
     }
 
-    pub fn registry_url(&self) -> String {
+    pub(crate) fn registry_url(&self) -> String {
         // Loopback registries (localhost:5000 etc.) serve plain HTTP — the
         // same insecure-by-default convention docker applies to 127.0.0.0/8.
         // Non-loopback plain-HTTP registries must be opted in via the
@@ -562,14 +562,14 @@ async fn download_blob_once(
 
 /// The result of pulling a base image — the config blob and an ordered list
 /// of layer descriptors (referenced in the new image manifest we'll build).
-pub struct BasePull {
+pub(crate) struct BasePull {
     pub layers: Vec<Descriptor>,
     pub platform: Option<crate::oci::manifest::Platform>,
     /// Parsed config (so the builder can inherit env, cmd, etc.).
     pub config_json: serde_json::Value,
 }
 
-pub async fn pull_base_image(
+pub(crate) async fn pull_base_image(
     reference: &str,
     layout: &ImageLayout,
     desired_platform: Option<(&str, &str)>,
@@ -744,7 +744,7 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
 /// (index-aligned with `manifest.layers`). Used as the layer-reuse cache for
 /// `mise oci push`.
 #[derive(Debug, Clone)]
-pub struct RemoteImage {
+pub(crate) struct RemoteImage {
     pub manifest: ImageManifest,
     pub diff_ids: Vec<String>,
 }
@@ -755,7 +755,7 @@ pub struct RemoteImage {
 /// or points at an image index rather than a single manifest. Other errors
 /// propagate — the caller treats them as a cache miss with a warning, since
 /// a broken cache lookup should never fail a push.
-pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> {
+pub(crate) async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> {
     let r = Reference::parse(reference)?;
     let base_url = r.registry_url();
     let mut session = AuthSession::new(r.clone(), "pull").await?;
@@ -875,7 +875,7 @@ pub async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteImage>> 
 // ---------------------------------------------------------------------------
 
 /// Summary of a completed push, for CLI reporting.
-pub struct PushSummary {
+pub(crate) struct PushSummary {
     pub manifest_digest: String,
     pub uploaded: usize,
     pub skipped: usize,
@@ -894,7 +894,7 @@ const UPLOAD_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
 /// The standard annotation naming the base image a manifest was built from
 /// (written by `mise oci build`). Push uses it to attempt cross-repository
 /// blob mounts when the base lives on the same registry.
-pub const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.name";
+pub(crate) const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.name";
 
 /// Push an OCI image layout directory to a registry reference.
 ///
@@ -908,7 +908,7 @@ pub const ANNOTATION_BASE_NAME: &str = "org.opencontainers.image.base.name";
 /// the existing index's other-platform entries are preserved, so runners
 /// of different architectures can each push the same tag and end up with
 /// a multi-arch image.
-pub async fn push_image(
+pub(crate) async fn push_image(
     image_dir: &Path,
     reference: &str,
     update_index: bool,
