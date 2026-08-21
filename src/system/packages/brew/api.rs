@@ -767,9 +767,6 @@ fn formula_from_internal(
         .bottle_tag
         .as_deref()
         .unwrap_or(&index.metadata.bottle_tag);
-    if bottle_tag != index.metadata.bottle_tag {
-        bail!("brew:{name} signed bottle tag disagrees with the signed index metadata");
-    }
     let mut bottle = HashMap::new();
     if let Some(checksum) = signed.bottle_checksum.as_deref() {
         validate_sha256("bottle", checksum)?;
@@ -1243,6 +1240,7 @@ mod tests {
                     "stable_dependencies": ["runtime", {"builder": ":build"}],
                     "bottle_checksum": bottle_sha,
                     "bottle_cellar": ":any_skip_relocation",
+                    "bottle_tag": "arm64_sequoia",
                     "ruby_source_checksum": ruby_sha,
                     "keg_only_args": [":versioned_formula"],
                     "conflicts": [["other", {":because": "same binary"}]],
@@ -1253,7 +1251,7 @@ mod tests {
             "formula_aliases": {"hi": "hello"},
             "formula_renames": {},
             "formula_tap_git_head": "signed-core-head",
-            "metadata": {"bottle_tag": "x86_64_linux"}
+            "metadata": {"bottle_tag": "arm64_tahoe"}
         }));
         let canonical = canonical_internal_name(&index, "hi").unwrap();
         let formula = formula_from_internal(
@@ -1275,7 +1273,7 @@ mod tests {
             formula.ruby_source_path.as_deref(),
             Some("Formula/h/hello.rb")
         );
-        let bottle = &formula.bottle["stable"].files["x86_64_linux"];
+        let bottle = &formula.bottle["stable"].files["arm64_sequoia"];
         assert_eq!(
             bottle.url,
             format!("https://ghcr.io/v2/homebrew/core/hello/blobs/sha256:{bottle_sha}")
