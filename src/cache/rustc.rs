@@ -192,11 +192,18 @@ fn action_from_parsed_dep_info(
     Ok((action, discovered))
 }
 
+/// Builds a compiler action context with stable host path mappings.
 fn base_action_context(rustc: &OsStr, working_dir: &Path) -> Result<ActionContext> {
+    let task_root = std::env::var_os(session::TASK_ROOT_ENV).map(PathBuf::from);
+    let cargo_target_dir = std::env::var_os(session::CARGO_TARGET_ENV).map(PathBuf::from);
     Ok(ActionContext {
         compiler: compiler_identity(rustc)?,
         working_dir: working_dir.to_path_buf(),
-        path_mappings: path_mappings(working_dir),
+        path_mappings: path_mappings(
+            working_dir,
+            task_root.as_deref(),
+            cargo_target_dir.as_deref(),
+        ),
         environment: BTreeMap::new(),
         inputs: Vec::new(),
     })
@@ -646,7 +653,12 @@ fn identity_field<'a>(verbose: &'a str, field: &str) -> Result<&'a str> {
         .ok_or_else(|| eyre::eyre!("rustc identity is missing {field}"))
 }
 
-fn path_mappings(working_dir: &Path) -> Vec<PathMapping> {
+/// Returns stable path mappings with optional task and Cargo target roots.
+fn path_mappings(
+    working_dir: &Path,
+    task_root: Option<&Path>,
+    cargo_target_dir: Option<&Path>,
+) -> Vec<PathMapping> {
     let mut mappings = Vec::new();
     let mut roots = BTreeSet::new();
     add_mapping(
@@ -655,6 +667,17 @@ fn path_mappings(working_dir: &Path) -> Vec<PathMapping> {
         working_dir.to_path_buf(),
         "workspace",
     );
+    if let Some(root) = task_root.filter(|root| root.is_absolute()) {
+        add_mapping(&mut mappings, &mut roots, root.to_path_buf(), "task_root");
+    }
+    if let Some(root) = cargo_target_dir.filter(|root| root.is_absolute()) {
+        add_mapping(
+            &mut mappings,
+            &mut roots,
+            root.to_path_buf(),
+            "cargo_target",
+        );
+    }
     for (name, placeholder) in [
         ("CARGO_HOME", "cargo_home"),
         ("RUSTUP_HOME", "rustup_home"),
@@ -952,12 +975,39 @@ mod tests {
     #[test]
     fn mappings_do_not_duplicate_home_placeholders() {
         let directory = tempfile::tempdir().unwrap();
-        let mappings = path_mappings(directory.path());
+        let mappings = path_mappings(directory.path(), None, None);
         let placeholders = mappings
             .iter()
             .map(|mapping| &mapping.placeholder)
             .collect::<BTreeSet<_>>();
         assert_eq!(placeholders.len(), mappings.len());
+    }
+
+    #[test]
+    fn mappings_include_the_task_root() {
+        let directory = tempfile::tempdir().unwrap();
+        let dependency = directory.path().join("dependency");
+        let task = directory.path().join("task");
+        let mappings = path_mappings(&dependency, Some(&task), None);
+
+        assert!(
+            mappings
+                .iter()
+                .any(|mapping| mapping.root == task && mapping.placeholder == "task_root")
+        );
+    }
+
+    #[test]
+    fn mappings_include_the_cargo_target_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("target");
+        let mappings = path_mappings(directory.path(), None, Some(&target));
+
+        assert!(
+            mappings
+                .iter()
+                .any(|mapping| mapping.root == target && mapping.placeholder == "cargo_target")
+        );
     }
 
     #[test]

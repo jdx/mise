@@ -8,6 +8,12 @@ export MISE_CEILING_PATHS="$HOME"
 
 mkdir -p "$MISE_CONFIG_DIR/conf.d"
 
+cat >dotted-fragment-target.toml <<EOF
+[env]
+DOTTED_SYMLINK = "loaded"
+EOF
+ln -s "$PWD/dotted-fragment-target.toml" "$MISE_CONFIG_DIR/conf.d/x.base.toml"
+
 cat >"$MISE_CONFIG_DIR/conf.d/10-fragment.toml" <<EOF
 [settings]
 minimum_release_age_excludes = ["from-conf-d"]
@@ -34,6 +40,8 @@ EOF
 echo "dummy 1.0.0" >"$HOME/.tool-versions"
 
 assert "mise env | grep GLOBAL_PRECEDENCE" "export GLOBAL_PRECEDENCE=from-local"
+assert "mise env --json | jq -r .DOTTED_SYMLINK" "loaded"
+MISE_ENV_CONF_D=true assert "mise env --json | jq -r .DOTTED_SYMLINK" "null"
 assert "mise settings get minimum_release_age_excludes" '["from-local"]'
 # ~/.tool-versions joins the global group only under MISE_USE_TOML=0, and outranks
 # the config dir. Only the active version carries a source.

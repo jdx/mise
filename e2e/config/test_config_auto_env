@@ -26,6 +26,7 @@ echo 'env.CONF_D_AUTO = "base"' >.mise/conf.d/00-base.toml
 echo 'env.CONF_D_AUTO = "unix"' >.mise/conf.d/10-platform.unix.toml
 echo "env.CONF_D_AUTO = \"$os\"" >".mise/conf.d/20-platform.$os.toml"
 echo "env.CONF_D_AUTO = \"$os-$arch\"" >".mise/conf.d/30-platform.$os-$arch.toml"
+export MISE_ENV_CONF_D=true
 
 # default: off, platform configs are not loaded
 assert "mise env --json | jq -r .AAA" "base"

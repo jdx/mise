@@ -804,7 +804,18 @@ impl JavaMetadata {
 
 // only care about these features
 static JAVA_FEATURES: Lazy<HashSet<String>> = Lazy::new(|| {
-    HashSet::from(["crac", "javafx", "jcef", "leyden", "lite", "musl"].map(|s| s.to_string()))
+    HashSet::from(
+        [
+            "crac",
+            "innovation",
+            "javafx",
+            "jcef",
+            "leyden",
+            "lite",
+            "musl",
+        ]
+        .map(|s| s.to_string()),
+    )
 });
 
 #[cfg(test)]

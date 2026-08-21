@@ -23,9 +23,9 @@ static AQUA_STANDARD_REGISTRY_ALIASES: phf::Map<&'static str, &'static str> = in
     "/aqua_standard_registry_aliases.rs"
 ));
 
-/// Returns all package IDs from the baked-in aqua registry.
-pub fn package_ids() -> Vec<&'static str> {
-    AQUA_STANDARD_REGISTRY_FILES.keys().copied().collect()
+/// Returns all package IDs from the baked-in Aqua registry without allocating a collection.
+pub fn package_ids() -> impl Iterator<Item = &'static str> {
+    AQUA_STANDARD_REGISTRY_FILES.keys().copied()
 }
 
 pub fn package(package_id: &str) -> Option<Result<AquaPackage>> {

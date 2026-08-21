@@ -1699,25 +1699,34 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
 /// Config filename patterns for a single MISE_ENV environment, in precedence order
 /// (later wins, matching LOCAL_CONFIG_FILENAMES ordering)
 fn env_config_patterns(env: &str) -> Vec<String> {
+    env_config_patterns_with_conf_d(env, env::env_conf_d())
+}
+
+/// `env_config_patterns` with the `env_conf_d` decision injected, so tests can
+/// cover both sides of the migration without touching global state.
+fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     let env = glob::Pattern::escape(env);
-    vec![
-        format!(".config/mise/conf.d/*.{env}.toml"),
+    let mut patterns = vec![
         format!(".config/mise/config.{env}.toml"),
         format!(".config/mise.{env}.toml"),
         format!("mise/config.{env}.toml"),
         format!("mise.{env}.toml"),
-        format!(".mise/conf.d/*.{env}.toml"),
         format!(".mise/config.{env}.toml"),
         format!(".mise.{env}.toml"),
-        format!(".config/mise/conf.d/*.{env}.local.toml"),
         format!(".config/mise/config.{env}.local.toml"),
         format!(".config/mise.{env}.local.toml"),
         format!("mise/config.{env}.local.toml"),
         format!("mise.{env}.local.toml"),
-        format!(".mise/conf.d/*.{env}.local.toml"),
         format!(".mise/config.{env}.local.toml"),
         format!(".mise.{env}.local.toml"),
-    ]
+    ];
+    if env_conf_d {
+        patterns.insert(0, format!(".config/mise/conf.d/*.{env}.toml"));
+        patterns.insert(5, format!(".mise/conf.d/*.{env}.toml"));
+        patterns.insert(8, format!(".config/mise/conf.d/*.{env}.local.toml"));
+        patterns.insert(13, format!(".mise/conf.d/*.{env}.local.toml"));
+    }
+    patterns
 }
 
 pub static DEFAULT_CONFIG_FILENAMES: Lazy<Vec<String>> = Lazy::new(|| {
@@ -1836,8 +1845,34 @@ fn is_environment_conf_d_file(path: &Path) -> bool {
     conf_d_file_environment(path).is_some()
 }
 
+/// Warn about a dotted `conf.d` fragment whose name will become an environment
+/// selector once `env_conf_d` defaults to on. Only fires inside the migration
+/// window: the setting is unset (so the meaning is still going to change) and
+/// the version default is still legacy (so it hasn't changed yet).
+fn warn_on_dotted_conf_d_file(path: &Path) {
+    if settings::is_loaded()
+        && env::env_conf_d_setting().is_none()
+        && !env::env_conf_d()
+        && is_environment_conf_d_file(path)
+    {
+        deprecated_at!(
+            "2026.8.10",
+            "2027.8.10",
+            "dotted_conf_d_filename",
+            "dots in unconditional conf.d filenames are deprecated because the suffix will become an environment selector; rename fragments such as `node.tools.toml` to `node-tools.toml`, or set `env_conf_d = true` in a miserc.toml file to opt in now"
+        );
+    }
+}
+
 fn load_config_glob(dir: &Path, pattern: &str) -> Vec<PathBuf> {
-    config_glob(dir, pattern)
+    let paths = config_glob(dir, pattern);
+    if !env::env_conf_d() {
+        for path in &paths {
+            warn_on_dotted_conf_d_file(path);
+        }
+        return paths;
+    }
+    paths
         .into_iter()
         .filter(|path| {
             if is_unconditional_conf_d_pattern(pattern) {
@@ -1875,8 +1910,9 @@ pub(crate) fn environments_for_config_path(path: &Path) -> Vec<String> {
             ["config", "mise", ".mise"].into_iter().any(|prefix| {
                 filename == format!("{prefix}.{environment}.toml")
                     || filename == format!("{prefix}.{environment}.local.toml")
-            }) || conf_d_file_environment(path)
-                .is_some_and(|(file_environment, _)| file_environment == environment.as_str())
+            }) || (env::env_conf_d()
+                && conf_d_file_environment(path)
+                    .is_some_and(|(file_environment, _)| file_environment == environment.as_str()))
         })
         .cloned()
         .collect()
@@ -2266,8 +2302,10 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
     }
     for dir in [*dirs::CONFIG, *dirs::SYSTEM_CONFIG] {
         for env_name in &candidate_envs {
-            found.extend(conf_d_environment_files(dir, env_name, false));
-            found.extend(conf_d_environment_files(dir, env_name, true));
+            if env::env_conf_d() {
+                found.extend(conf_d_environment_files(dir, env_name, false));
+                found.extend(conf_d_environment_files(dir, env_name, true));
+            }
             for filename in [
                 format!("config.{env_name}.toml"),
                 format!("mise.{env_name}.toml"),
@@ -2496,14 +2534,17 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
         if let Some(file_name) = p.file_name().map(|f| f.to_string_lossy().to_string())
             && !file_name.starts_with(".")
             && file_name.ends_with(".toml")
-            && !is_environment_conf_d_file(&p)
+            && (!env::env_conf_d() || !is_environment_conf_d_file(&p))
         {
+            warn_on_dotted_conf_d_file(&p);
             files.insert(p);
         }
     }
     files.extend([dir.join("config.toml"), dir.join("mise.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
-        files.extend(conf_d_environment_files(dir, environment, false));
+        if env::env_conf_d() {
+            files.extend(conf_d_environment_files(dir, environment, false));
+        }
         files.extend([
             dir.join(format!("config.{environment}.toml")),
             dir.join(format!("mise.{environment}.toml")),
@@ -2511,7 +2552,9 @@ fn config_files_from_dir(dir: &Path) -> IndexSet<PathBuf> {
     }
     files.extend([dir.join("config.local.toml"), dir.join("mise.local.toml")]);
     for environment in &*env::MISE_ENV_WITH_AUTO {
-        files.extend(conf_d_environment_files(dir, environment, true));
+        if env::env_conf_d() {
+            files.extend(conf_d_environment_files(dir, environment, true));
+        }
         files.extend([
             dir.join(format!("config.{environment}.local.toml")),
             dir.join(format!("mise.{environment}.local.toml")),
@@ -2716,6 +2759,7 @@ async fn parse_config_file(
     f: &PathBuf,
     idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<Arc<dyn ConfigFile>> {
+    warn_on_dotted_conf_d_file(f);
     let plugins = matching_idiomatic_tools(f, idiomatic_filenames);
     if plugins.is_empty() {
         config_file::parse(f).await
@@ -5436,7 +5480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_project_conf_d_environment_precedence() -> Result<()> {
+    fn test_project_conf_d_dotted_fragments_remain_unconditional() -> Result<()> {
         let tmp = TempDir::new()?;
         let confd = tmp.path().join(".mise/conf.d");
         fs::create_dir_all(&confd)?;
@@ -5450,11 +5494,7 @@ mod tests {
             fs::write(confd.join(filename), "[env]\n")?;
         }
 
-        let filenames = vec![
-            ".mise/conf.d/*.toml".to_string(),
-            ".mise/conf.d/*.dev.toml".to_string(),
-            ".mise/conf.d/*.dev.local.toml".to_string(),
-        ];
+        let filenames = vec![".mise/conf.d/*.toml".to_string()];
         let paths = config_paths_in_dir_with_filenames(tmp.path(), &filenames);
         let relative = paths
             .iter()
@@ -5463,6 +5503,9 @@ mod tests {
         assert_eq!(
             relative,
             vec![
+                Path::new(".mise/conf.d/05-ci.ci.toml"),
+                Path::new(".mise/conf.d/04-dev-local.dev.local.toml"),
+                Path::new(".mise/conf.d/03-dev.dev.toml"),
                 Path::new(".mise/conf.d/02-local.local.toml"),
                 Path::new(".mise/conf.d/01-base.toml"),
             ]
@@ -5813,7 +5856,7 @@ mod tests {
     #[test]
     fn test_env_config_patterns() {
         assert_eq!(
-            env_config_patterns("linux"),
+            env_config_patterns_with_conf_d("linux", true),
             vec![
                 ".config/mise/conf.d/*.linux.toml",
                 ".config/mise/config.linux.toml",
@@ -5833,6 +5876,11 @@ mod tests {
                 ".mise.linux.local.toml",
             ]
         );
+        assert!(
+            env_config_patterns_with_conf_d("linux", false)
+                .iter()
+                .all(|pattern| !pattern.contains("conf.d"))
+        );
     }
 
     #[test]
@@ -5843,7 +5891,7 @@ mod tests {
         fs::write(confd.join("tools.qa*.toml"), "[env]\n")?;
         fs::write(confd.join("tools.qa1.toml"), "[env]\n")?;
 
-        let pattern = env_config_patterns("qa*")
+        let pattern = env_config_patterns_with_conf_d("qa*", true)
             .into_iter()
             .find(|pattern| pattern.starts_with(".mise/conf.d/") && !pattern.contains(".local."))
             .unwrap();

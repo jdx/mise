@@ -10,10 +10,10 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `mise.toml`
 - `mise/config.toml`
 - `.mise/config.toml`
-- `.mise/conf.d/*.toml` - non-hidden TOML fragments, loaded in alphabetical order; environment suffixes such as `tools.development.toml` load only when that environment is active
+- `.mise/conf.d/*.toml` - all non-hidden TOML files in this directory are loaded in alphabetical order; dotted names like `x.base.toml` are [being deprecated](/configuration/environments.html#conf-d-environments) and load only for the matching environment under `env_conf_d = true`
 - `.config/mise.toml` - use this in order to group config files into a common directory
 - `.config/mise/config.toml`
-- `.config/mise/conf.d/*.toml` - the same fragment and environment-suffix behavior under the grouped config directory
+- `.config/mise/conf.d/*.toml` - the same fragment loading and [deprecation](/configuration/environments.html#conf-d-environments) behavior under the grouped config directory
 
 ::: tip
 Run [`mise cfg`](/cli/config.html) to figure out what order mise is loading files on your particular setup. This is often

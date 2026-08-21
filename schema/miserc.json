@@ -25,6 +25,10 @@
         "type": "string"
       }
     },
+    "env_conf_d": {
+      "description": "Enable environment-specific filenames in conf.d directories.",
+      "type": "boolean"
+    },
     "ignored_config_paths": {
       "default": [],
       "description": "This is a list of config paths that mise will ignore.",
