@@ -3065,6 +3065,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn atomically_validated_removal_rejects_path_replacement() {
         let root = tempfile::tempdir().unwrap();
