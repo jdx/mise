@@ -3567,6 +3567,7 @@ packages:
     repo_owner: example
     repo_name: tool
     name: crates.io/example-crate
+    crate: ""
 "#,
         )
         .unwrap();
@@ -3575,6 +3576,27 @@ packages:
         let error = validate(&pkg).unwrap_err().to_string();
 
         assert!(error.ends_with("Use the cargo backend instead: cargo:example-crate."));
+    }
+
+    #[test]
+    fn cargo_warning_escapes_terminal_control_characters() {
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: cargo
+    repo_owner: example
+    repo_name: tool
+    crate: "example\u001b[2J\ncrate"
+"#,
+        )
+        .unwrap();
+        let pkg = registry.package("example/tool").unwrap();
+
+        let error = validate(&pkg).unwrap_err().to_string();
+
+        assert!(!error.contains('\u{1b}'));
+        assert!(!error.contains('\n'));
+        assert!(error.ends_with(r"Use the cargo backend instead: cargo:example\u{1b}[2J\ncrate."));
     }
 
     fn aqua_var(name: &str, required: bool) -> AquaVar {
@@ -4768,12 +4790,13 @@ fn validate(pkg: &AquaPackage) -> Result<()> {
                 "package type `cargo` is not supported in the aqua backend. Use the cargo backend instead{}.",
                 pkg.crate_name
                     .as_deref()
+                    .filter(|name| !name.is_empty())
                     .or_else(|| {
                         pkg.name
                             .as_deref()
                             .and_then(|s| s.strip_prefix("crates.io/"))
                     })
-                    .map(|name| format!(": cargo:{name}"))
+                    .map(|name| format!(": cargo:{}", name.escape_debug()))
                     .unwrap_or_default()
             )
         }
