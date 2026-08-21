@@ -142,6 +142,16 @@ impl MultiProgressReport {
         }
     }
 
+    /// Depth of overlapping progress suspensions.
+    ///
+    /// For tests that need to observe that a caller holds its guard for a whole
+    /// scope — such as an elevated child's lifetime in [`crate::system::sudo`] —
+    /// rather than only that it constructed one.
+    #[cfg(test)]
+    pub(crate) fn progress_suspension_depth(&self) -> usize {
+        self.pause_state.lock().unwrap().count
+    }
+
     fn resume_progress(&self) {
         let mut state = self.pause_state.lock().unwrap();
         if state.release() {
