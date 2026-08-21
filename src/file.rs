@@ -182,6 +182,7 @@ pub fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
 /// Atomically detach a directory from its public pathname, validate the detached object, then
 /// remove it. This prevents a concurrent pathname replacement between identity validation and
 /// recursive deletion from redirecting cleanup to a different directory.
+#[cfg(unix)]
 pub fn remove_all_atomically_validated(
     path: &Path,
     validate: impl FnOnce(&Path) -> Result<()>,
