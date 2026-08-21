@@ -1015,7 +1015,7 @@ e.g.: node, python
 }
 cmd completion help="Generate shell completions" effect=read {
     alias complete completions hide=#true
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise\u{1b}[22m\n    $ \u{1b}[1mmise completion fish > ~/.config/fish/completions/mise.fish\u{1b}[22m\n    $ \u{1b}[1mmise completion powershell >> $PROFILE\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # put it where the shell looks, and print any one-time line it still needs\n    $ \u{1b}[1mmise completion zsh --install\u{1b}[22m\n\n    # or choose the path yourself\n    $ \u{1b}[1mmise completion bash > ~/.local/share/bash-completion/completions/mise\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise\u{1b}[22m\n    $ \u{1b}[1mmise completion fish > ~/.config/fish/completions/mise.fish\u{1b}[22m\n    $ \u{1b}[1mmise completion powershell >> $PROFILE\u{1b}[22m\n"
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL> {
             choices {
@@ -1042,6 +1042,16 @@ Retained for compatibility with older completion generators.
 Completions now always use usage-rs's built-in protocol, so this is a no-op.
 """#
     }
+    flag --install help="Install the script where this shell looks for it, instead of printing it" effect=write {
+        long_help #"""
+Install the script where this shell looks for it, instead of printing it
+
+Writes the script file and nothing else: no shell rc file and no PowerShell profile is
+edited. Where a shell needs a one-time line of its own — zsh's `fpath+=`, PowerShell's
+dot-source — it is printed for you to add.
+"""#
+    }
+    flag --force help="Replace a file at the target path that mise did not write" requires=--install effect=write
     arg "[SHELL]" help="Shell type to generate completions for" required=#false required_unless=--shell {
         choices {
             choice bash
