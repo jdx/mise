@@ -292,6 +292,16 @@ jobs:
           result_dir="$RUNNER_TEMP/mise-brew-oracle-${{ matrix.reference.id }}-results"
           mkdir -p "$result_dir"
           test ! -L "$result_dir"
+      - name: Run gcloud-cli durable launcher oracle
+        env:
+          MISE_BREW_ORACLE_DISPOSABLE: "1"
+          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-${{ matrix.reference.id }}-results
+          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
+          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
+          MISE_DISABLE_TOOLS: "1"
+          MISE_AUTO_INSTALL: "false"
+        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_cask_gcloud_macos_slow
       - name: Run cask oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
@@ -312,16 +322,6 @@ jobs:
           MISE_DISABLE_TOOLS: "1"
           MISE_AUTO_INSTALL: "false"
         run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_cask_appdir_slow
-      - name: Run gcloud-cli durable launcher oracle
-        env:
-          MISE_BREW_ORACLE_DISPOSABLE: "1"
-          MISE_BREW_ORACLE_RESULT_DIR: ${{ runner.temp }}/mise-brew-oracle-${{ matrix.reference.id }}-results
-          MISE_BREW_ORACLE_RUNNER_TEMP: ${{ runner.temp }}
-          MISE_BREW_ORACLE_MISE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          MISE_BREW_ORACLE_UNFORWARDED: must-not-leak
-          MISE_DISABLE_TOOLS: "1"
-          MISE_AUTO_INSTALL: "false"
-        run: mise run --skip-deps test:e2e e2e/cli/test_system_install_brew_cask_gcloud_macos_slow
       - name: Run canonical formula lifecycle oracle
         env:
           MISE_BREW_ORACLE_DISPOSABLE: "1"
