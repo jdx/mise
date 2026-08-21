@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
