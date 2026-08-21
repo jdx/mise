@@ -142,6 +142,11 @@ pub struct RegistryIdiomaticFile {
     pub version_regex: Option<&'static str>,
     pub version_json_path: Option<&'static str>,
     pub version_expr: Option<&'static str>,
+    /// Set when this file should no longer be read. The value is the reason, shown in
+    /// the deprecation warning emitted when the file still resolves a version. Used for
+    /// files that only declare a minimum compatible version rather than the version the
+    /// project is built with.
+    pub deprecated: Option<&'static str>,
 }
 
 impl RegistryIdiomaticFile {
@@ -428,13 +433,18 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
             version_regex: None,
             version_json_path: None,
             version_expr: None,
+            deprecated: None,
         }),
         toml::Value::Table(table) => {
             for key in table.keys() {
                 ensure!(
                     matches!(
                         key.as_str(),
-                        "path" | "version_regex" | "version_json_path" | "version_expr"
+                        "path"
+                            | "version_regex"
+                            | "version_json_path"
+                            | "version_expr"
+                            | "deprecated"
                     ),
                     "unknown idiomatic file field: {key}"
                 );
@@ -457,6 +467,7 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
                 version_regex: string("version_regex")?,
                 version_json_path: string("version_json_path")?,
                 version_expr: string("version_expr")?,
+                deprecated: string("deprecated")?,
             })
         }
         _ => Err(eyre::eyre!(
@@ -835,6 +846,7 @@ idiomatic_files = [
   ".example-version",
   { path = "example.json", version_json_path = ".tool.version" },
   { path = "example.txt", version_regex = 'version=(\S+)', version_expr = "versions[0]" },
+  { path = "example.conf", version_regex = 'minimum=(\S+)', deprecated = "it declares a minimum." },
 ]
 test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
 "#
@@ -873,6 +885,12 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some(r"version=(\S+)")
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
+        assert_eq!(tool.idiomatic_files[2].deprecated, None);
+        assert_eq!(tool.idiomatic_files[3].path, "example.conf");
+        assert_eq!(
+            tool.idiomatic_files[3].deprecated,
+            Some("it declares a minimum.")
+        );
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
         assert!(!registry.missing_version_order);
     }

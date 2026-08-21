@@ -263,7 +263,7 @@ fn codegen_registry() {
                     .iter()
                     .map(|f| match f {
                         toml::Value::String(path) => format!(
-                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None }}",
+                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None, deprecated: None }}",
                             raw_string_literal(path)
                         ),
                         toml::Value::Table(spec) => {
@@ -275,6 +275,7 @@ fn codegen_registry() {
                                             | "version_regex"
                                             | "version_json_path"
                                             | "version_expr"
+                                            | "deprecated"
                                     ),
                                     "[{short}] unknown idiomatic file field: {key}"
                                 );
@@ -302,11 +303,12 @@ fn codegen_registry() {
                                     .unwrap_or_else(|| "None".to_string())
                             };
                             format!(
-                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {} }}",
+                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {}, deprecated: {} }}",
                                 raw_string_literal(required("path")),
                                 optional("version_regex"),
                                 optional("version_json_path"),
                                 optional("version_expr"),
+                                optional("deprecated"),
                             )
                         }
                         _ => panic!(

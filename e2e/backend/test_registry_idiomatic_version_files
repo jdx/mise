@@ -34,11 +34,21 @@ assert_contains "mise tool task" "3.17"
 echo "v2.71.1" >.chezmoiversion
 assert_contains "mise tool chezmoi" "2.71.1"
 
+# `cmake_minimum_required` is a floor, not the version the project is built with.
+# Deprecated: it still resolves but warns. Removed in mise 2026.11.0 along with this
+# block and the registry entry's parser.
 cat >CMakeLists.txt <<'EOF'
 cmake_minimum_required(VERSION 3.25...3.28)
 project(example)
 EOF
 assert_contains "mise tool cmake" "3.25"
+assert_contains "mise tool cmake 2>&1" "deprecated [CMakeLists.txt]"
+
+# opting into the final behavior now drops the version and the warning
+export MISE_IDIOMATIC_VERSION_FILE_IGNORE_MINIMUM_VERSIONS=1
+assert_not_contains "mise tool cmake" "3.25"
+assert_not_contains "mise tool cmake 2>&1" "deprecated"
+unset MISE_IDIOMATIC_VERSION_FILE_IGNORE_MINIMUM_VERSIONS
 
 cat >Earthfile <<'EOF'
 VERSION --pass-args 0.8

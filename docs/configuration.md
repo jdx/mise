@@ -498,10 +498,34 @@ idiomatic files. Registry entries may use the same `version_regex`, `version_jso
 This lets tools installed through backends such as `aqua:` and `github:` support JSON manifests
 and other tool-specific version files without requiring an asdf or vfox plugin.
 
-Some files declare a minimum compatible version or a configuration-format major rather than an
-exact binary release. mise treats that value as a normal version request, so a value such as
-`3.25` selects the latest matching CMake 3.25 release and a GoReleaser config `version: 2` selects
-the latest GoReleaser 2.x release.
+### Which fields mise reads
+
+An idiomatic version file is only read for fields that declare **the version the project is built
+with**. Fields that declare a **minimum compatible version** — a floor for whoever consumes the
+project — are not version requests and mise does not install from them. A floor says nothing about
+which version the project is developed and tested against: a library that still supports Node 18
+or CMake 3.25 is almost certainly not built with it, so resolving the floor either pins everyone to
+the oldest supported release or, read as a range, just means "latest".
+
+A configuration-format major is different and is still read: a GoReleaser config `version: 2` is a
+schema selector deliberately coupled to the CLI major, not a compatibility floor, so it selects the
+latest GoReleaser 2.x.
+
+::: warning
+mise used to treat two floors as version requests. Both are deprecated, warn when they resolve a
+version, and will be removed in mise 2026.11.0: `go.mod`'s `go X.Y` directive (add a
+`toolchain goX.Y.Z` line to `go.mod`, or use `.go-version` or `mise.toml`) and `CMakeLists.txt`'s
+`cmake_minimum_required` (use `mise.toml`).
+
+A project that has already migrated can opt into the final behavior — floors ignored, no warning —
+before then:
+
+```sh
+mise settings set idiomatic_version_file_ignore_minimum_versions true
+```
+
+That setting is removed in 2026.11.0 along with the behavior it guards.
+:::
 
 For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn`):
 
@@ -509,9 +533,21 @@ For `package.json` (supported by `node`, `deno`, `bun`, `npm`, `pnpm`, and `yarn
 - Package managers (`npm`, `pnpm`, and `yarn`) read `devEngines.packageManager` or top-level `packageManager` (e.g. `pnpm@9.1.0` or `npm@10.0.0`).
 - For `bun`, mise checks `devEngines.runtime` first, falling back to `devEngines.packageManager` and top-level `packageManager` (e.g. `bun@1.2.0`).
 
-For `go.mod`, the `toolchain goX.Y.Z` directive (an exact toolchain pin) is used when present.
-Otherwise the `go X.Y` directive is used; because it declares only the _minimum_ required Go
-version, mise resolves it to the latest matching patch (e.g. `go 1.22` → latest `1.22.x`).
+The `engines` field is **not** read, and this is the clearest case of the rule above. `engines`
+declares the range of Node versions a package is _compatible_ with — npm uses it to warn or fail
+when someone installs the package on an unsupported runtime. It is a statement about consumers, and
+it is routinely a wide range (`>=18`) that no one develops against. `devEngines`, added by npm
+precisely to fill this gap, states the version the project's own developers use, which is what mise
+needs. If you only have `engines`, pin the real version explicitly:
+
+```sh
+mise use node@22
+```
+
+For `go.mod`, the `toolchain goX.Y.Z` directive is used — an exact pin of the toolchain the module
+builds and tests with. The `go X.Y` directive is a minimum and is deprecated (see above).
+
+### Enabling idiomatic version files
 
 In mise, these are disabled by default, see <https://github.com/jdx/mise/discussions/4345> for rationale.
 
