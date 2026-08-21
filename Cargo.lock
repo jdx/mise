@@ -6474,8 +6474,8 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
- "usage-rs",
+ "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
+ "usage-rs 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
  "versions",
  "vfox",
  "walkdir",
@@ -11104,11 +11104,26 @@ version = "5.1.0"
 source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 
 [[package]]
+name = "usage-argv"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+
+[[package]]
 name = "usage-derive"
 version = "5.1.0"
 source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 dependencies = [
  "heck",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.3",
+]
+
+[[package]]
+name = "usage-derive"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.3",
@@ -11141,7 +11156,7 @@ dependencies = [
 [[package]]
 name = "usage-lib"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
+source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
 dependencies = [
  "heck",
  "indexmap 2.14.0",
@@ -11157,7 +11172,6 @@ dependencies = [
  "tera 2.1.1",
  "thiserror 2.0.20",
  "versions",
- "xx",
 ]
 
 [[package]]
@@ -11165,15 +11179,33 @@ name = "usage-rs"
 version = "5.1.0"
 source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
 dependencies = [
- "usage-argv",
- "usage-derive",
+ "usage-argv 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
+ "usage-derive 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
+]
+
+[[package]]
+name = "usage-rs"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+dependencies = [
+ "usage-argv 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
+ "usage-derive 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
+ "usage-test",
  "usage-validation",
+]
+
+[[package]]
+name = "usage-test"
+version = "5.1.0"
+source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+dependencies = [
+ "usage-argv 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
 ]
 
 [[package]]
 name = "usage-validation"
 version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
+source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
 dependencies = [
  "expr-lang",
 ]
@@ -11271,7 +11303,7 @@ dependencies = [
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "url",
- "usage-rs",
+ "usage-rs 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
  "wiremock",
  "xx",
 ]
