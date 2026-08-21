@@ -129,13 +129,13 @@ enum BootstrapPart {
     Compose,
     Repos,
     Dotfiles,
-    #[value(name = "mise-shell-activate", alias = "shell")]
+    #[value(name = "mise-shell-activate", visible_alias = "shell")]
     Shell,
-    #[value(name = "macos-defaults", alias = "defaults")]
+    #[value(name = "macos-defaults", visible_alias = "defaults")]
     Defaults,
-    #[value(name = "macos-launchd-agents", alias = "launchd")]
+    #[value(name = "macos-launchd-agents", visible_alias = "launchd")]
     Launchd,
-    #[value(name = "linux-systemd-units", alias = "systemd")]
+    #[value(name = "linux-systemd-units", visible_alias = "systemd")]
     Systemd,
     User,
     Tools,
@@ -691,6 +691,7 @@ struct BootstrapDotfilesApply {
 /// Show the status of dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
 #[command(
+    visible_alias = "ls",
     verbatim_doc_comment,
     after_long_help = BOOTSTRAP_DOTFILES_STATUS_AFTER_LONG_HELP
 )]

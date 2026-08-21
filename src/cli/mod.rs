@@ -228,7 +228,7 @@ pub(crate) enum Commands {
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
-    #[command(alias = "bs")]
+    #[command(visible_alias = "bs")]
     Bootstrap(bootstrap::Bootstrap),
     Cache(cache::Cache),
     Completion(completion::Completion),
@@ -1073,6 +1073,15 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    #[test]
+    fn run_keeps_its_custom_help_route() {
+        let cli = parse_cli(&["mise", "run", "--help"]).unwrap();
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected the run command");
+        };
+        assert_eq!(run.task.as_deref(), Some("--help"));
     }
 
     #[test]

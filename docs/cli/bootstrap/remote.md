@@ -102,6 +102,10 @@ Run only one or more remote bootstrap parts
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--port <PORT>`
 
@@ -142,6 +146,10 @@ Skip one or more remote bootstrap parts
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--source <SOURCE>`
 

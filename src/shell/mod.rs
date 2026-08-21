@@ -28,11 +28,10 @@ pub enum ShellType {
     // so the name never carried the 5.1-vs-7 distinction, and `mise completion` already spells the
     // same shell `powershell`.
     //
-    // It is not hidden, whatever `alias` suggests: `mise usage` renders aliases into
-    // `mise.usage.kdl` and from there into the CLI docs, so both names are listed there.
+    // Both names are documented, so this must remain a visible alias in the portable spec.
     //
     // Deliberately not a doc comment: the derive turns those into the value's help text.
-    #[value(alias = "powershell")]
+    #[value(visible_alias = "powershell")]
     Pwsh,
 }
 

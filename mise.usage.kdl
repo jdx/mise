@@ -151,7 +151,7 @@ Customize status output with `status` settings.
                 choice xonsh
                 choice zsh
                 choice pwsh {
-                    alias powershell hide=#true
+                    alias powershell
                 }
             }
         }
@@ -190,7 +190,7 @@ See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
             choice xonsh
             choice zsh
             choice pwsh {
-                alias powershell hide=#true
+                alias powershell
             }
         }
     }
@@ -277,7 +277,7 @@ e.g.: ruby@3
 """# required=#false var=#true
 }
 cmd bootstrap help="Set up a machine for the current config in one command" effect=destructive {
-    alias bs hide=#true
+    alias bs
     long_help #"""
 Set up a machine for the current config in one command
 
@@ -352,16 +352,16 @@ Cannot be used with `--skip`.
                 choice repos
                 choice dotfiles
                 choice mise-shell-activate {
-                    alias shell hide=#true
+                    alias shell
                 }
                 choice macos-defaults {
-                    alias defaults hide=#true
+                    alias defaults
                 }
                 choice macos-launchd-agents {
-                    alias launchd hide=#true
+                    alias launchd
                 }
                 choice linux-systemd-units {
-                    alias systemd hide=#true
+                    alias systemd
                 }
                 choice user
                 choice tools
@@ -389,16 +389,16 @@ Can be passed multiple times or as a comma-separated list.
                 choice repos
                 choice dotfiles
                 choice mise-shell-activate {
-                    alias shell hide=#true
+                    alias shell
                 }
                 choice macos-defaults {
-                    alias defaults hide=#true
+                    alias defaults
                 }
                 choice macos-launchd-agents {
-                    alias launchd hide=#true
+                    alias launchd
                 }
                 choice linux-systemd-units {
-                    alias systemd hide=#true
+                    alias systemd
                 }
                 choice user
                 choice tools
@@ -494,6 +494,7 @@ mise doesn't otherwise own.
             arg <TARGET> help="Target to edit"
         }
         cmd status help="Show the status of dotfiles from `[dotfiles]`" effect=read {
+            alias ls
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status --json\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status --missing\u{1b}[22m # exit 1 if anything is out of sync\n"
             flag "-J --json" help="Output in JSON format"
             flag --missing help=#"""
@@ -829,16 +830,16 @@ local one
                     choice repos
                     choice dotfiles
                     choice mise-shell-activate {
-                        alias shell hide=#true
+                        alias shell
                     }
                     choice macos-defaults {
-                        alias defaults hide=#true
+                        alias defaults
                     }
                     choice macos-launchd-agents {
-                        alias launchd hide=#true
+                        alias launchd
                     }
                     choice linux-systemd-units {
-                        alias systemd hide=#true
+                        alias systemd
                     }
                     choice user
                     choice tools
@@ -871,16 +872,16 @@ local one
                     choice repos
                     choice dotfiles
                     choice mise-shell-activate {
-                        alias shell hide=#true
+                        alias shell
                     }
                     choice macos-defaults {
-                        alias defaults hide=#true
+                        alias defaults
                     }
                     choice macos-launchd-agents {
-                        alias launchd hide=#true
+                        alias launchd
                     }
                     choice linux-systemd-units {
-                        alias systemd hide=#true
+                        alias systemd
                     }
                     choice user
                     choice tools
@@ -1306,7 +1307,7 @@ use this if you have `mise activate` in your shell rc file.
                 choice xonsh
                 choice zsh
                 choice pwsh {
-                    alias powershell hide=#true
+                    alias powershell
                 }
             }
         }
@@ -1785,7 +1786,7 @@ cmd hook-env hide=#true help="[internal] called by activate hook to update env v
                 choice xonsh
                 choice zsh
                 choice pwsh {
-                    alias powershell hide=#true
+                    alias powershell
                 }
             }
         }
@@ -1811,7 +1812,7 @@ cmd hook-not-found hide=#true help="[internal] called by shell when a command is
                 choice xonsh
                 choice zsh
                 choice pwsh {
-                    alias powershell hide=#true
+                    alias powershell
                 }
             }
         }
@@ -2853,7 +2854,7 @@ currently active in mise.toml.
     arg "[TOOL]" required=#false hide=#true
     arg "[VERSION]" required=#false hide=#true
 }
-cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" {
+cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" unknown_flags=value {
     alias r
     long_help #"""
 Run task(s)
@@ -3531,7 +3532,7 @@ By default, only tasks from the current directory hierarchy are loaded.
         }
         flag --usage hide=#true
     }
-    cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" {
+    cmd run disable_help_flag=#true restart_token=::: help="Run task(s)" unknown_flags=value {
         alias r
         long_help #"""
 Run task(s)

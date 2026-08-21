@@ -122,7 +122,7 @@ within_isolated_env() {
     MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
     MISE_USE_VERSIONS_HOST_TRACK=0 \
     MISE_YES=1 \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:${CARGO_TARGET_DIR:-$ROOT/target}/usage-cli/bin:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$ROOT/target/usage-cli/bin:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
     ROOT="$ROOT" \
     RUSTUP_HOME="$RUSTUP_HOME" \
     RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \

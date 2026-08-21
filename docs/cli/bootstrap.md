@@ -2,6 +2,7 @@
 # `mise bootstrap`
 
 - **Usage**: `mise bootstrap [FLAGS] [SUBCOMMAND]`
+- **Aliases**: `bs`
 - **Effect**: destructive — may delete or irreversibly overwrite
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
@@ -105,6 +106,10 @@ Cannot be used with `--skip`.
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--prompt-secrets`
 
@@ -135,6 +140,10 @@ Can be passed multiple times or as a comma-separated list.
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--update`
 
