@@ -3,6 +3,7 @@
 export MISE_EXPERIMENTAL=1
 
 marker="$MISE_TMP_DIR/monorepo-config-render-count"
+: >"$marker"
 mkdir -p apps/example
 
 cat <<'EOF' >mise.toml
