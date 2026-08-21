@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Remote task discovery must trust the defining config before it fetches or
-# renders metadata, including through explicitly included task files.
+# Remote task metadata can render Tera templates during discovery and install
+# tools before execution. Both actions must respect the defining config's trust.
 
 HTTP_PORT_FILE="$TMPDIR/mise_http_test_port"
 MARKER="$TMPDIR/remote-template-executed"
@@ -62,11 +62,13 @@ assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "not trusted"
 
 assert_fail "$UNTRUSTED_ENV mise tasks ls" "not trusted"
 assert_fail "$UNTRUSTED_ENV mise tasks deps remote_template" "not trusted"
+assert_fail "$UNTRUSTED_ENV mise run remote_template --help" "not trusted"
 [[ ! -e $REQUEST_MARKER ]] || fail "remote task was fetched during untrusted passive discovery"
 [[ ! -e $MARKER ]] || fail "remote metadata template executed before trust"
-
 assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
 assert_succeed "$UNTRUSTED_ENV mise tasks ls"
+assert_contains "$UNTRUSTED_ENV mise tasks deps remote_template" "remote_dep"
+assert_contains "$UNTRUSTED_ENV mise run remote_template --help" "--remote-flag"
 [[ -e $REQUEST_MARKER ]] || fail "trusted passive discovery did not fetch the remote task"
 [[ -e $MARKER ]] || fail "trusted remote metadata template did not render"
 assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
@@ -134,12 +136,47 @@ assert_contains "$UNTRUSTED_ENV PATH=$FAKE_SOPS_BIN:$PATH MISE_SOPS_ROPS=0 mise 
 [[ -e $SOPS_MARKER ]] || fail "trusted remote sops file did not execute the configured tool"
 assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
 
+# Remote visibility is metadata too: ordinary listings must apply hide after
+# fetching, while --hidden still exposes the task and its remote description.
+cat <<EOF >mise.toml
+[tasks.remote_hidden]
+file = "http://localhost:${HTTP_PORT}/test/remote-hidden"
+EOF
+
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_not_contains "$UNTRUSTED_ENV mise tasks ls" "remote_hidden"
+assert_contains "$UNTRUSTED_ENV mise tasks ls --hidden" "hidden remote metadata"
+assert_not_contains "$UNTRUSTED_ENV mise tasks deps" "remote_hidden"
+assert_contains "$UNTRUSTED_ENV mise tasks deps --hidden" "remote_hidden"
+assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
+# Locally known hidden metadata is monotonic, so passive listings must not
+# fetch that task merely to discard it afterward.
+rm -f "$REQUEST_MARKER"
+cat <<EOF >mise.toml
+[tasks.locally_hidden_remote]
+file = "http://localhost:${HTTP_PORT}/test/remote-template"
+hide = true
+EOF
+
+assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
+assert_not_contains "$UNTRUSTED_ENV mise tasks deps" "locally_hidden_remote"
+[[ ! -e $REQUEST_MARKER ]] || fail "tasks deps fetched a locally hidden remote task"
+assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
 # Tool metadata is consumed for runtime activation even when installation is
 # disabled, so every consumption path must require trust. Disabled modes still
 # remain authoritative after trust and must not install the missing fixture.
 cat <<EOF >mise.toml
 [tasks.remote_tools]
 file = "http://localhost:${HTTP_PORT}/test/remote-tools"
+
+[tasks.remote_alias_parent]
+depends = ["remote-tools-alias"]
+run = "echo remote alias parent ran"
+
+[tasks.remote_alias_delegate]
+run = [{ task = "remote-tools-alias" }]
 EOF
 
 assert_fail "$UNTRUSTED_ENV mise run remote_tools" "not trusted"
@@ -153,7 +190,85 @@ assert_fail "$UNTRUSTED_ENV mise run --dry-run --skip-tools remote_tools" "not t
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
 
 assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
-assert_contains "$UNTRUSTED_ENV mise run --skip-tools remote_tools" "dummy not installed"
+assert_contains "$UNTRUSTED_ENV mise tasks info remote-tools-alias" "remote-tools-alias"
+assert_contains "$UNTRUSTED_ENV mise tasks deps remote-tools-alias" "remote_tools"
+assert_contains "$UNTRUSTED_ENV mise run --skip-tools remote-tools-alias" "dummy not installed"
+assert_contains "$UNTRUSTED_ENV MISE_TASK_RUN_AUTO_INSTALL=0 mise remote-tools-alias" "dummy not installed"
+assert_contains "$UNTRUSTED_ENV mise run --skip-tools remote_alias_parent" "remote alias parent ran"
+assert_contains "$UNTRUSTED_ENV mise run --skip-tools remote_alias_delegate" "dummy not installed"
 assert_contains "$UNTRUSTED_ENV MISE_TASK_RUN_AUTO_INSTALL=0 mise run remote_tools" "dummy not installed"
 assert_contains "$UNTRUSTED_ENV MISE_AUTO_INSTALL=0 mise run remote_tools" "dummy not installed"
 assert_contains "$UNTRUSTED_ENV mise run remote_tools" "This is Dummy 1.0.0!"
+
+# A prefixed alias already known from local metadata must not trigger remote
+# alias discovery for unrelated tasks.
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+
+[tasks.local_prefixed_alias]
+alias = "local-alias"
+run = "echo local prefixed alias ran"
+
+[tasks.unrelated_remote]
+file = "http://localhost:${HTTP_PORT}/test/remote-template"
+EOF
+
+rm -f "$REQUEST_MARKER"
+assert_contains "mise //:local-alias" "local prefixed alias ran"
+[[ ! -e $REQUEST_MARKER ]] || fail "known local prefixed alias fetched unrelated remote metadata"
+
+# Prefixed monorepo aliases must use the same synthesized alias map in bare
+# dispatch and dynamic task delegation as normal `mise run` resolution.
+cat <<EOF >mise.toml
+monorepo_root = true
+
+[monorepo]
+config_roots = ["projects/*"]
+
+[tasks.remote_tools]
+file = "http://localhost:${HTTP_PORT}/test/remote-tools"
+
+[tasks.remote_prefixed_alias_delegate]
+run = [{ task = "//:remote-tools-alias" }]
+EOF
+
+assert_contains "MISE_TASK_RUN_AUTO_INSTALL=0 mise //:remote-tools-alias" "This is Dummy 1.0.0!"
+assert_contains "mise run --skip-tools remote_prefixed_alias_delegate" "This is Dummy 1.0.0!"
+
+# Bare remote-alias dispatch must retain the snapshot whose header established
+# the alias, rather than selecting revision 1 and executing a second download.
+cat <<EOF >mise.toml
+[tasks.remote_changing_alias]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing-alias"
+EOF
+
+assert_contains "MISE_TASK_REMOTE_NO_CACHE=true mise remote-changing-alias" "remote changing alias revision 1"
+
+# A remote raw-args task must execute the same snapshot used to decide that
+# --help should pass through, rather than fetching a mutable source twice.
+cat <<EOF >mise.toml
+[tasks.remote_raw_help]
+file = "http://localhost:${HTTP_PORT}/test/remote-raw-help"
+EOF
+
+assert_contains "MISE_TASK_REMOTE_NO_CACHE=true mise run remote_raw_help --help" "remote raw help revision 1"
+
+# Two no-cache tasks using the same mutable URL must retain the exact body that
+# was parsed for each Task instead of both executing the final download path.
+cat <<EOF >mise.toml
+[tasks.remote_revision_a]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing"
+
+[tasks.remote_revision_b]
+file = "http://localhost:${HTTP_PORT}/test/remote-changing"
+EOF
+
+ARTIFACT_TMPDIR="$TMPDIR/remote-artifacts"
+mkdir -p "$ARTIFACT_TMPDIR"
+output=$(quiet_assert_succeed "TMPDIR=$ARTIFACT_TMPDIR MISE_TASK_REMOTE_NO_CACHE=true mise run remote_revision_a ::: remote_revision_b")
+assert_contains_text "$output" "remote revision 1"
+assert_contains_text "$output" "remote revision 2"
+assert_fail "find '$ARTIFACT_TMPDIR' -mindepth 1 -print -quit | grep -q ."

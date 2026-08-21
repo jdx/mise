@@ -38,6 +38,17 @@ pub(crate) fn reset() {
     TASK_ENV_CACHE.lock().unwrap().clear();
 }
 
+#[derive(Debug)]
+pub(crate) struct TaskNotFoundError(String);
+
+impl Display for TaskNotFoundError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TaskNotFoundError {}
+
 /// Type alias for tracking failed tasks with their exit codes
 pub type FailedTasks = Arc<std::sync::Mutex<Vec<(Task, Option<i32>)>>>;
 
@@ -1679,7 +1690,7 @@ impl Task {
         config: &Arc<Config>,
         tasks_to_run: &[Task],
     ) -> Result<ResolvedTaskDependencies> {
-        use crate::task::TaskLoadContext;
+        use crate::task::{TaskLoadContext, task_fetcher::TaskFetcher};
 
         if let Some(err) = &self.workspace_dependency_error {
             bail!("{err}");
@@ -1712,62 +1723,76 @@ impl Task {
         };
 
         let all_tasks = config.tasks_with_context(ctx.as_ref()).await?;
-        let tasks = build_task_ref_map(all_tasks.iter());
-        // Skip deps with unresolved {{usage.*}} references — they'll be resolved
-        // later when render_depends_with_usage() is called with actual arg values.
-        let depends = self
-            .depends
-            .iter()
-            .filter(|td| !dep_has_usage_ref(td))
-            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
-            .flatten_ok()
-            .collect_vec();
-        let wait_for = self
-            .wait_for
-            .iter()
-            .filter(|td| !dep_has_usage_ref(td))
-            .map(|td| {
-                match_tasks_with_context(&tasks, td, Some(self))
-                    .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
+        let resolve = |all_tasks: &BTreeMap<String, Task>| -> Result<_> {
+            let tasks = build_task_ref_map(all_tasks.iter());
+            // Skip deps with unresolved {{usage.*}} references — they'll be resolved
+            // later when render_depends_with_usage() is called with actual arg values.
+            let depends = self
+                .depends
+                .iter()
+                .filter(|td| !dep_has_usage_ref(td))
+                .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
+                .flatten_ok()
+                .collect_vec();
+            let wait_for = self
+                .wait_for
+                .iter()
+                .filter(|td| !dep_has_usage_ref(td))
+                .map(|td| {
+                    match_tasks_with_context(&tasks, td, Some(self))
+                        .map(|tasks| tasks.into_iter().map(|t| (t, td)).collect_vec())
+                })
+                .flatten_ok()
+                .filter_map_ok(|(t, td)| {
+                    if td.env.is_empty() && td.args.is_empty() {
+                        // Name-based matching: wait for any running instance of this task
+                        // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
+                        // Return the actual task from tasks_to_run so the dependency graph
+                        // gets the correct env/args-variant node.
+                        tasks_to_run
+                            .iter()
+                            .find(|tr| tr.name == t.name)
+                            .map(|tr| (*tr).clone())
+                    } else {
+                        // Full identity matching: user explicitly wants a specific env/args variant
+                        tasks_to_run.contains(&t).then_some(t)
+                    }
+                })
+                .collect_vec();
+            let depends_post = self
+                .depends_post
+                .iter()
+                .filter(|td| !dep_has_usage_ref(td))
+                .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
+                .flatten_ok()
+                .filter_ok(|t| t.name != self.name)
+                .collect::<Result<Vec<_>>>()?;
+            let depends = depends
+                .into_iter()
+                .filter_ok(|t| t.name != self.name)
+                .collect::<Result<_>>()?;
+            let wait_for = wait_for
+                .into_iter()
+                .filter_ok(|t| t.name != self.name)
+                .collect::<Result<_>>()?;
+            Ok(ResolvedTaskDependencies {
+                depends,
+                wait_for,
+                depends_post,
             })
-            .flatten_ok()
-            .filter_map_ok(|(t, td)| {
-                if td.env.is_empty() && td.args.is_empty() {
-                    // Name-based matching: wait for any running instance of this task
-                    // regardless of env/args variant (e.g., "VERBOSE=1 setup" matches "setup").
-                    // Return the actual task from tasks_to_run so the dependency graph
-                    // gets the correct env/args-variant node.
-                    tasks_to_run
-                        .iter()
-                        .find(|tr| tr.name == t.name)
-                        .map(|tr| (*tr).clone())
-                } else {
-                    // Full identity matching: user explicitly wants a specific env/args variant
-                    tasks_to_run.contains(&t).then_some(t)
-                }
-            })
-            .collect_vec();
-        let depends_post = self
-            .depends_post
-            .iter()
-            .filter(|td| !dep_has_usage_ref(td))
-            .map(|td| match_tasks_with_context(&tasks, td, Some(self)))
-            .flatten_ok()
-            .filter_ok(|t| t.name != self.name)
-            .collect::<Result<Vec<_>>>()?;
-        let depends = depends
-            .into_iter()
-            .filter_ok(|t| t.name != self.name)
-            .collect::<Result<_>>()?;
-        let wait_for = wait_for
-            .into_iter()
-            .filter_ok(|t| t.name != self.name)
-            .collect::<Result<_>>()?;
-        Ok(ResolvedTaskDependencies {
-            depends,
-            wait_for,
-            depends_post,
-        })
+        };
+
+        match resolve(&all_tasks) {
+            Ok(dependencies) => Ok(dependencies),
+            Err(err) if err.downcast_ref::<TaskNotFoundError>().is_some() => {
+                let all_tasks = TaskFetcher::new(false)
+                    .require_trust_before_fetch()
+                    .fetch_task_map(config, &all_tasks)
+                    .await?;
+                resolve(&all_tasks)
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Expands `^task` dependencies to the matching task in every upstream workspace project.
@@ -3127,7 +3152,7 @@ fn match_tasks_with_context(
             }
         }
 
-        return Err(eyre!(err_msg));
+        return Err(TaskNotFoundError(err_msg).into());
     };
 
     Ok(matches)

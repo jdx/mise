@@ -5,6 +5,7 @@ use crate::task::{Task, script_header_has_decoded_template};
 use dashmap::DashMap;
 use eyre::{Result, WrapErr};
 use std::{
+    collections::BTreeMap,
     path::PathBuf,
     sync::{Arc, LazyLock, Mutex},
 };
@@ -202,6 +203,21 @@ impl TaskFetcher {
         }
 
         Ok(())
+    }
+
+    /// Clone and resolve a task map so consumers can retry alias/dependency
+    /// matching against metadata that only exists in remote headers.
+    pub async fn fetch_task_map(
+        &self,
+        config: &Arc<Config>,
+        tasks: &BTreeMap<String, Task>,
+    ) -> Result<BTreeMap<String, Task>> {
+        let mut resolved = tasks.values().cloned().collect::<Vec<_>>();
+        self.fetch_tasks(config, &mut resolved).await?;
+        Ok(resolved
+            .into_iter()
+            .map(|task| (task.name.clone(), task))
+            .collect())
     }
 
     /// Check if a source path is a remote task file (git or http/https)
