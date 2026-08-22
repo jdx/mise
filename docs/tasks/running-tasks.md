@@ -207,7 +207,8 @@ run = [
 
 `mise run one_by_one` runs that pipeline, but `mise tasks deps one_by_one` still
 shows a leaf. Those `{ task }` / `{ tasks }` entries are this task's own `run`
-steps, not `depends`. Rewriting them as `depends = ["example1", "example2", "example3"]`
+steps, not graph edges. The nested tasks still run, including their own
+`depends`. Rewriting them as `depends = ["example1", "example2", "example3"]`
 would put them in the graph, but it would also drop the sequential/parallel
 ordering above: `depends` only requires those tasks to finish first, with no
 order among them.

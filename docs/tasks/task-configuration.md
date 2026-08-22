@@ -26,7 +26,8 @@ run = [
 ```
 
 `{ task }` and `{ tasks }` are execution steps for this task, not
-[`depends`](#depends). `mise tasks deps` therefore does not include them.
+[`depends`](#depends). They still run with their own dependencies.
+`mise tasks deps` does not include them as graph edges.
 See [`mise tasks deps`](/cli/tasks/deps.html).
 
 Simple forms still work and are equivalent:
