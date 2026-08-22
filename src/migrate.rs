@@ -23,7 +23,7 @@ pub(crate) async fn run() {
 
 async fn task(job: impl FnOnce() -> Result<()> + Send + 'static) {
     if let Err(err) = job() {
-        eprintln!("[WARN] migrate: {err}");
+        safe_eprintln!("[WARN] migrate: {err}");
     }
 }
 
@@ -42,7 +42,7 @@ fn migrate_trusted_configs() -> Result<()> {
 
 fn move_dirs(from: &Path, to: &Path) -> Result<bool> {
     if from.exists() && !to.exists() {
-        eprintln!("migrating {} to {}", from.display(), to.display());
+        safe_eprintln!("migrating {} to {}", from.display(), to.display());
         file::create_dir_all(to.parent().unwrap())?;
         file::rename(from, to)?;
         Ok(true)
@@ -58,7 +58,9 @@ fn remove_deprecated_plugin(name: &str, plugin_name: &str) -> Result<()> {
     if !gitconfig_body.contains(&format!("github.com/mise-plugins/{plugin_name}")) {
         return Ok(());
     }
-    eprintln!("removing deprecated plugin {plugin_name}, will use core {name} plugin from now on");
+    safe_eprintln!(
+        "removing deprecated plugin {plugin_name}, will use core {name} plugin from now on"
+    );
     file::remove_all(plugin_root)?;
     Ok(())
 }
@@ -71,7 +73,7 @@ async fn migrate_runtime_symlink_dirs() {
     }
 
     if let Err(err) = migrate_runtime_symlink_dirs_impl(&marker).await {
-        eprintln!("[WARN] migrate: {err}");
+        safe_eprintln!("[WARN] migrate: {err}");
     }
 }
 

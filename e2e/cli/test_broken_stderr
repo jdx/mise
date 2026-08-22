@@ -13,3 +13,10 @@ fi
 # MISE_DEBUG=1 forces log output to stderr; the subshell keeps stderr pointed
 # at /dev/full since the assert helpers append their own 2>&1
 assert "(MISE_DEBUG=1 mise version >/dev/null 2>/dev/full && echo ok)" "ok"
+
+# The check above runs with no migration pending, so migrate.rs never reaches
+# one of its prints and passes vacuously. Give it a migration to announce: that
+# is the path a real user hits on the first run after an upgrade, and it is the
+# one that still aborted with SIGABRT.
+mkdir -p "$MISE_DATA_DIR/tracked-config-files"
+assert "(MISE_DEBUG=1 mise version >/dev/null 2>/dev/full && echo ok)" "ok"
