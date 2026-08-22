@@ -272,3 +272,66 @@ assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.1.0"'
 assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
 assert "cd monorepo-upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
 assert "cd monorepo-upgrade/packages/a && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
+
+echo "=== upgrade pulls matching loose sibling requests forward ==="
+mkdir -p monorepo-shared-loose/packages/b
+cat >monorepo-shared-loose/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-shared-loose/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert "cd monorepo-shared-loose && mise install"
+assert "cd monorepo-shared-loose/packages/b && mise install"
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' \
+  monorepo-shared-loose/mise.toml monorepo-shared-loose/packages/b/mise.toml
+rm monorepo-shared-loose/mise.toml.bak monorepo-shared-loose/packages/b/mise.toml.bak
+assert "cd monorepo-shared-loose && mise upgrade dummy"
+
+assert_not_contains "cat monorepo-shared-loose/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-shared-loose/mise.lock" 'version = "1.1.0"'
+assert "cd monorepo-shared-loose && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-shared-loose/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+
+echo "=== upgrade preserves an exact sibling pin after the active version ==="
+mkdir -p monorepo-exact-pin/packages/b
+cat >monorepo-exact-pin/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-exact-pin/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert "cd monorepo-exact-pin && mise install"
+assert "cd monorepo-exact-pin/packages/b && mise install"
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' monorepo-exact-pin/mise.toml
+rm monorepo-exact-pin/mise.toml.bak
+assert "cd monorepo-exact-pin && mise upgrade dummy"
+
+assert_contains "cat monorepo-exact-pin/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-exact-pin/mise.lock" 'version = "1.1.0"'
+assert "cd monorepo-exact-pin && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-exact-pin/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
