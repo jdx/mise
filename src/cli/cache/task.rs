@@ -129,6 +129,7 @@ pub(super) async fn resolve_tasks(task_spec: &str) -> Result<(Arc<Config>, Vec<T
         bail!("Task not found: {task_spec}, use `mise tasks ls --all --hidden` to list all tasks");
     }
     TaskFetcher::new(false)
+        .require_trust_before_fetch()
         .fetch_tasks(&config, &mut tasks)
         .await?;
     Ok((config, tasks))
