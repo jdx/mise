@@ -190,15 +190,18 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
 
     for request in requests {
         // A missing source has an unknown eventual shape, but it still claims
-        // its target. Model that conservatively as a leaf so target-filtered
-        // operations cannot mutate a path inside the unresolved footprint.
+        // its target. Whole-resource modes reserve a leaf; symlink-each has a
+        // known directory-shaped target even before its children are known.
         let source_unavailable = request.mode != FileMode::Content
             && (!request.source.exists()
                 || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
         let directory_walker = !source_unavailable
             && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
             && request.source.is_dir();
-        let request_leaves = if directory_walker {
+        let unresolved_directory = source_unavailable && request.mode == FileMode::SymlinkEach;
+        let request_leaves = if unresolved_directory {
+            vec![]
+        } else if directory_walker {
             walk_source_files(request)?
                 .into_iter()
                 .map(|(_, target)| target)
@@ -210,7 +213,7 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
         for leaf in &request_leaves {
             request_directories.extend(leaf.ancestors().skip(1).map(Path::to_path_buf));
         }
-        if directory_walker {
+        if directory_walker || unresolved_directory {
             request_directories.insert(request.target.clone());
             request_directories.extend(request.target.ancestors().skip(1).map(Path::to_path_buf));
         }
@@ -2456,6 +2459,24 @@ mod tests {
             err.to_string()
                 .contains(&target.to_string_lossy().to_string())
         );
+        Ok(())
+    }
+
+    /// An unavailable symlink-each contributor reserves the shared target as
+    /// a directory, allowing a sibling's known leaves to remain composable.
+    #[test]
+    fn composed_file_footprints_keep_missing_symlink_each_directory_shaped() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let missing = dir.path().join("missing");
+        let source_tree = dir.path().join("tree");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("known"), "known")?;
+
+        validate_composed_file_footprints(&[
+            link_req(&missing, &target, FileMode::SymlinkEach),
+            link_req(&source_tree, &target, FileMode::SymlinkEach),
+        ])?;
         Ok(())
     }
 
