@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+echo "tasks.mylocal = { run = 'echo mylocal' }" >mise.toml
+
+# the user-global scope owns its config dir's tasks/ even without a config file
+mkdir -p "$MISE_CONFIG_DIR/tasks"
+cat <<'EOF' >"$MISE_CONFIG_DIR/tasks/scripts-only"
+#!/usr/bin/env bash
+echo scripts-only
+EOF
+chmod +x "$MISE_CONFIG_DIR/tasks/scripts-only"
+
+assert "mise run scripts-only" "scripts-only"
+assert "mise tasks --global" "scripts-only"
+
+# the system scope owns its tasks dir even without a system config file
+mkdir -p "$MISE_SYSTEM_DIR/tasks"
+cat <<'EOF' >"$MISE_SYSTEM_DIR/tasks/system-scripts-only"
+#!/usr/bin/env bash
+echo system-scripts-only
+EOF
+chmod +x "$MISE_SYSTEM_DIR/tasks/system-scripts-only"
+
+assert "mise run system-scripts-only" "system-scripts-only"
+assert "mise tasks --global" "scripts-only
+system-scripts-only"
+
+# a relocated config dir owns its own tasks/; the default location is no
+# longer part of the global scope but stays discoverable as a HOME-local task
+mkdir -p ~/relocated-config/tasks
+cat <<'EOF' >~/relocated-config/tasks/relocated
+#!/usr/bin/env bash
+echo relocated
+EOF
+chmod +x ~/relocated-config/tasks/relocated
+
+export MISE_CONFIG_DIR="$HOME/relocated-config"
+assert "mise run relocated" "relocated"
+assert "mise tasks --global" "relocated
+system-scripts-only"
+assert "mise run scripts-only" "scripts-only"
+
+# a config file in the relocated dir keeps the same default include
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+TOML
+assert "mise run relocated" "relocated"
+assert "mise tasks --global" "myglobal
+relocated
+system-scripts-only"
+
+# explicit task_config.includes still replaces the default include
+cat >"$MISE_CONFIG_DIR/config.toml" <<'TOML'
+[task_config]
+includes = ["custom-tasks"]
+TOML
+mkdir -p ~/custom-tasks
+cat <<'EOF' >~/custom-tasks/custom-included
+#!/usr/bin/env bash
+echo custom-included
+EOF
+chmod +x ~/custom-tasks/custom-included
+
+assert "mise run custom-included" "custom-included"
+assert "mise tasks --global" "custom-included
+system-scripts-only"
