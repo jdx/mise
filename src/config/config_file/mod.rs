@@ -476,20 +476,24 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig(path.into()))?
 }
 
-/// Require trust before configuration can cause remote network or Git work.
+/// A trust check that safe mode does not waive.
 ///
-/// Safe mode makes ordinary config parsing trust-exempt because its executable
-/// features are disabled. A remote fetch is still an external side effect,
-/// though, so safe mode only permits it when the owner was already trusted.
-/// Outside safe mode this preserves the normal interactive trust prompt.
-pub(crate) fn trust_check_remote_fetch(path: &Path) -> eyre::Result<()> {
-    if !remote_fetch_trust_allows(Settings::safe_mode(), is_path_trusted(path)) {
+/// Safe mode makes ordinary config parsing trust-exempt because a config
+/// loaded there is inert, and it is a code-execution boundary rather than a
+/// network one: an untrusted config can already resolve and download
+/// arbitrary URLs through the HTTP-based backends. Remote task *content* is
+/// different. Whether it is inert is decided by bytes the config only names,
+/// so the payload is invisible where the config is reviewed, and a server can
+/// vary it per request. Operations that let that content act therefore need
+/// real trust even in safe mode.
+pub(crate) fn trust_check_remote_content(path: &Path) -> eyre::Result<()> {
+    if !remote_content_trust_allows(Settings::safe_mode(), is_path_trusted(path)) {
         Err(UntrustedConfig(path.into()))?
     }
     trust_check(path)
 }
 
-fn remote_fetch_trust_allows(safe_mode: bool, is_trusted: bool) -> bool {
+fn remote_content_trust_allows(safe_mode: bool, is_trusted: bool) -> bool {
     !safe_mode || is_trusted
 }
 
@@ -1315,10 +1319,12 @@ mod tests {
     }
 
     #[test]
-    fn test_remote_fetch_trust_policy() {
-        assert!(!remote_fetch_trust_allows(true, false));
-        assert!(remote_fetch_trust_allows(true, true));
-        assert!(remote_fetch_trust_allows(false, false));
-        assert!(remote_fetch_trust_allows(false, true));
+    fn test_remote_content_trust_policy() {
+        // safe mode is the only case that cannot fall through to trust_check's
+        // prompt, so it must fail closed unless the owner is already trusted
+        assert!(!remote_content_trust_allows(true, false));
+        assert!(remote_content_trust_allows(true, true));
+        assert!(remote_content_trust_allows(false, false));
+        assert!(remote_content_trust_allows(false, true));
     }
 }

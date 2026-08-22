@@ -29,10 +29,14 @@ file = "http://localhost:${HTTP_PORT}/test/remote-template"
 run = "echo remote dependency"
 EOF
 
-# Safe mode makes config parsing inert, but it must not turn remote discovery
-# into an SSRF-capable trust bypass.
+# Safe mode is a code-execution boundary, not a network one: an untrusted
+# config can already download arbitrary URLs there through the HTTP-based
+# backends, so the fetch is allowed. Rendering the fetched header is what must
+# still require trust.
 assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "not trusted"
-[[ ! -e $REQUEST_MARKER ]] || fail "safe-mode discovery fetched an untrusted remote task"
+[[ -e $REQUEST_MARKER ]] || fail "safe mode should still fetch the remote task"
+[[ ! -e $MARKER ]] || fail "safe-mode remote metadata template rendered without trust"
+rm -f "$REQUEST_MARKER"
 
 assert_fail "$UNTRUSTED_ENV mise tasks ls" "not trusted"
 assert_fail "$UNTRUSTED_ENV mise tasks deps remote_template" "not trusted"
@@ -56,11 +60,26 @@ assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise cache task remote_template" "not t
 assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise watch remote_template" "disabled in safe mode"
 [[ ! -e $REQUEST_MARKER ]] || fail "safe-mode watch fetched an untrusted remote task"
 
+# no-cache so this re-fetches rather than reusing the safe-mode download above
 assert_succeed "$UNTRUSTED_ENV mise trust mise.toml"
-assert_succeed "$UNTRUSTED_ENV mise tasks ls"
+assert_succeed "$UNTRUSTED_ENV MISE_TASK_REMOTE_NO_CACHE=true mise tasks ls"
 [[ -e $REQUEST_MARKER ]] || fail "trusted passive discovery did not fetch the remote task"
 [[ -e $MARKER ]] || fail "trusted remote metadata template did not render"
+
+# Trust gets the header past the render gate, but safe mode still refuses the
+# code execution inside it, exactly as it does for a local task template.
+assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "disabled in safe mode"
 assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
+
+# A template-free remote task is inert once fetched, so safe mode can list it
+# without trust.
+PLAIN_DIR="$TMPDIR/plain-remote"
+mkdir -p "$PLAIN_DIR"
+cat <<EOF >"$PLAIN_DIR/mise.toml"
+[tasks.remote_plain]
+file = "http://localhost:${HTTP_PORT}/test/mytask"
+EOF
+assert_contains "cd $PLAIN_DIR && $UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "remote_plain"
 
 # A trusted config vouches for an explicitly included task file even when that
 # file is outside the config's trust root. Preserve that provenance when the

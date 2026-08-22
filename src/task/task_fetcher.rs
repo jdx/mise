@@ -1,4 +1,4 @@
-use crate::config::config_file::trust_check_remote_fetch;
+use crate::config::config_file::{trust_check, trust_check_remote_content};
 use crate::config::{Config, Settings};
 use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
 use crate::task::{Task, script_header_has_decoded_template};
@@ -114,8 +114,13 @@ impl TaskFetcher {
                     .or_else(|| defining_cf.as_ref().map(|cf| cf.get_path().to_path_buf()))
                     .unwrap_or_else(|| original.config_source.clone());
 
+                // Safe mode deliberately does not gate the fetch itself: it is a
+                // code-execution boundary, not a network one, and an untrusted
+                // config can already download arbitrary URLs there through the
+                // HTTP-based backends. What must not happen without trust is the
+                // fetched header acting, which the render gate below enforces.
                 if self.trust_before_fetch {
-                    trust_check_remote_fetch(&defining_config_source).wrap_err_with(|| {
+                    trust_check(&defining_config_source).wrap_err_with(|| {
                         format!(
                             "fetching remote task {source} requires its defining config to be trusted"
                         )
@@ -167,8 +172,11 @@ impl TaskFetcher {
                     original.cf.clone(),
                 )
                 .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
+                // Rendering is where a remote header can execute code, read
+                // files, or interpolate the process env into printed metadata,
+                // so this gate holds even in safe mode.
                 if header_has_templates {
-                    trust_check_remote_fetch(&defining_config_source).wrap_err_with(|| {
+                    trust_check_remote_content(&defining_config_source).wrap_err_with(|| {
                         format!(
                             "remote task metadata from {source} requires its defining config to be trusted"
                         )
