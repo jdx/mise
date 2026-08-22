@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# [env] _.source uses unix_default_inline_shell_args on Unix.
+# [env] _.source shell is per-directive so a shared mise.toml can source fish.
 # See https://github.com/jdx/mise/discussions/6095
 require_cmd fish
 
@@ -21,9 +21,15 @@ cat >mise.toml <<'EOF'
 _.source = "./script.fish"
 EOF
 
-# Default inline shell is `sh -c -o errexit`, so a fish script fails to source.
+# String form still uses bash, so a fish script fails to source.
 assert_fail "mise env --json"
 
-assert_json_partial_object "MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS='fish -c' mise env --json" "MY_BUILD_VALUE" '{
+# `shell` belongs on the directive so clones share the same behavior.
+cat >mise.toml <<'EOF'
+[env]
+_.source = { path = "./script.fish", shell = "fish -c" }
+EOF
+
+assert_json_partial_object "mise env --json" "MY_BUILD_VALUE" '{
   "MY_BUILD_VALUE": "mise"
 }'

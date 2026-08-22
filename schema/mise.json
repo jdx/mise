@@ -202,6 +202,10 @@
         },
         "required": {
           "$ref": "#/$defs/env_required"
+        },
+        "shell": {
+          "description": "Shell used to source the file. Only valid on `_.source`. Example: `fish -c`. Defaults to bash when omitted.",
+          "type": "string"
         }
       },
       "oneOf": [
@@ -486,16 +490,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "bash script to load",
+                  "description": "script to load",
                   "type": "string"
                 },
                 {
-                  "description": "bash scripts to load",
+                  "description": "scripts to load",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "bash script to load",
+                        "description": "script to load",
                         "type": "string"
                       },
                       {
@@ -2064,7 +2068,7 @@
         },
         "unix_default_inline_shell_args": {
           "default": "sh -c -o errexit",
-          "description": "Default shell arguments for Unix to be used for inline commands and `[env] _.source`. For example, `sh -c` for sh.",
+          "description": "Default shell arguments for Unix to be used for inline commands. For example, `sh -c` for sh.",
           "type": "string"
         },
         "upgrade": {
@@ -2257,13 +2261,13 @@
             "source": {
               "oneOf": [
                 {
-                  "description": "bash script to load",
+                  "description": "script to load",
                   "type": "string"
                 },
                 {
-                  "description": "bash scripts to load",
+                  "description": "scripts to load",
                   "items": {
-                    "description": "bash script to load",
+                    "description": "script to load",
                     "type": "string"
                   },
                   "type": "array"

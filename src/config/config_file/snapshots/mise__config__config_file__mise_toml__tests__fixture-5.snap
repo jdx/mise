@@ -12,6 +12,7 @@ MiseToml(~/fixtures/.mise.toml): ToolRequestSet: terraform@1.0.0 node@18 node@pr
                 redact: None,
                 required: False,
                 expand: false,
+                shell: None,
             },
         ),
     ],

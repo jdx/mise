@@ -488,10 +488,9 @@ _.source = "./script.sh"
 ```
 
 ::: info
-On Unix, the script is sourced by the default inline shell
-([`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args),
-`sh -c -o errexit` by default). The shebang is **ignored**. Use `fish -c` to
-source fish scripts. See [#1448](https://github.com/jdx/mise/discussions/6734)
+On Unix, the script is sourced by bash unless you set `shell` on the directive
+(for example `shell = "fish -c"`). The shebang is **ignored**. See
+[#1448](https://github.com/jdx/mise/discussions/6734)
 for a potential alternative that would work with binaries or other script languages.
 :::
 
@@ -509,7 +508,7 @@ The `env._.source` directive supports:
 - A single source as a string or an object
 - Multiple sources as an array of strings and objects
 - Using relative or absolute paths
-- The `redact` and `tools` options
+- The `redact`, `tools`, and `shell` options
 
 For `PATH`, sourced scripts may prepend entries by preserving the original value as an exact
 suffix:
@@ -533,6 +532,11 @@ _.source = 'source.sh'
 [env]
 # Source this file after tools have defined environment variables
 _.source = { path = "my/env.sh", tools = true }
+```
+
+```toml
+[env]
+_.source = { path = "./script.fish", shell = "fish -c" }
 ```
 
 ```toml
