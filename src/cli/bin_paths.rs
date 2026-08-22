@@ -8,19 +8,19 @@ use std::path::PathBuf;
 
 /// List all the active runtime bin paths
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct BinPaths {
     /// Tool(s) to look up
     /// e.g.: ruby@3
-    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Option<Vec<ToolArg>>,
 
     /// Output executable names instead of bin directories
-    #[arg(long)]
+    #[usage(long)]
     bin_names: bool,
 
     /// Output executable entries in JSON format (implies --bin-names)
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 }
 

@@ -12,20 +12,20 @@ use crate::{dirs, file};
 ///
 /// This is used for developing a plugin.
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct PluginsLink {
     /// The name of the plugin
     /// e.g.: cmake, poetry
-    #[arg(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     name: String,
 
     /// The local path to the plugin
     /// e.g.: ./vfox-cmake
-    #[arg(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
+    #[usage(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     dir: Option<PathBuf>,
 
     /// Overwrite existing plugin
-    #[arg(long, short = 'f')]
+    #[usage(long, short = 'f')]
     force: bool,
 }
 

@@ -13,18 +13,18 @@ use std::time::Duration;
 /// By default, this command will remove files that have not been accessed in 30 days.
 /// Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_alias = "p")]
+#[usage(verbatim_doc_comment, visible_alias = "p")]
 pub(super) struct CachePrune {
     /// Tool(s) to prune cache for
     /// e.g.: node, python
     tool: Option<Vec<String>>,
 
     /// Show pruned files
-    #[arg(long, short, action = usage_rs::ArgAction::Count)]
+    #[usage(long, short, action = usage_rs::ArgAction::Count)]
     verbose: u8,
 
     /// Just show what would be pruned
-    #[arg(long)]
+    #[usage(long)]
     dry_run: bool,
 }
 

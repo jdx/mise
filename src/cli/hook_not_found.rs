@@ -8,14 +8,14 @@ use crate::toolset::ToolsetBuilder;
 
 /// [internal] called by shell when a command is not found
 #[derive(Debug, usage_rs::Args)]
-#[command(hide = true)]
+#[usage(hide = true)]
 pub(crate) struct HookNotFound {
     /// Attempted bin to run
-    #[arg()]
+    #[usage()]
     bin: String,
 
     /// Shell type to generate script for
-    #[arg(long, short, value_enum)]
+    #[usage(long, short, value_enum)]
     shell: Option<ShellType>,
 }
 

@@ -17,23 +17,23 @@ pub(crate) use unapply::DotfilesUnapply;
 ///
 /// Use `mise bootstrap dotfiles` instead.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, hide = true)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(crate) struct Dotfiles {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    #[command(hide = true)]
+    #[usage(hide = true)]
     Add(add::DotfilesAdd),
-    #[command(hide = true)]
+    #[usage(hide = true)]
     Apply(apply::DotfilesApply),
-    #[command(hide = true)]
+    #[usage(hide = true)]
     Edit(edit::DotfilesEdit),
-    #[command(hide = true)]
+    #[usage(hide = true)]
     Status(status::DotfilesStatus),
-    #[command(hide = true)]
+    #[usage(hide = true)]
     Unapply(unapply::DotfilesUnapply),
 }
 

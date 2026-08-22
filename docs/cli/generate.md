@@ -2,7 +2,7 @@
 # `mise generate`
 
 - **Usage**: `mise generate <SUBCOMMAND>`
-- **Aliases**: `gen`
+- **Aliases**: `gen`, `g`
 - **Effect**: read-only
 - **Source code**: [`src/cli/generate/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/mod.rs)
 

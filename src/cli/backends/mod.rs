@@ -3,13 +3,13 @@ use eyre::Result;
 mod ls;
 
 #[derive(Debug, usage_rs::Args)]
-#[command(
+#[usage(
     about = "Manage backends",
     aliases = ["b", "backend", "backend-list"],
     after_long_help = AFTER_LONG_HELP
 )]
 pub(crate) struct Backends {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 }
 

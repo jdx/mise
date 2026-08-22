@@ -15,14 +15,14 @@ use crate::ui::table;
 ///     [tool_alias.node.versions]
 ///     lts = "22.0.0"
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ToolAliasLs {
     /// Show aliases for <TOOL>
-    #[arg()]
+    #[usage()]
     pub tool: Option<BackendArg>,
 
     /// Don't show table header
-    #[arg(long)]
+    #[usage(long)]
     pub no_header: bool,
 }
 

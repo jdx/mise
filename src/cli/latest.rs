@@ -11,32 +11,27 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 ///
 /// Supports prefixes such as `node@20` to get the latest version of node 20.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Latest {
     /// Tool to get the latest version of
-    #[arg(value_name = "TOOL@VERSION")]
+    #[usage(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     /// used for asdf compatibility
-    #[arg(hide = true)]
+    #[usage(hide = true)]
     asdf_version: Option<String>,
 
     /// Show latest installed instead of available version
-    #[arg(short, long)]
+    #[usage(short, long)]
     installed: bool,
 
     /// Only consider versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
     /// Overrides per-tool `minimum_release_age` options and the global `minimum_release_age` setting.
-    #[arg(
-        long,
-        alias = "before",
-        verbatim_doc_comment,
-        conflicts_with = "installed"
-    )]
+    #[usage(long, alias = "before", verbatim_doc_comment, conflicts = "installed")]
     minimum_release_age: Option<String>,
 }
 

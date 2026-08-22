@@ -2,9 +2,9 @@ mod token;
 
 /// GitHub related commands
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, hide = true)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(crate) struct Github {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     subcommand: Commands,
 }
 

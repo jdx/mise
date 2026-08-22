@@ -13,9 +13,9 @@ mod run;
 /// (or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change
 /// in future releases.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct Oci {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 

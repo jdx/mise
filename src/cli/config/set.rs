@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 /// Set the value of a setting in a mise.toml file
 #[derive(Debug, usage_rs::Args)]
-#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ConfigSet {
     /// The path of the config to display
     pub key: String,
@@ -21,10 +21,10 @@ pub(super) struct ConfigSet {
     /// Can be a file path or directory. If a directory is provided, the config file in that directory is used.
     ///
     /// If not provided, the nearest mise.toml file will be used
-    #[arg(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
+    #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
-    #[arg(value_enum, short, long, default = "infer")]
+    #[usage(value_enum, short, long, default = "infer")]
     pub type_: TomlValueTypes,
 }
 
@@ -32,17 +32,17 @@ pub(super) struct ConfigSet {
 pub(super) enum TomlValueTypes {
     #[default]
     Infer,
-    #[value()]
+    #[usage()]
     String,
-    #[value()]
+    #[usage()]
     Integer,
-    #[value()]
+    #[usage()]
     Float,
-    #[value()]
+    #[usage()]
     Bool,
-    #[value()]
+    #[usage()]
     List,
-    #[value()]
+    #[usage()]
     Set,
 }
 

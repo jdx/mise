@@ -41,7 +41,7 @@ use crate::{config, env, exit, file};
 ///
 /// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, usage_rs::Args)]
-#[command(
+#[usage(
     verbatim_doc_comment,
     visible_alias = "u",
     after_long_help = AFTER_LONG_HELP,
@@ -56,29 +56,29 @@ pub(crate) struct Use {
     /// Tool options can be set with this syntax:
     ///
     ///     mise use ubi:BurntSushi/ripgrep[exe=rg]
-    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Create/modify an environment-specific config file like .mise.<env>.toml
-    #[arg(long, short, overrides_with_all = & ["global", "path"])]
+    #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 
     /// Force reinstall even if already installed
-    #[arg(long, short, requires = "tool")]
+    #[usage(long, short, requires = "tool")]
     force: bool,
 
     /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-    #[arg(short, long, overrides_with_all = & ["path", "env"])]
+    #[usage(short, long, overrides = & ["path", "env"])]
     global: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Perform a dry run, showing what would be installed and modified without making changes
-    #[arg(long, short = 'n', verbatim_doc_comment)]
+    #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
     /// Specify a path to a config file or directory
@@ -88,26 +88,26 @@ pub(crate) struct Use {
     // No `--file` alias here: `-f` on this command is `--force`, so offering `--file`
     // invites `-f <path>`, which is a different action. See `mise unset --path` for the
     // commands where the short form is free.
-    #[arg(short, long, overrides_with_all = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
+    #[usage(short, long, overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Like --dry-run but exits with code 1 if there are changes to make
     ///
     /// This is useful for scripts to check if tools need to be added or removed.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
     /// Save fuzzy version to config file
     ///
     /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
     /// this is the default behavior unless `MISE_PIN=1`
-    #[arg(long, verbatim_doc_comment, overrides_with = "pin")]
+    #[usage(long, verbatim_doc_comment, overrides = "pin")]
     fuzzy: bool,
 
     /// Only install versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[arg(long, alias = "before", verbatim_doc_comment)]
+    #[usage(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
     /// Save the resolved concrete version to the config file
@@ -119,16 +119,16 @@ pub(crate) struct Use {
     ///
     /// Consider using mise.lock as a better alternative to pinning in mise.toml:
     /// https://mise.jdx.dev/configuration/settings.html#lockfile
-    #[arg(long, verbatim_doc_comment, overrides_with = "fuzzy")]
+    #[usage(long, verbatim_doc_comment, overrides = "fuzzy")]
     pin: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies `--jobs=1`
-    #[arg(long, overrides_with = "jobs")]
+    #[usage(long, overrides = "jobs")]
     raw: bool,
 
     /// Remove the tool(s) from config file
-    #[arg(long, value_name = "TOOL", aliases = ["rm", "unset"])]
+    #[usage(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Vec<BackendArg>,
 }
 

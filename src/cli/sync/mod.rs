@@ -6,9 +6,9 @@ mod reconcile;
 mod ruby;
 
 #[derive(Debug, usage_rs::Args)]
-#[command(about = "Synchronize tools from other version managers with mise")]
+#[usage(about = "Synchronize tools from other version managers with mise")]
 pub(crate) struct Sync {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 

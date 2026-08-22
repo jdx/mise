@@ -11,11 +11,11 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 /// This is similar to `mise ls --current`, but this only shows the runtime
 /// and/or version. It's designed to fit into scripts more easily.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Current {
     /// Plugin to show versions of
     /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
-    #[arg()]
+    #[usage()]
     plugin: Option<BackendArg>,
 }
 

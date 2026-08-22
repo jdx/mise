@@ -14,25 +14,25 @@ use super::reconcile;
 ///
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct SyncNode {
-    #[arg(flatten)]
+    #[usage(flatten)]
     _type: SyncNodeType,
 }
 
 #[derive(Debug, usage_rs::Args)]
-#[group(required = true, multiple = true)]
+#[usage(group("sync-node-type", required, multiple))]
 pub(super) struct SyncNodeType {
     /// Get tool versions from Homebrew
-    #[arg(long)]
+    #[usage(long, group = "sync-node-type")]
     brew: bool,
 
     /// Get tool versions from nodenv
-    #[arg(long)]
+    #[usage(long, group = "sync-node-type")]
     nodenv: bool,
 
     /// Get tool versions from nvm
-    #[arg(long)]
+    #[usage(long, group = "sync-node-type")]
     nvm: bool,
 }
 

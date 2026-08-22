@@ -61,7 +61,7 @@ SSH identity file override
 
 Print the remote bootstrap changes without applying them
 
-### `--install-mise <PATH>`
+### `--install-mise[=PATH]`
 
 Install the provisioned mise on each host instead of only staging it
 

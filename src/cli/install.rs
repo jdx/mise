@@ -32,82 +32,82 @@ use std::path::PathBuf;
 ///
 /// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 #[derive(Debug, Default, usage_rs::Args)]
-#[command(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
-    #[arg(value_name = "TOOL@VERSION")]
+    #[usage(value_name = "TOOL@VERSION")]
     tool: Option<Vec<ToolArg>>,
 
     /// Force reinstall even if already installed
     /// With no tools specified, reinstall all configured tools
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     force: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Show what would be installed without actually installing
-    #[arg(long, short = 'n', verbatim_doc_comment)]
+    #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
     /// Show installation output
     ///
     /// This argument will print backend output such as download, configuration, and compilation output.
-    #[arg(long, short, action = usage_rs::ArgAction::Count)]
+    #[usage(long, short, action = usage_rs::ArgAction::Count)]
     verbose: u8,
 
     /// Like --dry-run but exits with code 1 if there are tools to install
     ///
     /// This is useful for scripts to check if tools need to be installed.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     dry_run_code: bool,
 
     /// Also install tools required by tasks in the current scope
     ///
     /// This prepares task tools without running task commands or dependencies.
     /// Combine with --monorepo to include tasks from every configured root.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     include_task_tools: bool,
 
     /// Only install versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[arg(long, alias = "before", verbatim_doc_comment)]
+    #[usage(long, alias = "before", verbatim_doc_comment)]
     minimum_release_age: Option<String>,
 
     /// Install tools from every [monorepo].config_roots config root
     ///
     /// Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     /// [monorepo].config_roots in the monorepo root config.
-    #[arg(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    #[usage(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
     monorepo: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[arg(long, overrides_with = "jobs")]
+    #[usage(long, overrides = "jobs")]
     raw: bool,
 
     /// Install tool(s) to a shared directory
     ///
     /// Installs to the specified directory instead of the default install location.
     /// May require elevated permissions depending on the path.
-    #[arg(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts_with = "system")]
+    #[usage(long, verbatim_doc_comment, value_hint = ValueHint::DirPath, conflicts = "system")]
     shared: Option<PathBuf>,
 
     /// Install tool(s) to the system-wide shared directory
     ///
     /// Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
     /// May require elevated permissions (e.g. sudo).
-    #[arg(long, verbatim_doc_comment, conflicts_with = "shared")]
+    #[usage(long, verbatim_doc_comment, conflicts = "shared")]
     system: bool,
 
     /// Skip confirmation when installing missing plugin system dependencies.
     /// Set internally by `mise bootstrap --yes`; not a user-facing flag.
-    #[arg(skip)]
+    #[usage(skip)]
     yes: bool,
 }
 

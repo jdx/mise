@@ -2,7 +2,7 @@
 # `mise tasks`
 
 - **Usage**: `mise tasks [FLAGS] [TASK] <SUBCOMMAND>`
-- **Aliases**: `t`
+- **Aliases**: `t`, `task`
 - **Effect**: read-only
 - **Source code**: [`src/cli/tasks/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/mod.rs)
 

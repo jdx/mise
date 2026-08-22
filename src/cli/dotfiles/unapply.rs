@@ -10,22 +10,22 @@ use crate::ui::prompt;
 /// mise cannot identify as managed. Modified copies, templates, and plain-line
 /// edits require `--force`.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesUnapply {
     /// Only unapply these targets
-    #[arg(value_name = "TARGET")]
+    #[usage(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Remove modified or otherwise ambiguous managed files and lines
-    #[arg(long, short)]
+    #[usage(long, short)]
     force: bool,
 
     /// Print the actions that would run without writing anything
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 

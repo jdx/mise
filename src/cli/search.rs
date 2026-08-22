@@ -28,21 +28,21 @@ pub(crate) enum MatchType {
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
 #[derive(Debug, usage_rs::Args)]
-#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
 
     /// Show interactive search
-    #[arg(long, short, conflicts_with_all = &["match_type", "no_header"])]
+    #[usage(long, short, conflicts = &["match_type", "no_header"])]
     interactive: bool,
 
     /// Match type: equal, contains, or fuzzy
-    #[arg(long, short, value_enum, default_value = "fuzzy")]
+    #[usage(long, short, value_enum, default = "fuzzy")]
     match_type: MatchType,
 
     /// Don't display headers
-    #[arg(long, alias = "no-headers")]
+    #[usage(long, alias = "no-headers")]
     no_header: bool,
 }
 

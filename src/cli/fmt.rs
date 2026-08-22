@@ -9,19 +9,19 @@ use taplo::formatter::Options;
 ///
 /// Sorts keys and cleans up whitespace in mise.toml
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Fmt {
     /// Format all files from the current directory
-    #[arg(short, long)]
+    #[usage(short, long)]
     pub all: bool,
 
     /// Check if the configs are formatted, no formatting is done
-    #[arg(short, long)]
+    #[usage(short, long)]
     pub check: bool,
 
     /// Read config from stdin and write its formatted version into
     /// stdout
-    #[arg(short, long)]
+    #[usage(short, long)]
     pub stdin: bool,
 }
 

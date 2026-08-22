@@ -8,18 +8,18 @@ use itertools::Itertools;
 
 /// List config files currently in use
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct ConfigLs {
     /// Output in JSON format
-    #[arg(short = 'J', long, verbatim_doc_comment)]
+    #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Do not print table header
-    #[arg(long, alias = "no-headers", verbatim_doc_comment)]
+    #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
     /// List all tracked config files
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub tracked_configs: bool,
 }
 

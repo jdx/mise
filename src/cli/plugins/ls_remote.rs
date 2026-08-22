@@ -7,16 +7,16 @@ use crate::toolset::install_state;
 
 /// List all available remote plugins
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
+#[usage(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
 pub(super) struct PluginsLsRemote {
     /// Show the git url for each plugin
     /// e.g.: https://github.com/mise-plugins/mise-poetry.git
-    #[arg(short, long)]
+    #[usage(short, long)]
     pub urls: bool,
 
     /// Only show the name of each plugin
     /// by default it will show a "*" next to installed plugins
-    #[arg(long)]
+    #[usage(long)]
     pub only_names: bool,
 }
 

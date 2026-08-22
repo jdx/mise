@@ -8,10 +8,10 @@ use crate::config::config_file::ConfigFile;
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ToolAliasSet {
     /// The tool/backend to set the alias for
-    #[arg(value_name = "TOOL")]
+    #[usage(value_name = "TOOL")]
     pub tool: BackendArg,
     /// The alias to set
     pub alias: String,

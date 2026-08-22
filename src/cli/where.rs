@@ -9,20 +9,20 @@ use crate::toolset::ToolsetBuilder;
 ///
 /// The tool must be installed for this to work.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Where {
     /// Tool(s) to look up
     /// e.g.: ruby@3
     /// if "@<PREFIX>" is specified, it will show the latest installed version
     /// that matches the prefix
     /// otherwise, it will show the current, active installed version
-    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: ToolArg,
 
     /// the version prefix to use when querying the latest version
     /// same as the first argument after the "@"
     /// used for asdf compatibility
-    #[arg(hide = true, verbatim_doc_comment)]
+    #[usage(hide = true, verbatim_doc_comment)]
     asdf_version: Option<String>,
 }
 

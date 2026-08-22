@@ -64,7 +64,7 @@ done
 description = "Build the usage CLI matching the generated spec dialect"
 run = [
   "rustup toolchain install 1.95 --profile minimal",
-  "cargo +1.95 install --locked --force --root target/usage-cli --git https://github.com/jdx/usage --rev 600c2287b7cd23a4841ad789a7dcb6dd7d8dd31a usage-cli",
+  "cargo +1.95 install --locked --force --root target/usage-cli --version 6.1.0 usage-cli",
 ]
 sources = ["Cargo.lock", "tasks.toml"]
 outputs = ["target/usage-cli/bin/usage"]

@@ -29,26 +29,26 @@ struct VersionOutputAll {
 ///
 /// Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
 )]
 pub(crate) struct LsRemote {
     /// Tool to get versions for
-    #[arg(value_name = "TOOL@VERSION", required_unless_present = "all")]
+    #[usage(value_name = "TOOL@VERSION", required_unless = "all")]
     pub plugin: Option<ToolArg>,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
-    #[arg(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     pub prefix: Option<String>,
 
     /// Show all installed plugins and versions
-    #[arg(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
+    #[usage(long, verbatim_doc_comment, conflicts = ["plugin", "prefix"])]
     pub all: bool,
 
     /// Only show versions released before this age or date
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[arg(
+    #[usage(
         long,
         alias = "before",
         value_name = "MINIMUM_RELEASE_AGE",
@@ -57,18 +57,18 @@ pub(crate) struct LsRemote {
     pub minimum_release_age: Option<String>,
 
     /// Output in JSON format (includes version metadata like created_at timestamps when available)
-    #[arg(short = 'J', long, verbatim_doc_comment)]
+    #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Disable checking the mise-versions host
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub no_versions_host: bool,
 
     /// Include pre-release versions in the output for backends that report
     /// upstream prerelease metadata or opt in to regex-based prerelease
     /// detection. Equivalent to setting `MISE_PRERELEASES=1` or the
     /// `prereleases` setting for the duration of this command.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub prerelease: bool,
 
     /// Fail if release metadata fetches fail
@@ -77,7 +77,7 @@ pub(crate) struct LsRemote {
     ///
     /// This prevents metadata consumers from accepting empty fallback results
     /// when a backend's metadata-producing upstream request fails.
-    #[arg(long, verbatim_doc_comment, requires_all = ["json", "no_versions_host"])]
+    #[usage(long, verbatim_doc_comment, requires = ["json", "no_versions_host"])]
     pub strict_metadata: bool,
 }
 

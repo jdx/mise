@@ -10,18 +10,18 @@ use walkdir::WalkDir;
 
 /// Deletes all cache files in mise
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
+#[usage(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
 pub(super) struct CacheClear {
     /// Tool(s) to clear cache for
     /// e.g.: node, python
     tool: Option<Vec<String>>,
 
     /// Mark all cache files as old
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     outdate: bool,
 
     /// Clear output cache entries for a task name or pattern
-    #[arg(long, conflicts_with_all = ["tool", "outdate"])]
+    #[usage(long, conflicts = ["tool", "outdate"])]
     task: Option<String>,
 }
 

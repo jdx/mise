@@ -9,19 +9,19 @@ use crate::ui::table::MiseTable;
 
 /// Show the status of dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesStatus {
     /// Only show these targets
-    #[arg(value_name = "TARGET")]
+    #[usage(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Output in JSON format
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured dotfiles are not in their desired
     /// state (missing, source missing, differs)
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 

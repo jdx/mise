@@ -25,41 +25,41 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 ///
 /// This behavior can be modified in ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
+#[usage(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
 )]
 pub(crate) struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: cmake, poetry
     /// Can specify multiple plugins: `mise plugins install cmake poetry`
-    #[arg(required_unless_present = "all", verbatim_doc_comment)]
+    #[usage(required_unless = "all", verbatim_doc_comment)]
     new_plugin: Option<String>,
 
     /// The git url of the plugin
     /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
-    #[arg(help = "The git url of the plugin", value_hint = usage_rs::ValueHint::Url, verbatim_doc_comment
+    #[usage(help = "The git url of the plugin", value_hint = usage_rs::ValueHint::Url, verbatim_doc_comment
     )]
     git_url: Option<String>,
 
-    #[arg(hide = true)]
+    #[usage(hide = true)]
     rest: Vec<String>,
 
     /// Install all missing plugins
     /// This will only install plugins that have matching shorthands.
     /// i.e.: they don't need the full git repo url
-    #[arg(short, long, conflicts_with_all = ["new_plugin", "force"], verbatim_doc_comment)]
+    #[usage(short, long, conflicts = ["new_plugin", "force"], verbatim_doc_comment)]
     all: bool,
 
     /// Reinstall even if plugin exists
-    #[arg(short, long, verbatim_doc_comment)]
+    #[usage(short, long, verbatim_doc_comment)]
     force: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Show installation output
-    #[arg(long, short, action = usage_rs::ArgAction::Count, verbatim_doc_comment)]
+    #[usage(long, short, action = usage_rs::ArgAction::Count, verbatim_doc_comment)]
     verbose: u8,
 }
 

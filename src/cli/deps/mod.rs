@@ -14,17 +14,17 @@ mod remove;
 /// Providers with `auto = true` are automatically invoked before `mise x` and `mise run`
 /// unless skipped with the --no-deps flag.
 #[derive(Debug, usage_rs::Args)]
-#[command(
+#[usage(
     visible_alias = "dep",
     alias = "prepare",
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
 pub(crate) struct Deps {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
-    #[arg(flatten)]
+    #[usage(flatten)]
     install: install::DepsInstall,
 }
 

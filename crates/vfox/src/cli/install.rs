@@ -5,7 +5,7 @@ use vfox::{Vfox, VfoxResult};
 pub(super) struct Install {
     sdk: String,
     version: String,
-    #[arg(short, long)]
+    #[usage(short, long)]
     output_dir: Option<PathBuf>,
 }
 

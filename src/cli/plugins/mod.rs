@@ -82,37 +82,37 @@ async fn join_plugin_tasks(
 }
 
 #[derive(Debug, usage_rs::Args)]
-#[command(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
+#[usage(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
 pub(crate) struct Plugins {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
     /// list all available remote plugins
     ///
     /// same as `mise plugins ls-remote`
-    #[arg(short, long, hide = true)]
+    #[usage(short, long, hide = true)]
     pub all: bool,
 
     /// The built-in plugins only
     /// Normally these are not shown
-    #[arg(short, long, verbatim_doc_comment, conflicts_with = "all")]
+    #[usage(short, long, verbatim_doc_comment, conflicts = "all")]
     pub core: bool,
 
     /// Show the git url for each plugin
     /// e.g.: https://github.com/mise-plugins/vfox-cmake.git
-    #[arg(short, long, alias = "url", verbatim_doc_comment)]
+    #[usage(short, long, alias = "url", verbatim_doc_comment)]
     pub urls: bool,
 
     /// Show the git refs for each plugin
     /// e.g.: main 1234abc
-    #[arg(long, hide = true, verbatim_doc_comment)]
+    #[usage(long, hide = true, verbatim_doc_comment)]
     pub refs: bool,
 
     /// List installed plugins
     ///
     /// This is the default behavior but can be used with --core
     /// to show core and user plugins
-    #[arg(long, verbatim_doc_comment, conflicts_with = "all")]
+    #[usage(long, verbatim_doc_comment, conflicts = "all")]
     pub user: bool,
 }
 

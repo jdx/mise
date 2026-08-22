@@ -14,28 +14,28 @@ use tokio::task::JoinSet;
 
 /// Test a tool installs and executes
 #[derive(Debug, Clone, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct TestTool {
     /// Tool(s) to test
-    #[arg(required_unless_present_any = ["all", "all_config"])]
+    #[usage(required_unless = ["all", "all_config"])]
     pub tools: Option<Vec<ToolArg>>,
     /// Test every tool specified in registry/
-    #[arg(long, short, conflicts_with = "tools", conflicts_with = "all_config")]
+    #[usage(long, short, conflicts = "tools", conflicts = "all_config")]
     pub all: bool,
     /// Number of tool tests to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[arg(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
+    #[usage(long, short, env = "MISE_TEST_TOOL_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
     /// Test all tools specified in config files
-    #[arg(long, conflicts_with = "tools", conflicts_with = "all")]
+    #[usage(long, conflicts = "tools", conflicts = "all")]
     pub all_config: bool,
     /// Also test tools not defined in registry/, guessing how to test it
-    #[arg(long)]
+    #[usage(long)]
     pub include_non_defined: bool,
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[arg(long, overrides_with = "jobs")]
+    #[usage(long, overrides = "jobs")]
     pub raw: bool,
 }
 

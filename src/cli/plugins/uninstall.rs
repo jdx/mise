@@ -8,18 +8,18 @@ use crate::{backend, plugins};
 
 /// Removes a plugin
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub(super) struct PluginsUninstall {
     /// Plugin(s) to remove
-    #[arg(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     plugin: Vec<String>,
 
     /// Remove all plugins
-    #[arg(long, short, verbatim_doc_comment, conflicts_with = "plugin")]
+    #[usage(long, short, verbatim_doc_comment, conflicts = "plugin")]
     all: bool,
 
     /// Also remove the plugin's installs, downloads, and cache
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     purge: bool,
 }
 

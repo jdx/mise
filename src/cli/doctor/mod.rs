@@ -31,15 +31,15 @@ use strum::IntoEnumIterator;
 
 /// Check mise installation for possible problems
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Doctor {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     subcommand: Option<Commands>,
-    #[arg(skip)]
+    #[usage(skip)]
     errors: Vec<String>,
-    #[arg(skip)]
+    #[usage(skip)]
     warnings: Vec<String>,
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 }
 

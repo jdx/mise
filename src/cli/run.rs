@@ -55,7 +55,7 @@ use tokio::sync::Mutex;
 ///     EOF
 ///     $ mise run build
 #[derive(usage_rs::Args)]
-#[command(
+#[usage(
     visible_alias = "r",
     verbatim_doc_comment,
     disable_help_flag = true,
@@ -67,74 +67,74 @@ pub(crate) struct Run {
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
     /// Defaults to `default` when omitted
-    #[arg(double_dash = "automatic", verbatim_doc_comment)]
+    #[usage(double_dash = "automatic", verbatim_doc_comment)]
     pub task: Option<String>,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
-    #[arg()]
+    #[usage()]
     pub args: Vec<String>,
 
     /// Arguments to pass to the tasks. Use ":::" to separate tasks.
-    #[arg(hide = true, last = true)]
+    #[usage(hide = true, double_dash = "required")]
     pub args_last: Vec<String>,
 
     /// Run matching tasks only for projects affected by Git changes
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub affected: bool,
 
     /// Git base revision for --affected
     /// Defaults to MISE_AFFECTED_BASE, CI metadata, or HEAD~1
-    #[arg(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    #[usage(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
     pub affected_base: Option<String>,
 
     /// Explain why projects and tasks were selected by --affected
-    #[arg(
+    #[usage(
         long,
         requires = "affected",
-        conflicts_with = "affected_json",
+        conflicts = "affected_json",
         verbatim_doc_comment
     )]
     pub affected_explain: bool,
 
     /// Git head revision for --affected
     /// Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
-    #[arg(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
+    #[usage(long, requires = "affected", value_name = "REV", verbatim_doc_comment)]
     pub affected_head: Option<String>,
 
     /// Output affected projects and tasks as JSON without running tasks
-    #[arg(
+    #[usage(
         long,
         requires = "affected",
-        conflicts_with = "affected_explain",
+        conflicts = "affected_explain",
         verbatim_doc_comment
     )]
     pub affected_json: bool,
 
     /// Open the interactive selector with all tasks from the entire monorepo
-    #[arg(long, conflicts_with_all = ["task", "affected"], verbatim_doc_comment)]
+    #[usage(long, conflicts = ["task", "affected"], verbatim_doc_comment)]
     pub all: bool,
 
     /// Continue running tasks even if one fails
-    #[arg(long, short = 'c', verbatim_doc_comment)]
+    #[usage(long, short = 'c', verbatim_doc_comment)]
     pub continue_on_error: bool,
 
     /// Change to this directory before executing the command
-    #[arg(short = 'C', long, value_hint = ValueHint::DirPath)]
+    #[usage(short = 'C', long, value_hint = ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
 
     /// Force the tasks to run even if outputs are up to date
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     pub force: bool,
 
     /// Number of tasks to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
     /// Configure with `jobs` config or `MISE_JOBS` env var
-    #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
     /// Don't actually run the task(s), just print them in order of execution
-    #[arg(long, short = 'n', verbatim_doc_comment)]
+    #[usage(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
     /// Change how tasks information is output when running tasks
@@ -146,17 +146,17 @@ pub(crate) struct Run {
     /// - `keep-order` - Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
     /// - `quiet` - Don't show extra output
     /// - `silent` - Don't show any output including stdout and stderr from the task except for errors
-    #[arg(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
+    #[usage(short, long, verbatim_doc_comment, env = "MISE_TASK_OUTPUT")]
     pub output: Option<TaskOutput>,
 
     /// Don't show extra output
-    #[arg(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
+    #[usage(long, short, verbatim_doc_comment, env = "MISE_QUIET")]
     pub quiet: bool,
 
     /// Read/write directly to stdin/stdout/stderr instead of by line
     /// Redactions are not applied with this option
     /// Configure with `raw` config or `MISE_RAW` env var
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     pub raw: bool,
 
     /// Shell to use to run toml tasks
@@ -164,85 +164,85 @@ pub(crate) struct Run {
     /// Defaults to `sh -c -o errexit -o pipefail` on unix, and `cmd /c` on Windows
     /// Can also be set with the setting `MISE_UNIX_DEFAULT_INLINE_SHELL_ARGS` or `MISE_WINDOWS_DEFAULT_INLINE_SHELL_ARGS`
     /// Or it can be overridden with the `shell` property on a task.
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     pub shell: Option<String>,
 
     /// Don't show any output except for errors
-    #[arg(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
+    #[usage(long, short = 'S', verbatim_doc_comment, env = "MISE_SILENT")]
     pub silent: bool,
 
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[arg(short, long, value_name = "TOOL@VERSION")]
+    #[usage(short, long, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
-    #[arg(skip)]
+    #[usage(skip)]
     pub is_linear: bool,
 
     /// Allow specific env var through (implies --deny-env for everything else)
     /// Supports wildcards, e.g. --allow-env='MYAPP_*'
-    #[arg(long, value_name = "VAR", verbatim_doc_comment)]
+    #[usage(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
-    #[arg(long, value_name = "HOST", verbatim_doc_comment)]
+    #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
     /// Allow reads from specific path (implies --deny-read for everything else)
-    #[arg(long, value_name = "PATH", verbatim_doc_comment)]
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
     /// Allow writes to specific path (implies --deny-write for everything else)
-    #[arg(long, value_name = "PATH", verbatim_doc_comment)]
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
     /// Block reads, writes, network, and env vars
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
     /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
     /// Block all network access
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_net: bool,
 
     /// Block filesystem reads (system libs and tool dirs still accessible)
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
     /// Block all filesystem writes
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
     /// Bypass the environment cache and recompute the environment
-    #[arg(long)]
+    #[usage(long)]
     pub fresh_env: bool,
 
     /// Do not use cache on remote tasks
-    #[arg(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
+    #[usage(long, verbatim_doc_comment, env = "MISE_TASK_REMOTE_NO_CACHE")]
     pub no_cache: bool,
 
     /// Skip automatic dependency preparation
-    #[arg(long)]
+    #[usage(long)]
     pub no_deps: bool,
 
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[arg(long, alias = "no-timing", verbatim_doc_comment)]
+    #[usage(long, alias = "no-timing", verbatim_doc_comment)]
     pub no_timings: bool,
 
     /// Run only the specified tasks skipping all dependencies
-    #[arg(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
+    #[usage(long, verbatim_doc_comment, env = "MISE_TASK_SKIP_DEPENDS")]
     pub skip_deps: bool,
 
     /// Skip installing tools before running tasks
     ///
     /// Can also be set persistently with the `task.run_auto_install` setting
     /// or `MISE_TASK_RUN_AUTO_INSTALL=false` env var
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub skip_tools: bool,
 
     /// Set task output cache access for this run
@@ -252,56 +252,56 @@ pub(crate) struct Run {
     /// - `write-only` - Write new results without reading cached results
     /// - `off` - Disable task output caching
     /// - `local-only` - Read and write only the local cache; currently equivalent to `read-write`
-    #[arg(
+    #[usage(
         long,
         value_enum,
-        default_value = "read-write",
+        default = "read-write",
         env = "MISE_TASK_CACHE",
         verbatim_doc_comment
     )]
     pub task_cache: TaskCacheMode,
 
     /// Explain the inputs that produced each task's output cache key
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub task_cache_explain: bool,
 
     /// Output cache-key input details as JSON Lines without running tasks
-    #[arg(
+    #[usage(
         long,
         requires = "dry_run",
-        conflicts_with = "task_cache_explain",
+        conflicts = "task_cache_explain",
         verbatim_doc_comment
     )]
     pub task_cache_explain_json: bool,
 
     /// Report task output cache hits, restored bytes, and time saved
-    #[arg(long, conflicts_with = "dry_run", verbatim_doc_comment)]
+    #[usage(long, conflicts = "dry_run", verbatim_doc_comment)]
     pub task_cache_stats: bool,
 
     /// Timeout for the task to complete
     /// e.g.: 30s, 5m
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub timeout: Option<String>,
 
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[arg(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    #[usage(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
 
-    #[arg(skip)]
+    #[usage(skip)]
     pub tmpdir: PathBuf,
 
-    #[arg(skip)]
+    #[usage(skip)]
     pub output_handler: Option<OutputHandler>,
 
-    #[arg(skip)]
+    #[usage(skip)]
     pub context_builder: crate::task::task_context_builder::TaskContextBuilder,
 
-    #[arg(skip)]
+    #[usage(skip)]
     pub executor: Option<crate::task::task_executor::TaskExecutor>,
 
-    #[arg(skip)]
+    #[usage(skip)]
     pub cache_session: Option<crate::cache::session::CacheSession>,
 }
 

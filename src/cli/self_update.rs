@@ -230,21 +230,21 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
 /// package manager instead. See
 /// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 #[derive(Debug, Default, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
     /// Update even if already up to date
-    #[arg(long, short)]
+    #[usage(long, short)]
     force: bool,
 
     /// Skip confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Disable auto-updating plugins
-    #[arg(long)]
+    #[usage(long)]
     no_plugins: bool,
 }
 

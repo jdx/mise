@@ -23,37 +23,37 @@ use crate::{env, file};
 /// This uses `.tool-version` by default unless there is a `mise.toml` file or if `MISE_USE_TOML`
 /// is set. A future v2 release of mise will default to using `mise.toml`.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Local {
     /// Tool(s) to add to .tool-versions/mise.toml
     /// e.g.: node@20
     /// if this is a single tool with no version,
     /// the current value of .tool-versions/mise.toml will be displayed
-    #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
     /// Recurse up to find a .tool-versions file rather than using the current directory only
     /// by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
-    #[arg(short, long, verbatim_doc_comment)]
+    #[usage(short, long, verbatim_doc_comment)]
     parent: bool,
 
     /// Save fuzzy version to `.tool-versions`
     /// e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions
     /// This is the default behavior unless MISE_ASDF_COMPAT=1
-    #[arg(long, overrides_with = "pin")]
+    #[usage(long, overrides = "pin")]
     fuzzy: bool,
 
     /// Get the path of the config file
-    #[arg(long)]
+    #[usage(long)]
     path: bool,
 
     /// Save exact version to `.tool-versions`
     /// e.g.: `mise local --pin node@20` will save `node 20.0.0` to .tool-versions
-    #[arg(long, verbatim_doc_comment, overrides_with = "fuzzy")]
+    #[usage(long, verbatim_doc_comment, overrides = "fuzzy")]
     pin: bool,
 
     /// Remove the tool(s) from .tool-versions
-    #[arg(long, value_name = "TOOL", aliases = ["rm", "unset"])]
+    #[usage(long, value_name = "TOOL", aliases = ["rm", "unset"])]
     remove: Option<Vec<BackendArg>>,
 }
 

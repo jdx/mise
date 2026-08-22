@@ -9,10 +9,10 @@ use crate::ui::table;
 /// Shows the shell aliases that are set in the current directory.
 /// These are defined in `mise.toml` under the `[shell_alias]` section.
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ShellAliasLs {
     /// Don't show table header
-    #[arg(long)]
+    #[usage(long)]
     pub no_header: bool,
 }
 

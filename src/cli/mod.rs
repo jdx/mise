@@ -96,12 +96,12 @@ pub(crate) enum LevelFilter {
 }
 
 #[derive(usage_rs::Cli)]
-#[command(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error")]
+#[usage(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error")]
 pub(crate) struct Cli {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     pub command: Option<Commands>,
     /// Task to run
-    #[arg(
+    #[usage(
         name = "TASK",
         double_dash = "automatic",
         long_help = r#"Task to run.
@@ -110,95 +110,95 @@ Shorthand for `mise tasks run <TASK>`."#
     )]
     pub task: Option<String>,
     /// Task arguments
-    #[arg(hide = true)]
+    #[usage(hide = true)]
     pub task_args: Option<Vec<String>>,
-    #[arg(last = true, hide = true)]
+    #[usage(double_dash = "required", hide = true)]
     pub task_args_last: Vec<String>,
     /// Continue running tasks even if one fails
-    #[arg(long, short = 'c', hide = true, verbatim_doc_comment)]
+    #[usage(long, short = 'c', hide = true, verbatim_doc_comment)]
     pub continue_on_error: bool,
     /// Change directory before running command
-    #[arg(short='C', long, global=true, value_name="DIR", value_hint=usage_rs::ValueHint::DirPath)]
+    #[usage(short='C', long, global=true, value_name="DIR", value_hint=usage_rs::ValueHint::DirPath)]
     pub cd: Option<PathBuf>,
     /// Set the environment for loading `mise.<ENV>.toml`
-    #[arg(short = 'E', long, global = true)]
+    #[usage(short = 'E', long, global = true)]
     pub env: Option<Vec<String>>,
     /// Force the operation
-    #[arg(long, short, hide = true)]
+    #[usage(long, short, hide = true)]
     pub force: bool,
     /// How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
-    #[arg(long, short, global = true, env = "MISE_JOBS")]
+    #[usage(long, short, global = true, env = "MISE_JOBS")]
     pub jobs: Option<usize>,
     /// Dry run, don't actually do anything
-    #[arg(short = 'n', long, hide = true)]
+    #[usage(short = 'n', long, hide = true)]
     pub dry_run: bool,
     /// Set the profile (environment)
-    #[arg(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
+    #[usage(short = 'P', long, global = true, hide = true, conflicts = "env")]
     pub profile: Option<Vec<String>>,
     /// Suppress non-error messages
-    #[arg(short = 'q', long, global = true, env = "MISE_QUIET", overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
+    #[usage(short = 'q', long, global = true, env = "MISE_QUIET", overrides = &["silent", "trace", "verbose", "debug", "log_level"])]
     pub quiet: bool,
-    #[arg(long, short, hide = true)]
+    #[usage(long, short, hide = true)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[arg(short, long, hide = true, value_name = "TOOL@VERSION")]
+    #[usage(short, long, hide = true, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
     /// Show extra output (use -vv for even more)
-    #[arg(short='v', long, global=true, count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
+    #[usage(short='v', long, global=true, count, overrides = &["quiet", "silent", "trace", "debug"])]
     pub verbose: u8,
-    #[arg(long, short = 'V', hide = true)]
+    #[usage(long, short = 'V', hide = true)]
     pub version: bool,
     /// Answer yes to all confirmation prompts
-    #[arg(short = 'y', long, global = true)]
+    #[usage(short = 'y', long, global = true)]
     pub yes: bool,
     /// Sets log level to debug
-    #[arg(long, global = true, hide = true, overrides_with_all = &["quiet", "trace", "verbose", "silent", "log_level"])]
+    #[usage(long, global = true, hide = true, overrides = &["quiet", "trace", "verbose", "silent", "log_level"])]
     pub debug: bool,
-    #[arg(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides_with_all = &["quiet", "trace", "verbose", "silent", "debug"])]
+    #[usage(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides = &["quiet", "trace", "verbose", "silent", "debug"])]
     pub log_level: Option<LevelFilter>,
     /// Do not load any config files
     ///
     /// Can also use `MISE_NO_CONFIG=1`
-    #[arg(long)]
+    #[usage(long)]
     pub no_config: bool,
     /// Do not load environment variables from config files
     ///
     /// Can also use `MISE_NO_ENV=1`
-    #[arg(long)]
+    #[usage(long)]
     pub no_env: bool,
     /// Do not execute hooks from config files
     ///
     /// Can also use `MISE_NO_HOOKS=1`
-    #[arg(long)]
+    #[usage(long)]
     pub no_hooks: bool,
     /// Hides elapsed time after each task completes
     ///
     /// Default to always hide with `MISE_TASK_TIMINGS=0`
-    #[arg(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
+    #[usage(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
     pub no_timings: bool,
-    #[arg(long)]
+    #[usage(long)]
     pub output: Option<TaskOutput>,
     /// Read/write directly to stdin/stdout/stderr instead of by line
-    #[arg(long, global = true)]
+    #[usage(long, global = true)]
     pub raw: bool,
     /// Require lockfile URLs to be present during installation
     ///
     /// Fails if tools don't have pre-resolved URLs in the lockfile for the current platform.
     /// This prevents API calls to GitHub, aqua registry, etc.
     /// Can also be enabled via MISE_LOCKED=1 or settings.locked=true
-    #[arg(long, global = true, verbatim_doc_comment)]
+    #[usage(long, global = true, verbatim_doc_comment)]
     pub locked: bool,
     /// Suppress all task output and mise non-error messages
-    #[arg(long, global = true, overrides_with_all = &["quiet", "trace", "verbose", "debug", "log_level"])]
+    #[usage(long, global = true, overrides = &["quiet", "trace", "verbose", "debug", "log_level"])]
     pub silent: bool,
     /// Shows elapsed time after each task completes
     ///
     /// Default to always show with `MISE_TASK_TIMINGS=1`
-    #[arg(long, alias = "timing", verbatim_doc_comment, hide = true)]
+    #[usage(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
     /// Sets log level to trace
-    #[arg(long, global = true, hide = true, overrides_with_all = &["quiet", "silent", "verbose", "debug", "log_level"])]
+    #[usage(long, global = true, hide = true, overrides = &["quiet", "silent", "verbose", "debug", "log_level"])]
     pub trace: bool,
 }
 
@@ -222,7 +222,7 @@ pub(crate) enum Commands {
     Asdf(asdf::Asdf),
     Backends(backends::Backends),
     BinPaths(bin_paths::BinPaths),
-    #[command(visible_alias = "bs")]
+    #[usage(visible_alias = "bs")]
     Bootstrap(bootstrap::Bootstrap),
     Cache(cache::Cache),
     Completion(completion::Completion),

@@ -13,17 +13,16 @@ use super::reconcile;
 
 /// Symlinks all ruby tool versions from an external tool into mise
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct SyncRuby {
-    #[arg(flatten)]
+    #[usage(flatten)]
     _type: SyncRubyType,
 }
 
 #[derive(Debug, usage_rs::Args)]
-#[group(required = true, multiple = true)]
 pub(super) struct SyncRubyType {
     /// Get tool versions from Homebrew
-    #[arg(long)]
+    #[usage(long, required = true)]
     brew: bool,
 }
 

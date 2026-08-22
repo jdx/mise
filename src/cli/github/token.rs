@@ -5,27 +5,27 @@ use crate::cli::token::github::Github;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
 pub(crate) struct Token {
     /// GitHub hostname
-    #[arg(default_value = "github.com")]
+    #[usage(default = "github.com")]
     host: String,
 
     /// Force native GitHub OAuth device flow instead of normal token resolution
-    #[arg(long)]
+    #[usage(long)]
     oauth: bool,
 
     /// Print only the token value
-    #[arg(long)]
+    #[usage(long)]
     raw: bool,
 
     /// Mint a fresh OAuth token even if the cached one has not
     /// expired, via the refresh-token grant or a new device-code flow
-    #[arg(long, requires = "oauth")]
+    #[usage(long, requires = "oauth")]
     refresh: bool,
 
     /// Show the full unmasked token
-    #[arg(long)]
+    #[usage(long)]
     unmask: bool,
 }
 

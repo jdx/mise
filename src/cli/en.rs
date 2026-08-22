@@ -9,16 +9,16 @@ use crate::env;
 /// It will have the tools and environment variables in the configs loaded.
 /// Note that changing directories will not update the mise environment.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct En {
     /// Directory to start the shell in
-    #[arg(default_value = ".", verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
+    #[usage(default = ".", verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
     pub dir: PathBuf,
 
     /// Shell to start
     ///
     /// Defaults to $SHELL
-    #[arg(verbatim_doc_comment, long, short = 's')]
+    #[usage(verbatim_doc_comment, long, short = 's')]
     pub shell: Option<String>,
 }
 

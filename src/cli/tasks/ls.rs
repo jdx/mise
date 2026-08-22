@@ -20,58 +20,58 @@ use serde_json::json;
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct TasksLs {
     /// Only show global tasks
-    #[arg(short, long, overrides_with = "local", verbatim_doc_comment)]
+    #[usage(short, long, overrides = "local", verbatim_doc_comment)]
     pub global: bool,
 
     /// Output in JSON format
-    #[arg(short = 'J', long, verbatim_doc_comment)]
+    #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Only show non-global tasks
-    #[arg(short, long, overrides_with = "global", verbatim_doc_comment)]
+    #[usage(short, long, overrides = "global", verbatim_doc_comment)]
     pub local: bool,
 
     /// Show all columns
-    #[arg(short = 'x', long, verbatim_doc_comment)]
+    #[usage(short = 'x', long, verbatim_doc_comment)]
     pub extended: bool,
 
     /// Load all tasks from the entire monorepo, including sibling directories.
     /// By default, only tasks from the current directory hierarchy are loaded.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub all: bool,
 
     /// Display tasks for usage completion
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     pub complete: bool,
 
     /// Show hidden tasks
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
 
     /// Only show task names, one per line. Useful for piping to fzf and similar tools.
-    #[arg(
+    #[usage(
         long,
         verbatim_doc_comment,
-        conflicts_with_all = ["json", "extended", "usage"]
+        conflicts = ["json", "extended", "usage"]
     )]
     pub name_only: bool,
 
     /// Do not print table header
-    #[arg(long, alias = "no-headers", verbatim_doc_comment)]
+    #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
     /// Sort by column. Default is name.
-    #[arg(long, value_name = "COLUMN", verbatim_doc_comment, value_enum)]
+    #[usage(long, value_name = "COLUMN", verbatim_doc_comment, value_enum)]
     pub sort: Option<SortColumn>,
 
     /// Sort order. Default is asc.
-    #[arg(long, verbatim_doc_comment, value_enum)]
+    #[usage(long, verbatim_doc_comment, value_enum)]
     pub sort_order: Option<SortOrder>,
 
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     pub usage: bool,
 }
 

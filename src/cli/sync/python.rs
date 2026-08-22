@@ -13,14 +13,14 @@ use super::reconcile;
 ///
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct SyncPython {
     /// Get tool versions from pyenv
-    #[arg(long)]
+    #[usage(long)]
     pyenv: bool,
 
     /// Sync tool versions with uv (2-way sync)
-    #[arg(long)]
+    #[usage(long)]
     uv: bool,
 }
 

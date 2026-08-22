@@ -16,23 +16,23 @@ use crate::system;
 ///
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemUpgrade {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
-    #[arg(value_name = "PACKAGE")]
+    #[usage(value_name = "PACKAGE")]
     packages: Vec<String>,
 
     /// Only upgrade packages for this built-in or plugin manager
-    #[arg(long, short)]
+    #[usage(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 

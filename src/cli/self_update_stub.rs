@@ -18,15 +18,15 @@ pub(crate) struct SelfUpdate {
     version: Option<String>,
 
     /// Update even if already up to date
-    #[arg(long, short)]
+    #[usage(long, short)]
     force: bool,
 
     /// Skip confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Disable auto-updating plugins
-    #[arg(long)]
+    #[usage(long)]
     no_plugins: bool,
 }
 

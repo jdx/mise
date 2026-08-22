@@ -23,15 +23,15 @@ use crate::toolset::ToolsetBuilder;
 /// Note that this creates shims for _all_ installed tools, not just the ones that are
 /// currently active in mise.toml.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Reshim {
-    #[arg(hide = true)]
+    #[usage(hide = true)]
     pub tool: Option<String>,
-    #[arg(hide = true)]
+    #[usage(hide = true)]
     pub version: Option<String>,
 
     /// Removes all shims before reshimming
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub force: bool,
 }
 

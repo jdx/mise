@@ -13,14 +13,14 @@ use super::parse_package_spec;
 /// Adds one or more packages to the project using the appropriate package manager.
 /// Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(super) struct DepsAdd {
     /// Package(s) to add (e.g., npm:react, npm:@types/react@19)
-    #[arg(required = true)]
+    #[usage(required = true)]
     pub packages: Vec<String>,
 
     /// Add as a development dependency
-    #[arg(long, short = 'D')]
+    #[usage(long, short = 'D')]
     pub dev: bool,
 }
 

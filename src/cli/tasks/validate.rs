@@ -19,19 +19,19 @@ use serde::Serialize;
 
 /// Validate tasks for common errors and issues
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct TasksValidate {
     /// Tasks to validate
     /// If not specified, validates all tasks
-    #[arg(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
     /// Only show errors (skip warnings)
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub errors_only: bool,
 
     /// Output validation results in JSON format
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub json: bool,
 }
 

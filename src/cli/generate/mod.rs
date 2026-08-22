@@ -11,9 +11,9 @@ mod tool_stub;
 
 /// Generate files for various tools/services
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "gen", alias = "g")]
+#[usage(visible_alias = "gen", alias = "g")]
 pub(crate) struct Generate {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 

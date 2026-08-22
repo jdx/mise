@@ -10,7 +10,7 @@ use crate::toolset::ToolsetBuilder;
 /// [internal] This is an internal command that writes an envrc file
 /// for direnv to consume.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, hide = true)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(super) struct DirenvExec {}
 
 #[derive(Debug, Default, Deserialize)]

@@ -31,32 +31,32 @@ use super::trust::Trust;
 ///
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Prune {
     /// Prune only these tools
-    #[arg()]
+    #[usage()]
     pub installed_tool: Option<Vec<ToolArg>>,
 
     /// Do not actually delete anything
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     pub dry_run: bool,
 
     /// Prune only tracked and trusted configuration links that point to nonexistent configurations
-    #[arg(long)]
+    #[usage(long)]
     pub configs: bool,
 
     /// Like --dry-run but exits with code 1 if there are tools to prune
     ///
     /// This is useful for scripts to check if tools need to be pruned.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub dry_run_code: bool,
 
     /// Placeholder for future monorepo pruning; `mise prune --monorepo` is not implemented yet.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub monorepo: bool,
 
     /// Prune only unused versions of tools
-    #[arg(long)]
+    #[usage(long)]
     pub tools: bool,
 }
 

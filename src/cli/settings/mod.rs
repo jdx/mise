@@ -7,16 +7,16 @@ mod set;
 mod unset;
 
 #[derive(Debug, usage_rs::Args)]
-#[command(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
+#[usage(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Settings {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
-    #[arg(flatten)]
+    #[usage(flatten)]
     ls: ls::SettingsLs,
 
     /// Setting value to set
-    #[arg(conflicts_with = "all")]
+    #[usage(conflicts = "all")]
     value: Option<String>,
 }
 
@@ -24,7 +24,7 @@ pub(crate) struct Settings {
 enum Commands {
     Add(add::SettingsAdd),
     Get(get::SettingsGet),
-    #[command(visible_alias = "list")]
+    #[usage(visible_alias = "list")]
     Ls(ls::SettingsLs),
     Set(set::SettingsSet),
     Unset(unset::SettingsUnset),

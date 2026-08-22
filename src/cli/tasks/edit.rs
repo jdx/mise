@@ -9,14 +9,14 @@ use std::path::MAIN_SEPARATOR_STR;
 ///
 /// The task will be created as a standalone script if it does not already exist.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct TasksEdit {
     /// Task to edit
-    #[arg()]
+    #[usage()]
     task: String,
 
     /// Display the path to the task instead of editing it
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     path: bool,
 }
 

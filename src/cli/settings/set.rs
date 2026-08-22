@@ -11,15 +11,15 @@ use crate::{config, duration, file};
 /// With `--local`, modifies the local config file instead.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct SettingsSet {
     /// The setting to set
-    #[arg()]
+    #[usage()]
     pub setting: String,
     /// The value to set (optional if provided as KEY=VALUE)
     pub value: Option<String>,
     /// Use the local config file instead of the global one
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub local: bool,
 }
 

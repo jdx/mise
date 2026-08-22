@@ -14,33 +14,33 @@ use tabled::{Table, Tabled};
 /// Note that aliases are also stored in this file
 /// but managed separately with `mise tool-alias`
 #[derive(Debug, usage_rs::Args)]
-#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(crate) struct SettingsLs {
     /// Name of setting
     pub setting: Option<String>,
 
     /// List all settings
-    #[arg(long, short)]
+    #[usage(long, short)]
     all: bool,
 
     /// Output in JSON format
-    #[arg(long, short = 'J', group = "output")]
+    #[usage(long, short = 'J', group = "output")]
     json: bool,
 
     /// Use the local config file instead of the global one
-    #[arg(long, short, global = true)]
+    #[usage(long, short, global = true)]
     pub local: bool,
 
     /// Output in TOML format
-    #[arg(long, short = 'T', group = "output")]
+    #[usage(long, short = 'T', group = "output")]
     toml: bool,
 
     /// Print all settings with descriptions for shell completions
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     complete: bool,
 
     /// Output in JSON format with sources
-    #[arg(long, group = "output")]
+    #[usage(long, group = "output")]
     json_extended: bool,
 }
 

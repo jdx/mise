@@ -17,7 +17,7 @@ use petgraph::dot::Dot;
 /// edges, so they do not appear here. Those nested tasks still run, including
 /// their own `depends`.
 #[derive(Debug, usage_rs::Args)]
-#[command(
+#[usage(
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP,
     unknown_flags = "error"
@@ -26,19 +26,19 @@ pub(super) struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
     /// e.g.: mise tasks deps lint test check
-    #[arg(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
     /// Collapse repeated dependencies after their first occurrence
-    #[arg(long, conflicts_with = "dot", verbatim_doc_comment)]
+    #[usage(long, conflicts = "dot", verbatim_doc_comment)]
     pub compact: bool,
 
     /// Display dependencies in DOT format
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub dot: bool,
 
     /// Show hidden tasks
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
 }
 

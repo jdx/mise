@@ -27,10 +27,10 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
-    #[arg(value_name = "REF")]
+    #[usage(value_name = "REF")]
     reference: String,
 
     /// Reuse unchanged tool layers from this image instead of the destination ref
@@ -38,33 +38,33 @@ pub(super) struct Push {
     /// Must live in the same repository as the destination. Useful when each
     /// push gets a unique tag (e.g. per-commit tags in CI):
     /// `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
-    #[arg(long, value_name = "REF", conflicts_with_all = &["no_cache", "image_dir"])]
+    #[usage(long, value_name = "REF", conflicts = &["no_cache", "image_dir"])]
     cache_from: Option<String>,
 
     /// Base image for the build (ignored with --image-dir)
-    #[arg(long)]
+    #[usage(long)]
     from: Option<String>,
 
     /// Push an already-built OCI image layout (skip the build step)
-    #[arg(long, value_hint = ValueHint::DirPath, conflicts_with_all = &["from", "mount_point", "no_mise", "owner", "include_global"])]
+    #[usage(long, value_hint = ValueHint::DirPath, conflicts = &["from", "mount_point", "no_mise", "owner", "include_global"])]
     image_dir: Option<PathBuf>,
 
     /// Also include tools from the global / system config (default: project-only)
     ///
     /// See `mise oci build --help` for details.
-    #[arg(long)]
+    #[usage(long)]
     include_global: bool,
 
     /// Override in-image mount point (ignored with --image-dir)
-    #[arg(long)]
+    #[usage(long)]
     mount_point: Option<String>,
 
     /// Don't reuse tool layers from the previously pushed image
-    #[arg(long)]
+    #[usage(long)]
     no_cache: bool,
 
     /// Don't embed the mise binary (ignored with --image-dir)
-    #[arg(long)]
+    #[usage(long)]
     no_mise: bool,
 
     /// UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
@@ -72,7 +72,7 @@ pub(super) struct Push {
     /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
     /// omitted, it defaults to UID. This affects file ownership only; [oci].user
     /// controls the image USER directive.
-    #[arg(long, value_name = "UID[:GID]")]
+    #[usage(long, value_name = "UID[:GID]")]
     owner: Option<LayerOwner>,
 
     /// Maintain the tag as a multi-arch image index
@@ -81,7 +81,7 @@ pub(super) struct Push {
     /// image index containing one entry per platform, preserving entries
     /// other architectures pushed. Run `mise oci push --update-index` from
     /// one runner per platform to assemble a multi-arch tag.
-    #[arg(long)]
+    #[usage(long)]
     update_index: bool,
 }
 

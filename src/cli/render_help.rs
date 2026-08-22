@@ -10,7 +10,7 @@ const IDIOMATIC_FILES_END: &str = "<!-- mise:idiomatic-version-files:end -->";
 
 /// internal command to generate markdown from help
 #[derive(Debug, usage_rs::Args)]
-#[command(hide = true)]
+#[usage(hide = true)]
 pub(crate) struct RenderHelp {}
 
 impl RenderHelp {

@@ -4,26 +4,26 @@ use strum::EnumString;
 
 /// Generate shell completions
 #[derive(Debug, usage_rs::Args)]
-#[command(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Completion {
     /// Shell type to generate completions for
-    #[arg(required_unless_present = "shell_type", value_enum)]
+    #[usage(required_unless = "shell_type", value_enum)]
     shell: Option<Shell>,
 
     /// Shell type to generate completions for
-    #[arg(long = "shell", short = 's', hide = true, value_enum)]
+    #[usage(long = "shell", short = 's', hide = true, value_enum)]
     shell_type: Option<Shell>,
 
     /// Retained for compatibility with older completion generators.
     ///
     /// usage-rs's built-in bash script is self-contained, so this is now a no-op.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     include_bash_completion_lib: bool,
 
     /// Retained for compatibility with older completion generators.
     ///
     /// Completions now always use usage-rs's built-in protocol, so this is a no-op.
-    #[arg(long, verbatim_doc_comment, hide = true)]
+    #[usage(long, verbatim_doc_comment, hide = true)]
     usage: bool,
 
     /// Install the script where this shell looks for it, instead of printing it
@@ -31,11 +31,11 @@ pub(crate) struct Completion {
     /// Writes the script file and nothing else: no shell rc file and no PowerShell profile is
     /// edited. Where a shell needs a one-time line of its own — zsh's `fpath+=`, PowerShell's
     /// dot-source — it is printed for you to add.
-    #[arg(long, verbatim_doc_comment, effect = "write")]
+    #[usage(long, verbatim_doc_comment, effect = "write")]
     install: bool,
 
     /// Replace a file at the target path that mise did not write
-    #[arg(long, requires = "--install", effect = "write")]
+    #[usage(long, requires = "--install", effect = "write")]
     force: bool,
 }
 
@@ -110,12 +110,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[derive(Debug, Clone, Copy, EnumString, strum::Display, usage_rs::ValueEnum)]
 #[strum(serialize_all = "snake_case")]
-#[value(rename_all = "snake_case")]
+#[usage(rename_all = "snake_case")]
 enum Shell {
     Bash,
     Fish,
     #[strum(serialize = "powershell")]
-    #[value(name = "powershell", visible_alias = "pwsh")]
+    #[usage(name = "powershell", visible_alias = "pwsh")]
     Powershell,
     Zsh,
 }

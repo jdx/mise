@@ -14,19 +14,19 @@ use crate::{cli::args::ToolArg, config::Config};
 ///
 /// Use this for adding installs either custom compiled outside mise or built with a different tool.
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Link {
     /// Tool name and version to create a symlink for
-    #[arg(value_name = "TOOL@VERSION")]
+    #[usage(value_name = "TOOL@VERSION")]
     tool: ToolArg,
 
     /// The local path to the tool version
     /// e.g.: ~/.nvm/versions/node/v20.0.0
-    #[arg(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
+    #[usage(value_hint = ValueHint::DirPath, verbatim_doc_comment)]
     path: PathBuf,
 
     /// Overwrite an existing tool version if it exists
-    #[arg(long, short = 'f')]
+    #[usage(long, short = 'f')]
     force: bool,
 }
 

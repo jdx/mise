@@ -23,27 +23,27 @@ pub(crate) struct BootstrapApplyReport {
 /// the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
-    #[arg(value_name = "PACKAGE")]
+    #[usage(value_name = "PACKAGE")]
     packages: Vec<String>,
 
     /// Only install packages for this built-in or plugin manager
-    #[arg(long, short)]
+    #[usage(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
-    #[arg(long)]
+    #[usage(long)]
     update: bool,
 }
 

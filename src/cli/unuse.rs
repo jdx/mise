@@ -29,29 +29,29 @@ use path_absolutize::Absolutize;
 ///
 /// Will also prune the installed version if no other configurations are using it.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Unuse {
     /// Tool(s) to remove
-    #[arg(value_name = "INSTALLED_TOOL@VERSION", required = true)]
+    #[usage(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,
 
     /// Create/modify an environment-specific config file like .mise.<env>.toml
-    #[arg(long, short, overrides_with_all = & ["global", "path"])]
+    #[usage(long, short, overrides = & ["global", "path"])]
     env: Option<String>,
 
     /// Use the global config file (`~/.config/mise/config.toml`) instead of the local one
-    #[arg(short, long, overrides_with_all = & ["path", "env"])]
+    #[usage(short, long, overrides = & ["path", "env"])]
     global: bool,
 
     /// Specify a path to a config file or directory
     ///
     /// If a directory is specified, it will look for a config file in that directory following
     /// the rules above.
-    #[arg(short, long, visible_alias = "file", overrides_with_all = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
+    #[usage(short, long, visible_alias = "file", overrides = & ["global", "env"], value_hint = usage_rs::ValueHint::FilePath)]
     path: Option<PathBuf>,
 
     /// Do not also prune the installed version
-    #[arg(long)]
+    #[usage(long)]
     no_prune: bool,
 }
 

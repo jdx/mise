@@ -8,13 +8,13 @@ use crate::{config, file};
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct SettingsUnset {
     /// The setting to remove
     pub key: String,
 
     /// Use the local config file instead of the global one
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub local: bool,
 }
 

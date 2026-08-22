@@ -12,15 +12,15 @@ mod validate;
 
 /// Manage tasks
 #[derive(usage_rs::Args)]
-#[command(visible_alias = "t", alias = "task", verbatim_doc_comment)]
+#[usage(visible_alias = "t", alias = "task", verbatim_doc_comment)]
 pub(crate) struct Tasks {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
     /// Task name to get info of
     task: Option<String>,
 
-    #[arg(flatten)]
+    #[usage(flatten)]
     ls: ls::TasksLs,
 }
 

@@ -6,10 +6,10 @@ use super::trust;
 
 /// Remove explicit trust for a config
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct Untrust {
     /// The config file to untrust
-    #[arg(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
+    #[usage(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 }
 

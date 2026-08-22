@@ -8,22 +8,22 @@ mod set;
 mod unset;
 
 #[derive(Debug, usage_rs::Args)]
-#[command(
+#[usage(
     name = "tool-alias",
     about = "Manage tool version aliases.",
     alias = "alias",
     alias = "aliases"
 )]
 pub(crate) struct ToolAlias {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
     /// Filter aliases by tool
-    #[arg(short = 'p', long = "tool", alias = "plugin", value_name = "TOOL")]
+    #[usage(short = 'p', long = "tool", alias = "plugin", value_name = "TOOL")]
     pub tool: Option<BackendArg>,
 
     /// Don't show table header
-    #[arg(long)]
+    #[usage(long)]
     pub no_header: bool,
 }
 

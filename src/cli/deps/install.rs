@@ -9,40 +9,40 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 /// Checks if dependency lockfiles are newer than installed outputs
 /// and runs install commands if needed.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct DepsInstall {
     /// Provider to operate on (runs only this provider, or use with --explain)
     pub provider: Option<String>,
 
     /// Show why a provider is fresh or stale (requires a provider argument)
-    #[arg(long)]
+    #[usage(long)]
     pub explain: bool,
 
     /// Force run all deps steps even if outputs are fresh
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub force: bool,
 
     /// Only check if deps install is needed, don't run commands
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     pub dry_run: bool,
 
     /// Show what deps providers are available
-    #[arg(long)]
+    #[usage(long)]
     pub list: bool,
 
     /// Install dependencies from every [monorepo].config_roots config root
     ///
     /// Requires monorepo_root = true plus explicit [monorepo].config_roots in
     /// the monorepo root config. Providers are named like //apps/api:uv.
-    #[arg(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
+    #[usage(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
     pub monorepo: bool,
 
     /// Run specific deps rule(s) only
-    #[arg(long)]
+    #[usage(long)]
     pub only: Option<Vec<String>>,
 
     /// Skip specific deps rule(s)
-    #[arg(long)]
+    #[usage(long)]
     pub skip: Option<Vec<String>>,
 }
 

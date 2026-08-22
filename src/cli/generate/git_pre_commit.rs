@@ -13,23 +13,27 @@ use crate::git::Git;
 ///
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
 pub(super) struct GitPreCommit {
     /// The task to run when the pre-commit hook is triggered
-    #[arg(long, short, default_value = "pre-commit")]
+    #[usage(long, short, default = "pre-commit")]
     task: String,
     /// write to .git/hooks/pre-commit and make it executable
-    #[arg(long, short)]
+    #[usage(long, short)]
     write: bool,
     /// Which hook to generate (saves to .git/hooks/$hook)
-    #[arg(long, default_value = "pre-commit")]
+    #[usage(long, default = "pre-commit")]
     hook: String,
     /// mise flags to embed in the generated hook, given after `--`
     ///
     /// These are inserted between `mise` and `run`, so the hook carries the same context you
     /// would pass on the command line. Useful when the config is not at the repository root,
     /// since git runs hooks from the top level: `-- -C subdir` makes the hook find it.
-    #[arg(last = true, value_name = "MISE_ARG", verbatim_doc_comment)]
+    #[usage(
+        double_dash = "required",
+        value_name = "MISE_ARG",
+        verbatim_doc_comment
+    )]
     mise_args: Vec<String>,
 }
 

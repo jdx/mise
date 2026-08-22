@@ -7,18 +7,18 @@ use serde::Serialize;
 
 /// [experimental] Inspect the workspace project graph
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct TasksGraph {
     /// Output the project graph as JSON
-    #[arg(short = 'J', long, verbatim_doc_comment)]
+    #[usage(short = 'J', long, verbatim_doc_comment)]
     json: bool,
 
     /// Explain provider attribution for inferred projects and tasks
-    #[arg(long, conflicts_with = "json", verbatim_doc_comment)]
+    #[usage(long, conflicts = "json", verbatim_doc_comment)]
     explain: bool,
 
     /// Do not print table headers
-    #[arg(long, alias = "no-headers", verbatim_doc_comment)]
+    #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     no_header: bool,
 }
 

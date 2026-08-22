@@ -11,9 +11,9 @@ mod task;
 ///
 /// Run `mise cache` with no args to view the current cache directory.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct Cache {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 }
 

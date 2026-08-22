@@ -4,10 +4,10 @@ use crate::config::Config;
 
 /// Show the command for a shell alias
 #[derive(Debug, usage_rs::Args)]
-#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ShellAliasGet {
     /// The alias to show
-    #[arg(name = "shell_alias")]
+    #[usage(name = "shell_alias")]
     pub alias: String,
 }
 

@@ -35,16 +35,16 @@ use toml_edit::DocumentMut;
 /// platforms to existing stub files rather than overwriting them. This allows you
 /// to incrementally build cross-platform tool stubs.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct ToolStub {
     /// Output file path for the tool stub
-    #[arg(value_hint = ValueHint::FilePath)]
+    #[usage(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
 
     /// Binary path within the extracted archive
     ///
     /// If not specified and the archive is downloaded, will auto-detect the most likely binary
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub bin: Option<String>,
 
     /// Wrap stub in a bootstrap script that installs mise if not already present
@@ -53,14 +53,14 @@ pub(super) struct ToolStub {
     /// 1. Checks if mise is installed at the expected path
     /// 2. If not, downloads and installs mise using the embedded installer
     /// 3. Executes the tool stub using mise
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub bootstrap: bool,
 
     /// Specify mise version for the bootstrap script
     ///
     /// By default, uses the latest version from the install script.
     /// Use this to pin to a specific version (e.g., "2025.1.0").
-    #[arg(long, verbatim_doc_comment, requires = "bootstrap")]
+    #[usage(long, verbatim_doc_comment, requires = "bootstrap")]
     pub bootstrap_version: Option<String>,
 
     /// Checksum algorithm to use when downloading artifacts
@@ -68,11 +68,11 @@ pub(super) struct ToolStub {
     /// Accepts `blake3` or `sha256` and defaults to `blake3`.
     /// Cannot be used with `--lock` or `--skip-download` because those modes do not
     /// calculate checksums.
-    #[arg(
+    #[usage(
         long,
         value_enum,
-        default_value = "blake3",
-        conflicts_with_all = &["lock", "skip_download"]
+        default = "blake3",
+        conflicts = &["lock", "skip_download"]
     )]
     pub checksum_algorithm: ChecksumAlgorithm,
 
@@ -80,22 +80,22 @@ pub(super) struct ToolStub {
     ///
     /// This reads an existing stub file and fills in any missing checksum/size fields
     /// by downloading the files. URLs must already be present in the stub.
-    #[arg(long, conflicts_with_all = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download", "lock"])]
+    #[usage(long, conflicts = &["url", "platform_url", "version", "bin", "platform_bin", "skip_download", "lock"])]
     pub fetch: bool,
 
     /// HTTP backend type to use
-    #[arg(long, default_value = "http")]
+    #[usage(long, default = "http")]
     pub http: String,
 
     /// Resolve and embed lockfile data (exact version + platform URLs/checksums)
     /// into an existing stub file for reproducible installs without runtime API calls
-    #[arg(long, conflicts_with_all = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"])]
+    #[usage(long, conflicts = &["url", "platform_url", "bin", "platform_bin", "fetch", "skip_download"])]
     pub lock: bool,
 
     /// Platform-specific binary paths in the format platform:path
     ///
     /// Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
-    #[arg(long)]
+    #[usage(long)]
     pub platform_bin: Vec<String>,
 
     /// Platform-specific URLs in the format platform:url or just url (auto-detect platform)
@@ -109,21 +109,21 @@ pub(super) struct ToolStub {
     /// Examples:
     /// --platform-url linux-x64:https://...
     /// --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
-    #[arg(long)]
+    #[usage(long)]
     pub platform_url: Vec<String>,
 
     /// Skip downloading for checksum and binary path detection (faster but less informative)
-    #[arg(long)]
+    #[usage(long)]
     pub skip_download: bool,
 
     /// URL for downloading the tool
     ///
     /// Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub url: Option<String>,
 
     /// Version of the tool
-    #[arg(long, default_value = "latest")]
+    #[usage(long, default = "latest")]
     pub version: String,
 }
 

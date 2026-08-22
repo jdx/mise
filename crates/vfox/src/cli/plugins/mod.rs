@@ -4,13 +4,13 @@ mod list;
 
 #[derive(usage_rs::Subcommands)]
 pub(crate) enum Commands {
-    #[command(alias_hidden = "ls")]
+    #[usage(alias_hidden = "ls")]
     List(list::List),
 }
 
 #[derive(usage_rs::Args)]
 pub(crate) struct Plugins {
-    #[command(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 

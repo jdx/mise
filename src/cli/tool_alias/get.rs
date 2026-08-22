@@ -8,10 +8,10 @@ use crate::config::Config;
 /// This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml
 ///
 #[derive(Debug, usage_rs::Args)]
-#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ToolAliasGet {
     /// The tool to show the alias for
-    #[arg(value_name = "TOOL")]
+    #[usage(value_name = "TOOL")]
     pub tool: BackendArg,
     /// The alias to show
     pub alias: String,

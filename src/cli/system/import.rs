@@ -34,35 +34,35 @@ use toml_edit::{Array, InlineTable, Value};
 /// formulae whose active keg receipt says they were installed on request.
 /// Pass `--all` to import every linked formula, including dependencies.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemImport {
     /// Write to the config file for this environment (mise.<ENV>.toml)
-    #[arg(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
+    #[usage(long, short, value_name = "ENV", conflicts = ["global", "path"])]
     env: Option<String>,
 
     /// Write to the global config (~/.config/mise/config.toml)
-    #[arg(long, short, conflicts_with_all = ["env", "path"])]
+    #[usage(long, short, conflicts = ["env", "path"])]
     global: bool,
 
     /// Only import packages for this manager. Currently only `brew` is supported.
-    #[arg(long, short, default_value = "brew", value_parser = ["brew"])]
+    #[usage(long, short, default = "brew", choices("brew"))]
     manager: String,
 
     /// Import every linked formula, including dependencies
-    #[arg(long)]
+    #[usage(long)]
     all: bool,
 
     /// Print the config change without writing config
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[arg(
+    #[usage(
         long,
         short,
         visible_alias = "file",
         value_name = "PATH",
-        conflicts_with = "global"
+        conflicts = "global"
     )]
     path: Option<PathBuf>,
 }

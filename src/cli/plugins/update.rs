@@ -15,16 +15,16 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 ///
 /// note: this updates the plugin itself, not the runtime versions
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], after_long_help = AFTER_LONG_HELP)]
 pub(super) struct Update {
     /// Plugin(s) to update
-    #[arg()]
+    #[usage()]
     plugin: Option<Vec<String>>,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// Default: 4
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 }
 

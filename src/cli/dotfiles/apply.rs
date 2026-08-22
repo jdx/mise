@@ -10,22 +10,22 @@ use crate::system;
 /// Edit entries manage a marker-delimited block or a single line in a file
 /// mise doesn't otherwise own.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesApply {
     /// Only apply these targets
-    #[arg(value_name = "TARGET")]
+    #[usage(value_name = "TARGET")]
     targets: Vec<String>,
 
     /// Overwrite existing files that conflict with whole-file dotfile entries
-    #[arg(long, short)]
+    #[usage(long, short)]
     force: bool,
 
     /// Print the actions that would run without writing anything
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 

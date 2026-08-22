@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 #[derive(Debug, usage_rs::Args)]
-#[command(
+#[usage(
     visible_alias = "w",
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP,
@@ -34,27 +34,27 @@ pub(crate) struct Watch {
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
     /// Defaults to `default`
-    #[arg(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     task: Option<String>,
 
     /// Tasks to run
-    #[arg(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, verbatim_doc_comment, hide = true)]
     task_flag: Vec<String>,
 
     /// Task and arguments to run
-    #[arg(allow_hyphen_values = true, trailing_var_arg = true)]
+    #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 
     /// Files to watch
     /// Defaults to sources from the task(s)
-    #[arg(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, verbatim_doc_comment, hide = true)]
     glob: Vec<String>,
 
     /// Run only the specified tasks skipping all dependencies
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub skip_deps: bool,
 
-    #[arg(flatten)]
+    #[usage(flatten)]
     watchexec: WatchexecArgs,
 }
 
@@ -566,7 +566,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// The special value '/dev/null', provided as the only path watched, will cause Watchexec to
     /// not watch any paths. Other event sources (like signals or key events) may still be used.
-    #[arg(
+    #[usage(
 		short = 'w',
 		long = "watch",
 		help_heading = "Filtering",
@@ -580,7 +580,7 @@ pub(crate) struct WatchexecArgs {
     /// Unlike '-w', folders watched with this option are not recursed into.
     ///
     /// This option can be specified multiple times to watch multiple directories non-recursively.
-    #[arg(
+    #[usage(
 		short = 'W',
 		long = "watch-non-recursive",
 		help_heading = "Filtering",
@@ -597,7 +597,7 @@ pub(crate) struct WatchexecArgs {
     /// file containing command-line options and pass it to watchexec with `@path/to/argfile`.
     ///
     /// The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
-    #[arg(
+    #[usage(
 		short = 'F',
 		long,
 		help_heading = "Filtering",
@@ -609,12 +609,12 @@ pub(crate) struct WatchexecArgs {
     /// Clear screen before running command
     ///
     /// If this doesn't completely clear the screen, try '--clear=reset'.
-    #[arg(
+    #[usage(
 		short = 'c',
 		long = "clear",
 		help_heading = "Output",
 		num_args = 0..=1,
-		default_missing_value = "clear",
+		default_missing = "clear",
 		value_enum,
 		value_name = "MODE",
     )]
@@ -630,10 +630,10 @@ pub(crate) struct WatchexecArgs {
     /// programs that can reload their configuration without a full restart.
     ///
     /// The signal can be specified with the '--signal' option.
-    #[arg(
+    #[usage(
         short,
         long,
-        default_value = "do-nothing",
+        default = "do-nothing",
         hide_default_value = true,
         value_enum,
         value_name = "MODE"
@@ -643,10 +643,10 @@ pub(crate) struct WatchexecArgs {
     /// Restart the process if it's still running
     ///
     /// This is a shorthand for '--on-busy-update=restart'.
-    #[arg(
+    #[usage(
 		short,
 		long,
-		conflicts_with_all = ["on_busy_update"],
+		conflicts = ["on_busy_update"],
     )]
     pub restart: bool,
 
@@ -660,10 +660,10 @@ pub(crate) struct WatchexecArgs {
     ///
     /// Signals are not supported on Windows at the moment, and will always be overridden to 'kill'.
     /// See '--stop-signal' for more on Windows "signals".
-    #[arg(
+    #[usage(
 		short,
 		long,
-		conflicts_with_all = ["restart"],
+		conflicts = ["restart"],
 		value_name = "SIGNAL"
     )]
     pub signal: Option<String>,
@@ -684,7 +684,7 @@ pub(crate) struct WatchexecArgs {
     /// has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE"
     /// events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are
     /// respectively mapped to these.
-    #[arg(long, value_name = "SIGNAL")]
+    #[usage(long, value_name = "SIGNAL")]
     pub stop_signal: Option<String>,
 
     /// Time to wait for the command to exit gracefully
@@ -700,9 +700,9 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This has no practical effect on Windows as the command is always forcefully terminated; see
     /// '--stop-signal' for why.
-    #[arg(
+    #[usage(
         long,
-        default_value = "10s",
+        default = "10s",
         hide_default_value = true,
         value_name = "TIMEOUT"
     )]
@@ -725,7 +725,7 @@ pub(crate) struct WatchexecArgs {
     /// "SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the
     /// forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot
     /// yet deliver other "signals" than a STOP.
-    #[arg(long = "map-signal", value_name = "SIGNAL:SIGNAL")]
+    #[usage(long = "map-signal", value_name = "SIGNAL:SIGNAL")]
     pub signal_map: Vec<String>,
 
     /// Time to wait for new events before taking action
@@ -745,10 +745,10 @@ pub(crate) struct WatchexecArgs {
     /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
     ///
     /// The default is 50 milliseconds. Setting to 0 is highly discouraged.
-    #[arg(
+    #[usage(
         long,
         short,
-        default_value = "50ms",
+        default = "50ms",
         hide_default_value = true,
         value_name = "TIMEOUT"
     )]
@@ -758,7 +758,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is
     /// closed. This is used by some process managers to avoid leaving zombie processes around.
-    #[arg(long)]
+    #[usage(long)]
     pub stdin_quit: bool,
 
     /// Don't load gitignores
@@ -768,7 +768,7 @@ pub(crate) struct WatchexecArgs {
     /// files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
     ///
     /// This option is useful if you want to watch files that are ignored by Git.
-    #[arg(long, help_heading = "Filtering")]
+    #[usage(long, help_heading = "Filtering")]
     pub no_vcs_ignore: bool,
 
     /// Don't load project-local ignores
@@ -790,7 +790,7 @@ pub(crate) struct WatchexecArgs {
     /// VCS ignore files (Git, Mercurial, Bazaar, Darcs, Fossil) are only used if the corresponding
     /// VCS is discovered to be in use for the project/origin. For example, a .bzrignore in a Git
     /// repository will be discarded.
-    #[arg(long, help_heading = "Filtering", verbatim_doc_comment)]
+    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
     pub no_project_ignore: bool,
 
     /// Don't load global ignores
@@ -808,7 +808,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// Like for project files, Git and Bazaar global files will only be used for the corresponding
     /// VCS as used in the project.
-    #[arg(long, help_heading = "Filtering", verbatim_doc_comment)]
+    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
     pub no_global_ignore: bool,
 
     /// Don't use internal default ignores
@@ -816,7 +816,7 @@ pub(crate) struct WatchexecArgs {
     /// Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
     /// `.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
     /// Watchexec log files.
-    #[arg(long, help_heading = "Filtering")]
+    #[usage(long, help_heading = "Filtering")]
     pub no_default_ignore: bool,
 
     /// Don't discover ignore files at all
@@ -825,7 +825,7 @@ pub(crate) struct WatchexecArgs {
     /// even more efficient as it will skip all the ignore discovery mechanisms from the get go.
     ///
     /// Note that default ignores are still loaded, see '--no-default-ignore'.
-    #[arg(long, help_heading = "Filtering")]
+    #[usage(long, help_heading = "Filtering")]
     pub no_discover_ignore: bool,
 
     /// Don't ignore anything at all
@@ -834,14 +834,14 @@ pub(crate) struct WatchexecArgs {
     ///
     /// Note that ignores explicitly loaded via other command line options, such as '--ignore' or
     /// '--ignore-file', will still be used.
-    #[arg(long, help_heading = "Filtering")]
+    #[usage(long, help_heading = "Filtering")]
     pub ignore_nothing: bool,
 
     /// Wait until first change before running command
     ///
     /// By default, Watchexec will run the command once immediately. With this option, it will
     /// instead wait until an event is detected before running the command as normal.
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub postpone: bool,
 
     /// Sleep before running the command
@@ -852,7 +852,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// Takes a unit-less value in seconds, or a time span value such as "2min 5s".
     /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    #[arg(long, value_name = "DURATION")]
+    #[usage(long, value_name = "DURATION")]
     pub delay_run: Option<String>,
 
     /// Poll for filesystem changes
@@ -867,11 +867,11 @@ pub(crate) struct WatchexecArgs {
     /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
     ///
     /// Aliased as '--force-poll'.
-    #[arg(
+    #[usage(
 		long,
 		alias = "force-poll",
 		num_args = 0..=1,
-		default_missing_value = "30s",
+		default_missing = "30s",
 		value_name = "INTERVAL",
     )]
     pub poll: Option<String>,
@@ -920,11 +920,11 @@ pub(crate) struct WatchexecArgs {
     /// Use with a unix shell and options:
     ///
     ///   $ watchexec --shell='zsh -x -o shwordsplit' -- scr
-    #[arg(long, help_heading = "Command", value_name = "SHELL")]
+    #[usage(long, help_heading = "Command", value_name = "SHELL")]
     pub shell: Option<String>,
 
     /// Shorthand for '--shell=none'
-    #[arg(short = 'n', help_heading = "Command")]
+    #[usage(short = 'n', help_heading = "Command")]
     pub no_shell: bool,
 
     /// Configure event emission
@@ -1027,11 +1027,11 @@ pub(crate) struct WatchexecArgs {
     /// numbers of files will either cause the environment to be truncated, or may error or crash
     /// the process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the
     /// multiple confused queries that have landed in my inbox over the years.
-    #[arg(
+    #[usage(
         long,
         help_heading = "Command",
         verbatim_doc_comment,
-        default_value = "none",
+        default = "none",
         hide_default_value = true,
         value_name = "MODE",
         required_if_eq("only_emit_events", "true"),
@@ -1048,10 +1048,10 @@ pub(crate) struct WatchexecArgs {
     /// This option requires `--emit-events-to` to be set, and restricts the available modes to
     /// `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin
     /// of the command.
-    #[arg(
+    #[usage(
 		long,
 		help_heading = "Output",
-		conflicts_with_all = ["manual"],
+		conflicts = ["manual"],
     )]
     pub only_emit_events: bool,
 
@@ -1061,7 +1061,7 @@ pub(crate) struct WatchexecArgs {
     /// setting them for the Watchexec process itself.
     ///
     /// Use key=value syntax. Multiple variables can be set by repeating the option.
-    #[arg(long, short = 'E', help_heading = "Command", value_name = "KEY=VALUE")]
+    #[usage(long, short = 'E', help_heading = "Command", value_name = "KEY=VALUE")]
     pub env: Vec<String>,
 
     /// Configure how the process is wrapped
@@ -1073,23 +1073,23 @@ pub(crate) struct WatchexecArgs {
     ///
     /// Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
     /// the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
-    #[arg(long, help_heading = "Command", value_name = "MODE", value_enum)]
+    #[usage(long, help_heading = "Command", value_name = "MODE", value_enum)]
     pub wrap_process: Option<WrapMode>,
 
     /// Alert when commands start and end
     ///
     /// With this, Watchexec will emit a desktop notification when a command starts and ends, on
     /// supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
-    #[arg(short = 'N', long, help_heading = "Output")]
+    #[usage(short = 'N', long, help_heading = "Output")]
     pub notify: bool,
 
     /// When to use terminal colours
     ///
     /// Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
-    #[arg(
+    #[usage(
         long,
         help_heading = "Output",
-        default_value = "auto",
+        default = "auto",
         value_name = "MODE",
         alias = "colour",
         value_enum
@@ -1100,18 +1100,18 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use
     /// the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
-    #[arg(long, help_heading = "Output")]
+    #[usage(long, help_heading = "Output")]
     pub timings: bool,
 
     /// Don't print starting and stopping messages
     ///
     /// By default Watchexec will print a message when the command starts and stops. This option
     /// disables this behaviour, so only the command's output, warnings, and errors will be printed.
-    #[arg(short, long, help_heading = "Output")]
+    #[usage(short, long, help_heading = "Output")]
     pub quiet: bool,
 
     /// Ring the terminal bell on command completion
-    #[arg(long, help_heading = "Output")]
+    #[usage(long, help_heading = "Output")]
     pub bell: bool,
 
     /// Set the project origin
@@ -1124,7 +1124,7 @@ pub(crate) struct WatchexecArgs {
     /// used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
     ///
     /// When set, Watchexec will also not bother searching, which can be significantly faster.
-    #[arg(
+    #[usage(
 		long,
 		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
@@ -1135,7 +1135,7 @@ pub(crate) struct WatchexecArgs {
     ///
     /// By default, the working directory of the command is the working directory of Watchexec. You
     /// can change that with this option. Note that paths may be less intuitive to use with this.
-    #[arg(
+    #[usage(
 		long,
 		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
@@ -1147,11 +1147,11 @@ pub(crate) struct WatchexecArgs {
     /// This is a quick filter to only emit events for files with the given extensions. Extensions
     /// can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
     /// be given by repeating the option or by separating them with commas.
-    #[arg(
+    #[usage(
         long = "exts",
         short = 'e',
         help_heading = "Filtering",
-        value_delimiter = ',',
+        delimiter = ',',
         value_name = "EXTENSIONS"
     )]
     pub filter_extensions: Vec<String>,
@@ -1161,7 +1161,7 @@ pub(crate) struct WatchexecArgs {
     /// Provide a glob-like filter pattern, and only events for files matching the pattern will be
     /// emitted. Multiple patterns can be given by repeating the option. Events that are not from
     /// files (e.g. signals, keyboard events) will pass through untouched.
-    #[arg(
+    #[usage(
         long = "filter",
         short = 'f',
         help_heading = "Filtering",
@@ -1175,7 +1175,7 @@ pub(crate) struct WatchexecArgs {
     /// with '#' are ignored. Uses the same pattern format as the '--filter' option.
     ///
     /// This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
-    #[arg(
+    #[usage(
 		long = "filter-file",
 		help_heading = "Filtering",
 		value_hint = usage_rs::ValueHint::FilePath,
@@ -1183,8 +1183,8 @@ pub(crate) struct WatchexecArgs {
 		env = "WATCHEXEC_FILTER_FILES",
 		hide_env = true,
     )]
-    #[cfg_attr(windows, arg(value_delimiter = ';'))]
-    #[cfg_attr(not(windows), arg(value_delimiter = ':'))]
+    #[cfg_attr(windows, usage(delimiter = ';'))]
+    #[cfg_attr(not(windows), usage(delimiter = ':'))]
     pub filter_files: Vec<PathBuf>,
 
     /// [experimental] Filter programs.
@@ -1247,7 +1247,7 @@ pub(crate) struct WatchexecArgs {
     /// Ignore files that start with shebangs:
     ///
     ///   'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
-    #[arg(
+    #[usage(
         long = "filter-prog",
         short = 'J',
         help_heading = "Filtering",
@@ -1260,7 +1260,7 @@ pub(crate) struct WatchexecArgs {
     /// Provide a glob-like filter pattern, and events for files matching the pattern will be
     /// excluded. Multiple patterns can be given by repeating the option. Events that are not from
     /// files (e.g. signals, keyboard events) will pass through untouched.
-    #[arg(
+    #[usage(
         long = "ignore",
         short = 'i',
         help_heading = "Filtering",
@@ -1274,7 +1274,7 @@ pub(crate) struct WatchexecArgs {
     /// with '#' are ignored. Uses the same pattern format as the '--ignore' option.
     ///
     /// This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
-    #[arg(
+    #[usage(
 		long = "ignore-file",
 		help_heading = "Filtering",
 		value_hint = usage_rs::ValueHint::FilePath,
@@ -1282,8 +1282,8 @@ pub(crate) struct WatchexecArgs {
 		env = "WATCHEXEC_IGNORE_FILES",
 		hide_env = true,
     )]
-    #[cfg_attr(windows, arg(value_delimiter = ';'))]
-    #[cfg_attr(not(windows), arg(value_delimiter = ':'))]
+    #[cfg_attr(windows, usage(delimiter = ';'))]
+    #[cfg_attr(not(windows), usage(delimiter = ':'))]
     pub ignore_files: Vec<PathBuf>,
 
     /// Filesystem events to filter to
@@ -1295,11 +1295,11 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This may apply filtering at the kernel level when possible, which can be more efficient, but
     /// may be more confusing when reading the logs.
-    #[arg(
+    #[usage(
         long = "fs-events",
         help_heading = "Filtering",
-        default_value = "create,remove,rename,modify,metadata",
-        value_delimiter = ',',
+        default = "create,remove,rename,modify,metadata",
+        delimiter = ',',
         hide_default_value = true,
         value_enum,
         value_name = "EVENTS"
@@ -1310,10 +1310,10 @@ pub(crate) struct WatchexecArgs {
     ///
     /// This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the
     /// '--fs-events' option is non-sensical and not allowed.
-    #[arg(
+    #[usage(
         long = "no-meta",
         help_heading = "Filtering",
-        conflicts_with = "filter_fs_events"
+        conflicts = "filter_fs_events"
     )]
     pub filter_fs_meta: bool,
 
@@ -1323,7 +1323,7 @@ pub(crate) struct WatchexecArgs {
     /// human readable form. This is useful for debugging filters.
     ///
     /// Use '-vvv' instead when you need more diagnostic information.
-    #[arg(long, help_heading = "Debugging")]
+    #[usage(long, help_heading = "Debugging")]
     pub print_events: bool,
 
     /// Show the manual page
@@ -1331,7 +1331,7 @@ pub(crate) struct WatchexecArgs {
     /// This shows the manual page for Watchexec, if the output is a terminal and the 'man' program
     /// is available. If not, the manual page is printed to stdout in ROFF format (suitable for
     /// writing to a watchexec.1 file).
-    #[arg(long, help_heading = "Debugging")]
+    #[usage(long, help_heading = "Debugging")]
     pub manual: bool,
     // /// Change to this directory before executing the command
     // #[arg(short = 'C', long, value_hint = ValueHint::DirPath, long)]

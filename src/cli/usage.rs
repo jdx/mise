@@ -5,7 +5,7 @@ use eyre::Result;
 ///
 /// See https://usage.jdx.dev for more information on this specification.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, hide = true)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(crate) struct Usage {}
 
 fn prepare_task_runner(command: &mut usage::SpecCommand) {

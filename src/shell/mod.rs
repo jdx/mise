@@ -31,7 +31,7 @@ pub(crate) enum ShellType {
     // Both names are documented, so this must remain a visible alias in the portable spec.
     //
     // Deliberately not a doc comment: the derive turns those into the value's help text.
-    #[value(visible_alias = "powershell")]
+    #[usage(visible_alias = "powershell")]
     Pwsh,
 }
 

@@ -2,7 +2,7 @@
 # `mise config`
 
 - **Usage**: `mise config [FLAGS] <SUBCOMMAND>`
-- **Aliases**: `cfg`
+- **Aliases**: `cfg`, `toml`
 - **Effect**: read-only
 - **Source code**: [`src/cli/config/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/mod.rs)
 

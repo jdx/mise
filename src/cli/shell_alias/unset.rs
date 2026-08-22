@@ -7,10 +7,10 @@ use crate::config::config_file::ConfigFile;
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ShellAliasUnset {
     /// The alias to remove
-    #[arg(name = "shell_alias")]
+    #[usage(name = "shell_alias")]
     pub alias: String,
 }
 

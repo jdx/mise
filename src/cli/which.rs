@@ -12,26 +12,26 @@ use itertools::Itertools;
 ///
 /// Use this to figure out what version of a tool is currently active.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Which {
     /// The bin to look up
-    #[arg(required_unless_present = "complete")]
+    #[usage(required_unless = "complete")]
     pub bin_name: Option<String>,
 
     /// Use a specific tool@version
     /// e.g.: `mise which npm --tool=node@20`
-    #[arg(short, long, value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    #[usage(short, long, value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Option<ToolArg>,
 
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     pub complete: bool,
 
     /// Show the plugin name instead of the path
-    #[arg(long, conflicts_with = "version")]
+    #[usage(long, conflicts = "version")]
     pub plugin: bool,
 
     /// Show the version instead of the path
-    #[arg(long, conflicts_with = "plugin")]
+    #[usage(long, conflicts = "plugin")]
     pub version: bool,
 }
 

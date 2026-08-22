@@ -2,7 +2,7 @@
 # `mise deps`
 
 - **Usage**: `mise deps [FLAGS] [PROVIDER] <SUBCOMMAND>`
-- **Aliases**: `dep`
+- **Aliases**: `dep`, `prepare`
 - **Effect**: modifies state
 - **Source code**: [`src/cli/deps/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/deps/mod.rs)
 

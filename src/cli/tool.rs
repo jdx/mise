@@ -11,47 +11,47 @@ use crate::ui::table;
 
 /// Gets information about a tool
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Tool {
     /// Tool name to get information about
     tool: BackendArg,
     /// Output in JSON format
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 
-    #[arg(flatten)]
+    #[usage(flatten)]
     filter: ToolInfoFilter,
 }
 
 #[derive(Debug, Clone, usage_rs::Args)]
-#[group(multiple = false)]
+#[usage(group("tool-info-filter"))]
 pub(super) struct ToolInfoFilter {
     /// Only show active versions
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     active: bool,
 
     /// Only show backend field
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     backend_: bool,
 
     /// Only show config source
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     config_source: bool,
 
     /// Only show description field
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     description: bool,
 
     /// Only show installed versions
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     installed: bool,
 
     /// Only show requested versions
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     requested: bool,
 
     /// Only show tool options
-    #[arg(long)]
+    #[usage(long, group = "tool-info-filter")]
     tool_options: bool,
 }
 

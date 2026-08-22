@@ -15,14 +15,14 @@ use crate::{dirs, duration, file};
 ///
 /// To appear here, become a patron at <https://jdx.dev/sponsors.html>.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Patrons {
     /// Output in JSON format
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 
     /// Bypass the local cache and re-fetch
-    #[arg(long)]
+    #[usage(long)]
     refresh: bool,
 }
 

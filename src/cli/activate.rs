@@ -29,18 +29,18 @@ use itertools::Itertools;
 ///
 /// Customize status output with `status` settings.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Activate {
     /// Shell type to generate the script for
-    #[arg(value_enum)]
+    #[usage(value_enum)]
     shell_type: Option<ShellType>,
 
     /// Suppress non-error messages
-    #[arg(long, short)]
+    #[usage(long, short)]
     quiet: bool,
 
     /// Shell type to generate the script for
-    #[arg(long, short, hide = true, value_enum)]
+    #[usage(long, short, hide = true, value_enum)]
     shell: Option<ShellType>,
 
     /// Do not automatically call hook-env
@@ -49,7 +49,7 @@ pub(crate) struct Activate {
     /// you can call `mise hook-env` manually which will output the env vars to stdout without actually
     /// modifying the environment. That way you can do things like `mise hook-env --trace` to get more
     /// information or just see the values that hook-env is outputting.
-    #[arg(long)]
+    #[usage(long)]
     no_hook_env: bool,
 
     /// Use shims instead of modifying PATH
@@ -59,11 +59,11 @@ pub(crate) struct Activate {
     ///
     /// `mise activate --shims` does not support all the features of `mise activate`.
     /// See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     shims: bool,
 
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     status: bool,
 }
 

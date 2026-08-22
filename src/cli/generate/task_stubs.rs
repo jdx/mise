@@ -15,16 +15,16 @@ use std::path::{Path, PathBuf};
 /// so contributors to a project can execute mise tasks without installing mise into their system.
 /// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct TaskStubs {
     /// Directory to create task stubs inside of
-    #[arg(long, short, verbatim_doc_comment, default_value="bin", value_hint=ValueHint::DirPath)]
+    #[usage(long, short, verbatim_doc_comment, default="bin", value_hint=ValueHint::DirPath)]
     dir: PathBuf,
 
     /// Path to a mise bin to use when running the task stub.
     ///
     /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
-    #[arg(long, short, verbatim_doc_comment, default_value = "mise")]
+    #[usage(long, short, verbatim_doc_comment, default = "mise")]
     mise_bin: PathBuf,
 }
 

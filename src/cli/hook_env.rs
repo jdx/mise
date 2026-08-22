@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
-#[value(rename_all = "lowercase")]
+#[usage(rename_all = "lowercase")]
 pub(crate) enum HookReason {
     Precmd,
     Chpwd,
@@ -27,26 +27,26 @@ pub(crate) enum HookReason {
 
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, usage_rs::Args)]
-#[command(hide = true)]
+#[usage(hide = true)]
 pub(crate) struct HookEnv {
     /// Skip early exit check
-    #[arg(long, short)]
+    #[usage(long, short)]
     force: bool,
 
     /// Hide warnings such as when a tool is not installed
-    #[arg(long, short)]
+    #[usage(long, short)]
     quiet: bool,
 
     /// Shell type to generate script for
-    #[arg(long, short, value_enum)]
+    #[usage(long, short, value_enum)]
     shell: Option<ShellType>,
 
     /// Reason for calling hook-env (e.g., "precmd", "chpwd")
-    #[arg(long, hide = true, value_enum)]
+    #[usage(long, hide = true, value_enum)]
     reason: Option<HookReason>,
 
     /// Show "mise: <TOOL>@<VERSION>" message when changing directories
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     status: bool,
 }
 

@@ -8,14 +8,14 @@ use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[bootstrap.packages]`
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemStatus {
     /// Output in JSON format
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 
     /// Exit with code 1 if any configured packages are not in their desired state
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     missing: bool,
 }
 

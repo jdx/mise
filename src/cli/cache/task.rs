@@ -17,13 +17,13 @@ use crate::ui::table::MiseTable;
 
 /// Inspect output cache entries for a task
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(super) struct CacheTask {
     /// Task name or pattern to inspect
     task: String,
 
     /// Output in JSON format
-    #[arg(short = 'J', long)]
+    #[usage(short = 'J', long)]
     json: bool,
 }
 

@@ -10,60 +10,60 @@ use toml_edit::Item;
 /// Adds a task to the local mise.toml file.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct TasksAdd {
     /// Tasks name to add
-    #[arg()]
+    #[usage()]
     task: String,
 
-    #[arg(last = true)]
+    #[usage(double_dash = "required")]
     run: Vec<String>,
 
     /// Other names for the task
-    #[arg(long, short)]
+    #[usage(long, short)]
     alias: Vec<String>,
     /// Add dependencies to the task
-    #[arg(long, short)]
+    #[usage(long, short)]
     depends: Vec<String>,
     /// Run the task in a specific directory
-    #[arg(long, short = 'D')]
+    #[usage(long, short = 'D')]
     dir: Option<String>,
     /// Create a file task instead of a toml task
-    #[arg(long, short)]
+    #[usage(long, short)]
     file: bool,
     /// Hide the task from `mise tasks` and completions
-    #[arg(long, short = 'H')]
+    #[usage(long, short = 'H')]
     hide: bool,
     /// Do not print the command before running
-    #[arg(long, short)]
+    #[usage(long, short)]
     quiet: bool,
     /// Directly connect stdin/stdout/stderr
-    #[arg(long, short)]
+    #[usage(long, short)]
     raw: bool,
     /// Glob patterns of files this task uses as input
-    #[arg(long, short)]
+    #[usage(long, short)]
     sources: Vec<String>,
     /// Wait for these tasks to complete if they are to run
-    #[arg(long, short)]
+    #[usage(long, short)]
     wait_for: Vec<String>,
 
     /// Dependencies to run after the task runs
-    #[arg(long)]
+    #[usage(long)]
     depends_post: Vec<String>,
     /// Description of the task
-    #[arg(long)]
+    #[usage(long)]
     description: Option<String>,
     /// Glob patterns of files this task creates, to skip if they are not modified
-    #[arg(long)]
+    #[usage(long)]
     outputs: Vec<String>,
     /// Command to run on windows
-    #[arg(long)]
+    #[usage(long)]
     run_windows: Option<String>,
     /// Run the task in a specific shell
-    #[arg(long)]
+    #[usage(long)]
     shell: Option<String>,
     /// Do not print the command or its output
-    #[arg(long)]
+    #[usage(long)]
     silent: bool,
     // TODO
     // env: Vec<String>,

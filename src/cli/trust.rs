@@ -32,30 +32,30 @@ use itertools::Itertools;
 /// checkout has been trusted. Paranoid mode disables this sharing since
 /// worktrees can check out branches with different config contents.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Trust {
     /// The config file whose trust status to change
-    #[arg(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
+    #[usage(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 
     /// Trust all config files in the current directory, its parents, and its subdirectories
     ///
     /// Subdirectories are walked respecting .gitignore, skipping hidden directories
     /// and common build/dependency directories (node_modules, vendor, target, dist, build).
-    #[arg(long, short, verbatim_doc_comment, conflicts_with_all = &["ignore", "untrust"])]
+    #[usage(long, short, verbatim_doc_comment, conflicts = &["ignore", "untrust"])]
     all: bool,
 
     /// Do not trust this config and ignore it in the future
-    #[arg(long, conflicts_with = "untrust")]
+    #[usage(long, conflicts = "untrust")]
     ignore: bool,
 
     /// Show the trusted status of config files from the current directory and its parents.
     /// Does not trust or untrust any files.
-    #[arg(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     show: bool,
 
     /// Remove explicit trust for this config
-    #[arg(long)]
+    #[usage(long)]
     untrust: bool,
 }
 

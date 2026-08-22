@@ -6,19 +6,19 @@ mod set;
 
 /// Manage config files
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "cfg", alias = "toml")]
+#[usage(visible_alias = "cfg", alias = "toml")]
 pub(crate) struct Config {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
-    #[arg(flatten)]
+    #[usage(flatten)]
     pub ls: ls::ConfigLs,
 }
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Get(get::ConfigGet),
-    #[command(visible_alias = "list")]
+    #[usage(visible_alias = "list")]
     Ls(ls::ConfigLs),
     Set(set::ConfigSet),
 }

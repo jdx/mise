@@ -16,25 +16,25 @@ use tokio::{sync::Semaphore, task::JoinSet};
 ///
 /// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 #[derive(Debug, usage_rs::Args)]
-#[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(crate) struct Registry {
     /// Show only the specified tool's full name
     name: Option<String>,
 
     /// Show only tools for this backend
-    #[arg(short, long)]
+    #[usage(short, long)]
     backend: Option<BackendType>,
 
     /// Print all tools with descriptions for shell completions
-    #[arg(long, hide = true)]
+    #[usage(long, hide = true)]
     complete: bool,
 
     /// Hide aliased tools
-    #[arg(long)]
+    #[usage(long)]
     hide_aliased: bool,
 
     /// Output in JSON format
-    #[arg(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 
     /// Include security features for each tool's backends in JSON output.
@@ -42,7 +42,7 @@ pub(crate) struct Registry {
     /// Requires --json. Security info is de-duplicated across
     /// all of a tool's backends. This can add noticeable time for large
     /// listings since each backend's security info is resolved individually.
-    #[arg(long, requires = "json")]
+    #[usage(long, requires = "json")]
     security: bool,
 }
 

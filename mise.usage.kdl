@@ -284,7 +284,7 @@ See https://mise.jdx.dev/dev-tools/shims.html#shims-vs-path for more information
     }
 }
 cmd tool-alias help="Manage tool version aliases." effect=read {
-    alias alias aliases hide=#true
+    alias alias aliases
     flag "-p --tool" help="Filter aliases by tool" {
         alias "--plugin" hide=#true
         arg <TOOL>
@@ -349,7 +349,7 @@ cmd asdf hide=#true help="[internal] simulates asdf for plugins that call \"asdf
     complete args type=command_args
 }
 cmd backends help="Manage backends" effect=read {
-    alias b backend backend-list hide=#true
+    alias b backend backend-list
     after_long_help "\u{1b}[1m\u{1b}[4mDeprecation:\u{1b}[22m\u{1b}[24m\n\nThe `mise b` alias is deprecated and will be removed in mise 2027.4.0.\nUse `mise backends` instead.\n"
     cmd ls help="List built-in backends" effect=read {
         alias list
@@ -639,7 +639,7 @@ edits require `--force`.
     }
     cmd linux subcommand_required=#true help="Manage Linux bootstrap config from `[bootstrap.linux]`" effect=read {
         cmd systemd-units subcommand_required=#true help="Manage systemd user services from `[bootstrap.linux.systemd.units]`" effect=read {
-            alias systemd hide=#true
+            alias systemd
             cmd apply effect=write {
                 flag "-n --dry-run" help="Print the commands that would run without running them"
                 flag "-y --yes" help="Skip the confirmation prompt"
@@ -662,7 +662,7 @@ edits require `--force`.
             }
         }
         cmd launchd-agents subcommand_required=#true help="Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`" effect=read {
-            alias launchd hide=#true
+            alias launchd
             cmd apply effect=write {
                 flag "-n --dry-run" help="Print the commands that would run without running them"
                 flag "-y --yes" help="Skip the confirmation prompt"
@@ -684,7 +684,7 @@ edits require `--force`.
         }
     }
     cmd mise-shell-activate subcommand_required=#true help="Manage mise shell activation from `[bootstrap.mise_shell_activate]`" effect=read {
-        alias shell hide=#true
+        alias shell
         cmd apply effect=write {
             flag "-n --dry-run" help="Print the actions that would run without writing anything"
             flag "-y --yes" help="Skip the confirmation prompt"
@@ -696,8 +696,7 @@ edits require `--force`.
     }
     cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" effect=read {
         cmd apply help="Apply system packages from `[bootstrap.packages]`" effect=write {
-            alias i
-            alias install hide=#true
+            alias i install
             long_help #"""
 Apply system packages from `[bootstrap.packages]`
 
@@ -866,7 +865,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
     cmd remote help="Bootstrap one or more machines over OpenSSH" effect=destructive {
         flag --all help="Select every configured inventory host"
         flag --bootstrap-command help="Explicit remote shell command that installs mise and places it on PATH" {
-            conflicts "--mise-bin" "--remote-mise"
+            conflicts "--mise-bin" "--remote-mise" "--install-mise"
             arg <COMMAND>
         }
         flag --connect-timeout help="SSH connection timeout in seconds" default="10" {
@@ -888,11 +887,21 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
             arg <IDENTITY_FILE>
         }
         flag "-n --dry-run" help="Print the remote bootstrap changes without applying them"
+        flag --install-mise help="Install the provisioned mise on each host instead of only staging it" require_equals=#true value_optional=#true default_missing="~/.local/bin/mise" {
+            long_help #"""
+Install the provisioned mise on each host instead of only staging it
+
+Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another path.
+"""#
+            conflicts "--remote-mise" "--bootstrap-command" "--no-install-mise"
+            arg "[PATH]" required=#false var_min=0 var_max=1
+        }
         flag --keep-staging help="Keep the remote staging directory for debugging"
         flag --mise-bin help="Local mise binary to upload (escape hatch for custom architectures)" {
             conflicts "--remote-mise" "--bootstrap-command"
             arg <MISE_BIN>
         }
+        flag --no-install-mise help="Do not install mise on the host, even when the selected hosts configure it"
         flag --only help="Run only one or more remote bootstrap parts" var=#true conflicts=--skip {
             arg <ONLY> delimiter=, {
                 choices {
@@ -932,7 +941,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
             arg <ENV> delimiter=,
         }
         flag --remote-mise help="Existing mise executable name or path; relative paths use the staged project" {
-            conflicts "--mise-bin" "--bootstrap-command"
+            conflicts "--mise-bin" "--bootstrap-command" "--install-mise"
             arg <COMMAND>
         }
         flag --skip help="Skip one or more remote bootstrap parts" var=#true {
@@ -1054,8 +1063,7 @@ Manage the mise cache
 Run `mise cache` with no args to view the current cache directory.
 """#
     cmd clear help="Deletes all cache files in mise" effect=write {
-        alias c
-        alias clean hide=#true
+        alias c clean
         flag --outdate help="Mark all cache files as old" hide=#true
         flag --task help="Clear output cache entries for a task name or pattern" {
             conflicts TOOL "--outdate"
@@ -1084,7 +1092,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
     }
 }
 cmd completion help="Generate shell completions" effect=read {
-    alias complete completions hide=#true
+    alias complete completions
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # put it where the shell looks, and print any one-time line it still needs\n    $ \u{1b}[1mmise completion zsh --install\u{1b}[22m\n\n    # or choose the path yourself\n    $ \u{1b}[1mmise completion bash > ~/.local/share/bash-completion/completions/mise\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise\u{1b}[22m\n    $ \u{1b}[1mmise completion fish > ~/.config/fish/completions/mise.fish\u{1b}[22m\n    $ \u{1b}[1mmise completion powershell >> $PROFILE\u{1b}[22m\n"
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL> {
@@ -1134,8 +1142,7 @@ dot-source — it is printed for you to add.
     }
 }
 cmd config help="Manage config files" effect=read {
-    alias cfg
-    alias toml hide=#true
+    alias cfg toml
     flag "-J --json" help="Output in JSON format"
     flag --no-header help="Do not print table header" {
         alias "--no-headers" hide=#true
@@ -1338,7 +1345,7 @@ cmd doctor help="Check mise installation for possible problems" effect=read {
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise doctor\u{1b}[22m\n    [WARN] plugin node is not installed\n"
     flag "-J --json"
     cmd path help="Print the current PATH entries mise is providing" effect=read {
-        alias paths hide=#true
+        alias paths
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    Get the current PATH entries mise is providing\n    $ mise doctor path\n    /home/user/.local/share/mise/installs/node/24.0.0/bin\n    /home/user/.local/share/mise/installs/rust/1.90.0/bin\n    /home/user/.local/share/mise/installs/python/3.10.0/bin\n"
         flag "-f --full" help="Print all entries including those not provided by mise"
     }
@@ -1460,8 +1467,7 @@ Sorts keys and cleans up whitespace in mise.toml
     flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
 cmd generate subcommand_required=#true help="Generate files for various tools/services" effect=read {
-    alias gen
-    alias g hide=#true
+    alias gen g
     cmd bootstrap hide=#true help="Deprecated. Use `mise generate install-script` instead" effect=write {
         long_help #"""
 Generate a script to download+execute mise
@@ -2016,7 +2022,7 @@ e.g.: ~/.nvm/versions/node/v20.0.0
     complete path type=dir
 }
 cmd local hide=#true help="Sets/gets tool version in local .tool-versions or mise.toml" effect=write {
-    alias l hide=#true
+    alias l
     long_help #"""
 Sets/gets tool version in local .tool-versions or mise.toml
 
@@ -2180,7 +2186,7 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
     arg "[INSTALLED_TOOL]…" help="Only show tool versions from [TOOL]" required=#false var=#true conflicts=--plugin
 }
 cmd ls-remote help="List runtime versions available for install." effect=read {
-    alias list-all list-remote hide=#true
+    alias list-all list-remote
     long_help #"""
 List runtime versions available for install.
 
@@ -2514,8 +2520,7 @@ To appear here, become a patron at <https://jdx.dev/sponsors.html>.
     flag --refresh help="Bypass the local cache and re-fetch"
 }
 cmd plugins help="Manage plugins" effect=read {
-    alias p
-    alias plugin plugin-list hide=#true
+    alias p plugin plugin-list
     flag "-a --all" help="list all available remote plugins" hide=#true {
         long_help #"""
 list all available remote plugins
@@ -2673,8 +2678,7 @@ Default: 4
     }
 }
 cmd deps help="[experimental] Manage project dependencies" effect=write {
-    alias dep
-    alias prepare hide=#true
+    alias dep prepare
     long_help #"""
 [experimental] Manage project dependencies
 
@@ -3051,7 +3055,7 @@ https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
     arg "[VERSION]" help="Update to a specific version" required=#false
 }
 cmd set help="Set environment variables in mise.toml" effect=write {
-    alias ev env-vars hide=#true
+    alias ev env-vars
     long_help #"""
 Set environment variables in mise.toml
 
@@ -3287,7 +3291,7 @@ This won't overwrite managed installs, runtime aliases, or links from other prov
         flag --brew help="Get tool versions from Homebrew"
         flag --nodenv help="Get tool versions from nodenv"
         flag --nvm help="Get tool versions from nvm"
-        group SyncNodeType "--brew" "--nodenv" "--nvm" required=#true multiple=#true
+        group sync-node-type "--brew" "--nodenv" "--nvm" required=#true multiple=#true
     }
     cmd python help="Symlinks all tool versions from an external tool into mise" effect=write {
         long_help #"""
@@ -3307,8 +3311,7 @@ This won't overwrite managed installs, runtime aliases, or links from other prov
     }
 }
 cmd tasks help="Manage tasks" effect=read {
-    alias t
-    alias task hide=#true
+    alias t task
     flag "-g --global" help="Only show global tasks" overrides=--local
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show non-global tasks" overrides=--global
@@ -3754,7 +3757,7 @@ cmd tool help="Gets information about a tool" effect=read {
     flag --requested help="Only show requested versions"
     flag --tool-options help="Only show tool options"
     arg <TOOL> help="Tool name to get information about"
-    group ToolInfoFilter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options"
+    group tool-info-filter "--active" "--backend" "--config-source" "--description" "--installed" "--requested" "--tool-options"
 }
 cmd tool-stub disable_help_flag=#true disable_version_flag=#true help="Execute a tool stub" {
     long_help #"""

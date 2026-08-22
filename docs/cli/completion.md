@@ -2,6 +2,7 @@
 # `mise completion`
 
 - **Usage**: `mise completion [FLAGS] [SHELL]`
+- **Aliases**: `complete`, `completions`
 - **Effect**: read-only
 - **Source code**: [`src/cli/completion.rs`](https://github.com/jdx/mise/blob/main/src/cli/completion.rs)
 

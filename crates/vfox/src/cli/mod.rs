@@ -7,9 +7,9 @@ mod install;
 mod plugins;
 
 #[derive(usage_rs::Cli)]
-#[command(name = "vfox", version, unknown_flags = "error")]
+#[usage(name = "vfox", version, unknown_flags = "error")]
 pub(crate) struct Cli {
-    #[command(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 
@@ -18,7 +18,7 @@ enum Commands {
     Available(available::Available),
     EnvKeys(env_keys::EnvKeys),
     Install(install::Install),
-    #[command(alias = "plugin")]
+    #[usage(alias = "plugin")]
     Plugins(plugins::Plugins),
 }
 

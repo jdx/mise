@@ -644,14 +644,14 @@ async fn execute_with_tool_request(
 ///
 /// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
 #[derive(Debug, usage_rs::Args)]
-#[command(disable_help_flag = true, disable_version_flag = true)]
+#[usage(disable_help_flag = true, disable_version_flag = true)]
 pub(crate) struct ToolStub {
     /// Path to the TOML tool stub file to execute
     ///
     /// The stub file must contain TOML configuration specifying the tool
     /// and version to run. At minimum, it should specify a 'version' field.
     /// Other common fields include 'tool', 'bin', and backend-specific options.
-    #[arg(value_name = "FILE", double_dash = "automatic")]
+    #[usage(value_name = "FILE", double_dash = "automatic")]
     pub file: PathBuf,
 
     /// Arguments to pass to the tool
@@ -659,7 +659,7 @@ pub(crate) struct ToolStub {
     /// All arguments after the stub file path will be forwarded to the
     /// underlying tool. Use '--' to separate mise arguments from tool arguments
     /// if needed.
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    #[usage(trailing_var_arg = true, allow_hyphen_values = true)]
     pub args: Vec<String>,
 }
 

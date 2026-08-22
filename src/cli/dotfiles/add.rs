@@ -19,49 +19,49 @@ use crate::ui::prompt;
 /// target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 /// under `dotfiles.root` unless `--source` is provided.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesAdd {
     /// Targets to add or update
-    #[arg(value_name = "TARGET", required = true)]
+    #[usage(value_name = "TARGET", required = true)]
     pub(super) targets: Vec<String>,
 
     /// Overwrite existing sources without prompting
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub(super) force: bool,
 
     /// Write to the global config
-    #[arg(long, short, conflicts_with_all = ["local", "path"])]
+    #[usage(long, short, conflicts = ["local", "path"])]
     pub(super) global: bool,
 
     /// Write to the local config instead of the global config
-    #[arg(long, short, conflicts_with_all = ["global", "path"])]
+    #[usage(long, short, conflicts = ["global", "path"])]
     pub(super) local: bool,
 
     /// Dotfile mode to write
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub(super) mode: Option<String>,
 
     /// Print the config/source updates without writing anything
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     pub(super) dry_run: bool,
 
     /// Add the entry without applying it
-    #[arg(long)]
+    #[usage(long)]
     pub(super) no_apply: bool,
 
     /// Write to this config file or directory
     // No `--file` alias here: `-f` on this command is `--force`, and `targets` accepts any
     // string, so `-f <path>` silently adds the config file as a dotfile instead of writing
     // to it. See `mise unset --path` for the commands where the short form is free.
-    #[arg(long, short, value_name = "PATH", conflicts_with_all = ["global", "local"])]
+    #[usage(long, short, value_name = "PATH", conflicts = ["global", "local"])]
     pub(super) path: Option<PathBuf>,
 
     /// Source path to use for a single target
-    #[arg(long, short, value_name = "PATH")]
+    #[usage(long, short, value_name = "PATH")]
     pub(super) source: Option<PathBuf>,
 
     /// Skip the confirmation prompt
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub(super) yes: bool,
 }
 

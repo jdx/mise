@@ -14,34 +14,34 @@ use indexmap::IndexSet;
 /// Use this if you don't want to permanently install mise. It's not necessary to
 /// use this if you have `mise activate` in your shell rc file.
 #[derive(Debug, usage_rs::Args)]
-#[command(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Env {
     /// Tool(s) to use
-    #[arg(value_name = "TOOL@VERSION")]
+    #[usage(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 
     /// Output in dotenv format
-    #[arg(long, short = 'D', overrides_with = "shell")]
+    #[usage(long, short = 'D', overrides = "shell")]
     dotenv: bool,
 
     /// Output in JSON format
-    #[arg(long, short = 'J', overrides_with = "shell")]
+    #[usage(long, short = 'J', overrides = "shell")]
     json: bool,
 
     /// Shell type to generate environment variables for
-    #[arg(long, short, overrides_with = "json", value_enum)]
+    #[usage(long, short, overrides = "json", value_enum)]
     shell: Option<ShellType>,
 
     /// Output in JSON format with additional information (source, tool)
-    #[arg(long, overrides_with = "shell")]
+    #[usage(long, overrides = "shell")]
     json_extended: bool,
 
     /// Only show redacted environment variables
-    #[arg(long)]
+    #[usage(long)]
     redacted: bool,
 
     /// Only show values of environment variables
-    #[arg(long)]
+    #[usage(long)]
     values: bool,
 }
 

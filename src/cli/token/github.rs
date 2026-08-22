@@ -7,30 +7,30 @@ use eyre::bail;
 /// Shows which token source mise would use, useful for debugging
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Github {
     /// GitHub hostname
-    #[arg(default_value = "github.com")]
+    #[usage(default = "github.com")]
     pub(crate) host: String,
 
     /// Resolve only via the native GitHub OAuth source (cache,
     /// refresh, or device-code flow), bypassing other token sources
-    #[arg(long)]
+    #[usage(long)]
     pub(crate) oauth: bool,
 
     /// Print only the token value
-    #[arg(long)]
+    #[usage(long)]
     pub(crate) raw: bool,
 
     /// Mint a fresh OAuth token even if the cached one has not
     /// expired, via the refresh-token grant or a new device-code flow.
     /// Use after changing the GitHub App's installations or permissions:
     /// cached tokens keep their original access until they expire
-    #[arg(long, requires = "oauth")]
+    #[usage(long, requires = "oauth")]
     pub(crate) refresh: bool,
 
     /// Show the full unmasked token
-    #[arg(long)]
+    #[usage(long)]
     pub(crate) unmask: bool,
 }
 

@@ -13,21 +13,21 @@ use xx::regex;
 /// Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
 /// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct InstallScript {
     /// Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
     ///
     /// This is necessary if users may use a different version of mise outside the project.
-    #[arg(long, short, verbatim_doc_comment)]
+    #[usage(long, short, verbatim_doc_comment)]
     localize: bool,
     /// Specify mise version to fetch
-    #[arg(long, short = 'V', verbatim_doc_comment)]
+    #[usage(long, short = 'V', verbatim_doc_comment)]
     version: Option<String>,
     /// instead of outputting the script to stdout, write to a file and make it executable
-    #[arg(long, short, verbatim_doc_comment, num_args=0..=1, default_missing_value = "./bin/mise")]
+    #[usage(long, short, verbatim_doc_comment, num_args=0..=1, default_missing = "./bin/mise")]
     write: Option<PathBuf>,
     /// Directory to put localized data into
-    #[arg(long, verbatim_doc_comment, default_value=".mise", value_hint=ValueHint::DirPath)]
+    #[usage(long, verbatim_doc_comment, default=".mise", value_hint=ValueHint::DirPath)]
     localized_dir: PathBuf,
     /// Also write a Windows launcher, `<WRITE>.cmd`
     ///
@@ -39,7 +39,7 @@ pub(super) struct InstallScript {
     /// carry two files.
     // Declared last because `clap-sort` requires long-only flags to be in alphabetical order, and
     // the rendered docs follow declaration order. Not a doc comment: this is not help text.
-    #[arg(long, verbatim_doc_comment, requires = "write")]
+    #[usage(long, verbatim_doc_comment, requires = "write")]
     windows: bool,
 }
 

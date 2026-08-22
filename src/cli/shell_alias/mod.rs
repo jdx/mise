@@ -6,13 +6,13 @@ mod set;
 mod unset;
 
 #[derive(Debug, usage_rs::Args)]
-#[command(name = "shell-alias", about = "Manage shell aliases.")]
+#[usage(name = "shell-alias", about = "Manage shell aliases.")]
 pub(crate) struct ShellAlias {
-    #[arg(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
     /// Don't show table header
-    #[arg(long)]
+    #[usage(long)]
     pub no_header: bool,
 }
 

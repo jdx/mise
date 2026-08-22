@@ -5,21 +5,21 @@ use crate::cli::edit::Edit;
 
 /// Generate a mise.toml file
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct Config {
     /// Generate the global config file (~/.config/mise/config.toml)
     // Declared here as well as on `Edit`: this command parses its own arguments before handing
     // them over, so the conflict does not carry across on its own.
-    #[arg(long, short = 'g', conflicts_with = "path")]
+    #[usage(long, short = 'g', conflicts = "path")]
     global: bool,
     /// Show what would be generated without writing to file
-    #[arg(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
     /// Path to the config file to create
-    #[arg(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    #[usage(verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     path: Option<PathBuf>,
     /// Path to a .tool-versions file to import tools from
-    #[arg(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
+    #[usage(long, short, verbatim_doc_comment, value_hint = ValueHint::FilePath)]
     tool_versions: Option<PathBuf>,
 }
 

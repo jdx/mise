@@ -13,10 +13,10 @@ use super::parse_package_spec;
 /// Removes one or more packages from the project using the appropriate package manager.
 /// Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment)]
+#[usage(verbatim_doc_comment)]
 pub(super) struct DepsRemove {
     /// Package(s) to remove (e.g., npm:lodash)
-    #[arg(required = true)]
+    #[usage(required = true)]
     pub packages: Vec<String>,
 }
 

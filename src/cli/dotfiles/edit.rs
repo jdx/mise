@@ -11,26 +11,26 @@ use crate::ui::prompt;
 
 /// Edit a managed dotfile source
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesEdit {
     /// Target to edit
-    #[arg(value_name = "TARGET")]
+    #[usage(value_name = "TARGET")]
     target: String,
 
     /// Apply this target after the editor exits
-    #[arg(long)]
+    #[usage(long)]
     apply: bool,
 
     /// Dotfile mode to use if the target is not yet managed
-    #[arg(long, short)]
+    #[usage(long, short)]
     mode: Option<String>,
 
     /// Source path to use if the target is not yet managed
-    #[arg(long, short, value_name = "PATH")]
+    #[usage(long, short, value_name = "PATH")]
     source: Option<PathBuf>,
 
     /// Skip the confirmation prompt when adding an unmanaged target
-    #[arg(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 

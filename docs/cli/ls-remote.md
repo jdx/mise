@@ -2,6 +2,7 @@
 # `mise ls-remote`
 
 - **Usage**: `mise ls-remote [FLAGS] [TOOL@VERSION] [PREFIX]`
+- **Aliases**: `list-all`, `list-remote`
 - **Effect**: read-only
 - **Source code**: [`src/cli/ls_remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls_remote.rs)
 

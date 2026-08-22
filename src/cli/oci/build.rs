@@ -17,18 +17,18 @@ use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 ///
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
-#[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct Build {
     /// Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
-    #[arg(long, value_name = "HOST_PATH:IMAGE_PATH")]
+    #[usage(long, value_name = "HOST_PATH:IMAGE_PATH")]
     copy: Vec<OciCopy>,
 
     /// Output directory for the OCI image layout
-    #[arg(long, short, default_value = "./mise-oci", value_hint = ValueHint::DirPath)]
+    #[usage(long, short, default = "./mise-oci", value_hint = ValueHint::DirPath)]
     output: PathBuf,
 
     /// Base image reference (overrides [oci].from and the oci.default_from setting)
-    #[arg(long)]
+    #[usage(long)]
     from: Option<String>,
 
     /// Also include tools from the global / system config (default: project-only)
@@ -39,19 +39,19 @@ pub(super) struct Build {
     /// `~/.config/mise/config.toml` are excluded so they don't bake into a
     /// project image. Pass `--include-global` to revert to the old
     /// "merge all loaded configs" behavior.
-    #[arg(long)]
+    #[usage(long)]
     include_global: bool,
 
     /// Tag to record in the image index (the org.opencontainers.image.ref.name annotation)
-    #[arg(long, short)]
+    #[usage(long, short)]
     tag: Option<String>,
 
     /// Where to place tool installs inside the image (default: /mise)
-    #[arg(long)]
+    #[usage(long)]
     mount_point: Option<String>,
 
     /// Do not embed the currently-running mise binary at /usr/local/bin/mise
-    #[arg(long)]
+    #[usage(long)]
     no_mise: bool,
 
     /// UID[:GID] to assign to every tar entry in generated layers
@@ -59,7 +59,7 @@ pub(super) struct Build {
     /// Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
     /// omitted, it defaults to UID. This affects file ownership only; [oci].user
     /// controls the image USER directive.
-    #[arg(long, value_name = "UID[:GID]")]
+    #[usage(long, value_name = "UID[:GID]")]
     owner: Option<LayerOwner>,
 }
 
