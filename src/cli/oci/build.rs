@@ -18,7 +18,7 @@ use crate::oci::{BuildOptions, LayerOwner, OciCopy};
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Build {
+pub(super) struct Build {
     /// Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
     #[arg(long, value_name = "HOST_PATH:IMAGE_PATH")]
     copy: Vec<OciCopy>,

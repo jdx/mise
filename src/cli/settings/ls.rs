@@ -15,7 +15,7 @@ use tabled::{Table, Tabled};
 /// but managed separately with `mise tool-alias`
 #[derive(Debug, usage_rs::Args)]
 #[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsLs {
+pub(crate) struct SettingsLs {
     /// Name of setting
     pub setting: Option<String>,
 

@@ -8,7 +8,7 @@ use crate::cli::settings::set::set;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
 #[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsAdd {
+pub(super) struct SettingsAdd {
     /// The setting to set
     #[arg()]
     pub setting: String,

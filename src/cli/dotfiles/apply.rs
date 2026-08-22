@@ -11,7 +11,7 @@ use crate::system;
 /// mise doesn't otherwise own.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesApply {
+pub(crate) struct DotfilesApply {
     /// Only apply these targets
     #[arg(value_name = "TARGET")]
     targets: Vec<String>,

@@ -10,7 +10,7 @@ use serde::Serialize;
 /// Generate a devcontainer to execute mise
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Devcontainer {
+pub(super) struct Devcontainer {
     /// The image to use for the devcontainer
     #[arg(long, short, verbatim_doc_comment)]
     image: Option<String>,

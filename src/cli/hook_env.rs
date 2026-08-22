@@ -20,7 +20,7 @@ use std::{borrow::Cow, sync::Arc};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
 #[value(rename_all = "lowercase")]
-pub enum HookReason {
+pub(crate) enum HookReason {
     Precmd,
     Chpwd,
 }
@@ -28,7 +28,7 @@ pub enum HookReason {
 /// [internal] called by activate hook to update env vars directory change
 #[derive(Debug, usage_rs::Args)]
 #[command(hide = true)]
-pub struct HookEnv {
+pub(crate) struct HookEnv {
     /// Skip early exit check
     #[arg(long, short)]
     force: bool,

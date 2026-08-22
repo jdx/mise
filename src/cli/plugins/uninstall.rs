@@ -9,7 +9,7 @@ use crate::{backend, plugins};
 /// Removes a plugin
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
-pub struct PluginsUninstall {
+pub(super) struct PluginsUninstall {
     /// Plugin(s) to remove
     #[arg(verbatim_doc_comment)]
     plugin: Vec<String>,

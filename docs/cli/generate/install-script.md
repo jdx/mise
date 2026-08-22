@@ -48,10 +48,10 @@ carry two files.
 Examples:
 
 ```
-$ mise generate bootstrap --write ./bin/mise
+$ mise generate install-script --write ./bin/mise
 $ ./bin/mise install                                    # downloads mise to .mise if not already installed
 
 # add a launcher for contributors who clone the project on Windows
-$ mise generate bootstrap --write ./bin/mise --windows  # also writes bin/mise.cmd
+$ mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
 $ .\bin\mise.cmd install
 ```

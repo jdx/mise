@@ -24,7 +24,7 @@ use crate::toolset::ToolsetBuilder;
 /// currently active in mise.toml.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Reshim {
+pub(crate) struct Reshim {
     #[arg(hide = true)]
     pub tool: Option<String>,
     #[arg(hide = true)]

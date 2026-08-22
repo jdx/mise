@@ -36,7 +36,7 @@ use toml_edit::DocumentMut;
 /// to incrementally build cross-platform tool stubs.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct ToolStub {
+pub(super) struct ToolStub {
     /// Output file path for the tool stub
     #[arg(value_hint = ValueHint::FilePath)]
     pub output: PathBuf,
@@ -128,7 +128,7 @@ pub struct ToolStub {
 }
 
 #[derive(Debug, Default, Clone, Copy, usage_rs::ValueEnum)]
-pub enum ChecksumAlgorithm {
+pub(super) enum ChecksumAlgorithm {
     #[default]
     Blake3,
     Sha256,

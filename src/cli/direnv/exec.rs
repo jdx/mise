@@ -11,7 +11,7 @@ use crate::toolset::ToolsetBuilder;
 /// for direnv to consume.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, hide = true)]
-pub struct DirenvExec {}
+pub(super) struct DirenvExec {}
 
 #[derive(Debug, Default, Deserialize)]
 struct DirenvWatches {

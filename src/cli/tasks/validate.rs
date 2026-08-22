@@ -20,7 +20,7 @@ use serde::Serialize;
 /// Validate tasks for common errors and issues
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksValidate {
+pub(super) struct TasksValidate {
     /// Tasks to validate
     /// If not specified, validates all tasks
     #[arg(verbatim_doc_comment)]

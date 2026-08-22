@@ -17,7 +17,7 @@ use tokio::{sync::Semaphore, task::JoinSet};
 /// For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 #[derive(Debug, usage_rs::Args)]
 #[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct Registry {
+pub(crate) struct Registry {
     /// Show only the specified tool's full name
     name: Option<String>,
 

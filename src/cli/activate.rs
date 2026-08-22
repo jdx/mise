@@ -30,7 +30,7 @@ use itertools::Itertools;
 /// Customize status output with `status` settings.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Activate {
+pub(crate) struct Activate {
     /// Shell type to generate the script for
     #[arg(value_enum)]
     shell_type: Option<ShellType>,

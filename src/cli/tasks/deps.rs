@@ -22,7 +22,7 @@ use petgraph::dot::Dot;
     after_long_help = AFTER_LONG_HELP,
     unknown_flags = "error"
 )]
-pub struct TasksDeps {
+pub(super) struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
     /// e.g.: mise tasks deps lint test check

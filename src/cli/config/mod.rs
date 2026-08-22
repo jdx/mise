@@ -7,7 +7,7 @@ mod set;
 /// Manage config files
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "cfg", alias = "toml")]
-pub struct Config {
+pub(crate) struct Config {
     #[arg(subcommand)]
     command: Option<Commands>,
 

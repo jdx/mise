@@ -97,7 +97,7 @@ pub(crate) enum LevelFilter {
 
 #[derive(usage_rs::Cli)]
 #[command(name = "mise", about, long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, author = "Jeff Dickey <@jdx>", arg_required_else_help = true, completion = true, unknown_flags = "error")]
-pub struct Cli {
+pub(crate) struct Cli {
     #[arg(subcommand)]
     pub command: Option<Commands>,
     /// Task to run
@@ -136,19 +136,13 @@ Shorthand for `mise tasks run <TASK>`."#
     #[arg(short = 'P', long, global = true, hide = true, conflicts_with = "env")]
     pub profile: Option<Vec<String>>,
     /// Suppress non-error messages
-    #[arg(short = 'q', long, global = true, overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
+    #[arg(short = 'q', long, global = true, env = "MISE_QUIET", overrides_with_all = &["silent", "trace", "verbose", "debug", "log_level"])]
     pub quiet: bool,
     #[arg(long, short, hide = true)]
     pub shell: Option<String>,
     /// Tool(s) to run in addition to what is in mise.toml files
     /// e.g.: node@20 python@3.10
-    #[arg(
-        short,
-        long,
-        hide = true,
-        value_name = "TOOL@VERSION",
-        env = "MISE_QUIET"
-    )]
+    #[arg(short, long, hide = true, value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
     /// Show extra output (use -vv for even more)
     #[arg(short='v', long, global=true, count, overrides_with_all = &["quiet", "silent", "trace", "debug"])]
@@ -621,7 +615,19 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
     };
 
     if let Some(separator_idx) = args[run_pos + 1..].iter().position(|a| a == "--") {
-        return escape_args_after_separator(args, run_pos + 1 + separator_idx);
+        let separator_idx = run_pos + 1 + separator_idx;
+        // First protect task-side flags before the separator (`run TASK -q -- ...`),
+        // then preserve the existing escaping for its tail.
+        let mut result = escape_task_args(cmd, &args[..separator_idx]);
+        result.push("--".to_string());
+        for arg in &args[separator_idx + 1..] {
+            if arg.starts_with('-') && arg != "-" {
+                result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
+            } else {
+                result.push(arg.clone());
+            }
+        }
+        return result;
     }
 
     let (flags_with_values, _) = get_all_run_flags(cmd);
@@ -739,7 +745,7 @@ fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -
     };
 
     // Check if the first non-flag argument is a known subcommand
-    if is_known_subcommand(cmd, &args[i]) {
+    if is_known_subcommand(cmd, &args[i]) || external::COMMANDS.contains_key(&args[i]) {
         return args.to_vec();
     }
 
@@ -1355,13 +1361,33 @@ mod tests {
 
         let escaped = escape_task_args(cmd, &args);
         let separator_idx = escaped.iter().position(|arg| arg == "--").unwrap();
-        assert_eq!(escaped[..=separator_idx], args[..=separator_idx]);
+        assert_eq!(escaped[..3], args[..3]);
+        assert!(escaped[3].starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert_eq!(separator_idx, 4);
         assert!(escaped[separator_idx + 1].starts_with(TASK_ARG_ESCAPE_PREFIX));
         assert!(escaped[separator_idx + 2].starts_with(TASK_ARG_ESCAPE_PREFIX));
         assert_eq!(
             unescape_task_args(&escaped[separator_idx + 1..]),
             vec!["--".to_string(), "--help".to_string()]
         );
+    }
+
+    #[test]
+    fn quiet_owns_the_mise_quiet_environment_binding() {
+        let quiet = Cli::spec()
+            .root
+            .flags
+            .iter()
+            .find(|flag| flag.flag.name == "quiet")
+            .expect("--quiet");
+        let tool = Cli::spec()
+            .root
+            .flags
+            .iter()
+            .find(|flag| flag.flag.name == "tool")
+            .expect("--tool");
+        assert_eq!(quiet.env, Some("MISE_QUIET"));
+        assert_eq!(tool.env, None);
     }
 
     #[test]

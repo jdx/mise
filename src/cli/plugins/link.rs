@@ -13,7 +13,7 @@ use crate::{dirs, file};
 /// This is used for developing a plugin.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct PluginsLink {
+pub(super) struct PluginsLink {
     /// The name of the plugin
     /// e.g.: cmake, poetry
     #[arg(verbatim_doc_comment)]

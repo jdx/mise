@@ -28,7 +28,7 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Push {
+pub(super) struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
     #[arg(value_name = "REF")]
     reference: String,

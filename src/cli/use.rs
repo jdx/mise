@@ -47,7 +47,7 @@ use crate::{config, env, exit, file};
     after_long_help = AFTER_LONG_HELP,
     unknown_flags = "error"
 )]
-pub struct Use {
+pub(crate) struct Use {
     /// Tool(s) to add to config file
     ///
     /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3

@@ -15,7 +15,7 @@ use tokio::task::JoinSet;
 /// Test a tool installs and executes
 #[derive(Debug, Clone, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TestTool {
+pub(crate) struct TestTool {
     /// Tool(s) to test
     #[arg(required_unless_present_any = ["all", "all_config"])]
     pub tools: Option<Vec<ToolArg>>,

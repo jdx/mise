@@ -8,7 +8,7 @@ use crate::shell::{EXAMPLE_SHELL, build_deactivation_script, require_shell};
 /// This can be used to temporarily disable mise in a shell session.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Deactivate {}
+pub(crate) struct Deactivate {}
 
 impl Deactivate {
     pub(crate) fn run(self) -> Result<()> {

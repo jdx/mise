@@ -8,7 +8,7 @@ use eyre::bail;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Github {
+pub(crate) struct Github {
     /// GitHub hostname
     #[arg(default_value = "github.com")]
     pub(crate) host: String,

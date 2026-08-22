@@ -60,7 +60,7 @@ fn push_unique_lock_tool(tools: &mut Vec<LockTool>, tool: LockTool) {
 /// Operates on the lockfile in the current config root. Use TOOL arguments to target specific tools.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Lock {
+pub(crate) struct Lock {
     /// Tool(s) to update in lockfile
     /// e.g.: node python
     /// If not specified, all configured and task-specific tools will be updated

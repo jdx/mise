@@ -1,11 +1,10 @@
-use crate::cli::Cli;
 use eyre::Result;
 use strum::EnumString;
 
 /// Generate shell completions
 #[derive(Debug, usage_rs::Args)]
 #[command(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Completion {
+pub(crate) struct Completion {
     /// Shell type to generate completions for
     #[arg(required_unless_present = "shell_type", value_enum)]
     shell: Option<Shell>,
@@ -43,9 +42,9 @@ impl Completion {
     pub(crate) async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
         if self.install {
-            return self.install_script(shell.into());
+            return self.install_script(shell);
         }
-        let script = Cli::completion_script(shell.into());
+        let script = completion_script(shell)?;
         miseprintln!("{}", script.trim());
 
         Ok(())
@@ -56,7 +55,7 @@ impl Completion {
     /// The location comes from usage rather than from a table here, so `mise completion zsh
     /// --install` and `usage g completion zsh mise --install` cannot disagree about where a mise
     /// completion lives.
-    fn install_script(&self, shell: usage_rs::complete::Shell) -> Result<()> {
+    fn install_script(&self, shell: Shell) -> Result<()> {
         use usage_rs::install::{self, OnForeign, Wrote};
 
         let on_foreign = if self.force {
@@ -66,13 +65,15 @@ impl Completion {
         };
         // The environment is described from this process rather than reached for inside the
         // resolver, which is what lets a test point the same code path somewhere harmless.
-        let done = Cli::install_completion(shell, &install::Env::from_process(), on_foreign)
-            .map_err(|err| match &err {
-                install::Error::Foreign { .. } => eyre::eyre!(
-                    "{err}\n\nPass --force to replace it, or redirect the script yourself."
-                ),
-                _ => eyre::Report::new(err),
-            })?;
+        let env = install::Env::from_process();
+        let plan = install::plan("mise", shell.into(), &env)?;
+        let script = completion_script(shell)?;
+        let done = install::write(&plan, &script, on_foreign).map_err(|err| match &err {
+            install::Error::Foreign { .. } => {
+                eyre::eyre!("{err}\n\nPass --force to replace it, or redirect the script yourself.")
+            }
+            _ => eyre::Report::new(err),
+        })?;
 
         // Everything here goes to stderr, so stdout stays empty under `--install`. The examples
         // below document `mise completion zsh > …`, and prose on stdout would land in that file.
@@ -92,6 +93,20 @@ impl Completion {
         }
         Ok(())
     }
+}
+
+fn completion_script(shell: Shell) -> Result<String> {
+    Ok(usage::complete::complete(
+        &usage::complete::CompleteOptions {
+            usage_bin: "usage".to_string(),
+            shell: shell.to_string(),
+            bin: "mise".to_string(),
+            cache_key: Some(env!("CARGO_PKG_VERSION").to_string()),
+            spec: Some(crate::cli::usage::completion_spec()),
+            usage_cmd: None,
+            source_file: None,
+        },
+    )?)
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -157,9 +172,9 @@ mod shell_name_tests {
     }
 
     #[test]
-    fn completion_script_calls_back_into_mise() {
-        let script = Cli::completion_script(usage_rs::complete::Shell::Bash);
-        assert!(script.contains("mise' __complete_word__"), "{script}");
-        assert!(!script.contains("command usage"), "{script}");
+    fn generated_completion_uses_the_enriched_mise_spec() {
+        let script = completion_script(Shell::Bash).expect("completion renders");
+        assert!(script.contains("mise tasks --usage"), "{script}");
+        assert!(script.contains("mise tasks ls --complete"), "{script}");
     }
 }

@@ -12,7 +12,7 @@ mod tool_stub;
 /// Generate files for various tools/services
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "gen", alias = "g")]
-pub struct Generate {
+pub(crate) struct Generate {
     #[arg(subcommand)]
     command: Commands,
 }
@@ -22,7 +22,7 @@ enum Commands {
     /// Deprecated. Use `mise generate install-script` instead
     // Renamed because `bootstrap` read as a form of `mise bootstrap` (machine setup), which this
     // command has nothing to do with.
-    #[clap(hide = true)]
+    #[usage(hide)]
     Bootstrap(install_script::InstallScript),
     Config(config::Config),
     Devcontainer(devcontainer::Devcontainer),

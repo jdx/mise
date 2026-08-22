@@ -37,7 +37,7 @@ use jiff::{Span, Timestamp, civil::date};
 /// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Upgrade {
+pub(crate) struct Upgrade {
     /// Tool(s) to upgrade
     /// e.g.: node@20 python@3.10
     /// If not specified, all current tools will be upgraded

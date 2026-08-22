@@ -9,7 +9,7 @@ use crate::git::Git;
 /// when you push changes to your repository.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct GithubAction {
+pub(super) struct GithubAction {
     /// The task to run when the workflow is triggered
     #[arg(long, short, default_value = "ci")]
     task: String,

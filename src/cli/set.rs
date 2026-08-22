@@ -25,7 +25,7 @@ use tabled::Tabled;
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, usage_rs::Args)]
 #[command(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Set {
+pub(crate) struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
     #[arg(value_name = "ENV_VAR", verbatim_doc_comment)]

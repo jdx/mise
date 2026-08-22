@@ -7,7 +7,7 @@ mod ruby;
 
 #[derive(Debug, usage_rs::Args)]
 #[command(about = "Synchronize tools from other version managers with mise")]
-pub struct Sync {
+pub(crate) struct Sync {
     #[arg(subcommand)]
     command: Commands,
 }

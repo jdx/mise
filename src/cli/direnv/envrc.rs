@@ -14,7 +14,7 @@ use crate::toolset::ToolsetBuilder;
 /// for direnv to consume.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, hide = true)]
-pub struct Envrc {}
+pub(super) struct Envrc {}
 
 impl Envrc {
     pub(super) async fn run(self, config: &Arc<Config>) -> Result<()> {

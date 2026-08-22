@@ -8,7 +8,7 @@ use crate::config::config_file::ConfigFile;
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_aliases = ["add", "create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ShellAliasSet {
+pub(super) struct ShellAliasSet {
     /// The alias name
     #[arg(name = "shell_alias")]
     pub alias: String,

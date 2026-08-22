@@ -83,7 +83,7 @@ async fn join_plugin_tasks(
 
 #[derive(Debug, usage_rs::Args)]
 #[command(about = "Manage plugins", visible_alias = "p", aliases = ["plugin", "plugin-list"])]
-pub struct Plugins {
+pub(crate) struct Plugins {
     #[arg(subcommand)]
     command: Option<Commands>,
 

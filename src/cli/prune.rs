@@ -32,7 +32,7 @@ use super::trust::Trust;
 /// You can list prunable tools with `mise ls --prunable`
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Prune {
+pub(crate) struct Prune {
     /// Prune only these tools
     #[arg()]
     pub installed_tool: Option<Vec<ToolArg>>,

@@ -24,7 +24,7 @@ use crate::system::packages::PackageRequest;
 /// a mise version selector. mas uses numeric ADAM IDs and does not support pins.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "u", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemUse {
+pub(crate) struct SystemUse {
     /// Packages in `manager:package[@version]` form
     #[arg(value_name = "PACKAGE", required = true)]
     packages: Vec<String>,

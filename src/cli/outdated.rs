@@ -15,7 +15,7 @@ use tabled::settings::location::ByColumnName;
 /// See `mise upgrade` to upgrade these versions.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Outdated {
+pub(crate) struct Outdated {
     /// Tool(s) to show outdated versions for
     /// e.g.: node@20 python@3.10
     /// If not specified, all tools in global and local configs will be shown

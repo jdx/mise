@@ -20,7 +20,7 @@ use crate::ui::prompt;
 /// under `dotfiles.root` unless `--source` is provided.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesAdd {
+pub(crate) struct DotfilesAdd {
     /// Targets to add or update
     #[arg(value_name = "TARGET", required = true)]
     pub(super) targets: Vec<String>,

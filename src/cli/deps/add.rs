@@ -14,7 +14,7 @@ use super::parse_package_spec;
 /// Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@types/react@19`.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct DepsAdd {
+pub(super) struct DepsAdd {
     /// Package(s) to add (e.g., npm:react, npm:@types/react@19)
     #[arg(required = true)]
     pub packages: Vec<String>,

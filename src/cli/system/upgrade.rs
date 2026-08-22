@@ -17,7 +17,7 @@ use crate::system;
 /// Packages can also be given explicitly in `manager:package` form.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemUpgrade {
+pub(crate) struct SystemUpgrade {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
     #[arg(value_name = "PACKAGE")]

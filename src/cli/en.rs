@@ -10,7 +10,7 @@ use crate::env;
 /// Note that changing directories will not update the mise environment.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct En {
+pub(crate) struct En {
     /// Directory to start the shell in
     #[arg(default_value = ".", verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
     pub dir: PathBuf,

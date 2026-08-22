@@ -33,7 +33,7 @@ use std::path::PathBuf;
 /// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 #[derive(Debug, Default, usage_rs::Args)]
 #[command(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Install {
+pub(crate) struct Install {
     /// Tool(s) to install
     /// e.g.: node@20
     #[arg(value_name = "TOOL@VERSION")]

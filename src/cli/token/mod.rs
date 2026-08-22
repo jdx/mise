@@ -5,7 +5,7 @@ mod gitlab;
 /// Display git provider tokens mise will use
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct Token {
+pub(crate) struct Token {
     #[arg(subcommand)]
     subcommand: Commands,
 }

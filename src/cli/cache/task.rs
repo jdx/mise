@@ -18,7 +18,7 @@ use crate::ui::table::MiseTable;
 /// Inspect output cache entries for a task
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct CacheTask {
+pub(super) struct CacheTask {
     /// Task name or pattern to inspect
     task: String,
 

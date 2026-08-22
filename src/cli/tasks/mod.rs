@@ -13,7 +13,7 @@ mod validate;
 /// Manage tasks
 #[derive(usage_rs::Args)]
 #[command(visible_alias = "t", alias = "task", verbatim_doc_comment)]
-pub struct Tasks {
+pub(crate) struct Tasks {
     #[arg(subcommand)]
     command: Option<Commands>,
 

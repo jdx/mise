@@ -19,7 +19,7 @@ use crate::{
 /// Use `mise local` to set a tool version locally in the current directory.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
-pub struct Global {
+pub(crate) struct Global {
     /// Tool(s) to add to .tool-versions
     /// e.g.: node@20
     /// If this is a single tool with no version, the current value of the global

@@ -8,7 +8,7 @@ mod ls;
     aliases = ["b", "backend", "backend-list"],
     after_long_help = AFTER_LONG_HELP
 )]
-pub struct Backends {
+pub(crate) struct Backends {
     #[arg(subcommand)]
     command: Option<Commands>,
 }

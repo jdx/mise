@@ -30,7 +30,7 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Exec {
+pub(crate) struct Exec {
     /// Tool(s) to start
     /// e.g.: node@20 python@3.10
     #[arg(value_name = "TOOL@VERSION")]

@@ -8,7 +8,7 @@ mod unset;
 
 #[derive(Debug, usage_rs::Args)]
 #[command(about = "Manage settings", after_long_help = AFTER_LONG_HELP)]
-pub struct Settings {
+pub(crate) struct Settings {
     #[arg(subcommand)]
     command: Option<Commands>,
 
@@ -44,7 +44,7 @@ impl Commands {
         }
     }
 
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => cmd.run(),
             Self::Get(cmd) => cmd.run(),
@@ -56,7 +56,7 @@ impl Commands {
 }
 
 impl Settings {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let parent_local = self.ls.local;
         let mut cmd = self.command.unwrap_or_else(|| {
             if let Some(value) = self.value {

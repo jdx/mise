@@ -20,7 +20,7 @@ use crate::{dirs, duration, env, file};
 /// If the version is out of date, it will display a warning.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
-pub struct Version {
+pub(crate) struct Version {
     /// Print the version information in JSON format
     #[arg(short = 'J', long)]
     json: bool,

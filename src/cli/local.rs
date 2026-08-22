@@ -24,7 +24,7 @@ use crate::{env, file};
 /// is set. A future v2 release of mise will default to using `mise.toml`.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, hide = true, alias = "l", after_long_help = AFTER_LONG_HELP)]
-pub struct Local {
+pub(crate) struct Local {
     /// Tool(s) to add to .tool-versions/mise.toml
     /// e.g.: node@20
     /// if this is a single tool with no version,

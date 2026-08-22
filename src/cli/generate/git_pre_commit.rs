@@ -14,7 +14,7 @@ use crate::git::Git;
 /// For more advanced pre-commit functionality, see mise's sister project: https://hk.jdx.dev/
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, visible_alias = "pre-commit", after_long_help = AFTER_LONG_HELP)]
-pub struct GitPreCommit {
+pub(super) struct GitPreCommit {
     /// The task to run when the pre-commit hook is triggered
     #[arg(long, short, default_value = "pre-commit")]
     task: String,

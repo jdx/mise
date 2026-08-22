@@ -27,7 +27,7 @@ use crate::ui::table::MiseTable;
 /// It's a useful command to get the current state of your tools.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Ls {
+pub(crate) struct Ls {
     /// Only show tool versions from [TOOL]
     #[arg(conflicts_with = "tool_flag")]
     installed_tool: Option<Vec<BackendArg>>,

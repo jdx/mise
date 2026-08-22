@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// Set the value of a setting in a mise.toml file
 #[derive(Debug, usage_rs::Args)]
 #[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ConfigSet {
+pub(super) struct ConfigSet {
     /// The path of the config to display
     pub key: String,
 
@@ -29,7 +29,7 @@ pub struct ConfigSet {
 }
 
 #[derive(usage_rs::ValueEnum, Default, Clone, Debug)]
-pub enum TomlValueTypes {
+pub(super) enum TomlValueTypes {
     #[default]
     Infer,
     #[value()]

@@ -3,11 +3,48 @@ name mise
 bin mise
 author "Jeff Dickey <@jdx>"
 about "Dev tools, env vars, and tasks in one CLI"
+source_code_link_template #"""
+{%- set path = path | replace(from='-', to='_') -%}
+{%- if path == "bootstrap/packages/apply" -%}
+{%- set path = "system/install.rs" -%}
+{%- elif path == "bootstrap/packages/import" -%}
+{%- set path = "system/import.rs" -%}
+{%- elif path == "bootstrap/packages/prune" -%}
+{%- set path = "system/prune.rs" -%}
+{%- elif path == "bootstrap/packages/status" -%}
+{%- set path = "system/status.rs" -%}
+{%- elif path == "bootstrap/packages/upgrade" -%}
+{%- set path = "system/upgrade.rs" -%}
+{%- elif path == "bootstrap/packages/use" -%}
+{%- set path = "system/use.rs" -%}
+{%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
+{%- set path = "system/brew/mod.rs" -%}
+{%- elif path == "bootstrap/dotfiles/add" -%}
+{%- set path = "dotfiles/add.rs" -%}
+{%- elif path == "bootstrap/dotfiles/apply" -%}
+{%- set path = "dotfiles/apply.rs" -%}
+{%- elif path == "bootstrap/dotfiles/edit" -%}
+{%- set path = "dotfiles/edit.rs" -%}
+{%- elif path == "bootstrap/dotfiles/status" -%}
+{%- set path = "dotfiles/status.rs" -%}
+{%- elif path == "bootstrap/dotfiles/unapply" -%}
+{%- set path = "dotfiles/unapply.rs" -%}
+{%- elif path is starting_with(pat="bootstrap") -%}
+{%- set path = "bootstrap.rs" -%}
+{%- elif path == "tasks/run" -%}
+{%- set path = "run.rs" -%}
+{%- elif cmd.subcommands | length > 0 -%}
+{%- set parts = path | split(pat="/") -%}
+{%- set path = parts[0] ~ "/mod.rs" -%}
+{%- else -%}
+{%- set path = path ~ ".rs" -%}
+{%- endif -%}
+https://github.com/jdx/mise/blob/main/src/cli/{{path}}
+"""#
 long_about "mise prepares your development environment before each command runs. https://github.com/jdx/mise"
 after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise install node@20.0.0\u{1b}[22m       Install a specific node version\n    $ \u{1b}[1mmise install node@20\u{1b}[22m           Install a version matching a prefix\n    $ \u{1b}[1mmise install node\u{1b}[22m              Install the node version defined in config\n    $ \u{1b}[1mmise install\u{1b}[22m                   Install all plugins/tools defined in config\n\n    $ \u{1b}[1mmise install cargo:ripgrep\u{1b}[22m     Install something via cargo\n    $ \u{1b}[1mmise install npm:prettier\u{1b}[22m      Install something via npm\n\n    $ \u{1b}[1mmise use node@20\u{1b}[22m               Use node-20.x in current project\n    $ \u{1b}[1mmise use -g node@20\u{1b}[22m            Use node-20.x as default\n    $ \u{1b}[1mmise use node@latest\u{1b}[22m           Use latest node in current directory\n\n    $ \u{1b}[1mmise up --interactive\u{1b}[22m          Show a menu to upgrade tools\n\n    $ \u{1b}[1mmise x -- npm install\u{1b}[22m          `npm install` w/ config loaded into PATH\n    $ \u{1b}[1mmise x node@20 -- node app.js\u{1b}[22m  `node app.js` w/ config + node-20.x on PATH\n\n    $ \u{1b}[1mmise set NODE_ENV=production\u{1b}[22m   Set NODE_ENV=production in config\n\n    $ \u{1b}[1mmise run build\u{1b}[22m                 Run `build` tasks\n    $ \u{1b}[1mmise watch build\u{1b}[22m               Run `build` tasks repeatedly when files change\n\n    $ \u{1b}[1mmise settings\u{1b}[22m                  Show settings in use\n    $ \u{1b}[1mmise settings color=0\u{1b}[22m          Disable color by modifying global config file\n"
 unknown_flags error
 default_subcommand run
-arg_required_else_help #true
 flag "-c --continue-on-error" help="Continue running tasks even if one fails" hide=#true
 flag "-C --cd" help="Change directory before running command" global=#true {
     arg <DIR>
@@ -23,13 +60,13 @@ flag "-n --dry-run" help="Dry run, don't actually do anything" hide=#true
 flag "-P --profile" help="Set the profile (environment)" var=#true hide=#true global=#true conflicts=--env {
     arg <PROFILE>
 }
-flag "-q --quiet" help="Suppress non-error messages" global=#true {
+flag "-q --quiet" help="Suppress non-error messages" global=#true env=MISE_QUIET {
     overrides "--silent" "--trace" "--verbose" "--debug" "--log-level"
 }
 flag "-s --shell" hide=#true {
     arg <SHELL>
 }
-flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true hide=#true env=MISE_QUIET {
+flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true hide=#true {
     long_help #"""
 Tool(s) to run in addition to what is in mise.toml files
 e.g.: node@20 python@3.10
@@ -120,6 +157,64 @@ Shorthand for `mise tasks run <TASK>`.
 arg "[TASK_ARGS]…" help="Task arguments" required=#false var=#true hide=#true
 arg "[-- TASK_ARGS_LAST]…" required=#false var=#true hide=#true
 complete dir type=dir
+complete alias run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
+complete config_file type=file
+complete new_plugin run="mise plugins --all"
+complete installed_tool run="mise ls -i | awk '{print $1}' | uniq"
+complete plugin run="mise plugins --core --user"
+complete prefix run="mise ls-remote {{words[PREV]}}"
+complete setting run="mise settings --complete" descriptions=#true
+complete task run="mise tasks ls --complete" descriptions=#true
+complete tool run="mise registry --complete" descriptions=#true
+complete env_var run="mise set --complete | awk '{print $1\"=\"}'"
+complete env_key run="mise set --complete"
+complete backend run="mise backends"
+complete bin_name run="mise which --complete"
+complete tool@version run=#"""
+cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise registry | awk '{print $1}')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac
+"""#
+complete installed_tool@version run=#"""
+cur="{{words[CURRENT]}}"
+case $cur in
+  *@*)
+    tool="$(echo "$cur" | cut -d'@' -f1)"
+    prefix="$(echo "$cur" | cut -d'@' -f2)"
+
+    if [ ! -z "$prefix" ]; then
+      prefix="--prefix $prefix"
+    fi
+    versions=$(mise ls --installed $tool $prefix | awk '{print $2}' | sed '1!G;h;$!d')
+
+    for version in $versions; do
+      echo "$tool@$version"
+    done
+    ;;
+  *)
+    plugins=$(mise ls --installed | awk '{print $1}' | uniq | sed '1!G;h;$!d')
+    for plugin in $plugins; do
+      echo "$plugin@"
+    done
+    ;;
+esac
+"""#
 cmd activate help="Initializes mise in the current shell session" effect=read {
     long_help #"""
 Initializes mise in the current shell session
@@ -1408,13 +1503,16 @@ stdout
 cmd generate subcommand_required=#true help="Generate files for various tools/services" effect=read {
     alias gen
     alias g hide=#true
-    cmd bootstrap help="Generate a script to download+execute mise" effect=write {
+    cmd bootstrap hide=#true help="Deprecated. Use `mise generate install-script` instead" effect=write {
         long_help #"""
 Generate a script to download+execute mise
 
 This is designed to be used in a project where contributors may not have mise installed.
+
+Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
+setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate bootstrap --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate bootstrap --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
         flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
             long_help #"""
 Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
@@ -1520,17 +1618,7 @@ This is designed to be used in a project where contributors may not have mise in
 Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 """#
-        after_long_help #"""
-Examples:
-
-    $ mise generate install-script --write ./bin/mise
-    $ ./bin/mise install                                    # downloads mise to .mise if not already installed
-
-    # add a launcher for contributors who clone the project on Windows
-    $ mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
-    $ .\bin\mise.cmd install
-
-"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
         flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
             long_help #"""
 Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
@@ -1541,13 +1629,13 @@ This is necessary if users may use a different version of mise outside the proje
         flag "-V --version" help="Specify mise version to fetch" {
             arg <VERSION>
         }
-        flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" {
-            arg <WRITE>
+        flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" value_optional=#true default_missing="./bin/mise" {
+            arg "[WRITE]" required=#false var_min=0 var_max=1
         }
         flag --localized-dir help="Directory to put localized data into" default=.mise {
             arg <LOCALIZED_DIR>
         }
-        flag --windows help="Also write a Windows launcher, `<WRITE>.cmd`" {
+        flag --windows help="Also write a Windows launcher, `<WRITE>.cmd`" requires=--write {
             long_help #"""
 Also write a Windows launcher, `<WRITE>.cmd`
 
@@ -1559,6 +1647,7 @@ on Windows is not the person who generated it. Requires `--write`, since stdout 
 carry two files.
 """#
         }
+        complete localized_dir type=dir
     }
     cmd task-docs help="Generate documentation for tasks in a project" effect=write {
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate task-docs\u{1b}[22m\n"
@@ -1606,7 +1695,7 @@ When a parent and nested task both exist, the parent stub is written to `<parent
             long_help #"""
 Path to a mise bin to use when running the task stub.
 
-Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
+Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
 """#
             arg <MISE_BIN>
         }
@@ -1935,11 +2024,6 @@ Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
-
-This shares the install location between users; it does not put binaries on
-PATH for use without mise. Every user still needs mise to run these tools.
-For binaries usable without mise, see `mise install-into` or
-`[bootstrap.packages]`.
 """#
     }
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" help_long=#"""
@@ -3576,9 +3660,7 @@ Defaults to MISE_AFFECTED_HEAD, CI metadata, or HEAD
             arg <REV>
         }
         flag --affected-json help="Output affected projects and tasks as JSON without running tasks" conflicts=--affected-explain requires=--affected
-        flag --all help="Open the interactive selector with all tasks from the entire monorepo" {
-            conflicts TASK "--affected"
-        }
+        flag --all help="Open the interactive selector with all tasks from the entire monorepo" conflicts=--affected
         flag "-c --continue-on-error" help="Continue running tasks even if one fails"
         flag "-C --cd" help="Change to this directory before executing the command" {
             arg <CD>
@@ -3708,14 +3790,6 @@ Shows elapsed time after each task completes
 Default to always show with `MISE_TASK_TIMINGS=1`
 """#
         }
-        arg "[TASK]" help=#"""
-Tasks to run
-Can specify multiple tasks by separating with `:::`
-e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-Defaults to `default` when omitted
-"""# required=#false double_dash=automatic
-        arg "[ARGS]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true
-        arg "[-- ARGS_LAST]…" help="Arguments to pass to the tasks. Use \":::\" to separate tasks." required=#false var=#true hide=#true
         mount run="mise tasks --usage"
         complete cd type=dir
     }
@@ -5047,102 +5121,3 @@ e.g.: `mise which npm --tool=node@20`
     flag --version help="Show the version instead of the path" conflicts=--plugin
     arg "[BIN_NAME]" help="The bin to look up" required=#false required_unless=--complete
 }
-source_code_link_template #"""
-{%- set path = path | replace(from='-', to='_') -%}
-{%- if path == "bootstrap/packages/apply" -%}
-{%- set path = "system/install.rs" -%}
-{%- elif path == "bootstrap/packages/import" -%}
-{%- set path = "system/import.rs" -%}
-{%- elif path == "bootstrap/packages/prune" -%}
-{%- set path = "system/prune.rs" -%}
-{%- elif path == "bootstrap/packages/status" -%}
-{%- set path = "system/status.rs" -%}
-{%- elif path == "bootstrap/packages/upgrade" -%}
-{%- set path = "system/upgrade.rs" -%}
-{%- elif path == "bootstrap/packages/use" -%}
-{%- set path = "system/use.rs" -%}
-{%- elif path is starting_with(pat="bootstrap/packages/brew") -%}
-{%- set path = "system/brew/mod.rs" -%}
-{%- elif path == "bootstrap/dotfiles/add" -%}
-{%- set path = "dotfiles/add.rs" -%}
-{%- elif path == "bootstrap/dotfiles/apply" -%}
-{%- set path = "dotfiles/apply.rs" -%}
-{%- elif path == "bootstrap/dotfiles/edit" -%}
-{%- set path = "dotfiles/edit.rs" -%}
-{%- elif path == "bootstrap/dotfiles/status" -%}
-{%- set path = "dotfiles/status.rs" -%}
-{%- elif path == "bootstrap/dotfiles/unapply" -%}
-{%- set path = "dotfiles/unapply.rs" -%}
-{%- elif path is starting_with(pat="bootstrap") -%}
-{%- set path = "bootstrap.rs" -%}
-{%- elif path == "tasks/run" -%}
-{%- set path = "run.rs" -%}
-{%- elif cmd.subcommands | length > 0 -%}
-{%- set parts = path | split(pat="/") -%}
-{%- set path = parts[0] ~ "/mod.rs" -%}
-{%- else -%}
-{%- set path = path ~ ".rs" -%}
-{%- endif -%}
-https://github.com/jdx/mise/blob/main/src/cli/{{path}}
-"""#
-
-complete "alias" run="mise alias ls {{words[PREV]}} | awk '{print $2}'"
-complete "config_file" type="file"
-complete "new_plugin" run="mise plugins --all"
-complete "installed_tool" run="mise ls -i | awk '{print $1}' | uniq"
-complete "plugin" run="mise plugins --core --user"
-complete "prefix" run="mise ls-remote {{words[PREV]}}"
-complete "setting" run="mise settings --complete" descriptions=#true
-complete "task" run="mise tasks ls --complete" descriptions=#true
-complete "tool" run="mise registry --complete" descriptions=#true
-complete "env_var" run=#"mise set --complete | awk '{print $1"="}'"#
-complete "env_key" run="mise set --complete"
-complete "backend" run="mise backends"
-complete "bin_name" run="mise which --complete"
-
-complete "tool@version" run=#"""
-cur="{{words[CURRENT]}}"
-case $cur in
-  *@*)
-    tool="$(echo "$cur" | cut -d'@' -f1)"
-    prefix="$(echo "$cur" | cut -d'@' -f2)"
-
-    versions=$(mise ls-remote $tool $prefix | sed '1!G;h;$!d')
-
-    for version in $versions; do
-      echo "$tool@$version"
-    done
-    ;;
-  *)
-    plugins=$(mise registry | awk '{print $1}')
-    for plugin in $plugins; do
-      echo "$plugin@"
-    done
-    ;;
-esac
-"""#
-
-complete "installed_tool@version" run=#"""
-cur="{{words[CURRENT]}}"
-case $cur in
-  *@*)
-    tool="$(echo "$cur" | cut -d'@' -f1)"
-    prefix="$(echo "$cur" | cut -d'@' -f2)"
-
-    if [ ! -z "$prefix" ]; then
-      prefix="--prefix $prefix"
-    fi
-    versions=$(mise ls --installed $tool $prefix | awk '{print $2}' | sed '1!G;h;$!d')
-
-    for version in $versions; do
-      echo "$tool@$version"
-    done
-    ;;
-  *)
-    plugins=$(mise ls --installed | awk '{print $1}' | uniq | sed '1!G;h;$!d')
-    for plugin in $plugins; do
-      echo "$plugin@"
-    done
-    ;;
-esac
-"""#

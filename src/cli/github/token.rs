@@ -6,7 +6,7 @@ use crate::cli::token::github::Github;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, hide = true)]
-pub struct Token {
+pub(crate) struct Token {
     /// GitHub hostname
     #[arg(default_value = "github.com")]
     host: String,

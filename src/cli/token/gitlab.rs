@@ -7,7 +7,7 @@ use crate::tokens;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Gitlab {
+pub(super) struct Gitlab {
     /// GitLab hostname
     #[arg(default_value = "gitlab.com")]
     host: String,

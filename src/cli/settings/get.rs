@@ -11,7 +11,7 @@ use eyre::bail;
 /// but managed separately with `mise tool-alias get`
 #[derive(Debug, usage_rs::Args)]
 #[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsGet {
+pub(super) struct SettingsGet {
     /// The setting to show
     pub setting: String,
     /// Use the local config file instead of the global one

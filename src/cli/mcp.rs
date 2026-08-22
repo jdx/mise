@@ -47,7 +47,7 @@ use std::sync::Arc;
 /// Cursor, or other tools that support the Model Context Protocol.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Mcp {}
+pub(crate) struct Mcp {}
 
 #[derive(Clone)]
 struct MiseServer {

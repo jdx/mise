@@ -12,7 +12,7 @@ use crate::ui::table;
 /// Gets information about a tool
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Tool {
+pub(crate) struct Tool {
     /// Tool name to get information about
     tool: BackendArg,
     /// Output in JSON format

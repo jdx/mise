@@ -34,15 +34,15 @@ Set the profile (environment)
 .TP
 \fB\-q, \-\-quiet\fR
 Suppress non\-error messages
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files
 e.g.: node@20 python@3.10
-.RS
-\fIEnvironment: \fR\fBMISE_QUIET\fR
-.RE
 .TP
 \fB\-v, \-\-verbose\fR
 Show extra output (use \-vv for even more)
@@ -2148,42 +2148,6 @@ Check if the configs are formatted, no formatting is done
 \fB\-s, \-\-stdin\fR
 Read config from stdin and write its formatted version into
 stdout
-.SH "MISE GENERATE BOOTSTRAP"
-Generate a script to download+execute mise
-
-This is designed to be used in a project where contributors may not have mise installed.
-.PP
-\fBUsage:\fR mise generate bootstrap [OPTIONS]
-.PP
-\fBOptions:\fR
-.PP
-.TP
-\fB\-l, \-\-localize\fR
-Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
-
-This is necessary if users may use a different version of mise outside the project.
-.TP
-\fB\-V, \-\-version\fR \fI<VERSION>\fR
-Specify mise version to fetch
-.TP
-\fB\-w, \-\-write\fR \fI<WRITE>\fR
-instead of outputting the script to stdout, write to a file and make it executable
-.TP
-\fB\-\-localized\-dir\fR \fI<LOCALIZED_DIR>\fR
-Directory to put localized data into
-.RS
-\fIDefault: \fR.mise
-.RE
-.TP
-\fB\-\-windows\fR
-Also write a Windows launcher, `<WRITE>.cmd`
-
-Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
-project on Windows has nothing to run without this.
-
-Generated on every host, not only on Windows: the file is committed, and whoever runs it
-on Windows is not the person who generated it. Requires `\-\-write`, since stdout cannot
-carry two files.
 .SH "MISE GENERATE CONFIG"
 Generate a mise.toml file
 .PP
@@ -2379,7 +2343,7 @@ Directory to create task stubs inside of
 \fB\-m, \-\-mise\-bin\fR \fI<MISE_BIN>\fR
 Path to a mise bin to use when running the task stub.
 
-Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate install\-script`
+Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
 .RS
 \fIDefault: \fRmise
 .RE
@@ -2592,11 +2556,6 @@ Install tool(s) to the system\-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
-
-This shares the install location between users; it does not put binaries on
-PATH for use without mise. Every user still needs mise to run these tools.
-For binaries usable without mise, see `mise install\-into` or
-`[bootstrap.packages]`.
 \fBArguments:\fR
 .PP
 .TP
@@ -4402,7 +4361,7 @@ The name of the script will be the name of the tasks.
     EOF
     $ mise run build
 .PP
-\fBUsage:\fR mise tasks run [OPTIONS] [<TASK>] [<ARGS>] ... [<ARGS_LAST>] ...
+\fBUsage:\fR mise tasks run [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
@@ -4579,20 +4538,6 @@ e.g.: 30s, 5m
 Shows elapsed time after each task completes
 
 Default to always show with `MISE_TASK_TIMINGS=1`
-\fBArguments:\fR
-.PP
-.TP
-\fB<TASK>\fR
-Tasks to run
-Can specify multiple tasks by separating with `:::`
-e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-Defaults to `default` when omitted
-.TP
-\fB<ARGS>\fR
-Arguments to pass to the tasks. Use ":::" to separate tasks.
-.TP
-\fB<ARGS_LAST>\fR
-Arguments to pass to the tasks. Use ":::" to separate tasks.
 .SH "MISE TASKS VALIDATE"
 Validate tasks for common errors and issues
 .PP

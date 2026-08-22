@@ -10,7 +10,7 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 /// and runs install commands if needed.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct DepsInstall {
+pub(crate) struct DepsInstall {
     /// Provider to operate on (runs only this provider, or use with --explain)
     pub provider: Option<String>,
 

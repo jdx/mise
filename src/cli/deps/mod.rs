@@ -20,7 +20,7 @@ mod remove;
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
-pub struct Deps {
+pub(crate) struct Deps {
     #[arg(subcommand)]
     command: Option<Commands>,
 
