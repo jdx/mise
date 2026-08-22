@@ -62,7 +62,7 @@ use tokio::sync::Mutex;
     after_long_help = AFTER_LONG_HELP,
     unknown_flags = "value"
 )]
-pub struct Run {
+pub(crate) struct Run {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2

@@ -10,7 +10,7 @@ use crate::ui::table;
 /// These are defined in `mise.toml` under the `[shell_alias]` section.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ShellAliasLs {
+pub(super) struct ShellAliasLs {
     /// Don't show table header
     #[arg(long)]
     pub no_header: bool,

@@ -14,7 +14,7 @@ mod unset;
     alias = "alias",
     alias = "aliases"
 )]
-pub struct ToolAlias {
+pub(crate) struct ToolAlias {
     #[arg(subcommand)]
     command: Option<Commands>,
 

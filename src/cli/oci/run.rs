@@ -20,7 +20,7 @@ use crate::oci::{BuildOptions, LayerOwner};
 /// one of: `podman`, `docker`.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Run {
+pub(super) struct Run {
     // Long-only flags, kept alphabetical (asserted by
     // `cli::tests::test_subcommands_are_sorted`).
     /// Container engine to use (`auto`, `podman`, or `docker`)

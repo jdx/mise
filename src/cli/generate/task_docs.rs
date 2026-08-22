@@ -9,7 +9,7 @@ const TASK_PLACEHOLDER_END: &str = "<!-- /mise-tasks -->";
 /// Generate documentation for tasks in a project
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TaskDocs {
+pub(super) struct TaskDocs {
     /// inserts the documentation into an existing file
     ///
     /// This will look for a special comment, `<!-- mise-tasks -->`, and replace it with the generated documentation.

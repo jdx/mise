@@ -14,7 +14,7 @@ use super::parse_package_spec;
 /// Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct DepsRemove {
+pub(super) struct DepsRemove {
     /// Package(s) to remove (e.g., npm:lodash)
     #[arg(required = true)]
     pub packages: Vec<String>,

@@ -10,7 +10,7 @@ use crate::ui::table::MiseTable;
 /// Show the status of dotfiles from `[dotfiles]`
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesStatus {
+pub(crate) struct DotfilesStatus {
     /// Only show these targets
     #[arg(value_name = "TARGET")]
     targets: Vec<String>,

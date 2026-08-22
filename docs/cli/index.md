@@ -35,6 +35,8 @@ How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
 
 Suppress non-error messages
 
+**Environment Variable:** `MISE_QUIET`
+
 ### `-v --verbose…`
 
 Show extra output (use -vv for even more)
@@ -244,7 +246,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise tasks graph [FLAGS]`](/cli/tasks/graph.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
-- [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
+- [`mise tasks run [FLAGS]`](/cli/tasks/run.md)
 - [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.md)
 - [`mise test-tool [FLAGS] [TOOLS]…`](/cli/test-tool.md)
 - [`mise token <SUBCOMMAND>`](/cli/token.md)

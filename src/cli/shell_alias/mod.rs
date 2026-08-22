@@ -7,7 +7,7 @@ mod unset;
 
 #[derive(Debug, usage_rs::Args)]
 #[command(name = "shell-alias", about = "Manage shell aliases.")]
-pub struct ShellAlias {
+pub(crate) struct ShellAlias {
     #[arg(subcommand)]
     command: Option<Commands>,
 

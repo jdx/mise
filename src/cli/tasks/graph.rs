@@ -8,7 +8,7 @@ use serde::Serialize;
 /// [experimental] Inspect the workspace project graph
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksGraph {
+pub(super) struct TasksGraph {
     /// Output the project graph as JSON
     #[arg(short = 'J', long, verbatim_doc_comment)]
     json: bool,

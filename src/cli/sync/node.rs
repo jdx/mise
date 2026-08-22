@@ -15,7 +15,7 @@ use super::reconcile;
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SyncNode {
+pub(super) struct SyncNode {
     #[arg(flatten)]
     _type: SyncNodeType,
 }

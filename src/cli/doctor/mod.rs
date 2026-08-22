@@ -32,7 +32,7 @@ use strum::IntoEnumIterator;
 /// Check mise installation for possible problems
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Doctor {
+pub(crate) struct Doctor {
     #[arg(subcommand)]
     subcommand: Option<Commands>,
     #[arg(skip)]
@@ -44,7 +44,7 @@ pub struct Doctor {
 }
 
 #[derive(Debug, usage_rs::Subcommands)]
-pub enum Commands {
+pub(crate) enum Commands {
     Path(path::Path),
 }
 

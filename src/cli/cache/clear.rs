@@ -11,7 +11,7 @@ use walkdir::WalkDir;
 /// Deletes all cache files in mise
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
-pub struct CacheClear {
+pub(super) struct CacheClear {
     /// Tool(s) to clear cache for
     /// e.g.: node, python
     tool: Option<Vec<String>>,

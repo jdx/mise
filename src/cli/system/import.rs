@@ -35,7 +35,7 @@ use toml_edit::{Array, InlineTable, Value};
 /// Pass `--all` to import every linked formula, including dependencies.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemImport {
+pub(crate) struct SystemImport {
     /// Write to the config file for this environment (mise.<ENV>.toml)
     #[arg(long, short, value_name = "ENV", conflicts_with_all = ["global", "path"])]
     env: Option<String>,

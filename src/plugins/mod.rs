@@ -30,7 +30,7 @@ pub(crate) mod script_manager;
 pub(crate) mod vfox_plugin;
 
 #[derive(Clone, Debug)]
-pub struct ExternalCommand {
+pub(crate) struct ExternalCommand {
     pub topic: String,
     pub subcommands: Vec<String>,
 }
@@ -124,7 +124,7 @@ impl PluginEnum {
         }
     }
 
-    pub fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
+    pub(crate) fn external_commands(&self) -> eyre::Result<Vec<ExternalCommand>> {
         match self {
             PluginEnum::Asdf(plugin) => plugin.external_commands(),
             PluginEnum::Vfox(plugin) => plugin.external_commands(),

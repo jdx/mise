@@ -29,7 +29,7 @@ use std::path::{Path, PathBuf};
     after_long_help = AFTER_LONG_HELP,
     unknown_flags = "value"
 )]
-pub struct Watch {
+pub(crate) struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
@@ -550,7 +550,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 //region watchexec
 #[derive(Debug, usage_rs::Args)]
-pub struct WatchexecArgs {
+pub(crate) struct WatchexecArgs {
     /// Watch a specific file or directory
     ///
     /// By default, Watchexec watches the current directory.
@@ -1375,7 +1375,7 @@ pub struct WatchexecArgs {
 }
 
 #[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
-pub enum EmitEvents {
+pub(crate) enum EmitEvents {
     #[default]
     Environment,
     Stdio,
@@ -1387,7 +1387,7 @@ pub enum EmitEvents {
 
 #[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub(super) enum OnBusyUpdate {
+pub(crate) enum OnBusyUpdate {
     #[default]
     Queue,
     DoNothing,
@@ -1412,7 +1412,7 @@ fn wrap_process_args(mode: Option<WrapMode>) -> Vec<String> {
 
 #[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub(super) enum WrapMode {
+pub(crate) enum WrapMode {
     #[default]
     Group,
     Session,
@@ -1420,14 +1420,14 @@ pub(super) enum WrapMode {
 }
 
 #[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
-pub enum ClearMode {
+pub(crate) enum ClearMode {
     #[default]
     Clear,
     Reset,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
-pub enum FsEvent {
+pub(crate) enum FsEvent {
     Access,
     Create,
     Remove,
@@ -1437,7 +1437,7 @@ pub enum FsEvent {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
-pub enum ColourMode {
+pub(crate) enum ColourMode {
     Auto,
     Always,
     Never,

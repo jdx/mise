@@ -33,7 +33,7 @@ use itertools::Itertools;
 /// worktrees can check out branches with different config contents.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Trust {
+pub(crate) struct Trust {
     /// The config file whose trust status to change
     #[arg(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,

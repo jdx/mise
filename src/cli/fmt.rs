@@ -10,7 +10,7 @@ use taplo::formatter::Options;
 /// Sorts keys and cleans up whitespace in mise.toml
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Fmt {
+pub(crate) struct Fmt {
     /// Format all files from the current directory
     #[arg(short, long)]
     pub all: bool,

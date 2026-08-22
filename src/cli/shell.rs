@@ -16,7 +16,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_na
 /// such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
-pub struct Shell {
+pub(crate) struct Shell {
     /// Tool(s) to use
     #[arg(value_name = "TOOL@VERSION", required = true)]
     tool: Vec<ToolArg>,

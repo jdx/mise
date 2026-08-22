@@ -30,7 +30,7 @@ use path_absolutize::Absolutize;
 /// Will also prune the installed version if no other configurations are using it.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
-pub struct Unuse {
+pub(crate) struct Unuse {
     /// Tool(s) to remove
     #[arg(value_name = "INSTALLED_TOOL@VERSION", required = true)]
     installed_tool: Vec<ToolArg>,

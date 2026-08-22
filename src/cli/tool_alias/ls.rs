@@ -16,7 +16,7 @@ use crate::ui::table;
 ///     lts = "22.0.0"
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ToolAliasLs {
+pub(super) struct ToolAliasLs {
     /// Show aliases for <TOOL>
     #[arg()]
     pub tool: Option<BackendArg>,

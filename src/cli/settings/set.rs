@@ -12,7 +12,7 @@ use crate::{config, duration, file};
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_aliases = ["create"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct SettingsSet {
+pub(super) struct SettingsSet {
     /// The setting to set
     #[arg()]
     pub setting: String,

@@ -6,7 +6,7 @@ use crate::cli::edit::Edit;
 /// Generate a mise.toml file
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Config {
+pub(super) struct Config {
     /// Generate the global config file (~/.config/mise/config.toml)
     // Declared here as well as on `Edit`: this command parses its own arguments before handing
     // them over, so the conflict does not carry across on its own.

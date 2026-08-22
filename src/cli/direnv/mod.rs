@@ -17,7 +17,7 @@ mod exec;
 /// direnv may not know to update environment variables when idiomatic file versions change.
 #[derive(Debug, usage_rs::Args)]
 #[command(hide = true, verbatim_doc_comment)]
-pub struct Direnv {
+pub(crate) struct Direnv {
     #[arg(subcommand)]
     command: Option<Commands>,
 }

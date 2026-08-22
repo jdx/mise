@@ -12,7 +12,7 @@ use crate::ui::prompt;
 /// Edit a managed dotfile source
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesEdit {
+pub(crate) struct DotfilesEdit {
     /// Target to edit
     #[arg(value_name = "TARGET")]
     target: String,

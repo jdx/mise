@@ -12,7 +12,7 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 /// and/or version. It's designed to fit into scripts more easily.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, hide = true, after_long_help = AFTER_LONG_HELP)]
-pub struct Current {
+pub(crate) struct Current {
     /// Plugin to show versions of
     /// e.g.: ruby, node, cargo:eza, npm:prettier, etc.
     #[arg()]

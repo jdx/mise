@@ -9,7 +9,7 @@ use crate::config::Config;
 ///
 #[derive(Debug, usage_rs::Args)]
 #[command(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct ToolAliasGet {
+pub(super) struct ToolAliasGet {
     /// The tool to show the alias for
     #[arg(value_name = "TOOL")]
     pub tool: BackendArg,

@@ -16,7 +16,7 @@ mod xonsh;
 mod zsh;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
-pub enum ShellType {
+pub(crate) enum ShellType {
     Bash,
     Elvish,
     Fish,

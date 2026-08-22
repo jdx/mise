@@ -49,7 +49,7 @@ pub(crate) struct TaskCacheConfig {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, usage_rs::ValueEnum)]
-pub enum TaskCacheMode {
+pub(crate) enum TaskCacheMode {
     /// Read cached results and write new results.
     #[default]
     ReadWrite,

@@ -10,7 +10,7 @@ use indoc::indoc;
 /// direnv may not know to update environment variables when idiomatic file versions change.
 #[derive(Debug, usage_rs::Args)]
 #[command(hide=true, verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DirenvActivate {}
+pub(super) struct DirenvActivate {}
 
 impl DirenvActivate {
     pub(super) async fn run(self) -> Result<()> {

@@ -11,7 +11,7 @@ use toml_edit::Item;
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksAdd {
+pub(super) struct TasksAdd {
     /// Tasks name to add
     #[arg()]
     task: String,

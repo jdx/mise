@@ -21,7 +21,7 @@ use serde_json::json;
 /// tasks will override the global ones if they have the same name.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksLs {
+pub(crate) struct TasksLs {
     /// Only show global tasks
     #[arg(short, long, overrides_with = "local", verbatim_doc_comment)]
     pub global: bool,
@@ -76,7 +76,7 @@ pub struct TasksLs {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
-pub enum SortColumn {
+pub(crate) enum SortColumn {
     Name,
     Alias,
     Description,
@@ -84,7 +84,7 @@ pub enum SortColumn {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
-pub enum SortOrder {
+pub(crate) enum SortOrder {
     Asc,
     Desc,
 }

@@ -9,9 +9,12 @@ use xx::regex;
 /// Generate a script to download+execute mise
 ///
 /// This is designed to be used in a project where contributors may not have mise installed.
+///
+/// Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
+/// setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Bootstrap {
+pub(super) struct InstallScript {
     /// Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
     ///
     /// This is necessary if users may use a different version of mise outside the project.

@@ -24,7 +24,7 @@ pub(crate) struct BootstrapApplyReport {
 /// only. `install` is accepted as an alias for this command.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemInstall {
+pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
     #[arg(value_name = "PACKAGE")]

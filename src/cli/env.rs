@@ -15,7 +15,7 @@ use indexmap::IndexSet;
 /// use this if you have `mise activate` in your shell rc file.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Env {
+pub(crate) struct Env {
     /// Tool(s) to use
     #[arg(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,

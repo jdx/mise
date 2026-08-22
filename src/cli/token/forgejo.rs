@@ -7,7 +7,7 @@ use crate::tokens;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Forgejo {
+pub(super) struct Forgejo {
     /// Forgejo hostname
     #[arg(default_value = "codeberg.org")]
     host: String,

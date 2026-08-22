@@ -11,7 +11,7 @@ use crate::toolset::ToolsetBuilder;
 /// [internal] simulates asdf for plugins that call "asdf" internally
 #[derive(Debug, usage_rs::Args)]
 #[command(hide = true, verbatim_doc_comment)]
-pub struct Asdf {
+pub(crate) struct Asdf {
     /// all arguments
     #[arg(allow_hyphen_values = true, value_hint = usage_rs::ValueHint::CommandWithArguments, trailing_var_arg = true)]
     args: Vec<String>,

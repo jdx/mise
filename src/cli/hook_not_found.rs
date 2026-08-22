@@ -9,7 +9,7 @@ use crate::toolset::ToolsetBuilder;
 /// [internal] called by shell when a command is not found
 #[derive(Debug, usage_rs::Args)]
 #[command(hide = true)]
-pub struct HookNotFound {
+pub(crate) struct HookNotFound {
     /// Attempted bin to run
     #[arg()]
     bin: String,

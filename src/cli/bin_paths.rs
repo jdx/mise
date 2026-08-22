@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// List all the active runtime bin paths
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct BinPaths {
+pub(crate) struct BinPaths {
     /// Tool(s) to look up
     /// e.g.: ruby@3
     #[arg(value_name = "TOOL@VERSION", verbatim_doc_comment)]

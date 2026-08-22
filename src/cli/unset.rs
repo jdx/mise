@@ -11,7 +11,7 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 /// By default, this command modifies `mise.toml` in the current directory.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Unset {
+pub(crate) struct Unset {
     /// Environment variable(s) to remove
     /// e.g.: NODE_ENV
     #[arg(verbatim_doc_comment, value_name = "ENV_KEY")]

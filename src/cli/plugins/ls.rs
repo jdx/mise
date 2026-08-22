@@ -15,7 +15,7 @@ use crate::ui::table;
 /// Can also show remotely available plugins to install.
 #[derive(Debug, usage_rs::Args)]
 #[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub struct PluginsLs {
+pub(super) struct PluginsLs {
     /// List all available remote plugins
     /// Same as `mise plugins ls-remote`
     #[arg(short, long, hide = true, verbatim_doc_comment)]

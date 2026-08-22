@@ -18,7 +18,7 @@ pub(crate) use unapply::DotfilesUnapply;
 /// Use `mise bootstrap dotfiles` instead.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, hide = true)]
-pub struct Dotfiles {
+pub(crate) struct Dotfiles {
     #[arg(subcommand)]
     command: Commands,
 }

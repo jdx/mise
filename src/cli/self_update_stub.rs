@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::env;
 
 #[derive(Debug, Default, usage_rs::Args)]
-pub struct SelfUpdate {
+pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
@@ -54,10 +54,10 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
 }
 
 pub(crate) fn upgrade_instructions_text() -> Option<String> {
-    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS {
-        if let Some(msg) = read_instructions_file(path) {
-            return Some(msg);
-        }
+    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
+        && let Some(msg) = read_instructions_file(path)
+    {
+        return Some(msg);
     }
     None
 }

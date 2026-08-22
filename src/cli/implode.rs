@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 /// Skips config directory by default.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct Implode {
+pub(crate) struct Implode {
     /// List directories that would be removed without actually removing them
     #[arg(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,

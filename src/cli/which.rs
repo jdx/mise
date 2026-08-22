@@ -13,7 +13,7 @@ use itertools::Itertools;
 /// Use this to figure out what version of a tool is currently active.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Which {
+pub(crate) struct Which {
     /// The bin to look up
     #[arg(required_unless_present = "complete")]
     pub bin_name: Option<String>,

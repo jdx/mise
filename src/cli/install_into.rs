@@ -19,7 +19,7 @@ use tokio::sync::OnceCell;
 /// Used for building a tool to a directory for use outside of mise
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct InstallInto {
+pub(crate) struct InstallInto {
     /// Tool to install
     /// e.g.: node@20
     #[arg(value_name = "TOOL@VERSION")]

@@ -11,7 +11,7 @@ use crate::ui::prompt;
 /// edits require `--force`.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesUnapply {
+pub(crate) struct DotfilesUnapply {
     /// Only unapply these targets
     #[arg(value_name = "TARGET")]
     targets: Vec<String>,

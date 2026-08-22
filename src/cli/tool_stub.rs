@@ -645,7 +645,7 @@ async fn execute_with_tool_request(
 /// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
 #[derive(Debug, usage_rs::Args)]
 #[command(disable_help_flag = true, disable_version_flag = true)]
-pub struct ToolStub {
+pub(crate) struct ToolStub {
     /// Path to the TOML tool stub file to execute
     ///
     /// The stub file must contain TOML configuration specifying the tool

@@ -14,7 +14,7 @@ use super::reconcile;
 /// Symlinks all ruby tool versions from an external tool into mise
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SyncRuby {
+pub(super) struct SyncRuby {
     #[arg(flatten)]
     _type: SyncRubyType,
 }

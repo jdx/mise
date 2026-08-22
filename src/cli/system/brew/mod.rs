@@ -9,7 +9,7 @@ pub(super) mod untap;
 /// can be fetched directly by mise without a Homebrew installation.
 #[derive(Debug, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct SystemBrew {
+pub(crate) struct SystemBrew {
     #[arg(subcommand)]
     command: Commands,
 }
