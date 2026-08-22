@@ -1261,6 +1261,15 @@ impl TaskExecutor {
         let (program, _) = task_shell_parts(&shell, "file shell")?;
         trace!("using shell: {}", shell.join(" "));
         let mut full_args = shell.to_vec();
+        // What follows a `-c` is a command string, so the script path alone would *be* the
+        // command and the task's arguments would land on `$0` onward. The payload restores the
+        // shape the rest of this function assumes: a program, then its arguments. Only an exact
+        // `-c` is recognised — a combined `-ec` keeps the old behaviour rather than guessing.
+        if let Some(payload) = crate::path::command_mode_script_payload(Path::new(program))
+            && let Some(i) = full_args.iter().position(|arg| arg == "-c")
+        {
+            full_args.insert(i + 1, payload.to_string());
+        }
         full_args.push(display);
         if !args.is_empty() {
             full_args.extend(args.iter().cloned());
