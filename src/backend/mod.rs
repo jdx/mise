@@ -2116,32 +2116,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(deps)
     }
 
-    async fn list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<String>> {
-        Ok(self
-            .list_remote_versions_with_info(config)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
-    }
-
-    /// Like `list_remote_versions` but with explicit refresh control. Pass
-    /// `refresh = true` to bypass the cached remote-versions list and re-fetch
-    /// upstream. Used by install-time resolution for selectors whose answer
-    /// depends on the freshest upstream entry (e.g. `latest`).
-    async fn list_remote_versions_with_refresh(
-        &self,
-        config: &Arc<Config>,
-        refresh: bool,
-    ) -> eyre::Result<Vec<String>> {
-        Ok(self
-            .list_remote_versions_with_info_with_refresh(config, refresh)
-            .await?
-            .into_iter()
-            .map(|v| v.version)
-            .collect())
-    }
-
     /// List remote versions using the fully layered candidate-selection options
     /// from the request currently being resolved. By default, backend listing/source
     /// options still use the config-based path below because those affect fetching
@@ -2713,35 +2687,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let filter = !self.include_prereleases(&self.ba().opts());
         self.fuzzy_match_filter(versions, query, filter)
     }
-    async fn list_versions_matching(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-    ) -> eyre::Result<Vec<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.list_versions_matching_with_selection_options(config, query, &opts, None, false)
-            .await
-    }
-
-    /// List versions matching a query, optionally filtered by release date.
-    /// Use this when you have a `before_date` from ResolveOptions.
-    async fn list_versions_matching_with_opts(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-        before_date: Option<Timestamp>,
-        refresh: bool,
-    ) -> eyre::Result<Vec<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.list_versions_matching_with_selection_options(
-            config,
-            query,
-            &opts,
-            before_date,
-            refresh,
-        )
-        .await
-    }
     /// List versions matching a query using the active request's selection options.
     async fn list_versions_matching_with_selection_options(
         &self,
@@ -2844,22 +2789,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
         before_date: Option<Timestamp>,
     ) -> eyre::Result<Option<String>> {
         self.latest_version_with_refresh(config, query, before_date, false)
-            .await
-    }
-
-    /// Get the latest version without applying release-date cutoffs.
-    ///
-    /// This is intended for diagnostics that compare a date-filtered result
-    /// with the absolute latest result. Normal resolution should use
-    /// `latest_version` so global, per-tool, and default release-age cutoffs are
-    /// honored.
-    async fn latest_version_unfiltered(
-        &self,
-        config: &Arc<Config>,
-        query: Option<String>,
-    ) -> eyre::Result<Option<String>> {
-        let opts = config.get_tool_opts_with_overrides(self.ba()).await?;
-        self.latest_version_unfiltered_with_selection_options(config, query, &opts)
             .await
     }
 
@@ -4699,7 +4628,11 @@ mod latest_version_tests {
 
         assert_eq!(
             backend
-                .latest_version_unfiltered(&config, Some("latest".to_string()))
+                .latest_version_unfiltered_with_selection_options(
+                    &config,
+                    Some("latest".to_string()),
+                    &ToolVersionOptions::default(),
+                )
                 .await
                 .unwrap()
                 .as_deref(),
@@ -4786,7 +4719,14 @@ mod latest_version_tests {
         let mut partial = SettingsPartial::empty();
         partial.offline = Some(true);
         Settings::reset(Some(partial));
-        let versions = backend.list_remote_versions(&config).await.unwrap();
+        let versions = backend
+            .list_remote_versions_with_selection_options(
+                &config,
+                &ToolVersionOptions::default(),
+                false,
+            )
+            .await
+            .unwrap();
         Settings::reset(None);
 
         assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
@@ -4850,18 +4790,30 @@ mod latest_version_tests {
         let _ = fs::remove_dir_all(&alpha.ba().cache_path);
 
         assert_eq!(
-            alpha.list_remote_versions(&config).await.unwrap(),
+            alpha
+                .list_remote_versions_with_selection_options(&config, &alpha.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
         // The defect: this read back the list `alpha` had cached under the shared key.
         assert_eq!(
-            beta.list_remote_versions(&config).await.unwrap(),
+            beta.list_remote_versions_with_selection_options(&config, &beta.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["2.0.0".to_string()]
         );
         // Same option value, same entry — which is what shows the key follows the value rather
         // than the instance, and that the fix did not trade staleness for a refetch every time.
         assert_eq!(
-            alpha_again.list_remote_versions(&config).await.unwrap(),
+            alpha_again
+                .list_remote_versions_with_selection_options(
+                    &config,
+                    &alpha_again.ba().opts(),
+                    false,
+                )
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
         assert_eq!(alpha_again.list_calls(), 0);
@@ -4888,7 +4840,10 @@ mod latest_version_tests {
             .unwrap();
 
         assert_eq!(
-            backend.list_remote_versions(&config).await.unwrap(),
+            backend
+                .list_remote_versions_with_selection_options(&config, &backend.ba().opts(), false)
+                .await
+                .unwrap(),
             vec!["1.0.0".to_string()]
         );
 

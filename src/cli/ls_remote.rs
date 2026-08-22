@@ -106,14 +106,23 @@ impl LsRemote {
     ) -> Result<()> {
         let before_date =
             resolve_before_date_for_backend(config, plugin.as_ref(), before_date).await?;
+        let selection_opts = config.get_tool_opts_with_overrides(plugin.ba()).await?;
         let prefix = match &self.plugin {
             Some(tool_arg) => match &tool_arg.tvr {
                 Some(ToolRequest::Version { version: v, .. }) => Some(v.clone()),
                 Some(ToolRequest::Sub {
                     sub, orig_version, ..
                 }) => Some(
-                    resolve_sub_base(config, &plugin, sub, orig_version, before_date, false)
-                        .await?,
+                    resolve_sub_base(
+                        config,
+                        &plugin,
+                        &selection_opts,
+                        sub,
+                        orig_version,
+                        before_date,
+                        false,
+                    )
+                    .await?,
                 ),
                 _ => self.prefix.clone(),
             },

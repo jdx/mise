@@ -491,15 +491,6 @@ impl Backend for JavaPlugin {
         self.fuzzy_match_filter(versions, query, true)
     }
 
-    async fn list_versions_matching(
-        &self,
-        config: &Arc<Config>,
-        query: &str,
-    ) -> eyre::Result<Vec<String>> {
-        let versions = self.list_remote_versions(config).await?;
-        Ok(self.fuzzy_match_filter(versions, query, true))
-    }
-
     fn get_aliases(&self) -> Result<BTreeMap<String, String>> {
         let aliases = BTreeMap::from([("lts".into(), "25".into())]);
         Ok(aliases)
