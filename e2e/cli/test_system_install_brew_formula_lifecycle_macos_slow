@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" ]] || [[ "$(uname -m)" != "arm64" ]]; then
+  echo "SKIP: formula lifecycle oracle requires macOS arm64" >&2
+  exit 0
+fi
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+export MISE_SYSTEM_BREW_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
+brew_oracle_require_disposable macos-formula-lifecycle /opt/homebrew
+[[ $MISE_SYSTEM_BREW_PREFIX == "$BREW_ORACLE_EXPECTED_PREFIX" ]] ||
+  brew_oracle_fail "formula lifecycle oracle requires explicit canonical /opt/homebrew prefix"
+brew_oracle_configure_runtime "$MISE_SYSTEM_BREW_PREFIX"
+brew=$BREW_ORACLE_BREW
+
+formula_fixtures=(ca-certificates openssl@3 node kimi-code)
+# Hosted images reserve python@3.14. python@3.12 exposes the same guarded
+# `set_permissions u+w` venv lifecycle shape without adopting runner state.
+permission_fixture=python@3.12
+shared_fixture_paths=(
+  "$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates"
+  "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3"
+)
+cleanup_formula_fixtures() {
+  local formula path
+  for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
+    # These exact formulae are the recorded fixtures on a disposable runner.
+    # Ignore reverse dependencies so Homebrew cannot leave a fixture installed
+    # merely because another preloaded runner formula refers to it.
+    "$brew" uninstall --formula --force --ignore-dependencies "$formula" >/dev/null 2>&1 || true
+    # Homebrew can leave an empty rack directory behind after deleting every
+    # keg. Remove only a proven-empty rack; any remaining entry still fails the
+    # fresh-topology gate below.
+    rmdir "$MISE_SYSTEM_BREW_PREFIX/Cellar/$formula" 2>/dev/null || true
+  done
+  for path in "${shared_fixture_paths[@]}"; do
+    rm -rf "$path"
+  done
+}
+
+cleanup_formula_oracle() {
+  local status=$?
+  if [[ $status != 0 ]]; then
+    cleanup_formula_fixtures
+  fi
+  brew_oracle_remove_runtime_bridge
+  return "$status"
+}
+
+# The explicit capability authorizes displacement of these exact fixtures on
+# this ephemeral runner. The record above makes that displacement auditable.
+cleanup_formula_fixtures
+trap cleanup_formula_oracle EXIT
+
+for formula in "${formula_fixtures[@]}" "$permission_fixture"; do
+  [[ ! -e $MISE_SYSTEM_BREW_PREFIX/Cellar/$formula ]] ||
+    brew_oracle_fail "failed to prepare fresh formula fixture: $formula"
+  [[ ! -e $MISE_SYSTEM_BREW_PREFIX/opt/$formula && ! -L $MISE_SYSTEM_BREW_PREFIX/opt/$formula ]] ||
+    brew_oracle_fail "stale opt record remains for $formula"
+  [[ ! -e $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula && ! -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula ]] ||
+    brew_oracle_fail "stale linked-keg record remains for $formula"
+done
+
+cat <<'EOF' >mise.toml
+[bootstrap.packages]
+"brew:kimi-code" = "latest"
+EOF
+
+mise bootstrap --yes
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem'"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/openssl.cnf'"
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "readlink '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'" "ca-certificates/cert.pem"
+assert_succeed "test -x '$MISE_SYSTEM_BREW_PREFIX/opt/node/bin/node'"
+assert_succeed "test -x '$MISE_SYSTEM_BREW_PREFIX/bin/kimi'"
+assert_fail "test -n \"${SSL_CERT_FILE:-}${NODE_EXTRA_CA_CERTS:-}${NODE_OPTIONS:-}\""
+assert_succeed "'$MISE_SYSTEM_BREW_PREFIX/opt/openssl@3/bin/openssl' s_client -verify_return_error -connect auth.kimi.com:443 -servername auth.kimi.com </dev/null"
+if [[ $MISE_SYSTEM_BREW_PREFIX == "/opt/homebrew" ]]; then
+  # Bottled Node embeds Homebrew's canonical OpenSSL directory. Exercise its
+  # unmodified default CA mode only on a disposable canonical-prefix runner.
+  assert_succeed "'$MISE_SYSTEM_BREW_PREFIX/opt/node/bin/node' -e 'fetch(\"https://auth.kimi.com/api/oauth/device_authorization\").then(r => { if (r.status !== 405) process.exit(1) })'"
+fi
+
+# Legacy mise state had a valid keg and opt record but omitted shared config.
+rm "$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem"
+assert_contains "mise bootstrap packages status" "needs repair"
+mise bootstrap --yes
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "mise bootstrap packages status" "installed"
+
+homebrew_require_formula() {
+  local formula=$1 keg info
+  keg=$(readlink -f "$MISE_SYSTEM_BREW_PREFIX/opt/$formula") ||
+    brew_oracle_fail "Homebrew opt record does not resolve for $formula"
+  case "$keg" in
+    "$MISE_SYSTEM_BREW_PREFIX/Cellar/$formula"/*) ;;
+    *) brew_oracle_fail "Homebrew opt record escapes the $formula rack: $keg" ;;
+  esac
+  [[ -s $keg/INSTALL_RECEIPT.json ]] ||
+    brew_oracle_fail "native Homebrew receipt is missing for $formula"
+  jq -e '(.homebrew_version | type == "string") and .built_as_bottle == true and .poured_from_bottle == true and (.installed_on_request | type == "boolean") and (.source.tap | type == "string")' \
+    "$keg/INSTALL_RECEIPT.json" >/dev/null ||
+    brew_oracle_fail "native Homebrew receipt is incomplete for $formula"
+  "$brew" list --formula --versions "$formula" | grep -Eq "^${formula//+/\\+} [^[:space:]]+" ||
+    brew_oracle_fail "pinned Homebrew does not list mise-installed $formula"
+  info=$("$brew" info --json=v2 --formula "$formula") ||
+    brew_oracle_fail "pinned Homebrew cannot inspect mise-installed $formula"
+  jq -e --arg formula "$formula" \
+    '.formulae | length == 1 and .[0].name == $formula and (.[0].installed | length > 0)' \
+    <<<"$info" >/dev/null ||
+    brew_oracle_fail "pinned Homebrew reports no installed keg for $formula"
+}
+
+for formula in "${formula_fixtures[@]}"; do
+  homebrew_require_formula "$formula"
+done
+
+# Remove dependents before dependencies. This is the interoperability boundary:
+# the pinned official Homebrew runtime, not mise or test cleanup, must remove the
+# mise-created native formula state successfully.
+for formula in kimi-code node openssl@3 ca-certificates; do
+  "$brew" uninstall --formula --force --ignore-dependencies "$formula"
+done
+for formula in "${formula_fixtures[@]}"; do
+  brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/Cellar/$formula" "$formula rack after Homebrew uninstall"
+  brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/opt/$formula" "$formula opt record after Homebrew uninstall"
+  brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$formula" "$formula linked-keg record after Homebrew uninstall"
+done
+# Official Homebrew deliberately preserves formula-managed configuration across
+# uninstall. Prove mise-created shared state has the same lifecycle, remains
+# usable after the kegs are gone, then remove only these audited fixture paths
+# so the disposable runner is returned to fresh state.
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/ca-certificates/cert.pem'"
+assert_succeed "test -r '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/openssl.cnf'"
+assert_succeed "test -L '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'"
+assert_contains "readlink '$MISE_SYSTEM_BREW_PREFIX/etc/openssl@3/cert.pem'" "ca-certificates/cert.pem"
+for path in "${shared_fixture_paths[@]}"; do
+  rm -rf "$path"
+  brew_oracle_require_absent_path "$path" "shared formula fixture cleanup"
+done
+
+# Python's venv templates require Homebrew's typed `set_permissions u+w` step.
+# Damage one recorded path, prove offline health detection, then repair only
+# that idempotent permission effect.
+cat <<EOF >mise.toml
+[bootstrap.packages]
+"brew:$permission_fixture" = "latest"
+EOF
+mise bootstrap --yes
+python_keg=$(readlink -f "$MISE_SYSTEM_BREW_PREFIX/opt/$permission_fixture")
+python_scripts=$(find "$python_keg/Frameworks/Python.framework/Versions" -type d \
+  -path '*/lib/python*/venv/scripts' -print -quit)
+[[ -n $python_scripts ]] || brew_oracle_fail "Python venv scripts directory is missing"
+python_permission_target=$(find "$python_scripts" -type f -print -quit)
+[[ -n $python_permission_target ]] || brew_oracle_fail "Python permission target is missing"
+chmod u-w "$python_permission_target"
+python_status=$(mise bootstrap packages status 2>&1)
+grep -F "post-install permission is missing" <<<"$python_status" >/dev/null ||
+  brew_oracle_fail "Python status omitted its missing lifecycle permission"
+mise bootstrap --yes
+python_modes=$(mktemp)
+find "$python_scripts" -mindepth 1 -exec stat -f '%Lp\t%N' {} + | LC_ALL=C sort >"$python_modes"
+awk '$1 !~ /^[2367]/ { print > "/dev/stderr"; bad=1 } END { exit bad }' "$python_modes" ||
+  brew_oracle_fail "Python venv lifecycle left a path without owner-write permission"
+assert_contains "mise bootstrap packages status" "installed"
+
+homebrew_require_formula "$permission_fixture"
+"$brew" uninstall --formula --force --ignore-dependencies "$permission_fixture"
+brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/Cellar/$permission_fixture" "$permission_fixture rack after Homebrew uninstall"
+brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/opt/$permission_fixture" "$permission_fixture opt record after Homebrew uninstall"
+brew_oracle_require_absent_path "$MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/$permission_fixture" "$permission_fixture linked-keg record after Homebrew uninstall"
+
+brew_oracle_remove_runtime_bridge
+trap - EXIT

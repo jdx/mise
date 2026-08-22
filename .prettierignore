@@ -26,6 +26,7 @@ AGENTS.md
 CRUSH.md
 e2e
 src/assets/bash_zsh_support/
+src/system/packages/brew/testdata/
 tasks.md
 test/data
 tmp

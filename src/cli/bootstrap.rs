@@ -2813,15 +2813,18 @@ impl BootstrapStatus {
                         (version.clone(), "installed", None::<&str>, false)
                     }
                     PackageState::Missing => ("".to_string(), "missing", None, true),
-                    PackageState::NeedsRepair { installed } => {
-                        (installed.clone(), "needs repair", None, true)
-                    }
+                    PackageState::NeedsRepair { installed, reason } => (
+                        installed.clone(),
+                        "needs repair",
+                        Some(reason.as_str()),
+                        true,
+                    ),
                     PackageState::VersionMismatch { installed } => {
                         (installed.clone(), "version mismatch", None, true)
                     }
                     #[cfg(unix)]
-                    PackageState::Unavailable { reason } => {
-                        ("".to_string(), "skipped", Some(reason.as_str()), false)
+                    PackageState::Unsupported { reason } => {
+                        ("".to_string(), "unsupported", Some(reason.as_str()), true)
                     }
                 };
                 report.row(

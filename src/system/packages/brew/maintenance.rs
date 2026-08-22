@@ -1,13 +1,14 @@
 //! Import/prune helpers for declarative Homebrew bootstrap packages.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{WrapErr, bail};
 use serde::Deserialize;
 use walkdir::WalkDir;
 
-use super::{api, pour, prefix, resolve};
+use super::{api, lifecycle, pour, prefix, resolve};
 use crate::file;
 use crate::result::Result;
 use crate::system::packages::PackageRequest;
@@ -62,6 +63,15 @@ pub(crate) struct PrunePlan {
     pub remove: Vec<PruneCandidate>,
 }
 
+#[derive(Debug)]
+struct PreparedLinkRemoval {
+    path: PathBuf,
+    ancestry: lifecycle::DirectoryAncestry,
+    device: u64,
+    inode: u64,
+    target: PathBuf,
+}
+
 impl PrunePlan {
     pub(crate) fn is_empty(&self) -> bool {
         self.remove.is_empty()
@@ -74,6 +84,13 @@ struct InstallReceipt {
     installed_on_request: Option<bool>,
     #[serde(default)]
     source: Option<ReceiptSource>,
+    #[serde(default)]
+    runtime_dependencies: Vec<InstalledReceiptDependency>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InstalledReceiptDependency {
+    full_name: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -165,11 +182,64 @@ async fn configured_package_closure(configured: &[PackageRequest]) -> Result<Has
     if configured.is_empty() {
         return Ok(HashSet::new());
     }
-    Ok(resolve::resolve_closure_with_taps(configured)
-        .await?
-        .into_iter()
-        .map(|rf| formula_package_name(&rf.formula))
-        .collect())
+    match resolve::resolve_closure_with_taps(configured).await {
+        Ok(closure) => Ok(closure
+            .into_iter()
+            .map(|rf| formula_package_name(&rf.formula))
+            .collect()),
+        Err(resolve_error) => {
+            configured_package_closure_from_installed(configured)?.ok_or(resolve_error)
+        }
+    }
+}
+
+/// A configured formula can disappear from the live API while remaining a
+/// valid installed root. Prune must preserve that root and its authoritative
+/// installed dependency closure instead of requiring mutable remote metadata.
+/// Fall back only when every configured root has a native linked receipt.
+fn configured_package_closure_from_installed(
+    configured: &[PackageRequest],
+) -> Result<Option<HashSet<String>>> {
+    let mut dependencies = BTreeMap::new();
+    for formula in linked_formulae(true)? {
+        let keg = file::desymlink_path(&pour::keg_path(&formula.name, &formula.version));
+        let Some(receipt) = read_receipt(&keg)? else {
+            continue;
+        };
+        dependencies.insert(
+            formula.package_name(),
+            receipt
+                .runtime_dependencies
+                .into_iter()
+                .map(|dependency| dependency.full_name)
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    let mut pending = configured
+        .iter()
+        .map(|request| {
+            request
+                .name
+                .strip_prefix("homebrew/core/")
+                .unwrap_or(&request.name)
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    if pending.iter().any(|name| !dependencies.contains_key(name)) {
+        return Ok(None);
+    }
+
+    let mut keep = HashSet::new();
+    while let Some(name) = pending.pop() {
+        if !keep.insert(name.clone()) {
+            continue;
+        }
+        if let Some(runtime_dependencies) = dependencies.get(&name) {
+            pending.extend(runtime_dependencies.iter().cloned());
+        }
+    }
+    Ok(Some(keep))
 }
 
 fn prune_plan_from_linked_formulae(keep: &HashSet<String>) -> Result<PrunePlan> {
@@ -224,78 +294,174 @@ fn linked_keg(opt_link: &Path) -> Option<(String, PathBuf)> {
 }
 
 fn unlink_and_remove_keg(candidate: &PruneCandidate) -> Result<()> {
+    let lifecycle_removal = lifecycle::prepare_remove_owned_state(&candidate.keg)?;
+    let finalization_removal = pour::prepare_remove_finalization_state(&candidate.keg)?;
     let links = links_into_keg(&candidate.name, &candidate.keg)?;
+    for link in &links {
+        validate_prepared_link_removal(link)?;
+    }
     let prefix_path = prefix::prefix();
     for link in links {
-        std::fs::remove_file(&link)
-            .wrap_err_with(|| format!("failed rm: {}", file::display_path(&link)))?;
+        validate_prepared_link_removal(&link)?;
+        fs::remove_file(&link.path)
+            .wrap_err_with(|| format!("failed rm: {}", file::display_path(&link.path)))?;
         let linked_dir = prefix::linked_keg_record(&candidate.name)
             .parent()
             .unwrap()
             .to_path_buf();
-        let stop = if link.parent() == Some(linked_dir.as_path()) {
+        let stop = if link.path.parent() == Some(linked_dir.as_path()) {
             &linked_dir
         } else {
             &prefix_path
         };
-        remove_empty_parents(&link, stop)?;
+        remove_empty_parents(&link.path, stop)?;
     }
+    lifecycle::remove_owned_state_prepared(lifecycle_removal)?;
+    pour::remove_finalization_state_prepared(finalization_removal)?;
     file::remove_all(&candidate.keg)?;
     let rack = prefix::cellar().join(&candidate.name);
-    file::remove_dir(&rack)?;
+    if rack
+        .read_dir()
+        .is_ok_and(|mut entries| entries.next().is_none())
+    {
+        file::remove_dir(&rack)?;
+    }
     Ok(())
 }
 
-fn links_into_keg(name: &str, keg: &Path) -> Result<Vec<PathBuf>> {
+fn links_into_keg(name: &str, keg: &Path) -> Result<Vec<PreparedLinkRemoval>> {
     let prefix_path = prefix::prefix();
-    let mut links = BTreeSet::new();
+    let mut paths = BTreeSet::new();
     let opt = prefix_path.join("opt").join(name);
-    if symlink_points_into(&opt, keg) {
-        links.insert(opt);
+    if symlink_points_into(&opt, keg)? {
+        paths.insert(opt);
     }
     let linked = prefix::linked_keg_record(name);
-    if symlink_points_into(&linked, keg) {
-        links.insert(linked);
+    if symlink_points_into(&linked, keg)? {
+        paths.insert(linked);
     }
     for dir in pour::LINK_DIRS {
         let root = prefix_path.join(dir);
-        if !root.exists() {
-            continue;
+        match symlink_metadata_if_exists(&root)? {
+            None => continue,
+            Some(metadata) if metadata.file_type().is_dir() => {}
+            Some(_) => bail!("public link root is not a directory: {}", root.display()),
         }
         for entry in WalkDir::new(&root).follow_links(false) {
             let entry = entry?;
-            if entry.file_type().is_symlink() && symlink_points_into(entry.path(), keg) {
-                links.insert(entry.path().to_path_buf());
+            if entry.file_type().is_symlink() && symlink_points_into(entry.path(), keg)? {
+                paths.insert(entry.path().to_path_buf());
             }
         }
     }
-    Ok(links.into_iter().collect())
+    paths
+        .into_iter()
+        .map(|path| prepare_link_removal(path, keg))
+        .collect::<Result<Vec<_>>>()
 }
 
-fn symlink_points_into(link: &Path, keg: &Path) -> bool {
-    if !link
-        .symlink_metadata()
-        .is_ok_and(|m| m.file_type().is_symlink())
-    {
-        return false;
+fn symlink_metadata_if_exists(path: &Path) -> Result<Option<fs::Metadata>> {
+    match path.symlink_metadata() {
+        Ok(metadata) => Ok(Some(metadata)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
     }
-    let Ok(target) = std::fs::read_link(link) else {
-        return false;
+}
+
+fn symlink_points_into(link: &Path, keg: &Path) -> Result<bool> {
+    let Some(metadata) = symlink_metadata_if_exists(link)? else {
+        return Ok(false);
     };
+    if !metadata.file_type().is_symlink() {
+        return Ok(false);
+    }
+    let target = fs::read_link(link)?;
+    raw_symlink_points_into(link, &target, keg)
+}
+
+fn raw_symlink_points_into(link: &Path, raw_target: &Path, keg: &Path) -> Result<bool> {
     // resolve one hop only, like link_keg's ownership checks — a Cellar
     // dylib alias is itself a relative symlink, and chasing the chain
     // resolved it against the CWD, leaving such links behind as dangling
-    let target =
-        pour::lexical_normalize(&link.parent().unwrap_or_else(|| Path::new("/")).join(target));
+    let target = pour::lexical_normalize(
+        &link
+            .parent()
+            .unwrap_or_else(|| Path::new("/"))
+            .join(raw_target),
+    );
     // canonicalize the parent only, for path spelling (/var -> /private/var);
     // the final component must stay unresolved
     let resolved = match (target.parent(), target.file_name()) {
-        (Some(dir), Some(name)) => std::fs::canonicalize(dir)
-            .map(|d| d.join(name))
-            .unwrap_or_else(|_| target.clone()),
+        (Some(dir), Some(name)) => match fs::canonicalize(dir) {
+            Ok(directory) => directory.join(name),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => target.clone(),
+            Err(error) => return Err(error.into()),
+        },
         _ => target.clone(),
     };
-    resolved.starts_with(file::desymlink_path(keg))
+    Ok(resolved.starts_with(file::desymlink_path(keg)))
+}
+
+fn prepare_link_removal(path: PathBuf, keg: &Path) -> Result<PreparedLinkRemoval> {
+    let metadata = path.symlink_metadata()?;
+    if !metadata.file_type().is_symlink() {
+        bail!(
+            "public link changed during prune preflight: {}",
+            path.display()
+        )
+    }
+    let (device, inode) = node_device_inode(&metadata)?;
+    let target = fs::read_link(&path)?;
+    let ancestry = lifecycle::capture_directory_ancestry(
+        path.parent()
+            .ok_or_else(|| eyre::eyre!("public link has no parent: {}", path.display()))?,
+    )?;
+    let prepared = PreparedLinkRemoval {
+        path,
+        ancestry,
+        device,
+        inode,
+        target,
+    };
+    validate_prepared_link_removal(&prepared)?;
+    if !raw_symlink_points_into(&prepared.path, &prepared.target, keg)? {
+        bail!(
+            "public link no longer points into the pruned keg: {}",
+            prepared.path.display()
+        )
+    }
+    Ok(prepared)
+}
+
+fn validate_prepared_link_removal(prepared: &PreparedLinkRemoval) -> Result<()> {
+    lifecycle::validate_directory_ancestry(&prepared.ancestry)?;
+    let metadata = prepared.path.symlink_metadata().wrap_err_with(|| {
+        format!(
+            "public link disappeared after prune preflight: {}",
+            prepared.path.display()
+        )
+    })?;
+    if !metadata.file_type().is_symlink()
+        || node_device_inode(&metadata)? != (prepared.device, prepared.inode)
+        || fs::read_link(&prepared.path)? != prepared.target
+    {
+        bail!(
+            "public link changed after prune preflight: {}",
+            prepared.path.display()
+        )
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn node_device_inode(metadata: &fs::Metadata) -> Result<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn node_device_inode(_metadata: &fs::Metadata) -> Result<(u64, u64)> {
+    bail!("Homebrew prune link identity requires Unix filesystem semantics")
 }
 
 fn remove_empty_parents(path: &Path, stop: &Path) -> Result<()> {
@@ -315,11 +481,11 @@ fn remove_empty_parents(path: &Path, stop: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use tokio::sync::Mutex;
 
     use super::*;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: Mutex<()> = Mutex::const_new(());
 
     struct BrewPrefixGuard {
         previous: Option<String>,
@@ -328,7 +494,7 @@ mod tests {
     impl BrewPrefixGuard {
         fn set(prefix: &Path) -> Self {
             let previous = crate::env::var("MISE_SYSTEM_BREW_PREFIX").ok();
-            crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", prefix);
+            crate::env::set_var("MISE_SYSTEM_BREW_PREFIX", file::desymlink_path(prefix));
             Self { previous }
         }
     }
@@ -374,9 +540,43 @@ mod tests {
         Ok(())
     }
 
+    fn formula(name: &str, version: &str) -> api::Formula {
+        serde_json::from_value(serde_json::json!({
+            "name": name,
+            "versions": {"stable": version},
+            "bottle": {},
+            "post_install_steps": []
+        }))
+        .unwrap()
+    }
+
+    fn write_formula_snapshot(keg: &Path, name: &str, contents: &str) -> Result<()> {
+        let snapshot = keg.join(".brew").join(format!("{name}.rb"));
+        file::create_dir_all(snapshot.parent().unwrap())?;
+        file::write(snapshot, contents)
+    }
+
+    fn formula_finalization_state_path(keg: &Path) -> PathBuf {
+        crate::dirs::STATE
+            .join("brew-formula-finalization")
+            .join(format!(
+                "{}.json",
+                crate::hash::hash_to_str(&(prefix::prefix(), keg))
+            ))
+    }
+
+    fn assert_prune_fixture_intact(prefix: &Path, name: &str, keg: &Path, lifecycle_state: &Path) {
+        assert!(prefix.join("bin").join(name).is_symlink());
+        assert!(prefix.join("opt").join(name).is_symlink());
+        assert!(prefix.join("var/homebrew/linked").join(name).is_symlink());
+        assert!(keg.is_dir());
+        assert!(lifecycle_state.is_file());
+        assert!(keg.join(".brew/.mise-lifecycle-incarnation").is_file());
+    }
+
     #[test]
     fn linked_formulae_default_keeps_only_requested_formulae() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         write_keg(
@@ -407,7 +607,7 @@ mod tests {
 
     #[test]
     fn linked_formulae_infers_tapped_config_entries() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         write_keg(
@@ -441,7 +641,7 @@ mod tests {
 
     #[test]
     fn prune_plan_removes_unconfigured_linked_formulae() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         write_keg(
@@ -471,9 +671,31 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn prepared_public_link_removal_rejects_foreign_file_swap() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let keg = write_keg(
+            tmp.path(),
+            "jq",
+            "1.7",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let link = prefix::prefix().join("bin/jq");
+        let prepared = prepare_link_removal(link.clone(), &keg)?;
+        file::remove_file(&link)?;
+        file::write(&link, "foreign")?;
+
+        assert!(validate_prepared_link_removal(&prepared).is_err());
+        assert_eq!(file::read_to_string(link)?, "foreign");
+        Ok(())
+    }
+
     #[test]
     fn prune_plan_uses_tap_qualified_keep_keys() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let keep = HashSet::from(["acme/tools/widget".to_string()]);
 
         {
@@ -519,7 +741,7 @@ mod tests {
 
     #[test]
     fn prune_plan_removes_formulae_only_needed_by_unconfigured_roots() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let readline = write_keg(
@@ -567,8 +789,48 @@ mod tests {
     }
 
     #[test]
+    fn installed_receipts_preserve_removed_configured_formula_closure() -> Result<()> {
+        let _lock = ENV_LOCK.blocking_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        write_keg(
+            tmp.path(),
+            "dependency",
+            "1.0.0",
+            r#"{"installed_on_request":false,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        write_keg(
+            tmp.path(),
+            "removed-root",
+            "2.0.0",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"},"runtime_dependencies":[{"full_name":"dependency"}]}"#,
+        )?;
+        let configured = vec![PackageRequest {
+            name: "removed-root".to_string(),
+            version: None,
+            tap_url: None,
+        }];
+
+        assert_eq!(
+            configured_package_closure_from_installed(&configured)?,
+            Some(HashSet::from([
+                "dependency".to_string(),
+                "removed-root".to_string(),
+            ]))
+        );
+
+        let missing = vec![PackageRequest {
+            name: "not-installed".to_string(),
+            version: None,
+            tap_url: None,
+        }];
+        assert_eq!(configured_package_closure_from_installed(&missing)?, None);
+        Ok(())
+    }
+
+    #[test]
     fn unlink_and_remove_keg_removes_links_and_keg() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let keg = write_keg(
@@ -601,11 +863,226 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn unlink_one_version_preserves_nonempty_rack() -> Result<()> {
+        assert!(
+            include_str!("testdata/brew-uninstall-post-state.txt")
+                .contains("present-if-other-version Cellar/jq/1.6")
+        );
+        let _lock = ENV_LOCK.blocking_lock();
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let old = write_keg(
+            tmp.path(),
+            "jq",
+            "1.6",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let current = write_keg(
+            tmp.path(),
+            "jq",
+            "1.7",
+            r#"{"installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        unlink_and_remove_keg(&PruneCandidate {
+            name: "jq".to_string(),
+            version: "1.7".to_string(),
+            keg: current.clone(),
+        })?;
+        assert!(old.exists());
+        assert!(!current.exists());
+        assert!(tmp.path().join("Cellar/jq").is_dir());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn prune_accepts_native_replacement_with_stale_mise_lifecycle_state() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let name = "openssl@3";
+        let version = "1.0";
+        let keg = write_keg(
+            tmp.path(),
+            name,
+            version,
+            r#"{"homebrew_version":"6.0.17 (mise)","installed_on_request":true,"built_as_bottle":true,"poured_from_bottle":true,"time":123,"source_modified_time":100,"arch":"arm64","source":{"spec":"stable","versions":{"stable":"1.0","head":null,"version_scheme":0},"path":"/api/formula.jws.json","tap":"homebrew/core","tap_git_head":"core-head"}}"#,
+        )?;
+        write_formula_snapshot(&keg, name, "class OpensslAT3; end")?;
+        write_linked_record(tmp.path(), name, version)?;
+        let prepared = lifecycle::prepare(&formula(name, version), &keg)?;
+        lifecycle::install(&prepared, None).await?;
+        let lifecycle_state = lifecycle::test_state_path(&keg);
+        assert!(lifecycle_state.is_file());
+
+        // Real Homebrew replaces the exact rack/version and its receipt while
+        // mise's private state survives outside the keg.
+        file::remove_all(&keg)?;
+        file::create_dir_all(keg.join("bin"))?;
+        file::write(keg.join("bin").join(name), "native replacement")?;
+        write_formula_snapshot(&keg, name, "class OpensslAT3; end # native")?;
+        file::write(
+            keg.join("INSTALL_RECEIPT.json"),
+            r#"{"homebrew_version":"6.0.17","installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        let candidate = PruneCandidate {
+            name: name.to_string(),
+            version: version.to_string(),
+            keg: keg.clone(),
+        };
+
+        unlink_and_remove_keg(&candidate)?;
+
+        assert!(
+            tmp.path()
+                .join("bin")
+                .join(name)
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(
+            tmp.path()
+                .join("opt")
+                .join(name)
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(
+            tmp.path()
+                .join("var/homebrew/linked")
+                .join(name)
+                .symlink_metadata()
+                .is_err()
+        );
+        assert!(!keg.exists());
+        assert!(lifecycle_state.symlink_metadata().is_err());
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn prune_rejects_stale_mise_identity_before_unlinking() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let name = "openssl@3";
+        let version = "1.0";
+        let keg = write_keg(
+            tmp.path(),
+            name,
+            version,
+            r#"{"homebrew_version":"6.0.17 (mise)","installed_on_request":true,"built_as_bottle":true,"poured_from_bottle":true,"time":123,"source_modified_time":100,"arch":"arm64","source":{"spec":"stable","versions":{"stable":"1.0","head":null,"version_scheme":0},"path":"/api/formula.jws.json","tap":"homebrew/core","tap_git_head":"core-head"}}"#,
+        )?;
+        write_formula_snapshot(&keg, name, "class OpensslAT3; end")?;
+        write_linked_record(tmp.path(), name, version)?;
+        let prepared = lifecycle::prepare(&formula(name, version), &keg)?;
+        lifecycle::install(&prepared, None).await?;
+        let lifecycle_state = lifecycle::test_state_path(&keg);
+        file::remove_file(keg.join(".brew/.mise-lifecycle-incarnation"))?;
+        let candidate = PruneCandidate {
+            name: name.to_string(),
+            version: version.to_string(),
+            keg: keg.clone(),
+        };
+
+        let error = unlink_and_remove_keg(&candidate).unwrap_err();
+
+        assert!(error.to_string().contains("lifecycle"));
+        assert!(tmp.path().join("bin").join(name).is_symlink());
+        assert!(tmp.path().join("opt").join(name).is_symlink());
+        assert!(
+            tmp.path()
+                .join("var/homebrew/linked")
+                .join(name)
+                .is_symlink()
+        );
+        assert!(keg.is_dir());
+        assert!(lifecycle_state.is_file());
+        file::remove_file(lifecycle_state)?;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn prune_rejects_malformed_finalization_state_before_unlinking() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let name = "openssl@3";
+        let version = "1.0";
+        let keg = write_keg(
+            tmp.path(),
+            name,
+            version,
+            r#"{"homebrew_version":"6.0.17 (mise)","installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        write_formula_snapshot(&keg, name, "class OpensslAT3; end")?;
+        write_linked_record(tmp.path(), name, version)?;
+        let prepared = lifecycle::prepare(&formula(name, version), &keg)?;
+        lifecycle::install(&prepared, None).await?;
+        let lifecycle_state = lifecycle::test_state_path(&keg);
+        let finalization_state = formula_finalization_state_path(&keg);
+        file::create_dir_all(finalization_state.parent().unwrap())?;
+        file::write(&finalization_state, b"{")?;
+        let candidate = PruneCandidate {
+            name: name.to_string(),
+            version: version.to_string(),
+            keg: keg.clone(),
+        };
+
+        let error = unlink_and_remove_keg(&candidate).unwrap_err();
+
+        assert!(error.to_string().contains("finalization"));
+        assert_prune_fixture_intact(tmp.path(), name, &keg, &lifecycle_state);
+        assert_eq!(std::fs::read(&finalization_state)?, b"{");
+        file::remove_file(finalization_state)?;
+        file::remove_file(lifecycle_state)?;
+        Ok(())
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn prune_rejects_symlink_finalization_state_before_unlinking() -> Result<()> {
+        let _lock = ENV_LOCK.lock().await;
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let name = "openssl@3";
+        let version = "1.0";
+        let keg = write_keg(
+            tmp.path(),
+            name,
+            version,
+            r#"{"homebrew_version":"6.0.17 (mise)","installed_on_request":true,"source":{"tap":"homebrew/core"}}"#,
+        )?;
+        write_formula_snapshot(&keg, name, "class OpensslAT3; end")?;
+        write_linked_record(tmp.path(), name, version)?;
+        let prepared = lifecycle::prepare(&formula(name, version), &keg)?;
+        lifecycle::install(&prepared, None).await?;
+        let lifecycle_state = lifecycle::test_state_path(&keg);
+        let finalization_state = formula_finalization_state_path(&keg);
+        file::create_dir_all(finalization_state.parent().unwrap())?;
+        let foreign = tmp.path().join("foreign-finalization-state");
+        file::write(&foreign, "foreign")?;
+        file::make_symlink(&foreign, &finalization_state)?;
+        let candidate = PruneCandidate {
+            name: name.to_string(),
+            version: version.to_string(),
+            keg: keg.clone(),
+        };
+
+        let error = unlink_and_remove_keg(&candidate).unwrap_err();
+
+        assert!(error.to_string().contains("finalization"));
+        assert_prune_fixture_intact(tmp.path(), name, &keg, &lifecycle_state);
+        assert!(finalization_state.is_symlink());
+        assert_eq!(file::read_to_string(&foreign)?, "foreign");
+        file::remove_file(finalization_state)?;
+        file::remove_file(lifecycle_state)?;
+        Ok(())
+    }
+
     /// a prefix link to a Cellar dylib alias resolves through a relative
     /// symlink chain and must still be removed, not left dangling
     #[test]
     fn unlink_and_remove_keg_removes_dylib_alias_links() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let keg = write_keg(
@@ -644,7 +1121,7 @@ mod tests {
 
     #[test]
     fn apply_prune_plan_dry_run_removes_nothing() -> Result<()> {
-        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let _lock = ENV_LOCK.blocking_lock();
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let keg = write_keg(

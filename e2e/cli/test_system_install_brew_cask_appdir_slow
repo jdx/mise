@@ -1,24 +1,35 @@
 #!/usr/bin/env bash
 
-# Verifies MISE_BREW_CASK_OPT_APPDIR relocates a cask's app artifact out of the
-# default /Applications and into an override directory. Needs a macOS CI runner
-# with network, and is kept out of local runs so it never touches a developer's
-# installed applications.
-if [[ "$(uname)" != "Darwin" ]] || [[ ${CI:-} != "true" ]]; then
+# Verifies MISE_BREW_CASK_OPT_APPDIR relocates a cask's app artifact and records
+# enough native state for pinned Homebrew to remove it. This is destructive only
+# inside the disposable macOS oracle job.
+if [[ $(uname) != Darwin ]] || [[ $(uname -m) != arm64 ]]; then
+  echo "SKIP: brew cask appdir oracle requires macOS arm64" >&2
   exit 0
 fi
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+brew_oracle_require_disposable macos-cask-appdir /opt/homebrew
+brew_oracle_configure_runtime /opt/homebrew
+brew=$BREW_ORACLE_BREW
 
 # The hiddenbar cask hardcodes an absolute `/Applications/Hidden Bar.app`
 # target, which is the exact shape the override has to relocate.
 default_app="/Applications/Hidden Bar.app"
 caskroom="/opt/homebrew/Caskroom/hiddenbar"
-appdir="$PWD/Applications"
+home_real=$(realpath "$HOME")
+workdir_real=$(realpath "$PWD")
+case "$workdir_real/" in
+  "$home_real"/*) ;;
+  *) brew_oracle_fail "isolated workdir escapes the test home" ;;
+esac
+appdir="$workdir_real/Applications"
 override_app="$appdir/Hidden Bar.app"
 
-# Never run if it would disturb a real installation of this cask.
-if [[ -e $default_app ]] || [[ -e $caskroom ]]; then
-  exit 0
-fi
+brew_oracle_require_absent_path "$default_app" "foreign or stale fixture app"
+brew_oracle_require_absent_path "$caskroom" "foreign or stale fixture Caskroom"
+brew_oracle_require_absent_path "$appdir" "foreign or stale override appdir"
 
 cleanup() {
   shopt -s nullglob
@@ -26,8 +37,10 @@ cleanup() {
     "$appdir"/Hidden\ Bar.mise-old-*
     "$appdir"/Hidden\ Bar.mise-tmp-*
   )
+  "$brew" uninstall --cask hiddenbar >/dev/null 2>&1 || true
   chmod -RN "$override_app" "${app_work_paths[@]}" 2>/dev/null || true
   rm -rf "$override_app" "$caskroom" "$appdir" "${app_work_paths[@]}"
+  brew_oracle_remove_runtime_bridge
 }
 trap cleanup EXIT
 
@@ -47,3 +60,20 @@ assert_directory_exists "$override_app"
 assert_directory_exists "$caskroom"
 assert_fail "test -e '$default_app'"
 assert_contains "mise bootstrap packages status" "installed"
+assert_contains "$brew list --cask" "hiddenbar"
+
+# Native config must retain the override so Homebrew removes the same public
+# app rather than consulting the platform default.
+python3 - "$caskroom/.metadata/config.json" "$appdir" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    config = json.load(handle)
+assert config["default"]["appdir"] == sys.argv[2], config
+PY
+
+"$brew" uninstall --cask hiddenbar
+assert_fail "test -e '$override_app'"
+assert_fail "test -e '$caskroom'"
+assert_fail "test -e '$default_app'"

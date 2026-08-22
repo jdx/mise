@@ -121,6 +121,11 @@ pub(crate) struct CmdLineRunner<'a> {
     observe_stderr: Option<OutputObserver<'a>>,
     timeout: Option<Duration>,
     sandbox: Option<crate::sandbox::SandboxConfig>,
+    cleanup_process_group: bool,
+    #[cfg(unix)]
+    process_group_prepared: bool,
+    #[cfg(unix)]
+    current_dir_fd_prepared: bool,
 }
 
 const GUARD_RUNNING: u8 = 0;
@@ -361,9 +366,15 @@ fn parent_has_terminal() -> bool {
 /// the child detached from that terminal while preserving the invariant that
 /// its PID is also its process group ID for killpg-based cleanup.
 #[cfg(unix)]
-fn prepare_execute_child(cmd: &mut std::process::Command) {
+fn prepare_execute_child(
+    cmd: &mut std::process::Command,
+    require_process_group: bool,
+) -> Result<()> {
     if !should_use_pgroup() {
-        return;
+        if require_process_group {
+            bail!("cannot guarantee child process-group cleanup in this process context");
+        }
+        return Ok(());
     }
 
     cmd.env(TASK_PGID_MANAGED_ENV, "1");
@@ -375,18 +386,33 @@ fn prepare_execute_child(cmd: &mut std::process::Command) {
             // async-signal-safe.
             let stdin = std::os::fd::BorrowedFd::borrow_raw(0);
             let child_stdin_is_terminal = std::io::IsTerminal::is_terminal(&stdin);
-            match child_process_isolation(
-                child_stdin_is_terminal,
-                parent_has_terminal,
-                cfg!(target_os = "macos"),
-            ) {
+            let isolation = if require_process_group && !child_stdin_is_terminal {
+                // Strict cleanup needs a process group in the parent's session.
+                // On Darwin, a descendant left in a child-created session can
+                // become unsignalable by killpg once its leader exits.
+                ChildProcessIsolation::ProcessGroup
+            } else {
+                child_process_isolation(
+                    child_stdin_is_terminal,
+                    parent_has_terminal,
+                    cfg!(target_os = "macos"),
+                )
+            };
+            match isolation {
+                ChildProcessIsolation::Inherit if require_process_group => Err(
+                    std::io::Error::other("cannot isolate a child with terminal stdin"),
+                ),
                 ChildProcessIsolation::Inherit => Ok(()),
                 ChildProcessIsolation::ProcessGroup => {
-                    let _ = nix::unistd::setpgid(
+                    let result = nix::unistd::setpgid(
                         nix::unistd::Pid::from_raw(0),
                         nix::unistd::Pid::from_raw(0),
                     );
-                    Ok(())
+                    if require_process_group {
+                        result.map_err(Into::into)
+                    } else {
+                        Ok(())
+                    }
                 }
                 ChildProcessIsolation::Session => {
                     nix::unistd::setsid().map(|_| ()).map_err(Into::into)
@@ -394,6 +420,68 @@ fn prepare_execute_child(cmd: &mut std::process::Command) {
             }
         });
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+const PROCESS_GROUP_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[cfg(unix)]
+fn kill_process_group_after_exit(pid: u32) -> Result<bool> {
+    let pgid = nix::unistd::Pid::from_raw(pid as i32);
+    match nix::sys::signal::killpg(pgid, nix::sys::signal::Signal::SIGKILL) {
+        Ok(()) => Ok(true),
+        Err(nix::errno::Errno::ESRCH) => Ok(false),
+        Err(error) => Err(eyre::eyre!(
+            "failed to terminate remaining descendants in process group {pid}: {error}"
+        )),
+    }
+}
+
+#[cfg(unix)]
+fn process_group_exists(pid: u32) -> Result<bool> {
+    let pgid = nix::unistd::Pid::from_raw(pid as i32);
+    match nix::sys::signal::killpg(pgid, None) {
+        Ok(()) => Ok(true),
+        Err(nix::errno::Errno::ESRCH) => Ok(false),
+        // Darwin can report EPERM briefly for a killed group whose remaining
+        // members are being reaped. It still proves the group exists; keep
+        // polling and fail on the bounded timeout unless it disappears.
+        Err(nix::errno::Errno::EPERM) => Ok(true),
+        Err(error) => Err(eyre::eyre!(
+            "failed to verify cleanup of process group {pid}: {error}"
+        )),
+    }
+}
+
+#[cfg(unix)]
+fn cleanup_process_group_blocking(pid: u32) -> Result<()> {
+    if !kill_process_group_after_exit(pid)? {
+        return Ok(());
+    }
+    let deadline = Instant::now() + PROCESS_GROUP_CLEANUP_TIMEOUT;
+    while process_group_exists(pid)? {
+        if Instant::now() >= deadline {
+            bail!("process group {pid} survived cleanup for {PROCESS_GROUP_CLEANUP_TIMEOUT:?}");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+async fn cleanup_process_group_async(pid: u32) -> Result<()> {
+    if !kill_process_group_after_exit(pid)? {
+        return Ok(());
+    }
+    let deadline = Instant::now() + PROCESS_GROUP_CLEANUP_TIMEOUT;
+    while process_group_exists(pid)? {
+        if Instant::now() >= deadline {
+            bail!("process group {pid} survived cleanup for {PROCESS_GROUP_CLEANUP_TIMEOUT:?}");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
 }
 
 /// True when this mise should isolate spawned children into process groups and
@@ -550,6 +638,11 @@ impl<'a> CmdLineRunner<'a> {
             observe_stderr: None,
             timeout: None,
             sandbox: None,
+            cleanup_process_group: false,
+            #[cfg(unix)]
+            process_group_prepared: false,
+            #[cfg(unix)]
+            current_dir_fd_prepared: false,
         }
     }
 
@@ -557,6 +650,15 @@ impl<'a> CmdLineRunner<'a> {
         if sandbox.is_active() {
             self.sandbox = Some(sandbox);
         }
+        self
+    }
+
+    /// Require a private Unix process group and remove every process that
+    /// remains in it after the command leader exits. This is opt-in because
+    /// ordinary interactive commands may intentionally leave descendants.
+    #[cfg(unix)]
+    pub(crate) fn with_process_group_cleanup(mut self) -> Self {
+        self.cleanup_process_group = true;
         self
     }
 
@@ -646,6 +748,30 @@ impl<'a> CmdLineRunner<'a> {
 
     pub(crate) fn current_dir<P: AsRef<Path>>(mut self, dir: P) -> Self {
         self.cmd.current_dir(dir);
+        self
+    }
+
+    /// Bind the child working directory to an already-audited directory
+    /// descriptor. Register this before `apply_sandbox()` so `fchdir` runs
+    /// before Landlock and seccomp are installed in the child.
+    #[cfg(unix)]
+    pub(crate) fn current_dir_fd(mut self, dir: std::os::fd::OwnedFd) -> Self {
+        use std::os::fd::AsRawFd;
+
+        unsafe {
+            self.cmd.as_std_mut().pre_exec(move || {
+                if nix::libc::fchdir(dir.as_raw_fd()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if nix::libc::fcntl(dir.as_raw_fd(), nix::libc::F_SETFD, nix::libc::FD_CLOEXEC)
+                    == -1
+                {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        self.current_dir_fd_prepared = true;
         self
     }
 
@@ -808,18 +934,29 @@ impl<'a> CmdLineRunner<'a> {
     pub(crate) fn execute(mut self) -> Result<()> {
         let read_lock = raw_read_lock_blocking();
         debug!("$ {self}");
+        #[cfg(not(unix))]
+        if self.cleanup_process_group {
+            bail!("process-group cleanup is unavailable on this platform");
+        }
+        #[cfg(unix)]
+        if self.cleanup_process_group && !self.process_group_prepared {
+            prepare_execute_child(self.cmd.as_std_mut(), true)?;
+            self.process_group_prepared = true;
+        }
         if Settings::get().raw || self.raw {
             drop(read_lock);
             let _write_lock = raw_write_lock_blocking();
             return self.execute_raw();
         }
         #[cfg(unix)]
-        prepare_execute_child(self.cmd.as_std_mut());
+        if !self.cleanup_process_group {
+            prepare_execute_child(self.cmd.as_std_mut(), false)?;
+        }
         let mut cp = self
             .spawn_with_etxtbsy_retry()
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
         let id = cp.id();
-        RUNNING_PIDS.lock().unwrap().insert(id);
+        let _running_pid = RunningPidGuard::new(Some(id));
         trace!("Started process: {id} for {}", self.get_program());
         let (tx, rx) = channel();
         if let Some(stdout) = cp.stdout.take() {
@@ -929,6 +1066,13 @@ impl<'a> CmdLineRunner<'a> {
                 }
                 ChildProcessOutput::ExitStatus(s) => {
                     status = Some(s);
+                    #[cfg(unix)]
+                    if self.cleanup_process_group {
+                        if let Some(g) = &timeout_guard {
+                            g.cancel();
+                        }
+                        cleanup_process_group_blocking(id)?;
+                    }
                     drain_deadline = Some(Instant::now() + PIPE_DRAIN_TIMEOUT);
                 }
                 #[cfg(not(any(test, windows)))]
@@ -956,7 +1100,6 @@ impl<'a> CmdLineRunner<'a> {
         }
         // Removed after rx loop drains (not inside ExitStatus arm) so kill_all
         // can still reach this PID while output is being processed.
-        RUNNING_PIDS.lock().unwrap().remove(&id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -991,19 +1134,31 @@ impl<'a> CmdLineRunner<'a> {
         }
         let read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
+        #[cfg(not(unix))]
+        if self.cleanup_process_group {
+            bail!("process-group cleanup is unavailable on this platform");
+        }
+        #[cfg(unix)]
+        if self.cleanup_process_group && !self.process_group_prepared {
+            prepare_execute_child(self.cmd.as_std_mut(), true)?;
+            self.process_group_prepared = true;
+        }
         if Settings::get().raw || self.raw {
             drop(read_lock);
             let _write_lock = RAW_LOCK.write().await;
             return self.execute_raw_async_with_cancel_check(is_cancelled).await;
         }
         #[cfg(unix)]
-        prepare_execute_child(self.cmd.as_std_mut());
+        if !self.cleanup_process_group {
+            prepare_execute_child(self.cmd.as_std_mut(), false)?;
+        }
         let mut cp = self
             .spawn_async_with_etxtbsy_retry()
             .await
             .wrap_err_with(|| format!("failed to execute command: {self}"))?;
-        let id = cp.id().unwrap_or_default();
-        RUNNING_PIDS.lock().unwrap().insert(id);
+        let child_id = cp.id();
+        let id = child_id.unwrap_or_default();
+        let _running_pid = RunningPidGuard::new(child_id);
         if is_cancelled() {
             #[cfg(unix)]
             signal_process_tree(id, nix::sys::signal::SIGINT);
@@ -1131,6 +1286,13 @@ impl<'a> CmdLineRunner<'a> {
                 }
             }
         }
+        #[cfg(unix)]
+        if self.cleanup_process_group {
+            if let Some(g) = &timeout_guard {
+                g.cancel();
+            }
+            cleanup_process_group_async(id).await?;
+        }
         let drain_deadline = Instant::now() + PIPE_DRAIN_TIMEOUT;
         loop {
             let remaining = drain_deadline.saturating_duration_since(Instant::now());
@@ -1165,7 +1327,6 @@ impl<'a> CmdLineRunner<'a> {
                 ChildProcessOutput::Signal(_) => {}
             }
         }
-        RUNNING_PIDS.lock().unwrap().remove(&id);
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1202,6 +1363,9 @@ impl<'a> CmdLineRunner<'a> {
         max_output_bytes: usize,
         pipe_drain_timeout: Duration,
     ) -> Result<(String, String)> {
+        if self.cleanup_process_group {
+            bail!("process-group cleanup is only supported by execute and execute_async");
+        }
         let _read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
@@ -1383,6 +1547,9 @@ impl<'a> CmdLineRunner<'a> {
 
     /// Run the command and return stdout, even when raw mode is enabled.
     pub(crate) async fn read(mut self) -> Result<String> {
+        if self.cleanup_process_group {
+            bail!("process-group cleanup is only supported by execute and execute_async");
+        }
         let _read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
         self.cmd.kill_on_drop(true);
@@ -1445,7 +1612,7 @@ impl<'a> CmdLineRunner<'a> {
         // In raw mode, inherit stdio so the child can interact with the terminal
         // directly. Piped stdout/stderr would deadlock if the child produces >64KB
         // of output since nobody reads the pipes.
-        if self.stdin.is_none() {
+        if self.stdin.is_none() && !self.cleanup_process_group {
             self.cmd.stdin(Stdio::inherit());
         }
         self.cmd.stdout(Stdio::inherit());
@@ -1453,6 +1620,13 @@ impl<'a> CmdLineRunner<'a> {
         let mut cp = self.spawn_with_etxtbsy_retry()?;
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, cp.id()));
         let status = cp.wait()?;
+        #[cfg(unix)]
+        if self.cleanup_process_group {
+            if let Some(g) = &timeout_guard {
+                g.cancel();
+            }
+            cleanup_process_group_blocking(cp.id())?;
+        }
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1469,7 +1643,7 @@ impl<'a> CmdLineRunner<'a> {
         mut self,
         is_cancelled: impl Fn() -> bool + Send + Sync,
     ) -> Result<()> {
-        if self.stdin.is_none() {
+        if self.stdin.is_none() && !self.cleanup_process_group {
             self.cmd.stdin(Stdio::inherit());
         }
         self.cmd.stdout(Stdio::inherit());
@@ -1484,6 +1658,13 @@ impl<'a> CmdLineRunner<'a> {
         }
         let timeout_guard = self.timeout.map(|t| TimeoutGuard::new(t, id));
         let status = cp.wait().await?;
+        #[cfg(unix)]
+        if self.cleanup_process_group {
+            if let Some(g) = &timeout_guard {
+                g.cancel();
+            }
+            cleanup_process_group_async(id).await?;
+        }
         if let Some(g) = &timeout_guard {
             g.cancel();
         }
@@ -1540,6 +1721,12 @@ impl<'a> CmdLineRunner<'a> {
         if !sandbox.is_active() {
             return Ok(());
         }
+        #[cfg(unix)]
+        let bound_current_dir = self.current_dir_fd_prepared;
+        #[cfg(not(unix))]
+        let bound_current_dir = false;
+        sandbox
+            .validate_formula_execution_for_runner(self.cleanup_process_group, bound_current_dir)?;
 
         // Fail early on Linux if per-host network filtering is requested
         #[cfg(target_os = "linux")]
@@ -1552,6 +1739,18 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
+            let strict_formula_execution = sandbox.system_access_profile
+                == crate::sandbox::SystemAccessProfile::FormulaExecution;
+            if strict_formula_execution {
+                crate::sandbox::ensure_strict_formula_execution_available(
+                    "formula-execution sandbox",
+                )?;
+                sandbox.require_bound_formula_execution_paths()?;
+            } else if sandbox.require_full_filesystem_confinement
+                && (sandbox.effective_deny_read() || sandbox.effective_deny_write())
+            {
+                crate::sandbox::ensure_landlock_available()?;
+            }
             // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
             // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
             if sandbox.effective_deny_env() {
@@ -1566,6 +1765,14 @@ impl<'a> CmdLineRunner<'a> {
                     self.cmd.env(k, v);
                 }
             }
+            // Strict formula commands must enter their dedicated process group
+            // before seccomp denies setpgid/setsid. Every descendant inherits
+            // the filter, so none can escape the group cleanup boundary.
+            if self.cleanup_process_group && !self.process_group_prepared {
+                prepare_execute_child(self.cmd.as_std_mut(), true)?;
+                self.process_group_prepared = true;
+            }
+            let deny_process_group_escape = self.cleanup_process_group;
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             let sandbox = sandbox.clone();
@@ -1575,9 +1782,16 @@ impl<'a> CmdLineRunner<'a> {
                         crate::sandbox::landlock_apply(&sandbox)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
-                    if sandbox.effective_deny_net() {
-                        crate::sandbox::seccomp_apply()
-                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    if sandbox.effective_deny_net()
+                        || deny_process_group_escape
+                        || strict_formula_execution
+                    {
+                        crate::sandbox::seccomp_apply(
+                            sandbox.deny_local_sockets,
+                            deny_process_group_escape,
+                            strict_formula_execution,
+                        )
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
                     Ok(())
                 });
@@ -2073,6 +2287,204 @@ mod tests {
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn test_process_group_cleanup_is_opt_in() {
+        assert!(!super::CmdLineRunner::new("true").cleanup_process_group);
+        assert!(
+            super::CmdLineRunner::new("true")
+                .with_process_group_cleanup()
+                .cleanup_process_group
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_execute_async_cleans_descendants_after_success() {
+        if !super::should_use_pgroup() {
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("descendant-finished");
+        let pid_file = dir.path().join("descendant.pid");
+        let script = format!(
+            "(trap '' HUP; sleep 0.5; printf leaked >{}) >/dev/null 2>&1 & printf %s \"$!\" >{}",
+            shell_escape::escape(marker.to_string_lossy()),
+            shell_escape::escape(pid_file.to_string_lossy()),
+        );
+
+        super::CmdLineRunner::new("sh")
+            .args(["-c", &script])
+            .with_process_group_cleanup()
+            .execute_async()
+            .await
+            .unwrap();
+
+        assert!(pid_file.is_file(), "leader did not launch its descendant");
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        assert!(!marker.exists(), "descendant survived successful leader");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_strict_sandbox_prevents_descendant_session_escape() {
+        if !super::should_use_pgroup() {
+            return;
+        }
+        let setsid = crate::file::which("setsid").expect("Linux test host must provide setsid");
+        let dir = tempfile::tempdir().unwrap();
+        let ready = dir.path().join("escaped-ready");
+        let marker = dir.path().join("escaped-finished");
+        let escaped_body = format!(
+            "printf ready >{}; sleep 0.3; printf leaked >{}",
+            shell_escape::escape(ready.to_string_lossy()),
+            shell_escape::escape(marker.to_string_lossy()),
+        );
+        let script = format!(
+            "{} sh -c {} >/dev/null 2>&1 & child=$!; i=0; \
+             while [ ! -e {} ] && kill -0 \"$child\" 2>/dev/null && [ \"$i\" -lt 100 ]; do \
+             sleep 0.01; i=$((i + 1)); done",
+            shell_escape::escape(setsid.to_string_lossy()),
+            shell_escape::escape(escaped_body.into()),
+            shell_escape::escape(ready.to_string_lossy()),
+        );
+        let mut runner = super::CmdLineRunner::new("sh")
+            .args(["-c", &script])
+            .with_sandbox(crate::sandbox::SandboxConfig {
+                deny_net: true,
+                deny_local_sockets: true,
+                ..Default::default()
+            })
+            .with_process_group_cleanup();
+
+        runner.apply_sandbox().await.unwrap();
+        runner.execute_async().await.unwrap();
+
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        assert!(!ready.exists(), "descendant escaped into a new session");
+        assert!(
+            !marker.exists(),
+            "escaped descendant mutated state after return"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn test_strict_process_cleanup_composes_or_reports_unavailable_landlock() {
+        if !super::should_use_pgroup() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let readable_file = root.path().join("formula.rb");
+        std::fs::write(&readable_file, "class Test; end").unwrap();
+        let writable = root.path().join("writable");
+        std::fs::create_dir(&writable).unwrap();
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_read: true,
+            deny_write: true,
+            deny_net: true,
+            deny_local_sockets: true,
+            deny_env: true,
+            allow_read: vec![root.path().to_path_buf(), readable_file],
+            allow_write: vec![writable],
+            deny_system_temp_write: true,
+            deny_mise_data_read: true,
+            require_full_filesystem_confinement: true,
+            system_access_profile: crate::sandbox::SystemAccessProfile::FormulaExecution,
+            ..Default::default()
+        };
+        sandbox.resolve_paths();
+        sandbox.bind_formula_execution_paths().unwrap();
+        let mut runner = super::CmdLineRunner::new("/bin/true")
+            .current_dir_fd(std::fs::File::open(root.path()).unwrap().into())
+            .env_clear()
+            .with_sandbox(sandbox)
+            .with_process_group_cleanup();
+
+        let expected_preflight =
+            crate::sandbox::ensure_strict_formula_execution_available("formula-execution sandbox")
+                .map_err(|error| error.to_string());
+        if let Err(error) = runner.apply_sandbox().await {
+            assert_eq!(Err(error.to_string()), expected_preflight);
+            return;
+        }
+        expected_preflight.unwrap();
+        runner.execute_async().await.unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn strict_formula_paths_and_cwd_remain_bound_across_pathname_swaps() {
+        use std::os::fd::OwnedFd;
+
+        if !super::should_use_pgroup() {
+            return;
+        }
+        let root = tempfile::tempdir().unwrap();
+        let readable = root.path().join("formula.rb");
+        std::fs::write(&readable, "original").unwrap();
+        let writable = root.path().join("writable");
+        std::fs::create_dir(&writable).unwrap();
+        let cwd = root.path().join("cwd");
+        std::fs::create_dir(&cwd).unwrap();
+        let cwd_fd = OwnedFd::from(std::fs::File::open(&cwd).unwrap());
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_read: true,
+            deny_write: true,
+            deny_net: true,
+            deny_local_sockets: true,
+            deny_env: true,
+            allow_read: vec![readable.clone()],
+            allow_write: vec![writable.clone(), cwd.clone()],
+            deny_system_temp_write: true,
+            deny_mise_data_read: true,
+            require_full_filesystem_confinement: true,
+            system_access_profile: crate::sandbox::SystemAccessProfile::FormulaExecution,
+            ..Default::default()
+        };
+        sandbox.resolve_paths();
+        sandbox.bind_formula_execution_paths().unwrap();
+        let script = format!(
+            "cat {} >/dev/null 2>&1 && exit 41; printf owned >relative; \
+             printf leaked >{}/leak 2>/dev/null && exit 42; exit 0",
+            shell_escape::escape(readable.to_string_lossy()),
+            shell_escape::escape(writable.to_string_lossy()),
+        );
+        let mut runner = super::CmdLineRunner::new("/bin/sh")
+            .args(["-c", &script])
+            .current_dir_fd(cwd_fd)
+            .env_clear()
+            .with_sandbox(sandbox)
+            .with_process_group_cleanup();
+
+        let expected_preflight =
+            crate::sandbox::ensure_strict_formula_execution_available("formula-execution sandbox")
+                .map_err(|error| error.to_string());
+        if let Err(error) = runner.apply_sandbox().await {
+            assert_eq!(Err(error.to_string()), expected_preflight);
+            return;
+        }
+        expected_preflight.unwrap();
+
+        let old_readable = root.path().join("old-formula.rb");
+        std::fs::rename(&readable, &old_readable).unwrap();
+        std::fs::write(&readable, "foreign").unwrap();
+        let old_writable = root.path().join("old-writable");
+        std::fs::rename(&writable, &old_writable).unwrap();
+        std::fs::create_dir(&writable).unwrap();
+        let old_cwd = root.path().join("old-cwd");
+        std::fs::rename(&cwd, &old_cwd).unwrap();
+        std::fs::create_dir(&cwd).unwrap();
+
+        runner.execute_async().await.unwrap();
+        assert_eq!(
+            std::fs::read_to_string(old_cwd.join("relative")).unwrap(),
+            "owned"
+        );
+        assert!(!cwd.join("relative").exists());
+        assert!(!writable.join("leak").exists());
+    }
+
     #[tokio::test]
     async fn test_execute_async_skips_pre_cancelled_command() {
         let err = super::CmdLineRunner::new("sh")
@@ -2122,6 +2534,29 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(output, "out");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_current_dir_fd_stays_bound_across_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let original = root.path().join("cwd");
+        let moved = root.path().join("moved");
+        std::fs::create_dir(&original).unwrap();
+        std::fs::write(original.join("marker"), "bound").unwrap();
+        let directory = std::fs::File::open(&original).unwrap();
+        std::fs::rename(&original, &moved).unwrap();
+        std::fs::create_dir(&original).unwrap();
+        std::fs::write(original.join("marker"), "replacement").unwrap();
+
+        let output = super::CmdLineRunner::new("/bin/sh")
+            .args(["-c", "cat marker"])
+            .current_dir_fd(directory.into())
+            .read()
+            .await
+            .unwrap();
+
+        assert_eq!(output, "bound");
     }
 
     #[tokio::test]
@@ -2269,6 +2704,75 @@ mod tests {
         assert!(
             env.iter()
                 .any(|(key, value)| *key == OsStr::new("DROP") && value.is_none())
+        );
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn test_sandbox_private_temp_blocks_external_write_and_env_leak() {
+        let root = tempfile::tempdir().unwrap();
+        let allowed = root.path().join("allowed");
+        let outside = root.path().join("outside");
+        std::fs::create_dir_all(&allowed).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let script = format!(
+            "env > {}/env; echo inside > {}/inside; echo outside > {}/escaped",
+            shell_escape::escape(allowed.to_string_lossy()),
+            shell_escape::escape(allowed.to_string_lossy()),
+            shell_escape::escape(outside.to_string_lossy()),
+        );
+        let mut sandbox = crate::sandbox::SandboxConfig {
+            deny_write: true,
+            deny_env: true,
+            allow_write: vec![allowed.clone()],
+            deny_system_temp_write: true,
+            require_full_filesystem_confinement: true,
+            ..Default::default()
+        };
+        sandbox.resolve_paths();
+        let mut runner = super::CmdLineRunner::new("/bin/sh")
+            .args(["-c", &script])
+            .env("SECRET_THAT_MUST_NOT_LEAK", "secret")
+            .env_clear()
+            .env("DOCUMENTED", "yes")
+            .with_sandbox(sandbox);
+        if let Err(error) = runner.apply_sandbox().await {
+            assert!(
+                error.to_string().starts_with("landlock is unavailable:"),
+                "unexpected sandbox preflight failure: {error:#}"
+            );
+            return;
+        }
+        let result = runner.execute_async().await;
+
+        assert!(result.is_err());
+        assert!(!outside.join("escaped").exists());
+        assert!(
+            allowed.join("inside").is_file(),
+            "sandboxed child never reached an authorized write"
+        );
+        let child_env = std::fs::read_to_string(allowed.join("env")).unwrap();
+        assert!(child_env.contains("DOCUMENTED=yes"));
+        assert!(!child_env.contains("SECRET_THAT_MUST_NOT_LEAK"));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn test_sandbox_network_is_denied_or_fails_closed() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut runner = super::CmdLineRunner::new("/bin/bash")
+            .args(["-c", &format!("exec 3<>/dev/tcp/127.0.0.1/{port}")])
+            .with_sandbox(crate::sandbox::SandboxConfig {
+                deny_net: true,
+                ..Default::default()
+            });
+        runner.apply_sandbox().await.unwrap();
+        assert!(runner.execute_async().await.is_err());
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
         );
     }
 

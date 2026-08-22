@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+if [[ $(uname) != Darwin ]] || [[ $(uname -m) != arm64 ]]; then
+  echo "SKIP: gcloud-cli cask oracle requires macOS arm64" >&2
+  exit 0
+fi
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+# shellcheck source=e2e/cli/brew_oracle.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle.sh"
+
+prefix=/opt/homebrew
+token=gcloud-cli
+room="$prefix/Caskroom/$token"
+sdk="$prefix/share/google-cloud-sdk"
+launcher="$prefix/bin/gcloud"
+
+brew_oracle_require_disposable macos-gcloud-cli "$prefix"
+brew_oracle_configure_runtime "$prefix"
+brew=$BREW_ORACLE_BREW
+
+cleanup() {
+  "$brew" uninstall --cask --zap --force "$token" >/dev/null 2>&1 || true
+  brew_oracle_remove_runtime_bridge
+}
+trap cleanup EXIT
+
+# Earlier oracle steps share this disposable prefix and may intentionally
+# leave casks that mise cannot prune. Normalize gcloud through Homebrew before
+# proving this test's own install and teardown lifecycle.
+"$brew" uninstall --cask --zap --force "$token" >/dev/null 2>&1 || true
+brew_oracle_require_absent_path "$room" "foreign gcloud-cli Caskroom"
+brew_oracle_require_absent_path "$sdk" "foreign Google Cloud SDK tree"
+brew_oracle_require_absent_path "$launcher" "foreign gcloud launcher"
+brew_oracle_record_api_fixture cask "$token" 581.0.0 \
+  0245559105cdc291753c7ab629b4b3e7d2cc7910e035ae869cd172094b03ab34
+
+cat <<'EOF' >mise.toml
+[bootstrap.packages]
+"brew-cask:gcloud-cli" = "latest"
+EOF
+
+mise bootstrap packages apply --yes
+assert_contains "mise bootstrap packages status" "installed"
+assert_succeed "'$launcher' version"
+assert_contains "'$launcher' version" "Google Cloud SDK 581.0.0"
+
+# gcloud derives CLOUDSDK_ROOT_DIR from its resolved launcher. The public
+# launcher must therefore remain a link into the durable SDK tree rather than
+# a copied file or a link back through mise's now-removed extraction stage.
+[[ -d $sdk && ! -L $sdk && -d $sdk/lib ]] ||
+  brew_oracle_fail "gcloud SDK tree is not durable prefix state"
+[[ -L $launcher ]] || brew_oracle_fail "gcloud launcher is not a symlink"
+launcher_target=$(readlink "$launcher")
+launcher_real=$(realpath "$launcher")
+sdk_backlink="$room/581.0.0/google-cloud-sdk"
+[[ $launcher_target == "$sdk_backlink/bin/gcloud" && $launcher_real == "$sdk/bin/gcloud" ]] ||
+  brew_oracle_fail "gcloud launcher does not target the durable SDK tree"
+[[ -L $sdk_backlink && $(realpath "$sdk_backlink") == "$sdk" ]] ||
+  brew_oracle_fail "gcloud Caskroom backlink does not target the durable SDK tree"
+case "$launcher_target" in
+  *mise*cache* | *staging* | *tmp*)
+    brew_oracle_fail "gcloud launcher retained transient staging topology"
+    ;;
+esac
+
+[[ -d $room/.metadata && ! -L $room/.metadata ]] ||
+  brew_oracle_fail "gcloud-cli lacks native Homebrew metadata"
+assert_contains "'$brew' list --cask" "$token"
+assert_succeed "'$brew' info --cask '$token'"
+
+# A pinned real Homebrew consumer must be able to remove mise-produced state,
+# including the preflight-created SDK tree named by the cask's zap stanza.
+"$brew" uninstall --cask --zap --force "$token"
+brew_oracle_require_absent_path "$room" "gcloud-cli Caskroom after Homebrew uninstall"
+brew_oracle_require_absent_path "$sdk" "Google Cloud SDK tree after Homebrew zap"
+brew_oracle_require_absent_path "$launcher" "gcloud launcher after Homebrew uninstall"
+assert_fail "'$brew' list --cask '$token'"
+
+brew_oracle_remove_runtime_bridge
+trap - EXIT

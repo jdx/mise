@@ -266,6 +266,7 @@ impl Exec {
                 deny_read: self.deny_read,
                 deny_write: self.deny_write,
                 deny_net: self.deny_net,
+                deny_local_sockets: false,
                 deny_env: self.deny_env,
                 allow_read: self.allow_read,
                 allow_write: self.allow_write,
@@ -273,6 +274,14 @@ impl Exec {
                 allow_env: self.allow_env,
                 pass_through_env: vec![],
                 cache_env: vec![],
+                deny_system_temp_write: false,
+                deny_mise_data_read: false,
+                require_full_filesystem_confinement: false,
+                system_access_profile: crate::sandbox::SystemAccessProfile::Compatibility,
+                #[cfg(target_os = "linux")]
+                bound_allow_read: vec![],
+                #[cfg(target_os = "linux")]
+                bound_allow_write: vec![],
             },
         );
         sandbox.resolve_paths();

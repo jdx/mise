@@ -67,17 +67,18 @@ impl SystemStatus {
                         any_missing = true;
                         ("".to_string(), "missing", None)
                     }
-                    PackageState::NeedsRepair { installed } => {
+                    PackageState::NeedsRepair { installed, reason } => {
                         any_missing = true;
-                        (installed.clone(), "needs repair", None)
+                        (installed.clone(), "needs repair", Some(reason.as_str()))
                     }
                     PackageState::VersionMismatch { installed } => {
                         any_missing = true;
                         (installed.clone(), "version mismatch", None)
                     }
                     #[cfg(unix)]
-                    PackageState::Unavailable { reason } => {
-                        ("".to_string(), "skipped", Some(reason.as_str()))
+                    PackageState::Unsupported { reason } => {
+                        any_missing = true;
+                        ("".to_string(), "unsupported", Some(reason.as_str()))
                     }
                 };
                 if self.json {

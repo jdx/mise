@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "$TEST_ROOT/cli/brew_oracle_guard.sh"
+
+runner_temp=$(mktemp -d)
+runner_temp=$(realpath "$runner_temp")
+trap 'rm -rf "$runner_temp" "${outside:-}"' EXIT
+export MISE_BREW_ORACLE_RUNNER_TEMP=$runner_temp
+export MISE_BREW_ORACLE_MISE_SHA
+MISE_BREW_ORACLE_MISE_SHA=$(git -c safe.directory="$ROOT" -C "$ROOT" rev-parse HEAD)
+
+if brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew; then
+  exit 1
+fi
+export MISE_BREW_ORACLE_DISPOSABLE=1
+unset GITHUB_TOKEN GH_TOKEN MISE_GITHUB_TOKEN FORGEJO_TOKEN
+brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew
+if brew_oracle_require_disposable linux-formula /opt/homebrew; then
+  exit 1
+fi
+if brew_oracle_require_disposable linux-source /tmp/outside-runner; then
+  exit 1
+fi
+brew_oracle_require_disposable linux-source "$runner_temp/source-prefix"
+if brew_oracle_require_disposable linux-source "$runner_temp/source-prefix/../outside"; then
+  exit 1
+fi
+outside=$(mktemp -d)
+ln -s "$outside" "$runner_temp/source-link"
+if brew_oracle_require_disposable linux-source "$runner_temp/source-link/prefix"; then
+  exit 1
+fi
+
+GITHUB_TOKEN=secret
+export GITHUB_TOKEN
+if brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew; then
+  exit 1
+fi

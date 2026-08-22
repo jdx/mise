@@ -1,0 +1,53 @@
+{
+  "homebrew_version": "6.0.15-125-g7372067",
+  "loaded_from_api": true,
+  "loaded_from_internal_api": true,
+  "uninstall_flight_blocks": false,
+  "installed_on_request": true,
+  "time": 1786073797,
+  "runtime_dependencies": {},
+  "source": {
+    "tap": "homebrew/cask",
+    "tap_git_head": "92f9a1251394f2cc2db3a8ec0116a7b320674225",
+    "version": "0.147.0",
+    "path": "/Users/donbeave/Library/Caches/Homebrew/api/internal/packages.arm64_tahoe.jws.json"
+  },
+  "arch": "arm64",
+  "uninstall_artifacts": [
+    {
+      "binary": [
+        "bin/codex"
+      ]
+    },
+    {
+      "generate_completions_from_executable": [
+        "bin/codex",
+        "completion",
+        {
+          "base_name": null,
+          "shell_parameter_format": null,
+          "shells": [
+            "bash",
+            "zsh",
+            "fish"
+          ]
+        }
+      ]
+    },
+    {
+      "zap": [
+        {
+          "rmdir": "~/.codex"
+        }
+      ]
+    }
+  ],
+  "built_on": {
+    "os": "Macintosh",
+    "os_version": "macOS 26.5",
+    "cpu_family": "arm_sotra",
+    "xcode": "26.3",
+    "clt": "26.6.0.0.1781586589",
+    "preferred_perl": "5.34"
+  }
+}

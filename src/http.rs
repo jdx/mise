@@ -10,8 +10,8 @@ use eyre::{Report, Result, WrapErr, bail, ensure, eyre};
 use regex::Regex;
 use reqwest::StatusCode;
 use reqwest::header::{
-    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, CONTENT_TYPE, DATE, ETAG, HeaderMap,
-    HeaderValue, IF_RANGE, LAST_MODIFIED, RANGE,
+    ACCEPT_ENCODING, AUTHORIZATION, CONTENT_DISPOSITION, CONTENT_RANGE, CONTENT_TYPE, DATE, ETAG,
+    HeaderMap, HeaderValue, IF_RANGE, LAST_MODIFIED, RANGE,
 };
 use reqwest::{ClientBuilder, IntoUrl, Method, Response};
 use serde::{Deserialize, Serialize};
@@ -194,7 +194,10 @@ pub(crate) struct DownloadFileMetadata {
 
 fn download_filename_hint(url: &Url) -> Option<String> {
     let segment = url.path_segments()?.next_back()?;
-    let filename = urlencoding::decode(segment).ok()?.into_owned();
+    safe_download_filename(urlencoding::decode(segment).ok()?.into_owned())
+}
+
+fn safe_download_filename(filename: String) -> Option<String> {
     if filename.is_empty()
         || filename == "."
         || filename == ".."
@@ -207,6 +210,37 @@ fn download_filename_hint(url: &Url) -> Option<String> {
     } else {
         Some(filename)
     }
+}
+
+fn content_disposition_filename(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get_all(CONTENT_DISPOSITION)
+        .iter()
+        .filter_map(|header| header.to_str().ok())
+        .filter_map(|header| {
+            let mut encoded = None;
+            let mut plain = None;
+            for parameter in header.split(';').skip(1) {
+                let Some((name, value)) = parameter.trim().split_once('=') else {
+                    continue;
+                };
+                let value = value.trim().trim_matches('"');
+                if name.trim().eq_ignore_ascii_case("filename*") {
+                    let Some((encoding, filename)) = value.split_once("''") else {
+                        continue;
+                    };
+                    if encoding.eq_ignore_ascii_case("utf-8") && !filename.is_empty() {
+                        encoded = urlencoding::decode(filename)
+                            .ok()
+                            .map(|value| value.into_owned());
+                    }
+                } else if name.trim().eq_ignore_ascii_case("filename") && !value.is_empty() {
+                    plain = Some(value.to_string());
+                }
+            }
+            encoded.or(plain).and_then(safe_download_filename)
+        })
+        .next_back()
 }
 
 #[derive(Debug, Clone)]
@@ -915,7 +949,8 @@ impl Client {
                     "GET",
                 )
                 .await?;
-            let response_filename = download_filename_hint(resp.url());
+            let response_filename = content_disposition_filename(resp.headers())
+                .or_else(|| download_filename_hint(resp.url()));
 
             if resp.status() == StatusCode::RANGE_NOT_SATISFIABLE {
                 if let Some(ParsedContentRange::Unsatisfied { total }) = resp
@@ -2088,6 +2123,47 @@ mod tests {
         artifact.assert();
     }
 
+    #[tokio::test]
+    async fn test_download_metadata_prefers_safe_content_disposition_filename() {
+        let mut server = mockito::Server::new_async().await;
+        let artifact = server
+            .mock("GET", "/download")
+            .with_status(200)
+            .with_header(
+                "content-disposition",
+                "attachment; filename=ignored.pkg; filename*=UTF-8''Cloudflare_WARP.pkg",
+            )
+            .with_header("content-length", "4")
+            .with_body("xar!")
+            .expect(1)
+            .create_async()
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let destination = dir.path().join("download");
+        let client = Client::new(Duration::from_secs(3), ClientKind::Http).unwrap();
+
+        let metadata = client
+            .download_file_with_metadata(format!("{}/download", server.url()), &destination, None)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            metadata.effective_filename.as_deref(),
+            Some("Cloudflare_WARP.pkg")
+        );
+        artifact.assert();
+    }
+
+    #[test]
+    fn test_content_disposition_filename_rejects_unsafe_names() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTENT_DISPOSITION,
+            HeaderValue::from_static("attachment; filename=../escaped.pkg"),
+        );
+        assert_eq!(content_disposition_filename(&headers), None);
+    }
+
     #[test]
     fn test_download_filename_hint_excludes_unsafe_or_private_url_parts() {
         let url: Url =
@@ -2328,7 +2404,27 @@ mod tests {
                     .lock()
                     .unwrap()
                     .push(String::from_utf8_lossy(&total).to_string());
-                let _ = sock.write_all(resp.as_bytes()).await;
+                if resp.is_empty() {
+                    // An accepted connection closed without any response is a
+                    // distinct retry case from connection refusal. Keep the
+                    // listener alive so the next canned response serves the
+                    // retry on every scheduler and platform.
+                    let _ = sock.shutdown().await;
+                    continue;
+                }
+                let (head, body) = resp.split_once("\r\n\r\n").unwrap();
+                let _ = sock.write_all(format!("{head}\r\n\r\n").as_bytes()).await;
+                let _ = sock.flush().await;
+                // Keep an intentionally truncated body in a separate transport
+                // frame. If headers, body, and EOF arrive together, reqwest may
+                // report the framing error before yielding the valid body bytes,
+                // which does not model an interrupted transfer with resumable data.
+                if !body.is_empty() {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    let _ = sock.write_all(body.as_bytes()).await;
+                    let _ = sock.flush().await;
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
                 let _ = sock.shutdown().await;
             }
         });

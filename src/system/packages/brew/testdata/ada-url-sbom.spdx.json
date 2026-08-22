@@ -1,0 +1,127 @@
+{
+  "SPDXID": "SPDXRef-DOCUMENT",
+  "spdxVersion": "SPDX-2.3",
+  "name": "SBOM-SPDX-ada-url-4.0.0",
+  "creationInfo": {
+    "created": "2026-08-07T03:36:19Z",
+    "creators": [
+      "Tool: https://github.com/Homebrew/brew@6.0.15-125-g7372067"
+    ]
+  },
+  "dataLicense": "CC0-1.0",
+  "documentNamespace": "https://formulae.brew.sh/spdx/ada-url-4.0.0.json",
+  "documentDescribes": [
+    "SPDXRef-Archive-ada-url-src",
+    "SPDXRef-Package-SPDXRef-fmt-12.2.0",
+    "SPDXRef-Compiler",
+    "SPDXRef-Bottle-ada-url"
+  ],
+  "files": [
+    {
+      "SPDXID": "SPDXRef-File-ada-url",
+      "fileName": "v4.0.0.tar.gz",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6d6c7ef7dd2e329320d34eb2ab29ccdc879ee3935af9dfb894a6640e58dc381d"
+        }
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Archive-ada-url-src",
+      "name": "ada-url",
+      "versionInfo": "4.0.0",
+      "filesAnalyzed": false,
+      "licenseDeclared": "NOASSERTION",
+      "builtDate": "2026-07-27T20:10:09Z",
+      "licenseConcluded": "Apache-2.0 OR MIT",
+      "downloadLocation": "https://github.com/ada-url/ada/archive/refs/tags/v4.0.0.tar.gz",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "6d6c7ef7dd2e329320d34eb2ab29ccdc879ee3935af9dfb894a6640e58dc381d"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Package-SPDXRef-fmt-12.2.0",
+      "name": "fmt",
+      "versionInfo": "12.2.0",
+      "filesAnalyzed": false,
+      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "MIT",
+      "downloadLocation": "https://ghcr.io/v2/homebrew/core/fmt/blobs/sha256:a218679bf77ccb0c76b316556f71a0bc5d5a1980d8cd3d2ea197a5829a140d65",
+      "copyrightText": "NOASSERTION",
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "a218679bf77ccb0c76b316556f71a0bc5d5a1980d8cd3d2ea197a5829a140d65"
+        }
+      ],
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:brew/fmt@12.2.0",
+          "referenceType": "purl"
+        }
+      ]
+    },
+    {
+      "SPDXID": "SPDXRef-Compiler",
+      "name": "clang",
+      "versionInfo": "26.6",
+      "filesAnalyzed": false,
+      "licenseDeclared": "NOASSERTION",
+      "licenseConcluded": "NOASSERTION",
+      "copyrightText": "NOASSERTION",
+      "downloadLocation": "NOASSERTION",
+      "checksums": [],
+      "externalRefs": []
+    },
+    {
+      "SPDXID": "SPDXRef-Bottle-ada-url",
+      "name": "ada-url",
+      "versionInfo": "4.0.0",
+      "filesAnalyzed": false,
+      "licenseDeclared": "NOASSERTION",
+      "builtDate": "2026-07-28T01:03:00Z",
+      "licenseConcluded": "Apache-2.0 OR MIT",
+      "downloadLocation": "https://ghcr.io/v2/homebrew/core/ada-url/blobs/sha256:e3b125f42e888b49edb6b7a6b65f47585d7740e170d59965ff96a2930e2c58fd",
+      "copyrightText": "NOASSERTION",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceLocator": "pkg:brew/ada-url@4.0.0",
+          "referenceType": "purl"
+        }
+      ],
+      "checksums": [
+        {
+          "algorithm": "SHA256",
+          "checksumValue": "e3b125f42e888b49edb6b7a6b65f47585d7740e170d59965ff96a2930e2c58fd"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "spdxElementId": "SPDXRef-File-ada-url",
+      "relationshipType": "PACKAGE_OF",
+      "relatedSpdxElement": "SPDXRef-Archive-ada-url-src"
+    },
+    {
+      "spdxElementId": "SPDXRef-Package-SPDXRef-fmt-12.2.0",
+      "relationshipType": "RUNTIME_DEPENDENCY_OF",
+      "relatedSpdxElement": "SPDXRef-Bottle-ada-url"
+    },
+    {
+      "spdxElementId": "SPDXRef-Compiler",
+      "relationshipType": "BUILD_TOOL_OF",
+      "relatedSpdxElement": "SPDXRef-Archive-ada-url-src"
+    }
+  ]
+}

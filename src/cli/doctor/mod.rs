@@ -520,10 +520,7 @@ impl Doctor {
             }
             match mp.manager.installed(&mp.requests).await {
                 Ok(statuses) => {
-                    let missing = statuses
-                        .iter()
-                        .filter(|s| !s.state.is_installed() && !s.state.is_unavailable())
-                        .count();
+                    let missing = statuses.iter().filter(|s| !s.state.is_installed()).count();
                     total_missing += missing;
                     map.insert(
                         name.into(),
@@ -746,10 +743,7 @@ impl Doctor {
             }
             match mp.manager.installed(&mp.requests).await {
                 Ok(statuses) => {
-                    let missing = statuses
-                        .iter()
-                        .filter(|s| !s.state.is_installed() && !s.state.is_unavailable())
-                        .count();
+                    let missing = statuses.iter().filter(|s| !s.state.is_installed()).count();
                     lines.push(format!(
                         "{name}: {} requested, {missing} missing",
                         statuses.len()

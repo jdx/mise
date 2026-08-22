@@ -63,20 +63,36 @@ pub(crate) enum PackageState {
     #[cfg_attr(windows, allow(dead_code))]
     NeedsRepair {
         installed: String,
+        reason: String,
     },
     /// installed, but the version pinned in config doesn't match
     VersionMismatch {
         installed: String,
     },
-    /// The manager is available on this host, but this individual package is
-    /// not supported on the current platform.
+    /// The manager can inspect this package on the current host, but required
+    /// install/teardown semantics are not implemented safely. Unlike an
+    /// unavailable manager, apply must fail rather than skip shared config.
     #[cfg(unix)]
-    Unavailable {
+    Unsupported {
         reason: String,
     },
 }
 
 impl PackageState {
+    pub(crate) fn installed_version(&self) -> Option<&str> {
+        match self {
+            Self::Installed { version } => Some(version),
+            #[cfg(unix)]
+            Self::InstalledAutoUpdates { version } => Some(version),
+            Self::NeedsRepair { installed, .. } | Self::VersionMismatch { installed } => {
+                Some(installed)
+            }
+            Self::Missing => None,
+            #[cfg(unix)]
+            Self::Unsupported { .. } => None,
+        }
+    }
+
     pub(crate) fn is_installed(&self) -> bool {
         match self {
             Self::Installed { .. } => true,
@@ -95,23 +111,15 @@ impl PackageState {
     }
 
     #[cfg(unix)]
-    pub(crate) fn unavailable(reason: impl Into<String>) -> Self {
-        Self::Unavailable {
+    pub(crate) fn unsupported(reason: impl Into<String>) -> Self {
+        Self::Unsupported {
             reason: reason.into(),
         }
     }
 
-    pub(crate) fn is_unavailable(&self) -> bool {
+    pub(crate) fn unsupported_reason(&self) -> Option<&str> {
         #[cfg(unix)]
-        if matches!(self, Self::Unavailable { .. }) {
-            return true;
-        }
-        false
-    }
-
-    pub(crate) fn unavailable_reason(&self) -> Option<&str> {
-        #[cfg(unix)]
-        if let Self::Unavailable { reason } = self {
+        if let Self::Unsupported { reason } = self {
             return Some(reason);
         }
         None
@@ -262,4 +270,39 @@ pub(crate) fn all_managers() -> Vec<Arc<dyn SystemPackageManager>> {
         }
     }
     managers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PackageState;
+
+    #[test]
+    fn package_state_reports_present_versions() {
+        let states = [
+            PackageState::Installed {
+                version: "1.0".into(),
+            },
+            PackageState::NeedsRepair {
+                installed: "2.0".into(),
+                reason: "test".into(),
+            },
+            PackageState::VersionMismatch {
+                installed: "3.0".into(),
+            },
+        ];
+        assert_eq!(
+            states.map(|state| state.installed_version().map(str::to_owned)),
+            [Some("1.0".into()), Some("2.0".into()), Some("3.0".into())]
+        );
+        assert_eq!(PackageState::Missing.installed_version(), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auto_updating_package_reports_receipt_version() {
+        let state = PackageState::InstalledAutoUpdates {
+            version: "4.0".into(),
+        };
+        assert_eq!(state.installed_version(), Some("4.0"));
+    }
 }

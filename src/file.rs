@@ -5,6 +5,8 @@ use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
 #[cfg(unix)]
+use std::io::{Seek, SeekFrom};
+#[cfg(unix)]
 use std::os::unix::fs::symlink;
 #[cfg(unix)]
 use std::os::unix::prelude::*;
@@ -175,6 +177,705 @@ pub(crate) fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
 pub(crate) fn remove_all_with_retry<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
     retry_remove_all(|| remove_all(path))
+}
+
+/// Atomically detach a directory from its public pathname, validate the detached object, then
+/// remove it. This prevents a concurrent pathname replacement between identity validation and
+/// recursive deletion from redirecting cleanup to a different directory.
+#[cfg(unix)]
+pub(crate) fn remove_all_atomically_validated(
+    path: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+) -> Result<()> {
+    remove_all_atomically_validated_inner(path, validate, |_| Ok(()))
+}
+
+#[cfg(unix)]
+fn remove_all_atomically_validated_inner(
+    path: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+    after_validate: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::fcntl::{OFlag, renameat};
+    use nix::sys::stat::Mode;
+    use nix::sys::stat::fstat;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("cannot quarantine path without parent: {}", path.display()))?;
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("cannot quarantine unnamed path: {}", path.display()))?;
+    let quarantine_name = format!(
+        ".mise-delete-{}-{}",
+        file_name.to_string_lossy(),
+        crate::rand::random_string(32)
+    );
+    let parent = File::open(parent)?;
+    validate_trusted_formula_rack(path, &parent)?;
+    let _lock = lock_formula_rack(path)?;
+    let mut detached = Dir::openat(
+        &parent,
+        file_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let detached_identity = fstat(&detached)?;
+    if let Err(error) = validate(
+        detached_identity.st_dev as u64,
+        detached_identity.st_ino as u64,
+    ) {
+        return Err(error)
+            .wrap_err_with(|| format!("refusing to remove changed path: {}", display_path(path)));
+    }
+    renameat(&parent, file_name, &parent, quarantine_name.as_str())
+        .wrap_err_with(|| format!("failed to quarantine {} before removal", display_path(path)))?;
+    let quarantine = path.with_file_name(&quarantine_name);
+    let quarantined_identity = nix::sys::stat::fstatat(
+        &parent,
+        quarantine_name.as_str(),
+        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+    )?;
+    if (quarantined_identity.st_dev, quarantined_identity.st_ino)
+        != (detached_identity.st_dev, detached_identity.st_ino)
+    {
+        if let Err(error) = atomic_rename_noreplace(&parent, quarantine_name.as_ref(), file_name) {
+            if error != nix::errno::Errno::EEXIST {
+                return Err(error.into());
+            }
+            let preserved_name = format!(
+                "{}.mise-preserved-{}",
+                file_name.to_string_lossy(),
+                crate::rand::random_string(32)
+            );
+            atomic_rename_noreplace(&parent, quarantine_name.as_ref(), preserved_name.as_ref())?;
+            bail!(
+                "cleanup target changed while quarantining {}; a newer occupant owns the public path and the displaced foreign directory was preserved visibly at {}",
+                display_path(path),
+                path.with_file_name(preserved_name).display()
+            );
+        }
+        bail!(
+            "cleanup target changed while quarantining {}",
+            display_path(path)
+        );
+    }
+    after_validate(&quarantine)?;
+    remove_dir_contents(&mut detached)?;
+    let final_identity = nix::sys::stat::fstatat(
+        &parent,
+        quarantine_name.as_str(),
+        nix::fcntl::AtFlags::AT_SYMLINK_NOFOLLOW,
+    )?;
+    if (final_identity.st_dev, final_identity.st_ino)
+        != (detached_identity.st_dev, detached_identity.st_ino)
+    {
+        bail!("cleanup tombstone changed while formula lock was held");
+    }
+    nix::unistd::unlinkat(
+        &parent,
+        quarantine_name.as_str(),
+        nix::unistd::UnlinkatFlags::RemoveDir,
+    )?;
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn restore_dir_atomically_validated(
+    from: &Path,
+    to: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+) -> Result<()> {
+    restore_dir_atomically_validated_inner(from, to, validate, |_, _| Ok(()))
+}
+
+#[cfg(unix)]
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FormulaRestorePhase {
+    Intent,
+    Quarantined,
+    Published,
+}
+
+#[cfg(unix)]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct FormulaRestoreJournal {
+    phase: FormulaRestorePhase,
+    published_device: u64,
+    published_inode: u64,
+    tombstone_device: Option<u64>,
+    tombstone_inode: Option<u64>,
+    tombstone_name: Option<String>,
+}
+
+#[cfg(unix)]
+fn persist_formula_restore_journal(
+    path: &Path,
+    parent: &File,
+    journal: &FormulaRestoreJournal,
+) -> Result<()> {
+    if let Ok(metadata) = path.symlink_metadata()
+        && (!metadata.is_file() || metadata.file_type().is_symlink())
+    {
+        bail!("formula restore journal is not a regular file");
+    }
+    let temporary = path.with_file_name(format!(
+        ".mise-restore-journal-{}.tmp",
+        crate::rand::random_string(32)
+    ));
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+        .open(&temporary)?;
+    file.write_all(&serde_json::to_vec(journal)?)?;
+    file.sync_all()?;
+    fs::rename(&temporary, path)?;
+    parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn remove_formula_restore_journal(path: &Path, parent: &File) -> Result<()> {
+    fs::remove_file(path)?;
+    parent.sync_all()?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn formula_restore_journal_path(to: &Path) -> Result<PathBuf> {
+    let name = to.file_name().ok_or_else(|| eyre::eyre!("unnamed keg"))?;
+    Ok(to.with_file_name(format!(".mise-restore-{}.json", name.to_string_lossy())))
+}
+
+#[cfg(unix)]
+fn formula_restore_tombstone_name(to_name: &std::ffi::OsStr) -> String {
+    format!(".mise-rollback-{}", to_name.to_string_lossy())
+}
+
+#[cfg(unix)]
+fn validate_formula_restore_journal(
+    to_name: &std::ffi::OsStr,
+    journal: &FormulaRestoreJournal,
+) -> Result<()> {
+    match (
+        journal.tombstone_device,
+        journal.tombstone_inode,
+        journal.tombstone_name.as_deref(),
+    ) {
+        (None, None, None) => Ok(()),
+        (Some(_), Some(_), Some(name)) if name == formula_restore_tombstone_name(to_name) => Ok(()),
+        _ => bail!("formula restore journal has an invalid tombstone authority"),
+    }
+}
+
+#[cfg(unix)]
+fn publish_formula_restore_entry(
+    parent: &File,
+    from_name: &std::ffi::OsStr,
+    to_name: &std::ffi::OsStr,
+    expected: (u64, u64),
+) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::fcntl::{AtFlags, OFlag};
+    use nix::sys::stat::{Mode, fstat, fstatat};
+
+    let candidate = Dir::openat(
+        parent,
+        from_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let identity = fstat(&candidate)?;
+    if (identity.st_dev as u64, identity.st_ino as u64) != expected {
+        bail!("formula restore backup changed before publication");
+    }
+    atomic_rename_noreplace(parent, from_name, to_name)?;
+    let installed = fstatat(parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+    if (installed.st_dev as u64, installed.st_ino as u64) != expected {
+        atomic_rename_noreplace(parent, to_name, from_name).wrap_err(
+            "formula restore published a changed backup and failed to return it to quarantine",
+        )?;
+        bail!("formula restore backup changed during publication");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+pub(crate) fn formula_restore_pending(to: &Path) -> bool {
+    formula_restore_journal_path(to).is_ok_and(|path| {
+        path.symlink_metadata()
+            .is_ok_and(|metadata| metadata.is_file() && !metadata.file_type().is_symlink())
+    })
+}
+
+#[cfg(unix)]
+fn restore_dir_atomically_validated_inner(
+    from: &Path,
+    to: &Path,
+    validate: impl FnOnce(u64, u64) -> Result<()>,
+    mut checkpoint: impl FnMut(&str, &Path) -> Result<()>,
+) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::{AtFlags, OFlag};
+    use nix::sys::stat::{Mode, fstat, fstatat};
+
+    let parent_path = from
+        .parent()
+        .filter(|parent| Some(*parent) == to.parent())
+        .ok_or_else(|| eyre::eyre!("formula restore requires one rack parent"))?;
+    let from_name = from
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("unnamed backup"))?;
+    let to_name = to.file_name().ok_or_else(|| eyre::eyre!("unnamed keg"))?;
+    let parent = File::open(parent_path)?;
+    validate_trusted_formula_rack(from, &parent)?;
+    let _lock = lock_formula_rack(from)?;
+    let journal_path = formula_restore_journal_path(to)?;
+    if let Ok(metadata) = journal_path.symlink_metadata() {
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            bail!("formula restore journal is not a regular file");
+        }
+        let journal: FormulaRestoreJournal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+        validate_formula_restore_journal(to_name, &journal)?;
+        reconcile_formula_restore(&parent, from_name, to_name, &journal_path, journal)?;
+        return Ok(());
+    }
+    let retained = Dir::openat(
+        &parent,
+        from_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    )?;
+    let identity = fstat(&retained)?;
+    validate(identity.st_dev as u64, identity.st_ino as u64)?;
+    let quarantine_name = formula_restore_tombstone_name(to_name);
+    let mut displaced = match Dir::openat(
+        &parent,
+        to_name,
+        OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(current) => {
+            let current_identity = fstat(&current)?;
+            let current_path = fstatat(&parent, to_name, AtFlags::AT_SYMLINK_NOFOLLOW)?;
+            if (current_path.st_dev, current_path.st_ino)
+                != (current_identity.st_dev, current_identity.st_ino)
+            {
+                bail!("formula restore destination changed while package lock was held");
+            }
+            if fstatat(
+                &parent,
+                quarantine_name.as_str(),
+                AtFlags::AT_SYMLINK_NOFOLLOW,
+            )
+            .is_ok()
+            {
+                bail!("formula restore tombstone already exists without a journal");
+            }
+            let mut journal = FormulaRestoreJournal {
+                phase: FormulaRestorePhase::Intent,
+                published_device: identity.st_dev as u64,
+                published_inode: identity.st_ino as u64,
+                tombstone_device: Some(current_identity.st_dev as u64),
+                tombstone_inode: Some(current_identity.st_ino),
+                tombstone_name: Some(quarantine_name.clone()),
+            };
+            persist_formula_restore_journal(&journal_path, &parent, &journal)?;
+            checkpoint("intent", &parent_path.join(&quarantine_name))?;
+            nix::fcntl::renameat(&parent, to_name, &parent, quarantine_name.as_str())?;
+            parent.sync_all()?;
+            let quarantined = fstatat(
+                &parent,
+                quarantine_name.as_str(),
+                AtFlags::AT_SYMLINK_NOFOLLOW,
+            )?;
+            if (quarantined.st_dev, quarantined.st_ino)
+                != (current_identity.st_dev, current_identity.st_ino)
+            {
+                bail!("formula restore destination changed while quarantining");
+            }
+            journal.phase = FormulaRestorePhase::Quarantined;
+            persist_formula_restore_journal(&journal_path, &parent, &journal)?;
+            checkpoint("quarantined", &parent_path.join(&quarantine_name))?;
+            Some((current, current_identity))
+        }
+        Err(Errno::ENOENT) => None,
+        Err(error) => return Err(error.into()),
+    };
+    if displaced.is_none() {
+        let journal = FormulaRestoreJournal {
+            phase: FormulaRestorePhase::Intent,
+            published_device: identity.st_dev as u64,
+            published_inode: identity.st_ino as u64,
+            tombstone_device: None,
+            tombstone_inode: None,
+            tombstone_name: None,
+        };
+        persist_formula_restore_journal(&journal_path, &parent, &journal)?;
+        checkpoint("intent", &journal_path)?;
+    }
+    if let Err(original) = publish_formula_restore_entry(
+        &parent,
+        from_name,
+        to_name,
+        (identity.st_dev as u64, identity.st_ino as u64),
+    ) {
+        if displaced.is_some() {
+            let rollback = atomic_rename_noreplace(&parent, quarantine_name.as_ref(), to_name);
+            return match rollback {
+                Ok(()) => Err(original),
+                Err(rollback) => Err(eyre::eyre!(original).wrap_err(format!(
+                    "formula restore also failed to republish quarantined destination: {rollback}"
+                ))),
+            };
+        }
+        return Err(original);
+    }
+    parent.sync_all()?;
+    let mut journal: FormulaRestoreJournal = serde_json::from_slice(&fs::read(&journal_path)?)?;
+    journal.phase = FormulaRestorePhase::Published;
+    persist_formula_restore_journal(&journal_path, &parent, &journal)?;
+    checkpoint("published", &parent_path.join(&quarantine_name))?;
+    // The shared Homebrew/mise formula lock is the cooperative namespace boundary. POSIX cannot
+    // defend against a malicious same-UID process that deliberately ignores that lock; cleanup
+    // remains descriptor-rooted so cooperative actors cannot redirect descendant deletion.
+    if let Some((mut current, current_identity)) = displaced.take() {
+        (|| -> Result<()> {
+            remove_dir_contents(&mut current)?;
+            let final_path = fstatat(
+                &parent,
+                quarantine_name.as_str(),
+                AtFlags::AT_SYMLINK_NOFOLLOW,
+            )?;
+            if (final_path.st_dev, final_path.st_ino)
+                != (current_identity.st_dev, current_identity.st_ino)
+            {
+                bail!("formula restore quarantine changed during cleanup");
+            }
+            nix::unistd::unlinkat(
+                &parent,
+                quarantine_name.as_str(),
+                nix::unistd::UnlinkatFlags::RemoveDir,
+            )?;
+            Ok(())
+        })()
+        .wrap_err(
+            "formula predecessor is active, but displaced-keg cleanup failed; retry cleanup of the identity-bound .mise-rollback tombstone",
+        )?;
+        parent.sync_all()?;
+        checkpoint("cleanup", &parent_path.join(&quarantine_name))?;
+        remove_formula_restore_journal(&journal_path, &parent)?;
+    } else {
+        checkpoint("cleanup", &journal_path)?;
+        remove_formula_restore_journal(&journal_path, &parent)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn reconcile_formula_restore(
+    parent: &File,
+    from_name: &std::ffi::OsStr,
+    to_name: &std::ffi::OsStr,
+    journal_path: &Path,
+    mut journal: FormulaRestoreJournal,
+) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::{Mode, fstat};
+
+    let identity = |name: &std::ffi::OsStr| -> Result<Option<(u64, u64)>> {
+        match Dir::openat(
+            parent,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(dir) => {
+                let stat = fstat(&dir)?;
+                Ok(Some((stat.st_dev as u64, stat.st_ino as u64)))
+            }
+            Err(Errno::ENOENT) => Ok(None),
+            Err(error) => Err(error.into()),
+        }
+    };
+    let published = (journal.published_device, journal.published_inode);
+    let displaced = journal.tombstone_device.zip(journal.tombstone_inode);
+    let tombstone_name = journal.tombstone_name.as_deref().map(std::ffi::OsStr::new);
+
+    if displaced.is_none() && tombstone_name.is_none() {
+        if identity(from_name)? == Some(published) && identity(to_name)?.is_none() {
+            publish_formula_restore_entry(parent, from_name, to_name, published)?;
+            parent.sync_all()?;
+            journal.phase = FormulaRestorePhase::Published;
+            persist_formula_restore_journal(journal_path, parent, &journal)?;
+        }
+        if identity(from_name)?.is_none() && identity(to_name)? == Some(published) {
+            return remove_formula_restore_journal(journal_path, parent);
+        }
+        bail!("formula restore journal does not match absent-destination namespace state");
+    }
+    let displaced = displaced.ok_or_else(|| eyre::eyre!("incomplete tombstone identity"))?;
+    let tombstone_name = tombstone_name.ok_or_else(|| eyre::eyre!("missing tombstone name"))?;
+
+    if identity(from_name)? == Some(published)
+        && identity(to_name)? == Some(displaced)
+        && identity(tombstone_name)?.is_none()
+    {
+        nix::fcntl::renameat(parent, to_name, parent, tombstone_name)?;
+        parent.sync_all()?;
+        journal.phase = FormulaRestorePhase::Quarantined;
+        persist_formula_restore_journal(journal_path, parent, &journal)?;
+    }
+    if identity(from_name)? == Some(published)
+        && identity(to_name)?.is_none()
+        && identity(tombstone_name)? == Some(displaced)
+    {
+        publish_formula_restore_entry(parent, from_name, to_name, published)?;
+        parent.sync_all()?;
+        journal.phase = FormulaRestorePhase::Published;
+        persist_formula_restore_journal(journal_path, parent, &journal)?;
+    }
+    if identity(from_name)?.is_none()
+        && identity(to_name)? == Some(published)
+        && identity(tombstone_name)? == Some(displaced)
+    {
+        let mut tombstone = Dir::openat(
+            parent,
+            tombstone_name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        )?;
+        remove_dir_contents(&mut tombstone)?;
+        nix::unistd::unlinkat(
+            parent,
+            tombstone_name,
+            nix::unistd::UnlinkatFlags::RemoveDir,
+        )?;
+        parent.sync_all()?;
+    }
+    if identity(from_name)?.is_none()
+        && identity(to_name)? == Some(published)
+        && identity(tombstone_name)?.is_none()
+    {
+        return remove_formula_restore_journal(journal_path, parent);
+    }
+    bail!("formula restore journal does not match any recoverable namespace state")
+}
+
+#[cfg(unix)]
+fn validate_trusted_formula_rack(path: &Path, rack: &File) -> Result<()> {
+    let metadata = nix::sys::stat::fstat(rack)?;
+    let (expected_uid, expected_gid) = formula_prefix_identity(path)?;
+    if (metadata.st_uid, metadata.st_gid) != (expected_uid, expected_gid)
+        || metadata.st_mode & 0o002 != 0
+    {
+        bail!("formula rack must match the trusted prefix owner/group and not be world-writable");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn trusted_formula_owner(uid: u32) -> bool {
+    let effective = nix::unistd::geteuid().as_raw();
+    uid == effective
+        || (effective == 0
+            && crate::env::var("SUDO_UID")
+                .ok()
+                .and_then(|value| value.parse::<u32>().ok())
+                == Some(uid))
+}
+
+#[cfg(unix)]
+fn formula_prefix_identity(path: &Path) -> Result<(u32, u32)> {
+    let rack = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("formula path has no rack"))?;
+    let prefix = rack
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| eyre::eyre!("formula rack has no Homebrew prefix"))?;
+    let metadata = prefix.symlink_metadata()?;
+    if !metadata.is_dir()
+        || metadata.file_type().is_symlink()
+        || !trusted_formula_owner(metadata.uid())
+        || metadata.mode() & 0o002 != 0
+    {
+        bail!("untrusted Homebrew prefix: {}", prefix.display());
+    }
+    Ok((metadata.uid(), metadata.gid()))
+}
+
+#[cfg(unix)]
+fn lock_formula_rack(path: &Path) -> Result<File> {
+    lock_formula_rack_inner(path, |_| Ok(()))
+}
+
+#[cfg(unix)]
+fn lock_formula_rack_inner(
+    path: &Path,
+    after_open: impl FnOnce(&Path) -> Result<()>,
+) -> Result<File> {
+    let rack = path
+        .parent()
+        .ok_or_else(|| eyre::eyre!("formula path has no rack"))?;
+    let formula = rack
+        .file_name()
+        .ok_or_else(|| eyre::eyre!("formula rack is unnamed"))?;
+    let prefix = rack
+        .parent()
+        .and_then(Path::parent)
+        .ok_or_else(|| eyre::eyre!("formula rack has no Homebrew prefix"))?;
+    let (expected_uid, expected_gid) = formula_prefix_identity(path)?;
+    let locks = prefix.join("var/homebrew/locks");
+    for component in [
+        prefix.to_path_buf(),
+        prefix.join("var"),
+        prefix.join("var/homebrew"),
+        locks.clone(),
+    ] {
+        match component.symlink_metadata() {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound && component != prefix => {
+                fs::create_dir(&component)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        let metadata = component.symlink_metadata()?;
+        if !metadata.is_dir()
+            || metadata.file_type().is_symlink()
+            || (metadata.uid(), metadata.gid()) != (expected_uid, expected_gid)
+            || metadata.mode() & 0o002 != 0
+        {
+            bail!(
+                "untrusted Homebrew formula lock directory: {}",
+                component.display()
+            );
+        }
+    }
+    let lock_path = locks.join(format!("{}.formula.lock", formula.to_string_lossy()));
+    if let Ok(existing) = lock_path.symlink_metadata()
+        && (!existing.is_file() || existing.file_type().is_symlink())
+    {
+        bail!(
+            "untrusted Homebrew formula lock file: {}",
+            lock_path.display()
+        );
+    }
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .mode(0o664)
+        .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_CLOEXEC)
+        .open(&lock_path)?;
+    let before = lock.metadata()?;
+    if !before.is_file()
+        || before.file_type().is_symlink()
+        || (before.uid(), before.gid()) != (expected_uid, expected_gid)
+        || before.mode() & 0o002 != 0
+    {
+        bail!(
+            "untrusted Homebrew formula lock file: {}",
+            lock_path.display()
+        );
+    }
+    after_open(&lock_path)?;
+    if unsafe { nix::libc::flock(lock.as_raw_fd(), nix::libc::LOCK_EX) } != 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let after = lock_path.symlink_metadata()?;
+    if (before.dev(), before.ino()) != (after.dev(), after.ino()) {
+        bail!("Homebrew formula lock inode changed while acquiring lock");
+    }
+    Ok(lock)
+}
+
+#[cfg(unix)]
+fn remove_dir_contents(dir: &mut nix::dir::Dir) -> Result<()> {
+    use nix::dir::Dir;
+    use nix::errno::Errno;
+    use nix::fcntl::OFlag;
+    use nix::sys::stat::Mode;
+    use nix::unistd::{UnlinkatFlags, unlinkat};
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let names = dir
+        .iter()
+        .filter_map(|entry| match entry {
+            Ok(entry) if !matches!(entry.file_name().to_bytes(), b"." | b"..") => {
+                Some(Ok(entry.file_name().to_bytes().to_vec()))
+            }
+            Ok(_) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<nix::Result<Vec<_>>>()?;
+    for name in names {
+        let name = OsStr::from_bytes(&name);
+        match Dir::openat(
+            &*dir,
+            name,
+            OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC,
+            Mode::empty(),
+        ) {
+            Ok(mut child) => {
+                remove_dir_contents(&mut child)?;
+                unlinkat(&*dir, name, UnlinkatFlags::RemoveDir)?;
+            }
+            Err(Errno::ENOTDIR | Errno::ELOOP) => {
+                unlinkat(&*dir, name, UnlinkatFlags::NoRemoveDir)?
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(())
+}
+#[cfg(unix)]
+fn atomic_rename_noreplace(
+    parent: &impl std::os::fd::AsRawFd,
+    from: &std::ffi::OsStr,
+    to: &std::ffi::OsStr,
+) -> nix::Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let from = CString::new(from.as_bytes()).map_err(|_| nix::errno::Errno::EINVAL)?;
+    let to = CString::new(to.as_bytes()).map_err(|_| nix::errno::Errno::EINVAL)?;
+    #[cfg(target_os = "linux")]
+    let result = unsafe {
+        nix::libc::syscall(
+            nix::libc::SYS_renameat2,
+            parent.as_raw_fd(),
+            from.as_ptr(),
+            parent.as_raw_fd(),
+            to.as_ptr(),
+            nix::libc::RENAME_NOREPLACE,
+        )
+    };
+    #[cfg(target_os = "macos")]
+    let result = unsafe {
+        nix::libc::renameatx_np(
+            parent.as_raw_fd(),
+            from.as_ptr(),
+            parent.as_raw_fd(),
+            to.as_ptr(),
+            nix::libc::RENAME_EXCL,
+        ) as nix::libc::c_long
+    };
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    compile_error!("descriptor-bound formula restore requires atomic no-replace rename support");
+    if result == -1 {
+        Err(nix::errno::Errno::last())
+    } else {
+        Ok(())
+    }
 }
 
 fn retry_remove_all(mut remove: impl FnMut() -> Result<()>) -> Result<()> {
@@ -2017,8 +2718,61 @@ pub(crate) fn untar(
     })
 }
 
+/// Extract a tar archive from an already-open, identity-bound file.
+///
+/// Callers that authenticate archive bytes before extraction must not reopen a
+/// mutable pathname afterwards. The retained descriptor keeps inspection and
+/// installation on the same inode.
+#[cfg(unix)]
+pub(crate) fn untar_file(
+    mut archive: File,
+    archive_label: &Path,
+    dest: &Path,
+    format: ExtractionFormat,
+    opts: &ExtractOptions,
+) -> Result<()> {
+    if !format.is_tar_archive() && format != ExtractionFormat::Raw {
+        bail!("untar only supports tar formats, got {}", format);
+    }
+    archive.seek(SeekFrom::Start(0))?;
+    debug!("tar -xf {} -C {}", archive_label.display(), dest.display());
+    if let Some(pr) = &opts.pr {
+        pr.set_message(format!(
+            "extract {}",
+            archive_label
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+        ));
+    }
+    let archive_display = display_path(archive_label);
+    let dest_display = display_path(dest);
+    let err = || format!("failed to extract tar: {archive_display} to {dest_display}");
+
+    run_blocking(|| {
+        let tar = open_tar_file(format, archive)?;
+        create_dir_all(dest).wrap_err_with(err)?;
+        let mut unpack_opts = UnpackOptions::default();
+        unpack_opts.preserve_mtime = opts.preserve_mtime;
+        unpack_opts.on_entry = Some(Box::new(|entry| {
+            trace!("extracting {}", entry.path.display());
+        }));
+        let summary = Archive::new(tar)
+            .unpack(dest, &mut unpack_opts)
+            .wrap_err_with(err)?;
+        debug!("tar extraction summary: {summary:?}");
+        strip_archive_path_components(dest, opts.strip_components).wrap_err_with(|| {
+            format!("failed to strip path components from tar archive: {archive_display}")
+        })
+    })
+}
+
 fn open_tar(format: ExtractionFormat, archive: &Path) -> Result<Box<dyn std::io::Read>> {
     let f = File::open(archive)?;
+    open_tar_file(format, f)
+}
+
+fn open_tar_file(format: ExtractionFormat, f: File) -> Result<Box<dyn std::io::Read>> {
     Ok(match format {
         // TODO: we probably shouldn't assume raw is tar.gz, but this was to retain existing behavior
         ExtractionFormat::TarGz | ExtractionFormat::Raw => Box::new(GzDecoder::new(f)),
@@ -2988,6 +3742,571 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn atomically_validated_removal_rejects_path_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let path = rack.join("backup");
+        let displaced = rack.join("displaced-backup");
+        let replacement = rack.join("replacement");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("expected"), "expected").unwrap();
+
+        // Model a replacement in the gap after the caller validated `path`.
+        fs::rename(&path, &displaced).unwrap();
+        fs::create_dir(&replacement).unwrap();
+        fs::write(replacement.join("must-survive"), "foreign").unwrap();
+        fs::rename(&replacement, &path).unwrap();
+
+        use std::os::unix::fs::MetadataExt;
+        let expected_metadata = fs::metadata(&displaced).unwrap();
+        let error = remove_all_atomically_validated(&path, |device, inode| {
+            if (device, inode) == (expected_metadata.dev(), expected_metadata.ino()) {
+                Ok(())
+            } else {
+                bail!("backup identity changed")
+            }
+        })
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("refusing to remove changed path")
+        );
+        let foreign = rack
+            .read_dir()
+            .unwrap()
+            .find_map(|entry| {
+                let path = entry.unwrap().path();
+                path.join("must-survive").is_file().then_some(path)
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(foreign.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert_eq!(
+            fs::read_to_string(displaced.join("expected")).unwrap(),
+            "expected"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomically_validated_removal_does_not_follow_quarantine_replacement() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let path = rack.join("backup");
+        let displaced = rack.join("displaced-quarantine");
+        fs::create_dir(&path).unwrap();
+        fs::write(path.join("expected"), "expected").unwrap();
+
+        let error = remove_all_atomically_validated_inner(
+            &path,
+            |_, _| Ok(()),
+            |quarantine| {
+                fs::rename(quarantine, &displaced)?;
+                fs::create_dir(quarantine)?;
+                fs::write(quarantine.join("must-survive"), "foreign")?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("cleanup tombstone changed while formula lock was held")
+        );
+
+        assert!(!path.exists());
+        let foreign = rack
+            .read_dir()
+            .unwrap()
+            .find_map(|entry| {
+                let path = entry.unwrap().path();
+                path.join("must-survive").is_file().then_some(path)
+            })
+            .unwrap();
+        assert_eq!(
+            fs::read_to_string(foreign.join("must-survive")).unwrap(),
+            "foreign"
+        );
+        assert!(displaced.read_dir().unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_atomically_publishes_absent_destination() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("expected"), "expected").unwrap();
+
+        restore_dir_atomically_validated(&source, &destination, |_, _| Ok(())).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("expected")).unwrap(),
+            "expected"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_quarantines_live_destination_before_publish() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        restore_dir_atomically_validated(&source, &destination, |_, _| Ok(())).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+        assert!(!destination.join("replacement").exists());
+        assert_eq!(
+            rack.read_dir()
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".mise-rollback-"))
+                .count(),
+            0
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_reports_cleanup_failure_with_predecessor_active() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        let displaced = rack.join("preserved-displaced");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |phase, quarantine| {
+                if phase != "published" {
+                    return Ok(());
+                }
+                fs::rename(quarantine, &displaced)?;
+                fs::create_dir(quarantine)?;
+                fs::write(quarantine.join("foreign"), "survive")?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("predecessor is active"));
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+        assert!(displaced.is_dir());
+        assert!(
+            rack.read_dir()
+                .unwrap()
+                .filter_map(Result::ok)
+                .any(|entry| { entry.path().join("foreign").is_file() })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_retries_journaled_post_publish_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |phase, _| {
+                if phase == "published" {
+                    bail!("injected cleanup interruption")
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("injected cleanup interruption"));
+        assert!(!source.exists());
+        assert!(formula_restore_pending(&destination));
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+
+        restore_dir_atomically_validated(&source, &destination, |_, _| {
+            bail!("consumed backup must not be revalidated")
+        })
+        .unwrap();
+
+        assert!(!formula_restore_pending(&destination));
+        assert!(!rack.join(".mise-rollback-1.0").exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_recovers_every_wal_boundary() {
+        for boundary in ["intent", "quarantined", "published", "cleanup"] {
+            let root = tempfile::tempdir().unwrap();
+            let rack = root.path().join("Cellar/foo");
+            fs::create_dir_all(&rack).unwrap();
+            let source = rack.join(".mise-backup-1.0");
+            let destination = rack.join("1.0");
+            fs::create_dir(&source).unwrap();
+            fs::write(source.join("predecessor"), "old").unwrap();
+            fs::create_dir(&destination).unwrap();
+            fs::write(destination.join("replacement"), "new").unwrap();
+
+            let error = restore_dir_atomically_validated_inner(
+                &source,
+                &destination,
+                |_, _| Ok(()),
+                |phase, _| {
+                    if phase == boundary {
+                        bail!("crash at {boundary}")
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains(boundary));
+            assert!(formula_restore_pending(&destination));
+
+            restore_dir_atomically_validated(&source, &destination, |_, _| {
+                bail!("WAL retry must not restart backup validation")
+            })
+            .unwrap();
+
+            assert!(
+                !formula_restore_pending(&destination),
+                "boundary {boundary}"
+            );
+            assert!(
+                !rack.join(".mise-rollback-1.0").exists(),
+                "boundary {boundary}"
+            );
+            assert_eq!(
+                fs::read_to_string(destination.join("predecessor")).unwrap(),
+                "old",
+                "boundary {boundary}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_recovers_absent_destination_wal_boundaries() {
+        for boundary in ["intent", "published", "cleanup"] {
+            let root = tempfile::tempdir().unwrap();
+            let rack = root.path().join("Cellar/foo");
+            fs::create_dir_all(&rack).unwrap();
+            let source = rack.join(".mise-backup-1.0");
+            let destination = rack.join("1.0");
+            fs::create_dir(&source).unwrap();
+            fs::write(source.join("predecessor"), "old").unwrap();
+
+            let error = restore_dir_atomically_validated_inner(
+                &source,
+                &destination,
+                |_, _| Ok(()),
+                |phase, _| {
+                    if phase == boundary {
+                        bail!("crash at absent {boundary}")
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains(&format!("crash at absent {boundary}"))
+            );
+            assert!(formula_restore_pending(&destination));
+
+            restore_dir_atomically_validated(&source, &destination, |_, _| {
+                bail!("absent WAL retry must not restart validation")
+            })
+            .unwrap();
+            assert!(
+                !formula_restore_pending(&destination),
+                "boundary {boundary}"
+            );
+            assert_eq!(
+                fs::read_to_string(destination.join("predecessor")).unwrap(),
+                "old"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_rejects_traversing_journal_tombstone() {
+        use std::os::unix::fs::MetadataExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let cellar = root.path().join("Cellar");
+        let rack = cellar.join("foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        let victim = cellar.join("victim");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&victim).unwrap();
+        fs::write(victim.join("must-survive"), "safe").unwrap();
+        let source_metadata = source.metadata().unwrap();
+        let victim_metadata = victim.metadata().unwrap();
+        let journal = FormulaRestoreJournal {
+            phase: FormulaRestorePhase::Quarantined,
+            published_device: source_metadata.dev(),
+            published_inode: source_metadata.ino(),
+            tombstone_device: Some(victim_metadata.dev()),
+            tombstone_inode: Some(victim_metadata.ino()),
+            tombstone_name: Some("../victim".to_string()),
+        };
+        fs::write(
+            formula_restore_journal_path(&destination).unwrap(),
+            serde_json::to_vec(&journal).unwrap(),
+        )
+        .unwrap();
+
+        let error =
+            restore_dir_atomically_validated(&source, &destination, |_, _| Ok(())).unwrap_err();
+
+        assert!(error.to_string().contains("invalid tombstone authority"));
+        assert_eq!(
+            fs::read_to_string(victim.join("must-survive")).unwrap(),
+            "safe"
+        );
+        assert!(source.is_dir());
+        assert!(!destination.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_does_not_publish_replaced_backup() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let displaced = rack.join("expected-backup");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |phase, _| {
+                if phase == "intent" {
+                    fs::rename(&source, &displaced)?;
+                    fs::create_dir(&source)?;
+                    fs::write(source.join("foreign"), "untrusted")?;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("backup changed before publication")
+        );
+        assert!(!destination.exists());
+        assert_eq!(
+            fs::read_to_string(source.join("foreign")).unwrap(),
+            "untrusted"
+        );
+        assert_eq!(
+            fs::read_to_string(displaced.join("predecessor")).unwrap(),
+            "old"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn locked_restore_ignores_torn_journal_temp_on_retry() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        let source = rack.join(".mise-backup-1.0");
+        let destination = rack.join("1.0");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("predecessor"), "old").unwrap();
+        fs::create_dir(&destination).unwrap();
+        fs::write(destination.join("replacement"), "new").unwrap();
+
+        let error = restore_dir_atomically_validated_inner(
+            &source,
+            &destination,
+            |_, _| Ok(()),
+            |phase, _| {
+                if phase == "quarantined" {
+                    fs::write(rack.join(".mise-restore-journal-torn.tmp"), b"{")?;
+                    bail!("crash with torn temp")
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("crash with torn temp"));
+
+        restore_dir_atomically_validated(&source, &destination, |_, _| {
+            bail!("retry must use authoritative journal")
+        })
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(destination.join("predecessor")).unwrap(),
+            "old"
+        );
+        assert!(rack.join(".mise-restore-journal-torn.tmp").is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_lock_rejects_symlinked_lock_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        fs::create_dir_all(root.path().join("var/homebrew")).unwrap();
+        let foreign = root.path().join("foreign-locks");
+        fs::create_dir(&foreign).unwrap();
+        std::os::unix::fs::symlink(&foreign, root.path().join("var/homebrew/locks")).unwrap();
+
+        let error = lock_formula_rack(&rack.join("1.0")).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("untrusted Homebrew formula lock directory")
+        );
+        assert!(foreign.read_dir().unwrap().next().is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_lock_uses_homebrew_compatible_name() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        fs::create_dir_all(root.path().join("var/homebrew/locks")).unwrap();
+        let lock_path = root.path().join("var/homebrew/locks/foo.formula.lock");
+        let mut homebrew = fslock::LockFile::open(&lock_path).unwrap();
+        homebrew.lock().unwrap();
+
+        let path = rack.join("1.0");
+        let (sent, received) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let lock = lock_formula_rack(&path).unwrap();
+            sent.send(lock).unwrap();
+        });
+        assert!(received.recv_timeout(Duration::from_millis(50)).is_err());
+        drop(homebrew);
+        drop(received.recv_timeout(Duration::from_secs(2)).unwrap());
+        worker.join().unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_lock_rejects_path_replacement_after_open() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        fs::create_dir_all(root.path().join("var/homebrew/locks")).unwrap();
+        let displaced = root.path().join("opened-lock");
+
+        let error = lock_formula_rack_inner(&rack.join("1.0"), |lock_path| {
+            fs::rename(lock_path, &displaced)?;
+            fs::write(lock_path, "replacement")?;
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("lock inode changed"));
+        assert!(displaced.is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_namespace_accepts_homebrew_group_writable_mode() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(root.path().join("var/homebrew/locks")).unwrap();
+        fs::create_dir_all(&rack).unwrap();
+        for path in [
+            root.path(),
+            &root.path().join("var"),
+            &root.path().join("var/homebrew"),
+            &root.path().join("var/homebrew/locks"),
+            &rack,
+        ] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o775)).unwrap();
+        }
+
+        drop(lock_formula_rack(&rack.join("1.0")).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn formula_owner_accepts_effective_user() {
+        assert!(trusted_formula_owner(nix::unistd::geteuid().as_raw()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn repeated_locked_cleanup_leaves_no_tombstones() {
+        let root = tempfile::tempdir().unwrap();
+        let rack = root.path().join("Cellar/foo");
+        fs::create_dir_all(&rack).unwrap();
+        for version in ["1.0", "2.0", "3.0"] {
+            let keg = rack.join(version);
+            fs::create_dir(&keg).unwrap();
+            fs::write(keg.join("payload"), version).unwrap();
+            remove_all_atomically_validated(&keg, |_, _| Ok(())).unwrap();
+        }
+        assert!(rack.read_dir().unwrap().next().is_none());
+    }
     #[cfg(unix)]
     #[test]
     fn test_desymlink_path_preserves_absolute_target() {

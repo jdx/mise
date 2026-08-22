@@ -1,0 +1,8 @@
+# Homebrew uninstall post-state, relative to prefix
+# Source: Homebrew/brew Library/Homebrew/keg.rb unlink and Formula#clear_cache
+absent bin/jq
+absent opt/jq
+absent var/homebrew/linked/jq
+absent Cellar/jq/1.7
+absent-if-empty Cellar/jq
+present-if-other-version Cellar/jq/1.6
