@@ -42,9 +42,12 @@ the config that owns the task.
 
 ```toml
 # Example mise.lock
+lockfile_version = 1
+
 [[tools.node]]
 version = "20.11.0"
 backend = "core:node"
+specifiers = ["20"]
 
 [tools.node.platforms.linux-x64]
 checksum = "sha256:a6c213b7a2c3b8b9c0aaf8d7f5b3a5c8d4e2f4a5b6c7d8e9f0a1b2c3d4e5f6a7"
@@ -54,6 +57,7 @@ url = "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.xz"
 [[tools.python]]
 version = "3.11.7"
 backend = "core:python"
+specifiers = ["3.11"]
 
 [tools.python.platforms.linux-x64]
 checksum = "sha256:def456..."
@@ -71,6 +75,12 @@ size = 1234567
 
 ```
 
+New lockfiles use the current versioned format. Unversioned lockfiles are treated as
+version 0 and remain in that format during ordinary updates to avoid unexpected lockfile
+drift. Run `mise lock --upgrade` to deliberately upgrade legacy lockfiles. Version 1
+records each original tool request in the concrete entry it resolved to, so overlapping
+requests such as `"1"` and `"1.0.0"` can select different locked versions reliably.
+
 ### Platform Information
 
 Each platform in a tool's `[tools.name.platforms]` section uses a key format like `"os-arch"` (e.g., `"linux-x64"`, `"macos-arm64"`) and can contain:
@@ -85,6 +95,7 @@ Each tool entry (`[[tools.name]]`) can contain:
 
 - **`version`** (required): The exact version of the tool
 - **`backend`** (optional): The backend used to install the tool (e.g., `core:node`, `aqua:BurntSushi/ripgrep`)
+- **`specifiers`** (version 1): Original requests that resolve to this version and option variant
 - **`options`** (optional): Backend-specific options that identify the artifact (e.g., `{exe = "rg", matching = "musl"}`)
 - **`platforms`** (optional): Platform-specific metadata (checksums, URLs, sizes)
 

@@ -61,9 +61,13 @@ pub(crate) fn invalidate_caches() {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+const CURRENT_LOCKFILE_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Lockfile {
+    #[serde(skip)]
+    lockfile_version: u32,
     #[serde(skip)]
     generated_header_url: Option<String>,
     #[serde(skip)]
@@ -81,10 +85,24 @@ pub(crate) struct Lockfile {
 pub(crate) struct LockfileTool {
     pub version: String,
     pub backend: Option<String>,
+    #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
+    pub specifiers: BTreeSet<String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub options: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty", default)]
     pub platforms: BTreeMap<String, PlatformInfo>,
+}
+
+impl Default for Lockfile {
+    fn default() -> Self {
+        Self {
+            lockfile_version: CURRENT_LOCKFILE_VERSION,
+            generated_header_url: None,
+            tools: BTreeMap::new(),
+            conda_packages: BTreeMap::new(),
+            pkgx_packages: BTreeMap::new(),
+        }
+    }
 }
 
 type LockfileToolKey = (String, BTreeMap<String, String>);
@@ -863,6 +881,42 @@ fn existing_lockfile_doc_url_from_path(path: &Path) -> Option<String> {
 }
 
 impl Lockfile {
+    pub(crate) fn lockfile_version(&self) -> u32 {
+        self.lockfile_version
+    }
+
+    pub(crate) fn upgrade(&mut self) {
+        self.lockfile_version = CURRENT_LOCKFILE_VERSION;
+    }
+
+    pub(crate) fn uses_request_bindings(&self) -> bool {
+        self.lockfile_version > 0
+    }
+
+    pub(crate) fn bind_request(
+        &mut self,
+        short: &str,
+        specifier: &str,
+        version: &str,
+        options: &BTreeMap<String, String>,
+    ) {
+        if !self.uses_request_bindings() {
+            return;
+        }
+        let Some(tools) = self.tools.get_mut(short) else {
+            return;
+        };
+        for tool in tools.iter_mut().filter(|tool| &tool.options == options) {
+            tool.specifiers.remove(specifier);
+        }
+        if let Some(tool) = tools
+            .iter_mut()
+            .find(|tool| tool.version == version && &tool.options == options)
+        {
+            tool.specifiers.insert(specifier.to_string());
+        }
+    }
+
     pub(crate) fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref();
         if !path.exists() {
@@ -872,6 +926,16 @@ impl Lockfile {
         let content = file::read_to_string(path)?;
         let generated_header_url = existing_lockfile_doc_url(&content);
         let mut table: toml::Table = toml::from_str(&content)?;
+        let lockfile_version = table
+            .remove("lockfile_version")
+            .map(|value| value.try_into())
+            .transpose()?
+            .unwrap_or(0);
+        if lockfile_version > CURRENT_LOCKFILE_VERSION {
+            bail!(
+                "unsupported lockfile version {lockfile_version}; this mise supports up to version {CURRENT_LOCKFILE_VERSION}"
+            );
+        }
 
         let tools: toml::Table = table
             .remove("tools")
@@ -879,6 +943,7 @@ impl Lockfile {
             .try_into()?;
 
         let mut lockfile = Lockfile {
+            lockfile_version,
             generated_header_url,
             ..Default::default()
         };
@@ -934,6 +999,13 @@ impl Lockfile {
     fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let path = path.as_ref();
         let mut lockfile = toml::Table::new();
+
+        if self.lockfile_version > 0 {
+            lockfile.insert(
+                "lockfile_version".to_string(),
+                i64::from(self.lockfile_version).into(),
+            );
+        }
 
         // Write conda-packages section first (before tools for nicer ordering)
         if !self.conda_packages.is_empty() {
@@ -994,7 +1066,7 @@ impl Lockfile {
             let value: toml::Value = versions
                 .iter()
                 .cloned()
-                .map(|version| version.into_toml_value())
+                .map(|version| version.into_toml_value(self.lockfile_version > 0))
                 .collect::<Vec<toml::Value>>()
                 .into();
             tools.insert(short.clone(), value);
@@ -1364,6 +1436,7 @@ impl Lockfile {
             tools.push(LockfileTool {
                 version: version.to_string(),
                 backend: backend.map(|s| s.to_string()),
+                specifiers: BTreeSet::new(),
                 options: options.clone(),
                 platforms,
             });
@@ -1519,7 +1592,10 @@ impl LockfileUpdateMode {
     }
 }
 
-pub(crate) fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
+pub(crate) fn migrate_monorepo_lockfiles(
+    config: &Config,
+    allow_format_upgrade: bool,
+) -> Result<()> {
     if !Settings::get().lockfile_enabled() {
         return Ok(());
     }
@@ -1542,6 +1618,7 @@ pub(crate) fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
         let _lock = crate::lock_file::LockFile::new(&target)
             .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
             .lock()?;
+        let target_existed = target.exists();
         let mut root_lockfile =
             Lockfile::read(&target).unwrap_or_else(|err| handle_lockfile_read_error(err, &target));
         let subproject_lockfile = match Lockfile::read(&source) {
@@ -1549,6 +1626,24 @@ pub(crate) fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
             Err(err) if is_not_found_report(&err) => continue,
             Err(err) => return Err(err),
         };
+        if !target_existed {
+            root_lockfile.lockfile_version = subproject_lockfile.lockfile_version;
+        } else if root_lockfile.lockfile_version != subproject_lockfile.lockfile_version
+            && allow_format_upgrade
+        {
+            // `mise lock --upgrade` immediately rebuilds the merged root from the
+            // authoritative monorepo union. Use legacy semantics for the merge so
+            // neither side's concrete entries become temporarily unreachable.
+            root_lockfile.lockfile_version = 0;
+        } else if root_lockfile.lockfile_version != subproject_lockfile.lockfile_version {
+            bail!(
+                "cannot merge lockfile version {} from {} into lockfile version {} at {}; run `mise lock --upgrade` at the monorepo root",
+                subproject_lockfile.lockfile_version,
+                display_path(&source),
+                root_lockfile.lockfile_version,
+                display_path(&target)
+            );
+        }
         merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
         root_lockfile.save(&target)?;
         if let Err(err) = fs::remove_file(&source)
@@ -1668,6 +1763,7 @@ fn merge_legacy_lockfile_if_present(lockfile: &mut Lockfile, legacy_path: &Path)
 }
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
+    root.lockfile_version = root.lockfile_version.min(other.lockfile_version);
     for (short, tools) in other.tools {
         let root_tools = root.tools.entry(short).or_default();
         let mut keys: HashSet<(String, BTreeMap<String, String>)> = root_tools
@@ -1676,7 +1772,11 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
             .collect();
         for tool in tools {
             let key = (tool.version.clone(), tool.options.clone());
-            if keys.insert(key) {
+            if let Some(existing) = root_tools.iter_mut().find(|existing| {
+                existing.version == tool.version && existing.options == tool.options
+            }) {
+                existing.specifiers.extend(tool.specifiers);
+            } else if keys.insert(key) {
                 root_tools.push(tool);
             }
         }
@@ -1953,6 +2053,24 @@ pub(crate) fn update_lockfiles(
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
             existing_lockfile.tools.insert(short, merged_tools);
+            if existing_lockfile.uses_request_bindings() {
+                for tv in versions {
+                    let options = if let Ok(backend) = tv.request.backend() {
+                        backend.resolve_lockfile_options(
+                            &tv.request,
+                            &PlatformTarget::from_current(),
+                        )?
+                    } else {
+                        BTreeMap::new()
+                    };
+                    existing_lockfile.bind_request(
+                        tv.short(),
+                        &tv.request.version(),
+                        &tv.version,
+                        &options,
+                    );
+                }
+            }
         }
 
         // Merge conda packages from new_versions into the lockfile
@@ -2918,6 +3036,7 @@ where
     for tool in entries {
         let key = (tool.version.clone(), tool.options.clone());
         let entry = by_key.entry(key).or_insert_with(|| tool.clone());
+        entry.specifiers.extend(tool.specifiers.clone());
 
         // Merge platforms - properly combine platform info to preserve URLs and prefer sha256
         for (platform, info) in tool.platforms {
@@ -2935,6 +3054,9 @@ where
     if let Some(existing) = existing_tools {
         for existing_tool in existing {
             let key = (existing_tool.version.clone(), existing_tool.options.clone());
+            if let Some(entry) = by_key.get_mut(&key) {
+                entry.specifiers.extend(existing_tool.specifiers.clone());
+            }
             if !existing_tool.options.is_empty() {
                 if let Some(entry) = by_key.get_mut(&key) {
                     // Preserve platform data only for an exact non-empty option
@@ -2947,6 +3069,7 @@ where
                             .and_modify(|existing| *existing = existing.merge_with(info))
                             .or_insert(info.clone());
                     }
+                    entry.specifiers.extend(existing_tool.specifiers.clone());
                 }
                 continue;
             }
@@ -2964,6 +3087,7 @@ where
                         .or_insert_with(|| LockfileTool {
                             version: existing_tool.version.clone(),
                             backend: existing_tool.backend.clone(),
+                            specifiers: existing_tool.specifiers.clone(),
                             options: existing_tool.options.clone(),
                             platforms: BTreeMap::new(),
                         })
@@ -2976,6 +3100,7 @@ where
                 let target = by_key.entry(target_key).or_insert_with(|| LockfileTool {
                     version: existing_tool.version.clone(),
                     backend: existing_tool.backend.clone(),
+                    specifiers: existing_tool.specifiers.clone(),
                     options: resolved_options,
                     platforms: BTreeMap::new(),
                 });
@@ -3114,21 +3239,29 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         }
     }
 
-    let result = all.into_iter().fold(Lockfile::default(), |mut acc, l| {
+    let result = all.into_iter().fold(None, |acc: Option<Lockfile>, l| {
+        let Some(mut acc) = acc else {
+            return Some(l);
+        };
+        acc.lockfile_version = acc.lockfile_version.min(l.lockfile_version);
         for (short, tools) in l.tools {
             let existing = acc.tools.entry(short).or_default();
             for tool in tools {
                 // Avoid duplicates (same version+options)
-                if !existing
-                    .iter()
-                    .any(|t| t.version == tool.version && t.options == tool.options)
+                if let Some(entry) = existing
+                    .iter_mut()
+                    .find(|t| t.version == tool.version && t.options == tool.options)
                 {
+                    entry.specifiers.extend(tool.specifiers);
+                } else {
                     existing.push(tool);
                 }
             }
         }
-        acc
+        Some(acc)
     });
+
+    let result = result.unwrap_or_default();
 
     let result = Arc::new(result);
     cache.insert(discovery.cache_key.clone(), Arc::clone(&result));
@@ -3212,6 +3345,7 @@ pub(crate) fn get_locked_version(
     config: &Config,
     path: Option<&Path>,
     short: &str,
+    specifier: &str,
     prefix: &str,
     require_prefix_boundary: bool,
     request_options: &BTreeMap<String, String>,
@@ -3237,6 +3371,24 @@ pub(crate) fn get_locked_version(
     };
 
     if let Some(tools) = lockfile.tools.get(short) {
+        if lockfile.uses_request_bindings() {
+            let matching = tools
+                .iter()
+                .filter(|tool| {
+                    tool.specifiers.contains(specifier) && &tool.options == request_options
+                })
+                .collect_vec();
+            return match matching.as_slice() {
+                [] => Ok(None),
+                [found] => {
+                    trace!("[{short}@{specifier}] found {} in lockfile", found.version);
+                    Ok(Some((*found).clone()))
+                }
+                _ => bail!(
+                    "lockfile contains multiple resolutions for {short}@{specifier} with the same options"
+                ),
+            };
+        }
         let version_matches = |v: &LockfileTool| {
             lockfile_version_matches(prefix, &v.version)
                 && (!require_prefix_boundary
@@ -3413,6 +3565,7 @@ impl TryFrom<toml::Value> for LockfileTool {
             toml::Value::String(v) => LockfileTool {
                 version: v,
                 backend: Default::default(),
+                specifiers: Default::default(),
                 options: Default::default(),
                 platforms: Default::default(),
             },
@@ -3446,6 +3599,11 @@ impl TryFrom<toml::Value> for LockfileTool {
                         }
                     }
                 }
+                let specifiers = t
+                    .remove("specifiers")
+                    .map(|value| value.try_into())
+                    .transpose()?
+                    .unwrap_or_default();
                 // Silently discard env field from old lockfiles for backwards compat
                 t.remove("env");
                 LockfileTool {
@@ -3459,6 +3617,7 @@ impl TryFrom<toml::Value> for LockfileTool {
                         .map(|v| v.try_into())
                         .transpose()?
                         .unwrap_or_default(),
+                    specifiers,
                     options,
                     platforms,
                 }
@@ -3470,11 +3629,17 @@ impl TryFrom<toml::Value> for LockfileTool {
 }
 
 impl LockfileTool {
-    fn into_toml_value(self) -> toml::Value {
+    fn into_toml_value(self, include_specifiers: bool) -> toml::Value {
         let mut table = toml::Table::new();
         table.insert("version".to_string(), self.version.into());
         if let Some(backend) = self.backend {
             table.insert("backend".to_string(), backend.into());
+        }
+        if include_specifiers && !self.specifiers.is_empty() {
+            table.insert(
+                "specifiers".to_string(),
+                self.specifiers.into_iter().collect::<Vec<_>>().into(),
+            );
         }
         if !self.options.is_empty() {
             let opts_table: toml::Table = self
@@ -3510,6 +3675,7 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
     Ok(LockfileTool {
         version: tv.version.clone(),
         backend: Some(tv.ba().stored_full()),
+        specifiers: BTreeSet::from([tv.request.version()]),
         options,
         platforms,
     })
@@ -3576,9 +3742,96 @@ mod tests {
         LockfileTool {
             version: version.to_string(),
             backend: Some(backend.to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn new_lockfiles_write_current_version_and_request_bindings() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "dummy".to_string(),
+            vec![LockfileTool {
+                version: "1.1.0".to_string(),
+                backend: Some("asdf:dummy".to_string()),
+                specifiers: BTreeSet::from(["1".to_string()]),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::new(),
+            }],
+        );
+
+        lockfile.save(&path).unwrap();
+        let contents = file::read_to_string(&path).unwrap();
+        assert!(contents.contains("lockfile_version = 1"));
+        assert!(contents.contains("specifiers = [\"1\"]"));
+
+        let reloaded = Lockfile::read(&path).unwrap();
+        assert_eq!(reloaded.lockfile_version(), 1);
+        assert_eq!(
+            reloaded.tools["dummy"][0].specifiers,
+            BTreeSet::from(["1".to_string()])
+        );
+    }
+
+    #[test]
+    fn legacy_lockfiles_remain_unversioned_when_rewritten() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        file::write(
+            &path,
+            "[[tools.dummy]]\nversion = \"1.0.0\"\nbackend = \"asdf:dummy\"\n",
+        )
+        .unwrap();
+
+        let lockfile = Lockfile::read(&path).unwrap();
+        assert_eq!(lockfile.lockfile_version(), 0);
+        lockfile.save(&path).unwrap();
+        let contents = file::read_to_string(&path).unwrap();
+        assert!(!contents.contains("lockfile_version"));
+        assert!(!contents.contains("specifiers"));
+    }
+
+    #[test]
+    fn future_lockfile_versions_are_rejected() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("mise.lock");
+        file::write(&path, "lockfile_version = 2\n[tools]\n").unwrap();
+
+        let err = Lockfile::read(&path).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("unsupported lockfile version 2; this mise supports up to version 1")
+        );
+    }
+
+    #[test]
+    fn request_binding_moves_between_versions_with_matching_options() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "dummy".to_string(),
+            vec![
+                LockfileTool {
+                    version: "1.0.0".to_string(),
+                    backend: Some("asdf:dummy".to_string()),
+                    specifiers: BTreeSet::from(["1".to_string()]),
+                    options: BTreeMap::new(),
+                    platforms: BTreeMap::new(),
+                },
+                basic_tool("1.1.0", "asdf:dummy"),
+            ],
+        );
+
+        lockfile.bind_request("dummy", "1", "1.1.0", &BTreeMap::new());
+
+        assert!(lockfile.tools["dummy"][0].specifiers.is_empty());
+        assert_eq!(
+            lockfile.tools["dummy"][1].specifiers,
+            BTreeSet::from(["1".to_string()])
+        );
     }
 
     #[test]
@@ -3682,6 +3935,7 @@ mod tests {
         LockfileTool {
             version: version.to_string(),
             backend: Some(backend.to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms,
         }
@@ -3827,6 +4081,7 @@ backend = "core:python"
         let tool = LockfileTool {
             version: "20.10.0".to_string(),
             backend: Some("core:node".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms,
         };
@@ -3965,6 +4220,7 @@ checksum = "blake3:abc123"
         let tool = LockfileTool {
             version: "14.0.0".to_string(),
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(), // Empty options
             platforms: BTreeMap::new(),
         };
@@ -3992,6 +4248,7 @@ checksum = "blake3:abc123"
         let tool = LockfileTool {
             version: "14.0.0".to_string(),
             backend: Some("ubi:BurntSushi/ripgrep".to_string()),
+            specifiers: BTreeSet::new(),
             options,
             platforms: BTreeMap::new(),
         };
@@ -4215,6 +4472,7 @@ options = { exe = "rg" }
         let existing = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms,
         }];
@@ -4231,6 +4489,7 @@ options = { exe = "rg" }
             vec![LockfileTool {
                 version: "26.0.1".to_string(),
                 backend: Some("core:java".to_string()),
+                specifiers: BTreeSet::new(),
                 options: options.clone(),
                 platforms: fresh_platforms,
             }],
@@ -4254,6 +4513,7 @@ options = { exe = "rg" }
         fragmented.push(LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
             platforms: BTreeMap::new(),
         });
@@ -4292,6 +4552,7 @@ options = { exe = "rg" }
         let existing = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms: existing_platforms,
         }];
@@ -4310,6 +4571,7 @@ options = { exe = "rg" }
         let fresh = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
+            specifiers: BTreeSet::new(),
             options: new_options.clone(),
             platforms: fresh_platforms,
         }];
@@ -4343,6 +4605,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: unix_options.clone(),
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
@@ -4355,6 +4618,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
@@ -4369,6 +4633,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: unix_options,
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
@@ -4381,6 +4646,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
@@ -4439,6 +4705,7 @@ options = { exe = "rg" }
         let existing = vec![LockfileTool {
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
+            specifiers: BTreeSet::new(),
             options: old_options,
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
@@ -4451,6 +4718,7 @@ options = { exe = "rg" }
         let fresh = vec![LockfileTool {
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
+            specifiers: BTreeSet::new(),
             options: new_options.clone(),
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
@@ -4477,6 +4745,7 @@ options = { exe = "rg" }
         let existing = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::new(),
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
@@ -4489,6 +4758,7 @@ options = { exe = "rg" }
         let fresh = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
+            specifiers: BTreeSet::new(),
             options: BTreeMap::from([("shorthand_vendor".to_string(), "openjdk".to_string())]),
             platforms: BTreeMap::new(),
         }];
@@ -4534,6 +4804,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
@@ -4546,6 +4817,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: unix_options.clone(),
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
@@ -4559,6 +4831,7 @@ options = { exe = "rg" }
         let fresh = vec![LockfileTool {
             version: "3.4.2".to_string(),
             backend: Some("core:ruby".to_string()),
+            specifiers: BTreeSet::new(),
             options: unix_options.clone(),
             platforms: BTreeMap::from([(
                 "linux-x64".to_string(),
@@ -4587,12 +4860,14 @@ options = { exe = "rg" }
         let existing = vec![LockfileTool {
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
+            specifiers: BTreeSet::new(),
             options: other_options.clone(),
             platforms: BTreeMap::new(),
         }];
         let fresh = vec![LockfileTool {
             version: "1.0.0".to_string(),
             backend: Some("example:tool".to_string()),
+            specifiers: BTreeSet::new(),
             options: current_options,
             platforms: BTreeMap::new(),
         }];
@@ -4656,6 +4931,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: unix_options.clone(),
                 platforms: BTreeMap::from([(
                     "linux-x64".to_string(),
@@ -4669,6 +4945,7 @@ options = { exe = "rg" }
             LockfileTool {
                 version: "3.4.2".to_string(),
                 backend: Some("core:ruby".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms: BTreeMap::from([(
                     "windows-x64".to_string(),
@@ -4882,6 +5159,7 @@ backend = "conda:jq"
             vec![LockfileTool {
                 version: "1.7.1".to_string(),
                 backend: Some("conda:jq".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms,
             }],
@@ -4969,6 +5247,7 @@ backend = "conda:jq"
             vec![LockfileTool {
                 version: "1.0.0".to_string(),
                 backend: Some("conda:mytool".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
                 platforms,
             }],
@@ -5081,6 +5360,7 @@ backend = "conda:jq"
             vec![LockfileTool {
                 version: "1.7.1".to_string(),
                 backend: Some("aqua:jqlang/jq".to_string()),
+                specifiers: BTreeSet::new(),
                 options: BTreeMap::new(),
 
                 platforms: BTreeMap::new(),

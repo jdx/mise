@@ -426,6 +426,7 @@ impl ToolRequest {
             config,
             path.map(|p| p.as_path()),
             &self.ba().short,
+            &self.version(),
             prefix,
             require_prefix_boundary,
             &request_options,

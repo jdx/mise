@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+
+echo "=== new lockfiles use request bindings ==="
+mkdir -p versioned/packages/b
+cat >versioned/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >versioned/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert_succeed "cd versioned && mise install"
+assert_succeed "cd versioned/packages/b && mise install"
+assert_contains "cat versioned/mise.lock" "lockfile_version = 1"
+assert_contains "cat versioned/mise.lock" 'specifiers = ["1"]'
+assert_contains "cat versioned/mise.lock" 'specifiers = ["1.0.0"]'
+assert "cd versioned && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd versioned/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+
+echo "=== upgrades move only the matching request binding ==="
+mkdir -p upgrade/packages/b
+cp versioned/mise.toml upgrade/mise.toml
+cp versioned/packages/b/mise.toml upgrade/packages/b/mise.toml
+cat >upgrade/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["1", "1.0.0"]
+EOF
+assert "cd upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+assert_succeed "cd upgrade && mise upgrade dummy"
+assert "cd upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd upgrade/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+
+echo "=== legacy lockfiles require an explicit format upgrade ==="
+mkdir legacy
+cat >legacy/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >legacy/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_contains "cd legacy && mise lock 2>&1" "uses legacy lockfile format version 0"
+assert_not_contains "cat legacy/mise.lock" "lockfile_version"
+assert_not_contains "cat legacy/mise.lock" "specifiers"
+
+assert_contains "cd legacy && mise lock --upgrade" "Upgrading"
+assert_contains "cat legacy/mise.lock" "lockfile_version = 1"
+assert_contains "cat legacy/mise.lock" 'specifiers = ["1.0.0"]'
+
+echo "=== dry-run reports but does not upgrade legacy lockfiles ==="
+mkdir legacy-dry-run
+cp legacy/mise.toml legacy-dry-run/mise.toml
+cat >legacy-dry-run/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_contains "cd legacy-dry-run && mise lock --upgrade --dry-run" "Would upgrade"
+assert_not_contains "cat legacy-dry-run/mise.lock" "lockfile_version"

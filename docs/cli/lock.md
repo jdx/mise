@@ -54,6 +54,14 @@ advances without installing anything. Config files are never modified:
 exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade --bump` to rewrite pins in mise.toml).
 
+### `--upgrade`
+
+Upgrade legacy lockfiles to the latest format
+
+Existing unversioned lockfiles use format version 0 and are otherwise
+preserved to avoid unexpected lockfile drift. This flag upgrades them
+to the latest format with request-specific version bindings.
+
 ### `--json`
 
 Output version changes as JSON

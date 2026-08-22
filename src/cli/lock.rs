@@ -95,6 +95,14 @@ pub(crate) struct Lock {
     #[clap(long, verbatim_doc_comment)]
     pub bump: bool,
 
+    /// Upgrade legacy lockfiles to the latest format
+    ///
+    /// Existing unversioned lockfiles use format version 0 and are otherwise
+    /// preserved to avoid unexpected lockfile drift. This flag upgrades them
+    /// to the latest format with request-specific version bindings.
+    #[clap(long, verbatim_doc_comment)]
+    pub upgrade: bool,
+
     /// Output version changes as JSON
     ///
     /// Prints an array of objects describing lockfile version changes:
@@ -172,7 +180,7 @@ impl Lock {
         let settings = Settings::get();
         let config = Config::get().await?;
         if !self.dry_run {
-            lockfile::migrate_monorepo_lockfiles(&config)?;
+            lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
         let lock_resolve_options = ResolveOptions {
@@ -262,6 +270,7 @@ impl Lock {
                 // For unfiltered runs (`mise lock`), this means "prune all stale lockfile entries".
                 if self.dry_run {
                     let lockfile = Lockfile::read(&lockfile_path)?;
+                    self.report_lockfile_format(&lockfile_path, &lockfile, true)?;
                     if self.json {
                         all_changes.extend(self.compute_version_changes(
                             &lockfile,
@@ -280,6 +289,8 @@ impl Lock {
                         .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                         .lock()?;
                     let mut lockfile = Lockfile::read(&lockfile_path)?;
+                    let format_changed =
+                        self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?;
                     if self.json {
                         all_changes.extend(self.compute_version_changes(
                             &lockfile,
@@ -291,7 +302,7 @@ impl Lock {
                         &mut lockfile,
                         configured_selectors.as_ref(),
                     );
-                    if !pruned_tools.is_empty() {
+                    if format_changed || !pruned_tools.is_empty() {
                         lockfile.write(&lockfile_path)?;
                         self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
                         has_lock_targets = true;
@@ -331,6 +342,7 @@ impl Lock {
             if self.dry_run {
                 self.show_dry_run(&tools, &target_platforms)?;
                 let lockfile = Lockfile::read(&lockfile_path)?;
+                self.report_lockfile_format(&lockfile_path, &lockfile, true)?;
                 if self.json {
                     all_changes.extend(self.compute_version_changes(
                         &lockfile,
@@ -353,6 +365,7 @@ impl Lock {
                 .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                 .lock()?;
             let mut lockfile = Lockfile::read(&lockfile_path)?;
+            self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?;
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
             }
@@ -367,6 +380,7 @@ impl Lock {
             let (results, resolution_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
+            self.bind_requests(&mut lockfile, &tools, &target_platforms);
             all_resolution_errors.extend(resolution_errors);
 
             let platform_regressions =
@@ -540,6 +554,67 @@ impl Lock {
 
     fn is_unfiltered_lock_run(&self) -> bool {
         self.tool.is_empty()
+    }
+
+    fn report_lockfile_format(
+        &self,
+        path: &Path,
+        lockfile: &Lockfile,
+        dry_run: bool,
+    ) -> Result<()> {
+        if !path.exists() || lockfile.lockfile_version() != 0 || self.json {
+            return Ok(());
+        }
+        if self.upgrade {
+            let prefix = if dry_run {
+                "Would upgrade"
+            } else {
+                "Upgrading"
+            };
+            miseprintln!(
+                "{} {prefix} {} from lockfile version 0 to 1",
+                style("→").yellow(),
+                style(display_path(path)).cyan()
+            );
+        } else {
+            warn!(
+                "{} uses legacy lockfile format version 0; run `mise lock --upgrade` to enable request-specific version bindings",
+                display_path(path)
+            );
+        }
+        Ok(())
+    }
+
+    fn prepare_lockfile_format(&self, path: &Path, lockfile: &mut Lockfile) -> Result<bool> {
+        self.report_lockfile_format(path, lockfile, false)?;
+        if path.exists() && lockfile.lockfile_version() == 0 && self.upgrade {
+            lockfile.upgrade();
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn bind_requests(&self, lockfile: &mut Lockfile, tools: &[LockTool], platforms: &[Platform]) {
+        if !lockfile.uses_request_bindings() {
+            return;
+        }
+        for (ba, tv) in tools {
+            let Ok(backend) = tv.request.backend() else {
+                continue;
+            };
+            for platform in platforms {
+                for variant in backend.platform_variants(platform) {
+                    let Ok(options) = backend.resolve_lockfile_options(
+                        &tv.request,
+                        &crate::backend::platform_target::PlatformTarget::new(variant),
+                    ) else {
+                        continue;
+                    };
+                    lockfile.bind_request(&ba.short, &tv.request.version(), &tv.version, &options);
+                }
+            }
+        }
     }
 
     fn prune_stale_entries_if_needed(
@@ -1448,6 +1523,7 @@ mod tests {
             global: false,
             minimum_release_age: None,
             bump: false,
+            upgrade: false,
             json: false,
         }
     }

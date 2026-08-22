@@ -2285,6 +2285,15 @@ exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade --bump` to rewrite pins in mise.toml).
 """#
     }
+    flag --upgrade help="Upgrade legacy lockfiles to the latest format" {
+        long_help #"""
+Upgrade legacy lockfiles to the latest format
+
+Existing unversioned lockfiles use format version 0 and are otherwise
+preserved to avoid unexpected lockfile drift. This flag upgrades them
+to the latest format with request-specific version bindings.
+"""#
+    }
     flag --json help="Output version changes as JSON" {
         long_help #"""
 Output version changes as JSON
