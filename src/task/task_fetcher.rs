@@ -1,4 +1,4 @@
-use crate::config::config_file::{trust_check, trust_check_remote_fetch};
+use crate::config::config_file::trust_check_remote_fetch;
 use crate::config::{Config, Settings};
 use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
 use crate::task::{Task, script_header_has_decoded_template};
@@ -168,13 +168,12 @@ impl TaskFetcher {
                 )
                 .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
                 if header_has_templates {
-                    trust_check(&defining_config_source).wrap_err_with(|| {
+                    trust_check_remote_fetch(&defining_config_source).wrap_err_with(|| {
                         format!(
                             "remote task metadata from {source} requires its defining config to be trusted"
                         )
                     })?;
                 }
-                let remote_metadata_has_tools = !remote.tools.is_empty();
                 remote.name.clone_from(&original.name);
                 remote.display_name.clone_from(&original.display_name);
 
@@ -200,7 +199,6 @@ impl TaskFetcher {
                 remote.global = original.global;
                 remote.remote_file_source = Some(source);
                 remote.remote_config_source = Some(defining_config_source);
-                remote.remote_metadata_has_tools = remote_metadata_has_tools;
                 *t = remote;
             }
         }

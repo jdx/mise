@@ -792,10 +792,6 @@ pub(crate) struct Task {
     #[serde(skip)]
     pub remote_config_source: Option<PathBuf>,
 
-    /// Whether the fetched remote header contributed tool requirements.
-    #[serde(skip)]
-    pub remote_metadata_has_tools: bool,
-
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -3176,7 +3172,6 @@ impl Default for Task {
             timeout: None,
             remote_file_source: None,
             remote_config_source: None,
-            remote_metadata_has_tools: false,
             deny_all: false,
             deny_read: false,
             deny_write: false,
