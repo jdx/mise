@@ -6055,10 +6055,13 @@ fn collect_pkg_receipt_ids(value: &Value, pkg_ids: &mut Vec<String>) {
             continue;
         };
         match pkgutil {
-            Value::String(id) => pkg_ids.push(id.clone()),
-            Value::Array(ids) => {
-                pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
-            }
+            Value::String(id) if !id.trim().is_empty() => pkg_ids.push(id.clone()),
+            Value::Array(ids) => pkg_ids.extend(
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .filter(|id| !id.trim().is_empty())
+                    .map(str::to_string),
+            ),
             _ => {}
         }
     }
@@ -6421,18 +6424,13 @@ fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
     #[cfg(target_os = "macos")]
     // Homebrew's pkgutil metadata is a regular expression, not a literal ID.
     // Match it with pkgutil itself to preserve its nonstandard regexp semantics.
+    // Like Homebrew, use the returned IDs rather than the exit status because a
+    // query with no matches may exit unsuccessfully.
     let output = std::process::Command::new("pkgutil")
         .arg(format!("--pkgs={pkg_id}"))
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .output()?;
-    #[cfg(target_os = "macos")]
-    if !output.status.success() {
-        bail!(
-            "brew-cask: pkgutil receipt query for '{pkg_id}' failed with {}",
-            output.status
-        );
-    }
     #[cfg(target_os = "macos")]
     Ok(pkgutil_output_has_match(&output.stdout))
 }
@@ -12065,6 +12063,24 @@ end
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("pkg artifacts require pkgutil ids"));
+    }
+
+    #[test]
+    fn rejects_empty_pkgutil_patterns() {
+        for pkgutil in [
+            serde_json::json!(""),
+            serde_json::json!(" \n\t"),
+            serde_json::json!(["", " \t"]),
+        ] {
+            let mut cask = test_cask("example", "1.0.0");
+            cask.artifacts = vec![
+                serde_json::json!({"uninstall": [{"pkgutil": pkgutil}]}),
+                serde_json::json!({"pkg": ["Example.pkg"]}),
+            ];
+
+            let err = cask_artifacts(&cask).unwrap_err().to_string();
+            assert!(err.contains("pkg artifacts require pkgutil ids"));
+        }
     }
 
     #[test]
