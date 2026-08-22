@@ -3063,9 +3063,10 @@ enum AbsentEntryPolicy<'a> {
     Drop,
     /// Keep every absent entry because sibling ownership is unknown.
     PreserveAll,
-    /// Keep only absent entries whose concrete version remains in the union;
-    /// `None` means the union contains no version for this short. The set is
-    /// membership-only (versions are opaque strings) and must never be iterated.
+    /// Keep absent entries whose concrete version remains in the union.
+    /// `None` means the union cannot attribute this short, so preserve every
+    /// absent entry. The set is membership-only (versions are opaque strings)
+    /// and must never be iterated.
     PreserveVersions(Option<&'a HashSet<String>>),
 }
 
@@ -3093,7 +3094,7 @@ fn absent_entry_policy_for_update<'a>(
         // exactly by [monorepo].config_roots. Discovery is not recursive:
         // nested undeclared configs still write to the root lockfile but are
         // invisible here, as are roots removed from the configured globs.
-        // Their unattributed entries may be pruned when this short is updated.
+        // Their unattributed entries fall back to preservation below.
         let keep_versions = monorepo_versions
             .get(lockfile_path)
             .and_then(|tools| tools.get(short));
@@ -3153,7 +3154,7 @@ fn preserve_absent_tool_entries(
             AbsentEntryPolicy::Drop => false,
             AbsentEntryPolicy::PreserveAll => true,
             AbsentEntryPolicy::PreserveVersions(versions) => {
-                versions.is_some_and(|versions| versions.contains(&existing_tool.version))
+                versions.is_none_or(|versions| versions.contains(&existing_tool.version))
             }
         };
         if !preserve {
@@ -4449,6 +4450,45 @@ options = { exe = "rg" }
                 .collect_vec(),
             vec!["2.0.0"]
         );
+    }
+
+    #[test]
+    fn test_unattributed_nested_monorepo_entry_is_preserved() {
+        let monorepo_root = Path::new("/repo");
+        let nested_config = Path::new("/repo/packages/a/sub/mise.toml");
+        let (lockfile_path, is_local) =
+            lockfile_path_for_config(nested_config, Some(monorepo_root));
+        assert_eq!(lockfile_path, PathBuf::from("/repo/mise.lock"));
+        assert!(!is_local);
+
+        // Exact config-root discovery does not recurse into `packages/a/sub`,
+        // so the union can have no attributable version for this short even
+        // though the nested config previously wrote it to the root lockfile.
+        let keep_versions = LockfileVersionsByPath::from([(lockfile_path.clone(), HashMap::new())]);
+        let omitted_shorts = HashSet::new();
+        let policy = absent_entry_policy_for_update(
+            true,
+            Some(&omitted_shorts),
+            Some(&keep_versions),
+            &lockfile_path,
+            "tool",
+        );
+        assert!(matches!(policy, AbsentEntryPolicy::PreserveVersions(None)));
+
+        let existing = vec![basic_tool("nested-pin", "aqua:example/tool")];
+        let merged = merge_tool_entries_for_update(
+            vec![basic_tool("active-upgrade", "aqua:example/tool")],
+            Some(&existing),
+            policy,
+            |_, _| None,
+        );
+        let versions = merged
+            .iter()
+            .map(|tool| tool.version.as_str())
+            .collect_vec();
+        assert_eq!(versions.len(), 2);
+        assert!(versions.contains(&"active-upgrade"));
+        assert!(versions.contains(&"nested-pin"));
     }
 
     #[test]
