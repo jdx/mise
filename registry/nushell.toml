@@ -1,0 +1,6 @@
+aliases = ["nu"]
+backends = ["aqua:nushell/nushell", "github:nushell/nushell"]
+bins = ["nu"]
+description = "A new type of shell"
+test = { cmd = "nu --version", expected = "{{version}}" }
+version_order = "semver"
