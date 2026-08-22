@@ -766,11 +766,8 @@ fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<S
 /// Installs the provisioned executable at a persistent remote path so the host
 /// keeps a usable mise once the staging directory is removed.
 fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
-    // The remote digest comes first so a first install does not hash the local
-    // executable for nothing.
-    if let Some(installed) = remote_executable_sha256(session, target)?
-        && installed == crate::hash::file_hash_sha256(binary, None)?
-    {
+    let expected = crate::hash::file_hash_sha256(binary, None)?;
+    if remote_executable_sha256(session, target)?.is_some_and(|installed| installed == expected) {
         info!(
             "mise is already installed at {target} on {}",
             session.host.name
@@ -780,6 +777,16 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
     let file = File::open(binary)
         .wrap_err_with(|| format!("failed to open mise binary {}", binary.display()))?;
     session.status_with_stdin(&["sh", "-c", &install_mise_script(target)], file)?;
+    // An install path can be writable by more than the SSH account, so confirm
+    // the executable about to run is the one that was just written.
+    if let Some(installed) = remote_executable_sha256(session, target)?
+        && installed != expected
+    {
+        bail!(
+            "{target} on '{}' changed after it was installed; another writer owns that path",
+            session.host.name
+        );
+    }
     info!("installed mise to {target} on {}", session.host.name);
     Ok(())
 }
