@@ -69,8 +69,10 @@ impl fmt::Display for TaskCycleError {
 impl std::error::Error for TaskCycleError {}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-/// State contributed by a task's completed direct dependencies.
+/// State contributed by a task's completed dependencies.
 pub(crate) struct TaskDependencyState {
+    /// Prerequisite tasks whose declared outputs may be read by this task.
+    pub(crate) dependencies: Vec<Task>,
     /// Stable artifact identities to include in the task's cache key.
     pub cache_keys: Vec<String>,
     /// Whether any dependency executed or restored outputs.
@@ -104,6 +106,7 @@ pub(crate) struct Deps {
     executed: HashSet<TaskKey>, // tasks that actually began executing (not just scheduled)
     did_work: HashSet<TaskKey>, // tasks that executed or restored outputs (not freshness-skipped)
     cache_keys: HashMap<TaskKey, String>, // stable artifact identities published by completed tasks
+    tasks: HashMap<TaskKey, Task>, // resolved definitions retained after graph nodes are removed
     dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys
     post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-subtree task to its triggering parents
     tx: mpsc::UnboundedSender<Option<Task>>,
@@ -306,6 +309,10 @@ impl Deps {
         let executed = HashSet::new();
         let did_work = HashSet::new();
         let cache_keys = HashMap::new();
+        let tasks = graph
+            .node_indices()
+            .map(|idx| (task_key(&graph[idx]), graph[idx].clone()))
+            .collect();
         Ok(Self {
             graph,
             tx,
@@ -314,6 +321,7 @@ impl Deps {
             executed,
             did_work,
             cache_keys,
+            tasks,
             dep_edges,
             post_dep_parents,
         })
@@ -450,7 +458,23 @@ impl Deps {
             .collect::<Vec<_>>();
         cache_keys.sort();
         cache_keys.dedup();
+        let mut prerequisite_keys = deps.clone();
+        let mut pending = deps.iter().copied().collect_vec();
+        while let Some(key) = pending.pop() {
+            for dependency in self.dep_edges.get(key).into_iter().flatten() {
+                if prerequisite_keys.insert(dependency) {
+                    pending.push(dependency);
+                }
+            }
+        }
+        let mut dependencies = prerequisite_keys
+            .iter()
+            .filter_map(|key| self.tasks.get(*key).cloned())
+            .collect_vec();
+        dependencies.sort();
+        dependencies.dedup();
         TaskDependencyState {
+            dependencies,
             cache_keys,
             any_did_work: deps.iter().any(|dep_key| self.did_work.contains(dep_key)),
             any_unkeyed_did_work: deps.iter().any(|dep_key| {
@@ -669,6 +693,7 @@ mod tests {
             executed: HashSet::new(),
             did_work: HashSet::new(),
             cache_keys: HashMap::new(),
+            tasks: HashMap::new(),
             dep_edges,
             post_dep_parents,
             tx,
@@ -706,6 +731,7 @@ mod tests {
         assert_eq!(
             deps.dependency_state(&c),
             TaskDependencyState {
+                dependencies: vec![],
                 cache_keys: vec![],
                 any_did_work: true,
                 any_unkeyed_did_work: true,
@@ -716,11 +742,54 @@ mod tests {
         assert_eq!(
             deps.dependency_state(&c),
             TaskDependencyState {
+                dependencies: vec![],
                 cache_keys: vec!["b-key".to_string()],
                 any_did_work: true,
                 any_unkeyed_did_work: false,
             }
         );
+    }
+
+    // https://github.com/jdx/mise/discussions/12264
+    #[test]
+    fn dependency_state_retains_direct_dependency_tasks() {
+        let dependency = Task {
+            outputs: crate::task::TaskOutputs::Files(vec!["dist".to_string()]),
+            ..task("dependency")
+        };
+        let parent = task("parent");
+        let mut deps = deps_with_relationships(
+            HashMap::from([(task_key(&parent), HashSet::from([task_key(&dependency)]))]),
+            HashMap::new(),
+        );
+        deps.tasks.insert(task_key(&dependency), dependency.clone());
+
+        assert_eq!(deps.dependency_state(&parent).dependencies, [dependency]);
+    }
+
+    // https://github.com/jdx/mise/discussions/12264
+    #[test]
+    fn dependency_state_retains_transitive_prerequisite_tasks() {
+        let first = Task {
+            outputs: crate::task::TaskOutputs::Files(vec!["first-output".to_string()]),
+            ..task("first")
+        };
+        let second = Task {
+            outputs: crate::task::TaskOutputs::Files(vec!["second-output".to_string()]),
+            ..task("second")
+        };
+        let parent = task("parent");
+        let mut deps = deps_with_relationships(
+            HashMap::from([
+                (task_key(&parent), HashSet::from([task_key(&second)])),
+                (task_key(&second), HashSet::from([task_key(&first)])),
+            ]),
+            HashMap::new(),
+        );
+        deps.tasks.insert(task_key(&first), first.clone());
+        deps.tasks.insert(task_key(&second), second.clone());
+
+        assert_eq!(deps.dependency_state(&parent).dependencies, [first, second]);
     }
 
     #[test]
@@ -737,6 +806,7 @@ mod tests {
         assert_eq!(
             deps.dependency_state(&post),
             TaskDependencyState {
+                dependencies: vec![],
                 cache_keys: vec!["parent-key".to_string()],
                 any_did_work: true,
                 any_unkeyed_did_work: false,

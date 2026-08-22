@@ -72,6 +72,22 @@ allow_write = ["./node_modules"]
 allow_net = ["registry.npmjs.org"]
 ```
 
+Tasks can also opt in to inferred filesystem reads:
+
+```toml
+[tasks.build]
+run = "npm run build"
+depends = ["generate"]
+sources = ["src/**/*.ts"]
+outputs = ["dist/**"]
+sandbox = true
+```
+
+With `sandbox = true`, matched source files and the task file are readable, and outputs from all
+prerequisite dependencies are readable. Explicit `allow_read` paths extend those inferred reads;
+other sandbox settings, including `allow_write`, continue to compose normally. Declaring `sources`
+without `sandbox = true` does not enable sandboxing.
+
 CLI flags on `mise run` override task-level config:
 
 ```bash
@@ -101,6 +117,21 @@ When filesystem restrictions are active, certain paths remain accessible so tool
 
 - `--allow-write` paths are implicitly readable
 - `--allow-read` paths include system essentials above
+- With task `sandbox = true`, declared `sources` enable read restrictions and are automatically
+  readable
+- With task `sandbox = true`, declared outputs of all prerequisite dependencies enable read
+  restrictions and are automatically readable
+
+Explicit `allow_read` paths extend these inferred permissions. Output writes are not inferred; use
+`allow_write` when a task also needs write restrictions.
+
+Source globs are resolved to the files they match, including source exclusions. Dependency output
+globs grant read access to the static path before the first wildcard.
+
+Inferred permissions are an ergonomics feature, not a hermetic build boundary. Tools may need
+additional explicit access for configuration, caches, formatters, or undeclared inputs. The task
+working directory is not implicitly readable; add `allow_read = ["."]` when a tool needs to inspect
+it.
 
 ## Platform Support
 

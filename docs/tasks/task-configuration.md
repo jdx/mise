@@ -1080,6 +1080,28 @@ When both a global timeout and a per-task timeout are set, the shorter of the tw
 timeout cannot extend beyond the global timeout. The `--timeout` CLI flag overrides the global
 setting.
 
+### `sandbox`
+
+- **Type**: `bool`
+- **Default**: `false`
+
+Infer filesystem sandbox reads from the task's declared inputs. Matched `sources` and the task file
+become readable, and outputs of all prerequisite dependencies become readable. Explicit
+`allow_read` paths extend the inferred reads; other sandbox settings continue to compose normally.
+
+```mise-toml
+[tasks.build]
+run = "npm run build"
+depends = ["generate"]
+sources = ["src/**/*.ts"]
+outputs = ["dist/**"]
+sandbox = true
+```
+
+Source globs resolve to the files they currently match. Dependency output globs grant read access
+to their static prefix. Output writes are not inferred; use `allow_write` when needed. See
+[Sandboxing](/sandboxing.html) for platform behavior and limitations.
+
 ### `deny_all`
 
 - **Type**: `bool`

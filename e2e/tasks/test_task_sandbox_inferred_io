@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# https://github.com/jdx/mise/discussions/12264
+# Filesystem sandboxing is unavailable on Windows and on Linux kernels without Landlock.
+case "$(uname -s)" in
+  Darwin) ;;
+  Linux)
+    if ! mise x --deny-read -- true >/dev/null 2>&1; then
+      echo "skipping: task sandbox inference requires Landlock"
+      return 0
+    fi
+    ;;
+  *)
+    echo "skipping: task sandbox inference is unsupported on this platform"
+    return 0
+    ;;
+esac
+
+mkdir -p input work/scratch seed-output dep-output output
+echo source >input/source.txt
+echo private >input/private.md
+
+cat <<'EOF' >source-task.sh
+#!/usr/bin/env bash
+echo source-file
+EOF
+chmod +x source-task.sh
+
+cat <<'EOF' >mise.toml
+[tasks.seed]
+dir = "work"
+run = "echo seed > ../seed-output/result.txt"
+outputs = ["../seed-output/**"]
+
+[tasks.prepare]
+dir = "work"
+run = "echo dependency > ../dep-output/result.txt"
+depends = ["seed"]
+outputs = ["../dep-output/**"]
+
+[tasks.build]
+dir = "work"
+run = "cat ../input/source.txt ../seed-output/result.txt ../dep-output/result.txt > ../output/result.txt && echo explicit > scratch/result.txt"
+depends = ["prepare"]
+sources = ["../input/*.txt"]
+outputs = ["../output/**"]
+sandbox = true
+allow_read = ["."]
+allow_write = ["../output", "scratch"]
+
+[tasks.undeclared-read]
+dir = "work"
+run = "cat ../input/private.md"
+sources = ["../input/*.txt"]
+sandbox = true
+allow_read = ["."]
+
+[tasks.not-sandboxed]
+dir = "work"
+run = "cat ../input/private.md"
+sources = ["../input/*.txt"]
+
+[tasks.source-file]
+file = "source-task.sh"
+dir = "work"
+sandbox = true
+allow_read = ["."]
+EOF
+
+assert "mise run build" ""
+assert "cat output/result.txt" $'source\nseed\ndependency'
+assert "cat work/scratch/result.txt" "explicit"
+assert_fail "mise run undeclared-read"
+assert "mise run --force not-sandboxed" "private"
+assert "mise run source-file" "source-file"

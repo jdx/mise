@@ -3,7 +3,7 @@ use crate::config::config_file::toml::deserialize_arr;
 use crate::task::task_sources::TaskOutputs;
 use crate::task::{
     RunEntry, Silent, Task, TaskCacheConfig, TaskConfirm, TaskDep, TaskOutput, TaskRustCacheConfig,
-    TaskToolValue, TaskWatchOptions,
+    TaskSandboxMode, TaskToolValue, TaskWatchOptions,
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -58,6 +58,9 @@ pub(crate) struct TaskTemplate {
     pub run_windows: Vec<RunEntry>,
     #[serde(default)]
     pub file: Option<String>,
+    /// Infer filesystem reads from sources and prerequisite outputs.
+    #[serde(default)]
+    pub sandbox: TaskSandboxMode,
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -234,6 +237,9 @@ impl Task {
 
         // sandbox: restrictions compose with task-local settings, matching how
         // task and global sandbox config are combined in the executor.
+        if template.sandbox.is_inferred() {
+            self.sandbox = TaskSandboxMode::Inferred;
+        }
         self.deny_all |= template.deny_all;
         self.deny_read |= template.deny_read;
         self.deny_write |= template.deny_write;
@@ -517,6 +523,7 @@ mod tests {
             ..Default::default()
         };
         let template = TaskTemplate {
+            sandbox: TaskSandboxMode::Inferred,
             deny_all: true,
             deny_read: true,
             deny_write: true,
@@ -531,6 +538,7 @@ mod tests {
 
         task.merge_template(&template);
 
+        assert!(task.sandbox.is_inferred());
         assert!(task.deny_all);
         assert!(task.deny_read);
         assert!(task.deny_write);

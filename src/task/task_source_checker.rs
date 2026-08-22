@@ -557,6 +557,24 @@ pub(crate) fn task_source_match_root(root: &Path, config: &Config) -> PathBuf {
         .unwrap_or_else(|| root.to_path_buf())
 }
 
+/// Resolve a task's declared source patterns to the files they currently match.
+pub(crate) async fn resolve_task_source_paths(
+    task: &Task,
+    config: &Arc<Config>,
+) -> Result<Vec<PathBuf>> {
+    let root = task_cwd(task, config).await?;
+    let match_root = task_source_match_root(&root, config);
+    let matcher = build_source_matcher(&match_root, &root, &task.sources);
+    let mut paths = get_file_metadatas(&root, &source_glob_patterns(&task.sources), &matcher)?
+        .into_iter()
+        .map(|(path, _)| path)
+        .collect::<std::collections::BTreeSet<_>>();
+    if let Some(path) = task.file_path(config).await? {
+        paths.insert(path);
+    }
+    Ok(paths.into_iter().collect())
+}
+
 /// Collect source file metadatas for a task, anchored at the correct workspace root.
 async fn collect_source_metadatas(
     task: &Task,
