@@ -57,7 +57,6 @@ pub struct AquaPackage {
     pub repo_owner: String,
     pub repo_name: String,
     pub name: Option<String>,
-    /// Cargo package name used when Aqua delegates installation to Cargo.
     #[serde(rename = "crate")]
     pub crate_name: Option<String>,
     pub asset: String,
@@ -135,15 +134,10 @@ struct AquaRuntime<'a> {
 /// A platform-specific package override with selectors mise can evaluate at runtime.
 #[derive(Debug, Clone)]
 pub struct AquaPackagePlatformOverride {
-    /// Package after applying this platform override.
     pub package: AquaPackage,
-    /// Aqua GOOS selector.
     pub goos: Option<String>,
-    /// Aqua GOARCH selector.
     pub goarch: Option<String>,
-    /// Aqua environment selectors.
     pub envs: Vec<String>,
-    /// Normalized libc selector, when present.
     pub libc: Option<String>,
 }
 

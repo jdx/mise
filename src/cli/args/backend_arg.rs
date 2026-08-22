@@ -361,7 +361,6 @@ impl BackendArg {
 
             let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
             for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
-                // Skip backend suggestions whose tool name matches an existing mise suggestion
                 if !mise_names.contains(&aqua.name) {
                     suggestions.push(aqua.backend);
                 }

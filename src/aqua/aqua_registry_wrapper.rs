@@ -487,7 +487,6 @@ pub(crate) struct AquaSearchEntry {
 }
 
 impl AquaSearchEntry {
-    /// Tool name users search by: the last path segment of the Aqua package id.
     pub(crate) fn name(&self) -> &'static str {
         self.id.rsplit_once('/').map_or(self.id, |(_, name)| name)
     }
@@ -536,7 +535,6 @@ pub(crate) fn aqua_suggest(query: &str) -> Vec<AquaSuggestion> {
     // Use a higher threshold (0.8) to avoid noisy suggestions
     let similar_names = xx::suggest::similar_n_with_threshold(query, &cache.names, 5, 0.8);
 
-    // Map back to runnable backend identifiers.
     let mut results = Vec::new();
     for matched_name in &similar_names {
         if let Some(entries) = cache.name_to_entries.get(matched_name.as_str()) {
