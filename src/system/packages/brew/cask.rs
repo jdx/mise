@@ -20793,16 +20793,21 @@ end
             {"zap": [{"delete": "~/.example"}]}
         ]);
         let receipt: receipt::CaskReceipt = serde_json::from_value(value)?;
-        assert_eq!(
-            homebrew_uninstall_actions("example", &receipt)?,
-            vec![
-                HomebrewUninstallAction::Launchctl("com.example.agent".to_string()),
-                HomebrewUninstallAction::Quit("com.example.app".to_string()),
-                HomebrewUninstallAction::Pkgutil("com.example.one".to_string()),
-                HomebrewUninstallAction::Pkgutil("com.example.two".to_string()),
-                HomebrewUninstallAction::Delete(PathBuf::from("/Library/Example")),
-            ]
-        );
+        let expected = vec![
+            HomebrewUninstallAction::Launchctl("com.example.agent".to_string()),
+            HomebrewUninstallAction::Quit("com.example.app".to_string()),
+            HomebrewUninstallAction::Pkgutil("com.example.one".to_string()),
+            HomebrewUninstallAction::Pkgutil("com.example.two".to_string()),
+            HomebrewUninstallAction::Delete(PathBuf::from("/Library/Example")),
+        ];
+        if cfg!(target_os = "macos") {
+            assert_eq!(homebrew_uninstall_actions("example", &receipt)?, expected);
+        } else {
+            let err = homebrew_uninstall_actions("example", &receipt)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("macOS uninstall directive is unavailable"));
+        }
         Ok(())
     }
 
@@ -20832,14 +20837,10 @@ end
             );
         }
         assert!(
-            validate_homebrew_uninstall_actions(
-                "gcloud-cli",
-                "581.0.0",
-                &[HomebrewUninstallAction::Trash(PathBuf::from("/"))],
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("protected path")
+            validate_cask_delete_pattern("gcloud-cli", Path::new("/"))
+                .unwrap_err()
+                .to_string()
+                .contains("protected path")
         );
         Ok(())
     }
