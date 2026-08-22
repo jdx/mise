@@ -429,7 +429,7 @@ packages:
   - type: github_release
     repo_owner: Arata1202
     repo_name: ascdir
-    description: Manage App Store Connect metadata and product-page assets as reviewable files
+    description: Manage App Store Connect metadata, TestFlight distribution, and releases with safe CLI workflows
     version_constraint: "false"
     version_overrides:
       - version_constraint: "true"
