@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-unset CI GITHUB_ACTIONS GITHUB_ACTION 2>/dev/null || true
-
 mkdir -p repo/packages/app other
 cat <<'EOF' >repo/packages/app/package.json
 {
