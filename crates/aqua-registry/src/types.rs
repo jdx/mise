@@ -413,26 +413,6 @@ impl AquaPackage {
         self.with_version_runtime(versions, os, arch, AquaRuntime { libc })
     }
 
-    /// Apply Aqua's unconditional version fallback and platform overrides.
-    ///
-    /// This resolves the package shape that can be determined without knowing a
-    /// concrete version. It is intended for offline metadata consumers, not for
-    /// installing a particular version.
-    pub fn with_unconditional_overrides(self, os: &str, arch: &str) -> AquaPackage {
-        self.with_unconditional_overrides_runtime(os, arch, AquaRuntime::default())
-    }
-
-    /// Apply Aqua's unconditional version fallback and platform overrides for
-    /// a libc runtime variant.
-    pub fn with_unconditional_overrides_libc(
-        self,
-        os: &str,
-        arch: &str,
-        libc: Option<&str>,
-    ) -> AquaPackage {
-        self.with_unconditional_overrides_runtime(os, arch, AquaRuntime { libc })
-    }
-
     /// Apply a catch-all version fallback when the root package is explicitly disabled.
     ///
     /// The boolean indicates whether the root package remains the effective
@@ -485,16 +465,6 @@ impl AquaPackage {
                 })
             })
             .collect()
-    }
-
-    fn with_unconditional_overrides_runtime(
-        self,
-        os: &str,
-        arch: &str,
-        runtime: AquaRuntime<'_>,
-    ) -> AquaPackage {
-        let (package, _) = self.with_unconditional_version_override();
-        package.with_platform_runtime(os, arch, runtime)
     }
 
     fn with_version_runtime(
@@ -2910,10 +2880,11 @@ packages:
       - version_constraint: "true"
         type: go_build
 "#;
-        let pkg = first_registry_package(yml).with_unconditional_overrides("linux", "amd64");
+        let (pkg, root_package) = first_registry_package(yml).with_unconditional_version_override();
 
         assert_eq!(pkg.package_type(), AquaPackageType::GoBuild);
         assert_eq!(pkg.crate_name, None);
+        assert!(!root_package);
     }
 
     #[test]
@@ -2926,10 +2897,11 @@ packages:
         type: cargo
         crate: tool
 "#;
-        let pkg = first_registry_package(yml).with_unconditional_overrides("linux", "amd64");
+        let (pkg, root_package) = first_registry_package(yml).with_unconditional_version_override();
 
         assert_eq!(pkg.package_type(), AquaPackageType::GithubRelease);
         assert_eq!(pkg.crate_name, None);
+        assert!(root_package);
     }
 
     #[test]
@@ -2991,14 +2963,22 @@ packages:
             type: cargo
             crate: platform-tool
 "#;
-        let pkg = first_registry_package(yml);
-        let linux = pkg.clone().with_unconditional_overrides("linux", "amd64");
-        let darwin = pkg.with_unconditional_overrides("darwin", "arm64");
+        let (effective, _) = first_registry_package(yml).with_unconditional_version_override();
 
-        assert_eq!(linux.package_type(), AquaPackageType::GithubRelease);
-        assert_eq!(linux.crate_name, None);
-        assert_eq!(darwin.package_type(), AquaPackageType::Cargo);
-        assert_eq!(darwin.crate_name.as_deref(), Some("platform-tool"));
+        assert_eq!(effective.package_type(), AquaPackageType::GithubRelease);
+        let package_override = effective.platform_overrides().into_iter().next().unwrap();
+        assert_eq!(
+            package_override.envs,
+            vec!["darwin".to_string(), "windows".to_string()]
+        );
+        assert_eq!(
+            package_override.package.package_type(),
+            AquaPackageType::Cargo
+        );
+        assert_eq!(
+            package_override.package.crate_name.as_deref(),
+            Some("platform-tool")
+        );
     }
 
     #[test]
