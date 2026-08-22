@@ -182,21 +182,7 @@ impl Backend for PIPXBackend {
             }
             PipxRequest::Git { .. } => vec![],
         };
-        // PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
-        // suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared
-        // regex so the rule stays scoped to Python — hex commit hashes used
-        // by other ecosystems (e.g. Go pseudo-versions) would false-positive.
-        Ok(versions
-            .into_iter()
-            .map(|mut v| {
-                // Only fill in unknowns — an authoritative flag from a
-                // GitHub release (either value) wins over pattern detection.
-                if v.prerelease.is_none() && PEP440_PRERELEASE_REGEX.is_match(&v.version) {
-                    v.prerelease = Some(true);
-                }
-                v
-            })
-            .collect())
+        Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
     }
 
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
@@ -1011,6 +997,19 @@ fn fix_venv_python_symlink(_install_path: &Path, _pkg_name: &str) -> Result<()> 
     Ok(())
 }
 
+/// PyPI versions follow PEP 440. Stamp the separator-less alpha/beta/rc
+/// suffixes (`3.12.0a1`, `1.0.0c1`) here rather than in the shared regex so
+/// the rule stays scoped to Python — hex commit hashes used by other
+/// ecosystems (e.g. Go pseudo-versions) would false-positive. Only fills in
+/// unknowns: an authoritative flag from a GitHub release (either value) wins
+/// over pattern detection.
+fn stamp_pep440_prerelease(mut version: VersionInfo) -> VersionInfo {
+    if version.prerelease.is_none() && PEP440_PRERELEASE_REGEX.is_match(&version.version) {
+        version.prerelease = Some(true);
+    }
+    version
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1536,14 +1535,7 @@ mod tests {
 
         let stamped: Vec<_> = versions
             .into_iter()
-            .map(|mut v| {
-                if v.prerelease.is_none()
-                    && crate::plugins::PEP440_PRERELEASE_REGEX.is_match(&v.version)
-                {
-                    v.prerelease = Some(true);
-                }
-                v
-            })
+            .map(super::stamp_pep440_prerelease)
             .collect();
         assert_eq!(stamped[0].prerelease, Some(false));
     }
