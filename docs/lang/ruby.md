@@ -32,11 +32,16 @@ Precompiled binaries are sourced from [jdx/ruby](https://github.com/jdx/ruby) an
 for the following platforms:
 
 - macOS (arm64/Apple Silicon only)
-- Linux arm64
-- Linux x86_64
+- Linux arm64 (glibc/manylinux2014 only)
+- Linux x86_64 (glibc/manylinux2014 only)
 
 If a precompiled binary is not available for your platform or Ruby version, mise automatically
 falls back to compiling from source using ruby-build.
+
+jdx/ruby has no musl builds, so on musl-based distros such as Alpine mise always compiles Ruby
+from source (unless you set `ruby.compile=false`, in which case installs error out). If you host
+your own musl binaries via `ruby.precompiled_url`, set `ruby.precompiled_arch` and
+`ruby.precompiled_os` explicitly to opt back in to precompiled installs.
 
 ### Precompiled binaries only
 
