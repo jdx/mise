@@ -3650,10 +3650,12 @@ async fn load_local_tasks_with_context(
             &d,
             local_configs.clone(),
             templates,
-            false,
-            effective_cascaded_task_config,
-            None,
-            load_file_tasks,
+            LoadTaskSourcesOptions {
+                monorepo_context: false,
+                cascaded_task_config: effective_cascaded_task_config,
+                rendered_file_tasks: None,
+                load_file_tasks,
+            },
         )
         .await?
         .into_tasks();
@@ -4187,10 +4189,12 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
             templates,
-            false,
-            None,
-            Some(&mut rendered_file_tasks),
-            true,
+            LoadTaskSourcesOptions {
+                monorepo_context: false,
+                cascaded_task_config: None,
+                rendered_file_tasks: Some(&mut rendered_file_tasks),
+                load_file_tasks: true,
+            },
         )
         .await?;
         rendered_file_tasks.finish_config();
@@ -4957,13 +4961,22 @@ async fn load_tasks_from_configs(
         dir,
         configs,
         templates,
-        monorepo_context,
-        cascaded_task_config,
-        None,
-        true,
+        LoadTaskSourcesOptions {
+            monorepo_context,
+            cascaded_task_config,
+            rendered_file_tasks: None,
+            load_file_tasks: true,
+        },
     )
     .await?
     .into_tasks())
+}
+
+struct LoadTaskSourcesOptions<'a> {
+    monorepo_context: bool,
+    cascaded_task_config: Option<&'a CascadedTaskConfig>,
+    rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
+    load_file_tasks: bool,
 }
 
 /// Load file and inline task sources without merging them.
@@ -4975,11 +4988,14 @@ async fn load_task_sources_from_configs(
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &TaskDefinitions,
-    monorepo_context: bool,
-    cascaded_task_config: Option<&CascadedTaskConfig>,
-    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
-    load_file_tasks: bool,
+    options: LoadTaskSourcesOptions<'_>,
 ) -> Result<TaskSources> {
+    let LoadTaskSourcesOptions {
+        monorepo_context,
+        cascaded_task_config,
+        mut rendered_file_tasks,
+        load_file_tasks,
+    } = options;
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
             None
