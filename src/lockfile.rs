@@ -4452,6 +4452,10 @@ options = { exe = "rg" }
         );
     }
 
+    /// Contract test: pins the nested-config lockfile routing and the
+    /// `PreserveVersions(None)` -> preserve decision. It is not a reproduction of
+    /// upgrading the same short elsewhere; that path always reaches `Some`
+    /// because `update_lockfiles` folds `new_versions` into the keep-set.
     #[test]
     fn test_unattributed_nested_monorepo_entry_is_preserved() {
         let monorepo_root = Path::new("/repo");
