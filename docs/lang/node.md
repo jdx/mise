@@ -172,6 +172,18 @@ mise settings node.flavor=glibc-217
 For the common musl case, `mise settings libc=musl` also selects Node's `musl`
 flavor when `node.flavor` is unset.
 
+On Alpine, `all_compile` currently defaults to `true`, which skips precompiled Node
+(including musl unofficial builds) and compiles from source instead. Disable that to use
+`node.flavor=musl`:
+
+```toml
+[settings]
+all_compile = false
+```
+
+or `[settings.node] compile = false`. This Alpine default is deprecated and will be removed
+in mise 2027.8.0.
+
 ## Settings
 
 <script setup>

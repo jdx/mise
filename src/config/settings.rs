@@ -252,42 +252,66 @@ static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
 static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
 // TODO(2027.8.0): Remove the per-tool warning accessors once the NixOS
-// `all_compile` deprecation process is complete.
+// and Alpine `all_compile` deprecation process is complete.
 
 fn default_all_compile(linux_distro: Option<&str>) -> bool {
     matches!(linux_distro, Some("alpine" | "nixos"))
 }
 
-fn compile_inherits_nixos_all_compile_default(
+fn compile_inherits_distro_all_compile_default(
     linux_distro: Option<&str>,
+    distro: &str,
     explicit_all_compile: Option<bool>,
     compile: Option<bool>,
 ) -> bool {
-    linux_distro == Some("nixos") && explicit_all_compile.is_none() && compile.is_none()
+    linux_distro == Some(distro) && explicit_all_compile.is_none() && compile.is_none()
 }
 
 fn effective_compile_setting(all_compile: bool, compile: Option<bool>) -> Option<bool> {
     compile.or_else(|| all_compile.then_some(true))
 }
 
-fn warn_nixos_all_compile_default_deprecated(
+fn distro_all_compile_deprecation_id(distro: &str, tool: &str) -> Option<&'static str> {
+    match (distro, tool) {
+        ("nixos", "node") => Some("nixos.node_all_compile_default"),
+        ("nixos", "python") => Some("nixos.python_all_compile_default"),
+        ("nixos", "erlang") => Some("nixos.erlang_all_compile_default"),
+        ("nixos", "ruby") => Some("nixos.ruby_all_compile_default"),
+        ("alpine", "node") => Some("alpine.node_all_compile_default"),
+        ("alpine", "python") => Some("alpine.python_all_compile_default"),
+        ("alpine", "erlang") => Some("alpine.erlang_all_compile_default"),
+        ("alpine", "ruby") => Some("alpine.ruby_all_compile_default"),
+        _ => None,
+    }
+}
+
+fn warn_implicit_all_compile_default_deprecated(
     tool: &str,
-    id: &'static str,
     all_compile: Option<bool>,
     compile: Option<bool>,
 ) {
-    if !cfg!(test)
-        && compile_inherits_nixos_all_compile_default(
-            env::LINUX_DISTRO.as_deref(),
-            all_compile,
-            compile,
-        )
+    if cfg!(test) {
+        return;
+    }
+    let distro = env::LINUX_DISTRO.as_deref();
+    if compile_inherits_distro_all_compile_default(distro, "nixos", all_compile, compile)
+        && let Some(id) = distro_all_compile_deprecation_id("nixos", tool)
     {
         deprecated_at!(
             "2026.8.0",
             "2027.8.0",
             id,
             "The automatic all_compile=true default on NixOS caused {tool} to compile from source. Enable nix-ld to use precompiled binaries, or configure all_compile=true explicitly to keep compiling tools from source."
+        );
+    }
+    if compile_inherits_distro_all_compile_default(distro, "alpine", all_compile, compile)
+        && let Some(id) = distro_all_compile_deprecation_id("alpine", tool)
+    {
+        deprecated_at!(
+            "2026.8.0",
+            "2027.8.0",
+            id,
+            "The automatic all_compile=true default on Alpine caused {tool} to compile from source. Set all_compile=false to use precompiled musl binaries when available, or configure all_compile=true explicitly to keep compiling tools from source."
         );
     }
 }
@@ -698,50 +722,29 @@ impl Settings {
         &self,
         purpose: CompilePurpose,
         tool: &str,
-        id: &'static str,
         compile: Option<bool>,
     ) -> Option<bool> {
         if matches!(purpose, CompilePurpose::Install) {
-            warn_nixos_all_compile_default_deprecated(tool, id, self.all_compile, compile);
+            warn_implicit_all_compile_default_deprecated(tool, self.all_compile, compile);
         }
         effective_compile_setting(self.all_compile(), compile)
     }
 
     pub(crate) fn node_compile(&self, purpose: CompilePurpose) -> Option<bool> {
-        self.compile_setting(
-            purpose,
-            "node",
-            "nixos.node_all_compile_default",
-            self.node.compile,
-        )
+        self.compile_setting(purpose, "node", self.node.compile)
     }
 
     pub(crate) fn python_compile(&self, purpose: CompilePurpose) -> Option<bool> {
-        self.compile_setting(
-            purpose,
-            "python",
-            "nixos.python_all_compile_default",
-            self.python.compile,
-        )
+        self.compile_setting(purpose, "python", self.python.compile)
     }
 
     pub(crate) fn erlang_compile(&self, purpose: CompilePurpose) -> Option<bool> {
-        self.compile_setting(
-            purpose,
-            "erlang",
-            "nixos.erlang_all_compile_default",
-            self.erlang.compile,
-        )
+        self.compile_setting(purpose, "erlang", self.erlang.compile)
     }
 
     #[cfg(not(windows))]
     pub(crate) fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
-        self.compile_setting(
-            purpose,
-            "ruby",
-            "nixos.ruby_all_compile_default",
-            self.ruby.compile,
-        )
+        self.compile_setting(purpose, "ruby", self.ruby.compile)
     }
 
     pub(crate) fn try_get() -> Result<Arc<Self>> {
@@ -1712,39 +1715,84 @@ mod tests {
     }
 
     #[test]
-    fn compile_warning_only_applies_to_implicit_nixos_values() {
-        assert!(compile_inherits_nixos_all_compile_default(
+    fn compile_warning_only_applies_to_implicit_distro_values() {
+        assert!(compile_inherits_distro_all_compile_default(
             Some("nixos"),
+            "nixos",
             None,
             None
         ));
-        assert!(!compile_inherits_nixos_all_compile_default(
+        assert!(!compile_inherits_distro_all_compile_default(
             Some("nixos"),
+            "nixos",
             Some(true),
             None
         ));
-        assert!(!compile_inherits_nixos_all_compile_default(
+        assert!(!compile_inherits_distro_all_compile_default(
             Some("nixos"),
+            "nixos",
             Some(false),
             None
         ));
-        assert!(!compile_inherits_nixos_all_compile_default(
+        assert!(!compile_inherits_distro_all_compile_default(
             Some("nixos"),
+            "nixos",
             None,
             Some(true)
         ));
-        assert!(!compile_inherits_nixos_all_compile_default(
+        assert!(!compile_inherits_distro_all_compile_default(
             Some("nixos"),
+            "nixos",
             None,
             Some(false)
         ));
-        assert!(!compile_inherits_nixos_all_compile_default(
+        assert!(!compile_inherits_distro_all_compile_default(
             Some("alpine"),
+            "nixos",
             None,
             None
         ));
-        assert!(!compile_inherits_nixos_all_compile_default(
-            None, None, None
+        assert!(compile_inherits_distro_all_compile_default(
+            Some("alpine"),
+            "alpine",
+            None,
+            None
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            Some("alpine"),
+            "alpine",
+            Some(true),
+            None
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            Some("alpine"),
+            "alpine",
+            Some(false),
+            None
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            Some("alpine"),
+            "alpine",
+            None,
+            Some(true)
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            Some("alpine"),
+            "alpine",
+            None,
+            Some(false)
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            Some("nixos"),
+            "alpine",
+            None,
+            None
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            None, "nixos", None, None
+        ));
+        assert!(!compile_inherits_distro_all_compile_default(
+            None, "alpine", None, None
         ));
     }
 
