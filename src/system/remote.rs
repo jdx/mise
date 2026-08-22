@@ -795,12 +795,13 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
 }
 
 /// Writes beside the target and renames, so a replaced executable is never
-/// truncated in place and a busy binary cannot fail with ETXTBSY. `mktemp`
-/// creates that file exclusively, so a symbolic link planted in a shared
-/// writable install directory cannot capture the write. A directory at the
-/// target is refused before the rename, and again after it in case one appears
-/// in between — `mv` would otherwise move the executable inside it and report
-/// success.
+/// truncated in place and a busy binary cannot fail with ETXTBSY. The write
+/// goes into a `mktemp -d` directory rather than a named sibling file: that
+/// directory is private to the SSH account, so nobody else can swap the path
+/// out from under `cat` in a shared writable install directory. A directory at
+/// the target is refused before the rename, and again after it in case one
+/// appears in between — `mv` would otherwise move the executable inside it and
+/// report success.
 fn install_mise_script(target: &str) -> String {
     format!(
         r#"set -eu
@@ -811,13 +812,14 @@ if [ -d "$target" ]; then
   printf 'mise install path is a directory: %s\n' "$target" >&2
   exit 1
 fi
-temporary=$(mktemp "$directory/.mise-install.XXXXXXXXXX")
-trap 'rm -f "$temporary"' EXIT
+staging=$(mktemp -d "$directory/.mise-install.XXXXXXXXXX")
+trap 'rm -rf -- "$staging"' EXIT
+temporary="$staging/mise"
 cat > "$temporary"
 chmod 755 "$temporary"
 mv -f "$temporary" "$target"
 if [ ! -f "$target" ]; then
-  rm -f "$target/${{temporary##*/}}"
+  rm -f "$target/mise"
   printf 'mise install path is not a regular file: %s\n' "$target" >&2
   exit 1
 fi"#,
@@ -2285,7 +2287,7 @@ mod tests {
         let script = install_mise_script("/home/deploy dir/.local/bin/mise");
         assert!(script.contains("target='/home/deploy dir/.local/bin/mise'"));
         assert!(script.contains("directory='/home/deploy dir/.local/bin'"));
-        assert!(script.contains(r#"temporary=$(mktemp "$directory/.mise-install.XXXXXXXXXX")"#));
+        assert!(script.contains(r#"staging=$(mktemp -d "$directory/.mise-install.XXXXXXXXXX")"#));
         assert!(script.contains(r#"if [ -d "$target" ]; then"#));
         assert_eq!(remote_parent_directory("/mise"), "/");
         assert!(script.contains(r#"mv -f "$temporary" "$target""#));

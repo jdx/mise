@@ -78,11 +78,14 @@ chmod +x fakebin/uname
 
 cat >fakebin/mktemp <<'EOF'
 #!/bin/sh
-# only the staging directory is faked; every other caller gets the real mktemp
-if test "${1:-}" != -d; then
+# only the bootstrap staging directory is faked; other callers get real mktemp
+case "${2:-}" in
+/tmp/mise-bootstrap.*) ;;
+*)
   PATH=/usr/bin:/bin command mktemp "$@"
   exit $?
-fi
+  ;;
+esac
 if test "${MISE_TEST_BAD_STAGE:-}" = 1; then
   mkdir -p "$BAD_REMOTE_STAGE"
   printf '%s\n' "$BAD_REMOTE_STAGE"
