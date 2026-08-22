@@ -500,7 +500,7 @@ impl Backend for UnifiedGitBackend {
                     version: self.strip_version_prefix(&r.tag_name, &opts),
                     created_at: Some(r.created_at),
                     release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                    prerelease: r.prerelease,
+                    prerelease: Some(r.prerelease),
                     ..Default::default()
                 })
                 .collect()
@@ -520,7 +520,7 @@ impl Backend for UnifiedGitBackend {
                         version: self.strip_version_prefix(&r.tag_name, &opts),
                         created_at,
                         release_url: Some(format!("{}/releases/tag/{}", web_url_base, r.tag_name)),
-                        prerelease: r.prerelease,
+                        prerelease: Some(r.prerelease),
                         ..Default::default()
                     }
                 })
@@ -599,7 +599,7 @@ impl Backend for UnifiedGitBackend {
             .map(|(tag, created_at, prerelease)| VersionInfo {
                 version: self.strip_version_prefix(&tag, &opts),
                 created_at: Some(created_at),
-                prerelease,
+                prerelease: Some(prerelease),
                 ..Default::default()
             }))
     }

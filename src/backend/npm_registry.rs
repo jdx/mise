@@ -93,7 +93,7 @@ pub(crate) async fn list_versions(name: &str) -> Result<Vec<VersionInfo>> {
         .map(|version| VersionInfo {
             version: version.clone(),
             created_at: packument.time.get(version).cloned(),
-            prerelease: is_semver_prerelease(version),
+            prerelease: Some(is_semver_prerelease(version)),
             ..Default::default()
         })
         .collect())

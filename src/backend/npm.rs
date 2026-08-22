@@ -274,10 +274,6 @@ impl Backend for NPMBackend {
         &self.ba
     }
 
-    fn mark_prereleases_from_version_pattern(&self) -> bool {
-        true
-    }
-
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         // Version queries hit the npm registry over HTTP and installs use the
         // embedded aube package manager, so by default neither needs a
@@ -1571,7 +1567,7 @@ fn npm_view_versions_time(data: &Value) -> eyre::Result<Vec<VersionInfo>> {
             VersionInfo {
                 version: version.to_string(),
                 created_at,
-                prerelease: is_semver_prerelease(version),
+                prerelease: Some(is_semver_prerelease(version)),
                 ..Default::default()
             }
         })
@@ -1606,7 +1602,7 @@ fn npm_deprecated_query(package: &str, versions: &[VersionInfo]) -> Option<Strin
 
     let prerelease_cores = versions
         .iter()
-        .filter(|version| version.prerelease)
+        .filter(|version| version.prerelease == Some(true))
         .filter_map(|version| semver::Version::parse(&version.version).ok())
         .map(|version| (version.major, version.minor, version.patch))
         .collect::<BTreeSet<_>>();
@@ -2000,14 +1996,14 @@ mod tests {
             versions[0].created_at,
             Some("2026-01-02T03:04:05.000Z".into())
         );
-        assert!(!versions[0].prerelease);
+        assert_eq!(versions[0].prerelease, Some(false));
 
         assert_eq!(versions[1].version, "1.1.0-beta.1");
         assert_eq!(
             versions[1].created_at,
             Some("2026-01-03T03:04:05.000Z".into())
         );
-        assert!(versions[1].prerelease);
+        assert_eq!(versions[1].prerelease, Some(true));
     }
 
     #[test]
@@ -2174,7 +2170,7 @@ pkg@1.2.0 '1.2.0'
         ]
         .map(|(version, prerelease)| VersionInfo {
             version: version.into(),
-            prerelease,
+            prerelease: Some(prerelease),
             ..Default::default()
         });
 

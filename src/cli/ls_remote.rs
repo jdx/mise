@@ -20,8 +20,9 @@ struct VersionOutputAll {
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
     /// Pre-release flag, sourced from upstream metadata or backend opt-in
-    /// detection. Always emitted so JSON consumers can rely on its presence.
-    prerelease: bool,
+    /// detection. Always emitted so JSON consumers can rely on its presence:
+    /// `true`/`false` when the source can tell, `null` when it cannot.
+    prerelease: Option<bool>,
 }
 
 /// List runtime versions available for install.
@@ -233,3 +234,36 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_json_output_always_carries_prerelease() {
+        // The --all --json contract: the field is always present — true/false
+        // when the source can tell, null when it cannot. (Single-tool --json
+        // serializes VersionInfo instead, which omits the key when unknown.)
+        let known = VersionOutputAll {
+            tool: "a".into(),
+            version: "1.0.0".into(),
+            created_at: None,
+            prerelease: Some(false),
+        };
+        assert_eq!(
+            serde_json::to_string(&known).unwrap(),
+            r#"{"tool":"a","version":"1.0.0","prerelease":false}"#
+        );
+
+        let unknown = VersionOutputAll {
+            tool: "a".into(),
+            version: "2.0.0".into(),
+            created_at: None,
+            prerelease: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&unknown).unwrap(),
+            r#"{"tool":"a","version":"2.0.0","prerelease":null}"#
+        );
+    }
+}
