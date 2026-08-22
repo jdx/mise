@@ -65,7 +65,7 @@ xx = { version = "2", default-features = false, features = [
 
 # cli dependencies
 env_logger = { version = "0.11", optional = true }
-usage_rs = { package = "usage-rs", git = "https://github.com/jdx/usage", rev = "7e6e349e35716ef2095be9a6adceb1281470683f", features = [
+usage_rs = { package = "usage-rs", version = "6", features = [
   "diagnostics",
 ], optional = true }
 tempfile = "3"

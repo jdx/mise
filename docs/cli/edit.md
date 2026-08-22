@@ -30,9 +30,9 @@ Path to a .tool-versions file to import tools from
 Examples:
 
 ```
-mise edit             # edit mise.toml interactively
-mise edit .mise.toml  # edit a specific file
-mise edit -g          # edit the global config file
-mise edit -y          # skip interactive editor
-mise edit -n          # preview without writing
+$ mise edit             # edit mise.toml interactively
+$ mise edit .mise.toml  # edit a specific file
+$ mise edit -g          # edit the global config file
+$ mise edit -y          # skip interactive editor
+$ mise edit -n          # preview without writing
 ```

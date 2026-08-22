@@ -8,7 +8,7 @@
 Create a new task
 
 Adds a task to the local mise.toml file.
-See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
+See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 
 ## Arguments
 
@@ -83,5 +83,5 @@ Do not print the command or its output
 Examples:
 
 ```
-mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
+$ mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```

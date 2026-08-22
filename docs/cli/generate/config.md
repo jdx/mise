@@ -30,9 +30,9 @@ Path to a .tool-versions file to import tools from
 Examples:
 
 ```
-mise generate config             # generate mise.toml interactively
-mise generate config .mise.toml  # generate a specific file
-mise generate config -g          # generate the global config file
-mise generate config -y          # skip interactive editor
-mise generate config -n          # preview without writing
+$ mise generate config             # generate mise.toml interactively
+$ mise generate config .mise.toml  # generate a specific file
+$ mise generate config -g          # generate the global config file
+$ mise generate config -y          # skip interactive editor
+$ mise generate config -n          # preview without writing
 ```

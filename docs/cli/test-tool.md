@@ -42,5 +42,5 @@ Implies --jobs=1
 Examples:
 
 ```
-mise test-tool ripgrep
+$ mise test-tool ripgrep
 ```

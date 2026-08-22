@@ -46,5 +46,5 @@ root directory to search for tasks
 Examples:
 
 ```
-mise generate task-docs
+$ mise generate task-docs
 ```

@@ -2067,7 +2067,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3671e15a3e8444d399658989389a0eca99bee6f4aca10b836aad27882d4c4d7"
 dependencies = [
  "clap",
- "usage-lib 5.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "usage-lib 5.1.0",
 ]
 
 [[package]]
@@ -2215,7 +2215,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3056,7 +3056,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3345,7 +3345,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4315,7 +4315,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a791e6620676a875f362f3156ed213e73ca099a09bf992c18812abe65cc37b1"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5382,7 +5382,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -5906,7 +5906,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "160f2eade097f30263b548aae5deb12ad349c909baa710fa24b92c9090b2e006"
 dependencies = [
  "scopeguard",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5959,7 +5959,7 @@ version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1886916523694cd6ea3d175f03a1e5010699a2a4cc13696d83d7bea1d80638"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6474,8 +6474,8 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
- "usage-lib 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
- "usage-rs 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
+ "usage-lib 6.0.0",
+ "usage-rs",
  "versions",
  "vfox",
  "walkdir",
@@ -6780,7 +6780,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7024,7 +7024,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7300,7 +7300,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bitfields",
  "block-padding",
  "blowfish",
@@ -7842,7 +7842,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8854,7 +8854,7 @@ dependencies = [
  "errno 0.3.14",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8913,7 +8913,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10252,10 +10252,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10323,7 +10323,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11100,29 +11100,15 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-argv"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
-
-[[package]]
-name = "usage-argv"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "162179f728d278bd58665be652eee85d2ae555bf28128476d009e75e264f49d3"
 
 [[package]]
 name = "usage-derive"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "usage-derive"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "419bca1663d0d5c5fc5ed50b2150240f849310da92af5030daad6007959fa302"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11155,8 +11141,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "242b7d1759f957259f29f307206af6b99d736e6d774eb5562e6ed900f9749337"
 dependencies = [
  "heck",
  "indexmap 2.14.0",
@@ -11176,36 +11163,30 @@ dependencies = [
 
 [[package]]
 name = "usage-rs"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f#7e6e349e35716ef2095be9a6adceb1281470683f"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f6fbc51c1c0ecb24dc799c6002c20b39736d0ddf47fa1167a21014485eb40a5"
 dependencies = [
- "usage-argv 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
- "usage-derive 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
-]
-
-[[package]]
-name = "usage-rs"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
-dependencies = [
- "usage-argv 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
- "usage-derive 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
+ "usage-argv",
+ "usage-derive",
  "usage-test",
  "usage-validation",
 ]
 
 [[package]]
 name = "usage-test"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05f487645613d586d484dfacb573c9e71daeaf95e44e342fb4e605a155bba87d"
 dependencies = [
- "usage-argv 5.1.0 (git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089)",
+ "usage-argv",
 ]
 
 [[package]]
 name = "usage-validation"
-version = "5.1.0"
-source = "git+https://github.com/jdx/usage?rev=8455ef42b50704475dbd3d2c956f0d8396dcf089#8455ef42b50704475dbd3d2c956f0d8396dcf089"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f312e0a2ee548c403f07ae79e03a5784b95a53a241f232f8abe9cf57b8ae105a"
 dependencies = [
  "expr-lang",
 ]
@@ -11303,7 +11284,7 @@ dependencies = [
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "url",
- "usage-rs 5.1.0 (git+https://github.com/jdx/usage?rev=7e6e349e35716ef2095be9a6adceb1281470683f)",
+ "usage-rs",
  "wiremock",
  "xx",
 ]
@@ -11524,7 +11505,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
