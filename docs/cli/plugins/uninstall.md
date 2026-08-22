@@ -27,5 +27,5 @@ Also remove the plugin's installs, downloads, and cache
 Examples:
 
 ```
-$ mise plugins uninstall cmake
+mise plugins uninstall cmake
 ```

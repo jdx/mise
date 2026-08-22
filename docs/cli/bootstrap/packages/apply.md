@@ -45,8 +45,8 @@ Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get upd
 Examples:
 
 ```
-$ mise bootstrap packages apply
-$ mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835
-$ mise bootstrap packages apply --dry-run
-$ mise bootstrap packages apply --manager apt --yes
+mise bootstrap packages apply
+mise bootstrap packages apply apk:zlib-dev apt:curl brew:jq brew-cask:firefox flatpak:org.mozilla.firefox flatpak-user:org.gnome.Builder mas:497799835
+mise bootstrap packages apply --dry-run
+mise bootstrap packages apply --manager apt --yes
 ```

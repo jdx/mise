@@ -6,15 +6,14 @@
 - **Effect**: read-only
 - **Source code**: [`src/cli/plugins/ls_remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/ls_remote.rs)
 
-
 List all available remote plugins
 
-The full list is here: https://github.com/jdx/mise/blob/main/registry/
+The full list is here: <https://github.com/jdx/mise/blob/main/registry/>
 
 Examples:
 
 ```
-$ mise plugins ls-remote
+mise plugins ls-remote
 ```
 
 ## Flags
@@ -22,7 +21,7 @@ $ mise plugins ls-remote
 ### `-u --urls`
 
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/mise-poetry.git
+e.g.: <https://github.com/mise-plugins/mise-poetry.git>
 
 ### `--only-names`
 

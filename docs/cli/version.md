@@ -21,8 +21,8 @@ Print the version information in JSON format
 Examples:
 
 ```
-$ mise version
-$ mise --version
-$ mise -v
-$ mise -V
+mise version
+mise --version
+mise -v
+mise -V
 ```

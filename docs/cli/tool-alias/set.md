@@ -27,6 +27,6 @@ The value to set the alias to
 Examples:
 
 ```
-$ mise tool-alias set maven asdf:mise-plugins/mise-maven
-$ mise tool-alias set node lts-jod 22.0.0
+mise tool-alias set maven asdf:mise-plugins/mise-maven
+mise tool-alias set node lts-jod 22.0.0
 ```

@@ -24,6 +24,6 @@ Display the path to the task instead of editing it
 Examples:
 
 ```
-$ mise tasks edit build
-$ mise tasks edit test
+mise tasks edit build
+mise tasks edit test
 ```

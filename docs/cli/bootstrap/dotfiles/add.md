@@ -58,7 +58,7 @@ Skip the confirmation prompt
 Examples:
 
 ```
-$ mise bootstrap dotfiles add ~/.zshrc
-$ mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
-$ mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
+mise bootstrap dotfiles add ~/.zshrc
+mise bootstrap dotfiles add --mode copy ~/.config/starship.toml
+mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig
 ```

@@ -71,5 +71,5 @@ Sort order. Default is asc.
 Examples:
 
 ```
-$ mise tasks ls
+mise tasks ls
 ```

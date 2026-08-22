@@ -3151,7 +3151,18 @@ non-fuzzy matches, use the `--match-type` flag.
     }
     arg "[NAME]" help="The tool to search for" required=#false
 }
-cmd self-update effect=write {
+cmd self-update help="Updates mise itself." effect=write {
+    long_help #"""
+Updates mise itself.
+
+Uses the GitHub Releases API to find the latest release and binary.
+By default, this will also update any installed plugins.
+Uses mise\'s GitHub token resolution chain for authenticated requests.
+
+Packagers can disable this command so that mise is updated through the
+package manager instead. See
+https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
+"""#
     flag "-f --force" help="Update even if already up to date"
     flag "-y --yes" help="Skip confirmation prompt"
     flag --no-plugins help="Disable auto-updating plugins"
