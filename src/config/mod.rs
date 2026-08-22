@@ -982,9 +982,19 @@ impl Config {
             load_local_tasks_with_context(&config, ctx, &task_definitions).await?;
         let global_tasks = load_global_tasks(&config, &task_definitions).await?;
         local_tasks.retain(|local| {
-            !global_tasks
-                .iter()
-                .any(|global| tasks_have_same_source(local, global))
+            !global_tasks.iter().any(|global| {
+                // Drop a local rediscovery of a global source only when both
+                // readings share a config root. A differing root (e.g.
+                // MISE_CONFIG_DIR pointing inside a project) is a genuinely
+                // different context, and the local reading keeps shadowing the
+                // global one by name.
+                tasks_have_same_source(local, global)
+                    && local
+                        .config_root
+                        .as_ref()
+                        .zip(global.config_root.as_ref())
+                        .is_none_or(|(l, g)| file::desymlink_path(l) == file::desymlink_path(g))
+            })
         });
         let mut tasks: BTreeMap<String, Task> = local_tasks
             .into_iter()
@@ -3377,22 +3387,34 @@ async fn apply_task_config_inputs(
 }
 
 fn default_task_includes() -> Vec<String> {
+    let mut includes = default_task_includes_without_config_dir();
+    includes.insert(3, ".config/mise/tasks".to_string());
+    includes
+}
+
+fn default_task_includes_without_config_dir() -> Vec<String> {
     vec![
         "mise-tasks".to_string(),
         ".mise-tasks".to_string(),
         ".mise/tasks".to_string(),
-        ".config/mise/tasks".to_string(),
         "mise/tasks".to_string(),
     ]
 }
 
-fn is_global_task_include_path(path: &Path) -> bool {
+/// The user-global and system scopes' own `tasks/` directories, in scope
+/// order. Both the global task loader and the global include marking/trust
+/// exemption derive from this list so they cannot drift apart.
+fn global_scope_tasks_dirs() -> [PathBuf; 2] {
     [
         dirs::CONFIG.join("tasks"),
         dirs::SYSTEM_CONFIG.join("tasks"),
     ]
-    .iter()
-    .any(|prefix| file::path_starts_with_resolved(path, prefix))
+}
+
+fn is_global_task_include_path(path: &Path) -> bool {
+    global_scope_tasks_dirs()
+        .iter()
+        .any(|prefix| file::path_starts_with_resolved(path, prefix))
 }
 
 #[async_backtrace::framed]
@@ -4077,10 +4099,22 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
     // Compose user-global and system configs as separate scopes so task_config
     // fields follow the same override semantics as local config files. Load the
     // user scope first so a user task replaces a same-named system task without
-    // inheriting metadata from it.
+    // inheriting metadata from it. Each scope owns its config dir's `tasks/`
+    // directory even when no config file exists in that scope, so scripts-only
+    // setups don't depend on the ancestor walk reaching the global root.
     let mut seen_configs = BTreeSet::new();
-    let mut config_groups = vec![];
-    for config_paths in [global_config_files(), system_config_files()] {
+    let mut tasks: IndexMap<String, Task> = IndexMap::new();
+    let mut rendered_file_tasks = RenderedTaskCache::default();
+    let [user_tasks_dir, system_tasks_dir] = global_scope_tasks_dirs();
+    for (config_paths, scope_tasks_dir, pin_config_dir_include) in [
+        (
+            global_config_files(),
+            user_tasks_dir,
+            *env::MISE_CONFIG_DIR_OVERRIDDEN,
+        ),
+        (system_config_files(), system_tasks_dir, true),
+    ] {
+        let scope_has_candidates = !config_paths.is_empty();
         let configs = config_paths
             .iter()
             .rev()
@@ -4096,25 +4130,46 @@ async fn load_global_tasks(config: &Arc<Config>, templates: &TaskDefinitions) ->
             })
             .filter(|cf| seen_configs.insert(file::desymlink_path(cf.get_path())))
             .collect::<Vec<_>>();
-        if !configs.is_empty() {
-            config_groups.push(configs);
-        }
-    }
-
-    // Aggregate the user and system scopes high-to-low. Each scope has already
-    // composed its file and inline tasks, so precedence between scopes is a
-    // simple first-wins replacement by task name.
-    let mut tasks: IndexMap<String, Task> = IndexMap::new();
-    let mut rendered_file_tasks = RenderedTaskCache::default();
-    for configs in config_groups {
+        let scope_task_defaults = if configs.is_empty() {
+            // Only a scope with no config files at all claims its own tasks
+            // dir. A scope whose candidates did not load (a nonexistent
+            // MISE_GLOBAL_CONFIG_FILE, --no-config) or were consumed by the
+            // other scope keeps that explicit configuration authoritative.
+            if scope_has_candidates || Settings::no_config() {
+                continue;
+            }
+            ScopeTaskDefaults {
+                includes: vec![],
+                pinned_dir: Some(scope_tasks_dir),
+            }
+        } else if pin_config_dir_include {
+            // The scope's config dir is not where the root-relative default
+            // include points, so pin the config-dir entry to the scope's own
+            // tasks dir instead.
+            ScopeTaskDefaults {
+                includes: default_task_includes_without_config_dir(),
+                pinned_dir: Some(scope_tasks_dir),
+            }
+        } else {
+            ScopeTaskDefaults {
+                includes: default_task_includes(),
+                pinned_dir: None,
+            }
+        };
+        // Aggregate the user and system scopes high-to-low. Each scope has
+        // already composed its file and inline tasks, so precedence between
+        // scopes is a simple first-wins replacement by task name.
         let sources = load_task_sources_from_configs(
             config,
             &env::MISE_GLOBAL_CONFIG_ROOT,
             configs,
             templates,
-            false,
-            None,
-            Some(&mut rendered_file_tasks),
+            TaskSourceLoadOptions {
+                monorepo_context: false,
+                cascaded_task_config: None,
+                rendered_file_tasks: Some(&mut rendered_file_tasks),
+                scope_task_defaults: Some(scope_task_defaults),
+            },
         )
         .await?;
         rendered_file_tasks.finish_config();
@@ -4881,12 +4936,33 @@ async fn load_tasks_from_configs(
         dir,
         configs,
         templates,
-        monorepo_context,
-        cascaded_task_config,
-        None,
+        TaskSourceLoadOptions {
+            monorepo_context,
+            cascaded_task_config,
+            rendered_file_tasks: None,
+            scope_task_defaults: None,
+        },
     )
     .await?
     .into_tasks())
+}
+
+/// A global/system scope's default task includes, applied only when no config
+/// supplies explicit `task_config.includes`.
+struct ScopeTaskDefaults {
+    /// Relative default patterns, resolved against the global root.
+    includes: Vec<String>,
+    /// The scope's own `tasks/` directory, loaded as a literal path so glob
+    /// metacharacters or non-UTF-8 bytes in the directory path cannot break
+    /// discovery.
+    pinned_dir: Option<PathBuf>,
+}
+
+struct TaskSourceLoadOptions<'a> {
+    monorepo_context: bool,
+    cascaded_task_config: Option<&'a CascadedTaskConfig>,
+    rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
+    scope_task_defaults: Option<ScopeTaskDefaults>,
 }
 
 /// Load file and inline task sources without merging them.
@@ -4898,10 +4974,14 @@ async fn load_task_sources_from_configs(
     dir: &Path,
     configs: Vec<&Arc<dyn ConfigFile>>,
     templates: &TaskDefinitions,
-    monorepo_context: bool,
-    cascaded_task_config: Option<&CascadedTaskConfig>,
-    mut rendered_file_tasks: Option<&mut RenderedTaskCache>,
+    options: TaskSourceLoadOptions<'_>,
 ) -> Result<TaskSources> {
+    let TaskSourceLoadOptions {
+        monorepo_context,
+        cascaded_task_config,
+        mut rendered_file_tasks,
+        scope_task_defaults,
+    } = options;
     let cascaded_task_config =
         if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
             None
@@ -4912,6 +4992,7 @@ async fn load_task_sources_from_configs(
     // a config can only vouch for task include files when it was actually
     // trusted — safe configs load without trust and cannot vouch for anything
     let require_task_include_trust = !configs.iter().any(|cf| is_path_trusted(cf.get_path()));
+    let mut pinned_scope_dir = None;
     let (includes, resolve_dir, include_config_precedence) = configs
         .iter()
         .enumerate()
@@ -4929,7 +5010,16 @@ async fn load_task_sources_from_configs(
                     .map(|includes| (includes, tc.includes_root.clone(), configs.len()))
             })
         })
-        .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
+        .unwrap_or_else(|| {
+            let includes = match scope_task_defaults {
+                Some(defaults) => {
+                    pinned_scope_dir = defaults.pinned_dir;
+                    defaults.includes
+                }
+                None => default_task_includes(),
+            };
+            (includes, dir.to_path_buf(), configs.len())
+        });
 
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
@@ -4982,14 +5072,35 @@ async fn load_task_sources_from_configs(
     } else {
         None
     };
-    for include in &includes {
-        let artifacts = if include.starts_with("git::") {
-            vec![resolve_git_url_to_path(include).await?]
-        } else {
-            expand_task_include(&resolve_dir, include)
+    enum TaskIncludeEntry<'a> {
+        Pattern(&'a str),
+        /// A literal directory bypassing glob expansion, so metacharacters or
+        /// non-UTF-8 bytes in the path cannot break discovery.
+        Dir(&'a Path),
+    }
+    let mut include_entries = includes
+        .iter()
+        .map(|include| TaskIncludeEntry::Pattern(include))
+        .collect::<Vec<_>>();
+    if let Some(dir_path) = &pinned_scope_dir {
+        // Keep the config-dir entry's position from default_task_includes()
+        // so later-include-wins precedence among the defaults is unchanged.
+        let pos = include_entries.len().min(3);
+        include_entries.insert(pos, TaskIncludeEntry::Dir(dir_path));
+    }
+    for entry in include_entries {
+        let artifacts = match entry {
+            TaskIncludeEntry::Pattern(include) if include.starts_with("git::") => {
+                vec![resolve_git_url_to_path(include).await?]
+            }
+            TaskIncludeEntry::Pattern(include) => expand_task_include(&resolve_dir, include)
                 .into_iter()
                 .map(TaskFileArtifact::persistent)
-                .collect()
+                .collect(),
+            TaskIncludeEntry::Dir(path) if path.exists() => {
+                vec![TaskFileArtifact::persistent(path.to_path_buf())]
+            }
+            TaskIncludeEntry::Dir(_) => vec![],
         };
         for artifact in artifacts {
             let p = artifact.path;
