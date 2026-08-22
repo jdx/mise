@@ -202,10 +202,6 @@
         },
         "required": {
           "$ref": "#/$defs/env_required"
-        },
-        "shell": {
-          "description": "Shell used to source the file. Only valid on `_.source`. Example: `fish -c`. Defaults to bash when omitted.",
-          "type": "string"
         }
       },
       "oneOf": [
@@ -490,16 +486,16 @@
                   "$ref": "#/$defs/env_directive"
                 },
                 {
-                  "description": "script to load",
+                  "description": "bash script to load",
                   "type": "string"
                 },
                 {
-                  "description": "scripts to load",
+                  "description": "bash scripts to load",
                   "type": "array",
                   "items": {
                     "oneOf": [
                       {
-                        "description": "script to load",
+                        "description": "bash script to load",
                         "type": "string"
                       },
                       {
@@ -2261,13 +2257,13 @@
             "source": {
               "oneOf": [
                 {
-                  "description": "script to load",
+                  "description": "bash script to load",
                   "type": "string"
                 },
                 {
-                  "description": "scripts to load",
+                  "description": "bash scripts to load",
                   "items": {
-                    "description": "script to load",
+                    "description": "bash script to load",
                     "type": "string"
                   },
                   "type": "array"

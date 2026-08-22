@@ -8,7 +8,7 @@ use crate::tera::{
     TeraEngine, contains_template_syntax, get_tera, render_str, tera_exec, tera1_exec,
 };
 use crate::toolset::Toolset;
-use eyre::{Context, bail, eyre};
+use eyre::{Context, eyre};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -115,9 +115,6 @@ pub(crate) struct EnvDirectiveOptions {
     pub(crate) required: RequiredValue,
     #[serde(default)]
     pub(crate) expand: bool,
-    /// Shell argv used to source the file. Only valid on `[env] _.source`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) shell: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -208,7 +205,7 @@ pub(crate) enum EnvDirective {
     File(String, EnvDirectiveOptions),
     /// add a path to the PATH
     Path(String, EnvDirectiveOptions),
-    /// source a script and apply the resulting env diff
+    /// run a bash script and apply the resulting env diff
     Source(String, EnvDirectiveOptions),
     /// [experimental] age-encrypted value
     Age {
@@ -687,8 +684,7 @@ impl EnvResults {
                         env.insert(k.clone(), (decrypted_v, Some(source.clone())));
                     }
                 }
-                EnvDirective::Path(input_str, opts) => {
-                    ensure_shell_only_on_source("path", &opts)?;
+                EnvDirective::Path(input_str, _opts) => {
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -706,7 +702,6 @@ impl EnvResults {
                     // This allows consumers to control PATH ordering
                 }
                 EnvDirective::File(input, opts) => {
-                    ensure_shell_only_on_source("file", &opts)?;
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -737,7 +732,7 @@ impl EnvResults {
                         }
                     }
                 }
-                EnvDirective::Source(input, opts) => {
+                EnvDirective::Source(input, _opts) => {
                     let mut directive_ctx = EnvDirectiveContext {
                         config,
                         tera_ctx: &mut ctx,
@@ -749,8 +744,7 @@ impl EnvResults {
                         config_root: &config_root,
                         toolset,
                     };
-                    let files =
-                        Self::source(&mut directive_ctx, &mut paths, input, opts.shell.as_deref())?;
+                    let files = Self::source(&mut directive_ctx, &mut paths, input)?;
                     for (f, new_env) in files {
                         r.env_scripts.push(f.clone());
                         for (k, v) in new_env {
@@ -1231,13 +1225,6 @@ impl Debug for EnvResults {
         }
         ds.finish()
     }
-}
-
-fn ensure_shell_only_on_source(kind: &str, opts: &EnvDirectiveOptions) -> eyre::Result<()> {
-    if opts.shell.is_some() {
-        bail!("`shell` is only valid on [env] _.source, not on _.{}", kind);
-    }
-    Ok(())
 }
 
 #[cfg(test)]

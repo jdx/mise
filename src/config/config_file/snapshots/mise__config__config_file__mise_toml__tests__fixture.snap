@@ -11,7 +11,6 @@ expression: cf.env_entries().unwrap()
             redact: None,
             required: False,
             expand: false,
-            shell: None,
         },
     ),
 ]

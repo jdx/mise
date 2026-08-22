@@ -480,7 +480,7 @@ Relative paths like `tools/bin` or `./tools/bin` are resolved against <span v-pr
 
 ### `env._.source`
 
-Source an external script and pull exported environment variables out of it:
+Source an external bash script and pull exported environment variables out of it:
 
 ```toml
 [env]
@@ -488,9 +488,13 @@ _.source = "./script.sh"
 ```
 
 ::: info
-On Unix, the script is sourced by bash unless you set `shell` on the directive
-(for example `shell = "fish -c"`). The shebang is **ignored**. See
-[#1448](https://github.com/jdx/mise/discussions/6734)
+This **must** be a script that runs in bash as if it were executed like this:
+
+```sh
+source ./script.sh
+```
+
+The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
 for a potential alternative that would work with binaries or other script languages.
 :::
 
@@ -508,7 +512,7 @@ The `env._.source` directive supports:
 - A single source as a string or an object
 - Multiple sources as an array of strings and objects
 - Using relative or absolute paths
-- The `redact`, `tools`, and `shell` options
+- The `redact` and `tools` options
 
 For `PATH`, sourced scripts may prepend entries by preserving the original value as an exact
 suffix:
@@ -532,11 +536,6 @@ _.source = 'source.sh'
 [env]
 # Source this file after tools have defined environment variables
 _.source = { path = "my/env.sh", tools = true }
-```
-
-```toml
-[env]
-_.source = { path = "./script.fish", shell = "fish -c" }
 ```
 
 ```toml

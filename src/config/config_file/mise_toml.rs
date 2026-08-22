@@ -2317,7 +2317,6 @@ impl<'de> de::Deserialize<'de> for EnvList {
                                         redact: Some(false),
                                         required: RequiredValue::False,
                                         expand: false,
-                                        shell: None,
                                     },
                                 });
                             }
@@ -3153,29 +3152,6 @@ mod tests {
             })
             .collect();
         assert_eq!(kinds, ["source", "path", "file"]);
-    }
-
-    #[tokio::test]
-    async fn test_env_source_shell_option() {
-        let _config = Config::get().await.unwrap();
-        let p = CWD.as_ref().unwrap().join(".test.mise.toml");
-        file::write(
-            &p,
-            formatdoc! {r#"
-            [env]
-            _.source = {{ path = "script.fish", shell = "fish -c" }}
-            "#},
-        )
-        .unwrap();
-        let cf = MiseToml::from_file(&p).unwrap();
-        match cf.env.0.first() {
-            Some(EnvDirective::Source(path, opts)) => {
-                assert_eq!(path, "script.fish");
-                assert_eq!(opts.shell.as_deref(), Some("fish -c"));
-            }
-            other => panic!("expected Source, got {other:?}"),
-        }
-        file::remove_file(&p).unwrap();
     }
 
     #[tokio::test]
