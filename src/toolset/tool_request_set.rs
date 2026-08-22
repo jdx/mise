@@ -96,18 +96,10 @@ impl ToolRequestSet {
             }
         }
         let matches = |ba: &BackendArg| tools.contains(&ba.short) || tools.contains(&ba.full());
-        let mut filtered = self
-            .iter()
+        self.iter()
             .filter(|(ba, ..)| matches(ba))
             .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
-            .collect::<ToolRequestSet>();
-        filtered.unknown_tools = self
-            .unknown_tools
-            .iter()
-            .filter(|ba| matches(ba))
-            .cloned()
-            .collect();
-        filtered
+            .collect()
     }
 
     pub(crate) fn into_toolset(self) -> Toolset {
@@ -351,9 +343,6 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     a.sources.retain(|ba, _| !b.sources.contains_key(ba));
     b.tools.extend(a.tools);
     b.sources.extend(a.sources);
-    // These may accumulate duplicate BackendArgs across a config hierarchy;
-    // consumers are expected to dedup (`.unique()` or collecting into a set).
-    b.unknown_tools.extend(a.unknown_tools);
     b
 }
 
@@ -405,34 +394,6 @@ mod tests {
             tool_from_env_var_name("MISE_NODEJS_VERSION").as_deref(),
             Some("node")
         );
-    }
-
-    #[test]
-    fn test_merge_preserves_unknown_tools() {
-        let first = Arc::new(BackendArg::from("dummy"));
-        let second = Arc::new(BackendArg::from("tiny"));
-        let mut a = ToolRequestSet::new();
-        a.unknown_tools.push(first.clone());
-        let mut b = ToolRequestSet::new();
-        b.unknown_tools.push(second.clone());
-
-        let merged = merge(a, b);
-
-        assert_eq!(merged.unknown_tools, vec![second, first]);
-    }
-
-    #[tokio::test]
-    async fn test_filter_by_tool_preserves_matching_unknown_tools() {
-        crate::toolset::install_state::init().await.unwrap();
-        let selected = Arc::new(BackendArg::from("selected-missing-tool"));
-        let excluded = Arc::new(BackendArg::from("excluded-missing-tool"));
-        let mut requests = ToolRequestSet::new();
-        requests.unknown_tools = vec![selected.clone(), excluded];
-
-        let filtered =
-            requests.filter_by_tool(HashSet::from(["selected-missing-tool".to_string()]));
-
-        assert_eq!(filtered.unknown_tools, vec![selected]);
     }
 
     #[test]

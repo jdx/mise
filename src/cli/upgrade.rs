@@ -468,7 +468,11 @@ impl Upgrade {
         *config = Config::reset().await?;
 
         // Rebuild symlinks BEFORE getting versions needed by tracked configs
-        // This ensures "latest" symlinks point to the new versions, not the old ones
+        // This ensures "latest" symlinks point to the new versions, not the old ones.
+        // Keep this lockfile-writing toolset on the same ToolRequestSetBuilder path as
+        // the monorepo union. Builder-filtered shorts (unknown backends, Windows asdf,
+        // registry OS gates, and settings filters) are then absent from both views and
+        // never reach the preservation loop, so they need no per-short fallback.
         let ts = config.get_toolset().await?;
         runtime_symlinks::rebuild_for_toolset(config, ts)
             .await

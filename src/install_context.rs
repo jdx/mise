@@ -60,18 +60,11 @@ impl InstallDependencyDeclarations {
     }
 
     fn matching_requests(&self, requests: &ToolRequestSet) -> ToolRequestSet {
-        let mut matching = requests
+        requests
             .iter()
             .filter(|(ba, ..)| self.matches(ba))
             .map(|(ba, requests, source)| (ba.clone(), requests.clone(), source.clone()))
-            .collect::<ToolRequestSet>();
-        matching.unknown_tools = requests
-            .unknown_tools
-            .iter()
-            .filter(|ba| self.matches(ba))
-            .cloned()
-            .collect();
-        matching
+            .collect()
     }
 }
 
@@ -264,22 +257,5 @@ mod tests {
             install_dependency_declarations(&request("unknown:example", r#"depends=["node"]"#));
         assert!(declarations.validate().is_err());
         assert_eq!(names(&declarations), vec!["node"]);
-    }
-
-    #[tokio::test]
-    async fn matching_requests_preserves_matching_unknown_tools() {
-        let _config = Config::get().await.unwrap();
-        let declarations = InstallDependencyDeclarations {
-            dependencies: IndexSet::from([BackendArg::from("node")]),
-            ..Default::default()
-        };
-        let node = Arc::new(BackendArg::from("node"));
-        let python = Arc::new(BackendArg::from("python"));
-        let mut requests = ToolRequestSet::new();
-        requests.unknown_tools = vec![node.clone(), python];
-
-        let matching = declarations.matching_requests(&requests);
-
-        assert_eq!(matching.unknown_tools, vec![node]);
     }
 }

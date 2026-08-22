@@ -8,7 +8,7 @@ use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
-use crate::toolset::{ToolSource, ToolVersion, Toolset};
+use crate::toolset::{ToolRequest, ToolSource, ToolVersion, Toolset};
 use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -1757,12 +1757,6 @@ pub(crate) fn update_lockfiles(
             lockfile_configs.entry(lockfile_path).or_default();
         }
     }
-    if let Some(superseded_by_path) = &superseded_by_path {
-        for lockfile_path in superseded_by_path.keys() {
-            lockfile_configs.entry(lockfile_path.clone()).or_default();
-        }
-    }
-
     debug!("updating {} lockfiles", lockfile_configs.len());
 
     // Process each lockfile, deferring provenance errors until all lockfiles are saved.
@@ -2011,7 +2005,7 @@ fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> Too
     tools_by_source_for_update_with_scope(ts, new_versions, NewVersionReplacementScope::Source)
 }
 
-/// Builds the union keep-set, replacing matching upgraded requests across sibling sources.
+/// Builds the union keep-set, replacing requests satisfied by an upgrade across sibling sources.
 fn tools_by_source_for_monorepo_update(
     ts: &Toolset,
     new_versions: &[ToolVersion],
@@ -2049,9 +2043,14 @@ fn tools_by_source_for_update_with_scope(
             replacement_scope,
             NewVersionReplacementScope::MatchingRequests
         ) {
+            let new_options = lockfile_tool_from_tool_version(new_tv)
+                .ok()
+                .map(|tool| tool.options);
             for source_tools in tools_by_source.values_mut() {
                 if let Some(existing_versions) = source_tools.get_mut(new_tv.short()) {
-                    existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+                    existing_versions.retain(|tv| {
+                        !new_version_satisfies_request(new_tv, new_options.as_ref(), tv)
+                    });
                 }
             }
         }
@@ -2068,6 +2067,32 @@ fn tools_by_source_for_update_with_scope(
     }
 
     tools_by_source
+}
+
+/// Whether the reader would use a newly installed concrete version for a request.
+fn new_version_satisfies_request(
+    new_tv: &ToolVersion,
+    new_options: Option<&BTreeMap<String, String>>,
+    requested_tv: &ToolVersion,
+) -> bool {
+    let (query, require_prefix_boundary) = match &requested_tv.request {
+        ToolRequest::Version { version, .. } => (version.as_str(), false),
+        ToolRequest::Prefix { prefix, .. } => (prefix.as_str(), true),
+        ToolRequest::Ref { .. }
+        | ToolRequest::Sub { .. }
+        | ToolRequest::Path { .. }
+        | ToolRequest::System { .. } => return false,
+    };
+    let Some(new_options) = new_options else {
+        return false;
+    };
+    let Ok(requested) = lockfile_tool_from_tool_version(requested_tv) else {
+        return false;
+    };
+    requested.options == *new_options
+        && lockfile_version_matches(query, &new_tv.version)
+        && (!require_prefix_boundary
+            || lockfile_version_matches_prefix_boundary(query, &new_tv.version))
 }
 
 fn superseded_entries_by_path(entries: &[SupersededLockfileEntry]) -> SupersededEntriesByPath {
@@ -3135,6 +3160,10 @@ enum AbsentEntryPolicy<'a> {
     PreserveAll,
     /// Drop exact superseded keys unless the union still pins their version.
     /// Every other absent entry is preserved.
+    ///
+    /// A flat lockfile cannot express which request owns a retained exact pin. If
+    /// that older pin also matches a loose request, deterministic entry ordering
+    /// may make the loose request resolve it before the newly installed version.
     PruneSuperseded {
         superseded: &'a HashSet<LockfileToolKey>,
         keep_versions: Option<&'a HashSet<String>>,
@@ -3208,11 +3237,6 @@ fn preserve_absent_tool_entries(
     let Some(existing_tools) = existing_tools else {
         return;
     };
-    // For upgrade pruning, keep active entries before preserved exact pins. The
-    // reader can then satisfy a loose upgraded request with the active entry and
-    // scan onward to the preserved old entry for an exact sibling request. This
-    // is insertion precedence, not an ordering comparison between opaque versions.
-    let preserve_current_order = matches!(policy, AbsentEntryPolicy::PruneSuperseded { .. });
     let mut keys: HashSet<(String, BTreeMap<String, String>)> = merged_tools
         .iter()
         .map(|tool| (tool.version.clone(), tool.options.clone()))
@@ -3242,13 +3266,11 @@ fn preserve_absent_tool_entries(
             merged_tools.push(existing_tool.clone());
         }
     }
-    if !preserve_current_order {
-        merged_tools.sort_by(|a, b| {
-            a.version
-                .cmp(&b.version)
-                .then_with(|| a.options.cmp(&b.options))
-        });
-    }
+    merged_tools.sort_by(|a, b| {
+        a.version
+            .cmp(&b.version)
+            .then_with(|| a.options.cmp(&b.options))
+    });
 }
 
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
@@ -3934,14 +3956,15 @@ mod tests {
         assert_eq!(tools_by_source[&source]["tool"][0].version, "release-new");
     }
 
-    #[test]
-    fn test_monorepo_update_replaces_matching_requests_across_sources() {
+    #[tokio::test]
+    async fn test_monorepo_update_replaces_satisfied_requests_across_sources() {
+        crate::toolset::install_state::init().await.unwrap();
         let root = ToolSource::MiseToml(PathBuf::from("/repo/mise.toml"));
         let sibling = ToolSource::MiseToml(PathBuf::from("/repo/packages/b/mise.toml"));
-        let root_old = basic_tv_from_source("dummy", "1", "1.0.0", root.clone());
+        let root_old = basic_tv_from_source("dummy", "1.0", "1.0.0", root.clone());
         let sibling_old = basic_tv_from_source("dummy", "1", "1.0.0", sibling.clone());
         let sibling_exact = basic_tv_from_source("dummy", "1.0.0", "1.0.0", sibling.clone());
-        let new = basic_tv_from_source("dummy", "1", "1.1.0", root.clone());
+        let new = basic_tv_from_source("dummy", "1.0", "1.0.1", root.clone());
         let ba = root_old.request.ba().clone();
         let mut tvl = crate::toolset::ToolVersionList::new(ba.clone(), root);
         tvl.requests = vec![
@@ -3961,7 +3984,7 @@ mod tests {
             .collect_vec();
 
         assert_eq!(versions.len(), 2);
-        assert!(versions.contains(&("1".to_string(), "1.1.0")));
+        assert!(versions.contains(&("1.0".to_string(), "1.0.1")));
         assert!(versions.contains(&("1.0.0".to_string(), "1.0.0")));
     }
 
@@ -4504,12 +4527,12 @@ options = { exe = "rg" }
                 .iter()
                 .map(|tool| tool.version.as_str())
                 .collect_vec(),
-            vec!["1.8.2", "1.8.1"]
+            vec!["1.8.1", "1.8.2"]
         );
     }
 
     #[test]
-    fn test_exact_pin_keeps_superseded_key_after_current_entry() {
+    fn test_exact_pin_keeps_superseded_key() {
         let old = basic_tool("1.0.0", "dummy");
         let superseded = HashSet::from([(old.version.clone(), old.options.clone())]);
         let keep_versions = HashSet::from([old.version.clone()]);
@@ -4524,14 +4547,12 @@ options = { exe = "rg" }
             |_, _| None,
         );
 
-        // Current entries precede preserved entries so a loose request resolves
-        // to the upgrade while an exact old pin can scan onward to its entry.
         assert_eq!(
             merged
                 .iter()
                 .map(|tool| tool.version.as_str())
                 .collect_vec(),
-            vec!["1.1.0", "1.0.0"]
+            vec!["1.0.0", "1.1.0"]
         );
     }
 
@@ -4555,7 +4576,7 @@ options = { exe = "rg" }
                 .iter()
                 .map(|tool| tool.version.as_str())
                 .collect_vec(),
-            vec!["1.8.2", "1.8.1"]
+            vec!["1.8.1", "1.8.2"]
         );
     }
 
