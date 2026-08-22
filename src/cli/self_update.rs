@@ -87,7 +87,7 @@ pub(crate) fn append_self_update_instructions(mut message: String) -> String {
 /// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 #[derive(Debug, Default, usage_rs::Args)]
 #[command(verbatim_doc_comment)]
-pub struct SelfUpdate {
+pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
