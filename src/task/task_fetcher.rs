@@ -1,7 +1,8 @@
-use crate::config::config_file::{trust_check, trust_check_remote_content};
+use crate::config::config_file::{remote_fetch_allowed, trust_check_remote_content};
 use crate::config::{Config, Settings};
+use crate::errors::Error::UntrustedConfig;
 use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
-use crate::task::{Task, script_header_has_decoded_template};
+use crate::task::{Task, remote_header_requires_trust};
 use dashmap::DashMap;
 use eyre::{Result, WrapErr};
 use std::{
@@ -118,13 +119,15 @@ impl TaskFetcher {
                 // code-execution boundary, not a network one, and an untrusted
                 // config can already download arbitrary URLs there through the
                 // HTTP-based backends. What must not happen without trust is the
-                // fetched header acting, which the render gate below enforces.
-                if self.trust_before_fetch {
-                    trust_check(&defining_config_source).wrap_err_with(|| {
-                        format!(
-                            "fetching remote task {source} requires its defining config to be trusted"
-                        )
-                    })?;
+                // fetched header acting, which the gate below enforces.
+                if self.trust_before_fetch && !remote_fetch_allowed(&defining_config_source) {
+                    return Err(UntrustedConfig(defining_config_source.clone())).wrap_err_with(
+                        || {
+                            format!(
+                                "fetching remote task {source} requires its defining config to be trusted"
+                            )
+                        },
+                    );
                 }
 
                 let provider = task_file_providers
@@ -164,7 +167,7 @@ impl TaskFetcher {
                 let body = crate::file::read_to_string(&local_path).wrap_err_with(|| {
                     format!("failed to read remote task metadata from {source}")
                 })?;
-                let header_has_templates = script_header_has_decoded_template(&body);
+                let header_requires_trust = remote_header_requires_trust(&body);
                 let mut remote = Task::from_path_unrendered_with_cf(
                     &local_path,
                     prefix,
@@ -172,10 +175,10 @@ impl TaskFetcher {
                     original.cf.clone(),
                 )
                 .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
-                // Rendering is where a remote header can execute code, read
-                // files, or interpolate the process env into printed metadata,
-                // so this gate holds even in safe mode.
-                if header_has_templates {
+                // Rendering a template, or resolving a `#USAGE include`, is
+                // where a remote header acts, so this gate holds even in safe
+                // mode.
+                if header_requires_trust {
                     trust_check_remote_content(&defining_config_source).wrap_err_with(|| {
                         format!(
                             "remote task metadata from {source} requires its defining config to be trusted"

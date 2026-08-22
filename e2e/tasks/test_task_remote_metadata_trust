@@ -29,35 +29,46 @@ file = "http://localhost:${HTTP_PORT}/test/remote-template"
 run = "echo remote dependency"
 EOF
 
+# Both gates report which one refused, so the assertions below can tell a
+# blocked fetch apart from a blocked render.
+REMOTE_URL="http://localhost:${HTTP_PORT}/test/remote-template"
+FETCH_REFUSED="fetching remote task $REMOTE_URL requires its defining config to be trusted"
+RENDER_REFUSED="remote task metadata from $REMOTE_URL requires its defining config to be trusted"
+
 # Safe mode is a code-execution boundary, not a network one: an untrusted
 # config can already download arbitrary URLs there through the HTTP-based
 # backends, so the fetch is allowed. Rendering the fetched header is what must
 # still require trust.
-assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "not trusted"
+assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "$RENDER_REFUSED"
 [[ -e $REQUEST_MARKER ]] || fail "safe mode should still fetch the remote task"
+# belt and braces: in safe mode the tera exec stub would also stop this
 [[ ! -e $MARKER ]] || fail "safe-mode remote metadata template rendered without trust"
 rm -f "$REQUEST_MARKER"
 
-assert_fail "$UNTRUSTED_ENV mise tasks ls" "not trusted"
-assert_fail "$UNTRUSTED_ENV mise tasks deps remote_template" "not trusted"
-[[ ! -e $REQUEST_MARKER ]] || fail "remote task was fetched during untrusted passive discovery"
-[[ ! -e $MARKER ]] || fail "remote metadata template executed before trust"
-
-# Outside paranoid mode a plain-tasks config body parses trust-exempt, so
-# these failures come specifically from the remote fetch gate rather than
-# parse-time trust checks.
-NON_PARANOID_UNTRUSTED_ENV="env -u CI -u GITHUB_ACTION -u GITHUB_ACTIONS MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 MISE_REMOTE_TEMPLATE_MARKER=$MARKER"
-assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks ls" "not trusted"
-assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks info remote_template" "not trusted"
-assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks validate remote_template" "not trusted"
+# Outside paranoid mode a plain-tasks config body parses trust-exempt, so these
+# failures come from the fetch gate rather than a parse-time trust check. The
+# safe-mode run above populated the remote-task cache, so force no-cache to
+# keep "no request was made" meaningful.
+NON_PARANOID_UNTRUSTED_ENV="env -u CI -u GITHUB_ACTION -u GITHUB_ACTIONS MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 MISE_TASK_REMOTE_NO_CACHE=true MISE_REMOTE_TEMPLATE_MARKER=$MARKER"
+assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks ls" "$FETCH_REFUSED"
+assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks info remote_template" "$FETCH_REFUSED"
+assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks validate remote_template" "$FETCH_REFUSED"
+assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise tasks deps remote_template" "$FETCH_REFUSED"
 # Cache inspection is passive discovery too and must honor the same gate.
-assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise cache task remote_template" "not trusted"
+assert_fail "$NON_PARANOID_UNTRUSTED_ENV mise cache task remote_template" "$FETCH_REFUSED"
 [[ ! -e $REQUEST_MARKER ]] || fail "remote task was fetched despite the untrusted fetch gate"
 [[ ! -e $MARKER ]] || fail "remote metadata template executed despite the untrusted fetch gate"
 
+# Passive discovery authorizes, it must not acquire: even under MISE_YES=1 a
+# listing must not persist trust for the whole config root.
+YES_STATE_DIR="$TMPDIR/yes-trust-state"
+mkdir -p "$YES_STATE_DIR"
+assert_fail "env -u CI -u GITHUB_ACTION -u GITHUB_ACTIONS MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=1 MISE_STATE_DIR=$YES_STATE_DIR MISE_TASK_REMOTE_NO_CACHE=true mise tasks ls" "$FETCH_REFUSED"
+assert "find '$YES_STATE_DIR/trusted-configs' -mindepth 1 2>/dev/null | wc -l | tr -d ' '" "0"
+
 # watch expands task dependencies (fetching remote tasks) before any run is
-# spawned, so safe mode must block it before discovery starts.
-assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise watch remote_template" "disabled in safe mode"
+# spawned, so safe mode must refuse it before discovery starts.
+assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 MISE_TASK_REMOTE_NO_CACHE=true mise watch remote_template" "disabled in safe mode"
 [[ ! -e $REQUEST_MARKER ]] || fail "safe-mode watch fetched an untrusted remote task"
 
 # no-cache so this re-fetches rather than reusing the safe-mode download above
@@ -68,7 +79,7 @@ assert_succeed "$UNTRUSTED_ENV MISE_TASK_REMOTE_NO_CACHE=true mise tasks ls"
 
 # Trust gets the header past the render gate, but safe mode still refuses the
 # code execution inside it, exactly as it does for a local task template.
-assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "disabled in safe mode"
+assert_fail "$UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "exec() is disabled in safe mode"
 assert_succeed "$UNTRUSTED_ENV mise untrust mise.toml"
 
 # A template-free remote task is inert once fetched, so safe mode can list it
@@ -79,7 +90,7 @@ cat <<EOF >"$PLAIN_DIR/mise.toml"
 [tasks.remote_plain]
 file = "http://localhost:${HTTP_PORT}/test/mytask"
 EOF
-assert_contains "cd $PLAIN_DIR && $UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "remote_plain"
+assert_contains "cd '$PLAIN_DIR' && $UNTRUSTED_ENV MISE_SAFE=1 mise tasks ls" "remote_plain"
 
 # A trusted config vouches for an explicitly included task file even when that
 # file is outside the config's trust root. Preserve that provenance when the

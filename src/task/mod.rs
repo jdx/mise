@@ -1073,6 +1073,26 @@ pub(crate) fn script_header_has_decoded_template(body: &str) -> bool {
         .any(|value| toml_value_has_template(&value))
 }
 
+/// Whether a fetched remote task header can act before anyone runs the task.
+///
+/// Two channels can. A decoded `#MISE` value containing a template renders
+/// during discovery, and a `#USAGE include` reads an arbitrary file while the
+/// spec is parsed for display. Both must wait for the defining config to be
+/// trusted; everything else in the header is inert until `mise run`.
+pub(crate) fn remote_header_requires_trust(body: &str) -> bool {
+    script_header_has_decoded_template(body) || script_usage_includes_file(body)
+}
+
+fn script_usage_includes_file(body: &str) -> bool {
+    extract_usage_from_comments(file::strip_utf8_bom(body))
+        .lines()
+        .any(|line| {
+            line.trim_start()
+                .strip_prefix("include")
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        })
+}
+
 fn parse_task_script_usage(file: &Path) -> usage::Result<usage::Spec> {
     let script = std::fs::read_to_string(file)?;
     // Same reason as the `#MISE` header scan: `#USAGE` on line 1 is invisible behind a mark.
@@ -3847,6 +3867,50 @@ rust_cache = { unknown = true }
         #[cfg(not(windows))]
         assert_eq!(env.get("USAGE_TARGET").map(String::as_str), Some("upper"));
         assert_eq!(env.get("OTHER").map(String::as_str), Some("keep"));
+    }
+
+    #[test]
+    fn test_script_header_has_decoded_template() {
+        use super::script_header_has_decoded_template;
+
+        assert!(!script_header_has_decoded_template(
+            "#!/usr/bin/env bash\n#MISE description=\"a plain task\"\necho hi\n"
+        ));
+
+        // escaped delimiters decode to a template the render would evaluate
+        assert!(script_header_has_decoded_template(
+            "#!/usr/bin/env bash\n#MISE description=\"\\u007b\\u007b exec(command='x') \\u007d\\u007d\"\necho hi\n"
+        ));
+
+        // fetched remote files keep the source name, so a `.toml` suffix must
+        // not change how the header is read: this is scanned as a script header
+        // because that is how the fetcher parses every remote task file
+        assert!(script_header_has_decoded_template(
+            "#MISE description=\"{{ exec(command='x') }}\"\n"
+        ));
+
+        // one unparseable entry must not hide a template in another
+        assert!(script_header_has_decoded_template(
+            "#!/usr/bin/env bash\n#MISE not valid toml\n#MISE description=\"{{ exec(command='x') }}\"\necho hi\n"
+        ));
+    }
+
+    #[test]
+    fn test_remote_header_requires_trust_covers_usage_include() {
+        use super::remote_header_requires_trust;
+
+        // a `#USAGE include` reads an arbitrary file while the spec is parsed
+        // for display, so it needs trust even with a template-free `#MISE`
+        assert!(remote_header_requires_trust(
+            "#!/usr/bin/env bash\n#USAGE include file=\"/etc/passwd\"\necho hi\n"
+        ));
+        // a flag merely named --include is inert
+        assert!(!remote_header_requires_trust(
+            "#!/usr/bin/env bash\n#USAGE flag \"--include\" help=\"x\"\necho hi\n"
+        ));
+        assert!(!remote_header_requires_trust(
+            "#!/usr/bin/env bash\n#MISE description=\"plain\"\necho hi\n"
+        ));
     }
 
     #[test]

@@ -4562,10 +4562,11 @@ async fn resolve_git_url_to_path(git_url: &str) -> Result<TaskFileArtifact> {
 }
 
 /// Unlike a remote task `file`, cloning a `git::` include stays gated in safe
-/// mode. The tasks it brings in render behind `task_include_requires_trust`,
-/// whose `trust_check` safe mode waives, so this clone gate is currently the
-/// only thing between an untrusted config and a remote template rendering.
-/// It can be relaxed once that render gate is safe-mode-aware too.
+/// mode. Passing this gate marks the includes authorized, which clears
+/// `require_task_include_trust` for the whole include set, so tasks from the
+/// clone then render with no further check -- this gate is all there is.
+/// Relaxing it therefore means first giving included tasks their own
+/// safe-mode-aware render gate *and* decoupling that from `remote_includes_authorized`.
 fn trust_check_remote_task_include(owner: &Path, include: &str) -> Result<()> {
     config_file::trust_check_remote_content(owner).wrap_err_with(|| {
         format!(

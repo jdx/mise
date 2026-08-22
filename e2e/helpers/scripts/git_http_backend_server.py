@@ -220,10 +220,14 @@ def start_server(port=0):
     repo_path = temp_dir / 'repo'
     upload_pack_count_path = os.environ.get('MISE_GIT_HTTP_UPLOAD_PACK_COUNT_FILE')
     upload_pack_count_file = Path(upload_pack_count_path) if upload_pack_count_path else None
-    request_log = os.environ.get('MISE_GIT_HTTP_REQUEST_LOG')
+    request_log_path = os.environ.get('MISE_GIT_HTTP_REQUEST_LOG')
+    request_log = Path(request_log_path) if request_log_path else None
     if upload_pack_count_file is not None:
         upload_pack_count_file.parent.mkdir(parents=True, exist_ok=True)
         upload_pack_count_file.write_text('')
+    if request_log is not None:
+        request_log.parent.mkdir(parents=True, exist_ok=True)
+        request_log.write_text('')
 
     # Create handler with repo directory
     def handler(*args, **kwargs):
@@ -272,6 +276,8 @@ def start_server(port=0):
             ready_file.unlink(missing_ok=True)
             if upload_pack_count_file is not None:
                 upload_pack_count_file.unlink(missing_ok=True)
+            if request_log is not None:
+                request_log.unlink(missing_ok=True)
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 0

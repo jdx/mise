@@ -476,6 +476,18 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig(path.into()))?
 }
 
+/// Whether a passive command may fetch remote content declared by `path`.
+///
+/// Unlike [`trust_check`] this only authorizes, it never acquires: passive
+/// discovery must not turn `mise tasks ls` into a trust grant for the whole
+/// config root, which `trust_check`'s prompt -- or `MISE_YES=1` -- would do.
+/// Safe mode waives it, because fetching is network work and safe mode is a
+/// code-execution boundary. What the fetched content may then *do* is gated
+/// separately by [`trust_check_remote_content`].
+pub(crate) fn remote_fetch_allowed(path: &Path) -> bool {
+    Settings::safe_mode() || is_path_trusted(path)
+}
+
 /// A trust check that safe mode does not waive.
 ///
 /// Safe mode makes ordinary config parsing trust-exempt because a config
@@ -558,8 +570,10 @@ pub(crate) fn is_trusted(path: &Path) -> bool {
         if !trusted {
             return false;
         }
-    } else if cfg!(test) || ci_info::is_ci() {
-        // in tests/CI we trust everything
+    } else if cfg!(test) || (ci_info::is_ci() && !Settings::safe_mode()) {
+        // in tests/CI we trust everything -- except under safe mode, whose
+        // whole purpose is running against config CI checked out but does not
+        // trust, which is where the remote-content gates have to hold
         return true;
     } else if !trust_path(path).exists() {
         // No direct trust record. A config inside a linked git worktree
