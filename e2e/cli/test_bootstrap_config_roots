@@ -216,3 +216,26 @@ assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
 assert_fail "mise bootstrap dotfiles apply --yes '$shared_tree'" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
 assert "readlink $shared_tree/conf.d/a.toml" "$root_a/tree/conf.d/a.toml"
 assert "readlink $shared_tree/conf.d/b.toml" "$root_b/tree/conf.d/b.toml"
+
+# A directory copy and a nested whole-file entry may share the target tree,
+# but they cannot own the same expanded leaf. Validate all entries even when
+# apply is filtered to only the nested target, and reject before mutation.
+nested_tree="$PWD/nested-tree"
+nested_leaf="$nested_tree/collide.txt"
+mkdir -p "$root_a/copy-tree"
+echo "from a" >"$root_a/copy-tree/collide.txt"
+echo "a only" >"$root_a/copy-tree/own-a.txt"
+echo "from b" >"$root_b/nested.txt"
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$nested_tree" = { source = "copy-tree", mode = "copy" }
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$nested_leaf" = { source = "nested.txt", mode = "copy" }
+EOF
+assert_fail "mise bootstrap dotfiles status" "conflicting dotfile declarations for $nested_leaf"
+assert_fail "mise bootstrap dotfiles status" "$root_a/mise.toml"
+assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
+assert_fail "mise bootstrap dotfiles apply --yes '$nested_leaf'" "conflicting dotfile declarations for $nested_leaf"
+assert_fail "test -e $nested_tree"

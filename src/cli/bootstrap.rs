@@ -2913,7 +2913,7 @@ impl BootstrapStatus {
     ) -> Result<()> {
         let mut json_files = vec![];
         let files = system::files::files_from_config(config)?;
-        system::files::validate_composed_symlink_each(&files)?;
+        system::files::validate_composed_file_footprints(&files)?;
         for req in files {
             let state = match system::files::check(config, &req) {
                 Ok(state) => state,
