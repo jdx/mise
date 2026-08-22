@@ -1,0 +1,5 @@
+backends = ["aqua:pkgxdev/pkgx", "github:pkgxdev/pkgx"]
+bins = ["pkgx"]
+description = "Run Anything"
+test = { cmd = "pkgx --version", expected = "pkgx {{version}}" }
+version_order = "semver"
