@@ -213,16 +213,6 @@ shell = "bash"
 script = "source completions.sh"
 ```
 
-Fish (and zsh) work the same way. This is the way to call an autoloaded fish
-function when entering a project — `[env] _.source` always uses bash and cannot
-see fish functions:
-
-```toml
-[hooks.enter]
-shell = "fish"
-script = "set -gx MY_BUILD_VALUE (hello mise)"
-```
-
 Current-shell hooks may use `script`/`scripts` arrays:
 
 ```toml
