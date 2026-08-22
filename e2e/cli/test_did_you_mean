@@ -13,8 +13,8 @@ assert_fail "mise use nod" "node"
 assert_fail "mise use pythn" "python"
 
 # Test: Aqua Cargo and GoInstall packages should use runnable backend suggestions
-assert_not_contains "mise use broot 2>&1 || true" "aqua:crates.io/broot"
-assert_fail "mise use broot" "cargo:broot"
+assert_not_contains "mise use wasmi_cli 2>&1 || true" "aqua:crates.io/wasmi_cli"
+assert_fail "mise use wasmi_cli" "cargo:wasmi_cli"
 assert_not_contains "mise use benchstat 2>&1 || true" "aqua:golang.org/x/perf/cmd/benchstat"
 assert_fail "mise use benchstat" "go:golang.org/x/perf/cmd/benchstat"
 assert_fail "mise use mapotf" "go:github.com/Azure/mapotf"

@@ -1,0 +1,10 @@
+description = "A new way to see and navigate directory trees"
+test = { cmd = "broot --version", expected = "broot {{version}}" }
+version_order = "semver"
+
+bins = ["broot"]
+[[backends]]
+full = "github:canop/broot"
+
+[backends.options]
+bin_path = '{{ arch(x64="x86_64", arm64="aarch64") }}-{{ os(macos="apple-darwin", linux="unknown-linux-gnu", windows="pc-windows-gnu") }}'
