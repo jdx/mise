@@ -269,6 +269,29 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
+[auto_update]
+default = false
+description = "Automatically update mise before running eligible commands."
+docs = """
+When enabled, mise periodically checks for a newer release before running commands that permit
+network access. If an update is available, mise installs it without updating plugins, then re-runs
+the original command with the new binary.
+
+Automatic updates are skipped in CI, offline and prefer-offline modes, non-interactive sessions,
+shell integration commands, and installations whose packager disabled self-update. This setting is
+global-only so a project's configuration cannot opt users into replacing their mise binary.
+"""
+env = "MISE_AUTO_UPDATE"
+global_only = true
+type = "Bool"
+
+[auto_update_check_duration]
+default = "7d"
+description = "How often to check for a new mise release when auto-update is enabled."
+env = "MISE_AUTO_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
+
 [cache_prune_age]
 default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
