@@ -769,6 +769,15 @@ impl Cli {
     }
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
+        // usage-rs's generated `parse()` intercepts this, but mise never calls
+        // `parse()` — it uses `parse_from_argv` after shim/naked-run rewriting.
+        // Handle the hidden completion protocol here, before config or tools load.
+        let completion_argv: Vec<std::ffi::OsString> =
+            args.iter().skip(1).map(std::ffi::OsString::from).collect();
+        if let Some(answer) = Cli::completion_request(&completion_argv) {
+            print!("{answer}");
+            return Ok(());
+        }
         crate::env::ARGS.write().unwrap().clone_from(args);
         let original_cwd = std::env::current_dir().ok();
         // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
