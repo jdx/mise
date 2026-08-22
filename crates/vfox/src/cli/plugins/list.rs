@@ -2,7 +2,7 @@ use vfox::Vfox;
 use vfox::VfoxResult;
 
 #[derive(usage_rs::Args)]
-pub struct List {}
+pub(crate) struct List {}
 
 impl List {
     pub(crate) async fn run(&self) -> VfoxResult<()> {

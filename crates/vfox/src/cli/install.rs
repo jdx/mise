@@ -2,11 +2,11 @@ use std::path::PathBuf;
 use vfox::{Vfox, VfoxResult};
 
 #[derive(usage_rs::Args)]
-pub struct Install {
-    pub sdk: String,
-    pub version: String,
+pub(super) struct Install {
+    sdk: String,
+    version: String,
     #[arg(short, long)]
-    pub output_dir: Option<PathBuf>,
+    output_dir: Option<PathBuf>,
 }
 
 impl Install {

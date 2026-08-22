@@ -1,7 +1,7 @@
 use vfox::{Vfox, VfoxResult};
 
 #[derive(usage_rs::Args)]
-pub struct Available {}
+pub(super) struct Available {}
 
 impl Available {
     pub(super) async fn run(&self) -> VfoxResult<()> {
