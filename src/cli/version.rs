@@ -8,6 +8,7 @@ use versions::Versioning;
 
 use crate::build_time::BUILD_TIME;
 use crate::cli::self_update::{SelfUpdate, upgrade_instructions_or_hint};
+use crate::config::Settings;
 use crate::file::modified_duration;
 use crate::ui::style;
 use crate::{dirs, duration, env, file};
@@ -32,6 +33,7 @@ impl Version {
         } else {
             show_version()?;
             show_latest().await;
+            show_version_hint();
         }
         Ok(())
     }
@@ -130,6 +132,72 @@ pub(crate) async fn show_latest() {
             warn!("{}", upgrade_instructions_or_hint());
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+enum VersionHint {
+    AutoUpdate,
+    Homebrew,
+    OptimizedBinary,
+}
+
+fn select_version_hint(
+    self_update_available: bool,
+    auto_update: bool,
+    homebrew: bool,
+) -> Option<VersionHint> {
+    if self_update_available {
+        (!auto_update).then_some(VersionHint::AutoUpdate)
+    } else if homebrew {
+        Some(VersionHint::Homebrew)
+    } else {
+        Some(VersionHint::OptimizedBinary)
+    }
+}
+
+pub(crate) fn show_auto_update_hint() {
+    let Ok(settings) = Settings::try_get() else {
+        return;
+    };
+    if select_version_hint(SelfUpdate::is_available(), settings.auto_update, false)
+        == Some(VersionHint::AutoUpdate)
+    {
+        hint!(
+            "auto_update",
+            "keep mise updated automatically with",
+            "mise settings set auto_update true"
+        );
+    }
+}
+
+pub(crate) fn show_version_hint() {
+    let Ok(settings) = Settings::try_get() else {
+        return;
+    };
+    match select_version_hint(
+        SelfUpdate::is_available(),
+        settings.auto_update,
+        is_homebrew_install(),
+    ) {
+        Some(VersionHint::AutoUpdate) => show_auto_update_hint(),
+        Some(VersionHint::Homebrew) => hint!(
+            "optimized_mise_homebrew",
+            "Homebrew's mise formula is typically 20–30% slower and about 40% larger than the optimized mise.run binary; replace it with",
+            "brew uninstall mise && curl https://mise.run | sh"
+        ),
+        Some(VersionHint::OptimizedBinary) => hint!(
+            "optimized_mise_binary",
+            "third-party package builds may be slower and larger than mise's optimized binary; install the official build with",
+            "curl https://mise.run | sh"
+        ),
+        None => {}
+    }
+}
+
+fn is_homebrew_install() -> bool {
+    std::fs::canonicalize(&*env::MISE_BIN)
+        .ok()
+        .is_some_and(|path| path.components().any(|part| part.as_os_str() == "Cellar"))
 }
 
 pub(crate) async fn check_for_new_version(cache_duration: Duration) -> Option<String> {
@@ -310,6 +378,27 @@ mod tests {
         assert_eq!(
             cached_latest_version(&p, HOUR),
             Cached::Fresh(Some("0.0.1".to_string()))
+        );
+    }
+
+    #[test]
+    fn version_hint_promotes_auto_update_for_official_binaries() {
+        assert_eq!(
+            select_version_hint(true, false, false),
+            Some(VersionHint::AutoUpdate)
+        );
+        assert_eq!(select_version_hint(true, true, false), None);
+    }
+
+    #[test]
+    fn version_hint_promotes_optimized_binaries_for_package_installs() {
+        assert_eq!(
+            select_version_hint(false, false, true),
+            Some(VersionHint::Homebrew)
+        );
+        assert_eq!(
+            select_version_hint(false, false, false),
+            Some(VersionHint::OptimizedBinary)
         );
     }
 }

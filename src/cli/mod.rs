@@ -811,6 +811,7 @@ impl Cli {
         trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
         if print_version {
             version::show_latest().await;
+            version::show_version_hint();
             return Err(request_exit(0));
         }
         let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();

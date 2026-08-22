@@ -411,6 +411,7 @@ impl SelfUpdate {
         } else {
             miseprintln!("mise is already up to date");
         }
+        crate::cli::version::show_auto_update_hint();
         if !self.no_plugins {
             cmd!(&*env::MISE_BIN, "plugins", "update").run()?;
         }

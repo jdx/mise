@@ -16,8 +16,9 @@ This page lists various ways to install `mise` on your system.
 
 The official single-binary release installed by `mise.run` is the preferred method on macOS and
 Linux. These binaries are built with mise's optimized release profile and can be updated immediately
-with `mise self-update`. Package-manager builds, including Homebrew, may be less optimized and may
-not become available as quickly after a mise release.
+with `mise self-update`. Prefer them over third-party package builds: the Homebrew formula is
+typically 20–30% slower and about 40% larger, and package-manager releases may also lag behind a mise
+release.
 
 ::: tip Which methods auto-update?
 Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Other methods can be updated with `mise self-update`.
