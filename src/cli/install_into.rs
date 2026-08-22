@@ -81,7 +81,8 @@ impl InstallInto {
                         display_path(&install_path)
                     ),
                     false,
-                )?;
+                )?
+                .is_yes();
             if !proceed {
                 bail!(
                     "refusing to overwrite non-empty directory {}; pass {} or choose an empty/new path",

@@ -115,7 +115,7 @@ pub(crate) async fn apply_defaults_with_report(
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("defaults: write {}?", list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("defaults: skipped");
             return Ok(BootstrapApplyReport::default());
         }
@@ -174,7 +174,7 @@ pub(crate) fn apply_login_shell_with_report(
     let needs_follow_up = status.state != LoginShellState::Set;
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("login_shell: run `chsh -s {}`?", request.shell);
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("login_shell: skipped");
             return Ok(BootstrapApplyReport::default());
         }
@@ -299,7 +299,7 @@ fn mutate_repos(
         .collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("repos: {} {}?", mutation.prompt_verb, list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("repos: skipped");
             return Ok(());
         }
@@ -356,7 +356,7 @@ pub(crate) async fn apply_launchd_with_report(
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("launchd: install/load {}?", list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("launchd: skipped");
             return Ok(BootstrapApplyReport::default());
         }
@@ -416,7 +416,7 @@ pub(crate) async fn apply_systemd_with_report(
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("systemd: apply {}?", list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("systemd: skipped");
             return Ok(BootstrapApplyReport::default());
         }

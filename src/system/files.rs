@@ -1222,7 +1222,7 @@ pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<boo
             .map(|(r, _)| r.target_raw.clone())
             .collect::<Vec<_>>()
             .join(", ");
-        if !prompt::confirm(format!("files: apply {list}?"))? {
+        if !prompt::confirm(format!("files: apply {list}?"))?.is_yes() {
             info!("files: skipped");
             return Ok(false);
         }
@@ -1492,7 +1492,7 @@ pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> 
             .iter()
             .map(|plan| plan.req.target_raw.clone())
             .join(", ");
-        if !prompt::confirm(format!("files: unapply {list}?"))? {
+        if !prompt::confirm(format!("files: unapply {list}?"))?.is_yes() {
             info!("files: skipped");
             return Ok(());
         }

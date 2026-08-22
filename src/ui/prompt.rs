@@ -12,6 +12,23 @@ static MUTEX: Mutex<()> = Mutex::new(());
 
 static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 
+/// The outcome of a confirmation prompt.
+///
+/// A plain `bool` cannot say the difference between a user who declined and a
+/// prompt that was never answerable, so every caller that acted on "no" had to
+/// re-derive the difference for itself -- and one that forgot silently attributed
+/// a decision to someone who never made one. Carrying it in the return type is
+/// what keeps that from being expressible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumIs)]
+pub(crate) enum Confirmation {
+    Yes,
+    No,
+    /// The question never reached anyone: nothing was drawable on stderr, or
+    /// mise is generating usage/completions. A prompt that *was* displayed and
+    /// then went unanswered is [`Confirmation::No`], not this.
+    Unavailable,
+}
+
 /// Whether a [`Dialog`] can actually be answered.
 ///
 /// `demand` defines interactive as stdin *and* stderr ([`demand::tty::is_tty`]),
@@ -23,9 +40,9 @@ static SKIP_PROMPT: Mutex<bool> = Mutex::new(false);
 /// forever on a keypress nobody is there to type. Checking both ends keeps a
 /// dialog from being drawn when nothing can answer it.
 ///
-/// Callers that act on a "no" answer must consult this too, so that "nobody could
-/// be asked" is not mistaken for "the user declined".
-pub(crate) fn can_prompt_dialog() -> bool {
+/// Deliberately private: callers learn that nobody could be asked from
+/// [`Confirmation::Unavailable`], never by re-deriving it here.
+fn can_prompt_dialog() -> bool {
     dialog_prompt_allowed(
         console::user_attended_stderr(),
         std::io::stdin().is_terminal(),
@@ -47,19 +64,19 @@ fn restore_cursor() {
     let _ = console::Term::stderr().show_cursor();
 }
 
-pub(crate) fn confirm<S: Into<String>>(message: S) -> eyre::Result<bool> {
+pub(crate) fn confirm<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
     confirm_with_default(message, true)
 }
 
 pub(crate) fn confirm_with_default<S: Into<String>>(
     message: S,
     default_yes: bool,
-) -> eyre::Result<bool> {
+) -> eyre::Result<Confirmation> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
 
     if !console::user_attended_stderr() || env::__USAGE.is_some() {
-        return Ok(false);
+        return Ok(Confirmation::Unavailable);
     }
     let message = message.into();
     // Held across both branches below: a prompt written to stderr is just as
@@ -81,13 +98,17 @@ pub(crate) fn confirm_with_default<S: Into<String>>(
         .theme(&theme)
         .run()
         .inspect_err(|_| restore_cursor())?;
-    Ok(result)
+    Ok(if result {
+        Confirmation::Yes
+    } else {
+        Confirmation::No
+    })
 }
 
 /// Prints `message` to stderr and reads a single answer from a non-terminal
 /// stdin, which is what makes `echo y | mise ...` work without letting an
 /// unanswered prompt (EOF) count as consent.
-fn read_confirm_from_stdin(message: &str, default_yes: bool) -> eyre::Result<bool> {
+fn read_confirm_from_stdin(message: &str, default_yes: bool) -> eyre::Result<Confirmation> {
     let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
     safe_eprintln!("{message} {hint}");
     let mut line = String::new();
@@ -102,37 +123,49 @@ fn read_confirm_from_stdin(message: &str, default_yes: bool) -> eyre::Result<boo
 /// error for anything else -- silently rereading what someone typed as "no" would
 /// be worse than telling them it was not understood.
 ///
-/// `None` means stdin reached EOF without an answer, which is the one case
-/// `demand` gets wrong and the reason this exists.
-fn parse_confirm_answer(line: Option<&str>, default_yes: bool) -> eyre::Result<bool> {
+/// `None` means stdin reached EOF without an answer -- the one case `demand`
+/// gets wrong (it applies the default) and the reason this exists.
+fn parse_confirm_answer(line: Option<&str>, default_yes: bool) -> eyre::Result<Confirmation> {
     let Some(line) = line else {
-        // Nobody answered, so nothing was consented to.
-        return Ok(false);
+        // A decline, not `Unavailable`: the question *was* put on stderr and
+        // stdin ended without an answer, so nothing was consented to.
+        // `Unavailable` is reserved for the question never reaching anyone.
+        // Keeping it a decline is also what every caller already assumed, and
+        // leaves silence safe to read as "no" for any that come later.
+        return Ok(Confirmation::No);
     };
     let answer = line.trim().to_lowercase();
     if answer.is_empty() {
-        return Ok(default_yes);
+        return Ok(default_answer(default_yes));
     }
     if "yes".starts_with(&answer) {
-        Ok(true)
+        Ok(Confirmation::Yes)
     } else if "no".starts_with(&answer) {
-        Ok(false)
+        Ok(Confirmation::No)
     } else {
         eyre::bail!("expected y/yes or n/no, got {:?}", line.trim())
     }
 }
 
-pub(crate) fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool> {
+fn default_answer(default_yes: bool) -> Confirmation {
+    if default_yes {
+        Confirmation::Yes
+    } else {
+        Confirmation::No
+    }
+}
+
+pub(crate) fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<Confirmation> {
     let _lock = MUTEX.lock().unwrap(); // Prevent multiple prompts at once
     ctrlc::show_cursor_after_ctrl_c();
 
     if !can_prompt_dialog() {
-        return Ok(false);
+        return Ok(Confirmation::Unavailable);
     }
 
     let mut skip_prompt = SKIP_PROMPT.lock().unwrap();
     if *skip_prompt {
-        return Ok(true);
+        return Ok(Confirmation::Yes);
     }
 
     let _progress_pause = MultiProgressReport::try_get().map(|report| report.pause_progress());
@@ -148,16 +181,19 @@ pub(crate) fn confirm_with_all<S: Into<String>>(message: S) -> eyre::Result<bool
         .run()
         .inspect_err(|_| restore_cursor())?;
 
-    let result = match answer.as_str() {
-        "Yes" => true,
-        "No" => false,
-        "All" => {
-            *skip_prompt = true;
-            true
-        }
-        _ => false,
-    };
-    Ok(result)
+    if answer == "All" {
+        *skip_prompt = true;
+    }
+    Ok(dialog_answer(&answer))
+}
+
+/// Maps a [`Dialog`] button label to an answer. "All" is a "yes" that also
+/// latches [`SKIP_PROMPT`]; the latching is the caller's job so this stays pure.
+fn dialog_answer(answer: &str) -> Confirmation {
+    match answer {
+        "Yes" | "All" => Confirmation::Yes,
+        _ => Confirmation::No,
+    }
 }
 
 #[cfg(test)]
@@ -186,15 +222,24 @@ mod tests {
 
     #[test]
     fn eof_is_not_consent() {
-        assert!(!parse_confirm_answer(None, true).unwrap());
-        assert!(!parse_confirm_answer(None, false).unwrap());
+        // The prompt was displayed and stdin ended without an answer. That has
+        // to read as a decline, whichever way the default points -- callers
+        // that act only on an explicit "no" must not take it as permission.
+        assert_eq!(parse_confirm_answer(None, true).unwrap(), Confirmation::No);
+        assert_eq!(parse_confirm_answer(None, false).unwrap(), Confirmation::No);
     }
 
     #[test]
     fn empty_line_takes_the_default() {
         for line in ["", "\n", "  \n"] {
-            assert!(parse_confirm_answer(Some(line), true).unwrap());
-            assert!(!parse_confirm_answer(Some(line), false).unwrap());
+            assert_eq!(
+                parse_confirm_answer(Some(line), true).unwrap(),
+                Confirmation::Yes
+            );
+            assert_eq!(
+                parse_confirm_answer(Some(line), false).unwrap(),
+                Confirmation::No
+            );
         }
     }
 
@@ -202,11 +247,26 @@ mod tests {
     fn explicit_answers_override_the_default() {
         // Any prefix of the label answers, as `demand`'s own non-tty branch did.
         for line in ["y\n", "Y", "ye", "yes", "YES\n"] {
-            assert!(parse_confirm_answer(Some(line), false).unwrap());
+            assert_eq!(
+                parse_confirm_answer(Some(line), false).unwrap(),
+                Confirmation::Yes
+            );
         }
         for line in ["n\n", "N", "no", "No\n"] {
-            assert!(!parse_confirm_answer(Some(line), true).unwrap());
+            assert_eq!(
+                parse_confirm_answer(Some(line), true).unwrap(),
+                Confirmation::No
+            );
         }
+    }
+
+    #[test]
+    fn all_answers_yes() {
+        assert_eq!(dialog_answer("Yes"), Confirmation::Yes);
+        assert_eq!(dialog_answer("All"), Confirmation::Yes);
+        assert_eq!(dialog_answer("No"), Confirmation::No);
+        // Escape and anything unrecognized decline rather than proceed.
+        assert_eq!(dialog_answer(""), Confirmation::No);
     }
 
     #[test]

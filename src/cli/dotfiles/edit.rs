@@ -49,7 +49,7 @@ impl DotfilesEdit {
         }
 
         if !self.yes && console::user_attended_stderr() {
-            let ok = prompt::confirm(format!("dotfiles: add {}?", self.target))?;
+            let ok = prompt::confirm(format!("dotfiles: add {}?", self.target))?.is_yes();
             if !ok {
                 info!("dotfiles: skipped");
                 return Ok(());

@@ -223,7 +223,8 @@ async fn make_task_executable(
         display_path(&path)
     );
     let confirmed = config::Settings::get().yes
-        || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
+        || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?
+            .is_yes();
     if !confirmed {
         return Ok(None);
     }
