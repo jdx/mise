@@ -21,8 +21,8 @@ cat >mise.toml <<'EOF'
 _.source = "./script.fish"
 EOF
 
-# String form still uses bash, so a fish script fails to source.
-assert_fail "mise env --json"
+# String form still uses bash, so fish `set -gx` is not imported.
+assert_not_contains "mise env --json" "MY_BUILD_VALUE"
 
 # `shell` belongs on the directive so clones share the same behavior.
 cat >mise.toml <<'EOF'
