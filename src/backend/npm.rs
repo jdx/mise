@@ -274,10 +274,6 @@ impl Backend for NPMBackend {
         &self.ba
     }
 
-    fn mark_prereleases_from_version_pattern(&self) -> bool {
-        true
-    }
-
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
         // Version queries hit the npm registry over HTTP and installs use the
         // embedded aube package manager, so by default neither needs a
