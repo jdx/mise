@@ -18,7 +18,8 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_scheduler::SchedMsg;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
-    remove_auto_output, save_checksum, sources_are_fresh, task_cwd, task_source_match_root,
+    expand_glob_braces, output_glob_patterns, remove_auto_output, resolve_task_source_paths,
+    save_checksum, sources_are_fresh, task_cwd, task_source_match_root,
 };
 use crate::task::{
     Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
@@ -70,6 +71,7 @@ pub(crate) struct TaskRunContext<'a> {
 #[derive(Clone, Copy)]
 struct TaskExecContext<'a> {
     task: &'a Task,
+    dependencies: &'a [Task],
     env: &'a BTreeMap<String, String>,
     prefix: &'a str,
     output_capture: Option<&'a TaskOutputCapture>,
@@ -150,6 +152,34 @@ fn resolve_task_sandbox_path(p: &Path, task_base: Option<&Path>) -> PathBuf {
     } else {
         p
     }
+}
+
+fn resolve_task_sandbox_pattern(pattern: &str, task_base: &Path) -> PathBuf {
+    let mut prefix = PathBuf::new();
+    for component in Path::new(pattern).components() {
+        if component
+            .as_os_str()
+            .to_string_lossy()
+            .contains(['*', '?', '[', '{'])
+        {
+            break;
+        }
+        prefix.push(component);
+    }
+    if prefix.as_os_str().is_empty() {
+        task_base.to_path_buf()
+    } else {
+        resolve_task_sandbox_path(&prefix, Some(task_base))
+    }
+}
+
+fn resolve_task_sandbox_patterns(patterns: &[String], task_base: &Path) -> Result<Vec<PathBuf>> {
+    patterns
+        .iter()
+        .map(|pattern| expand_glob_braces(pattern))
+        .flatten_ok()
+        .map_ok(|pattern| resolve_task_sandbox_pattern(&pattern, task_base))
+        .collect()
 }
 
 /// Build the single-line command shown in a task's header (the `$ ...` line).
@@ -415,6 +445,7 @@ impl TaskExecutor {
     async fn build_sandbox_for_task(
         &self,
         task: &Task,
+        dependencies: &[Task],
         config: &Arc<Config>,
     ) -> Result<SandboxConfig> {
         let task_base = task.dir(config).await?;
@@ -464,6 +495,30 @@ impl TaskExecutor {
                 .cloned()
                 .collect(),
         };
+        if task.sandbox.is_inferred() {
+            let source_paths = resolve_task_source_paths(task, config).await?;
+            let dependency_outputs = dependencies
+                .iter()
+                .map(|dependency| output_glob_patterns(&dependency.outputs.patterns()))
+                .collect_vec();
+            if !task.sources.is_empty()
+                || !source_paths.is_empty()
+                || dependency_outputs.iter().any(|outputs| !outputs.is_empty())
+            {
+                sandbox.deny_read = true;
+                sandbox.allow_read.extend(source_paths);
+            }
+            for (dependency, output_patterns) in dependencies.iter().zip(dependency_outputs) {
+                if output_patterns.is_empty() {
+                    continue;
+                }
+                let dependency_base = task_cwd(dependency, config).await?;
+                sandbox.allow_read.extend(resolve_task_sandbox_patterns(
+                    &output_patterns,
+                    &dependency_base,
+                )?);
+            }
+        }
         if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
             && let Some(session) = &self.cache_session
         {
@@ -586,7 +641,12 @@ impl TaskExecutor {
                 }
                 Some(prepared) => {
                     let command_inputs = self
-                        .resolve_cache_command_inputs(task, config, &env)
+                        .resolve_cache_command_inputs(
+                            task,
+                            &dependency_state.dependencies,
+                            config,
+                            &env,
+                        )
                         .await?;
                     let cache = prepared
                         .finish(TaskCacheContext {
@@ -722,6 +782,7 @@ impl TaskExecutor {
         };
         let exec_ctx = TaskExecContext {
             task,
+            dependencies: &dependency_state.dependencies,
             env: &env,
             prefix: &prefix,
             output_capture: output_capture.as_ref(),
@@ -1339,6 +1400,7 @@ impl TaskExecutor {
     async fn resolve_cache_command_inputs(
         &self,
         task: &Task,
+        dependencies: &[Task],
         config: &Arc<Config>,
         resolved_env: &BTreeMap<String, String>,
     ) -> Result<Vec<CommandInput>> {
@@ -1347,7 +1409,9 @@ impl TaskExecutor {
             return Ok(Vec::new());
         }
         let root = task_cwd(task, config).await?;
-        let sandbox = self.build_sandbox_for_task(task, config).await?;
+        let sandbox = self
+            .build_sandbox_for_task(task, dependencies, config)
+            .await?;
         let filtered_env = if sandbox.is_active() {
             sandbox.filter_env(resolved_env)
         } else {
@@ -1492,6 +1556,7 @@ impl TaskExecutor {
     ) -> Result<()> {
         let TaskExecContext {
             task,
+            dependencies,
             env,
             prefix,
             output_capture,
@@ -1509,7 +1574,9 @@ impl TaskExecutor {
         let program = program.to_executable();
         let redactions = config.redactions();
         let raw = self.raw(Some(task));
-        let sandbox = self.build_sandbox_for_task(task, &config).await?;
+        let sandbox = self
+            .build_sandbox_for_task(task, dependencies, &config)
+            .await?;
         let env = if sandbox.is_active() {
             &sandbox.filter_env(env)
         } else {
@@ -2590,6 +2657,28 @@ mod tests {
         let resolved = resolve_task_sandbox_path(Path::new(""), Some(Path::new("/task/base")));
 
         assert_eq!(resolved, PathBuf::new());
+    }
+
+    // https://github.com/jdx/mise/discussions/12264
+    #[test]
+    fn dependency_output_patterns_resolve_to_static_prefixes() {
+        let base = Path::new("/task/base");
+
+        assert_eq!(
+            resolve_task_sandbox_pattern("src/**/*.rs", base),
+            PathBuf::from("/task/base/src")
+        );
+        assert_eq!(
+            resolve_task_sandbox_pattern("*.rs", base),
+            PathBuf::from("/task/base")
+        );
+        assert_eq!(
+            resolve_task_sandbox_patterns(&["{src,tests}/**/*.rs".to_string()], base).unwrap(),
+            [
+                PathBuf::from("/task/base/src"),
+                PathBuf::from("/task/base/tests")
+            ]
+        );
     }
 
     #[test]

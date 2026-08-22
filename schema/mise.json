@@ -3347,6 +3347,11 @@
           "description": "timeout for this task",
           "type": "string"
         },
+        "sandbox": {
+          "default": false,
+          "description": "infer filesystem reads from sources and prerequisite outputs",
+          "type": "boolean"
+        },
         "deny_all": {
           "default": false,
           "description": "block reads, writes, network, and env vars",

@@ -89,6 +89,33 @@ pub(crate) enum TaskRunPhase {
     Post,
 }
 
+/// Selects how a task derives filesystem sandbox read permissions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(from = "bool")]
+pub(crate) enum TaskSandboxMode {
+    /// Use only explicitly configured sandbox permissions.
+    #[default]
+    Disabled,
+    /// Infer reads from task sources and prerequisite outputs.
+    Inferred,
+}
+
+impl TaskSandboxMode {
+    pub(crate) fn is_inferred(self) -> bool {
+        matches!(self, Self::Inferred)
+    }
+}
+
+impl From<bool> for TaskSandboxMode {
+    fn from(enabled: bool) -> Self {
+        if enabled {
+            Self::Inferred
+        } else {
+            Self::Disabled
+        }
+    }
+}
+
 pub(crate) struct ResolvedTaskDependencies {
     pub depends: Vec<Task>,
     pub wait_for: Vec<Task>,
@@ -787,6 +814,9 @@ pub(crate) struct Task {
     #[serde(skip)]
     pub remote_file_source: Option<String>,
 
+    /// Infer filesystem reads from sources and prerequisite outputs.
+    #[serde(default)]
+    pub sandbox: TaskSandboxMode,
     /// Block reads, writes, network, and env vars
     #[serde(default)]
     pub deny_all: bool,
@@ -1421,6 +1451,7 @@ impl Task {
             })
             .transpose()?;
         task.outputs = p.get_raw("outputs").map(|to| to.into()).unwrap_or_default();
+        task.sandbox = p.parse_bool("sandbox").unwrap_or_default().into();
         task.cache = p
             .get_raw("cache")
             .map(|v| {
@@ -2591,7 +2622,10 @@ impl Task {
         if !other.usage.is_empty() {
             self.usage = other.usage;
         }
-        // Sandbox fields — deny is OR (any deny wins), allow lists extend.
+        // Sandbox fields — restrictions compose and allow lists extend.
+        if other.sandbox.is_inferred() {
+            self.sandbox = TaskSandboxMode::Inferred;
+        }
         self.deny_all |= other.deny_all;
         self.deny_read |= other.deny_read;
         self.deny_write |= other.deny_write;
@@ -3156,6 +3190,7 @@ impl Default for Task {
             usage: "".to_string(),
             timeout: None,
             remote_file_source: None,
+            sandbox: TaskSandboxMode::Disabled,
             deny_all: false,
             deny_read: false,
             deny_write: false,
@@ -5082,6 +5117,7 @@ echo "hello world"
 #MISE sources=["src1.txt", "src2.txt"]
 #MISE watch={no_vcs_ignore=true}
 #MISE outputs=["out1.txt"]
+#MISE sandbox=true
 #MISE cache={enabled=true,env=["PROFILE"]}
 #MISE rust_cache=true
 #MISE pass_through_env=["DEPLOY_TOKEN"]
@@ -5128,6 +5164,7 @@ echo "test"
             })
         );
         assert_eq!(task.rust_cache, Some(TaskRustCacheConfig::default()));
+        assert!(task.sandbox.is_inferred());
         assert_eq!(task.pass_through_env, ["DEPLOY_TOKEN"]);
         assert_eq!(task.shell, Some("bash -c".to_string()));
         assert_eq!(task.quiet, true);
