@@ -1,0 +1,21 @@
+[package]
+name = "mise-exec"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Thin fast-path shim/exec binary for mise"
+homepage = "https://github.com/jdx/mise"
+repository = "https://github.com/jdx/mise"
+publish = false
+
+[[bin]]
+name = "mise-exec"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.23"
+blake3 = "1"
+chacha20poly1305 = "0.10"
+hex = "0.4"
+rmp-serde = "1"
+serde = { version = "1", features = ["derive"] }
