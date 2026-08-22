@@ -33,3 +33,18 @@ assert_contains "mise doctor" "(none)"
 echo "DOCTOR_VAR=1" >.doctor-test-env
 assert_contains "MISE_ENV_FILE=.doctor-test-env mise doctor" ".doctor-test-env"
 assert_contains "MISE_ENV_FILE=.doctor-test-env mise doctor -J" ".doctor-test-env"
+
+# Both outputs render the same warnings, so a check that only one path runs is a hole in the other.
+# Seeding the version cache makes this deterministic: no network, and no waiting for a release.
+# Asked of mise rather than assembled here, so the file is written wherever the version check
+# will look for it.
+# Kept last — the seeded version adds a warning to every doctor run after this point.
+cache_dir="$(mise cache path)"
+mkdir -p "$cache_dir"
+echo "2099.1.0" >"$cache_dir/latest-version"
+assert_contains "mise doctor" "new mise version 2099.1.0 available"
+# Structure rather than substring on the JSON side: what this PR is about is the warning reaching
+# `warnings`, not the text appearing somewhere in the document. `pipefail` because the helper runs
+# this through its own `bash -c`, where the pipeline's status is jq's alone — a `mise doctor` that
+# printed the right JSON and then exited non-zero would pass unnoticed.
+assert_succeed "set -o pipefail; mise doctor -J | jq -e '.warnings | map(contains(\"new mise version 2099.1.0 available\")) | any'"
