@@ -59,13 +59,14 @@ struct VersionEntry {
     created_at: toml::value::Datetime,
     #[serde(default)]
     release_url: Option<String>,
-    /// Pre-release flag, when the producing source can distinguish it. Defaults
-    /// to false so old host data — and entries from sources that don't track
-    /// prereleases — stay correct without any schema upgrade. Old mise clients
-    /// that don't know about this field ignore it (toml-rs accepts unknown
-    /// fields by default), so populating it in mise-versions is forward-compatible.
+    /// Pre-release flag, when the producing source can distinguish it. Absent
+    /// in old host data — and for entries from sources that don't track
+    /// prereleases — which maps to `None` ("unknown") without any schema
+    /// upgrade. Old mise clients that don't know about this field ignore it
+    /// (toml-rs accepts unknown fields by default), so populating it in
+    /// mise-versions is forward-compatible.
     #[serde(default)]
-    prerelease: bool,
+    prerelease: Option<bool>,
 }
 
 #[derive(serde::Deserialize)]

@@ -20,8 +20,9 @@ struct VersionOutputAll {
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
     /// Pre-release flag, sourced from upstream metadata or backend opt-in
-    /// detection. Always emitted so JSON consumers can rely on its presence.
-    prerelease: bool,
+    /// detection. Always emitted so JSON consumers can rely on its presence:
+    /// `true`/`false` when the source can tell, `null` when it cannot.
+    prerelease: Option<bool>,
 }
 
 /// List runtime versions available for install.

@@ -189,8 +189,8 @@ impl Backend for PIPXBackend {
         Ok(versions
             .into_iter()
             .map(|mut v| {
-                if !v.prerelease && PEP440_PRERELEASE_REGEX.is_match(&v.version) {
-                    v.prerelease = true;
+                if v.prerelease != Some(true) && PEP440_PRERELEASE_REGEX.is_match(&v.version) {
+                    v.prerelease = Some(true);
                 }
                 v
             })
