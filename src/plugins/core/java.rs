@@ -439,7 +439,9 @@ impl JavaPlugin {
             .map(|(v, m)| VersionInfo {
                 version: v.clone(),
                 created_at: m.created_at.clone(),
-                prerelease: Some(VERSION_REGEX.is_match(v)),
+                // The regex is a denylist heuristic, not a total grammar:
+                // a match proves "prerelease", a miss proves nothing.
+                prerelease: VERSION_REGEX.is_match(v).then_some(true),
                 ..Default::default()
             })
             .unique_by(|v| v.version.clone())

@@ -4786,9 +4786,9 @@ fn package_has_asset(pkg: &AquaPackage) -> bool {
 ///
 /// Always fetches the pre-release superset so the shared remote-versions cache
 /// is independent of the `prerelease` tool option; callers filter on the
-/// returned `prerelease` bit at read time. Git tags (the `github_tag` version
-/// source) carry no pre-release flag, so those entries are reported as
-/// `prerelease = false` and rely on the shared regex-based fuzzy-match filter.
+/// returned `prerelease` flag at read time. Git tags (the `github_tag` version
+/// source) carry no pre-release flag, so those entries are reported as `None`
+/// ("unknown") and rely on the shared regex-based fuzzy-match filter.
 async fn get_tags_with_release_dates(
     pkg: &AquaPackage,
 ) -> Result<Vec<(String, Option<String>, Option<bool>)>> {
