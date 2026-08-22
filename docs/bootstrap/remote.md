@@ -211,7 +211,9 @@ install_mise = "/usr/local/bin/mise"
 
 `true` installs to `~/.local/bin/mise`, the same path used by
 [mise.run](https://mise.run). A string installs to that path instead; it must be
-absolute or start with `~/`, and it names the executable rather than a directory.
+absolute or start with `~/`, and it names the executable rather than a directory
+— a path that already holds a directory is rejected instead of receiving the
+executable as a child entry.
 A host-level value replaces `[bootstrap.remote].install_mise`, so
 `install_mise = false` opts one host out of a project-wide default.
 
@@ -222,7 +224,8 @@ mise bootstrap remote cache --no-install-mise
 ```
 
 `--install-mise` requires `=` before a path so that a bare flag cannot consume a
-target name.
+target name. Like the other command-line provisioning options, it replaces a
+`remote_mise` or `bootstrap_command` declared by a selected inventory host.
 
 What gets installed is the same executable the default strategy would have
 staged — the local binary or the checksum-verified official release artifact —

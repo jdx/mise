@@ -78,6 +78,11 @@ chmod +x fakebin/uname
 
 cat >fakebin/mktemp <<'EOF'
 #!/bin/sh
+# only the staging directory is faked; every other caller gets the real mktemp
+if test "${1:-}" != -d; then
+  PATH=/usr/bin:/bin command mktemp "$@"
+  exit $?
+fi
 if test "${MISE_TEST_BAD_STAGE:-}" = 1; then
   mkdir -p "$BAD_REMOTE_STAGE"
   printf '%s\n' "$BAD_REMOTE_STAGE"
@@ -275,6 +280,13 @@ assert_contains "cat $ssh_log" "'$install_target' --cd"
 
 assert_fail "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise=relative/mise --yes"
 assert_fail "mise bootstrap remote --host install.test --source . --install-mise --remote-mise mise --yes"
+assert_fail "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise='$HOME/installed bin' --yes --skip tools"
+
+# a command-line install replaces the strategy the inventory host declared
+: >"$ssh_log"
+assert_contains \
+  "mise bootstrap remote cache --mise-bin bin/mise --install-mise='$install_target' --dry-run --yes --skip tools 2>&1" \
+  "would install mise to $install_target"
 
 cat >>mise.toml <<'EOF'
 

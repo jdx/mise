@@ -652,7 +652,7 @@ struct BootstrapRemote {
         value_name = "PATH",
         num_args = 0..=1,
         require_equals = true,
-        default_missing_value = "~/.local/bin/mise",
+        default_missing_value = system::remote::DEFAULT_INSTALL_MISE_PATH,
         conflicts_with_all = ["remote_mise", "bootstrap_command", "no_install_mise"]
     )]
     install_mise: Option<String>,

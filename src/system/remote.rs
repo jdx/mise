@@ -14,7 +14,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
 /// Where `install_mise = true` puts the executable. This matches the default
 /// used by <https://mise.run> and is already searched by remote mise discovery.
-const DEFAULT_INSTALL_MISE_PATH: &str = "~/.local/bin/mise";
+pub(crate) const DEFAULT_INSTALL_MISE_PATH: &str = "~/.local/bin/mise";
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct RemoteTomlConfig {
@@ -292,6 +292,10 @@ impl RemoteHost {
             }
         }
         if let Some(install_mise) = &overrides.install_mise {
+            // Both of these provide their own mise, so an explicit install
+            // replaces them the same way a command-line strategy would.
+            self.remote_mise = None;
+            self.bootstrap_command = None;
             self.install_mise = Some(install_mise.clone());
         } else if overrides.no_install_mise {
             self.install_mise = None;
@@ -778,13 +782,20 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
 }
 
 /// Writes beside the target and renames, so a replaced executable is never
-/// truncated in place and a busy binary cannot fail with ETXTBSY.
+/// truncated in place and a busy binary cannot fail with ETXTBSY. `mktemp`
+/// creates that file exclusively, so a symbolic link planted in a shared
+/// writable install directory cannot capture the write.
 fn install_mise_script(target: &str) -> String {
     format!(
         r#"set -eu
 target={}
-mkdir -p {}
-temporary="$target.mise-install.$$"
+directory={}
+mkdir -p "$directory"
+if [ -d "$target" ]; then
+  printf 'mise install path is a directory: %s\n' "$target" >&2
+  exit 1
+fi
+temporary=$(mktemp "$directory/.mise-install.XXXXXXXXXX")
 trap 'rm -f "$temporary"' EXIT
 cat > "$temporary"
 chmod 755 "$temporary"
@@ -2176,13 +2187,35 @@ mod tests {
         .unwrap();
         assert!(host.install_mise.is_none());
         assert_eq!(host.remote_mise.as_deref(), Some("mise"));
+
+        host.apply_overrides(&RemoteOverrides {
+            install_mise: Some(DEFAULT_INSTALL_MISE_PATH.to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(
+            host.install_mise.as_deref(),
+            Some(DEFAULT_INSTALL_MISE_PATH)
+        );
+        assert!(host.remote_mise.is_none());
+
+        host.bootstrap_command = Some("curl https://mise.run | sh".to_string());
+        host.install_mise = None;
+        host.apply_overrides(&RemoteOverrides {
+            install_mise: Some(DEFAULT_INSTALL_MISE_PATH.to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.bootstrap_command.is_none());
     }
 
     #[test]
     fn install_script_quotes_the_target_and_renames_into_place() {
         let script = install_mise_script("/home/deploy dir/.local/bin/mise");
         assert!(script.contains("target='/home/deploy dir/.local/bin/mise'"));
-        assert!(script.contains("mkdir -p '/home/deploy dir/.local/bin'"));
+        assert!(script.contains("directory='/home/deploy dir/.local/bin'"));
+        assert!(script.contains(r#"temporary=$(mktemp "$directory/.mise-install.XXXXXXXXXX")"#));
+        assert!(script.contains(r#"if [ -d "$target" ]; then"#));
         assert_eq!(remote_parent_directory("/mise"), "/");
         assert!(script.contains(r#"mv -f "$temporary" "$target""#));
     }
