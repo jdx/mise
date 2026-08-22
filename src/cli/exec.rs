@@ -281,6 +281,19 @@ impl Exec {
             env = sandbox.filter_env(&env);
         }
 
+        // Experimental exec fast path: record the fully-computed env so the
+        // next identical invocation can skip startup entirely. Only for the
+        // plain shim/`x --` forms whose semantics the fast path can replay.
+        if crate::exec_fastpath::enabled()
+            && !sandbox.is_active()
+            && self.tool.is_empty()
+            && self.c.is_none()
+            && !self.raw
+            && !self.fresh_env
+        {
+            crate::exec_fastpath::maybe_write_record(&config, &ts, &env).await;
+        }
+
         time!("exec");
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional

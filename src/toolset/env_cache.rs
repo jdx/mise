@@ -24,7 +24,7 @@ fn get_encryption_key() -> Option<[u8; 32]> {
     })
 }
 
-fn encrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
+pub(crate) fn encrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
     let cipher = ChaCha20Poly1305::new_from_slice(key)
         .map_err(|e| eyre::eyre!("failed to create cipher: {}", e))?;
     let nonce = Nonce::generate();
@@ -38,7 +38,7 @@ fn encrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
     Ok(result)
 }
 
-fn decrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
+pub(crate) fn decrypt_data(data: &[u8], key: &[u8; 32]) -> Result<Vec<u8>> {
     if data.len() < 12 {
         bail!("data too short to contain nonce");
     }
