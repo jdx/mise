@@ -191,5 +191,4 @@ ToolRequestSet {
         ),
     },
     unknown_tools: [],
-    filtered_tools: [],
 }

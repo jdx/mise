@@ -71,12 +71,6 @@ impl InstallDependencyDeclarations {
             .filter(|ba| self.matches(ba))
             .cloned()
             .collect();
-        matching.filtered_tools = requests
-            .filtered_tools
-            .iter()
-            .filter(|ba| self.matches(ba))
-            .cloned()
-            .collect();
         matching
     }
 }
@@ -273,7 +267,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn matching_requests_preserves_matching_omission_metadata() {
+    async fn matching_requests_preserves_matching_unknown_tools() {
         let _config = Config::get().await.unwrap();
         let declarations = InstallDependencyDeclarations {
             dependencies: IndexSet::from([BackendArg::from("node")]),
@@ -282,12 +276,10 @@ mod tests {
         let node = Arc::new(BackendArg::from("node"));
         let python = Arc::new(BackendArg::from("python"));
         let mut requests = ToolRequestSet::new();
-        requests.unknown_tools = vec![node.clone(), python.clone()];
-        requests.filtered_tools = vec![node.clone(), python];
+        requests.unknown_tools = vec![node.clone(), python];
 
         let matching = declarations.matching_requests(&requests);
 
-        assert_eq!(matching.unknown_tools, vec![node.clone()]);
-        assert_eq!(matching.filtered_tools, vec![node]);
+        assert_eq!(matching.unknown_tools, vec![node]);
     }
 }

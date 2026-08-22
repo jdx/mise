@@ -22,8 +22,6 @@ pub(crate) struct ToolRequestSet {
     pub sources: BTreeMap<Arc<BackendArg>, ToolSource>,
     /// Tools that were filtered out because they don't exist in the registry (BackendType::Unknown)
     pub unknown_tools: Vec<Arc<BackendArg>>,
-    /// Tools omitted because their backend, platform, or settings disabled them.
-    pub filtered_tools: Vec<Arc<BackendArg>>,
 }
 
 impl ToolRequestSet {
@@ -105,12 +103,6 @@ impl ToolRequestSet {
             .collect::<ToolRequestSet>();
         filtered.unknown_tools = self
             .unknown_tools
-            .iter()
-            .filter(|ba| matches(ba))
-            .cloned()
-            .collect();
-        filtered.filtered_tools = self
-            .filtered_tools
             .iter()
             .filter(|ba| matches(ba))
             .cloned()
@@ -213,11 +205,10 @@ impl ToolRequestSetBuilder {
         Ok(trs)
     }
 
-    /// Removes disabled tools while retaining metadata about the incomplete request set.
+    /// Removes disabled tools while retaining unknown backends for diagnostics.
     fn filter_disabled_tools(&self, trs: &mut ToolRequestSet) {
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
-                trs.filtered_tools.push(ba.clone());
                 if trs
                     .tools
                     .get(&ba)
@@ -363,7 +354,6 @@ fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     // These may accumulate duplicate BackendArgs across a config hierarchy;
     // consumers are expected to dedup (`.unique()` or collecting into a set).
     b.unknown_tools.extend(a.unknown_tools);
-    b.filtered_tools.extend(a.filtered_tools);
     b
 }
 
@@ -418,36 +408,31 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_preserves_omission_metadata() {
+    fn test_merge_preserves_unknown_tools() {
         let first = Arc::new(BackendArg::from("dummy"));
         let second = Arc::new(BackendArg::from("tiny"));
         let mut a = ToolRequestSet::new();
         a.unknown_tools.push(first.clone());
-        a.filtered_tools.push(first.clone());
         let mut b = ToolRequestSet::new();
         b.unknown_tools.push(second.clone());
-        b.filtered_tools.push(second.clone());
 
         let merged = merge(a, b);
 
-        assert_eq!(merged.unknown_tools, vec![second.clone(), first.clone()]);
-        assert_eq!(merged.filtered_tools, vec![second, first]);
+        assert_eq!(merged.unknown_tools, vec![second, first]);
     }
 
     #[tokio::test]
-    async fn test_filter_by_tool_preserves_matching_omission_metadata() {
+    async fn test_filter_by_tool_preserves_matching_unknown_tools() {
         crate::toolset::install_state::init().await.unwrap();
         let selected = Arc::new(BackendArg::from("selected-missing-tool"));
         let excluded = Arc::new(BackendArg::from("excluded-missing-tool"));
         let mut requests = ToolRequestSet::new();
-        requests.unknown_tools = vec![selected.clone(), excluded.clone()];
-        requests.filtered_tools = vec![selected.clone(), excluded];
+        requests.unknown_tools = vec![selected.clone(), excluded];
 
         let filtered =
             requests.filter_by_tool(HashSet::from(["selected-missing-tool".to_string()]));
 
-        assert_eq!(filtered.unknown_tools, vec![selected.clone()]);
-        assert_eq!(filtered.filtered_tools, vec![selected]);
+        assert_eq!(filtered.unknown_tools, vec![selected]);
     }
 
     #[test]
@@ -731,55 +716,6 @@ mod tests {
         builder.filter_disabled_tools(&mut trs);
 
         assert!(trs.tools.is_empty());
-        assert_eq!(trs.unknown_tools, vec![ba.clone()]);
-        assert_eq!(trs.filtered_tools, vec![ba]);
-    }
-
-    #[tokio::test]
-    async fn test_filter_disabled_tools_records_registry_os_gate() {
-        crate::toolset::install_state::init().await.unwrap();
-        // This test intentionally follows registry OS metadata because the builder
-        // reads the gate from BackendArg; keep these examples platform-exclusive.
-        // The same predicate in `Toolset::is_disabled` excludes this short from
-        // the active update, so this recording cannot change a lockfile; it
-        // exists so the union's omission set stays complete.
-        let short = if crate::cli::version::OS.as_str() == "macos" {
-            "systemctl-tui"
-        } else {
-            "tart"
-        };
-        let ba = Arc::new(BackendArg::from(short));
-        assert!(!ba.is_os_supported());
-        let request = ToolRequest::new(ba.clone(), "latest", ToolSource::Unknown).unwrap();
-        let mut trs = ToolRequestSet::new();
-        trs.add_version(request, &ToolSource::Unknown);
-
-        ToolRequestSetBuilder::default().filter_disabled_tools(&mut trs);
-
-        assert!(trs.tools.is_empty());
-        assert!(trs.unknown_tools.is_empty());
-        assert_eq!(trs.filtered_tools, vec![ba]);
-    }
-
-    #[tokio::test]
-    async fn test_filter_disabled_tools_records_settings_exclusion() {
-        crate::toolset::install_state::init().await.unwrap();
-        // The same settings check in `Toolset::is_disabled` excludes this short
-        // from the active update, so this recording cannot change a lockfile;
-        // it exists so the union's omission set stays complete.
-        let ba = Arc::new(BackendArg::from("node"));
-        let request = ToolRequest::new(ba.clone(), "22", ToolSource::Unknown).unwrap();
-        let mut trs = ToolRequestSet::new();
-        trs.add_version(request, &ToolSource::Unknown);
-        let builder = ToolRequestSetBuilder {
-            disable_tools: BTreeSet::from([BackendArg::from("node")]),
-            ..Default::default()
-        };
-
-        builder.filter_disabled_tools(&mut trs);
-
-        assert!(trs.tools.is_empty());
-        assert!(trs.unknown_tools.is_empty());
-        assert_eq!(trs.filtered_tools, vec![ba]);
+        assert_eq!(trs.unknown_tools, vec![ba]);
     }
 }

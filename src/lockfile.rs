@@ -1510,15 +1510,24 @@ impl LockfileUpdateMode {
     }
 }
 
-/// Controls whether a lockfile update has only the active view or an authoritative union.
+/// Controls whether a lockfile update has only the active view or a resolved sibling union.
 pub(crate) enum LockfileUpdateScope<'a> {
     /// Preserve entries that may belong to unloaded sibling projects.
     Active,
-    /// Preserve union versions plus all entries for tools omitted while loading it.
+    /// Prune only successfully superseded entries that the union no longer needs.
     MonorepoUnion {
         toolset: &'a Toolset,
         omitted_shorts: &'a HashSet<String>,
+        superseded: &'a [SupersededLockfileEntry],
     },
+}
+
+/// Exact lockfile entry replaced by a successful monorepo upgrade.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SupersededLockfileEntry {
+    lockfile_path: PathBuf,
+    short: String,
+    key: LockfileToolKey,
 }
 
 pub(crate) fn migrate_monorepo_lockfiles(config: &Config) -> Result<()> {
@@ -1712,19 +1721,21 @@ pub(crate) fn update_lockfiles(
     }
 
     // Only the active toolset contributes lockfile entries and auto-lock work. A
-    // complete monorepo union is used below solely to decide which existing
-    // sibling versions remain configured and must be preserved.
+    // resolved monorepo union is used below solely to decide whether an exact
+    // superseded entry remains configured and must be preserved.
     let tools_by_source = tools_by_source_for_update(ts, new_versions);
-    let (monorepo_versions, omitted_shorts) = match scope {
-        LockfileUpdateScope::Active => (None, None),
+    let (monorepo_versions, omitted_shorts, superseded_by_path) = match scope {
+        LockfileUpdateScope::Active => (None, None, None),
         LockfileUpdateScope::MonorepoUnion {
             toolset,
             omitted_shorts,
+            superseded,
         } => {
-            let tools = tools_by_source_for_update(toolset, new_versions);
+            let tools = tools_by_source_for_monorepo_update(toolset, new_versions);
             (
                 Some(lockfile_versions_by_path(config, &tools)),
                 Some(omitted_shorts),
+                Some(superseded_entries_by_path(superseded)),
             )
         }
     };
@@ -1744,6 +1755,11 @@ pub(crate) fn update_lockfiles(
     for source in tools_by_source.keys() {
         if let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, source) {
             lockfile_configs.entry(lockfile_path).or_default();
+        }
+    }
+    if let Some(superseded_by_path) = &superseded_by_path {
+        for lockfile_path in superseded_by_path.keys() {
+            lockfile_configs.entry(lockfile_path.clone()).or_default();
         }
     }
 
@@ -1927,6 +1943,7 @@ pub(crate) fn update_lockfiles(
                 is_monorepo_root_lockfile,
                 omitted_shorts,
                 monorepo_versions.as_ref(),
+                superseded_by_path.as_ref(),
                 &lockfile_path,
                 &short,
             );
@@ -1943,8 +1960,9 @@ pub(crate) fn update_lockfiles(
             );
             // Keep the prior provenance-bearing entry alive for unverified upgrades so
             // the auto-lock pass can verify the new version and compare against it. The
-            // merge above drops superseded versions; without this the baseline would be
-            // gone before auto-lock runs, letting a genuine regression slip through. The
+            // merge above may drop a superseded version; without this the baseline would
+            // be gone before auto-lock runs, letting a genuine regression slip through.
+            // This can deliberately re-add a superseded entry for one update cycle; the
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
             existing_lockfile.tools.insert(short, merged_tools);
@@ -1980,9 +1998,36 @@ type ToolsBySource = HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>>;
 /// Membership-only keep-sets of opaque version strings; never iterate them —
 /// iteration order is unspecified and lockfile output must stay deterministic.
 type LockfileVersionsByPath = HashMap<PathBuf, HashMap<String, HashSet<String>>>;
+type SupersededEntriesByPath = HashMap<PathBuf, HashMap<String, HashSet<LockfileToolKey>>>;
+
+#[derive(Clone, Copy)]
+enum NewVersionReplacementScope {
+    Source,
+    MatchingRequests,
+}
 
 /// Groups resolved and newly installed versions by their contributing config source.
 fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> ToolsBySource {
+    tools_by_source_for_update_with_scope(ts, new_versions, NewVersionReplacementScope::Source)
+}
+
+/// Builds the union keep-set, replacing matching upgraded requests across sibling sources.
+fn tools_by_source_for_monorepo_update(
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+) -> ToolsBySource {
+    tools_by_source_for_update_with_scope(
+        ts,
+        new_versions,
+        NewVersionReplacementScope::MatchingRequests,
+    )
+}
+
+fn tools_by_source_for_update_with_scope(
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+    replacement_scope: NewVersionReplacementScope,
+) -> ToolsBySource {
     let mut tools_by_source: ToolsBySource = HashMap::new();
     for (ba, tvl) in &ts.versions {
         for tv in &tvl.versions {
@@ -2000,17 +2045,42 @@ fn tools_by_source_for_update(ts: &Toolset, new_versions: &[ToolVersion]) -> Too
 
     // Add versions added within this session (from `mise use` or `mise up`).
     for new_tv in new_versions {
+        if matches!(
+            replacement_scope,
+            NewVersionReplacementScope::MatchingRequests
+        ) {
+            for source_tools in tools_by_source.values_mut() {
+                if let Some(existing_versions) = source_tools.get_mut(new_tv.short()) {
+                    existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+                }
+            }
+        }
         let source_tools = tools_by_source
             .entry(new_tv.request.source().clone())
             .or_default();
         let existing_versions = source_tools
             .entry(new_tv.ba().short.to_string())
             .or_default();
-        existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+        if matches!(replacement_scope, NewVersionReplacementScope::Source) {
+            existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+        }
         existing_versions.push(new_tv.clone());
     }
 
     tools_by_source
+}
+
+fn superseded_entries_by_path(entries: &[SupersededLockfileEntry]) -> SupersededEntriesByPath {
+    let mut by_path = SupersededEntriesByPath::new();
+    for entry in entries {
+        by_path
+            .entry(entry.lockfile_path.clone())
+            .or_default()
+            .entry(entry.short.clone())
+            .or_default()
+            .insert(entry.key.clone());
+    }
+    by_path
 }
 
 /// Collects the concrete versions that each target lockfile must preserve.
@@ -3063,11 +3133,12 @@ enum AbsentEntryPolicy<'a> {
     Drop,
     /// Keep every absent entry because sibling ownership is unknown.
     PreserveAll,
-    /// Keep absent entries whose concrete version remains in the union.
-    /// `None` means the union cannot attribute this short, so preserve every
-    /// absent entry. The set is membership-only (versions are opaque strings)
-    /// and must never be iterated.
-    PreserveVersions(Option<&'a HashSet<String>>),
+    /// Drop exact superseded keys unless the union still pins their version.
+    /// Every other absent entry is preserved.
+    PruneSuperseded {
+        superseded: &'a HashSet<LockfileToolKey>,
+        keep_versions: Option<&'a HashSet<String>>,
+    },
 }
 
 /// Chooses how one tool's absent entries are handled for the current update scope.
@@ -3075,30 +3146,27 @@ fn absent_entry_policy_for_update<'a>(
     is_monorepo_root_lockfile: bool,
     omitted_shorts: Option<&HashSet<String>>,
     monorepo_versions: Option<&'a LockfileVersionsByPath>,
+    superseded_by_path: Option<&'a SupersededEntriesByPath>,
     lockfile_path: &Path,
     short: &str,
 ) -> AbsentEntryPolicy<'a> {
     if !is_monorepo_root_lockfile {
         AbsentEntryPolicy::Drop
     } else if omitted_shorts.is_some_and(|omitted| omitted.contains(short)) {
-        // Registry OS gates and settings filters exclude the same short from
-        // the active update too, and unknown backends produce no active
-        // resolved entry; Windows asdf is the filtered-tool exception.
-        // Request-level `os = [...]` gating and resolution failures widen this
-        // path: `Toolset::is_disabled` checks only the registry gate, so a
-        // sibling can be gated or fail while the active project still
-        // contributes the same short — preserve that short only.
+        // A request-level `os = [...]` gate or unresolved sibling can still pin
+        // the superseded entry even when another project upgraded this short.
         AbsentEntryPolicy::PreserveAll
-    } else if let Some(monorepo_versions) = monorepo_versions {
-        // "Complete" means complete for the config roots currently matched
-        // exactly by [monorepo].config_roots. Discovery is not recursive:
-        // nested undeclared configs still write to the root lockfile but are
-        // invisible here, as are roots removed from the configured globs.
-        // Their unattributed entries fall back to preservation below.
+    } else if let Some(superseded) = superseded_by_path
+        .and_then(|paths| paths.get(lockfile_path))
+        .and_then(|tools| tools.get(short))
+    {
         let keep_versions = monorepo_versions
-            .get(lockfile_path)
+            .and_then(|paths| paths.get(lockfile_path))
             .and_then(|tools| tools.get(short));
-        AbsentEntryPolicy::PreserveVersions(keep_versions)
+        AbsentEntryPolicy::PruneSuperseded {
+            superseded,
+            keep_versions,
+        }
     } else {
         AbsentEntryPolicy::PreserveAll
     }
@@ -3140,6 +3208,11 @@ fn preserve_absent_tool_entries(
     let Some(existing_tools) = existing_tools else {
         return;
     };
+    // For upgrade pruning, keep active entries before preserved exact pins. The
+    // reader can then satisfy a loose upgraded request with the active entry and
+    // scan onward to the preserved old entry for an exact sibling request. This
+    // is insertion precedence, not an ordering comparison between opaque versions.
+    let preserve_current_order = matches!(policy, AbsentEntryPolicy::PruneSuperseded { .. });
     let mut keys: HashSet<(String, BTreeMap<String, String>)> = merged_tools
         .iter()
         .map(|tool| (tool.version.clone(), tool.options.clone()))
@@ -3153,8 +3226,13 @@ fn preserve_absent_tool_entries(
         let preserve = match policy {
             AbsentEntryPolicy::Drop => false,
             AbsentEntryPolicy::PreserveAll => true,
-            AbsentEntryPolicy::PreserveVersions(versions) => {
-                versions.is_none_or(|versions| versions.contains(&existing_tool.version))
+            AbsentEntryPolicy::PruneSuperseded {
+                superseded,
+                keep_versions,
+            } => {
+                !superseded.contains(&key)
+                    || keep_versions
+                        .is_some_and(|versions| versions.contains(&existing_tool.version))
             }
         };
         if !preserve {
@@ -3164,11 +3242,13 @@ fn preserve_absent_tool_entries(
             merged_tools.push(existing_tool.clone());
         }
     }
-    merged_tools.sort_by(|a, b| {
-        a.version
-            .cmp(&b.version)
-            .then_with(|| a.options.cmp(&b.options))
-    });
+    if !preserve_current_order {
+        merged_tools.sort_by(|a, b| {
+            a.version
+                .cmp(&b.version)
+                .then_with(|| a.options.cmp(&b.options))
+        });
+    }
 }
 
 fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
@@ -3641,6 +3721,29 @@ fn lockfile_tool_from_tool_version(tv: &ToolVersion) -> Result<LockfileTool> {
     })
 }
 
+/// Builds an exact pruning candidate when a tool version belongs to a monorepo root lockfile.
+pub(crate) fn superseded_monorepo_lockfile_entry(
+    config: &Config,
+    tv: &ToolVersion,
+) -> Result<Option<SupersededLockfileEntry>> {
+    let Some(root) = config.monorepo_lockfile_root() else {
+        return Ok(None);
+    };
+    let Some((lockfile_path, _)) = lockfile_path_for_tool_source(config, tv.request.source())
+    else {
+        return Ok(None);
+    };
+    if lockfile_path.parent() != Some(root.as_path()) {
+        return Ok(None);
+    }
+    let tool = lockfile_tool_from_tool_version(tv)?;
+    Ok(Some(SupersededLockfileEntry {
+        lockfile_path,
+        short: tv.short().to_string(),
+        key: (tool.version, tool.options),
+    }))
+}
+
 fn format(mut doc: DocumentMut) -> String {
     if let Some(tools) = doc.get_mut("tools") {
         for (_k, v) in tools.as_table_mut().unwrap().iter_mut() {
@@ -3829,6 +3932,37 @@ mod tests {
 
         assert_eq!(tools_by_source[&source]["tool"].len(), 1);
         assert_eq!(tools_by_source[&source]["tool"][0].version, "release-new");
+    }
+
+    #[test]
+    fn test_monorepo_update_replaces_matching_requests_across_sources() {
+        let root = ToolSource::MiseToml(PathBuf::from("/repo/mise.toml"));
+        let sibling = ToolSource::MiseToml(PathBuf::from("/repo/packages/b/mise.toml"));
+        let root_old = basic_tv_from_source("dummy", "1", "1.0.0", root.clone());
+        let sibling_old = basic_tv_from_source("dummy", "1", "1.0.0", sibling.clone());
+        let sibling_exact = basic_tv_from_source("dummy", "1.0.0", "1.0.0", sibling.clone());
+        let new = basic_tv_from_source("dummy", "1", "1.1.0", root.clone());
+        let ba = root_old.request.ba().clone();
+        let mut tvl = crate::toolset::ToolVersionList::new(ba.clone(), root);
+        tvl.requests = vec![
+            root_old.request.clone(),
+            sibling_old.request.clone(),
+            sibling_exact.request.clone(),
+        ];
+        tvl.versions = vec![root_old, sibling_old, sibling_exact];
+        let mut toolset = Toolset::default();
+        toolset.versions.insert(ba, tvl);
+
+        let tools = tools_by_source_for_monorepo_update(&toolset, &[new]);
+        let versions = tools
+            .values()
+            .flat_map(|by_short| &by_short["dummy"])
+            .map(|tv| (tv.request.version(), tv.version.as_str()))
+            .collect_vec();
+
+        assert_eq!(versions.len(), 2);
+        assert!(versions.contains(&("1".to_string(), "1.1.0")));
+        assert!(versions.contains(&("1.0.0".to_string(), "1.0.0")));
     }
 
     fn tool_with_conda_dep(
@@ -4351,17 +4485,17 @@ options = { exe = "rg" }
     }
 
     #[test]
-    fn test_complete_monorepo_update_prunes_superseded_version() {
-        let existing = vec![
-            basic_tool("1.8.0", "aqua:jqlang/jq"),
-            basic_tool("2.0.0", "aqua:jqlang/jq"),
-        ];
-
-        let keep_versions = HashSet::from(["1.8.2".to_string(), "2.0.0".to_string()]);
+    fn test_monorepo_update_prunes_only_superseded_key() {
+        let old = basic_tool("1.8.0", "aqua:jqlang/jq");
+        let superseded = HashSet::from([(old.version.clone(), old.options.clone())]);
+        let existing = vec![old, basic_tool("1.8.1", "aqua:jqlang/jq")];
         let merged = merge_tool_entries_for_update(
             vec![basic_tool("1.8.2", "aqua:jqlang/jq")],
             Some(&existing),
-            AbsentEntryPolicy::PreserveVersions(Some(&keep_versions)),
+            AbsentEntryPolicy::PruneSuperseded {
+                superseded: &superseded,
+                keep_versions: None,
+            },
             |_, _| None,
         );
 
@@ -4370,94 +4504,150 @@ options = { exe = "rg" }
                 .iter()
                 .map(|tool| tool.version.as_str())
                 .collect_vec(),
-            vec!["1.8.2", "2.0.0"]
+            vec!["1.8.2", "1.8.1"]
         );
     }
 
     #[test]
-    fn test_monorepo_update_preserves_only_omitted_shorts() {
+    fn test_exact_pin_keeps_superseded_key_after_current_entry() {
+        let old = basic_tool("1.0.0", "dummy");
+        let superseded = HashSet::from([(old.version.clone(), old.options.clone())]);
+        let keep_versions = HashSet::from([old.version.clone()]);
+        let existing = vec![old];
+        let merged = merge_tool_entries_for_update(
+            vec![basic_tool("1.1.0", "dummy")],
+            Some(&existing),
+            AbsentEntryPolicy::PruneSuperseded {
+                superseded: &superseded,
+                keep_versions: Some(&keep_versions),
+            },
+            |_, _| None,
+        );
+
+        // Current entries precede preserved entries so a loose request resolves
+        // to the upgrade while an exact old pin can scan onward to its entry.
+        assert_eq!(
+            merged
+                .iter()
+                .map(|tool| tool.version.as_str())
+                .collect_vec(),
+            vec!["1.1.0", "1.0.0"]
+        );
+    }
+
+    #[test]
+    fn test_accumulated_versions_remove_only_direct_predecessor() {
+        let old = basic_tool("1.8.0", "dummy");
+        let superseded = HashSet::from([(old.version.clone(), old.options.clone())]);
+        let existing = vec![old, basic_tool("1.8.1", "dummy")];
+        let merged = merge_tool_entries_for_update(
+            vec![basic_tool("1.8.2", "dummy")],
+            Some(&existing),
+            AbsentEntryPolicy::PruneSuperseded {
+                superseded: &superseded,
+                keep_versions: None,
+            },
+            |_, _| None,
+        );
+
+        assert_eq!(
+            merged
+                .iter()
+                .map(|tool| tool.version.as_str())
+                .collect_vec(),
+            vec!["1.8.2", "1.8.1"]
+        );
+    }
+
+    #[test]
+    fn test_resolved_union_selects_superseded_pruning_for_candidate_short() {
         let lockfile_path = PathBuf::from("/repo/mise.lock");
-        let keep_versions = LockfileVersionsByPath::from([(
+        let old = basic_tool("1.0.0", "dummy");
+        let superseded = SupersededEntriesByPath::from([(
             lockfile_path.clone(),
             HashMap::from([(
-                "unaffected".to_string(),
-                HashSet::from(["2.0.0".to_string()]),
+                "dummy".to_string(),
+                HashSet::from([(old.version.clone(), old.options.clone())]),
             )]),
         )]);
-        let omitted_shorts = HashSet::from(["omitted".to_string()]);
-        let existing = vec![basic_tool("1.0.0", "aqua:example/tool")];
+        let versions = LockfileVersionsByPath::from([(
+            lockfile_path.clone(),
+            HashMap::from([("dummy".to_string(), HashSet::from(["1.1.0".to_string()]))]),
+        )]);
 
-        // Non-root lockfiles drop absent entries even for omitted shorts.
         assert!(matches!(
             absent_entry_policy_for_update(
-                false,
-                Some(&omitted_shorts),
-                Some(&keep_versions),
+                true,
+                Some(&HashSet::new()),
+                Some(&versions),
+                Some(&superseded),
                 &lockfile_path,
-                "omitted",
+                "dummy",
             ),
-            AbsentEntryPolicy::Drop
+            AbsentEntryPolicy::PruneSuperseded { .. }
         ));
-        // Without a resolved union, every root-lockfile short preserves all.
-        assert!(matches!(
-            absent_entry_policy_for_update(true, None, None, &lockfile_path, "unaffected"),
-            AbsentEntryPolicy::PreserveAll
-        ));
-
-        let omitted_policy = absent_entry_policy_for_update(
-            true,
-            Some(&omitted_shorts),
-            Some(&keep_versions),
-            &lockfile_path,
-            "omitted",
-        );
-        assert!(matches!(omitted_policy, AbsentEntryPolicy::PreserveAll));
-        let omitted = merge_tool_entries_for_update(
-            vec![basic_tool("2.0.0", "aqua:example/tool")],
-            Some(&existing),
-            omitted_policy,
-            |_, _| None,
-        );
-        assert_eq!(
-            omitted
-                .iter()
-                .map(|tool| tool.version.as_str())
-                .collect_vec(),
-            vec!["1.0.0", "2.0.0"]
-        );
-
-        let unaffected_policy = absent_entry_policy_for_update(
-            true,
-            Some(&omitted_shorts),
-            Some(&keep_versions),
-            &lockfile_path,
-            "unaffected",
-        );
-        assert!(matches!(
-            unaffected_policy,
-            AbsentEntryPolicy::PreserveVersions(_)
-        ));
-        let unaffected = merge_tool_entries_for_update(
-            vec![basic_tool("2.0.0", "aqua:example/tool")],
-            Some(&existing),
-            unaffected_policy,
-            |_, _| None,
-        );
-        assert_eq!(
-            unaffected
-                .iter()
-                .map(|tool| tool.version.as_str())
-                .collect_vec(),
-            vec!["2.0.0"]
-        );
     }
 
-    /// Contract test: pins the nested-config lockfile routing and the
-    /// `PreserveVersions(None)` -> preserve decision. It is not a reproduction of
-    /// upgrading the same short elsewhere; that path always reaches `Some`
-    /// because `update_lockfiles` folds `new_versions` into the keep-set.
     #[test]
-    fn test_unattributed_nested_monorepo_entry_is_preserved() {
+    fn test_union_failure_preserves_superseded_entry() {
+        let lockfile_path = PathBuf::from("/repo/mise.lock");
+        let old = basic_tool("1.0.0", "dummy");
+        let fallback =
+            absent_entry_policy_for_update(true, None, None, None, &lockfile_path, "dummy");
+        assert!(matches!(fallback, AbsentEntryPolicy::PreserveAll));
+        let existing = vec![old];
+        let merged = merge_tool_entries_for_update(
+            vec![basic_tool("1.1.0", "dummy")],
+            Some(&existing),
+            fallback,
+            |_, _| None,
+        );
+        assert_eq!(merged.len(), 2);
+    }
+
+    fn assert_omitted_short_preserves_superseded_entry() {
+        let lockfile_path = PathBuf::from("/repo/mise.lock");
+        let old = basic_tool("1.0.0", "dummy");
+        let superseded = SupersededEntriesByPath::from([(
+            lockfile_path.clone(),
+            HashMap::from([(
+                "dummy".to_string(),
+                HashSet::from([(old.version.clone(), old.options.clone())]),
+            )]),
+        )]);
+        let omitted_shorts = HashSet::from(["dummy".to_string()]);
+        let empty_versions = LockfileVersionsByPath::new();
+        let policy = absent_entry_policy_for_update(
+            true,
+            Some(&omitted_shorts),
+            Some(&empty_versions),
+            Some(&superseded),
+            &lockfile_path,
+            "dummy",
+        );
+        assert!(matches!(policy, AbsentEntryPolicy::PreserveAll));
+        let existing = vec![old];
+        let merged = merge_tool_entries_for_update(
+            vec![basic_tool("1.1.0", "dummy")],
+            Some(&existing),
+            policy,
+            |_, _| None,
+        );
+        assert_eq!(merged.len(), 2);
+    }
+
+    #[test]
+    fn test_request_os_gated_sibling_short_is_not_pruned() {
+        assert_omitted_short_preserves_superseded_entry();
+    }
+
+    #[test]
+    fn test_unresolved_sibling_short_is_not_pruned() {
+        assert_omitted_short_preserves_superseded_entry();
+    }
+
+    #[test]
+    fn test_nested_undeclared_different_version_is_preserved() {
         let monorepo_root = Path::new("/repo");
         let nested_config = Path::new("/repo/packages/a/sub/mise.toml");
         let (lockfile_path, is_local) =
@@ -4465,34 +4655,26 @@ options = { exe = "rg" }
         assert_eq!(lockfile_path, PathBuf::from("/repo/mise.lock"));
         assert!(!is_local);
 
-        // Exact config-root discovery does not recurse into `packages/a/sub`,
-        // so the union can have no attributable version for this short even
-        // though the nested config previously wrote it to the root lockfile.
-        let keep_versions = LockfileVersionsByPath::from([(lockfile_path.clone(), HashMap::new())]);
-        let omitted_shorts = HashSet::new();
-        let policy = absent_entry_policy_for_update(
-            true,
-            Some(&omitted_shorts),
-            Some(&keep_versions),
-            &lockfile_path,
-            "tool",
-        );
-        assert!(matches!(policy, AbsentEntryPolicy::PreserveVersions(None)));
-
-        let existing = vec![basic_tool("nested-pin", "aqua:example/tool")];
+        let old = basic_tool("1.0.0", "dummy");
+        let superseded = HashSet::from([(old.version.clone(), old.options.clone())]);
+        let existing = vec![old, basic_tool("nested-pin", "dummy")];
         let merged = merge_tool_entries_for_update(
-            vec![basic_tool("active-upgrade", "aqua:example/tool")],
+            vec![basic_tool("1.1.0", "dummy")],
             Some(&existing),
-            policy,
+            AbsentEntryPolicy::PruneSuperseded {
+                superseded: &superseded,
+                keep_versions: None,
+            },
             |_, _| None,
         );
-        let versions = merged
-            .iter()
-            .map(|tool| tool.version.as_str())
-            .collect_vec();
-        assert_eq!(versions.len(), 2);
-        assert!(versions.contains(&"active-upgrade"));
-        assert!(versions.contains(&"nested-pin"));
+
+        assert_eq!(
+            merged
+                .iter()
+                .map(|tool| tool.version.as_str())
+                .collect_vec(),
+            vec!["1.1.0", "nested-pin"]
+        );
     }
 
     #[test]

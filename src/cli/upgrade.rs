@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::backend::backend_type::BackendType;
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, Settings, config_file};
@@ -11,7 +10,6 @@ use crate::file::display_path;
 use crate::install_before::{
     effective_minimum_release_age_for_tool, resolve_cli_minimum_release_age,
 };
-use crate::registry::tool_enabled;
 use crate::semver::split_version_prefix;
 use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
@@ -584,33 +582,49 @@ impl Upgrade {
             }
         }
 
+        // Only a concrete version actually replaced by a successful install is
+        // eligible for pruning. This is intentionally independent of --no-prune,
+        // which controls uninstalling the old installation rather than lock pins.
+        let mut superseded = vec![];
+        for outdated in &outdated {
+            if outdated.tool_version.version == outdated.latest
+                || !successful_versions
+                    .iter()
+                    .any(|tv| successful_upgrade_matches(outdated, tv))
+            {
+                continue;
+            }
+            match crate::lockfile::superseded_monorepo_lockfile_entry(
+                config,
+                &outdated.tool_version,
+            ) {
+                Ok(Some(entry)) => superseded.push(entry),
+                Ok(None) => {}
+                Err(err) => debug!(
+                    "could not identify superseded lockfile entry for {}@{}: {err:#}",
+                    outdated.name, outdated.tool_version.version
+                ),
+            }
+        }
+
         let monorepo_update = if Settings::get().lockfile_enabled()
             && config.monorepo_lockfile_root().is_some()
+            && !superseded.is_empty()
         {
             match config.monorepo_union_tool_request_set().await {
                 Ok(requests) => {
-                    let mut omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
+                    let mut omitted_shorts = monorepo_request_set_os_omitted_shorts(&requests);
                     let mut ts: Toolset = requests.into();
                     match ts.resolve(config).await {
                         Ok(()) => {
-                            omitted_shorts.add_reportable(monorepo_toolset_unresolved_shorts(&ts));
-                            if !omitted_shorts.reportable.is_empty() {
-                                warn_once!(
-                                    "lockfile entries for these monorepo tools will not be pruned: {}",
-                                    omitted_shorts.reportable.iter().sorted().join(", ")
-                                );
-                            }
-                            let debug_only = omitted_shorts
-                                .all
-                                .difference(&omitted_shorts.reportable)
-                                .sorted()
-                                .join(", ");
-                            if !debug_only.is_empty() {
+                            omitted_shorts.extend(monorepo_toolset_unresolved_shorts(&ts));
+                            if !omitted_shorts.is_empty() {
                                 debug!(
-                                    "monorepo tools omitted from the lockfile keep-set but also filtered from the active update: {debug_only}"
+                                    "not pruning superseded lockfile entries for omitted or unresolved monorepo tools: {}",
+                                    omitted_shorts.iter().sorted().join(", ")
                                 );
                             }
-                            Some((ts, omitted_shorts.all))
+                            Some((ts, omitted_shorts))
                         }
                         Err(err) => {
                             warn!(
@@ -646,6 +660,7 @@ impl Upgrade {
                     ts,
                     monorepo_ts,
                     omitted_shorts,
+                    &superseded,
                     &successful_versions,
                     crate::lockfile::LockfileUpdateMode::AllowLocked,
                 )
@@ -873,66 +888,21 @@ impl Upgrade {
     }
 }
 
-/// Tool shorts omitted from the union keep-set and the subset worth reporting.
-#[derive(Debug, Default, PartialEq, Eq)]
-struct MonorepoOmittedShorts {
-    all: HashSet<String>,
-    reportable: HashSet<String>,
-}
-
-impl MonorepoOmittedShorts {
-    fn add_reportable(&mut self, shorts: impl IntoIterator<Item = String>) {
-        for short in shorts {
-            self.all.insert(short.clone());
-            self.reportable.insert(short);
-        }
-    }
-}
-
-/// Returns tool shorts omitted while constructing the union's preservation keep-set.
-fn monorepo_request_set_omitted_shorts(requests: &ToolRequestSet) -> MonorepoOmittedShorts {
-    // unknown_tools is included independently as a defensive measure for request
-    // sets constructed outside ToolRequestSetBuilder. Builder-produced unknowns
-    // are also present in filtered_tools.
-    let mut omitted = MonorepoOmittedShorts::default();
-    omitted.all.extend(
-        requests
-            .unknown_tools
-            .iter()
-            .chain(&requests.filtered_tools)
-            .map(|ba| ba.short.to_string()),
-    );
-
-    let settings = Settings::get();
-    let enable_tools = settings.enable_tools();
-    let disable_tools = settings.disable_tools();
-    omitted.reportable.extend(
-        requests
-            .filtered_tools
-            .iter()
-            .filter(|ba| {
-                let enabled = tool_enabled(enable_tools.as_ref(), &disable_tools, &ba.short);
-                filtered_monorepo_short_is_reportable(ba, enabled)
-            })
-            .map(|ba| ba.short.to_string()),
-    );
-
-    let request_os_gated = requests
+/// Returns request-level OS-gated shorts that cannot safely justify pruning.
+fn monorepo_request_set_os_omitted_shorts(requests: &ToolRequestSet) -> HashSet<String> {
+    requests
         .iter()
         .filter(|(_, requests, _)| requests.iter().any(|request| !request.is_os_supported()))
         .map(|(ba, _, _)| ba.short.to_string())
-        .collect_vec();
-    omitted.add_reportable(request_os_gated);
-    omitted
+        .collect()
 }
 
-/// Returns whether a builder-filtered short can diverge from the active update.
-fn filtered_monorepo_short_is_reportable(ba: &BackendArg, enabled: bool) -> bool {
-    let backend_type = ba.backend_type();
-    ba.is_os_supported()
-        && enabled
-        && (backend_type == BackendType::Unknown
-            || (cfg!(windows) && backend_type == BackendType::Asdf))
+/// Returns whether an installed version is the exact replacement for an outdated entry.
+fn successful_upgrade_matches(outdated: &OutdatedInfo, installed: &ToolVersion) -> bool {
+    installed.ba().stored_full() == outdated.tool_request.ba().stored_full()
+        && installed.version == outdated.latest
+        && installed.request.version() == outdated.tool_request.version()
+        && installed.request.options() == outdated.tool_request.options()
 }
 
 /// Returns shorts whose retained request lists did not resolve completely.
@@ -1115,9 +1085,9 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 #[cfg(test)]
 mod tests {
     use super::{
-        current_version_satisfies_hidden_release, filtered_monorepo_short_is_reportable,
-        format_hidden_release_details, monorepo_request_set_omitted_shorts,
-        monorepo_toolset_unresolved_shorts, release_is_eligible_at,
+        current_version_satisfies_hidden_release, format_hidden_release_details,
+        monorepo_request_set_os_omitted_shorts, monorepo_toolset_unresolved_shorts,
+        release_is_eligible_at, successful_upgrade_matches,
     };
     use crate::cli::args::BackendArg;
     use crate::toolset::{
@@ -1126,73 +1096,6 @@ mod tests {
     use jiff::tz::TimeZone;
     use std::collections::HashSet;
     use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_unknown_or_filtered_monorepo_request_preserves_omitted_shorts() {
-        crate::toolset::install_state::init().await.unwrap();
-        let ba = Arc::new(BackendArg::from("missing-sibling-tool"));
-        let mut requests = ToolRequestSet::new();
-        let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
-        assert!(omitted_shorts.all.is_empty());
-        assert!(omitted_shorts.reportable.is_empty());
-
-        requests.unknown_tools.push(ba.clone());
-        let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
-        assert_eq!(omitted_shorts.all, HashSet::from([ba.short.to_string()]));
-        assert!(omitted_shorts.reportable.is_empty());
-
-        requests.unknown_tools.clear();
-        requests.filtered_tools.push(ba);
-        let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
-        assert_eq!(
-            omitted_shorts.all,
-            HashSet::from(["missing-sibling-tool".to_string()])
-        );
-        assert_eq!(omitted_shorts.reportable, omitted_shorts.all);
-    }
-
-    #[tokio::test]
-    async fn test_registry_os_gated_monorepo_request_is_debug_only() {
-        crate::toolset::install_state::init().await.unwrap();
-        // These registry entries are deliberately platform-exclusive and are
-        // pinned by the corresponding request-set builder regression test.
-        let short = if crate::cli::version::OS.as_str() == "macos" {
-            "systemctl-tui"
-        } else {
-            "tart"
-        };
-        let ba = Arc::new(BackendArg::from(short));
-        assert!(!ba.is_os_supported());
-        let mut requests = ToolRequestSet::new();
-        requests.filtered_tools.push(ba);
-
-        let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
-
-        assert_eq!(omitted_shorts.all, HashSet::from([short.to_string()]));
-        assert!(omitted_shorts.reportable.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_filtered_monorepo_request_reporting_classification() {
-        crate::toolset::install_state::init().await.unwrap();
-        let unknown = BackendArg::from("missing-sibling-tool");
-        assert!(filtered_monorepo_short_is_reportable(&unknown, true));
-        assert!(!filtered_monorepo_short_is_reportable(&unknown, false));
-
-        let known = BackendArg::from("node");
-        assert!(!filtered_monorepo_short_is_reportable(&known, false));
-        let mut settings_filtered = ToolRequestSet::new();
-        settings_filtered.filtered_tools.push(Arc::new(known));
-        let omitted_shorts = monorepo_request_set_omitted_shorts(&settings_filtered);
-        assert_eq!(omitted_shorts.all, HashSet::from(["node".to_string()]));
-        assert!(omitted_shorts.reportable.is_empty());
-
-        let asdf = BackendArg::from("asdf:example/tool");
-        assert_eq!(
-            filtered_monorepo_short_is_reportable(&asdf, true),
-            cfg!(windows)
-        );
-    }
 
     #[tokio::test]
     async fn test_unresolved_monorepo_request_only_omits_its_short() {
@@ -1216,9 +1119,6 @@ mod tests {
             unresolved_shorts,
             HashSet::from([unresolved_ba.short.to_string()])
         );
-        let mut omitted_shorts = monorepo_request_set_omitted_shorts(&ToolRequestSet::new());
-        omitted_shorts.add_reportable(unresolved_shorts);
-        assert_eq!(omitted_shorts.reportable, omitted_shorts.all);
     }
 
     #[tokio::test]
@@ -1248,12 +1148,42 @@ mod tests {
             &ToolSource::Unknown,
         );
 
-        let omitted_shorts = monorepo_request_set_omitted_shorts(&requests);
+        let omitted_shorts = monorepo_request_set_os_omitted_shorts(&requests);
         assert_eq!(
-            omitted_shorts.all,
+            omitted_shorts,
             HashSet::from([inactive_ba.short.to_string()])
         );
-        assert_eq!(omitted_shorts.reportable, omitted_shorts.all);
+    }
+
+    #[tokio::test]
+    async fn test_successful_upgrade_match_is_exact() {
+        crate::toolset::install_state::init().await.unwrap();
+        let request = ToolRequest::new(
+            Arc::new(BackendArg::from("dummy")),
+            "1",
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let old = ToolVersion::new(request.clone(), "1.0.0".to_string());
+        let outdated = crate::toolset::outdated_info::OutdatedInfo {
+            name: "dummy".to_string(),
+            tool_request: request.clone(),
+            tool_version: old,
+            requested: "1".to_string(),
+            current: Some("1.0.0".to_string()),
+            bump: None,
+            latest: "1.1.0".to_string(),
+            source: ToolSource::Unknown,
+        };
+
+        assert!(successful_upgrade_matches(
+            &outdated,
+            &ToolVersion::new(request.clone(), "1.1.0".to_string())
+        ));
+        assert!(!successful_upgrade_matches(
+            &outdated,
+            &ToolVersion::new(request, "1.2.0".to_string())
+        ));
     }
 
     #[test]

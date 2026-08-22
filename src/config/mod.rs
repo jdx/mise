@@ -764,6 +764,9 @@ impl Config {
         }
         let roots = match filenames {
             Some(filenames) => {
+                // Declared roots are exact, not recursive. A nested undeclared
+                // config can still route entries to the root lockfile, but it is
+                // invisible to monorepo_union's preservation check.
                 expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?
             }
             None => expand_config_root_dirs(&monorepo_root, patterns, None)?,
@@ -822,7 +825,6 @@ impl Config {
                 .build(self)
                 .await?;
             union.unknown_tools.extend(root_trs.unknown_tools.clone());
-            union.filtered_tools.extend(root_trs.filtered_tools.clone());
             for (_ba, requests, source) in root_trs.iter() {
                 for request in requests {
                     let already_present = union.tools.get(request.ba()).is_some_and(|existing| {
@@ -838,7 +840,6 @@ impl Config {
         }
 
         union.unknown_tools = union.unknown_tools.into_iter().unique().collect();
-        union.filtered_tools = union.filtered_tools.into_iter().unique().collect();
         let repo_urls = load_plugins(&config_files)?;
         Ok(MonorepoUnion {
             config_files,
@@ -3398,12 +3399,13 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
     .await
 }
 
-/// Rebuilds active links and shims while using a complete monorepo union to preserve siblings.
+/// Rebuilds active links and shims while using the resolved monorepo union to preserve siblings.
 pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
     config: &Arc<Config>,
     ts: &Toolset,
     monorepo_ts: &Toolset,
     omitted_shorts: &HashSet<String>,
+    superseded: &[lockfile::SupersededLockfileEntry],
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
@@ -3415,6 +3417,7 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
         lockfile::LockfileUpdateScope::MonorepoUnion {
             toolset: monorepo_ts,
             omitted_shorts,
+            superseded,
         },
     )
     .await
@@ -6543,11 +6546,6 @@ missing-monorepo-sibling = "1"
         assert_eq!(fixture_versions, vec!["1", "2"]);
         assert!(
             trs.unknown_tools
-                .iter()
-                .any(|ba| ba.short == "missing-monorepo-sibling")
-        );
-        assert!(
-            trs.filtered_tools
                 .iter()
                 .any(|ba| ba.short == "missing-monorepo-sibling")
         );
