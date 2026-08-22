@@ -124,7 +124,7 @@ mise supports multiple backends for installing tools from different sources:
 
 - `env._.file` - Load variables from a file (e.g., `.env`)
 - `env._.path` - Prepend directories to PATH
-- `env._.source` - Source a shell script
+- `env._.source` - Source a bash script
 
 **Lazy Evaluation**
 : Environment variables configured with `tools = true` that can access tool-provided environment variables. These are evaluated after tools are loaded.
