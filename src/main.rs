@@ -47,6 +47,7 @@ pub(crate) mod duration;
 mod env;
 mod env_diff;
 mod errors;
+mod exec_fastpath;
 mod exit;
 #[cfg_attr(windows, path = "fake_asdf_windows.rs")]
 mod fake_asdf;
@@ -120,6 +121,12 @@ fn main() -> ExitCode {
     #[cfg(windows)]
     if env::invoked_as_self_replace_helper() {
         return ExitCode::SUCCESS;
+    }
+    // Experimental (MISE_EXEC_CACHE=1): serve shim / plain `mise x` invocations
+    // from a validated cache record and exec the target directly — before the
+    // runtime, logging, clap, or config startup. Misses fall through.
+    if let Some(code) = exec_fastpath::try_run() {
+        return code;
     }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
