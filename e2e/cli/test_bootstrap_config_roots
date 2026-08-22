@@ -259,3 +259,30 @@ EOF
 assert_fail "mise bootstrap dotfiles add '$nested_leaf' --source '$root_b/nested.txt' --path '$root_b/mise.toml' --no-apply --yes" "conflicting dotfile declarations for $nested_leaf"
 assert_not_contains "cat '$root_b/mise.toml'" "$nested_leaf"
 assert_contains "cat '$root_b/mise.toml'" "keep = true"
+
+# A missing directory source has an unknown future shape. It still reserves
+# its target so filtering to a nested declaration cannot bypass validation.
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$nested_tree" = { source = "missing-tree", mode = "copy" }
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$nested_leaf" = { source = "nested.txt", mode = "copy" }
+EOF
+assert_fail "mise bootstrap dotfiles apply --yes '$nested_leaf'" "conflicting dotfile declarations for $nested_tree"
+assert_fail "test -e $nested_leaf"
+
+# Refreshing an existing directory declaration retains its exclusions while
+# validating the prospective set.
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$nested_tree" = { source = "copy-tree", mode = "copy", exclude = ["collide.txt"] }
+EOF
+assert_succeed "mise bootstrap dotfiles add '$nested_tree' --path '$root_a/mise.toml' --no-apply --yes"
+
+# Repeated and aliased arguments resolve to one config target and therefore
+# produce one prospective filesystem operation rather than conflicting.
+duplicate_target="$PWD/duplicate.conf"
+echo duplicate >"$duplicate_target"
+assert_succeed "mise bootstrap dotfiles add '$duplicate_target' '$PWD/roots/../duplicate.conf' --path '$root_b/mise.toml' --no-apply --dry-run --yes"

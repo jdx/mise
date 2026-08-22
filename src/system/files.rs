@@ -189,16 +189,14 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
     let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
 
     for request in requests {
-        // Preserve the normal source-missing/type diagnostic. Apply will not
-        // mutate anything when any source is invalid, and its footprint cannot
-        // be determined reliably until the source exists with the right type.
-        if request.mode == FileMode::SymlinkEach && !request.source.is_dir()
-            || request.mode != FileMode::Content && !request.source.exists()
-        {
-            continue;
-        }
-
-        let directory_walker = matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
+        // A missing source has an unknown eventual shape, but it still claims
+        // its target. Model that conservatively as a leaf so target-filtered
+        // operations cannot mutate a path inside the unresolved footprint.
+        let source_unavailable = request.mode != FileMode::Content
+            && (!request.source.exists()
+                || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
+        let directory_walker = !source_unavailable
+            && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
             && request.source.is_dir();
         let request_leaves = if directory_walker {
             walk_source_files(request)?
@@ -2427,6 +2425,29 @@ mod tests {
 
         let err = validate_composed_file_footprints(&[
             link_req(&source_tree, &target, FileMode::Symlink),
+            link_req(&source_file, &target.join("nested"), FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        assert!(
+            err.to_string()
+                .contains(&target.to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    /// A declaration whose source is unavailable still reserves its target,
+    /// preventing a filtered apply from writing a nested declaration there.
+    #[test]
+    fn composed_file_footprints_reserve_missing_source_target() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let missing = dir.path().join("missing");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::write(&source_file, "nested")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&missing, &target, FileMode::Copy),
             link_req(&source_file, &target.join("nested"), FileMode::Copy),
         ])
         .unwrap_err();
