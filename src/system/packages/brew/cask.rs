@@ -6419,15 +6419,27 @@ fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
     bail!("brew-cask: pkgutil receipt check for '{pkg_id}' is only available on macOS");
 
     #[cfg(target_os = "macos")]
+    // Homebrew's pkgutil metadata is a regular expression, not a literal ID.
+    // Match it with pkgutil itself to preserve its nonstandard regexp semantics.
     let output = std::process::Command::new("pkgutil")
-        .arg("--pkg-info")
-        .arg(pkg_id)
+        .arg(format!("--pkgs={pkg_id}"))
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status()?;
+        .output()?;
     #[cfg(target_os = "macos")]
-    Ok(output.success())
+    if !output.status.success() {
+        bail!(
+            "brew-cask: pkgutil receipt query for '{pkg_id}' failed with {}",
+            output.status
+        );
+    }
+    #[cfg(target_os = "macos")]
+    Ok(pkgutil_output_has_match(&output.stdout))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn pkgutil_output_has_match(output: &[u8]) -> bool {
+    output.iter().any(|byte| !byte.is_ascii_whitespace())
 }
 
 fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
@@ -12013,6 +12025,15 @@ end
             }
         );
         Ok(())
+    }
+
+    #[test]
+    fn detects_pkgutil_query_matches() {
+        assert!(pkgutil_output_has_match(
+            b"com.pioneer.rekordbox.7.2.14.0323\n"
+        ));
+        assert!(!pkgutil_output_has_match(b""));
+        assert!(!pkgutil_output_has_match(b"\n"));
     }
 
     #[test]
