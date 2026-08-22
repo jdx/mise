@@ -77,9 +77,12 @@ fn parse_git_with(regex: &Regex, file: &str) -> Option<RemoteGitSource> {
     })
 }
 
+// Windows `Path::join` discards the base path when joining a drive-prefixed
+// path even without a root (e.g. `C:outside`), so any leading `<letter>:`
+// must be rejected, not just a bare `C:` component.
 fn is_windows_drive_component(component: &str) -> bool {
     let bytes = component.as_bytes();
-    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 #[cfg(test)]
@@ -160,6 +163,12 @@ mod tests {
         );
         assert!(
             RemoteSource::parse_git("git::https://myserver.com/example.git//C:\\outside").is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//C:outside").is_none()
+        );
+        assert!(
+            RemoteSource::parse_git("git::https://myserver.com/example.git//C:dir/file").is_none()
         );
     }
 
