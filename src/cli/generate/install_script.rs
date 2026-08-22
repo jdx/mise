@@ -44,6 +44,40 @@ pub(super) struct InstallScript {
     windows: bool,
 }
 
+/// The non-localized bash wrapper's variable block.
+///
+/// The pinned binary defaults under the *data* dir, not the cache dir: it is the runtime every
+/// subsequent invocation execs, not a disposable artifact, and `cache clean`, `cache prune`, and
+/// any "rm -rf ~/.cache/mise" troubleshooting step delete the cache wholesale. Discussion #12245.
+fn non_localized_bash_vars(version: &str) -> String {
+    format!(
+        r#"
+local mise_data_dir="${{MISE_DATA_DIR:-${{XDG_DATA_HOME:-$HOME/.local/share}}/mise}}"
+# mise itself expands a leading ~ in these (env::var_path -> file::replace_path); parameter
+# expansion does not, so without this a tilde value ends up as a relative directory. CI YAML
+# supplies exactly this shape (MISE_DATA_DIR: ~/.local/share/mise).
+case $mise_data_dir in
+  "~") mise_data_dir=$HOME ;;
+  "~/"*) mise_data_dir=$HOME/${{mise_data_dir#\~/}} ;;
+esac
+local cache_home="${{XDG_CACHE_HOME:-$HOME/.cache}}/mise"
+local mise_version="${{MISE_VERSION:-{version}}}"
+mise_version="${{mise_version#v}}"
+# Only a defaulted path may fall back: an explicit MISE_INSTALL_PATH wins even while its file
+# does not exist yet.
+if [ -z "${{MISE_INSTALL_PATH:-}}" ]; then
+  export MISE_INSTALL_PATH="$mise_data_dir/bootstrap/mise-$mise_version"
+  # Wrappers generated before the data-dir default put the binary in the cache dir; run that
+  # one instead of re-downloading it. -x so a non-executable leftover reinstalls rather than
+  # dying at exec.
+  if [ ! -f "$MISE_INSTALL_PATH" ] && [ -x "$cache_home/mise-$mise_version" ]; then
+    MISE_INSTALL_PATH="$cache_home/mise-$mise_version"
+  fi
+fi
+"#
+    )
+}
+
 impl InstallScript {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let (output, version) = self.generate().await?;
@@ -124,14 +158,7 @@ export MISE_IGNORED_CONFIG_PATHS="$HOME/.config/mise${{MISE_IGNORED_CONFIG_PATHS
 "#
             )
         } else {
-            format!(
-                r#"
-local cache_home="${{XDG_CACHE_HOME:-$HOME/.cache}}/mise"
-local mise_version="${{MISE_VERSION:-{version}}}"
-mise_version="${{mise_version#v}}"
-export MISE_INSTALL_PATH="${{MISE_INSTALL_PATH:-$cache_home/mise-$mise_version}}"
-"#
-            )
+            non_localized_bash_vars(version)
         };
         let vars = info::indent_by(vars.trim(), "    ");
         let script = format!(
@@ -209,6 +236,7 @@ set "install_dir=%LOCALAPPDATA%\mise""#
             checksum("x64")?,
             checksum("arm64")?,
             vars.trim_end(),
+            self.localize,
         ))
     }
 }
@@ -317,7 +345,33 @@ fn windows_checksum<'a>(sums: &'a str, version: &str, arch: &str) -> Option<&'a 
 ///   Without that the override would either be rejected or, worse, checked against the wrong
 ///   version's hash. The bash side guards the same property by keying the install path on the
 ///   requested version.
-fn windows_script(version: &str, sum_x64: &str, sum_arm64: &str, vars: &str) -> String {
+fn windows_script(
+    version: &str,
+    sum_x64: &str,
+    sum_arm64: &str,
+    vars: &str,
+    localized: bool,
+) -> String {
+    // A localized launcher's directory is project-local, not a cache nothing owns, so its
+    // default stays where older launchers put it and needs no legacy fallback. Only the
+    // non-localized default moved under bootstrap\.
+    let install_path_block = if localized {
+        r#"
+if not defined MISE_INSTALL_PATH set "MISE_INSTALL_PATH=%install_dir%\mise-%resolved_version%.exe"
+if exist "%MISE_INSTALL_PATH%" goto :run"#
+    } else {
+        r#"
+if not defined MISE_INSTALL_PATH (
+  set "MISE_INSTALL_PATH=%install_dir%\bootstrap\mise-%resolved_version%.exe"
+  rem Launchers generated before the bootstrap\ subdirectory put the binary directly under
+  rem %install_dir%; run that one rather than re-downloading it. Only the defaulted path falls
+  rem back -- an explicit MISE_INSTALL_PATH wins even while its file does not exist yet.
+  if not exist "%install_dir%\bootstrap\mise-%resolved_version%.exe" if exist "%install_dir%\mise-%resolved_version%.exe" (
+    set "MISE_INSTALL_PATH=%install_dir%\mise-%resolved_version%.exe"
+  )
+)
+if exist "%MISE_INSTALL_PATH%" goto :run"#
+    };
     format!(
         r#"@echo off
 rem Delayed expansion stays OFF for the whole script. With it on, cmd runs a second expansion pass
@@ -358,8 +412,7 @@ set "arch=x64"
 if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "arch=arm64"
 if /i "%PROCESSOR_ARCHITEW6432%"=="ARM64" set "arch=arm64"
 
-if not defined MISE_INSTALL_PATH set "MISE_INSTALL_PATH=%install_dir%\mise-%resolved_version%.exe"
-if exist "%MISE_INSTALL_PATH%" goto :run
+{install_path_block}
 
 set "release=https://github.com/jdx/mise/releases/download/v%resolved_version%"
 if "%arch%"=="arm64" (set "expected=%sum_arm64%") else (set "expected=%sum_x64%")
@@ -484,6 +537,7 @@ b6760c6c4d5e629c31e31cb8a5018316338b01592408062a2aed673cec63cb2d  ./mise-v2026.8
             windows_checksum(SUMS, "2026.8.4", "x64").unwrap(),
             windows_checksum(SUMS, "2026.8.4", "arm64").unwrap(),
             "\nset \"install_dir=%LOCALAPPDATA%\\mise\"",
+            false,
         );
         // Both, because the host that generates this is not necessarily the host that runs it.
         assert!(
@@ -601,6 +655,7 @@ b6760c6c4d5e629c31e31cb8a5018316338b01592408062a2aed673cec63cb2d  ./mise-v2026.8
             windows_checksum(SUMS, "2026.8.4", "x64").unwrap(),
             windows_checksum(SUMS, "2026.8.4", "arm64").unwrap(),
             "\nset \"install_dir=%LOCALAPPDATA%\\mise\"",
+            false,
         );
         // A caller-supplied MISE_INSTALL_PATH can name a file anywhere. install.sh creates
         // `dirname "$install_path"`; creating install_dir instead leaves the move with no
@@ -620,6 +675,7 @@ b6760c6c4d5e629c31e31cb8a5018316338b01592408062a2aed673cec63cb2d  ./mise-v2026.8
             windows_checksum(SUMS, "2026.8.4", "x64").unwrap(),
             windows_checksum(SUMS, "2026.8.4", "arm64").unwrap(),
             "\nset \"install_dir=%LOCALAPPDATA%\\mise\"",
+            false,
         );
         // The property every path in this script depends on. With delayed expansion on, a `!`
         // anywhere in the project directory, MISE_INSTALL_PATH or TEMP is eaten on every line
@@ -631,5 +687,90 @@ b6760c6c4d5e629c31e31cb8a5018316338b01592408062a2aed673cec63cb2d  ./mise-v2026.8
             !regex!(r"![A-Za-z_][A-Za-z0-9_]*!").is_match(&script),
             "script still contains a delayed-expansion read"
         );
+    }
+
+    #[test]
+    fn the_default_install_path_lives_under_bootstrap_with_a_legacy_fallback() {
+        let script = windows_script(
+            "2026.8.4",
+            windows_checksum(SUMS, "2026.8.4", "x64").unwrap(),
+            windows_checksum(SUMS, "2026.8.4", "arm64").unwrap(),
+            "\nset \"install_dir=%LOCALAPPDATA%\\mise\"",
+            false,
+        );
+        assert!(
+            script.contains(
+                r#"set "MISE_INSTALL_PATH=%install_dir%\bootstrap\mise-%resolved_version%.exe""#
+            ),
+            "windows launcher must default MISE_INSTALL_PATH under bootstrap\\"
+        );
+        // Launchers generated before the bootstrap\ subdirectory put the binary directly under
+        // %install_dir%; the fallback keeps running that one instead of re-downloading.
+        assert!(
+            script.contains(
+                r#"if not exist "%install_dir%\bootstrap\mise-%resolved_version%.exe" if exist "%install_dir%\mise-%resolved_version%.exe""#
+            ),
+            "windows launcher must fall back to the pre-bootstrap install location"
+        );
+        // The fallback decision must read only variables assigned before the block: inside a
+        // parenthesised block %MISE_INSTALL_PATH% expands at parse time, and an equality check
+        // against the recomputed default would hijack an explicit override that happens to
+        // equal it.
+        assert!(
+            !script.contains(r#"%MISE_INSTALL_PATH%"=="%install_dir%"#),
+            "fallback must not reconstruct whether the path was defaulted"
+        );
+    }
+
+    #[test]
+    fn the_localized_launcher_keeps_its_binary_beside_the_script() {
+        let script = windows_script(
+            "2026.8.4",
+            windows_checksum(SUMS, "2026.8.4", "x64").unwrap(),
+            windows_checksum(SUMS, "2026.8.4", "arm64").unwrap(),
+            "\nset \"install_dir=%project_dir%\\.mise\"",
+            true,
+        );
+        // A localized launcher's directory is project-local, not a cache nothing owns, so its
+        // default stays where older launchers put it and no legacy fallback exists.
+        assert!(script.contains(
+            r#"if not defined MISE_INSTALL_PATH set "MISE_INSTALL_PATH=%install_dir%\mise-%resolved_version%.exe""#
+        ));
+        assert!(!script.contains(r#"%install_dir%\bootstrap\"#));
+    }
+
+    #[test]
+    fn the_bash_wrapper_defaults_to_the_data_dir_not_the_cache() {
+        let vars = non_localized_bash_vars("2026.8.10");
+        assert!(
+            vars.contains(
+                r#"export MISE_INSTALL_PATH="$mise_data_dir/bootstrap/mise-$mise_version""#
+            ),
+            "bash wrapper must default MISE_INSTALL_PATH under the data dir"
+        );
+        // Only a defaulted path may fall back, so an explicit override -- including one that
+        // happens to equal the default -- is never redirected.
+        assert!(vars.contains(r#"if [ -z "${MISE_INSTALL_PATH:-}" ]; then"#));
+        // The cache path is only ever a reuse target now, never the default.
+        assert!(
+            !vars.contains(r#"MISE_INSTALL_PATH="${MISE_INSTALL_PATH:-$cache_home"#),
+            "default install path must not point into the cache dir"
+        );
+    }
+
+    #[test]
+    fn the_bash_wrapper_expands_a_tilde_prefixed_data_dir() {
+        let vars = non_localized_bash_vars("2026.8.10");
+        // mise expands a leading ~ in MISE_DATA_DIR/XDG_DATA_HOME (env::var_path ->
+        // file::replace_path); parameter expansion does not, so the wrapper must do it itself.
+        assert!(vars.contains(r#"  "~/"*) mise_data_dir=$HOME/${mise_data_dir#\~/} ;;"#));
+    }
+
+    #[test]
+    fn the_bash_wrapper_reuses_a_pre_data_dir_binary_from_the_cache() {
+        let vars = non_localized_bash_vars("2026.8.10");
+        // -x: a non-executable leftover must reinstall, not die at exec.
+        assert!(vars.contains(r#"[ -x "$cache_home/mise-$mise_version" ]"#));
+        assert!(vars.contains(r#"MISE_INSTALL_PATH="$cache_home/mise-$mise_version""#));
     }
 }
