@@ -4657,13 +4657,11 @@ options = { exe = "rg" }
         assert_eq!(merged.len(), 2);
     }
 
+    /// Request-level OS gates and unresolved sibling toolsets both reach this
+    /// layer as an entry in `omitted_shorts` (see `cli::upgrade`), so one
+    /// assertion covers both.
     #[test]
-    fn test_request_os_gated_sibling_short_is_not_pruned() {
-        assert_omitted_short_preserves_superseded_entry();
-    }
-
-    #[test]
-    fn test_unresolved_sibling_short_is_not_pruned() {
+    fn test_omitted_short_preserves_superseded_entry() {
         assert_omitted_short_preserves_superseded_entry();
     }
 
