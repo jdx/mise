@@ -239,6 +239,8 @@ pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Res
     Ok(())
 }
 
+/// Describe a footprint collision while preserving the established
+/// `symlink-each` diagnostic for two contributors in that mode.
 fn composed_file_footprint_conflict(
     path: &Path,
     first: &FileRequest,
@@ -2361,6 +2363,8 @@ mod tests {
         Ok(())
     }
 
+    /// Nested declarations may share directories when their concrete leaves
+    /// remain disjoint.
     #[test]
     fn composed_file_footprints_allow_disjoint_nested_leaves() -> Result<()> {
         let dir = tempfile::tempdir()?;
@@ -2382,6 +2386,8 @@ mod tests {
         Ok(())
     }
 
+    /// A nested whole-file declaration cannot also be owned by a directory
+    /// copy, regardless of declaration order.
     #[test]
     fn composed_file_footprints_reject_directory_copy_nested_leaf() -> Result<()> {
         let dir = tempfile::tempdir()?;
@@ -2408,6 +2414,8 @@ mod tests {
         Ok(())
     }
 
+    /// A whole-resource leaf cannot occupy a path another declaration needs
+    /// as a directory.
     #[test]
     fn composed_file_footprints_reject_leaf_required_as_directory() -> Result<()> {
         let dir = tempfile::tempdir()?;

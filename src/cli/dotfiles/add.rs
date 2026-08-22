@@ -66,6 +66,7 @@ pub(crate) struct DotfilesAdd {
 }
 
 impl DotfilesAdd {
+    /// Validate and capture the requested targets as one transactional update.
     pub(crate) async fn run(self) -> Result<()> {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
@@ -143,6 +144,22 @@ impl DotfilesAdd {
                 already_managed: existing.cloned(),
             });
         }
+
+        let mut prospective = managed.clone();
+        for item in &planned {
+            if let Some(existing) = &item.already_managed
+                && let Some(index) = prospective.iter().position(|request| {
+                    request.target == existing.target
+                        && request.source == existing.source
+                        && request.mode == existing.mode
+                        && request.origin.config == existing.origin.config
+                })
+            {
+                prospective.remove(index);
+            }
+            prospective.push(item.validation_request(&config_path));
+        }
+        system::files::validate_composed_file_footprints(&prospective)?;
 
         if self.dry_run {
             for item in &planned {
@@ -380,6 +397,21 @@ struct PlannedAdd {
 }
 
 impl PlannedAdd {
+    /// Build the request that will exist after capture, using the live target
+    /// as the future source footprint when add is about to copy or move it.
+    fn validation_request(&self, config_path: &std::path::Path) -> FileRequest {
+        let mut request = self.as_request(config_path);
+        if self.target.exists() && !same_file(&self.target, &self.source) {
+            request.source = self.target.clone();
+        } else if !self.source.exists() && self.mode != FileMode::SymlinkEach {
+            // Add creates an empty source file in this case. Content mode gives
+            // the validator that known leaf shape without touching the disk.
+            request.mode = FileMode::Content;
+            request.content = Some(String::new());
+        }
+        request
+    }
+
     fn as_request(&self, config_path: &std::path::Path) -> FileRequest {
         FileRequest {
             target_raw: self.target_raw.clone(),

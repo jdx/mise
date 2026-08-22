@@ -35,9 +35,14 @@ pub(crate) struct DotfilesEdit {
 }
 
 impl DotfilesEdit {
+    /// Open the managed source and optionally converge its target afterward.
     pub(crate) async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
+        if self.apply {
+            let files = system::files::files_from_config(&config)?;
+            system::files::validate_composed_file_footprints(&files)?;
+        }
 
         if let Some(path) = source_for_target(&config, &target, &self.target)? {
             open_or_create(&path)?;
@@ -140,10 +145,13 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Apply a selected target after validating the complete composed footprint.
 async fn apply_target(target: &str) -> Result<()> {
     let config = Config::reset().await?;
     let targets = vec![target.to_string()];
-    let files = system::files::files_from_config(&config)?
+    let all_files = system::files::files_from_config(&config)?;
+    system::files::validate_composed_file_footprints(&all_files)?;
+    let files = all_files
         .into_iter()
         .filter(|req| system::files::matches_target(&req.target, &req.target_raw, &targets))
         .collect::<Vec<_>>();
