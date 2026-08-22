@@ -480,7 +480,7 @@ Relative paths like `tools/bin` or `./tools/bin` are resolved against <span v-pr
 
 ### `env._.source`
 
-Source an external bash script and pull exported environment variables out of it:
+Source an external script and pull exported environment variables out of it:
 
 ```toml
 [env]
@@ -488,13 +488,10 @@ _.source = "./script.sh"
 ```
 
 ::: info
-This **must** be a script that runs in bash as if it were executed like this:
-
-```sh
-source ./script.sh
-```
-
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
+On Unix, the script is sourced by the default inline shell
+([`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args),
+`sh -c -o errexit` by default). The shebang is **ignored**. Use `fish -c` to
+source fish scripts. See [#1448](https://github.com/jdx/mise/discussions/6734)
 for a potential alternative that would work with binaries or other script languages.
 :::
 

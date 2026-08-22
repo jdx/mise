@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use base64::prelude::*;
 use eyre::Result;
+#[cfg(not(windows))]
+use eyre::WrapErr;
 use flate2::Compression;
 use flate2::write::{ZlibDecoder, ZlibEncoder};
 use indexmap::{IndexMap, IndexSet};
@@ -138,18 +140,16 @@ impl EnvDiff {
         .full_env(&env)
         .read()?;
         #[cfg(not(windows))]
-        let out = cmd!(
-            bash_path,
-            "--noprofile",
-            "-c",
-            indoc::formatdoc! {"
-                . \"{script}\"
-                export -p
-            ", script = script.display()}
-        )
-        .dir(dir)
-        .full_env(&env)
-        .read()?;
+        let out = run_unix_source_script(
+            script,
+            dir,
+            &env,
+            &[
+                bash_path.to_string_lossy().into_owned(),
+                "--noprofile".to_string(),
+                "-c".to_string(),
+            ],
+        )?;
 
         #[cfg(windows)]
         let (mut additions, baseline_path) = {
@@ -186,6 +186,39 @@ impl EnvDiff {
         #[cfg(windows)]
         fixup_windows_path(&mut additions, baseline_path.as_deref(), &env, script);
         Ok(Self::new(&env, additions))
+    }
+
+    /// Source `script` with `shell` (the default inline shell argv, e.g.
+    /// `sh -c -o errexit` or `fish -c`) and import exported variables.
+    ///
+    /// Bourne-like shells use `. "$1"`. Fish uses `source $argv[1]`. The env
+    /// dump is always bash `export -p` so [`parse_export_p`] stays valid when
+    /// the source shell is dash/zsh/fish. `cmd` / `pwsh` cannot source; callers
+    /// should keep [`Self::from_bash_script`] on Windows.
+    #[cfg(not(windows))]
+    pub(crate) fn from_unix_shell_script<T, U, V>(
+        script: &Path,
+        dir: &Path,
+        env: T,
+        opts: &EnvDiffOptions,
+        shell: &[String],
+    ) -> Result<Self>
+    where
+        T: IntoIterator<Item = (U, V)>,
+        U: Into<OsString>,
+        V: Into<OsString>,
+    {
+        let env: EnvMap = env
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k.into().into_string().unwrap(),
+                    v.into().into_string().unwrap(),
+                )
+            })
+            .collect();
+        let out = run_unix_source_script(script, dir, &env, shell)?;
+        Ok(env_diff_from_unix_export_p(&env, &out, opts))
     }
 
     pub(crate) fn deserialize(raw: &str) -> Result<EnvDiff> {
@@ -259,6 +292,99 @@ impl EnvDiff {
 
         diff
     }
+}
+
+/// Stem of `shell[0]` when that program can source a script: Bourne-like shells
+/// and fish. `None` for `cmd`/`pwsh`/empty.
+#[cfg(not(windows))]
+fn unix_source_shell_stem(shell: &[String]) -> Option<String> {
+    let program = shell.first()?;
+    let stem = crate::path::program_stem(Path::new(program))?;
+    matches!(
+        stem.as_str(),
+        "ash" | "bash" | "dash" | "ksh" | "sh" | "zsh" | "fish"
+    )
+    .then_some(stem)
+}
+
+/// Source `script` with `shell` and return bash `export -p` output.
+#[cfg(not(windows))]
+fn run_unix_source_script(
+    script: &Path,
+    dir: &Path,
+    env: &EnvMap,
+    shell: &[String],
+) -> Result<String> {
+    eyre::ensure!(
+        !shell.is_empty(),
+        "inline shell is empty; check unix_default_inline_shell_args"
+    );
+    let mut shell = shell.to_vec();
+    let stem = unix_source_shell_stem(&shell).ok_or_else(|| {
+        eyre::eyre!(
+            "inline shell {} cannot source {}; use a Bourne shell or fish",
+            shell[0],
+            script.display()
+        )
+    })?;
+    if stem == "bash" && !shell.iter().any(|a| a == "--noprofile") {
+        shell.insert(1, "--noprofile".into());
+    }
+    if !shell.iter().skip(1).any(|a| a == "-c") {
+        shell.push("-c".into());
+    }
+
+    let script_arg = script.to_string_lossy().into_owned();
+    let dump_bash = || {
+        let dump_bash = file::which("bash").unwrap_or("/bin/bash".into());
+        shell_escape::unix::escape(dump_bash.to_string_lossy()).into_owned()
+    };
+    let (command, extras) = match stem.as_str() {
+        "fish" => (
+            format!(
+                "source $argv[1]; exec {} --noprofile -c 'export -p'",
+                dump_bash()
+            ),
+            vec![script_arg],
+        ),
+        "bash" => (
+            ". \"$1\"; export -p".to_string(),
+            vec!["mise".to_string(), script_arg],
+        ),
+        _ => (
+            format!(". \"$1\"; exec {} --noprofile -c 'export -p'", dump_bash()),
+            vec!["mise".to_string(), script_arg],
+        ),
+    };
+
+    let args: Vec<String> = shell
+        .iter()
+        .skip(1)
+        .cloned()
+        .chain(once(command))
+        .chain(extras)
+        .collect();
+    crate::cmd::cmd(&shell[0], &args)
+        .dir(dir)
+        .full_env(env)
+        .read()
+        .wrap_err_with(|| format!("failed to source {}", script.display()))
+}
+
+#[cfg(not(windows))]
+fn env_diff_from_unix_export_p(env: &EnvMap, out: &str, opts: &EnvDiffOptions) -> EnvDiff {
+    let mut additions = parse_export_p(out, opts);
+    for (k, v) in additions.clone().iter() {
+        let v = normalize_escape_sequences(v);
+        if let Some(orig) = env.get(k)
+            && &v == orig
+        {
+            additions.remove(k);
+            continue;
+        }
+        additions.insert(k.into(), v);
+    }
+    EnvDiff::new(env, additions)
 }
 
 /// Parse the output of bash's `export -p` into a map of exported variables.
@@ -656,6 +782,67 @@ mod tests {
         let ed =
             EnvDiff::from_bash_script(path.as_path(), &cwd, orig, &Default::default()).unwrap();
         assert_debug_snapshot!(ed);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_from_unix_shell_script_sh() {
+        let _config = crate::config::Config::get().await.unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("env.sh");
+        std::fs::write(&script, "export FROM_SH=1\n").unwrap();
+        let ed = EnvDiff::from_unix_shell_script(
+            &script,
+            tmp.path(),
+            EnvMap::new(),
+            &Default::default(),
+            &[
+                "sh".to_string(),
+                "-c".to_string(),
+                "-o".to_string(),
+                "errexit".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(ed.new.get("FROM_SH").map(String::as_str), Some("1"));
+
+        let spaced = tmp.path().join("env file.sh");
+        std::fs::write(&spaced, "export FROM_SPACED=1\n").unwrap();
+        let ed = EnvDiff::from_unix_shell_script(
+            &spaced,
+            tmp.path(),
+            EnvMap::new(),
+            &Default::default(),
+            &[
+                "sh".to_string(),
+                "-c".to_string(),
+                "-o".to_string(),
+                "errexit".to_string(),
+            ],
+        )
+        .unwrap();
+        assert_eq!(ed.new.get("FROM_SPACED").map(String::as_str), Some("1"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_from_unix_shell_script_fish() {
+        let _config = crate::config::Config::get().await.unwrap();
+        if crate::file::which("fish").is_none() {
+            return;
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        let script = tmp.path().join("env.fish");
+        std::fs::write(&script, "set -gx FROM_FISH 1\n").unwrap();
+        let ed = EnvDiff::from_unix_shell_script(
+            &script,
+            tmp.path(),
+            EnvMap::new(),
+            &Default::default(),
+            &["fish".to_string(), "-c".to_string()],
+        )
+        .unwrap();
+        assert_eq!(ed.new.get("FROM_FISH").map(String::as_str), Some("1"));
     }
 
     #[tokio::test]

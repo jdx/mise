@@ -3,7 +3,10 @@ use crate::config::env_directive::{EnvDirectiveContext, EnvResults};
 use crate::env;
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffOptions};
 use indexmap::IndexMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+#[cfg(not(windows))]
+use crate::config::Settings;
 
 impl EnvResults {
     pub(super) fn source(
@@ -27,12 +30,7 @@ impl EnvResults {
                 continue;
             }
             let env = out.entry(p.clone()).or_insert_with(IndexMap::new);
-            let env_diff = EnvDiff::from_bash_script(
-                &p,
-                ctx.config_root,
-                ctx.exec_env.clone(),
-                &env_diff_opts,
-            )?;
+            let env_diff = source_env_diff(&p, ctx, &env_diff_opts)?;
             for p in env_diff.to_patches() {
                 match p {
                     EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
@@ -62,5 +60,21 @@ impl EnvResults {
             }
         }
         Ok(out)
+    }
+}
+
+fn source_env_diff(
+    script: &Path,
+    ctx: &EnvDirectiveContext<'_>,
+    opts: &EnvDiffOptions,
+) -> Result<EnvDiff> {
+    #[cfg(windows)]
+    {
+        EnvDiff::from_bash_script(script, ctx.config_root, ctx.exec_env.clone(), opts)
+    }
+    #[cfg(not(windows))]
+    {
+        let shell = Settings::get().default_inline_shell()?;
+        EnvDiff::from_unix_shell_script(script, ctx.config_root, ctx.exec_env.clone(), opts, &shell)
     }
 }
