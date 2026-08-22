@@ -67,8 +67,7 @@ mise 2027.8.0. Afterward, users who require source builds must set `all_compile 
 explicitly.
 
 Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
-like Alpine that does not use glibc and therefore likely won't be able to run precompiled
-glibc binaries. Prefer musl or static precompiled binaries when they exist.
+like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
 
 Note that this needs to be setup for each language. File a ticket if you notice a language that is
 not
