@@ -9,9 +9,9 @@ use crate::config::Settings;
 use crate::registry::REGISTRY;
 use crate::{dirs, file};
 
-pub type Shorthands = HashMap<String, Vec<String>>;
+pub(crate) type Shorthands = HashMap<String, Vec<String>>;
 
-pub fn get_shorthands(settings: &Settings) -> Shorthands {
+pub(crate) fn get_shorthands(settings: &Settings) -> Shorthands {
     let mut shorthands = HashMap::new();
     if !settings.disable_default_registry {
         shorthands.extend(

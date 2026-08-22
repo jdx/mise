@@ -23,7 +23,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> VfoxResult<()> {
+    pub(crate) async fn run(self) -> VfoxResult<()> {
         match self {
             Commands::Available(available) => available.run().await,
             Commands::EnvKeys(env_keys) => env_keys.run().await,
@@ -33,6 +33,6 @@ impl Commands {
     }
 }
 
-pub async fn run() -> VfoxResult<()> {
+pub(crate) async fn run() -> VfoxResult<()> {
     Cli::parse().command.run().await
 }

@@ -15,7 +15,7 @@ mod unset;
     alias = "alias",
     alias = "aliases"
 )]
-pub struct ToolAlias {
+pub(crate) struct ToolAlias {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -37,7 +37,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Get(cmd) => cmd.run().await,
             Self::Ls(cmd) => cmd.run().await,
@@ -48,7 +48,7 @@ impl Commands {
 }
 
 impl ToolAlias {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Ls(ls::ToolAliasLs {
             tool: self.tool,
             no_header: self.no_header,

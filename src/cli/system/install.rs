@@ -24,7 +24,7 @@ pub(crate) struct BootstrapApplyReport {
 /// only. `install` is accepted as an alias for this command.
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct SystemInstall {
+pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
     #[clap(value_name = "PACKAGE")]
@@ -48,7 +48,7 @@ pub struct SystemInstall {
 }
 
 impl SystemInstall {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let mgrs = if self.packages.is_empty() {
             let config = Config::get().await?;
             system::packages_from_config(&config)

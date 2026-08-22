@@ -13,7 +13,7 @@ const CARGO_TOML: &str = "Cargo.toml";
 
 /// Discovers Cargo packages from a workspace manifest.
 #[derive(Debug, Default)]
-pub struct CargoWorkspaceProvider;
+pub(crate) struct CargoWorkspaceProvider;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]

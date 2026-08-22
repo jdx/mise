@@ -8,7 +8,7 @@ use eyre::bail;
 /// authentication issues. The token is masked by default.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Github {
+pub(crate) struct Github {
     /// GitHub hostname
     #[clap(default_value = "github.com")]
     pub(crate) host: String,
@@ -35,7 +35,7 @@ pub struct Github {
 }
 
 impl Github {
-    pub fn run(self) -> eyre::Result<()> {
+    pub(crate) fn run(self) -> eyre::Result<()> {
         let resolved = if self.oauth {
             Some((
                 github::oauth::token(github::oauth::TokenRequest {

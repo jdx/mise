@@ -9,7 +9,7 @@ use crate::shell::bash::Bash;
 use crate::shell::{self, ActivateOptions, Shell};
 
 #[derive(Default)]
-pub struct Zsh {}
+pub(super) struct Zsh {}
 
 impl Zsh {}
 

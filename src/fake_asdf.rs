@@ -10,7 +10,7 @@ use crate::env::PATH_KEY;
 use crate::path_env::PathEnv;
 use crate::{env, file};
 
-pub fn setup() -> color_eyre::Result<PathBuf> {
+pub(crate) fn setup() -> color_eyre::Result<PathBuf> {
     static SETUP: OnceCell<PathBuf> = OnceCell::new();
     let path = SETUP.get_or_try_init(|| {
         let path = env::MISE_DATA_DIR.join(".fake-asdf");
@@ -34,7 +34,7 @@ pub fn setup() -> color_eyre::Result<PathBuf> {
     Ok(path.clone())
 }
 
-pub fn get_path_with_fake_asdf() -> String {
+pub(crate) fn get_path_with_fake_asdf() -> String {
     let mut path_env = PathEnv::from_iter(env::split_paths(
         &env::var_os(&*PATH_KEY).unwrap_or_default(),
     ));

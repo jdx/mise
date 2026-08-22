@@ -94,6 +94,74 @@ else
   test_failures=$((test_failures + 1))
 fi
 
+echo "=== Testing paths mise cannot read back ==="
+
+# Test 5b: a path that does not exist. Neither command can tell "directory the user meant to
+# create" from "file with an unrecognised name", and a file mise refuses to read is worse than an
+# error: `mise set` used to write one and exit 0. A target per command, so that one creating a
+# file cannot be misread as the other doing it, and so nothing has to be deleted to tell them
+# apart — the trap at the top of this file owns cleanup.
+echo "Test 5b: --path/--file pointing at something that does not exist"
+missing_use="$test_project/missing_for_use"
+missing_set="$test_project/missing_for_set"
+
+if mise use --path "$missing_use" dummy@1.0.0 >/dev/null 2>&1; then
+  echo "✗ mise use --path accepted a path that does not exist"
+  test_failures=$((test_failures + 1))
+else
+  echo "✓ mise use --path rejected it"
+fi
+if [ -e "$missing_use" ]; then
+  echo "✗ mise use --path created $missing_use"
+  test_failures=$((test_failures + 1))
+fi
+
+if mise set --file "$missing_set" MISSING_VAR=1 >/dev/null 2>&1; then
+  echo "✗ mise set --file accepted a path that does not exist"
+  test_failures=$((test_failures + 1))
+else
+  echo "✓ mise set --file rejected it"
+fi
+if [ -e "$missing_set" ]; then
+  echo "✗ mise set --file created $missing_set, which mise cannot read back"
+  test_failures=$((test_failures + 1))
+fi
+
+# Test 5c: a name mise does recognise, but not as TOML. Both halves of it: creating one, and being
+# pointed at one that already exists. The second is why the check runs before mise looks at whether
+# the file is there — otherwise it fails later as invalid TOML, which does not say what is wrong.
+echo "Test 5c: mise set --file pointing at a .tool-versions"
+mkdir -p "$test_project/tvnew" "$test_project/tvold"
+tv_new="$test_project/tvnew/.tool-versions"
+tv_existing="$test_project/tvold/.tool-versions"
+printf 'node 20\n' >"$tv_existing"
+
+if mise set --file "$tv_new" TV_VAR=1 >/dev/null 2>&1; then
+  echo "✗ mise set --file wrote TOML to a new .tool-versions path"
+  test_failures=$((test_failures + 1))
+else
+  echo "✓ mise set --file rejected a new .tool-versions path"
+fi
+if [ -e "$tv_new" ]; then
+  echo "✗ mise set --file created $tv_new"
+  test_failures=$((test_failures + 1))
+fi
+
+# Whitespace is squeezed before matching so that wrapping the message cannot break the assertion.
+if tv_output=$(mise set --file "$tv_existing" TV_VAR=1 2>&1); then
+  echo "✗ mise set --file wrote TOML to an existing .tool-versions"
+  test_failures=$((test_failures + 1))
+elif ! printf '%s' "$tv_output" | tr -s '[:space:]' ' ' | grep -Fq 'cannot write TOML'; then
+  echo "✗ mise set --file rejected an existing .tool-versions without saying why: $tv_output"
+  test_failures=$((test_failures + 1))
+else
+  echo "✓ mise set --file rejected an existing .tool-versions with a reason"
+fi
+if [ "$(cat "$tv_existing")" != "node 20" ]; then
+  echo "✗ mise set --file modified $tv_existing"
+  test_failures=$((test_failures + 1))
+fi
+
 echo "=== Testing environment-specific configs ==="
 
 # Test 6: Both should handle --env consistently

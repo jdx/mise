@@ -4,8 +4,16 @@ use std::path::PathBuf;
 
 use crate::env;
 
+pub(crate) async fn maybe_auto_update(
+    _args: &[String],
+    _original_cwd: Option<&std::path::Path>,
+    _command_eligible: bool,
+) -> crate::Result<()> {
+    Ok(())
+}
+
 #[derive(Debug, Default, clap::Args)]
-pub struct SelfUpdate {
+pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
@@ -23,13 +31,13 @@ pub struct SelfUpdate {
 }
 
 impl SelfUpdate {
-    pub async fn run(self) -> crate::Result<()> {
+    pub(crate) async fn run(self) -> crate::Result<()> {
         if let Some(instructions) = upgrade_instructions_text() {
             warn!("{}", instructions);
         }
         eyre::bail!("mise's self-update feature has been disabled at build time, cannot update");
     }
-    pub fn is_available() -> bool {
+    pub(crate) fn is_available() -> bool {
         false
     }
 }
@@ -53,7 +61,7 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
     None
 }
 
-pub fn upgrade_instructions_text() -> Option<String> {
+pub(crate) fn upgrade_instructions_text() -> Option<String> {
     if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS {
         if let Some(msg) = read_instructions_file(path) {
             return Some(msg);
@@ -67,16 +75,16 @@ pub fn upgrade_instructions_text() -> Option<String> {
 /// telling the user their mise is out of date is a dead end. Kept neutral about
 /// how mise was installed: a build without the `self_update` feature is usually
 /// a distro package, but it can equally be a local `--no-default-features` build.
-pub const SELF_UPDATE_DISABLED_HINT: &str =
+pub(crate) const SELF_UPDATE_DISABLED_HINT: &str =
     "self-update is disabled for this install, update mise the same way you installed it";
 
 /// How to update mise: the packager's instructions when they shipped some,
 /// otherwise the generic hint.
-pub fn upgrade_instructions_or_hint() -> String {
+pub(crate) fn upgrade_instructions_or_hint() -> String {
     upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
 }
 
-pub fn append_self_update_instructions(mut message: String) -> String {
+pub(crate) fn append_self_update_instructions(mut message: String) -> String {
     message.push('\n');
     message.push_str(&upgrade_instructions_or_hint());
     message

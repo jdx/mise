@@ -178,6 +178,10 @@
               "version_expr": {
                 "type": "string",
                 "description": "expr-lang expression used to extract or post-process versions"
+              },
+              "deprecated": {
+                "type": "string",
+                "description": "Reason this file is no longer read; emits a deprecation warning when it resolves a version"
               }
             },
             "required": ["path"],

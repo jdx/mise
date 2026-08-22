@@ -9,7 +9,7 @@ use itertools::Itertools;
 /// List config files currently in use
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct ConfigLs {
+pub(crate) struct ConfigLs {
     /// Output in JSON format
     #[clap(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
@@ -24,7 +24,7 @@ pub struct ConfigLs {
 }
 
 impl ConfigLs {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if self.tracked_configs {
             self.display_tracked_configs().await?;
         } else if self.json {

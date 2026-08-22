@@ -269,6 +269,29 @@ parse_env = "list_by_comma"
 rust_type = "Vec<String>"
 type = "ListString"
 
+[auto_update]
+default = false
+description = "Automatically update mise before running eligible commands."
+docs = """
+When enabled, mise periodically checks for a newer release before running commands that permit
+network access. If an update is available, mise installs it without updating plugins, then re-runs
+the original command with the new binary.
+
+Automatic updates are skipped in CI, offline and prefer-offline modes, non-interactive sessions,
+shell integration commands, and installations whose packager disabled self-update. This setting is
+global-only so a project's configuration cannot opt users into replacing their mise binary.
+"""
+env = "MISE_AUTO_UPDATE"
+global_only = true
+type = "Bool"
+
+[auto_update_check_duration]
+default = "7d"
+description = "How often to check for a new mise release when auto-update is enabled."
+env = "MISE_AUTO_UPDATE_CHECK_DURATION"
+global_only = true
+type = "Duration"
+
 [cache_prune_age]
 default = "30d"
 description = "Delete files in cache that have not been accessed in this duration"
@@ -678,6 +701,27 @@ tool versions, settings, or watched files change.
 """
 env = "MISE_ENV_CACHE_TTL"
 type = "Duration"
+
+[env_conf_d]
+description = "Enable environment-specific filenames in conf.d directories."
+docs = """
+When enabled, files in `.mise/conf.d` and `.config/mise/conf.d` use environment
+suffixes: `tools.development.toml` loads only when `development` is active, and
+`tools.development.local.toml` is its local variant.
+
+This behavior is opt-in during the migration period. When disabled or unset,
+all non-hidden TOML files in `conf.d` continue to load unconditionally. Dots in
+unconditional fragment names are deprecated; rename `node.tools.toml` to
+`node-tools.toml` before mise 2027.8.10.
+
+This is an early-init setting: it must be set in a `miserc.toml` file or via the
+`MISE_ENV_CONF_D` environment variable. Setting it in `mise.toml` has no effect
+because config file discovery has already occurred by the time `mise.toml` is read.
+"""
+env = "MISE_ENV_CONF_D"
+optional = true
+rc = true
+type = "Bool"
 
 [env_file]
 description = "Path to a file containing environment variables to automatically load."
@@ -1314,6 +1358,28 @@ env = "MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS"
 parse_env = "set_by_comma"
 rust_type = "BTreeSet<String>"
 type = "SetString"
+
+[idiomatic_version_file_ignore_minimum_versions]
+default = false
+description = "Ignore idiomatic version file fields that only declare a minimum compatible version."
+docs = """
+Some idiomatic version files carry a *minimum* compatible version rather than the version the
+project is built with. mise used to resolve those, which is wrong -- a floor says nothing about
+which version a project is developed against. They are deprecated and warn; set this to opt into
+the final behavior now, which ignores them and silences the warning:
+
+    mise settings set idiomatic_version_file_ignore_minimum_versions true
+
+Affects `go.mod`'s `go X.Y` directive (`toolchain goX.Y.Z` is still read) and `CMakeLists.txt`'s
+`cmake_minimum_required`.
+
+This is a temporary migration setting. In mise 2026.11.0 the behavior becomes unconditional and
+this setting is removed. See
+[Idiomatic Version Files](/configuration.html#which-fields-mise-reads).
+"""
+env = "MISE_IDIOMATIC_VERSION_FILE_IGNORE_MINIMUM_VERSIONS"
+hide = true
+type = "Bool"
 
 [ignored_config_paths]
 default = []

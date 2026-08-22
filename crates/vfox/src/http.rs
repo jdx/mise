@@ -5,7 +5,7 @@ use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::sync::watch;
 
-pub static CLIENT: LazyLock<Client> = LazyLock::new(|| {
+pub(crate) static CLIENT: LazyLock<Client> = LazyLock::new(|| {
     ClientBuilder::new()
         .user_agent(format!("vfox.rs/{}", env!("CARGO_PKG_VERSION")))
         .build()

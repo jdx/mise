@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use versions::{Mess, Versioning};
 
 /// splits a version number into an optional prefix and the remaining version string
-pub fn split_version_prefix(version: &str) -> (String, String) {
+pub(crate) fn split_version_prefix(version: &str) -> (String, String) {
     let mut prev_char = None;
     for (i, c) in version.char_indices() {
         if c.is_ascii_digit()
@@ -19,7 +19,7 @@ pub fn split_version_prefix(version: &str) -> (String, String) {
 
 /// split a version number into chunks
 /// given v: "1.2-3a4" return ["1", ".2", "-3a4"]
-pub fn chunkify_version(v: &str) -> Vec<String> {
+pub(crate) fn chunkify_version(v: &str) -> Vec<String> {
     fn chunkify(m: &Mess, sep0: &str, chunks: &mut Vec<String>) {
         for (i, chunk) in m.chunks.iter().enumerate() {
             let sep = if i == 0 { sep0 } else { "." };
@@ -49,7 +49,7 @@ pub fn chunkify_version(v: &str) -> Vec<String> {
 ///
 /// Returns `None` for non-range queries so callers can fall back to mise's
 /// existing fuzzy matching for aliases and non-semver tools.
-pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<String>> {
+pub(crate) fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<String>> {
     let query = query.trim();
     if !is_npm_semver_range_query(query) {
         return None;
@@ -70,7 +70,7 @@ pub fn npm_semver_range_filter(versions: &[String], query: &str) -> Option<Vec<S
     )
 }
 
-pub fn is_npm_semver_range_query(query: &str) -> bool {
+pub(crate) fn is_npm_semver_range_query(query: &str) -> bool {
     if query.is_empty() || query.eq_ignore_ascii_case("latest") {
         return false;
     }
@@ -102,7 +102,7 @@ pub fn is_npm_semver_range_query(query: &str) -> bool {
     query.split('.').any(|part| matches!(part, "*" | "x" | "X"))
 }
 
-pub fn semver_triplet(version: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn semver_triplet(version: &str) -> Option<(u64, u64, u64)> {
     let trimmed = version.trim().trim_start_matches(['v', 'V']);
     let mut parts = trimmed.split('.');
     let major = parts.next()?.parse().ok()?;
@@ -111,15 +111,15 @@ pub fn semver_triplet(version: &str) -> Option<(u64, u64, u64)> {
     Some((major, minor, patch))
 }
 
-pub fn semver_cmp(version: &str, other: &str) -> Option<Ordering> {
+pub(crate) fn semver_cmp(version: &str, other: &str) -> Option<Ordering> {
     Some(semver_triplet(version)?.cmp(&semver_triplet(other)?))
 }
 
-pub fn semver_is_older_than(version: &str, minimum: &str) -> Option<bool> {
+pub(crate) fn semver_is_older_than(version: &str, minimum: &str) -> Option<bool> {
     Some(semver_cmp(version, minimum)? == Ordering::Less)
 }
 
-pub fn semver_is_at_least(version: &str, minimum: &str) -> Option<bool> {
+pub(crate) fn semver_is_at_least(version: &str, minimum: &str) -> Option<bool> {
     Some(semver_cmp(version, minimum)? != Ordering::Less)
 }
 

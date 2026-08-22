@@ -12,11 +12,15 @@ use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 #[cfg(target_os = "macos")]
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
+use std::time::Duration;
 
+const AUTO_UPDATE_REEXEC_ENV: &str = "__MISE_AUTO_UPDATE_REEXEC";
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
     message: Option<String>,
@@ -36,7 +40,7 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
     None
 }
 
-pub fn upgrade_instructions_text() -> Option<String> {
+pub(crate) fn upgrade_instructions_text() -> Option<String> {
     if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
         && let Some(msg) = read_instructions_file(path)
     {
@@ -52,17 +56,17 @@ pub fn upgrade_instructions_text() -> Option<String> {
 /// `MISE_SELF_UPDATE_AVAILABLE=false`. The wording stays neutral about which of
 /// those applies — being unable to self-update is not by itself proof that a
 /// package manager owns the install.
-pub const SELF_UPDATE_DISABLED_HINT: &str =
+pub(crate) const SELF_UPDATE_DISABLED_HINT: &str =
     "self-update is disabled for this install, update mise the same way you installed it";
 
 /// How to update mise when `mise self-update` is not available: the packager's
 /// instructions when they shipped some, otherwise the generic hint.
-pub fn upgrade_instructions_or_hint() -> String {
+pub(crate) fn upgrade_instructions_or_hint() -> String {
     upgrade_instructions_text().unwrap_or_else(|| SELF_UPDATE_DISABLED_HINT.to_string())
 }
 
 /// Appends self-update guidance and packaging instructions (if any) to a message.
-pub fn append_self_update_instructions(mut message: String) -> String {
+pub(crate) fn append_self_update_instructions(mut message: String) -> String {
     if SelfUpdate::is_available() {
         message.push_str("\nRun `mise self-update` to update mise");
     }
@@ -76,6 +80,146 @@ pub fn append_self_update_instructions(mut message: String) -> String {
     message
 }
 
+/// Checks for and installs an update before an eligible interactive command.
+/// Failures are deliberately non-fatal so the requested command still runs.
+pub(crate) async fn maybe_auto_update(
+    args: &[String],
+    original_cwd: Option<&std::path::Path>,
+    command_eligible: bool,
+) -> Result<()> {
+    let Ok(settings) = Settings::try_get() else {
+        return Ok(());
+    };
+    if !auto_update_eligible(AutoUpdateContext {
+        enabled: settings.auto_update,
+        offline: settings.offline(),
+        prefer_offline: settings.prefer_offline(),
+        ci: settings.ci || ci_info::is_ci(),
+        attended: console::user_attended_stderr(),
+        already_reexecuted: env::var_os(AUTO_UPDATE_REEXEC_ENV).is_some(),
+        self_update_available: SelfUpdate::is_available(),
+        command_eligible,
+    }) {
+        return Ok(());
+    }
+
+    let lock_path = crate::dirs::CACHE.join("auto-update");
+    let update_lock = match crate::lock_file::LockFile::new(&lock_path).try_lock() {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            debug!("skipping auto-update because another mise process is updating");
+            return Ok(());
+        }
+        Err(err) => {
+            debug!("automatic mise update could not acquire its lock: {err:#}");
+            return Ok(());
+        }
+    };
+    let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
+    let check_duration = match settings.auto_update_check_duration() {
+        Ok(duration) => duration,
+        Err(err) => {
+            debug!("automatic mise update has an invalid check duration: {err:#}");
+            return Ok(());
+        }
+    };
+    if !auto_update_check_due(&last_check_path, check_duration) {
+        return Ok(());
+    }
+    if let Err(err) = crate::file::write(&last_check_path, "") {
+        debug!("automatic mise update could not record its check: {err:#}");
+        return Ok(());
+    }
+    // The marker above is the auto-update throttle. Bypass the separate shared
+    // version cache so a shorter-lived `mise version` lookup cannot make this
+    // due check accept stale data and advance the marker for another interval.
+    let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
+        return Ok(());
+    };
+
+    let update = SelfUpdate {
+        version: Some(version),
+        force: false,
+        yes: true,
+        no_plugins: true,
+    };
+    if let Err(err) = update.run().await {
+        debug!("automatic mise update failed: {err:#}");
+        return Ok(());
+    }
+    drop(update_lock);
+    reexec(args, original_cwd)
+}
+
+/// Returns whether the automatic-update attempt marker has expired.
+fn auto_update_check_due(path: &std::path::Path, duration: Duration) -> bool {
+    crate::file::modified_duration(path).map_or(true, |age| age >= duration)
+}
+
+/// Runtime conditions that gate automatic updates.
+#[derive(Clone, Copy)]
+struct AutoUpdateContext {
+    enabled: bool,
+    offline: bool,
+    prefer_offline: bool,
+    ci: bool,
+    attended: bool,
+    already_reexecuted: bool,
+    self_update_available: bool,
+    command_eligible: bool,
+}
+
+/// Applies the automatic-update safety policy without side effects.
+fn auto_update_eligible(context: AutoUpdateContext) -> bool {
+    context.enabled
+        && !context.offline
+        && !context.prefer_offline
+        && !context.ci
+        && context.attended
+        && !context.already_reexecuted
+        && context.self_update_available
+        && context.command_eligible
+}
+
+/// Builds the replacement process with the original arguments, directory, and
+/// a recursion guard shared by every platform-specific re-exec path.
+fn build_reexec_command<I, S>(args: I, original_cwd: Option<&std::path::Path>) -> Command
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut command = Command::new(&*env::MISE_BIN);
+    command.args(args).env(AUTO_UPDATE_REEXEC_ENV, "1");
+    if let Some(cwd) = original_cwd {
+        command.current_dir(cwd);
+    }
+    command
+}
+
+#[cfg(unix)]
+fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+
+    let mut command = build_reexec_command(std::env::args_os().skip(1), original_cwd);
+    let err = command.exec();
+    warn!("mise was updated but could not re-execute the command: {err}");
+    Ok(())
+}
+
+#[cfg(windows)]
+fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
+    let mut command = build_reexec_command(std::env::args_os().skip(1), original_cwd);
+    let status = command.status()?;
+    Err(crate::request_exit(status.code().unwrap_or(1)))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
+    let mut command = build_reexec_command(&args[1..], original_cwd);
+    let status = command.status()?;
+    Err(crate::request_exit(status.code().unwrap_or(1)))
+}
+
 /// Updates mise itself.
 ///
 /// Uses the GitHub Releases API to find the latest release and binary.
@@ -87,7 +231,7 @@ pub fn append_self_update_instructions(mut message: String) -> String {
 /// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
 #[derive(Debug, Default, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct SelfUpdate {
+pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
@@ -222,7 +366,7 @@ fn current_exe_stem() -> Option<String> {
 }
 
 impl SelfUpdate {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
             if let Some(instructions) = upgrade_instructions_text() {
                 warn!("{}", instructions);
@@ -262,6 +406,7 @@ impl SelfUpdate {
         } else {
             miseprintln!("mise is already up to date");
         }
+        crate::cli::version::show_auto_update_hint();
         if !self.no_plugins {
             cmd!(&*env::MISE_BIN, "plugins", "update").run()?;
         }
@@ -448,7 +593,7 @@ impl SelfUpdate {
         Ok(())
     }
 
-    pub fn is_available() -> bool {
+    pub(crate) fn is_available() -> bool {
         if let Some(b) = *env::MISE_SELF_UPDATE_AVAILABLE {
             return b;
         }
@@ -496,6 +641,99 @@ impl SelfUpdate {
 
         debug!("macOS binary signature verified successfully");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod auto_update_tests {
+    use super::*;
+
+    fn eligible_context() -> AutoUpdateContext {
+        AutoUpdateContext {
+            enabled: true,
+            offline: false,
+            prefer_offline: false,
+            ci: false,
+            attended: true,
+            already_reexecuted: false,
+            self_update_available: true,
+            command_eligible: true,
+        }
+    }
+
+    #[test]
+    fn eligible_interactive_command_updates() {
+        assert!(auto_update_eligible(eligible_context()));
+    }
+
+    #[test]
+    fn safety_conditions_disable_auto_update() {
+        let context = eligible_context();
+        for ineligible in [
+            AutoUpdateContext {
+                enabled: false,
+                ..context
+            },
+            AutoUpdateContext {
+                offline: true,
+                ..context
+            },
+            AutoUpdateContext {
+                prefer_offline: true,
+                ..context
+            },
+            AutoUpdateContext {
+                ci: true,
+                ..context
+            },
+            AutoUpdateContext {
+                attended: false,
+                ..context
+            },
+            AutoUpdateContext {
+                already_reexecuted: true,
+                ..context
+            },
+            AutoUpdateContext {
+                self_update_available: false,
+                ..context
+            },
+        ] {
+            assert!(!auto_update_eligible(ineligible));
+        }
+    }
+
+    #[test]
+    fn ineligible_commands_do_not_update() {
+        assert!(!auto_update_eligible(AutoUpdateContext {
+            command_eligible: false,
+            ..eligible_context()
+        }));
+    }
+
+    #[test]
+    fn reexec_preserves_arguments_directory_and_guard() {
+        use std::ffi::OsString;
+
+        let cwd = std::path::Path::new("a directory");
+        let args = [OsString::from("install"), OsString::from("node@22 beta")];
+        let command = build_reexec_command(&args, Some(cwd));
+
+        assert_eq!(command.get_args().collect::<Vec<_>>(), args);
+        assert_eq!(command.get_current_dir(), Some(cwd));
+        assert!(command.get_envs().any(|(key, value)| {
+            key == AUTO_UPDATE_REEXEC_ENV && value == Some(OsStr::new("1"))
+        }));
+    }
+
+    #[test]
+    fn automatic_update_attempts_are_throttled() {
+        let temp = tempfile::tempdir().unwrap();
+        let marker = temp.path().join("last-check");
+        assert!(auto_update_check_due(&marker, Duration::from_secs(60)));
+        std::fs::write(&marker, "").unwrap();
+        assert!(!auto_update_check_due(&marker, Duration::from_secs(60)));
+        assert!(auto_update_check_due(&marker, Duration::ZERO));
     }
 }
 

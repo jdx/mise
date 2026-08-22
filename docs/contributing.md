@@ -782,10 +782,17 @@ The supported parser fields are:
 These parsers are evaluated in-process and cannot run shell commands. Plain string entries remain
 compatible with existing registry entries and backend-native parsers.
 
-Only extract a value that determines compatibility with the tool binary. Good candidates include
-an exact version, a minimum/required version, or a configuration-format major that is intentionally
-coupled to the CLI major. Do not extract unrelated project versions, dependency versions, lockfile
-schema revisions, or generic `version` fields that do not constrain the tool itself.
+Only extract a value that states the version the project is built with. Good candidates are an
+exact version or a configuration-format major that is intentionally coupled to the CLI major. Do
+not extract a **minimum compatible version** — a floor such as `cmake_minimum_required` or
+`package.json`'s `engines` describes what a consumer needs, not what the project is developed
+against, and resolving it pins users to the oldest supported release (see
+[which fields mise reads](/configuration.html#which-fields-mise-reads)).
+Also do not extract unrelated project versions, dependency versions, lockfile schema revisions, or
+generic `version` fields that do not constrain the tool itself.
+
+An existing entry that reads a floor can be retired with `deprecated = "<reason>"` on the file,
+which keeps it resolving while warning users to move the version into `mise.toml`.
 
 Include all filenames that the tool officially searches, including documented nested paths such as
 `.config/tool.yml`. When suffixes overlap, mise uses the most specific matching path.

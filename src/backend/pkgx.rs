@@ -24,10 +24,10 @@ use std::sync::Arc;
 
 const DIST_URL: &str = "https://dist.pkgx.dev";
 const PANTRY_RAW_URL: &str = "https://raw.githubusercontent.com/pkgxdev/pantry/main/projects";
-pub const EXPERIMENTAL: bool = true;
+pub(crate) const EXPERIMENTAL: bool = true;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub struct PkgxPackageInfo {
+pub(crate) struct PkgxPackageInfo {
     pub url: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
@@ -37,12 +37,12 @@ pub struct PkgxPackageInfo {
     pub pkgx_runtime_env: Option<BTreeMap<String, String>>,
 }
 
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![]
 }
 
 #[derive(Debug)]
-pub struct PkgxBackend {
+pub(crate) struct PkgxBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -183,7 +183,7 @@ impl Backend for PkgxBackend {
 }
 
 impl PkgxBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 
@@ -309,7 +309,7 @@ impl PkgxBackend {
         Ok(())
     }
 
-    pub async fn resolve_pkgx_packages(
+    pub(crate) async fn resolve_pkgx_packages(
         &self,
         tv: &ToolVersion,
         target: &PlatformTarget,

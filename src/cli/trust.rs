@@ -34,8 +34,8 @@ use itertools::Itertools;
 /// worktrees can check out branches with different config contents.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Trust {
-    /// The config file to trust
+pub(crate) struct Trust {
+    /// The config file whose trust status to change
     #[clap(value_hint = ValueHint::FilePath, verbatim_doc_comment)]
     config_file: Option<PathBuf>,
 
@@ -61,7 +61,7 @@ pub struct Trust {
 }
 
 impl Trust {
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.show {
             return self.show();
         }
@@ -83,7 +83,7 @@ impl Trust {
             self.trust()
         }
     }
-    pub fn clean() -> Result<()> {
+    pub(crate) fn clean() -> Result<()> {
         if dirs::TRUSTED_CONFIGS.is_dir() {
             for path in file::ls(&dirs::TRUSTED_CONFIGS)? {
                 if !path.exists() {

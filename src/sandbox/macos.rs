@@ -25,7 +25,7 @@ const SYSTEM_READ_PATHS: &[&str] = &[
 ];
 
 /// Generate a Seatbelt (SBPL) profile string from sandbox config.
-pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
+pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
     let mut rules = Vec::new();
     rules.push("(version 1)".to_string());
     rules.push("(allow default)".to_string());
@@ -45,6 +45,9 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
     // Filesystem read restrictions
     if config.effective_deny_read() {
         rules.push("(deny file-read*)".to_string());
+        // Seatbelt requires data access to the root vnode for process startup and getcwd.
+        // This exposes names directly under `/`, but descendants still obey the read rules.
+        rules.push("(allow file-read-data (literal \"/\"))".to_string());
         for path in SYSTEM_READ_PATHS {
             rules.push(format!("(allow file-read* (subpath \"{path}\"))"));
         }
@@ -112,7 +115,7 @@ pub async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::{fs, path::PathBuf, process::Command};
 
     #[tokio::test]
     async fn test_deny_write_profile() {
@@ -177,6 +180,43 @@ mod tests {
         assert!(profile.contains("(deny file-read*)"));
         assert!(profile.contains("(allow file-read* (subpath \"/usr\"))"));
         assert!(profile.contains("(allow file-read* (subpath \"/System\"))"));
+    }
+
+    #[tokio::test]
+    async fn test_allow_read_executes_shell_without_reading_siblings() {
+        let root = tempfile::tempdir().unwrap();
+        let allowed_dir = root.path().join("allowed");
+        fs::create_dir(&allowed_dir).unwrap();
+        let allowed_file = allowed_dir.join("allowed.txt");
+        let denied_file = root.path().join("denied.txt");
+        fs::write(&allowed_file, "allowed").unwrap();
+        fs::write(&denied_file, "denied").unwrap();
+        let allowed_file = allowed_file.canonicalize().unwrap();
+        let denied_file = denied_file.canonicalize().unwrap();
+
+        let mut config = SandboxConfig {
+            deny_read: true,
+            allow_read: vec![allowed_dir],
+            ..Default::default()
+        };
+        config.resolve_paths();
+        let profile = generate_seatbelt_profile(&config).await;
+        let read = |path: &std::path::Path| {
+            Command::new("sandbox-exec")
+                .current_dir("/")
+                .args(["-p", &profile, "--", "/bin/sh", "-c", "cat \"$1\"", "sh"])
+                .arg(path)
+                .output()
+                .unwrap()
+        };
+
+        let allowed = read(&allowed_file);
+        assert!(
+            allowed.status.success(),
+            "sandboxed shell failed: {}",
+            String::from_utf8_lossy(&allowed.stderr)
+        );
+        assert!(!read(&denied_file).status.success());
     }
 
     #[tokio::test]

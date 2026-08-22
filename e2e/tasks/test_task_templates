@@ -98,6 +98,28 @@ EOF
 assert_not_contains "mise run inherited" "task output"
 assert "mise run overridden" "task output"
 
+# An explicit false is different from an omitted value: it must override a
+# template's true value, while an omitted task still inherits the template.
+cat <<'EOF' >mise.toml
+[task_templates.silent]
+run = "echo task output"
+silent = true
+
+[tasks.inherited-silent]
+extends = "silent"
+
+[tasks.explicit-audible]
+extends = "silent"
+silent = false
+EOF
+
+assert \
+  "mise tasks ls --json | jq -r '.[] | select(.name == \"inherited-silent\") | .silent'" \
+  "true"
+assert \
+  "mise tasks ls --json | jq -r '.[] | select(.name == \"explicit-audible\") | .silent'" \
+  "false"
+
 # Test depends from template (using task name, not :prefix syntax)
 cat <<'EOF' >mise.toml
 [task_templates."python:test"]

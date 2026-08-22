@@ -7,14 +7,11 @@
 - **Source code**: [`src/cli/generate/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/mod.rs)
 
 Generate files for various tools/services
-
-## Subcommands
-
-- [`mise generate bootstrap [FLAGS]`](/cli/generate/bootstrap.md)
 - [`mise generate config [FLAGS] [PATH]`](/cli/generate/config.md)
 - [`mise generate devcontainer [FLAGS]`](/cli/generate/devcontainer.md)
 - [`mise generate git-pre-commit [FLAGS] [-- MISE_ARG]…`](/cli/generate/git-pre-commit.md)
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
+- [`mise generate install-script [FLAGS]`](/cli/generate/install-script.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
 - [`mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`](/cli/generate/task-stubs.md)
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)

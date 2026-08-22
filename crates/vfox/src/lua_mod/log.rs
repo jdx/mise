@@ -37,7 +37,7 @@ macro_rules! create_log_fn {
     };
 }
 
-pub fn mod_log(lua: &Lua) -> Result<()> {
+pub(crate) fn mod_log(lua: &Lua) -> Result<()> {
     let package: Table = lua.globals().get("package")?;
     let loaded: Table = package.get("loaded")?;
 

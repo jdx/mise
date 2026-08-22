@@ -633,6 +633,16 @@
             "type": "string"
           }
         },
+        "auto_update": {
+          "default": false,
+          "description": "Automatically update mise before running eligible commands.",
+          "type": "boolean"
+        },
+        "auto_update_check_duration": {
+          "default": "7d",
+          "description": "How often to check for a new mise release when auto-update is enabled.",
+          "type": "string"
+        },
         "cache_prune_age": {
           "default": "30d",
           "description": "Delete files in cache that have not been accessed in this duration",
@@ -828,6 +838,10 @@
           "default": "1h",
           "description": "TTL for cached environments",
           "type": "string"
+        },
+        "env_conf_d": {
+          "description": "Enable environment-specific filenames in conf.d directories.",
+          "type": "boolean"
         },
         "env_file": {
           "description": "Path to a file containing environment variables to automatically load.",
@@ -1127,6 +1141,11 @@
           "items": {
             "type": "string"
           }
+        },
+        "idiomatic_version_file_ignore_minimum_versions": {
+          "default": false,
+          "description": "Ignore idiomatic version file fields that only declare a minimum compatible version.",
+          "type": "boolean"
         },
         "ignored_config_paths": {
           "default": [],

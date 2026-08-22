@@ -32,7 +32,7 @@ use strum::IntoEnumIterator;
 /// Check mise installation for possible problems
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "dr", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Doctor {
+pub(crate) struct Doctor {
     #[clap(subcommand)]
     subcommand: Option<Commands>,
     #[clap(skip)]
@@ -44,7 +44,7 @@ pub struct Doctor {
 }
 
 #[derive(Debug, clap::Subcommand)]
-pub enum Commands {
+pub(super) enum Commands {
     Path(path::Path),
 }
 
@@ -82,7 +82,7 @@ enum SystemLoginShellDiagnosis {
 }
 
 impl Doctor {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         if let Some(cmd) = self.subcommand {
             match cmd {
                 Commands::Path(cmd) => cmd.run().await,
@@ -164,6 +164,7 @@ impl Doctor {
         self.analyze_plugins();
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
+        self.analyze_new_version().await;
         #[cfg(windows)]
         self.analyze_self_update_leftovers();
         self.check_path_ordering(ts, &config).await;
@@ -313,13 +314,7 @@ impl Doctor {
         }
         self.analyze_settings()?;
 
-        if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
-            version::show_latest().await;
-            self.warnings.push(format!(
-                "new mise version {latest} available, currently on {}",
-                *version::V
-            ));
-        }
+        self.analyze_new_version().await;
         #[cfg(windows)]
         self.analyze_self_update_leftovers();
 
@@ -397,6 +392,22 @@ impl Doctor {
                 };
                 self.warnings.push(msg);
             }
+        }
+    }
+
+    /// Both outputs render `self.warnings`, so a check only one path runs is a hole in the other.
+    ///
+    /// The stderr notice is presentation rather than diagnosis, and `-J` is asked for by something
+    /// reading the JSON: it gets the warning below instead of a message aimed at a person.
+    async fn analyze_new_version(&mut self) {
+        if let Some(latest) = version::check_for_new_version(duration::HOURLY).await {
+            if !self.json {
+                version::show_latest().await;
+            }
+            self.warnings.push(format!(
+                "new mise version {latest} available, currently on {}",
+                *version::V
+            ));
         }
     }
 

@@ -23,7 +23,7 @@ use std::str::FromStr;
 /// This struct is designed for extensibility - additional fields can be added
 /// as needed without breaking existing code.
 #[derive(Clone, Debug, Default)]
-pub struct BackendResolution {
+pub(crate) struct BackendResolution {
     /// Whether the user explicitly specified the full backend (e.g., "aqua:oven-sh/bun" vs "bun").
     /// Also true when restored from install state for backward compatibility with existing installations,
     /// and for plugin-based tools initialized from the plugin registry.
@@ -31,13 +31,13 @@ pub struct BackendResolution {
 }
 
 impl BackendResolution {
-    pub fn new(explicit: bool) -> Self {
+    pub(crate) fn new(explicit: bool) -> Self {
         Self { explicit }
     }
 }
 
 #[derive(Clone)]
-pub struct BackendArg {
+pub(crate) struct BackendArg {
     /// short or full identifier (what the user specified), "node", "prettier", "npm:prettier", "cargo:eza"
     pub short: String,
     /// full identifier, "core:node", "npm:prettier", "cargo:eza", "vfox:version-fox/vfox-nodejs"
@@ -109,7 +109,7 @@ impl From<InstallStateTool> for BackendArg {
 
 /// Split a string like `"http:hello[url=...,bin=bin]"` into `("http:hello", "url=...,bin=bin")`.
 /// Returns `None` if no bracketed opts are present.
-pub fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_bracketed_opts(s: &str) -> Option<(&str, &str)> {
     if !s.ends_with(']') {
         return None;
     }
@@ -235,7 +235,7 @@ fn plugin_type_to_backend_type(plugin_name: &str, plugin_type: PluginType) -> Ba
 }
 
 impl BackendArg {
-    pub fn matches_bin_name(&self, bin_name: &str) -> bool {
+    pub(crate) fn matches_bin_name(&self, bin_name: &str) -> bool {
         let exe_suffix = std::env::consts::EXE_SUFFIX;
         let bin_name = if exe_suffix.is_empty() {
             bin_name
@@ -264,7 +264,7 @@ impl BackendArg {
         Self::new_raw(short, full, tool_name, opts, resolution)
     }
 
-    pub fn new_raw(
+    pub(crate) fn new_raw(
         short: String,
         full: Option<String>,
         tool_name: String,
@@ -289,7 +289,7 @@ impl BackendArg {
 
     /// Returns the kebab-cased directory name used for this tool's install path.
     /// This is the canonical name used on the filesystem (e.g. "github-user-repo").
-    pub fn tool_dir_name(&self) -> String {
+    pub(crate) fn tool_dir_name(&self) -> String {
         self.installs_path
             .file_name()
             .unwrap()
@@ -297,7 +297,7 @@ impl BackendArg {
             .to_string()
     }
 
-    pub fn backend(&self) -> Result<ABackend> {
+    pub(crate) fn backend(&self) -> Result<ABackend> {
         // TODO: see above about hash key
         // let backend = self.backend.get_or_try_init(|| {
         //     if let Some(backend) = backend::get(self) {
@@ -381,7 +381,7 @@ impl BackendArg {
         }
     }
 
-    pub fn backend_type(&self) -> BackendType {
+    pub(crate) fn backend_type(&self) -> BackendType {
         // Check if this is a valid backend:tool format first
         if let Some((backend_prefix, _tool_name)) = self.short.split_once(':')
             && let Ok(backend_type) = backend_prefix.parse::<BackendType>()
@@ -426,13 +426,22 @@ impl BackendArg {
         BackendType::Unknown
     }
 
-    pub fn full(&self) -> String {
+    pub(crate) fn full(&self) -> String {
         let short = unalias_backend(&self.short);
 
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_MYTOOLS='github:myorg/mytools'
         if let Some(env_value) = self.env_backend_override() {
             return env_value;
+        }
+
+        // An explicitly resolved full backend must not be replaced by a short-name
+        // alias or lockfile entry. This is also used by package.json checksum
+        // declarations, which require the backend that publishes the verified artifact.
+        if self.resolution.explicit
+            && let Some(full) = &self.full
+        {
+            return full.clone();
         }
 
         if config::is_loaded() {
@@ -522,7 +531,7 @@ impl BackendArg {
         }
     }
 
-    pub fn full_without_opts(&self) -> String {
+    pub(crate) fn full_without_opts(&self) -> String {
         let full = self.full();
         if let Some((name, _)) = split_bracketed_opts(&full) {
             return name.to_string();
@@ -530,11 +539,11 @@ impl BackendArg {
         full
     }
 
-    pub fn opts(&self) -> ToolVersionOptions {
+    pub(crate) fn opts(&self) -> ToolVersionOptions {
         self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), None)
     }
 
-    pub fn registry_opts(&self) -> ToolVersionOptions {
+    pub(crate) fn registry_opts(&self) -> ToolVersionOptions {
         let full = self.full_without_opts();
         REGISTRY
             .get(self.short.as_str())
@@ -549,7 +558,10 @@ impl BackendArg {
             .and_then(|tool| tool.version_order(&full))
     }
 
-    pub fn opts_with_config(&self, config_opts: Option<ToolVersionOptions>) -> ToolVersionOptions {
+    pub(crate) fn opts_with_config(
+        &self,
+        config_opts: Option<ToolVersionOptions>,
+    ) -> ToolVersionOptions {
         self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), config_opts)
     }
 
@@ -579,13 +591,13 @@ impl BackendArg {
         opts
     }
 
-    pub fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
+    pub(crate) fn explicit_opts(&self) -> Option<&ToolVersionOptions> {
         self.opts
             .as_ref()
             .filter(|_| self.opts_source == Some(ToolOptionSource::InlineBackendArg))
     }
 
-    pub fn install_manifest_opts(&self) -> Option<&ToolVersionOptions> {
+    pub(crate) fn install_manifest_opts(&self) -> Option<&ToolVersionOptions> {
         self.opts
             .as_ref()
             .filter(|_| self.opts_source == Some(ToolOptionSource::InstallManifest))
@@ -619,7 +631,7 @@ impl BackendArg {
             .map(parse_tool_options)
     }
 
-    pub fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
+    pub(crate) fn set_opts(&mut self, opts: Option<ToolVersionOptions>) {
         self.opts = opts;
         self.opts_source = self
             .opts
@@ -631,7 +643,7 @@ impl BackendArg {
     /// When false and the tool is not plugin-based, it may resolve to the current
     /// registry backend on next operation, allowing automatic backend migration
     /// when registry/ is updated.
-    pub fn has_explicit_backend(&self) -> bool {
+    pub(crate) fn has_explicit_backend(&self) -> bool {
         self.resolution.explicit
     }
 
@@ -640,7 +652,7 @@ impl BackendArg {
     /// respects registry updates, allowing automatic backend migration when registry/
     /// is updated. Used for lockfiles to preserve the actual installed backend when possible.
     /// Options are stripped since lockfiles have a separate options field.
-    pub fn stored_full(&self) -> String {
+    pub(crate) fn stored_full(&self) -> String {
         // For non-explicit tools, use full() which respects registry updates.
         // This allows tools to automatically switch backends when the registry changes.
         if !self.resolution.explicit {
@@ -677,14 +689,14 @@ impl BackendArg {
         full
     }
 
-    pub fn tool_name(&self) -> String {
+    pub(crate) fn tool_name(&self) -> String {
         let full = self.full();
         let (_backend, tool_name) = full.split_once(':').unwrap_or(("", &full));
         strip_opts(tool_name)
     }
 
     /// maps something like cargo:cargo-binstall to cargo-binstall and ubi:cargo-binstall, etc
-    pub fn all_fulls(&self) -> HashSet<String> {
+    pub(crate) fn all_fulls(&self) -> HashSet<String> {
         let full = self.full();
         let mut all = HashSet::new();
         for short in registry::shorts_for_full(&full) {
@@ -700,7 +712,7 @@ impl BackendArg {
         all
     }
 
-    pub fn is_os_supported(&self) -> bool {
+    pub(crate) fn is_os_supported(&self) -> bool {
         if self.uses_plugin() {
             return true;
         }
@@ -710,7 +722,7 @@ impl BackendArg {
         true
     }
 
-    pub fn uses_plugin(&self) -> bool {
+    pub(crate) fn uses_plugin(&self) -> bool {
         install_state::get_plugin_type(&self.short).is_some()
     }
 }

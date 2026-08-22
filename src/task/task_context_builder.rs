@@ -24,7 +24,7 @@ type EnvResolutionResult = (
 /// - Toolset caching for monorepo tasks
 /// - Environment resolution with config file contexts
 /// - Tool request set caching
-pub struct TaskContextBuilder {
+pub(crate) struct TaskContextBuilder {
     toolset_cache: RwLock<IndexMap<PathBuf, Arc<Toolset>>>,
     tool_request_set_cache: RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>>,
     env_resolution_cache: RwLock<IndexMap<PathBuf, EnvResolutionResult>>,
@@ -44,7 +44,7 @@ impl Clone for TaskContextBuilder {
 }
 
 impl TaskContextBuilder {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             toolset_cache: RwLock::new(IndexMap::new()),
             tool_request_set_cache: RwLock::new(IndexMap::new()),
@@ -53,7 +53,7 @@ impl TaskContextBuilder {
     }
 
     /// Build toolset for a task, with caching for monorepo tasks
-    pub async fn build_toolset_for_task(
+    pub(crate) async fn build_toolset_for_task(
         &self,
         config: &Arc<Config>,
         task: &Task,
@@ -141,7 +141,7 @@ impl TaskContextBuilder {
     /// This is used for monorepo tasks to load env vars from subdirectory mise.toml files
     /// Returns (env, task_env, resolved_vars) where resolved_vars contains vars from the
     /// task's config hierarchy (for injecting into tera context during script rendering)
-    pub async fn resolve_task_env_with_config(
+    pub(crate) async fn resolve_task_env_with_config(
         &self,
         config: &Arc<Config>,
         task: &Task,
@@ -469,7 +469,7 @@ impl TaskContextBuilder {
     }
 
     /// Get access to the tool request set cache for collecting tools
-    pub fn tool_request_set_cache(
+    pub(crate) fn tool_request_set_cache(
         &self,
     ) -> &RwLock<IndexMap<PathBuf, Arc<crate::toolset::ToolRequestSet>>> {
         &self.tool_request_set_cache

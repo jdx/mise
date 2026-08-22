@@ -170,7 +170,7 @@ fn patch_slice(slice: &mut [u8], replacements: &[Replacement], path: &Path) -> R
 
 /// Patch load-command path strings in a Mach-O file (thin or fat).
 /// Returns whether anything changed.
-pub fn patch(content: &mut [u8], replacements: &[Replacement], path: &Path) -> Result<bool> {
+pub(super) fn patch(content: &mut [u8], replacements: &[Replacement], path: &Path) -> Result<bool> {
     if content.len() < 8 {
         return Ok(false);
     }

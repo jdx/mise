@@ -22,12 +22,12 @@ use versions::Versioning;
 use xx::regex;
 
 #[derive(Debug)]
-pub struct GoPlugin {
+pub(super) struct GoPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl GoPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("go")),
         }
@@ -282,7 +282,10 @@ impl Backend for GoPlugin {
     }
     async fn _parse_idiomatic_file(&self, path: &Path) -> eyre::Result<Vec<String>> {
         let v = match path.file_name() {
-            Some(name) if name == "go.mod" => parse_gomod(&file::read_to_string(path)?),
+            Some(name) if name == "go.mod" => parse_gomod(
+                &file::read_to_string(path)?,
+                Settings::get().idiomatic_version_file_ignore_minimum_versions,
+            ),
             _ => {
                 // .go-version
                 let body = normalize_idiomatic_contents(&file::read_to_string(path)?);
@@ -416,25 +419,28 @@ fn is_go_directive_version(v: &str) -> bool {
 /// A `toolchain` version: a fully-qualified Go release `major.minor.patch` (e.g.
 /// `1.22.5`). Go toolchain names always carry the patch (`go1.22.5`, never `go1.22`),
 /// and pre-releases are excluded from resolution, so anything else falls back to the
-/// `go` directive rather than being used as an exact pin.
+/// deprecated `go` directive rather than being used as an exact pin.
 fn is_go_toolchain_version(v: &str) -> bool {
     regex!(r"^[0-9]+\.[0-9]+\.[0-9]+$").is_match(v)
 }
 
 /// Parse a `go.mod` file into a Go version request for idiomatic version resolution.
 ///
-/// go.mod carries two relevant directives with different semantics:
-/// - `toolchain goX.Y.Z` is the *exact* toolchain the module builds/tests with (what
-///   `go version` reports in the repo), so it takes precedence and resolves exactly.
-/// - `go X.Y` is the *minimum* required Go version. mise materializes it as a prefix,
-///   resolving to the latest matching patch (e.g. `go 1.22` -> latest `1.22.x`), which
-///   is consistent with how every other idiomatic version file (`.go-version`, etc.) is
-///   resolved and picks up patch/security updates.
+/// `toolchain goX.Y.Z` is the *exact* toolchain the module builds and tests with (what
+/// `go version` reports inside the repo), so it is a real version declaration and is
+/// what mise reads.
+///
+/// `go X.Y` declares only the *minimum* Go version the module is compatible with. That
+/// is a consumer compatibility floor, the same kind of declaration as `package.json`'s
+/// `engines` field, which mise ignores — it says nothing about which version the project
+/// is developed with, so it should never have selected a version to install. It is
+/// deprecated and still resolves (as a prefix, to the latest matching patch) until
+/// 2026.11.0, or until `ignore_minimums` opts a project into the final behavior early.
 ///
 /// Returns an empty string when no usable version is found (malformed, pre-release, or
 /// missing directive) so the caller skips the file rather than erroring or pinning a
 /// wrong version.
-fn parse_gomod(body: &str) -> String {
+fn parse_gomod(body: &str, ignore_minimums: bool) -> String {
     // Value of the first `<keyword> <value>` directive, ignoring `//` line comments.
     let directive_value = |keyword: &str| -> Option<String> {
         body.lines().find_map(|line| {
@@ -448,15 +454,33 @@ fn parse_gomod(body: &str) -> String {
         })
     };
 
-    // Prefer a fully-qualified `toolchain goX.Y.Z` pin; otherwise fall back to the `go`
-    // minimum. A malformed/partial/pre-release toolchain (e.g. `toolchain default`,
-    // `toolchain go1.22`, `toolchain go1.22rc1`) falls through to the `go` directive
-    // rather than discarding the file.
-    directive_value("toolchain")
+    // A fully-qualified `toolchain goX.Y.Z` pin is the only non-deprecated source. A
+    // malformed/partial/pre-release toolchain (e.g. `toolchain default`,
+    // `toolchain go1.22`, `toolchain go1.22rc1`) is not a real toolchain name, so it
+    // falls through to the `go` directive rather than discarding the file.
+    if let Some(toolchain) = directive_value("toolchain")
         .and_then(|v| v.strip_prefix("go").map(|s| s.to_string()))
         .filter(|v| is_go_toolchain_version(v))
-        .or_else(|| directive_value("go").filter(|v| is_go_directive_version(v)))
-        .unwrap_or_default()
+    {
+        return toolchain;
+    }
+
+    if ignore_minimums {
+        return String::new();
+    }
+
+    match directive_value("go").filter(|v| is_go_directive_version(v)) {
+        Some(minimum) => {
+            deprecated_at!(
+                "2026.8.10",
+                "2026.11.0",
+                "idiomatic.go.mod.go-directive",
+                "the `go` directive in go.mod is only a minimum compatible version, not the version this project is built with, so mise will stop reading it. Add a `toolchain goX.Y.Z` line to go.mod, or set the version in .go-version or mise.toml."
+            );
+            minimum
+        }
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]
@@ -467,50 +491,96 @@ mod tests {
 
     #[test]
     fn test_parse_gomod() {
+        // a fully-qualified `toolchain` pin is used
+        assert_eq!(
+            parse_gomod(
+                indoc! {r#"
+                module example.com/m
+                go 1.22
+                toolchain go1.22.5
+            "#},
+                false
+            ),
+            "1.22.5"
+        );
+        // a `toolchain` pin with no `go` directive is still usable
+        assert_eq!(parse_gomod("toolchain go1.22.0\n", false), "1.22.0");
+        // inline `//` comments and extra whitespace are ignored
+        assert_eq!(
+            parse_gomod("toolchain   go1.20.3   // set by go mod tidy\n", false),
+            "1.20.3"
+        );
+        // no version directive -> empty (file skipped)
+        assert_eq!(parse_gomod("module example.com/m\n", false), "");
+    }
+
+    /// The `go` directive is a minimum, not a version to install. It is deprecated and
+    /// still resolves until 2026.11.0; every case here goes away with it.
+    #[test]
+    fn test_parse_gomod_deprecated_go_directive() {
         // bare `go` directive -> minor version (mise resolves to the latest patch)
         assert_eq!(
-            parse_gomod(indoc! {r#"
+            parse_gomod(
+                indoc! {r#"
                 module example.com/mymodule
                 go 1.14
                 require (
                     example.com/othermodule v1.2.3
                 )
-            "#}),
+            "#},
+                false
+            ),
             "1.14"
         );
         // `toolchain` (exact pin) takes precedence over `go` (minimum)
         assert_eq!(
-            parse_gomod(indoc! {r#"
+            parse_gomod(
+                indoc! {r#"
                 module example.com/m
                 go 1.22
                 toolchain go1.22.5
-            "#}),
+            "#},
+                false
+            ),
             "1.22.5"
         );
         // `toolchain default` is ignored -> fall back to the `go` directive
         assert_eq!(
-            parse_gomod(indoc! {r#"
+            parse_gomod(
+                indoc! {r#"
                 go 1.22
                 toolchain default
-            "#}),
+            "#},
+                false
+            ),
             "1.22"
         );
         // full patch version in the `go` directive is used as-is (resolves exactly)
-        assert_eq!(parse_gomod("go 1.21.4\n"), "1.21.4");
+        assert_eq!(parse_gomod("go 1.21.4\n", false), "1.21.4");
         // inline `//` comments and extra whitespace are ignored
-        assert_eq!(parse_gomod("go   1.20   // set by go mod tidy\n"), "1.20");
+        assert_eq!(
+            parse_gomod("go   1.20   // set by go mod tidy\n", false),
+            "1.20"
+        );
         // pre-releases are not resolvable -> skip the file
-        assert_eq!(parse_gomod("go 1.22rc1\n"), "");
+        assert_eq!(parse_gomod("go 1.22rc1\n", false), "");
         // an invalid pre-release toolchain falls back to a valid `go` line
-        assert_eq!(parse_gomod("go 1.21\ntoolchain go1.21rc1\n"), "1.21");
+        assert_eq!(parse_gomod("go 1.21\ntoolchain go1.21rc1\n", false), "1.21");
         // a partial (not fully-qualified) toolchain is not a real toolchain name;
         // fall back to the `go` directive
-        assert_eq!(parse_gomod("go 1.22\ntoolchain go1.22\n"), "1.22");
-        // a fully-qualified toolchain with no `go` directive is still usable
-        assert_eq!(parse_gomod("toolchain go1.22.0\n"), "1.22.0");
+        assert_eq!(parse_gomod("go 1.22\ntoolchain go1.22\n", false), "1.22");
         // a bare major-only directive is rejected (would resolve to the newest Go)
-        assert_eq!(parse_gomod("go 1\n"), "");
-        // no version directive -> empty (file skipped)
-        assert_eq!(parse_gomod("module example.com/m\n"), "");
+        assert_eq!(parse_gomod("go 1\n", false), "");
+    }
+
+    /// `idiomatic_version_file_ignore_minimum_versions` opts a project into the final
+    /// behavior early: the `go` directive is not read, and `toolchain` is unaffected.
+    #[test]
+    fn test_parse_gomod_ignore_minimum_versions() {
+        assert_eq!(parse_gomod("go 1.21\n", true), "");
+        assert_eq!(parse_gomod("go 1.21.4\n", true), "");
+        assert_eq!(parse_gomod("go 1.21\ntoolchain default\n", true), "");
+        assert_eq!(parse_gomod("go 1.21\ntoolchain go1.21.4\n", true), "1.21.4");
+        assert_eq!(parse_gomod("toolchain go1.21.4\n", true), "1.21.4");
     }
 }

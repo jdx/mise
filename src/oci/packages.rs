@@ -40,7 +40,7 @@ enum FsEntryKind {
     Other,
 }
 
-pub struct SystemPackagesLayer {
+pub(crate) struct SystemPackagesLayer {
     pub blob: LayerBlob,
     pub manager: &'static str,
 }
@@ -60,7 +60,7 @@ impl OciPackageManager {
     }
 }
 
-pub fn build_system_packages_layer(
+pub(crate) fn build_system_packages_layer(
     layout: &ImageLayout,
     base_layers: &[Descriptor],
     managers: &[ManagerPackages],

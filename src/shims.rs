@@ -23,7 +23,7 @@ use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
-pub async fn handle_shim() -> Result<()> {
+pub(crate) async fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
     let bin_name = *env::MISE_BIN_NAME;
     if env::is_mise_binary(bin_name) || cfg!(test) {
@@ -209,7 +209,7 @@ async fn which_shim(
 /// surfaces the opaque `cannot find binary path`; symlink shims already get
 /// this message directly from `which_shim`. See discussion #11183.
 #[cfg(not(test))]
-pub async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
+pub(crate) async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
     // Windows exe shims are invoked as `<tool>.exe`; name `<tool>` in the message.
     let bin_stem = bin_name
         .strip_suffix(std::env::consts::EXE_SUFFIX)
@@ -228,7 +228,7 @@ pub async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
     }
 }
 
-pub async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<()> {
+pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<()> {
     let _lock = LockFile::new(&dirs::SHIMS)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
@@ -589,7 +589,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, _shim: &str) -> Result<()> {
     Ok(())
 }
 
-pub struct ShimDiffs {
+pub(crate) struct ShimDiffs {
     pub missing: BTreeSet<String>,
     pub extra: BTreeSet<String>,
     pub desired: HashSet<String>,
@@ -597,7 +597,7 @@ pub struct ShimDiffs {
 
 // get_shim_diffs contrasts the actual shims on disk
 // with the desired shims specified by the Toolset
-pub async fn get_shim_diffs(
+pub(crate) async fn get_shim_diffs(
     config: &Arc<Config>,
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
@@ -921,7 +921,7 @@ pub(crate) fn inactive_installed_tool_message(
 /// binary has definitively failed to resolve, so the config/toolset load lands
 /// on a path that is about to abort anyway.
 #[cfg(not(test))]
-pub async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
+pub(crate) async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
     // Windows invokes binaries as `<tool>.exe`; name `<tool>` in the message.
     let bin_stem = bin_name
         .strip_suffix(std::env::consts::EXE_SUFFIX)
@@ -935,9 +935,7 @@ pub async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
     let settings = Settings::get();
     let enable_tools = settings.enable_tools();
     let disable_tools = settings.disable_tools();
-    // try_list_tools rather than list_tools: an error path must not panic
-    // because install state was never initialized.
-    let installed_shorts = crate::toolset::install_state::try_list_tools()?
+    let installed_shorts = crate::toolset::install_state::list_tools()
         .values()
         .filter(|t| !t.versions.is_empty())
         .map(|t| t.short.clone())

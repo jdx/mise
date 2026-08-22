@@ -20,13 +20,13 @@ use crate::ui::progress_report::SingleReport;
 use crate::{dirs, env};
 
 #[derive(Debug, Clone)]
-pub struct ScriptManager {
+pub(crate) struct ScriptManager {
     pub plugin_path: PathBuf,
     pub env: HashMap<OsString, OsString>,
 }
 
 #[derive(Debug, Clone)]
-pub enum Script {
+pub(crate) enum Script {
     Hook(String),
 
     // Plugin
@@ -98,7 +98,7 @@ static INITIAL_ENV: Lazy<HashMap<OsString, OsString>> = Lazy::new(|| {
 });
 
 impl ScriptManager {
-    pub fn new(plugin_path: PathBuf) -> Self {
+    pub(crate) fn new(plugin_path: PathBuf) -> Self {
         let mut env = INITIAL_ENV.clone();
         if let Some(failure) = env::var_os("MISE_FAILURE") {
             // used for testing failure cases
@@ -107,7 +107,7 @@ impl ScriptManager {
         Self { env, plugin_path }
     }
 
-    pub fn with_env<K, V>(mut self, k: K, v: V) -> Self
+    pub(crate) fn with_env<K, V>(mut self, k: K, v: V) -> Self
     where
         K: Into<OsString>,
         V: Into<OsString>,
@@ -116,7 +116,7 @@ impl ScriptManager {
         self
     }
 
-    pub fn without_env<K>(mut self, key: K) -> Self
+    pub(crate) fn without_env<K>(mut self, key: K) -> Self
     where
         K: Into<OsString>,
     {
@@ -139,7 +139,7 @@ impl ScriptManager {
         self
     }
 
-    pub fn prepend_path(&mut self, path: PathBuf) {
+    pub(crate) fn prepend_path(&mut self, path: PathBuf) {
         let k: OsString = PATH_KEY.to_string().into();
         let mut paths = env::split_paths(&self.env[&k]).collect::<Vec<_>>();
         paths.insert(0, path);
@@ -147,18 +147,18 @@ impl ScriptManager {
             .insert(PATH_KEY.to_string().into(), env::join_paths(paths).unwrap());
     }
 
-    pub fn get_script_path(&self, script: &Script) -> PathBuf {
+    pub(crate) fn get_script_path(&self, script: &Script) -> PathBuf {
         match script {
             Script::RunExternalCommand(path, _) => path.clone(),
             _ => self.plugin_path.join("bin").join(script.to_string()),
         }
     }
 
-    pub fn script_exists(&self, script: &Script) -> bool {
+    pub(crate) fn script_exists(&self, script: &Script) -> bool {
         self.get_script_path(script).is_file()
     }
 
-    pub fn cmd(&self, script: &Script) -> Expression {
+    pub(crate) fn cmd(&self, script: &Script) -> Expression {
         let args = match script {
             Script::ParseIdiomaticFile(filename) => vec![filename.clone()],
             Script::RunExternalCommand(_, args) => args.clone(),
@@ -177,7 +177,7 @@ impl ScriptManager {
         cmd
     }
 
-    pub fn read(&self, script: &Script) -> Result<String> {
+    pub(crate) fn read(&self, script: &Script) -> Result<String> {
         Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let mut cmd = self.cmd(script);
         let settings = &Settings::try_get()?;
@@ -188,7 +188,7 @@ impl ScriptManager {
             .wrap_err_with(|| ScriptFailed(display_path(self.get_script_path(script)), None))
     }
 
-    pub fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
+    pub(crate) fn run_by_line(&self, script: &Script, pr: &dyn SingleReport) -> Result<()> {
         Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let path = self.get_script_path(script);
         pr.set_message(display_path(&path));

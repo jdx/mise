@@ -36,7 +36,7 @@ use crate::system::resources::ResourceOrigin;
 use crate::ui::prompt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileMode {
+pub(crate) enum FileMode {
     /// symlink the target to the source — a file or the directory itself
     Symlink,
     /// source is a directory: recreate its directory structure under the
@@ -53,7 +53,7 @@ pub enum FileMode {
 }
 
 impl FileMode {
-    pub fn parse(s: &str) -> Option<Self> {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
         match s {
             "symlink" => Some(Self::Symlink),
             "symlink-each" => Some(Self::SymlinkEach),
@@ -63,7 +63,7 @@ impl FileMode {
         }
     }
 
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Symlink => "symlink",
             Self::SymlinkEach => "symlink-each",
@@ -77,7 +77,7 @@ impl FileMode {
 /// one `[dotfiles]` whole-file entry as written in mise.toml
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
-pub enum FileTomlEntry {
+pub(crate) enum FileTomlEntry {
     /// `"~/.gitconfig" = "dotfiles/gitconfig"`
     Source(String),
     /// `"~/.gitconfig" = { source = "...", mode = "..." }` — every field is
@@ -98,7 +98,7 @@ pub enum FileTomlEntry {
 
 /// one file entry, resolved against the config file that declared it
 #[derive(Debug, Clone)]
-pub struct FileRequest {
+pub(crate) struct FileRequest {
     /// target path as written in config (display/merge key)
     pub target_raw: String,
     /// absolute, lexically normalized target path (`~` expanded)
@@ -141,7 +141,7 @@ enum LoadedSymlinkEachState {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum FileState {
+pub(crate) enum FileState {
     Applied,
     Missing,
     /// target exists but doesn't match — the reason is human-readable
@@ -152,7 +152,7 @@ pub enum FileState {
 /// Aggregate whole-file `[dotfiles]` entries across all loaded config files.
 /// Keys union global -> local; a more local config overrides an entry for the
 /// same target. Malformed entries and unknown modes warn and are skipped.
-pub fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
+pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     let mut composed: IndexMap<PathBuf, Vec<FileRequest>> = IndexMap::new();
     for config_files in config.bootstrap_config_maps() {
         for request in files_from_config_files(config_files) {
@@ -257,7 +257,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
 /// Aggregate `[dotfiles]` across a specific set of config files. This is
 /// used by OCI builds, which intentionally scope config to project files by
 /// default instead of blindly inheriting global dotfiles.
-pub fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
+pub(crate) fn files_from_config_files(config_files: &ConfigMap) -> Vec<FileRequest> {
     // keyed by the *expanded* target so "~/.gitconfig" in one config and
     // its absolute spelling in another are one entry, not two
     let mut merged: IndexMap<PathBuf, FileRequest> = IndexMap::new();
@@ -416,7 +416,7 @@ fn merge_file_entry(
     }
 }
 
-pub fn default_mode() -> FileMode {
+pub(crate) fn default_mode() -> FileMode {
     let settings = Settings::get();
     let mode = settings.dotfiles.default_mode.as_str();
     match FileMode::parse(mode) {
@@ -428,11 +428,11 @@ pub fn default_mode() -> FileMode {
     }
 }
 
-pub fn dotfiles_root() -> PathBuf {
+pub(crate) fn dotfiles_root() -> PathBuf {
     file::replace_path(&Settings::get().dotfiles.root)
 }
 
-pub fn implied_source(target: &Path) -> Result<PathBuf> {
+pub(crate) fn implied_source(target: &Path) -> Result<PathBuf> {
     let home: &Path = &dirs::HOME;
     let rel = target.strip_prefix(home).map_err(|_| {
         eyre::eyre!(
@@ -446,7 +446,7 @@ pub fn implied_source(target: &Path) -> Result<PathBuf> {
     Ok(dotfiles_root().join(rel))
 }
 
-pub fn source_is_implied(req: &FileRequest) -> bool {
+pub(crate) fn source_is_implied(req: &FileRequest) -> bool {
     if req.mode == FileMode::Content {
         return false;
     }
@@ -456,7 +456,7 @@ pub fn source_is_implied(req: &FileRequest) -> bool {
     }
 }
 
-pub fn resolve_target_arg(target: &str) -> PathBuf {
+pub(crate) fn resolve_target_arg(target: &str) -> PathBuf {
     lexical_normalize(&file::replace_path(target))
 }
 
@@ -474,7 +474,7 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     normalized
 }
 
-pub fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
+pub(crate) fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> bool {
     filters.is_empty()
         || filters.iter().any(|filter| {
             filter == req_raw || {
@@ -484,7 +484,7 @@ pub fn matches_target(req_target: &Path, req_raw: &str, filters: &[String]) -> b
         })
 }
 
-pub fn copy_path(source: &Path, target: &Path) -> Result<()> {
+pub(crate) fn copy_path(source: &Path, target: &Path) -> Result<()> {
     if let Some(parent) = target.parent() {
         file::create_dir_all(parent)?;
     }
@@ -737,7 +737,7 @@ where
 /// templates (which run on
 /// every command in a trusted config); only `--dry-run` promises to execute
 /// nothing and therefore skips template checks entirely.
-pub fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
+pub(crate) fn check(config: &Config, req: &FileRequest) -> Result<FileState> {
     if req.mode != FileMode::Content && !req.source.exists() {
         return Ok(FileState::SourceMissing);
     }
@@ -913,7 +913,7 @@ fn check_content(target: &Path, expected: &[u8]) -> Result<FileState> {
     }
 }
 
-pub fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
+pub(crate) fn render_template(config: &Config, req: &FileRequest) -> Result<String> {
     let raw = file::read_to_string(&req.source)?;
     let mut tera = crate::tera::get_tera(Some(&req.base));
     let rendered = crate::tera::render_str(
@@ -1168,7 +1168,7 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
     Ok(out)
 }
 
-pub struct ApplyOpts {
+pub(crate) struct ApplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     /// replace conflicting targets (existing real files where a symlink
@@ -1178,7 +1178,7 @@ pub struct ApplyOpts {
     pub yes: bool,
 }
 
-pub struct ApplyPlan<'a> {
+pub(crate) struct ApplyPlan<'a> {
     todo: Vec<(&'a FileRequest, Option<String>)>,
     record_symlink_each: Vec<&'a FileRequest>,
 }
@@ -1188,11 +1188,11 @@ pub struct ApplyPlan<'a> {
 /// should go) are an error unless `force` is set — content updates for
 /// copy/template entries are not conflicts, overwriting is their job. Returns
 /// `false` when the user declines the confirmation prompt.
-pub fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
+pub(crate) fn apply(config: &Config, requests: &[FileRequest], opts: &ApplyOpts) -> Result<bool> {
     execute_apply(plan_apply(config, requests, opts)?, opts)
 }
 
-pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
+pub(crate) fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
     if plan.todo.is_empty() {
         if !opts.dry_run {
             for req in plan.record_symlink_each {
@@ -1252,7 +1252,7 @@ pub fn execute_apply(plan: ApplyPlan<'_>, opts: &ApplyOpts) -> Result<bool> {
 
 /// Plan and validate an apply without changing targets. Templates are rendered
 /// here so execution writes exactly the content that was validated.
-pub fn plan_apply<'a>(
+pub(crate) fn plan_apply<'a>(
     config: &Config,
     requests: &'a [FileRequest],
     opts: &ApplyOpts,
@@ -1340,7 +1340,7 @@ pub fn plan_apply<'a>(
     })
 }
 
-pub struct UnapplyOpts {
+pub(crate) struct UnapplyOpts {
     pub dry_run: bool,
     pub verbose: bool,
     /// remove targets whose ownership cannot be verified from their current
@@ -1350,7 +1350,7 @@ pub struct UnapplyOpts {
 }
 
 #[derive(Debug)]
-pub struct UnapplyPlan<'a> {
+pub(crate) struct UnapplyPlan<'a> {
     req: &'a FileRequest,
     paths: Vec<PathBuf>,
     /// directory-walking modes share their target with unmanaged files, so
@@ -1367,7 +1367,7 @@ pub struct UnapplyPlan<'a> {
 /// directories that may contain unmanaged files. Symlinks carry their own
 /// ownership evidence. Copies and templates must still match their source
 /// unless `--force` was given.
-pub fn plan_unapply<'a>(
+pub(crate) fn plan_unapply<'a>(
     requests: &'a [FileRequest],
     opts: &UnapplyOpts,
 ) -> Result<Vec<UnapplyPlan<'a>>> {
@@ -1391,7 +1391,7 @@ pub fn plan_unapply<'a>(
 
 /// Resolve checks that may execute user-authored template functions. This runs
 /// only after interactive confirmation, but still before any mutation.
-pub fn resolve_unapply(
+pub(crate) fn resolve_unapply(
     config: &Config,
     plans: &mut Vec<UnapplyPlan<'_>>,
     opts: &UnapplyOpts,
@@ -1459,7 +1459,7 @@ pub fn resolve_unapply(
     Ok(())
 }
 
-pub fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
+pub(crate) fn execute_unapply(plans: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> Result<()> {
     let todo = plans;
     if todo.is_empty() {
         info!("files: all files are unapplied");

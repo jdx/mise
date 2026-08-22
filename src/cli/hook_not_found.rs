@@ -9,7 +9,7 @@ use crate::toolset::ToolsetBuilder;
 /// [internal] called by shell when a command is not found
 #[derive(Debug, clap::Args)]
 #[clap(hide = true)]
-pub struct HookNotFound {
+pub(crate) struct HookNotFound {
     /// Attempted bin to run
     #[clap()]
     bin: String,
@@ -20,7 +20,7 @@ pub struct HookNotFound {
 }
 
 impl HookNotFound {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
         let settings = Settings::try_get()?;
         if settings.not_found_auto_install {

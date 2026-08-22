@@ -5,24 +5,63 @@
 # Enable idiomatic version files for go
 mise settings set idiomatic_version_file_enable_tools go
 
-# the `toolchain` directive is an exact pin and takes precedence over the
-# `go` directive (which is only a minimum version)
-cat >go.mod <<EOF
+# the `toolchain` directive is an exact pin of the toolchain the module builds
+# with, and takes precedence over the `go` directive. A `go` directive alongside
+# it is not read at all, so this must not warn -- `go` + `toolchain` together is
+# what `go mod tidy` writes, and it is the shape users should end up with.
+cat >go.mod <<GOMOD
 module example.com/m
 
 go 1.21
 toolchain go1.21.4
-EOF
+GOMOD
 assert "mise current go" "1.21.4"
+assert_not_contains "mise current go 2>&1" "deprecated"
 
-# `toolchain default` is ignored; the `go` directive is used, resolved to the
-# latest matching patch (a minimum version -> latest 1.21.x). Derive the expected
-# patch the same way resolution does, so the assertion tracks "latest matching".
-cat >go.mod <<EOF
+# a `toolchain` pin alone is enough, and also does not warn
+cat >go.mod <<GOMOD
+module example.com/m
+
+toolchain go1.21.4
+GOMOD
+assert "mise current go" "1.21.4"
+assert_not_contains "mise current go 2>&1" "deprecated"
+
+# the `go` directive is only a minimum compatible version. Deprecated: it still
+# resolves (to the latest matching patch) but warns. Removed in mise 2026.11.0,
+# along with this block.
+cat >go.mod <<GOMOD
 module example.com/m
 
 go 1.21
-toolchain default
-EOF
+GOMOD
 latest_121="$(mise ls-remote go@1.21 | tail -1)"
 assert "mise current go" "$latest_121"
+assert_contains "mise current go 2>&1" "deprecated [idiomatic.go.mod.go-directive]"
+
+# no usable directive at all -> the file is skipped
+cat >go.mod <<GOMOD
+module example.com/m
+GOMOD
+assert "mise current go" ""
+
+# projects can opt into the final behavior now: the `go` directive is not read and
+# nothing warns
+mise settings set idiomatic_version_file_ignore_minimum_versions true
+
+cat >go.mod <<GOMOD
+module example.com/m
+
+go 1.21
+GOMOD
+assert "mise current go" ""
+assert_not_contains "mise current go 2>&1" "deprecated"
+
+# ...and `toolchain` still resolves
+cat >go.mod <<GOMOD
+module example.com/m
+
+go 1.21
+toolchain go1.21.4
+GOMOD
+assert "mise current go" "1.21.4"

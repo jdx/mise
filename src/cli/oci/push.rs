@@ -29,7 +29,7 @@ use crate::oci::{BuildOptions, LayerOwner, registry};
 /// Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Push {
+pub(super) struct Push {
     /// Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
     #[clap(value_name = "REF")]
     reference: String,
@@ -87,7 +87,7 @@ pub struct Push {
 }
 
 impl Push {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         Settings::get().ensure_experimental("mise oci push")?;
 
         if !self.reference.contains('/') {

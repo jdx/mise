@@ -8,7 +8,7 @@ static SHOW_CURSOR: AtomicBool = AtomicBool::new(false);
 static CANCELLED: AtomicBool = AtomicBool::new(false);
 // static HANDLERS: OnceCell<Vec<Box<dyn Fn() + Send + Sync + 'static>>> = OnceCell::new();
 
-pub async fn exit_signal() -> i32 {
+pub(crate) async fn exit_signal() -> i32 {
     loop {
         tokio::signal::ctrl_c().await.unwrap();
         if SHOW_CURSOR.load(Ordering::Relaxed) {
@@ -26,17 +26,17 @@ pub async fn exit_signal() -> i32 {
     }
 }
 
-pub fn exit_on_ctrl_c(do_exit: bool) {
+pub(crate) fn exit_on_ctrl_c(do_exit: bool) {
     EXIT.store(do_exit, Ordering::Relaxed);
     CANCELLED.store(false, Ordering::Relaxed);
 }
 
 /// Returns true if ctrl-c has been received
-pub fn is_cancelled() -> bool {
+pub(crate) fn is_cancelled() -> bool {
     CANCELLED.load(Ordering::Relaxed)
 }
 
 /// ensures cursor is displayed on ctrl-c
-pub fn show_cursor_after_ctrl_c() {
+pub(crate) fn show_cursor_after_ctrl_c() {
     SHOW_CURSOR.store(true, Ordering::Relaxed);
 }

@@ -18,7 +18,7 @@ use serde::{Deserialize, Deserializer};
 use toml::Value;
 
 #[derive(Debug, Deserialize)]
-pub struct ToolStubFile {
+pub(crate) struct ToolStubFile {
     #[serde(default = "default_version")]
     pub version: String,
     pub bin: Option<String>,  // defaults to filename if not specified
@@ -35,12 +35,12 @@ pub struct ToolStubFile {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ToolStubLock {
+pub(crate) struct ToolStubLock {
     pub platforms: BTreeMap<String, ToolStubLockPlatform>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ToolStubLockPlatform {
+pub(crate) struct ToolStubLockPlatform {
     pub url: Option<String>,
     pub checksum: Option<String>,
 }
@@ -138,7 +138,7 @@ fn extract_toml_from_bootstrap(content: &str) -> Option<String> {
 }
 
 impl ToolStubFile {
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub(crate) fn from_file(path: &Path) -> Result<Self> {
         let content = file::read_to_string(path)?;
         let stub_name = path
             .file_name()
@@ -185,7 +185,7 @@ impl ToolStubFile {
     }
 
     // Create a ToolRequest directly using ToolVersionOptions
-    pub fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
+    pub(crate) fn to_tool_request(&self, stub_path: &Path) -> Result<ToolRequest> {
         use crate::cli::args::BackendArg;
 
         let mut backend_arg = BackendArg::from(&self.tool_name);
@@ -642,7 +642,7 @@ async fn execute_with_tool_request(
 /// For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
 #[derive(Debug, Parser)]
 #[clap(disable_help_flag = true, disable_version_flag = true)]
-pub struct ToolStub {
+pub(crate) struct ToolStub {
     /// Path to the TOML tool stub file to execute
     ///
     /// The stub file must contain TOML configuration specifying the tool
@@ -661,7 +661,7 @@ pub struct ToolStub {
 }
 
 impl ToolStub {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         // Ignore clap parsing and use raw args from env::ARGS to avoid version flag interception
         let file_str = self.file.to_string_lossy();
 

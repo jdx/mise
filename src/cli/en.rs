@@ -10,7 +10,7 @@ use crate::env;
 /// Note that changing directories will not update the mise environment.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct En {
+pub(crate) struct En {
     /// Directory to start the shell in
     #[clap(default_value = ".", verbatim_doc_comment, value_hint = clap::ValueHint::DirPath)]
     pub dir: PathBuf,
@@ -23,7 +23,7 @@ pub struct En {
 }
 
 impl En {
-    pub async fn run(self) -> eyre::Result<()> {
+    pub(crate) async fn run(self) -> eyre::Result<()> {
         env::set_current_dir(&self.dir)?;
         let shell = self.shell.unwrap_or((*env::SHELL).clone());
         let command = shell_words::split(&shell).map_err(|e| eyre::eyre!(e))?;

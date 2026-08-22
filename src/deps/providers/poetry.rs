@@ -9,12 +9,12 @@ use super::ProviderBase;
 
 /// Deps provider for Poetry (poetry.lock)
 #[derive(Debug)]
-pub struct PoetryDepsProvider {
+pub(crate) struct PoetryDepsProvider {
     base: ProviderBase,
 }
 
 impl PoetryDepsProvider {
-    pub fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(project_root: &Path, config: DepsProviderConfig) -> Self {
         Self {
             base: ProviderBase::new("poetry", project_root, config),
         }

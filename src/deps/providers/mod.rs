@@ -14,21 +14,21 @@ mod poetry;
 mod uv;
 mod yarn;
 
-pub use aube::AubeDepsProvider;
-pub use bun::BunDepsProvider;
-pub use bundler::BundlerDepsProvider;
-pub use composer::ComposerDepsProvider;
-pub use custom::CustomDepsProvider;
-pub use dart::DartDepsProvider;
-pub use deno::DenoDepsProvider;
-pub use git_submodule::GitSubmoduleDepsProvider;
-pub use go::GoDepsProvider;
-pub use npm::NpmDepsProvider;
-pub use pip::PipDepsProvider;
-pub use pnpm::PnpmDepsProvider;
-pub use poetry::PoetryDepsProvider;
-pub use uv::UvDepsProvider;
-pub use yarn::YarnDepsProvider;
+pub(crate) use aube::AubeDepsProvider;
+pub(crate) use bun::BunDepsProvider;
+pub(crate) use bundler::BundlerDepsProvider;
+pub(crate) use composer::ComposerDepsProvider;
+pub(crate) use custom::CustomDepsProvider;
+pub(crate) use dart::DartDepsProvider;
+pub(crate) use deno::DenoDepsProvider;
+pub(crate) use git_submodule::GitSubmoduleDepsProvider;
+pub(crate) use go::GoDepsProvider;
+pub(crate) use npm::NpmDepsProvider;
+pub(crate) use pip::PipDepsProvider;
+pub(crate) use pnpm::PnpmDepsProvider;
+pub(crate) use poetry::PoetryDepsProvider;
+pub(crate) use uv::UvDepsProvider;
+pub(crate) use yarn::YarnDepsProvider;
 
 use std::path::{Path, PathBuf};
 
@@ -40,14 +40,18 @@ use crate::task::task_source_checker::expand_glob_braces;
 /// Shared base for all deps providers, holding the id, project root, and config.
 /// Provides common implementations for `id` and `is_auto`.
 #[derive(Debug)]
-pub struct ProviderBase {
+pub(crate) struct ProviderBase {
     pub(crate) id: String,
     pub(crate) project_root: PathBuf,
     pub(crate) config: DepsProviderConfig,
 }
 
 impl ProviderBase {
-    pub fn new(id: impl Into<String>, project_root: &Path, config: DepsProviderConfig) -> Self {
+    pub(crate) fn new(
+        id: impl Into<String>,
+        project_root: &Path,
+        config: DepsProviderConfig,
+    ) -> Self {
         Self {
             id: id.into(),
             project_root: project_root.to_path_buf(),
@@ -55,20 +59,20 @@ impl ProviderBase {
         }
     }
 
-    pub fn is_auto(&self) -> bool {
+    pub(crate) fn is_auto(&self) -> bool {
         self.config.auto
     }
 
     /// Returns the effective root directory for resolving sources/outputs.
     /// When `dir` is set in config, returns `project_root/dir`; otherwise `project_root`.
-    pub fn config_root(&self) -> PathBuf {
+    pub(crate) fn config_root(&self) -> PathBuf {
         match &self.config.dir {
             Some(dir) => self.project_root.join(dir),
             None => self.project_root.clone(),
         }
     }
 
-    pub fn sources(&self, default: Vec<PathBuf>) -> Vec<PathBuf> {
+    pub(crate) fn sources(&self, default: Vec<PathBuf>) -> Vec<PathBuf> {
         self.config
             .sources
             .as_deref()
@@ -76,7 +80,7 @@ impl ProviderBase {
             .unwrap_or(default)
     }
 
-    pub fn outputs(&self, default: Vec<PathBuf>) -> Vec<PathBuf> {
+    pub(crate) fn outputs(&self, default: Vec<PathBuf>) -> Vec<PathBuf> {
         self.config
             .outputs
             .as_deref()
@@ -84,7 +88,7 @@ impl ProviderBase {
             .unwrap_or(default)
     }
 
-    pub fn optional_outputs(&self, default: Vec<PathBuf>) -> Vec<PathBuf> {
+    pub(crate) fn optional_outputs(&self, default: Vec<PathBuf>) -> Vec<PathBuf> {
         if self.config.outputs.is_some() {
             vec![]
         } else {
@@ -96,7 +100,7 @@ impl ProviderBase {
     /// expanding glob matches. This distinguishes omitted defaults, explicit
     /// replacements, and an explicit empty list while keeping the identity
     /// unchanged when files matching a glob are added or removed.
-    pub fn output_rules_hash(&self) -> String {
+    pub(crate) fn output_rules_hash(&self) -> String {
         let rules = serde_json::to_string(&(&self.config.dir, &self.config.outputs))
             .expect("deps output rules should serialize");
         crate::hash::hash_blake3_to_str(&rules)

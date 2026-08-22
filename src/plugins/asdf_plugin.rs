@@ -28,7 +28,7 @@ use std::{collections::HashMap, sync::Arc};
 use xx::regex;
 
 #[derive(Debug)]
-pub struct AsdfPlugin {
+pub(crate) struct AsdfPlugin {
     pub name: String,
     pub plugin_path: PathBuf,
     pub repo: Mutex<Git>,
@@ -102,7 +102,10 @@ impl AsdfPlugin {
         }
         Ok(())
     }
-    pub fn fetch_remote_versions(&self, script_man: &ScriptManager) -> eyre::Result<Vec<String>> {
+    pub(crate) fn fetch_remote_versions(
+        &self,
+        script_man: &ScriptManager,
+    ) -> eyre::Result<Vec<String>> {
         Settings::ensure_not_safe("executing asdf plugin scripts")?;
         let cmd = script_man.cmd(&Script::ListAll);
         let result = run_with_timeout(
@@ -139,7 +142,10 @@ impl AsdfPlugin {
             .map(|v| regex!(r"^v(\d+)").replace(v, "$1").to_string())
             .collect())
     }
-    pub fn fetch_latest_stable(&self, script_man: &ScriptManager) -> eyre::Result<Option<String>> {
+    pub(crate) fn fetch_latest_stable(
+        &self,
+        script_man: &ScriptManager,
+    ) -> eyre::Result<Option<String>> {
         let latest_stable = script_man.read(&Script::LatestStable)?.trim().to_string();
         Ok(if latest_stable.is_empty() {
             None
@@ -148,24 +154,24 @@ impl AsdfPlugin {
         })
     }
 
-    pub fn fetch_idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
+    pub(crate) fn fetch_idiomatic_filenames(&self) -> eyre::Result<Vec<String>> {
         let stdout = self.script_man.read(&Script::ListIdiomaticFilenames)?;
         Ok(self.parse_idiomatic_filenames(&stdout))
     }
-    pub fn parse_idiomatic_filenames(&self, data: &str) -> Vec<String> {
+    pub(crate) fn parse_idiomatic_filenames(&self, data: &str) -> Vec<String> {
         data.split_whitespace().map(|v| v.into()).collect()
     }
-    pub fn has_list_alias_script(&self) -> bool {
+    pub(crate) fn has_list_alias_script(&self) -> bool {
         self.script_man.script_exists(&Script::ListAliases)
     }
-    pub fn has_list_idiomatic_filenames_script(&self) -> bool {
+    pub(crate) fn has_list_idiomatic_filenames_script(&self) -> bool {
         self.script_man
             .script_exists(&Script::ListIdiomaticFilenames)
     }
-    pub fn has_latest_stable_script(&self) -> bool {
+    pub(crate) fn has_latest_stable_script(&self) -> bool {
         self.script_man.script_exists(&Script::LatestStable)
     }
-    pub fn fetch_aliases(&self) -> eyre::Result<Vec<(String, String)>> {
+    pub(crate) fn fetch_aliases(&self) -> eyre::Result<Vec<(String, String)>> {
         let stdout = self.script_man.read(&Script::ListAliases)?;
         Ok(self.parse_aliases(&stdout))
     }

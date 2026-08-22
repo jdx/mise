@@ -21,37 +21,63 @@ static REMOTE_TASK_ARTIFACTS: LazyLock<RemoteTaskArtifacts> = LazyLock::new(Dash
 static REMOTE_TASK_ARTIFACT_SCOPES: Mutex<usize> = Mutex::new(0);
 
 /// Keeps no-cache remote task snapshots alive for one command or direct caller.
-pub(crate) struct RemoteTaskArtifactsGuard;
+pub(crate) struct RemoteTaskArtifactsGuard(());
 
 impl RemoteTaskArtifactsGuard {
     pub(crate) fn new() -> Self {
         *REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap() += 1;
-        Self
+        Self(())
     }
 }
 
 impl Drop for RemoteTaskArtifactsGuard {
     fn drop(&mut self) {
-        let mut scopes = REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap();
-        *scopes -= 1;
-        if *scopes == 0 {
-            REMOTE_TASK_ARTIFACTS.clear();
-        }
+        let (include_artifacts, task_artifacts) = {
+            let mut scopes = REMOTE_TASK_ARTIFACT_SCOPES.lock().unwrap();
+            *scopes -= 1;
+            if *scopes != 0 {
+                return;
+            }
+            (
+                crate::config::take_remote_task_include_artifacts(),
+                take_remote_task_artifacts(),
+            )
+        };
+        drop(include_artifacts);
+        drop(task_artifacts);
     }
 }
 
+fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
+    let keys = REMOTE_TASK_ARTIFACTS
+        .iter()
+        .map(|entry| entry.key().clone())
+        .collect::<Vec<_>>();
+    keys.into_iter()
+        .filter_map(|key| {
+            REMOTE_TASK_ARTIFACTS
+                .remove(&key)
+                .map(|(_, artifact)| artifact)
+        })
+        .collect()
+}
+
 /// Handles fetching remote task files and converting them to local paths
-pub struct TaskFetcher {
+pub(crate) struct TaskFetcher {
     no_cache: bool,
 }
 
 impl TaskFetcher {
-    pub fn new(no_cache: bool) -> Self {
+    pub(crate) fn new(no_cache: bool) -> Self {
         Self { no_cache }
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
-    pub async fn fetch_tasks(&self, config: &Arc<Config>, tasks: &mut Vec<Task>) -> Result<()> {
+    pub(crate) async fn fetch_tasks(
+        &self,
+        config: &Arc<Config>,
+        tasks: &mut Vec<Task>,
+    ) -> Result<()> {
         let no_cache = self.no_cache || Settings::get().task.remote_no_cache.unwrap_or(false);
         let task_file_providers = TaskFileProvidersBuilder::new()
             .with_cache(!no_cache)
@@ -134,7 +160,7 @@ impl TaskFetcher {
     }
 
     /// Check if a source path is a remote task file (git or http/https)
-    pub fn is_remote_source(source: &str) -> bool {
+    pub(crate) fn is_remote_source(source: &str) -> bool {
         source.starts_with("git::")
             || source.starts_with("http://")
             || source.starts_with("https://")
@@ -167,6 +193,7 @@ mod tests {
             },
             Arc::new(OnceCell::new()),
         );
+
         drop(inner);
         assert_eq!(REMOTE_TASK_ARTIFACTS.len(), 1);
 

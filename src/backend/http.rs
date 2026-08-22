@@ -144,7 +144,7 @@ impl FileInfo {
 }
 
 #[derive(Debug)]
-pub struct HttpBackend {
+pub(crate) struct HttpBackend {
     ba: Arc<BackendArg>,
 }
 
@@ -190,6 +190,10 @@ impl<'a> HttpOptions<'a> {
 
     fn bin_path(&self) -> Option<String> {
         self.values.platform_string("bin_path")
+    }
+
+    fn windows_script_interpreter(&self) -> Option<String> {
+        self.values.platform_string("windows_script_interpreter")
     }
 
     fn checksum_expr(&self) -> Option<&'a str> {
@@ -246,7 +250,7 @@ impl<'a> HttpOptions<'a> {
 }
 
 impl HttpBackend {
-    pub fn from_arg(ba: BackendArg) -> Self {
+    pub(crate) fn from_arg(ba: BackendArg) -> Self {
         Self { ba: Arc::new(ba) }
     }
 
@@ -335,6 +339,13 @@ impl HttpBackend {
             if let Some(bin_path) = opts.bin_path() {
                 parts.push(format!("binpath_{bin_path}"));
             }
+        }
+
+        if let Some(interpreter) = opts.windows_script_interpreter() {
+            parts.push(format!(
+                "windows_script_interpreter_{}",
+                hash::hash_blake3_to_str(&interpreter)
+            ));
         }
 
         let key = parts.join("_");
@@ -620,6 +631,10 @@ impl HttpBackend {
         file::copy(file_path, &dest_file)?;
 
         file::make_executable(&dest_file)?;
+        #[cfg(windows)]
+        if let Some(interpreter) = opts.windows_script_interpreter() {
+            write_windows_script_launcher(&dest_file, &interpreter)?;
+        }
         Ok(ExtractionType::RawFile { filename })
     }
 
@@ -969,8 +984,41 @@ impl HttpBackend {
     }
 }
 
+#[cfg(any(windows, test))]
+fn windows_script_launcher(script: &Path, interpreter: &str) -> Result<(PathBuf, String)> {
+    ensure_plain_bin_name("windows_script_interpreter", interpreter)?;
+    if interpreter.is_empty()
+        || !interpreter
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    {
+        eyre::bail!("windows_script_interpreter: {interpreter:?} must be a plain executable name");
+    }
+    let filename = script
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .ok_or_else(|| eyre::eyre!("Windows script launcher requires a UTF-8 file name"))?;
+    ensure_plain_bin_name("windows script", filename)?;
+    if filename.is_empty()
+        || !filename
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+    {
+        eyre::bail!("Windows script file name {filename:?} contains unsupported characters");
+    }
+    let launcher = script.with_file_name(format!("{filename}.cmd"));
+    let body = format!("@echo off\r\n{interpreter} \"%~dp0{filename}\" %*\r\n");
+    Ok((launcher, body))
+}
+
+#[cfg(windows)]
+fn write_windows_script_launcher(script: &Path, interpreter: &str) -> Result<()> {
+    let (launcher, body) = windows_script_launcher(script, interpreter)?;
+    file::write(launcher, body)
+}
+
 /// Returns install-time-only option keys for HTTP backend.
-pub fn install_time_option_keys() -> Vec<String> {
+pub(crate) fn install_time_option_keys() -> Vec<String> {
     vec![
         "url".into(),
         "checksum".into(),
@@ -980,6 +1028,7 @@ pub fn install_time_option_keys() -> Vec<String> {
         "version_expr".into(),
         "format".into(),
         "rename_exe".into(),
+        "windows_script_interpreter".into(),
         "checksum_url".into(),
         "checksum_expr".into(),
     ]
@@ -1289,6 +1338,21 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::toolset::{ToolRequest, ToolSource};
+
+    #[test]
+    fn windows_script_launcher_preserves_script_filename() {
+        for filename in ["tool", "tool.js", "tool.cmd"] {
+            let script = Path::new("C:/tools").join(filename);
+            let (launcher, body) = windows_script_launcher(&script, "node").unwrap();
+            assert_eq!(launcher, script.with_file_name(format!("{filename}.cmd")));
+            assert_eq!(
+                body,
+                format!("@echo off\r\nnode \"%~dp0{filename}\" %*\r\n")
+            );
+            assert_ne!(launcher, script);
+        }
+        assert!(windows_script_launcher(Path::new("tool.js"), "node & echo injected").is_err());
+    }
 
     fn http_test_tv(version: &str) -> ToolVersion {
         http_test_tv_with_installs(version, None)

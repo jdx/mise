@@ -28,12 +28,12 @@ use tempfile::tempdir_in;
 const SWIFT_PLATFORM_OPTION: &str = "swift_platform";
 
 #[derive(Debug)]
-pub struct SwiftPlugin {
+pub(super) struct SwiftPlugin {
     ba: Arc<BackendArg>,
 }
 
 impl SwiftPlugin {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             ba: Arc::new(plugins::core::new_backend_arg("swift")),
         }

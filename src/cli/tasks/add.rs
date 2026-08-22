@@ -11,7 +11,7 @@ use toml_edit::Item;
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksAdd {
+pub(super) struct TasksAdd {
     /// Tasks name to add
     #[clap()]
     task: String,
@@ -71,7 +71,7 @@ pub struct TasksAdd {
 }
 
 impl TasksAdd {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         if self.file {
             let mut path = Task::task_dir()
                 .await?

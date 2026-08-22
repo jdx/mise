@@ -4,13 +4,13 @@ use mlua::Lua;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-pub struct HookFunc {
+pub(super) struct HookFunc {
     _name: &'static str,
     pub filename: &'static str,
 }
 
 #[rustfmt::skip]
-pub const HOOK_FUNCS: [HookFunc; 15] = [
+pub(super) const HOOK_FUNCS: [HookFunc; 15] = [
     HookFunc { _name: "Available", filename: "available" },
     HookFunc { _name: "PreInstall", filename: "pre_install" },
     HookFunc { _name: "EnvKeys", filename: "env_keys" },
@@ -34,7 +34,7 @@ pub const HOOK_FUNCS: [HookFunc; 15] = [
     HookFunc { _name: "MisePath", filename: "mise_path" },
 ];
 
-pub fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
+pub(crate) fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
     let mut hooks = BTreeSet::new();
     for hook in &HOOK_FUNCS {
         let hook_path = root.join("hooks").join(format!("{}.lua", hook.filename));
@@ -46,7 +46,10 @@ pub fn mod_hooks(lua: &Lua, root: &Path) -> Result<BTreeSet<&'static str>> {
     Ok(hooks)
 }
 
-pub fn hooks_embedded(lua: &Lua, embedded: &EmbeddedPlugin) -> Result<BTreeSet<&'static str>> {
+pub(crate) fn hooks_embedded(
+    lua: &Lua,
+    embedded: &EmbeddedPlugin,
+) -> Result<BTreeSet<&'static str>> {
     let mut hooks = BTreeSet::new();
 
     // Get package.loaded table to preload hooks

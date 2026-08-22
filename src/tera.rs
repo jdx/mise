@@ -34,7 +34,7 @@ fn track_tera_file(path: &Path) {
 }
 
 /// Take all tracked files, clearing the global list.
-pub fn take_tera_accessed_files() -> Vec<PathBuf> {
+pub(crate) fn take_tera_accessed_files() -> Vec<PathBuf> {
     let mut files = TERA_ACCESSED_FILES
         .lock()
         .map(|mut f| std::mem::take(&mut *f))
@@ -49,11 +49,11 @@ pub fn take_tera_accessed_files() -> Vec<PathBuf> {
 /// Tera 1.20.1's grammar starts every variable, tag, and comment block with
 /// `{{`, `{%`, or `{#` respectively, including whitespace-trimmed forms like
 /// `{{-`, `{%-`, and `{#-`.
-pub fn contains_template_syntax(input: &str) -> bool {
+pub(crate) fn contains_template_syntax(input: &str) -> bool {
     input.contains("{{") || input.contains("{%") || input.contains("{#")
 }
 
-pub enum TeraEngine {
+pub(crate) enum TeraEngine {
     V2(Box<Tera>),
     V1(Box<tera1::Tera>),
 }
@@ -80,11 +80,15 @@ impl TeraEngine {
     }
 }
 
-pub fn render_str(tera: &mut TeraEngine, input: &str, context: &Context) -> TeraResult<String> {
+pub(crate) fn render_str(
+    tera: &mut TeraEngine,
+    input: &str,
+    context: &Context,
+) -> TeraResult<String> {
     tera.render_str(input, context)
 }
 
-pub fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
+pub(crate) fn render_str_v2(tera: &mut Tera, input: &str, context: &Context) -> TeraResult<String> {
     tera.render_str(input, context, false)
 }
 
@@ -305,7 +309,7 @@ fn tera_v1_float(value: Value, args: Kwargs) -> TeraResult<Value> {
     }
 }
 
-pub static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
+pub(crate) static BASE_CONTEXT: Lazy<Context> = Lazy::new(|| {
     let mut context = Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("mise_bin", &*env::MISE_BIN);
@@ -1272,13 +1276,13 @@ fn safe_disabled_fn_v1(
 /// because they are only registered in [`get_tera`], not in `TERA` itself — so they
 /// cannot accidentally become available here if `TERA` changes in the future. This also
 /// intentionally ignores `tera_v1`, since Settings are not fully loaded at this stage.
-pub fn get_miserc_tera() -> TeraEngine {
+pub(crate) fn get_miserc_tera() -> TeraEngine {
     TeraEngine::V2(Box::new(TERA.clone()))
 }
 
 /// Returns a renderer without mise's custom template functions or filters.
 /// Unlike [`get_miserc_tera`], this respects the configured Tera version.
-pub fn get_empty_tera() -> TeraEngine {
+pub(crate) fn get_empty_tera() -> TeraEngine {
     if use_tera_v1() {
         TeraEngine::V1(Box::default())
     } else {
@@ -1286,7 +1290,7 @@ pub fn get_empty_tera() -> TeraEngine {
     }
 }
 
-pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
+pub(crate) fn get_tera(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {
         TeraEngine::V1(Box::new(get_tera_v1(dir)))
     } else {
@@ -1302,7 +1306,7 @@ pub fn get_tera(dir: Option<&Path>) -> TeraEngine {
 /// `arch` a platform arch name (e.g. "x64", "arm64"), matching the values
 /// returned by the host-bound functions. Remap arguments such as
 /// `os(macos="darwin")` and `arch(x64="amd64")` keep the same semantics.
-pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngine {
+pub(crate) fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngine {
     // os_family() must follow the target too, not the host.
     let family = if os == "windows" { "windows" } else { "unix" };
     if use_tera_v1() {
@@ -1363,7 +1367,7 @@ pub fn get_tera_for_target(dir: Option<&Path>, os: &str, arch: &str) -> TeraEngi
 /// resolved, but `os()`/`arch()` are deferred so the backend can re-render them
 /// for the host at install time or for an arbitrary target during cross-platform
 /// `mise lock`. Mirrors how `{{ version }}` is preserved via a placeholder.
-pub fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
+pub(crate) fn get_tera_preserving_os_arch(dir: Option<&Path>) -> TeraEngine {
     if use_tera_v1() {
         let mut tera = get_tera_v1(dir);
         tera.register_function("os", reemit_template_fn_v1("os"));
@@ -1503,7 +1507,7 @@ fn reemit_arg_literal(v: &serde_json::Value) -> Option<String> {
     }
 }
 
-pub fn tera_exec(
+pub(crate) fn tera_exec(
     dir: Option<PathBuf>,
     env: EnvMap,
 ) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
@@ -1609,7 +1613,7 @@ pub fn tera_exec(
     }
 }
 
-pub fn tera_read_file(dir: Option<PathBuf>) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+pub(crate) fn tera_read_file(dir: Option<PathBuf>) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
     move |args: Kwargs, _: &State| -> TeraResult<Value> {
         match args.get::<String>("path")? {
             Some(path_str) => {

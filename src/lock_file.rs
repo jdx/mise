@@ -6,15 +6,15 @@ use crate::dirs;
 use crate::file::{create_dir_all, display_path};
 use crate::hash::hash_to_str;
 
-pub type OnLockedFn = Box<dyn Fn(&Path)>;
+pub(crate) type OnLockedFn = Box<dyn Fn(&Path)>;
 
-pub struct LockFile {
+pub(crate) struct LockFile {
     path: PathBuf,
     on_locked: Option<OnLockedFn>,
 }
 
 impl LockFile {
-    pub fn new(path: &Path) -> Self {
+    pub(crate) fn new(path: &Path) -> Self {
         let path = dirs::CACHE.join("lockfiles").join(hash_to_str(&path));
         Self {
             path,
@@ -22,7 +22,7 @@ impl LockFile {
         }
     }
 
-    pub fn with_callback<F>(mut self, cb: F) -> Self
+    pub(crate) fn with_callback<F>(mut self, cb: F) -> Self
     where
         F: Fn(&Path) + 'static,
     {
@@ -30,7 +30,7 @@ impl LockFile {
         self
     }
 
-    pub fn lock(self) -> Result<fslock::LockFile> {
+    pub(crate) fn lock(self) -> Result<fslock::LockFile> {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
@@ -42,6 +42,19 @@ impl LockFile {
             lock.lock()?;
         }
         Ok(lock)
+    }
+
+    #[cfg(feature = "self_update")]
+    pub(crate) fn try_lock(self) -> Result<Option<fslock::LockFile>> {
+        if let Some(parent) = self.path.parent() {
+            create_dir_all(parent)?;
+        }
+        let mut lock = fslock::LockFile::open(&self.path)?;
+        if lock.try_lock()? {
+            Ok(Some(lock))
+        } else {
+            Ok(None)
+        }
     }
 }
 

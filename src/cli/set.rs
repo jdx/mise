@@ -25,7 +25,7 @@ use tabled::Tabled;
 /// Use `-E <env>` to create/modify environment-specific config files like `mise.<env>.toml`.
 #[derive(Debug, clap::Args)]
 #[clap(aliases = ["ev", "env-vars"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Set {
+pub(crate) struct Set {
     /// Environment variable(s) to set
     /// e.g.: NODE_ENV=production
     #[clap(value_name = "ENV_VAR", verbatim_doc_comment)]
@@ -113,7 +113,7 @@ impl Set {
             Ok(value.to_string())
         }
     }
-    pub async fn run(mut self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
         if self.complete {
             return self.complete().await;
         }
@@ -130,7 +130,7 @@ impl Set {
         }
 
         let filename = self.filename()?;
-        let mut mise_toml = get_mise_toml(&filename)?;
+        let mut mise_toml = get_mise_toml(&filename).await?;
 
         if let Some(env_names) = &self.remove {
             for name in env_names {
@@ -450,8 +450,11 @@ impl Set {
     }
 }
 
-fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
+async fn get_mise_toml(filename: &Path) -> Result<MiseToml> {
     let path = env::current_dir()?.join(filename);
+    // Before the exists/does-not-exist split, so a `.tool-versions` says why it is refused instead
+    // of failing later as invalid TOML, and so a name mise cannot read back is never created.
+    crate::config::config_file::ensure_writable_as_toml(&path).await?;
     let mise_toml = if path.exists() {
         MiseToml::from_file(&path)?
     } else {

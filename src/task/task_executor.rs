@@ -3,7 +3,9 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
+use crate::file::{
+    can_execute_directly, canonicalize_or_self, display_path, replace_path, strip_utf8_bom,
+};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
@@ -16,7 +18,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_scheduler::SchedMsg;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
-    remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
+    remove_auto_output, save_checksum, sources_are_fresh, task_cwd, task_source_match_root,
 };
 use crate::task::{
     Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
@@ -269,7 +271,7 @@ fn append_inline_args(script: &str, args: &[String], style: InlineArgsStyle) -> 
 }
 
 /// Configuration for TaskExecutor
-pub struct TaskExecutorConfig {
+pub(crate) struct TaskExecutorConfig {
     pub force: bool,
     pub cd: Option<PathBuf>,
     pub shell: Option<String>,
@@ -287,7 +289,7 @@ pub struct TaskExecutorConfig {
 }
 
 /// Executes tasks with proper context, environment, and output handling
-pub struct TaskExecutor {
+pub(crate) struct TaskExecutor {
     pub context_builder: TaskContextBuilder,
     pub output_handler: OutputHandler,
     pub failed_tasks: FailedTasks,
@@ -311,7 +313,7 @@ pub struct TaskExecutor {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TaskRunOutcome {
+pub(crate) struct TaskRunOutcome {
     pub did_work: bool,
     pub cache_key: Option<String>,
 }
@@ -337,7 +339,7 @@ impl TaskCacheStats {
 }
 
 impl TaskExecutor {
-    pub fn new(
+    pub(crate) fn new(
         context_builder: TaskContextBuilder,
         output_handler: OutputHandler,
         config: TaskExecutorConfig,
@@ -364,15 +366,15 @@ impl TaskExecutor {
         }
     }
 
-    pub fn is_stopping(&self) -> bool {
+    pub(crate) fn is_stopping(&self) -> bool {
         self.is_interrupted() || !self.failed_tasks.lock().unwrap().is_empty()
     }
 
-    pub fn is_interrupted(&self) -> bool {
+    pub(crate) fn is_interrupted(&self) -> bool {
         self.interrupted.load(Ordering::Relaxed)
     }
 
-    pub fn mark_interrupted(&self) {
+    pub(crate) fn mark_interrupted(&self) {
         self.interrupted.store(true, Ordering::Relaxed);
     }
 
@@ -383,7 +385,7 @@ impl TaskExecutor {
         Ok(())
     }
 
-    pub fn add_failed_task(&self, task: Task, status: Option<i32>) {
+    pub(crate) fn add_failed_task(&self, task: Task, status: Option<i32>) {
         let mut failed = self.failed_tasks.lock().unwrap();
         failed.push((task, status.or(Some(1))));
     }
@@ -476,6 +478,8 @@ impl TaskExecutor {
                     "MISE_CACHE_SOCKET".into(),
                     "MISE_CACHE_STAGING_DIR".into(),
                     "MISE_CACHE_TASK".into(),
+                    "MISE_CACHE_CARGO_TARGET_DIR".into(),
+                    "MISE_CACHE_TASK_ROOT".into(),
                     "MISE_CACHE_RUST_VERIFY".into(),
                     "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
                     "RUSTC_WRAPPER".into(),
@@ -487,7 +491,7 @@ impl TaskExecutor {
         Ok(sandbox)
     }
 
-    pub fn task_timings(&self, task: Option<&Task>) -> bool {
+    pub(crate) fn task_timings(&self, task: Option<&Task>) -> bool {
         // Resolve the style/verbosity for *this* task so a per-task `output`
         // override is honored (e.g. a task with `output = "interleave"` must not
         // get a timing line just because the global default is `prefix`).
@@ -504,7 +508,7 @@ impl TaskExecutor {
 
     /// Run a task, returning whether it did work and any stable artifact identity
     /// it produced or reused.
-    pub async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
+    pub(crate) async fn run_task_sched(&self, ctx: TaskRunContext<'_>) -> Result<TaskRunOutcome> {
         let TaskRunContext {
             task,
             config,
@@ -707,8 +711,12 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
-        let action_cache_run = if let Some(session) = self.cache_session.as_ref() {
-            session.apply(task, &mut env).await
+        let action_cache_run = if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
+            && let Some(session) = self.cache_session.as_ref()
+        {
+            let task_cwd = task_cwd(task, config).await?;
+            let task_root = canonicalize_or_self(&task_source_match_root(&task_cwd, config));
+            session.apply(task, &task_root, &mut env).await
         } else {
             None
         };
@@ -1853,7 +1861,11 @@ impl TaskExecutor {
     /// Validate a task invocation before the scheduler starts any task commands.
     /// Runtime execution repeats this work so configuration changes made while
     /// dependencies run are still detected.
-    pub async fn preflight_task_usage(&self, config: &Arc<Config>, task: &Task) -> Result<()> {
+    pub(crate) async fn preflight_task_usage(
+        &self,
+        config: &Arc<Config>,
+        task: &Task,
+    ) -> Result<()> {
         if task.should_bypass_usage_parser() {
             return Ok(());
         }

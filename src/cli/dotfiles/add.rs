@@ -20,7 +20,7 @@ use crate::ui::prompt;
 /// under `dotfiles.root` unless `--source` is provided.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesAdd {
+pub(crate) struct DotfilesAdd {
     /// Targets to add or update
     #[clap(value_name = "TARGET", required = true)]
     pub(super) targets: Vec<String>,
@@ -66,7 +66,7 @@ pub struct DotfilesAdd {
 }
 
 impl DotfilesAdd {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
         }

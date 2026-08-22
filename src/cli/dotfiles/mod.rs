@@ -19,7 +19,7 @@ pub(crate) use unapply::DotfilesUnapply;
 /// Use `mise bootstrap dotfiles` instead.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true)]
-pub struct Dotfiles {
+pub(crate) struct Dotfiles {
     #[clap(subcommand)]
     command: Commands,
 }
@@ -39,7 +39,7 @@ enum Commands {
 }
 
 impl Dotfiles {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         deprecated_at!(
             "2027.2.0",
             "2028.2.0",

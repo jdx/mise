@@ -27,7 +27,7 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["i", "a", "add"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP
 )]
-pub struct PluginsInstall {
+pub(crate) struct PluginsInstall {
     /// The name of the plugin to install
     /// e.g.: cmake, poetry
     /// Can specify multiple plugins: `mise plugins install cmake poetry`
@@ -64,7 +64,7 @@ pub struct PluginsInstall {
 }
 
 impl PluginsInstall {
-    pub async fn run(self, config: &Arc<Config>) -> Result<()> {
+    pub(crate) async fn run(self, config: &Arc<Config>) -> Result<()> {
         let this = Arc::new(self);
         if this.all {
             return this.install_all_missing_plugins(config).await;

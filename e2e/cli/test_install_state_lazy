@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Install state loads per tool: exec/env resolve the tools they use without
+# enumerating the whole installs dir (a readdir per installed tool plus stats
+# per version, which dominated startup for users with many tools). Enumerating
+# commands still scan everything.
+
+mise install dummy@1.0.0 tiny@3.1.0
+
+cat >mise.toml <<'TOML'
+[tools]
+dummy = "1.0.0"
+TOML
+
+# The full scan is instrumented; its absence from the timings proves the
+# per-tool path served resolution.
+out="$(MISE_TIMINGS=1 mise x -- true 2>&1)"
+assert_contains_text "$out" "install_state"
+assert_not_contains_text "$out" "full_scan_tools"
+
+out="$(MISE_TIMINGS=1 mise env 2>&1)"
+assert_not_contains_text "$out" "full_scan_tools"
+
+# A tool installed in another process resolves through the lazy path,
+# including its recorded identity and version.
+assert_contains "mise current dummy" "1.0.0"
+
+# Enumerating commands see every installed tool, not just the configured one.
+ls_out="$(mise ls 2>&1)"
+assert_contains_text "$ls_out" "dummy"
+assert_contains_text "$ls_out" "tiny"
+
+# Uninstall (an enumerating flow) then per-tool lookup reflects it.
+mise uninstall tiny@3.1.0
+ls_out="$(mise ls 2>&1)"
+assert_not_contains_text "$ls_out" "3.1.0"
+
+# A shared install dir can record a tool under a dir that doesn't kebab-match
+# its short. The full scan finds such dirs by enumeration; the per-tool path
+# must find them through the shared manifest, still without a full scan.
+shared_installs="$HOME/.local/share/mise-shared"
+mkdir -p "$shared_installs/dummy-renamed/2.0.0/bin"
+cat >"$shared_installs/.mise-installs.toml" <<'EOF'
+[dummy-renamed]
+short = "dummy"
+full = "asdf:dummy"
+explicit_backend = true
+EOF
+export MISE_SHARED_INSTALL_DIRS="$shared_installs"
+out="$(MISE_TIMINGS=1 mise latest --installed dummy@2 2>&1)"
+assert_contains_text "$out" "2.0.0"
+assert_not_contains_text "$out" "full_scan_tools"

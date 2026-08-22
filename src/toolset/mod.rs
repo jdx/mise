@@ -11,14 +11,14 @@ use crate::registry::REGISTRY;
 use crate::registry::tool_enabled;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::{backend, parallel};
-pub use builder::{ConfigScope, ToolsetBuilder};
+pub(crate) use builder::{ConfigScope, ToolsetBuilder};
 use console::truncate_str;
 use eyre::{Result, bail};
 use helpers::TVTuple;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use outdated_info::OutdatedInfo;
-pub use outdated_info::is_outdated_version;
+pub(crate) use outdated_info::is_outdated_version;
 use petgraph::Direction;
 use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
@@ -32,23 +32,23 @@ use std::{
 };
 use tokio::sync::OnceCell;
 
-pub use install_options::InstallOptions;
+pub(crate) use install_options::InstallOptions;
 pub(crate) use tool_deps::ensure_compatible_install_requests;
-pub use tool_request::ToolRequest;
-pub use tool_request_set::{
+pub(crate) use tool_request::ToolRequest;
+pub(crate) use tool_request_set::{
     ToolRequestSet, ToolRequestSetBuilder, tool_env_var_name, tool_env_vars, tool_from_env_var_name,
 };
-pub use tool_source::ToolSource;
+pub(crate) use tool_source::ToolSource;
 pub(crate) use tool_version::resolve_sub_base;
-pub use tool_version::{ResolveOptions, ToolVersion};
-pub use tool_version_list::ToolVersionList;
-pub use tool_version_options::{
+pub(crate) use tool_version::{ResolveOptions, ToolVersion};
+pub(crate) use tool_version_list::ToolVersionList;
+pub(crate) use tool_version_options::{
     CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
     ToolOptions, ToolVersionOptions, parse_tool_options, try_parse_tool_options,
 };
 
 mod builder;
-pub mod env_cache;
+pub(crate) mod env_cache;
 mod helpers;
 mod install_options;
 pub(crate) mod install_state;
@@ -65,14 +65,14 @@ mod toolset_install;
 mod toolset_paths;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct ToolInfo {
+pub(crate) struct ToolInfo {
     pub version: String,
     pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
-pub enum ToolInfos {
+pub(crate) enum ToolInfos {
     Single(ToolInfo),
     Multiple(Vec<ToolInfo>),
 }
@@ -83,21 +83,21 @@ pub enum ToolInfos {
 /// the idea is that we start with an empty toolset, then
 /// merge in other toolsets from various sources
 #[derive(Debug, Default, Clone)]
-pub struct Toolset {
+pub(crate) struct Toolset {
     pub versions: IndexMap<Arc<BackendArg>, ToolVersionList>,
     pub source: Option<ToolSource>,
     tera_ctx: OnceCell<tera::Context>,
 }
 
 impl Toolset {
-    pub fn new(source: ToolSource) -> Self {
+    pub(crate) fn new(source: ToolSource) -> Self {
         Self {
             source: Some(source),
             ..Default::default()
         }
     }
 
-    pub fn add_version(&mut self, tvr: ToolRequest) {
+    pub(crate) fn add_version(&mut self, tvr: ToolRequest) {
         let ba = tvr.ba();
         if self.is_disabled(ba) {
             return;
@@ -109,7 +109,7 @@ impl Toolset {
         tvl.requests.push(tvr);
     }
 
-    pub fn merge(&mut self, other: Toolset) {
+    pub(crate) fn merge(&mut self, other: Toolset) {
         let mut versions = other.versions;
         for (plugin, tvl) in self.versions.clone() {
             if !versions.contains_key(&plugin) {
@@ -155,7 +155,7 @@ impl Toolset {
         Ok(())
     }
 
-    pub fn list_missing_plugins(&self) -> Vec<String> {
+    pub(crate) fn list_missing_plugins(&self) -> Vec<String> {
         self.versions
             .iter()
             .filter(|(_, tvl)| {
@@ -171,7 +171,7 @@ impl Toolset {
             .collect()
     }
 
-    pub async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
+    pub(crate) async fn list_missing_versions(&self, config: &Arc<Config>) -> Vec<ToolVersion> {
         trace!("list_missing_versions");
         measure!("toolset::list_missing_versions", {
             let versions = self.list_current_versions().into_iter().collect::<Vec<_>>();
@@ -206,7 +206,16 @@ impl Toolset {
         })
     }
 
-    pub async fn list_installed_versions(&self, _config: &Arc<Config>) -> Result<Vec<TVTuple>> {
+    pub(crate) async fn list_installed_versions(
+        &self,
+        _config: &Arc<Config>,
+    ) -> Result<Vec<TVTuple>> {
+        // Surface an unreadable installs dir as an error rather than as an empty
+        // list. Shim rebuilding derives its desired set from this and deletes
+        // every shim it cannot account for, so "scan failed" must not be
+        // indistinguishable from "nothing is installed". (A missing installs dir
+        // is not an error — that is genuinely empty.)
+        install_state::try_list_tools()?;
         let current_versions: HashMap<(PathBuf, String), TVTuple> = self
             .list_current_versions()
             .into_iter()
@@ -274,21 +283,21 @@ impl Toolset {
             .collect()
     }
 
-    pub fn list_current_requests(&self) -> Vec<&ToolRequest> {
+    pub(crate) fn list_current_requests(&self) -> Vec<&ToolRequest> {
         self.versions
             .values()
             .flat_map(|tvl| &tvl.requests)
             .collect()
     }
 
-    pub fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
+    pub(crate) fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
         self.versions
             .iter()
             .flat_map(|(ba, tvl)| eyre::Ok((ba.backend()?, tvl)))
             .collect()
     }
 
-    pub fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
+    pub(crate) fn list_current_versions(&self) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
         trace!("list_current_versions");
         self.list_versions_by_plugin()
             .iter()
@@ -296,7 +305,7 @@ impl Toolset {
             .collect()
     }
 
-    pub async fn list_all_versions(
+    pub(crate) async fn list_all_versions(
         &self,
         config: &Arc<Config>,
     ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
@@ -310,7 +319,7 @@ impl Toolset {
         Ok(versions)
     }
 
-    pub fn list_current_installed_versions(
+    pub(crate) fn list_current_installed_versions(
         &self,
         config: &Arc<Config>,
     ) -> Vec<(Arc<dyn Backend>, ToolVersion)> {
@@ -320,7 +329,7 @@ impl Toolset {
             .collect()
     }
 
-    pub async fn list_outdated_versions(
+    pub(crate) async fn list_outdated_versions(
         &self,
         config: &Arc<Config>,
         bump: bool,
@@ -330,7 +339,7 @@ impl Toolset {
             .await
     }
 
-    pub async fn list_outdated_versions_filtered(
+    pub(crate) async fn list_outdated_versions_filtered(
         &self,
         config: &Arc<Config>,
         bump: bool,
@@ -408,7 +417,7 @@ impl Toolset {
         outdated.into_iter().flatten().collect()
     }
 
-    pub fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {
+    pub(crate) fn build_tools_tera_map(&self, config: &Arc<Config>) -> HashMap<String, ToolInfos> {
         let mut tools_map: HashMap<String, Vec<ToolInfo>> = HashMap::new();
         for (_, tv) in self.list_current_installed_versions(config) {
             let tool_name = tv.ba().tool_name.clone();
@@ -438,7 +447,7 @@ impl Toolset {
             .collect()
     }
 
-    pub async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
+    pub(crate) async fn tera_ctx(&self, config: &Arc<Config>) -> Result<&tera::Context> {
         self.tera_ctx
             .get_or_try_init(async || {
                 let env = self.full_env(config).await?;
@@ -555,7 +564,7 @@ impl Toolset {
         Ok(())
     }
 
-    pub async fn which(
+    pub(crate) async fn which(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -574,7 +583,7 @@ impl Toolset {
         None
     }
 
-    pub async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
+    pub(crate) async fn which_bin(&self, config: &Arc<Config>, bin_name: &str) -> Option<PathBuf> {
         let mut installed = self.list_current_installed_versions(config);
         Self::sort_by_overrides(&mut installed).unwrap();
         for (p, tv) in installed {
@@ -589,7 +598,7 @@ impl Toolset {
     /// [`Backend::spawn_program`] and [`Backend::spawnable_dependency`]. `which_bin` itself
     /// is untouched because `mise which`, shim dispatch and auto-install all depend on its
     /// answer.
-    pub async fn which_bin_spawnable(
+    pub(crate) async fn which_bin_spawnable(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -604,7 +613,7 @@ impl Toolset {
         None
     }
 
-    pub async fn list_rtvs_with_bin(
+    pub(crate) async fn list_rtvs_with_bin(
         &self,
         config: &Arc<Config>,
         bin_name: &str,
@@ -622,12 +631,12 @@ impl Toolset {
         Ok(rtvs)
     }
 
-    pub async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
+    pub(crate) async fn notify_if_versions_missing(&self, config: &Arc<Config>) {
         let missing_versions = self.list_missing_versions(config).await;
         self.notify_missing_versions(missing_versions);
     }
 
-    pub fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
+    pub(crate) fn notify_missing_versions(&self, missing_versions: Vec<ToolVersion>) {
         if Settings::get().status.missing_tools() == SettingsStatusMissingTools::Never {
             return;
         }
@@ -697,7 +706,7 @@ impl From<ToolRequestSet> for Toolset {
 /// Returns a set of (short_name, tv_pathname) pairs.
 /// This is used by both `mise prune` and `mise upgrade` to avoid
 /// uninstalling versions that other projects still need.
-pub async fn get_versions_needed_by_tracked_configs(
+pub(crate) async fn get_versions_needed_by_tracked_configs(
     config: &Arc<Config>,
     use_locked_version: bool,
     offline: bool,
@@ -713,7 +722,7 @@ pub async fn get_versions_needed_by_tracked_configs(
 
 /// Like [`get_versions_needed_by_tracked_configs`], but ignores lockfile pins
 /// for the provided config paths.
-pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
+pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
     config: &Arc<Config>,
     use_locked_version: bool,
     offline: bool,
@@ -765,7 +774,7 @@ pub async fn get_versions_needed_by_tracked_configs_excluding_locks(
 /// executed. Returns (short_name, tv_pathname) pairs like
 /// [`get_versions_needed_by_tracked_configs`] so `mise prune` and
 /// `mise upgrade` do not delete versions still referenced by a stub.
-pub async fn get_versions_needed_by_tracked_stubs(
+pub(crate) async fn get_versions_needed_by_tracked_stubs(
     config: &Arc<Config>,
 ) -> Result<HashSet<(String, String)>> {
     let mut needed = HashSet::new();

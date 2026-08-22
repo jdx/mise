@@ -36,7 +36,10 @@ static VERSION_PATTERN: LazyLock<regex::Regex> =
 /// # Returns
 /// * `Some("<algo>:<hash>")` if found
 /// * `None` if the SHASUMS file couldn't be fetched or filename not found
-pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> Option<String> {
+pub(crate) async fn fetch_checksum_from_shasums(
+    shasums_url: &str,
+    filename: &str,
+) -> Option<String> {
     match HTTP.get_text_cached(shasums_url).await {
         Ok(shasums_content) => {
             let shasums = hash::parse_shasums(&shasums_content);
@@ -60,7 +63,7 @@ pub async fn fetch_checksum_from_shasums(shasums_url: &str, filename: &str) -> O
 /// an individual checksum file, scan it for the hash" or "this is a SHASUMS list
 /// that simply has no row for our artifact" — in which case falling back to a
 /// first-hash scan would silently pick another platform's checksum.
-pub async fn shasums_has_entries(shasums_url: &str) -> bool {
+pub(crate) async fn shasums_has_entries(shasums_url: &str) -> bool {
     match HTTP.get_text_cached(shasums_url).await {
         Ok(content) => !hash::parse_shasums(&content).is_empty(),
         Err(_) => false,
@@ -81,7 +84,7 @@ pub async fn shasums_has_entries(shasums_url: &str) -> bool {
 /// Uses the in-process cache so that resolving an individual checksum file
 /// doesn't re-fetch the same URL already probed by [`fetch_checksum_from_shasums`]
 /// / [`shasums_has_entries`] for that platform.
-pub async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
+pub(crate) async fn fetch_checksum_from_file(checksum_url: &str, algo: &str) -> Option<String> {
     match HTTP.get_text_cached(checksum_url).await {
         Ok(content) => parse_checksum_file_content(&content, algo),
         Err(e) => {
@@ -124,7 +127,11 @@ fn parse_checksum_file_content(content: &str, algo: &str) -> Option<String> {
 ///
 /// The result is normalized to `algo:hash`. Returns `None` when evaluation fails
 /// or the result is not a usable `algo:hash`.
-pub fn eval_checksum_expr(expr_str: &str, body: &str, vars: &[(&str, &str)]) -> Option<String> {
+pub(crate) fn eval_checksum_expr(
+    expr_str: &str,
+    body: &str,
+    vars: &[(&str, &str)],
+) -> Option<String> {
     use expr::{Context, Environment, Value};
 
     let mut ctx = Context::default();
@@ -182,7 +189,7 @@ fn is_checksum_hex(s: &str, algo: &str) -> bool {
     s.len() == expected_len && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-pub trait VerifiableError: Sized + Send + Sync + 'static {
+pub(crate) trait VerifiableError: Sized + Send + Sync + 'static {
     fn is_not_found(&self) -> bool;
     fn into_eyre(self) -> eyre::Report;
 }
@@ -207,7 +214,7 @@ impl VerifiableError for eyre::Report {
 }
 
 /// Helper to try both prefixed and non-prefixed tags for a resolver function
-pub async fn try_with_v_prefix<F, Fut, T, E>(
+pub(crate) async fn try_with_v_prefix<F, Fut, T, E>(
     version: &str,
     version_prefix: Option<&str>,
     resolver: F,
@@ -222,7 +229,7 @@ where
 
 /// Helper to try various tag formats for a resolver function
 /// Tries version_prefix (if set), v prefix, and optionally repo@version formats
-pub async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
+pub(crate) async fn try_with_v_prefix_and_repo<F, Fut, T, E>(
     version: &str,
     version_prefix: Option<&str>,
     repo: Option<&str>,
@@ -291,7 +298,7 @@ where
 
 /// Returns all possible aliases for the current platform (os, arch),
 /// with the preferred spelling first (macos/x64, linux/x64, etc).
-pub fn platform_aliases() -> Vec<(String, String)> {
+pub(crate) fn platform_aliases() -> Vec<(String, String)> {
     let os = std::env::consts::OS;
     let arch = std::env::consts::ARCH;
     let mut aliases = vec![];
@@ -322,7 +329,7 @@ pub fn platform_aliases() -> Vec<(String, String)> {
 /// Looks up a value in ToolVersionOptions using nested platform key format.
 /// Supports nested format (platforms.macos-x64.url) with os-arch dash notation.
 /// Also supports both "platforms" and "platform" prefixes.
-pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<String> {
+pub(crate) fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<String> {
     lookup_platform_value_for_aliases(
         platform_aliases(),
         key_type,
@@ -341,14 +348,14 @@ pub fn lookup_platform_key(opts: &ToolVersionOptions, key_type: &str) -> Option<
 /// # Returns
 /// * `Some(value)` if found in platform-specific or base options
 /// * `None` if not found
-pub fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
+pub(crate) fn lookup_with_fallback(opts: &ToolVersionOptions, key: &str) -> Option<String> {
     lookup_platform_key(opts, key).or_else(|| opts.get_string(key))
 }
 
 /// Looks up a raw option value with platform-specific fallback.
 /// Like [`lookup_with_fallback`] but preserves the original `toml::Value` so
 /// callers can distinguish scalar and table forms (e.g. `rename_exe`).
-pub fn lookup_value_with_fallback<'a>(
+pub(crate) fn lookup_value_with_fallback<'a>(
     opts: &'a ToolVersionOptions,
     key: &str,
 ) -> Option<&'a toml::Value> {
@@ -422,7 +429,7 @@ fn target_platform_aliases(target: &PlatformTarget) -> Vec<(String, String)> {
 
 /// Looks up a value in ToolVersionOptions for a specific target platform.
 /// Used for cross-platform lockfile generation.
-pub fn lookup_platform_key_for_target(
+pub(crate) fn lookup_platform_key_for_target(
     opts: &ToolVersionOptions,
     key_type: &str,
     target: &PlatformTarget,
@@ -436,7 +443,7 @@ pub fn lookup_platform_key_for_target(
 }
 
 /// Looks up a raw option value for a specific target platform.
-pub fn lookup_platform_value_for_target<'a>(
+pub(crate) fn lookup_platform_value_for_target<'a>(
     opts: &'a ToolVersionOptions,
     key_type: &str,
     target: &PlatformTarget,
@@ -450,7 +457,7 @@ pub fn lookup_platform_value_for_target<'a>(
 }
 
 /// Looks up a raw platform-specific option value.
-pub fn lookup_platform_value<'a>(
+pub(crate) fn lookup_platform_value<'a>(
     opts: &'a ToolVersionOptions,
     key_type: &str,
 ) -> Option<&'a toml::Value> {
@@ -463,7 +470,10 @@ pub fn lookup_platform_value<'a>(
 }
 
 /// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").
-pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &str) -> Vec<String> {
+pub(crate) fn list_available_platforms_with_key(
+    opts: &ToolVersionOptions,
+    key_type: &str,
+) -> Vec<String> {
     let mut set = IndexSet::new();
 
     // Gather from flat keys
@@ -499,7 +509,7 @@ pub fn list_available_platforms_with_key(opts: &ToolVersionOptions, key_type: &s
     set.into_iter().collect()
 }
 
-pub fn template_string(template: &str, tv: &ToolVersion) -> String {
+pub(crate) fn template_string(template: &str, tv: &ToolVersion) -> String {
     // `os()`/`arch()` resolve to the current host platform.
     render_template(template, &tv.version, crate::tera::get_tera(None))
 }
@@ -507,7 +517,7 @@ pub fn template_string(template: &str, tv: &ToolVersion) -> String {
 /// Like [`template_string`] but renders `os()`/`arch()` for an explicit target
 /// platform instead of the current host. Used by cross-platform `mise lock` to
 /// build URLs and checksum-file URLs for platforms other than the one mise runs on.
-pub fn template_string_for_target(
+pub(crate) fn template_string_for_target(
     template: &str,
     tv: &ToolVersion,
     target: &PlatformTarget,
@@ -550,7 +560,7 @@ fn render_template(template: &str, version: &str, mut tera: crate::tera::TeraEng
     }
 }
 
-pub fn get_filename_from_url(url_str: &str) -> String {
+pub(crate) fn get_filename_from_url(url_str: &str) -> String {
     let filename = if let Ok(url) = url::Url::parse(url_str) {
         // Use proper URL parsing to get the path and extract filename
         url.path_segments()
@@ -570,7 +580,7 @@ pub fn get_filename_from_url(url_str: &str) -> String {
         .unwrap_or(filename)
 }
 
-pub fn install_artifact(
+pub(crate) fn install_artifact(
     tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &ToolVersionOptions,
@@ -799,7 +809,7 @@ fn make_configured_bin_executable(search_dir: &Path, bin_name: &str) -> Result<(
     Ok(())
 }
 
-pub fn verify_artifact(
+pub(crate) fn verify_artifact(
     _tv: &crate::toolset::ToolVersion,
     file_path: &Path,
     opts: &crate::toolset::ToolVersionOptions,
@@ -830,7 +840,7 @@ pub fn verify_artifact(
     Ok(())
 }
 
-pub fn verify_checksum_str(
+pub(crate) fn verify_checksum_str(
     file_path: &Path,
     checksum: &str,
     pr: Option<&dyn SingleReport>,
@@ -889,7 +899,7 @@ fn should_skip_file(file_name: &str, strict: bool) -> bool {
 /// - `tool_name`: Optional hint for finding non-executable files by name matching.
 ///   When provided, if no executable is found, will search for files matching the tool name
 ///   and make them executable before renaming.
-pub fn rename_executable_in_dir(
+pub(crate) fn rename_executable_in_dir(
     dir: &Path,
     new_name: &str,
     tool_name: Option<&str>,
@@ -1034,7 +1044,7 @@ pub fn rename_executable_in_dir(
 ///   patterns (matched against the file name); values are the new names. This
 ///   lets archives that ship several binaries expose all of them under clean
 ///   names.
-pub fn apply_rename_exe(
+pub(crate) fn apply_rename_exe(
     search_dir: &Path,
     value: &toml::Value,
     tool_name: Option<&str>,
@@ -1128,7 +1138,7 @@ fn take_matching(available: &mut Vec<PathBuf>, pattern: &str) -> eyre::Result<Op
 /// Rejects `bin`/`rename_exe` names that are not plain file names (`../tool`,
 /// `/abs/tool`, `bin/tool`), which would otherwise be joined onto the install
 /// or search directory and place the binary outside it.
-pub fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()> {
+pub(crate) fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()> {
     if !file::is_plain_file_name(name) {
         bail!(
             "{option}: '{name}' must be a plain file name \
@@ -1140,7 +1150,7 @@ pub fn ensure_plain_bin_name(option: &str, name: &str) -> eyre::Result<()> {
 
 /// Rejects a configured binary path that is absolute or contains parent
 /// components, while preserving the established `bin = "bin/tool"` form.
-pub fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
+pub(crate) fn ensure_safe_relative_bin_path(option: &str, path: &str) -> eyre::Result<()> {
     if !file::is_safe_relative_path(path) {
         bail!(
             "{option}: '{path}' must be a safe relative path \
@@ -1259,7 +1269,7 @@ fn keep_extensions(
     target_path
 }
 
-pub fn rename_binary_name(original_name: &str, new_name: &str) -> String {
+pub(crate) fn rename_binary_name(original_name: &str, new_name: &str) -> String {
     for ext in [".exe", ".cmd", ".bat", ".sh", ".ps1", ".AppImage"] {
         if original_name.to_lowercase().ends_with(&ext.to_lowercase())
             && !new_name.to_lowercase().ends_with(&ext.to_lowercase())
@@ -1287,7 +1297,7 @@ pub fn rename_binary_name(original_name: &str, new_name: &str) -> String {
 /// - "mytool-v1.2.3-windows-amd64" -> "mytool"
 /// - "app-2.0.0-linux-x64" -> "app" (with tool_name="app")
 /// - "script-darwin-arm64.sh" -> "script.sh" (preserves .sh extension)
-pub fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
+pub(crate) fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
     // Extract extension if present (to preserve it)
     let (name_without_ext, extension) = if let Some(pos) = name.rfind('.') {
         let potential_ext = &name[pos + 1..];

@@ -23,7 +23,7 @@ const MAX_AVAILABLE_TASKS_IN_ERROR: usize = 20;
 /// Find non-executable files in task include directories.
 /// These are files that likely should be tasks but are missing the executable bit.
 /// Skips hidden files (e.g., .gitkeep, .DS_Store) to match load_tasks_includes behavior.
-pub fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBuf> {
     includes
         .iter()
         .filter(|d| d.is_dir())
@@ -44,7 +44,7 @@ pub fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBuf> {
 
 /// Split a task spec into name and args
 /// e.g., "task arg1 arg2" -> ("task", vec!["arg1", "arg2"])
-pub fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
+pub(crate) fn split_task_spec(spec: &str) -> (&str, Vec<String>) {
     let mut parts = spec.split_whitespace();
     let name = parts.next().unwrap_or("");
     let args = parts.map(|s| s.to_string()).collect_vec();
@@ -405,7 +405,7 @@ async fn prompt_for_task(config: &Arc<Config>, load_all: bool) -> Result<Task> {
 
 /// Get a list of tasks to run from command-line arguments
 /// Handles task patterns, monorepo paths, and interactive selection
-pub async fn get_task_lists(
+pub(crate) async fn get_task_lists(
     config: &Arc<Config>,
     args: &[String],
     prompt: bool,
@@ -577,7 +577,7 @@ pub async fn get_task_lists(
 
 /// Resolve all dependencies for a list of tasks
 /// Iteratively discovers path hints by loading tasks and their dependencies
-pub async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
+pub(crate) async fn resolve_depends(config: &Arc<Config>, tasks: Vec<Task>) -> Result<Vec<Task>> {
     // Iteratively discover all path hints by loading tasks and their dependencies
     // This handles chains like: //A:B -> :C -> :D -> //E:F where we need to discover E
     let mut all_path_hints = HashSet::new();

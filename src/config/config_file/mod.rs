@@ -39,16 +39,16 @@ use tool_versions::ToolVersions;
 
 use super::Config;
 
-pub mod config_root;
-pub mod diagnostic;
-pub mod idiomatic_version;
-pub mod min_version;
-pub mod mise_toml;
-pub mod toml;
-pub mod tool_versions;
+pub(crate) mod config_root;
+pub(crate) mod diagnostic;
+pub(crate) mod idiomatic_version;
+pub(crate) mod min_version;
+pub(crate) mod mise_toml;
+pub(crate) mod toml;
+pub(crate) mod tool_versions;
 
 #[derive(Debug, PartialEq)]
-pub enum ConfigFileType {
+pub(crate) enum ConfigFileType {
     MiseToml,
     ToolVersions,
     IdiomaticVersion(Vec<Arc<dyn Backend>>),
@@ -102,7 +102,7 @@ fn detection_error(path: &Path, detection: ConfigFileDetection) -> eyre::Report 
     }
 }
 
-pub trait ConfigFile: Debug + Send + Sync {
+pub(crate) trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
     fn min_version(&self) -> Option<&MinVersionSpec> {
         None
@@ -219,7 +219,7 @@ pub trait ConfigFile: Debug + Send + Sync {
 }
 
 impl dyn ConfigFile {
-    pub async fn add_runtimes(
+    pub(crate) async fn add_runtimes(
         &self,
         config: &Arc<Config>,
         tools: &[ToolArg],
@@ -286,7 +286,7 @@ impl dyn ConfigFile {
     /// this is for `mise local|global TOOL` which will display the version instead of setting it
     /// it's only valid to use a single tool in this case
     /// returns "true" if the tool was displayed which means the CLI should exit
-    pub fn display_runtime(&self, runtimes: &[ToolArg]) -> eyre::Result<bool> {
+    pub(crate) fn display_runtime(&self, runtimes: &[ToolArg]) -> eyre::Result<bool> {
         // in this situation we just print the current version in the config file
         if runtimes.len() == 1 && runtimes[0].tvr.is_none() {
             let fa = &runtimes[0].ba;
@@ -335,7 +335,7 @@ async fn init(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     }
 }
 
-pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
+pub(crate) async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     let path = if path.is_dir() {
         path.join(&*env::MISE_DEFAULT_CONFIG_FILENAME)
     } else {
@@ -348,12 +348,35 @@ pub async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFile>> {
     Ok(cf)
 }
 
+/// Refuse a path mise would not read back as a TOML config.
+///
+/// [`parse_or_init`] gives this check to every caller that goes through a [`ConfigFile`]. Callers
+/// that write TOML directly — `mise set` builds a `MiseToml` itself — bypassed it and would happily
+/// create a file that config detection then refuses to recognize, or write TOML into a name mise
+/// reads as `.tool-versions`. One definition of "a path mise can write TOML to", rather than two
+/// that drift apart.
+pub(crate) async fn ensure_writable_as_toml(path: &Path) -> eyre::Result<()> {
+    let settings = IdiomaticVersionFileSettings::current();
+    match detect_config_file_with_settings(path, &settings).await {
+        ConfigFileDetection::Recognized(ConfigFileType::MiseToml) => Ok(()),
+        ConfigFileDetection::Recognized(ConfigFileType::ToolVersions) => Err(eyre!(
+            "cannot write TOML to {}: mise reads that name as a .tool-versions file",
+            display_path(path)
+        )),
+        ConfigFileDetection::Recognized(ConfigFileType::IdiomaticVersion(_))
+        | ConfigFileDetection::DisabledRegistryIdiomatic => {
+            Err(DisabledIdiomaticVersionFile(path.to_path_buf()).into())
+        }
+        detection => Err(detection_error(path, detection)),
+    }
+}
+
 /// Lock a config file for a read-modify-write operation, then read its latest contents.
 ///
 /// Callers must keep the returned lock alive until after [`ConfigFile::save`]. Acquiring the
 /// lock before re-reading is what prevents two mise processes from both modifying the same stale
 /// snapshot and silently overwriting one another's changes.
-pub async fn lock_and_parse_or_init(
+pub(crate) async fn lock_and_parse_or_init(
     path: &Path,
 ) -> eyre::Result<(fslock::LockFile, Arc<dyn ConfigFile>)> {
     lock_and_parse_or_init_with_callback(path, |path| {
@@ -379,7 +402,7 @@ where
     Ok((lock, cf))
 }
 
-pub async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
+pub(crate) async fn parse(path: &Path) -> Result<Arc<dyn ConfigFile>> {
     let settings = IdiomaticVersionFileSettings::current();
     parse_with_idiomatic_settings(path, &settings).await
 }
@@ -439,7 +462,7 @@ pub(super) fn detection_requires_trust(path: &Path, detection: &ConfigFileDetect
     }
 }
 
-pub fn config_trust_root(path: &Path) -> PathBuf {
+pub(crate) fn config_trust_root(path: &Path) -> PathBuf {
     if settings::is_loaded() && Settings::get().paranoid {
         path.to_path_buf()
     } else {
@@ -451,17 +474,17 @@ pub fn config_trust_root(path: &Path) -> PathBuf {
 ///
 /// Unlike a passing [`trust_check`], this is false for files that merely do
 /// not *need* trust (e.g. safe configs loaded without it).
-pub fn is_path_trusted(path: &Path) -> bool {
+pub(crate) fn is_path_trusted(path: &Path) -> bool {
     is_trusted(&config_trust_root(path)) || is_trusted(path)
 }
 
 static IMPLICITLY_TRUST_ACTIVE_CONFIG: AtomicBool = AtomicBool::new(false);
 
-pub fn set_implicitly_trust_active_config(enabled: bool) {
+pub(crate) fn set_implicitly_trust_active_config(enabled: bool) {
     IMPLICITLY_TRUST_ACTIVE_CONFIG.store(enabled, Ordering::Relaxed);
 }
 
-pub fn trust_active_config() -> Result<()> {
+pub(crate) fn trust_active_config() -> Result<()> {
     if !IMPLICITLY_TRUST_ACTIVE_CONFIG.load(Ordering::Relaxed) {
         return Ok(());
     }
@@ -486,7 +509,7 @@ pub fn trust_active_config() -> Result<()> {
     Ok(())
 }
 
-pub fn trust_check(path: &Path) -> eyre::Result<()> {
+pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     // In safe mode, config is inert (no code execution, no env injection — see
     // MISE_SAFE / the `safe` setting), so loading an untrusted config is
     // harmless and no trust is required. `safe` is global-only, so a project
@@ -534,7 +557,7 @@ pub fn trust_check(path: &Path) -> eyre::Result<()> {
     Err(UntrustedConfig(path.into()))?
 }
 
-pub fn is_trusted(path: &Path) -> bool {
+pub(crate) fn is_trusted(path: &Path) -> bool {
     let canonicalized_path = match path.canonicalize() {
         Ok(p) => p,
         Err(err) => {
@@ -621,14 +644,14 @@ static IS_IGNORED: Lazy<Mutex<HashSet<PathBuf>>> = Lazy::new(|| Mutex::new(HashS
 fn add_trusted(path: PathBuf) {
     IS_TRUSTED.lock().unwrap().insert(path);
 }
-pub fn add_ignored(path: PathBuf) -> Result<()> {
+pub(crate) fn add_ignored(path: PathBuf) -> Result<()> {
     let path = path.canonicalize()?;
     file::create_dir_all(&*dirs::IGNORED_CONFIGS)?;
     file::make_symlink_or_file(&path, &ignore_path(&path))?;
     IS_IGNORED.lock().unwrap().insert(path);
     Ok(())
 }
-pub fn rm_ignored(path: PathBuf) -> Result<()> {
+pub(crate) fn rm_ignored(path: PathBuf) -> Result<()> {
     let path = path.canonicalize()?;
     let ignore_path = ignore_path(&path);
     if ignore_path.exists() {
@@ -651,7 +674,7 @@ fn trusted_config_path_matches(canonicalized_path: &Path) -> bool {
 /// This is the signal that overrides the persisted ignore list (a dismissed
 /// trust prompt or `mise trust --ignore`) in both [`is_trusted`] and config
 /// discovery. It does not consider global config or per-file trust records.
-pub fn is_trusted_via_config_paths(path: &Path) -> bool {
+pub(crate) fn is_trusted_via_config_paths(path: &Path) -> bool {
     // Config discovery calls this, and the initial `Settings` load itself runs
     // config discovery (`load_config_paths`). Reading `trusted_config_paths`
     // before settings are loaded would re-enter `Settings::get()` and recurse,
@@ -734,7 +757,7 @@ static IGNORED_CONFIG_PATH_MATCHER: Lazy<IgnoredConfigPathMatcher> =
 ///
 /// This is an explicit "never load this config" instruction and is a hard
 /// block: it takes precedence over `trusted_config_paths`.
-pub fn is_ignored_via_setting(path: &Path) -> bool {
+pub(crate) fn is_ignored_via_setting(path: &Path) -> bool {
     IGNORED_CONFIG_PATH_MATCHER.is_match(path)
 }
 
@@ -744,7 +767,7 @@ pub fn is_ignored_via_setting(path: &Path) -> bool {
 /// `mise trust --ignore`. Unlike [`is_ignored_via_setting`], this only records
 /// a dismissed prompt, so it is overridden by `trusted_config_paths` (see
 /// [`is_trusted_via_config_paths`]).
-pub fn is_persisted_ignored(path: &Path) -> bool {
+pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         if !dirs::IGNORED_CONFIGS.exists() {
@@ -769,11 +792,11 @@ pub fn is_persisted_ignored(path: &Path) -> bool {
 /// Whether `path` is ignored, by either the `ignored_config_paths` setting or
 /// the persisted ignore list. Callers that need to respect the
 /// `trusted_config_paths` override use the finer-grained variants directly.
-pub fn is_ignored(path: &Path) -> bool {
+pub(crate) fn is_ignored(path: &Path) -> bool {
     is_ignored_via_setting(path) || is_persisted_ignored(path)
 }
 
-pub fn trust(path: &Path) -> Result<()> {
+pub(crate) fn trust(path: &Path) -> Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     if !hashed_path.exists() {
@@ -789,7 +812,7 @@ pub fn trust(path: &Path) -> Result<()> {
 }
 
 /// Marks a trusted config as a monorepo root, allowing all descendant configs to be trusted
-pub fn mark_as_monorepo_root(path: &Path) -> Result<()> {
+pub(crate) fn mark_as_monorepo_root(path: &Path) -> Result<()> {
     let config_root = config_trust_root(path);
     let hashed_path = trust_path(&config_root);
     let monorepo_marker = with_appended_extension(&hashed_path, "monorepo");
@@ -800,7 +823,7 @@ pub fn mark_as_monorepo_root(path: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn untrust(path: &Path) -> eyre::Result<()> {
+pub(crate) fn untrust(path: &Path) -> eyre::Result<()> {
     rm_ignored(path.to_path_buf())?;
     let hashed_path = trust_path(path);
     if hashed_path.exists() {
@@ -1078,7 +1101,7 @@ impl Hash for dyn ConfigFile {
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
-pub struct TaskConfig {
+pub(crate) struct TaskConfig {
     pub cascade: Option<bool>,
     pub includes: Option<Vec<String>>,
     pub dir: Option<String>,
@@ -1097,7 +1120,7 @@ pub struct TaskConfig {
 /// an invocation-wide merged value.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub struct ToolConfig {
+pub(crate) struct ToolConfig {
     pub locked: bool,
 }
 

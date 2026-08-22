@@ -8,19 +8,19 @@ use std::path::PathBuf;
 use crate::result::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoginShellRequest {
+pub(crate) struct LoginShellRequest {
     pub shell: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LoginShellState {
+pub(crate) enum LoginShellState {
     Set,
     Differs { current: String },
     MissingFromShells { current: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LoginShellStatus {
+pub(crate) struct LoginShellStatus {
     pub request: LoginShellRequest,
     pub user: String,
     pub current: String,
@@ -28,11 +28,11 @@ pub struct LoginShellStatus {
     pub state: LoginShellState,
 }
 
-pub fn is_available() -> bool {
+pub(crate) fn is_available() -> bool {
     cfg!(unix) && crate::file::which("chsh").is_some()
 }
 
-pub fn unavailable_reason() -> String {
+pub(crate) fn unavailable_reason() -> String {
     if cfg!(unix) {
         "`chsh` not found".to_string()
     } else {
@@ -40,7 +40,7 @@ pub fn unavailable_reason() -> String {
     }
 }
 
-pub fn status(request: &LoginShellRequest) -> Result<LoginShellStatus> {
+pub(crate) fn status(request: &LoginShellRequest) -> Result<LoginShellStatus> {
     let user = target_user()?;
     let current = display_shell(user.shell);
     let shell_listed = shell_is_listed(&request.shell)?;
@@ -68,7 +68,7 @@ fn login_shell_state(current: &str, requested: &str, shell_listed: bool) -> Logi
     }
 }
 
-pub fn apply(request: &LoginShellRequest, dry_run: bool) -> Result<()> {
+pub(crate) fn apply(request: &LoginShellRequest, dry_run: bool) -> Result<()> {
     let user = target_user()?;
     let args = chsh_args(request, &user);
     ensure_shell_listed(&request.shell, dry_run)?;

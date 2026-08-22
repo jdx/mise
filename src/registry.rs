@@ -31,7 +31,7 @@ pub(crate) fn baked_registry() -> &'static Registry {
     &BAKED_REGISTRY
 }
 
-pub static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
+pub(crate) static REGISTRY: Lazy<&'static Registry> = Lazy::new(|| {
     if !Settings::get().registry_floating {
         return &BAKED_REGISTRY;
     }
@@ -60,7 +60,7 @@ const MAX_REGISTRY_ARCHIVE_ENTRIES: usize = 4096;
 const MAX_REGISTRY_ARCHIVE_ENTRY_SIZE: u64 = 1024 * 1024;
 const MAX_REGISTRY_ARCHIVE_SIZE: u64 = 16 * 1024 * 1024;
 
-pub struct Registry {
+pub(crate) struct Registry {
     entries: &'static [(&'static str, RegistryTool)],
     lookup: RegistryLookup,
     missing_version_order: bool,
@@ -72,23 +72,23 @@ enum RegistryLookup {
 }
 
 impl Registry {
-    pub fn get(&self, name: &str) -> Option<&'static RegistryTool> {
+    pub(crate) fn get(&self, name: &str) -> Option<&'static RegistryTool> {
         self.lookup.get(name).map(|index| &self.entries[*index].1)
     }
 
-    pub fn contains_key(&self, name: &str) -> bool {
+    pub(crate) fn contains_key(&self, name: &str) -> bool {
         self.lookup.get(name).is_some()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&'static str, &'static RegistryTool)> {
         self.entries.iter().map(|(name, tool)| (*name, tool))
     }
 
-    pub fn keys(&self) -> impl Iterator<Item = &'static str> {
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &'static str> {
         self.entries.iter().map(|(name, _)| *name)
     }
 
-    pub fn values(&self) -> impl Iterator<Item = &'static RegistryTool> {
+    pub(crate) fn values(&self) -> impl Iterator<Item = &'static RegistryTool> {
         self.entries.iter().map(|(_, tool)| tool)
     }
 
@@ -121,7 +121,7 @@ impl RegistryLookup {
 }
 
 #[derive(Debug, Clone)]
-pub struct RegistryTool {
+pub(crate) struct RegistryTool {
     pub short: &'static str,
     pub description: Option<&'static str>,
     pub(crate) version_order: VersionOrder,
@@ -137,15 +137,20 @@ pub struct RegistryTool {
 }
 
 #[derive(Debug, Clone)]
-pub struct RegistryIdiomaticFile {
+pub(crate) struct RegistryIdiomaticFile {
     pub path: &'static str,
     pub version_regex: Option<&'static str>,
     pub version_json_path: Option<&'static str>,
     pub version_expr: Option<&'static str>,
+    /// Set when this file should no longer be read. The value is the reason, shown in
+    /// the deprecation warning emitted when the file still resolves a version. Used for
+    /// files that only declare a minimum compatible version rather than the version the
+    /// project is built with.
+    pub deprecated: Option<&'static str>,
 }
 
 impl RegistryIdiomaticFile {
-    pub fn has_parser(&self) -> bool {
+    pub(crate) fn has_parser(&self) -> bool {
         self.version_regex.is_some()
             || self.version_json_path.is_some()
             || self.version_expr.is_some()
@@ -153,14 +158,14 @@ impl RegistryIdiomaticFile {
 }
 
 #[derive(Debug, Clone)]
-pub struct RegistryToolTest {
+pub(crate) struct RegistryToolTest {
     pub cmd: &'static str,
     pub expected: &'static str,
     pub tools: &'static [&'static str],
 }
 
 #[derive(Debug, Clone)]
-pub struct RegistryBackend {
+pub(crate) struct RegistryBackend {
     pub full: &'static str,
     pub platforms: &'static [&'static str],
     pub options: &'static [(&'static str, &'static str)],
@@ -184,7 +189,7 @@ fn cache_is_fresh(path: &Path, ttl: Duration) -> bool {
 
 /// Refresh the floating mise registry before anything initializes [`REGISTRY`].
 /// Fast and offline commands use the cached archive (or the baked registry) without networking.
-pub async fn refresh() {
+pub(crate) async fn refresh() {
     let settings = Settings::get();
     if !settings.registry_floating || settings.prefer_offline() {
         return;
@@ -428,13 +433,18 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
             version_regex: None,
             version_json_path: None,
             version_expr: None,
+            deprecated: None,
         }),
         toml::Value::Table(table) => {
             for key in table.keys() {
                 ensure!(
                     matches!(
                         key.as_str(),
-                        "path" | "version_regex" | "version_json_path" | "version_expr"
+                        "path"
+                            | "version_regex"
+                            | "version_json_path"
+                            | "version_expr"
+                            | "deprecated"
                     ),
                     "unknown idiomatic file field: {key}"
                 );
@@ -457,6 +467,7 @@ fn parse_registry_idiomatic_file(value: &toml::Value) -> Result<RegistryIdiomati
                 version_regex: string("version_regex")?,
                 version_json_path: string("version_json_path")?,
                 version_expr: string("version_expr")?,
+                deprecated: string("deprecated")?,
             })
         }
         _ => Err(eyre::eyre!(
@@ -555,7 +566,7 @@ static ENV_BACKENDS: Lazy<Mutex<HashMap<String, &'static str>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 impl RegistryTool {
-    pub fn provides_bin(&self, bin_name: &str) -> bool {
+    pub(crate) fn provides_bin(&self, bin_name: &str) -> bool {
         let exe_suffix = std::env::consts::EXE_SUFFIX;
         let bin_name = if exe_suffix.is_empty() {
             bin_name
@@ -575,7 +586,7 @@ impl RegistryTool {
         })
     }
 
-    pub fn backends(&self) -> Vec<&'static str> {
+    pub(crate) fn backends(&self) -> Vec<&'static str> {
         // Check for environment variable override first
         // e.g., MISE_BACKENDS_GRAPHITE='github:withgraphite/homebrew-tap[exe=gt]'
         let env_key = format!("MISE_BACKENDS_{}", self.short.to_shouty_snake_case());
@@ -633,23 +644,23 @@ impl RegistryTool {
             .collect()
     }
 
-    pub fn is_supported_os(&self) -> bool {
+    pub(crate) fn is_supported_os(&self) -> bool {
         self.os.is_empty() || self.os.contains(&OS)
     }
 
-    pub fn ba(&self) -> Option<BackendArg> {
+    pub(crate) fn ba(&self) -> Option<BackendArg> {
         self.backends()
             .first()
             .map(|f| BackendArg::new(self.short.to_string(), Some(f.to_string())))
     }
 
     /// Get RegistryBackend for a specific full backend string
-    pub fn get_backend(&self, full: &str) -> Option<&RegistryBackend> {
+    pub(crate) fn get_backend(&self, full: &str) -> Option<&RegistryBackend> {
         self.backends.iter().find(|rb| rb.full == full)
     }
 
     /// Get options for a specific backend
-    pub fn backend_options(&self, full: &str) -> ToolVersionOptions {
+    pub(crate) fn backend_options(&self, full: &str) -> ToolVersionOptions {
         let mut opts = IndexMap::new();
 
         if let Some(backend) = self.get_backend(full) {
@@ -696,7 +707,7 @@ fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
         || platforms.contains(&platform.as_str())
 }
 
-pub fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
+pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
     static EMPTY: Vec<&'static str> = vec![];
     static FULL_TO_SHORT: Lazy<HashMap<&'static str, Vec<&'static str>>> = Lazy::new(|| {
         let mut map: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
@@ -710,7 +721,7 @@ pub fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
     FULL_TO_SHORT.get(full).unwrap_or(&EMPTY)
 }
 
-pub fn is_trusted_plugin(name: &str, remote: &str) -> bool {
+pub(crate) fn is_trusted_plugin(name: &str, remote: &str) -> bool {
     let Ok(normalized_url) = normalize_remote(remote) else {
         return false;
     };
@@ -742,7 +753,7 @@ pub fn is_trusted_plugin(name: &str, remote: &str) -> bool {
     name_matches_official_remote || official_registry_plugin_remotes().contains(&normalized_url)
 }
 
-pub fn normalize_remote(remote: &str) -> eyre::Result<String> {
+pub(crate) fn normalize_remote(remote: &str) -> eyre::Result<String> {
     let url = Url::parse(remote)?;
     let host = url
         .host_str()
@@ -751,7 +762,7 @@ pub fn normalize_remote(remote: &str) -> eyre::Result<String> {
     Ok(format!("{host}{path}"))
 }
 
-pub fn full_to_url(full: &str) -> String {
+pub(crate) fn full_to_url(full: &str) -> String {
     if url_like(full) {
         return full.to_string();
     }
@@ -783,7 +794,7 @@ impl Display for RegistryTool {
 /// individual tools. `Some(empty)` is an explicit empty allowlist and disables
 /// every tool. When an allowlist is configured, it is authoritative and
 /// `disable_tools` is not applied.
-pub fn tool_enabled<T: Ord>(
+pub(crate) fn tool_enabled<T: Ord>(
     enable_tools: Option<&BTreeSet<T>>,
     disable_tools: &BTreeSet<T>,
     name: &T,
@@ -835,6 +846,7 @@ idiomatic_files = [
   ".example-version",
   { path = "example.json", version_json_path = ".tool.version" },
   { path = "example.txt", version_regex = 'version=(\S+)', version_expr = "versions[0]" },
+  { path = "example.conf", version_regex = 'minimum=(\S+)', deprecated = "it declares a minimum." },
 ]
 test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
 "#
@@ -873,6 +885,12 @@ test = { cmd = "example --version", expected = "{{version}}", tools = ["node"] }
             Some(r"version=(\S+)")
         );
         assert_eq!(tool.idiomatic_files[2].version_expr, Some("versions[0]"));
+        assert_eq!(tool.idiomatic_files[2].deprecated, None);
+        assert_eq!(tool.idiomatic_files[3].path, "example.conf");
+        assert_eq!(
+            tool.idiomatic_files[3].deprecated,
+            Some("it declares a minimum.")
+        );
         assert_eq!(tool.test.as_ref().unwrap().tools, &["node"]);
         assert!(!registry.missing_version_order);
     }

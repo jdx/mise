@@ -21,7 +21,7 @@ mod remove;
     verbatim_doc_comment,
     after_long_help = AFTER_LONG_HELP
 )]
-pub struct Deps {
+pub(crate) struct Deps {
     #[clap(subcommand)]
     command: Option<Commands>,
 
@@ -37,7 +37,7 @@ enum Commands {
 }
 
 impl Commands {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         match self {
             Self::Add(cmd) => cmd.run().await,
             Self::Install(cmd) => cmd.run().await,
@@ -47,7 +47,7 @@ impl Commands {
 }
 
 impl Deps {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let cmd = self.command.unwrap_or(Commands::Install(self.install));
 
         cmd.run().await
@@ -55,7 +55,7 @@ impl Deps {
 }
 
 /// Parse a package spec like "npm:react" or "npm:@types/react@19" into (ecosystem, package)
-pub fn parse_package_spec(spec: &str) -> Result<(&str, &str)> {
+pub(super) fn parse_package_spec(spec: &str) -> Result<(&str, &str)> {
     spec.split_once(':').ok_or_else(|| {
         eyre::eyre!(
             "invalid package spec '{spec}', expected format: ecosystem:package (e.g., npm:react)"

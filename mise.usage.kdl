@@ -1482,20 +1482,15 @@ Examples:
 cmd generate subcommand_required=#true help="Generate files for various tools/services" effect=read {
     alias gen
     alias g hide=#true
-    cmd bootstrap help="Generate a script to download+execute mise" effect=write {
-        long_help #"""
-Generate a script to download+execute mise
-
-This is designed to be used in a project where contributors may not have mise installed.
-"""#
+    cmd bootstrap hide=#true help="Deprecated. Use `mise generate install-script` instead" effect=write {
         after_long_help #"""
 Examples:
 
-    $ mise generate bootstrap --write ./bin/mise
+    $ mise generate install-script --write ./bin/mise
     $ ./bin/mise install                                    # downloads mise to .mise if not already installed
 
     # add a launcher for contributors who clone the project on Windows
-    $ mise generate bootstrap --write ./bin/mise --windows  # also writes bin/mise.cmd
+    $ mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
     $ .\bin\mise.cmd install
 
 """#
@@ -1622,6 +1617,55 @@ Examples:
             arg <NAME>
         }
     }
+    cmd install-script help="Generate a script to download+execute mise" effect=write {
+        long_help #"""
+Generate a script to download+execute mise
+
+This is designed to be used in a project where contributors may not have mise installed.
+
+Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap` (machine
+setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
+"""#
+        after_long_help #"""
+Examples:
+
+    $ mise generate install-script --write ./bin/mise
+    $ ./bin/mise install                                    # downloads mise to .mise if not already installed
+
+    # add a launcher for contributors who clone the project on Windows
+    $ mise generate install-script --write ./bin/mise --windows  # also writes bin/mise.cmd
+    $ .\bin\mise.cmd install
+
+"""#
+        flag "-l --localize" help="Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
+            long_help #"""
+Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+
+This is necessary if users may use a different version of mise outside the project.
+"""#
+        }
+        flag "-V --version" help="Specify mise version to fetch" {
+            arg <VERSION>
+        }
+        flag "-w --write" help="instead of outputting the script to stdout, write to a file and make it executable" {
+            arg <WRITE>
+        }
+        flag --localized-dir help="Directory to put localized data into" default=.mise {
+            arg <LOCALIZED_DIR>
+        }
+        flag --windows help="Also write a Windows launcher, `<WRITE>.cmd`" {
+            long_help #"""
+Also write a Windows launcher, `<WRITE>.cmd`
+
+Windows cannot execute the `#!/usr/bin/env bash` script, so a contributor who clones the
+project on Windows has nothing to run without this.
+
+Generated on every host, not only on Windows: the file is committed, and whoever runs it
+on Windows is not the person who generated it. Requires `--write`, since stdout cannot
+carry two files.
+"""#
+        }
+    }
     cmd task-docs help="Generate documentation for tasks in a project" effect=write {
         after_long_help #"""
 Examples:
@@ -1657,7 +1701,7 @@ The file must already contain both comments; mise errors instead of modifying th
         long_help #"""
 Generates shims to run mise tasks
 
-By default, this will build shims like ./bin/<task>. These can be paired with `mise generate bootstrap`
+By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
 When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
 """#
@@ -1677,7 +1721,7 @@ Examples:
             long_help #"""
 Path to a mise bin to use when running the task stub.
 
-Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
+Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
 """#
             arg <MISE_BIN>
         }
@@ -2043,6 +2087,11 @@ Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
+
+This shares the install location between users; it does not put binaries on
+PATH for use without mise. Every user still needs mise to run these tools.
+For binaries usable without mise, see `mise install-into` or
+`[bootstrap.packages]`.
 """#
     }
     arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
@@ -4478,7 +4527,7 @@ Show the trusted status of config files from the current directory and its paren
 Does not trust or untrust any files.
 """#
     flag --untrust help="Remove explicit trust for this config"
-    arg "[CONFIG_FILE]" help="The config file to trust" required=#false
+    arg "[CONFIG_FILE]" help="The config file whose trust status to change" required=#false
 }
 cmd uninstall help="Removes installed tool versions" effect=destructive {
     long_help #"""

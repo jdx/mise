@@ -12,7 +12,7 @@ use crate::ui::style;
 use crate::{backend, ui};
 
 #[derive(Debug, Clone, Copy)]
-pub enum ProgressIcon {
+pub(crate) enum ProgressIcon {
     Success,
     Skipped,
     #[allow(dead_code)]
@@ -34,7 +34,7 @@ impl Display for ProgressIcon {
     }
 }
 
-pub trait SingleReport: Send + Sync + std::fmt::Debug {
+pub(crate) trait SingleReport: Send + Sync + std::fmt::Debug {
     fn println(&self, _message: String) {}
     fn set_message(&self, _message: String) {}
     fn inc(&self, _delta: u64) {}
@@ -81,16 +81,16 @@ fn normal_prefix(pad: usize, prefix: &str) -> String {
 
 /// clx-based progress report implementation
 #[derive(Debug)]
-pub struct ProgressReport {
+pub(crate) struct ProgressReport {
     job: Arc<ProgressJob>,
 }
 
 impl ProgressReport {
-    pub fn new(prefix: String) -> ProgressReport {
+    pub(crate) fn new(prefix: String) -> ProgressReport {
         Self::new_with_pad(prefix, *LONGEST_PLUGIN_NAME)
     }
 
-    pub fn new_with_pad(prefix: String, pad: usize) -> ProgressReport {
+    pub(crate) fn new_with_pad(prefix: String, pad: usize) -> ProgressReport {
         ui::ctrlc::show_cursor_after_ctrl_c();
         let formatted_prefix = normal_prefix(pad, &prefix);
 
@@ -157,10 +157,10 @@ impl SingleReport for ProgressReport {
 }
 
 #[derive(Debug)]
-pub struct QuietReport {}
+pub(crate) struct QuietReport {}
 
 impl QuietReport {
-    pub fn new() -> QuietReport {
+    pub(crate) fn new() -> QuietReport {
         QuietReport {}
     }
 }
@@ -168,7 +168,7 @@ impl QuietReport {
 impl SingleReport for QuietReport {}
 
 #[derive(Debug)]
-pub struct VerboseReport {
+pub(crate) struct VerboseReport {
     prefix: String,
     prev_message: Mutex<String>,
     pad: usize,
@@ -177,11 +177,11 @@ pub struct VerboseReport {
 }
 
 impl VerboseReport {
-    pub fn new(prefix: String) -> VerboseReport {
+    pub(crate) fn new(prefix: String) -> VerboseReport {
         Self::new_with_pad(prefix, *LONGEST_PLUGIN_NAME)
     }
 
-    pub fn new_with_pad(prefix: String, pad: usize) -> VerboseReport {
+    pub(crate) fn new_with_pad(prefix: String, pad: usize) -> VerboseReport {
         VerboseReport {
             prefix,
             prev_message: Mutex::new("".to_string()),

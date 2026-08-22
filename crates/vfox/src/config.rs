@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
 
 #[derive(Debug, Clone)]
-pub struct Config {
+pub(crate) struct Config {
     pub plugin_dir: PathBuf,
 }
 
 static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
 impl Config {
-    pub fn get() -> Self {
+    pub(crate) fn get() -> Self {
         Self::_get().as_ref().unwrap().clone()
     }
 
@@ -29,14 +29,14 @@ impl Config {
     }
 }
 
-pub fn os() -> String {
+pub(crate) fn os() -> String {
     match OS {
         "macos" => "darwin".to_string(),
         os => os.to_string(),
     }
 }
 
-pub fn arch() -> String {
+pub(crate) fn arch() -> String {
     match ARCH {
         "aarch64" => "arm64".to_string(),
         "x86_64" => "amd64".to_string(),

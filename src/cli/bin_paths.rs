@@ -9,7 +9,7 @@ use std::path::PathBuf;
 /// List all the active runtime bin paths
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment)]
-pub struct BinPaths {
+pub(crate) struct BinPaths {
     /// Tool(s) to look up
     /// e.g.: ruby@3
     #[clap(value_name = "TOOL@VERSION", verbatim_doc_comment)]
@@ -28,7 +28,7 @@ pub struct BinPaths {
 }
 
 impl BinPaths {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let mut tsb = ToolsetBuilder::new();
         if let Some(tool) = &self.tool {

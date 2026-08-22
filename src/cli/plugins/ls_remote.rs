@@ -8,7 +8,7 @@ use crate::toolset::install_state;
 /// List all available remote plugins
 #[derive(Debug, clap::Args)]
 #[clap(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
-pub struct PluginsLsRemote {
+pub(super) struct PluginsLsRemote {
     /// Show the git url for each plugin
     /// e.g.: https://github.com/mise-plugins/mise-poetry.git
     #[clap(short, long)]
@@ -21,7 +21,7 @@ pub struct PluginsLsRemote {
 }
 
 impl PluginsLsRemote {
-    pub async fn run(self, config: &Config) -> Result<()> {
+    pub(super) async fn run(self, config: &Config) -> Result<()> {
         let installed_plugins = install_state::list_plugins();
 
         let shorthands = config.shorthands.iter().sorted().collect_vec();

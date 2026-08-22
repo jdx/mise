@@ -6,7 +6,7 @@ use std::sync::LazyLock as Lazy;
 use crate::backend;
 use crate::cli::args::BackendArg;
 
-pub static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
+pub(super) static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
     backend::list()
         .into_iter()
         .flat_map(|b| {
@@ -23,7 +23,7 @@ pub static COMMANDS: Lazy<HashMap<String, Command>> = Lazy::new(|| {
         .collect()
 });
 
-pub fn execute(ba: &BackendArg, mut cmd: Command, args: Vec<String>) -> Result<()> {
+pub(super) fn execute(ba: &BackendArg, mut cmd: Command, args: Vec<String>) -> Result<()> {
     if let Some(subcommand) = cmd.find_subcommand(&args[0]) {
         let backend = ba.backend()?;
         if let Some(p) = backend.plugin() {

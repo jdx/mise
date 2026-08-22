@@ -7,13 +7,13 @@ use crate::deps_graph::DepsGraph;
 /// Thin wrapper around `DepsGraph<String, String>` with deps-specific
 /// validation and error messages.
 #[derive(Debug)]
-pub struct DepsOrdering {
+pub(crate) struct DepsOrdering {
     inner: DepsGraph<String, String>,
 }
 
 impl DepsOrdering {
     /// Creates a new DepsOrdering from a list of (provider_id, depends) tuples.
-    pub fn new(providers: &[(String, Vec<String>)]) -> Result<Self> {
+    pub(crate) fn new(providers: &[(String, Vec<String>)]) -> Result<Self> {
         // Validate that all deps reference known providers before building the graph
         let known: std::collections::HashSet<&str> =
             providers.iter().map(|(id, _)| id.as_str()).collect();
@@ -44,22 +44,22 @@ impl DepsOrdering {
     }
 
     /// Subscribe to receive providers that are ready to run.
-    pub fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<String>> {
+    pub(crate) fn subscribe(&mut self) -> mpsc::UnboundedReceiver<Option<String>> {
         self.inner.subscribe()
     }
 
     /// Mark a provider as successfully completed.
-    pub fn complete_success(&mut self, id: &str) {
+    pub(crate) fn complete_success(&mut self, id: &str) {
         self.inner.complete_success(&id.to_string());
     }
 
     /// Mark a provider as failed and block all transitive dependents.
-    pub fn complete_failure(&mut self, id: &str) {
+    pub(crate) fn complete_failure(&mut self, id: &str) {
         self.inner.complete_failure(&id.to_string());
     }
 
     /// Returns the list of blocked provider IDs.
-    pub fn blocked_providers(&self) -> Vec<String> {
+    pub(crate) fn blocked_providers(&self) -> Vec<String> {
         self.inner.blocked_keys()
     }
 }

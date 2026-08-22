@@ -16,7 +16,7 @@ use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_t
 /// note: this updates the plugin itself, not the runtime versions
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], after_long_help = AFTER_LONG_HELP)]
-pub struct Update {
+pub(super) struct Update {
     /// Plugin(s) to update
     #[clap()]
     plugin: Option<Vec<String>>,
@@ -29,7 +29,7 @@ pub struct Update {
 }
 
 impl Update {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let plugins: Vec<_> = match self.plugin {
             Some(plugins) => plugins
                 .into_iter()

@@ -12,7 +12,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 /// Supports prefixes such as `node@20` to get the latest version of node 20.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct Latest {
+pub(crate) struct Latest {
     /// Tool to get the latest version of
     #[clap(value_name = "TOOL@VERSION")]
     tool: ToolArg,
@@ -41,7 +41,7 @@ pub struct Latest {
 }
 
 impl Latest {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let before_date = self.get_before_date()?;
         let config = Config::get().await?;
         let Self {

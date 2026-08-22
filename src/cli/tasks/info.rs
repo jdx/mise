@@ -14,7 +14,7 @@ use crate::ui::info;
 /// Get information about a task
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct TasksInfo {
+pub(super) struct TasksInfo {
     /// Name of the task to get information about
     #[clap(verbatim_doc_comment)]
     pub task: String,
@@ -24,7 +24,7 @@ pub struct TasksInfo {
 }
 
 impl TasksInfo {
-    pub async fn run(self) -> Result<()> {
+    pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
 
         let task_name = crate::task::expand_colon_task_syntax(&self.task, &config)?;

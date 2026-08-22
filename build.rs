@@ -1,3 +1,6 @@
+#![allow(unknown_lints)]
+#![deny(dead_code_pub_in_binary, unreachable_pub)]
+
 use heck::ToUpperCamelCase;
 use indexmap::IndexMap;
 use serde::Serialize as _;
@@ -263,7 +266,7 @@ fn codegen_registry() {
                     .iter()
                     .map(|f| match f {
                         toml::Value::String(path) => format!(
-                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None }}",
+                            "RegistryIdiomaticFile {{ path: {}, version_regex: None, version_json_path: None, version_expr: None, deprecated: None }}",
                             raw_string_literal(path)
                         ),
                         toml::Value::Table(spec) => {
@@ -275,6 +278,7 @@ fn codegen_registry() {
                                             | "version_regex"
                                             | "version_json_path"
                                             | "version_expr"
+                                            | "deprecated"
                                     ),
                                     "[{short}] unknown idiomatic file field: {key}"
                                 );
@@ -302,11 +306,12 @@ fn codegen_registry() {
                                     .unwrap_or_else(|| "None".to_string())
                             };
                             format!(
-                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {} }}",
+                                "RegistryIdiomaticFile {{ path: {}, version_regex: {}, version_json_path: {}, version_expr: {}, deprecated: {} }}",
                                 raw_string_literal(required("path")),
                                 optional("version_regex"),
                                 optional("version_json_path"),
                                 optional("version_expr"),
+                                optional("deprecated"),
                             )
                         }
                         _ => panic!(
@@ -615,7 +620,7 @@ fn codegen_settings() {
     let mut lines = vec![
         r#"#[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(layer_attr(derive(Clone, Serialize, Default)))]
-pub struct Settings {"#
+pub(crate) struct Settings {"#
             .to_string(),
     ];
 
@@ -729,7 +734,7 @@ pub struct Settings {"#
 #[derive(Config, Default, Debug, Clone, Serialize)]
 #[config(layer_attr(derive(Clone, Serialize, Default)))]
 #[config(layer_attr(serde(deny_unknown_fields)))]
-pub struct {name} {{"#,
+pub(crate) struct {name} {{"#,
                 name = settings_struct_name(&path)
             ));
 
@@ -744,7 +749,7 @@ pub struct {name} {{"#,
 
     lines.push(
         r#"
-pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
+pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
     indexmap!{"#
             .to_string(),
     );
@@ -836,7 +841,7 @@ pub static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new
 /// These settings affect config file discovery and must be loaded before
 /// the main config files are parsed.
 #[derive(Debug, Clone, Default, serde::Deserialize)]
-pub struct MisercSettings {"#
+pub(crate) struct MisercSettings {"#
             .to_string(),
     );
 

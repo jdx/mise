@@ -11,7 +11,7 @@ use serde::Deserialize;
 /// A task template definition that can be extended by tasks via `extends`
 /// Templates are defined in [task_templates.*] sections of mise.toml
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct TaskTemplate {
+pub(crate) struct TaskTemplate {
     #[serde(default)]
     pub description: String,
     #[serde(default, rename = "alias", deserialize_with = "deserialize_arr")]
@@ -103,7 +103,7 @@ impl Task {
     /// - dir: Local overrides; defaults to None if not in template
     /// - sources, outputs: Local overrides completely (if non-empty)
     /// - Other fields: Local overrides template (if set)
-    pub fn merge_template(&mut self, template: &TaskTemplate) {
+    pub(crate) fn merge_template(&mut self, template: &TaskTemplate) {
         // run: only use template if local is empty
         if self.run.is_empty() {
             self.run = template.run.clone();
@@ -205,11 +205,14 @@ impl Task {
         // `quiet = false` but gets overridden by a template's `quiet = true`. Users
         // must explicitly set these in their task if needed.
 
-        // silent: use template only if local is Off (Silent is an enum, so we can distinguish)
-        if matches!(self.silent, Silent::Off)
+        // Preserve whether `silent = false` was explicitly selected. The resolved
+        // value alone cannot distinguish that from an omitted `silent` field, and
+        // overlays need the same provenance after a template is applied.
+        if !self.toml_bool_presence.silent
             && let Some(ref silent) = template.silent
         {
             self.silent = silent.clone();
+            self.toml_bool_presence.record("silent");
         }
 
         // usage: use template only if local is empty

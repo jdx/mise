@@ -10,7 +10,7 @@ use crate::ui::table::MiseTable;
 /// Show the status of dotfiles from `[dotfiles]`
 #[derive(Debug, clap::Args)]
 #[clap(visible_alias = "ls", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub struct DotfilesStatus {
+pub(crate) struct DotfilesStatus {
     /// Only show these targets
     #[clap(value_name = "TARGET")]
     targets: Vec<String>,
@@ -26,7 +26,7 @@ pub struct DotfilesStatus {
 }
 
 impl DotfilesStatus {
-    pub async fn run(self) -> Result<()> {
+    pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let mut any_missing = false;
 

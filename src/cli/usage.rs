@@ -8,14 +8,14 @@ use eyre::Result;
 /// See https://usage.jdx.dev for more information on this specification.
 #[derive(Debug, clap::Args)]
 #[clap(verbatim_doc_comment, hide = true)]
-pub struct Usage {}
+pub(crate) struct Usage {}
 
 /// mise's own usage spec, with everything clap cannot express applied.
 ///
 /// Shared with `mise mcp`, which answers "what does this command do" from the
 /// same `effect=` data this prints. Two constructions would drift, and the one
 /// an agent reads is the one that must not.
-pub fn spec() -> usage::Spec {
+pub(super) fn spec() -> usage::Spec {
     {
         let cli = Cli::command()
             .version(Resettable::Reset)
@@ -69,7 +69,7 @@ pub fn spec() -> usage::Spec {
 }
 
 impl Usage {
-    pub fn run(self) -> Result<()> {
+    pub(crate) fn run(self) -> Result<()> {
         // 3.6 added `effect=` (jdx/usage#739) and 4.0 added it on flags and args
         // (jdx/usage#742); older `usage` CLIs reject the spec outright with
         // "unsupported cmd prop effect", so this moves in lockstep with the
