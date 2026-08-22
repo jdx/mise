@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
+use std::sync::Arc;
 
 use crate::file::replace_path;
 
@@ -8,6 +10,16 @@ mod landlock;
 mod macos;
 #[cfg(target_os = "linux")]
 mod seccomp;
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum SystemAccessProfile {
+    /// Preserve the historical broad system-path policy for user-configured
+    /// task and command sandboxes.
+    #[default]
+    Compatibility,
+    /// Minimal system access for untrusted Homebrew formula execution.
+    FormulaExecution,
+}
 
 /// Configuration for process sandboxing.
 ///
@@ -19,6 +31,10 @@ pub(crate) struct SandboxConfig {
     pub deny_read: bool,
     pub deny_write: bool,
     pub deny_net: bool,
+    /// Also deny local/Unix-domain sockets when network access is denied.
+    /// This is stricter than the default network sandbox, which keeps local
+    /// IPC available for compatibility.
+    pub deny_local_sockets: bool,
     pub deny_env: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
@@ -28,6 +44,151 @@ pub(crate) struct SandboxConfig {
     pub pass_through_env: Vec<String>,
     /// Exact hashed environment names that survive an active env sandbox.
     pub cache_env: Vec<String>,
+    /// Do not grant the sandbox's usual broad write access to system temp.
+    /// Callers using this must add an explicit private temp path to `allow_write`.
+    pub deny_system_temp_write: bool,
+    /// Do not grant the sandbox's usual broad read access to mise's data and
+    /// install roots. Security-sensitive callers must allow exact tool roots.
+    pub deny_mise_data_read: bool,
+    /// Require every vetted Landlock ABI V6 filesystem right and reject
+    /// partial enforcement. Source formula execution enables this; ordinary
+    /// task sandboxes retain their compatibility behavior.
+    pub require_full_filesystem_confinement: bool,
+    /// Select the built-in system-path policy independently from enforcement
+    /// compatibility. Formula execution must not inherit the broad task policy.
+    pub system_access_profile: SystemAccessProfile,
+    /// Parent-opened allow nodes for strict formula execution. Compatibility
+    /// sandboxes intentionally keep their historical pathname behavior.
+    #[cfg(target_os = "linux")]
+    pub(super) bound_allow_read: Vec<BoundSandboxPath>,
+    #[cfg(target_os = "linux")]
+    pub(super) bound_allow_write: Vec<BoundSandboxPath>,
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone)]
+pub(super) struct BoundSandboxPath {
+    pub(super) path: PathBuf,
+    pub(super) fd: Arc<std::os::fd::OwnedFd>,
+    device: nix::libc::dev_t,
+    inode: nix::libc::ino_t,
+    is_directory: bool,
+    validate_pathname: bool,
+}
+
+#[cfg(target_os = "linux")]
+impl BoundSandboxPath {
+    fn from_fd(path: &std::path::Path, fd: std::os::fd::OwnedFd) -> eyre::Result<Self> {
+        let retained_stat = nix::sys::stat::fstat(&fd)?;
+        let kind = nix::sys::stat::SFlag::from_bits_truncate(retained_stat.st_mode);
+        if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+            eyre::bail!(
+                "formula-execution sandbox descriptor is a symlink: {}",
+                path.display()
+            )
+        }
+        let authority = nix::fcntl::open(
+            path,
+            nix::fcntl::OFlag::O_PATH
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let authority_stat = nix::sys::stat::fstat(&authority)?;
+        let authority_kind = nix::sys::stat::SFlag::from_bits_truncate(authority_stat.st_mode);
+        if (authority_stat.st_dev, authority_stat.st_ino, authority_kind)
+            != (retained_stat.st_dev, retained_stat.st_ino, kind)
+        {
+            eyre::bail!(
+                "formula-execution sandbox authority changed while binding: {}",
+                path.display()
+            )
+        }
+        Ok(Self {
+            path: path.to_path_buf(),
+            fd: Arc::new(authority),
+            device: retained_stat.st_dev,
+            inode: retained_stat.st_ino,
+            is_directory: kind.contains(nix::sys::stat::SFlag::S_IFDIR),
+            validate_pathname: false,
+        })
+    }
+
+    fn open(path: &std::path::Path) -> eyre::Result<Self> {
+        use std::path::Component;
+
+        if !path.is_absolute() {
+            eyre::bail!(
+                "formula-execution sandbox allow path is not absolute: {}",
+                path.display()
+            )
+        }
+        let mut fd = nix::fcntl::open(
+            "/",
+            nix::fcntl::OFlag::O_PATH
+                | nix::fcntl::OFlag::O_DIRECTORY
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC,
+            nix::sys::stat::Mode::empty(),
+        )?;
+        let components = path
+            .components()
+            .filter_map(|component| match component {
+                Component::Normal(name) => Some(name),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (index, name) in components.iter().enumerate() {
+            let mut flags = nix::fcntl::OFlag::O_PATH
+                | nix::fcntl::OFlag::O_NOFOLLOW
+                | nix::fcntl::OFlag::O_CLOEXEC;
+            if index + 1 != components.len() {
+                flags |= nix::fcntl::OFlag::O_DIRECTORY;
+            }
+            fd = nix::fcntl::openat(&fd, *name, flags, nix::sys::stat::Mode::empty()).map_err(
+                |error| {
+                    eyre::eyre!(
+                        "failed to bind formula-execution sandbox path {}: {error}",
+                        path.display()
+                    )
+                },
+            )?;
+            let stat = nix::sys::stat::fstat(&fd)?;
+            let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
+            if kind.contains(nix::sys::stat::SFlag::S_IFLNK) {
+                eyre::bail!(
+                    "formula-execution sandbox path contains a symlink: {}",
+                    path.display()
+                )
+            }
+            if index + 1 != components.len() && !kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
+                eyre::bail!(
+                    "formula-execution sandbox path ancestor is not a directory: {}",
+                    path.display()
+                )
+            }
+        }
+        let mut bound = Self::from_fd(path, fd)?;
+        bound.validate_pathname = true;
+        Ok(bound)
+    }
+
+    fn validate_path(&self) -> eyre::Result<()> {
+        if !self.validate_pathname {
+            return Ok(());
+        }
+        let current = Self::open(&self.path)?;
+        if current.device != self.device
+            || current.inode != self.inode
+            || current.is_directory != self.is_directory
+        {
+            eyre::bail!(
+                "formula-execution sandbox path changed while it was being bound: {}",
+                self.path.display()
+            )
+        }
+        Ok(())
+    }
 }
 
 /// Minimal env vars inherited when deny_env is active.
@@ -73,16 +234,57 @@ impl SandboxConfig {
         self.deny_read
             || self.deny_write
             || self.deny_net
+            || self.deny_local_sockets
             || self.deny_env
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
             || !self.allow_env.is_empty()
+            || self.deny_system_temp_write
+            || self.deny_mise_data_read
+            || self.system_access_profile == SystemAccessProfile::FormulaExecution
+    }
+
+    pub(crate) fn validate_formula_execution_for_runner(
+        &self,
+        cleanup_process_group: bool,
+        bound_current_dir: bool,
+    ) -> eyre::Result<()> {
+        if self.system_access_profile != SystemAccessProfile::FormulaExecution {
+            return Ok(());
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (cleanup_process_group, bound_current_dir);
+            eyre::bail!(
+                "formula-execution sandbox is supported only on Linux with fully enforced Landlock ABI V6 confinement"
+            );
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if !self.deny_read
+                || !self.deny_write
+                || !self.deny_net
+                || !self.deny_local_sockets
+                || !self.deny_env
+                || !self.deny_system_temp_write
+                || !self.deny_mise_data_read
+                || !self.require_full_filesystem_confinement
+                || !cleanup_process_group
+                || !bound_current_dir
+            {
+                eyre::bail!(
+                    "formula-execution sandbox requires strict read, write, network, local-socket, environment, temp, mise-data, filesystem, process-group, and descriptor-bound working-directory confinement"
+                );
+            }
+            Ok(())
+        }
     }
 
     /// Resolve allow_* paths to absolute paths relative to cwd.
     pub(crate) fn resolve_paths(&mut self) {
         let cwd = std::env::current_dir().unwrap_or_default();
+        let canonicalize = self.system_access_profile != SystemAccessProfile::FormulaExecution;
         let resolve = |paths: &mut Vec<PathBuf>| {
             paths.retain(|p| !p.as_os_str().is_empty());
             for p in paths.iter_mut() {
@@ -91,13 +293,110 @@ impl SandboxConfig {
                     *p = cwd.join(&*p);
                 }
                 // Canonicalize to resolve symlinks (e.g., /var -> /private/var on macOS)
-                if let Ok(canonical) = p.canonicalize() {
+                if canonicalize && let Ok(canonical) = p.canonicalize() {
                     *p = canonical;
                 }
             }
         };
         resolve(&mut self.allow_read);
         resolve(&mut self.allow_write);
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn bind_formula_execution_paths(&mut self) -> eyre::Result<()> {
+        if self.system_access_profile != SystemAccessProfile::FormulaExecution {
+            return Ok(());
+        }
+        for path in &self.allow_read {
+            if !self
+                .bound_allow_read
+                .iter()
+                .any(|bound| bound.path == *path)
+            {
+                self.bound_allow_read.push(BoundSandboxPath::open(path)?);
+            }
+        }
+        for path in &self.allow_write {
+            if !self
+                .bound_allow_write
+                .iter()
+                .any(|bound| bound.path == *path)
+            {
+                self.bound_allow_write.push(BoundSandboxPath::open(path)?);
+            }
+        }
+        for path in self.bound_allow_read.iter().chain(&self.bound_allow_write) {
+            path.validate_path()?;
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn require_bound_formula_execution_paths(&self) -> eyre::Result<()> {
+        if self.system_access_profile == SystemAccessProfile::FormulaExecution
+            && (!bindings_cover_paths(&self.allow_read, &self.bound_allow_read)
+                || !bindings_cover_paths(&self.allow_write, &self.bound_allow_write))
+        {
+            eyre::bail!(
+                "formula-execution sandbox allow paths must be descriptor-bound before runner setup"
+            )
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prebind_formula_execution_read(
+        &mut self,
+        path: &std::path::Path,
+        fd: std::os::fd::OwnedFd,
+    ) -> eyre::Result<()> {
+        self.prebind_formula_execution_path(path, fd, false)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(crate) fn prebind_formula_execution_write(
+        &mut self,
+        path: &std::path::Path,
+        fd: std::os::fd::OwnedFd,
+    ) -> eyre::Result<()> {
+        self.prebind_formula_execution_path(path, fd, true)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn prebind_formula_execution_path(
+        &mut self,
+        path: &std::path::Path,
+        fd: std::os::fd::OwnedFd,
+        write: bool,
+    ) -> eyre::Result<()> {
+        if self.system_access_profile != SystemAccessProfile::FormulaExecution {
+            eyre::bail!("only formula-execution sandboxes accept prebound paths")
+        }
+        let allowed = if write {
+            &self.allow_write
+        } else {
+            &self.allow_read
+        };
+        if !allowed.iter().any(|allowed| allowed == path) {
+            eyre::bail!(
+                "prebound formula-execution path is not declared: {}",
+                path.display()
+            )
+        }
+        let bound = BoundSandboxPath::from_fd(path, fd)?;
+        let bindings = if write {
+            &mut self.bound_allow_write
+        } else {
+            &mut self.bound_allow_read
+        };
+        if bindings.iter().any(|existing| existing.path == path) {
+            eyre::bail!(
+                "formula-execution sandbox path was bound more than once: {}",
+                path.display()
+            )
+        }
+        bindings.push(bound);
+        Ok(())
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
@@ -113,7 +412,7 @@ impl SandboxConfig {
 
     #[cfg_attr(windows, allow(dead_code))]
     pub(crate) fn effective_deny_net(&self) -> bool {
-        self.deny_net || !self.allow_net.is_empty()
+        self.deny_net || self.deny_local_sockets || !self.allow_net.is_empty()
     }
 
     pub(crate) fn effective_deny_env(&self) -> bool {
@@ -193,6 +492,11 @@ impl SandboxConfig {
         if !self.is_active() {
             return Ok(None);
         }
+        if self.system_access_profile == SystemAccessProfile::FormulaExecution {
+            eyre::bail!(
+                "formula-execution sandbox requires CmdLineRunner process-group confinement"
+            );
+        }
 
         #[cfg(target_os = "linux")]
         {
@@ -217,14 +521,20 @@ impl SandboxConfig {
         if self.effective_deny_read() || self.effective_deny_write() {
             landlock::apply_landlock(self)?;
         }
-        if self.effective_deny_net() {
+        let strict_formula_execution =
+            self.system_access_profile == SystemAccessProfile::FormulaExecution;
+        if self.effective_deny_net() || strict_formula_execution {
             if !self.allow_net.is_empty() {
                 eyre::bail!(
                     "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
                      Use --deny-net to block all network, or remove --allow-net."
                 );
             }
-            seccomp::apply_seccomp_net_filter()?;
+            seccomp::apply_seccomp_net_filter(
+                self.deny_local_sockets,
+                false,
+                strict_formula_execution,
+            )?;
         }
         Ok(())
     }
@@ -250,6 +560,14 @@ impl SandboxConfig {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn bindings_cover_paths(paths: &[PathBuf], bindings: &[BoundSandboxPath]) -> bool {
+    paths
+        .iter()
+        .all(|path| bindings.iter().any(|binding| binding.path == *path))
+        && bindings.iter().all(|binding| paths.contains(&binding.path))
+}
+
 /// A command rewritten to run through a sandbox wrapper (macOS sandbox-exec).
 #[cfg(not(test))]
 #[cfg_attr(windows, allow(dead_code))]
@@ -267,10 +585,173 @@ pub(crate) fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
     landlock::apply_landlock(config)
 }
 
+/// Fail before spawning when filesystem confinement is unavailable. This
+/// keeps the real Landlock diagnostic instead of `pre_exec`'s synthetic EINVAL.
+#[cfg(target_os = "linux")]
+pub(crate) fn ensure_landlock_available() -> eyre::Result<()> {
+    landlock::ensure_landlock_available()
+}
+
+/// Prove that untrusted formula code can run with the strict Linux sandbox.
+/// Callers must invoke this before downloads, staging, receipt changes, or any
+/// other host mutation that would be unsafe to leave behind on refusal.
+#[cfg(all(unix, not(target_os = "macos")))]
+pub(crate) fn ensure_strict_formula_execution_available(context: &str) -> eyre::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        let status = std::fs::read_to_string("/proc/self/status").map_err(|error| {
+            eyre::eyre!(
+                "{context}: could not inspect retained Linux capabilities before formula execution: {error}"
+            )
+        })?;
+        validate_linux_formula_execution_security(
+            context,
+            unsafe { nix::libc::geteuid() },
+            &status,
+        )?;
+        probe_strict_formula_execution().map_err(|error| {
+            eyre::eyre!("{context}: strict formula execution is unavailable: {error}")
+        })?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    eyre::bail!(
+        "{context}: strict formula execution is supported only on Linux with fully enforced Landlock ABI V6 confinement"
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn probe_strict_formula_execution() -> eyre::Result<()> {
+    use std::io::Read;
+    use std::os::fd::AsRawFd;
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    let config = SandboxConfig {
+        deny_read: true,
+        deny_write: true,
+        deny_net: true,
+        deny_local_sockets: true,
+        deny_env: true,
+        deny_system_temp_write: true,
+        deny_mise_data_read: true,
+        require_full_filesystem_confinement: true,
+        system_access_profile: SystemAccessProfile::FormulaExecution,
+        ..Default::default()
+    };
+    let (stage_reader, stage_writer) = nix::unistd::pipe2(nix::fcntl::OFlag::O_CLOEXEC)
+        .map_err(|error| eyre::eyre!("could not create strict sandbox probe pipe: {error}"))?;
+    let stage_writer_fd = stage_writer.as_raw_fd();
+    let report_stage = move |stage: &[u8]| unsafe {
+        nix::libc::write(
+            stage_writer_fd,
+            stage.as_ptr().cast(),
+            stage.len() as nix::libc::size_t,
+        );
+    };
+
+    let mut command = Command::new("/bin/true");
+    command
+        .env_clear()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    unsafe {
+        command.pre_exec(move || {
+            if nix::libc::setpgid(0, 0) != 0 {
+                report_stage(b"process-group");
+                return Err(std::io::Error::last_os_error());
+            }
+            if let Err(error) = landlock::apply_landlock(&config) {
+                let detail = format!("landlock ({error})");
+                report_stage(detail.as_bytes());
+                return Err(std::io::Error::other(error.to_string()));
+            }
+            if let Err(error) = seccomp::apply_seccomp_net_filter(true, true, true) {
+                let detail = format!("seccomp ({error})");
+                report_stage(detail.as_bytes());
+                return Err(std::io::Error::other(error.to_string()));
+            }
+            Ok(())
+        });
+    }
+
+    let child = command.spawn();
+    drop(stage_writer);
+    let mut stage = String::new();
+    std::fs::File::from(stage_reader)
+        .read_to_string(&mut stage)
+        .map_err(|error| eyre::eyre!("could not read strict sandbox probe result: {error}"))?;
+    let mut child = child.map_err(|error| strict_formula_probe_error(&stage, error))?;
+    let status = child
+        .wait()
+        .map_err(|error| eyre::eyre!("strict sandbox probe could not wait for child: {error}"))?;
+    if !status.success() {
+        eyre::bail!("strict sandbox probe child exited unsuccessfully: {status}");
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn strict_formula_probe_error(stage: &str, error: impl std::fmt::Display) -> eyre::Report {
+    let stage = if stage.is_empty() {
+        "spawn/exec"
+    } else {
+        stage
+    };
+    eyre::eyre!("strict sandbox probe failed during {stage}: {error}")
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn validate_linux_formula_execution_security(
+    context: &str,
+    effective_uid: u32,
+    proc_status: &str,
+) -> eyre::Result<()> {
+    if effective_uid == 0 {
+        eyre::bail!(
+            "{context}: strict formula execution refuses effective UID 0 because formula code must not retain host capabilities; run mise as an unprivileged user"
+        );
+    }
+    for field in ["CapInh", "CapPrm", "CapEff", "CapAmb"] {
+        let prefix = format!("{field}:");
+        let values = proc_status
+            .lines()
+            .filter_map(|line| line.strip_prefix(&prefix))
+            .map(str::trim)
+            .collect::<Vec<_>>();
+        let [value] = values.as_slice() else {
+            eyre::bail!(
+                "{context}: cannot prove retained Linux capabilities are absent: expected exactly one {field} entry in /proc/self/status"
+            );
+        };
+        let mask = u64::from_str_radix(value, 16).map_err(|_| {
+            eyre::eyre!(
+                "{context}: cannot prove retained Linux capabilities are absent: malformed {field} value in /proc/self/status"
+            )
+        })?;
+        if mask != 0 {
+            eyre::bail!(
+                "{context}: strict formula execution refuses retained Linux capabilities ({field}={value}); run mise without inherited, permitted, effective, or ambient capabilities"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Apply seccomp network filter (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn seccomp_apply() -> eyre::Result<()> {
-    seccomp::apply_seccomp_net_filter()
+pub(crate) fn seccomp_apply(
+    deny_local_sockets: bool,
+    deny_process_group_escape: bool,
+    strict_formula_execution: bool,
+) -> eyre::Result<()> {
+    seccomp::apply_seccomp_net_filter(
+        deny_local_sockets,
+        deny_process_group_escape,
+        strict_formula_execution,
+    )
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).
@@ -456,5 +937,165 @@ mod tests {
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
+    }
+
+    #[test]
+    fn test_local_socket_denial_enables_strict_network_sandbox() {
+        let config = SandboxConfig {
+            deny_local_sockets: true,
+            ..Default::default()
+        };
+
+        assert!(config.is_active());
+        assert!(config.effective_deny_net());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn formula_execution_profile_requires_every_strict_boundary() {
+        let strict = SandboxConfig {
+            deny_read: true,
+            deny_write: true,
+            deny_net: true,
+            deny_local_sockets: true,
+            deny_env: true,
+            deny_system_temp_write: true,
+            deny_mise_data_read: true,
+            require_full_filesystem_confinement: true,
+            system_access_profile: SystemAccessProfile::FormulaExecution,
+            ..Default::default()
+        };
+
+        assert!(strict.is_active());
+        strict
+            .validate_formula_execution_for_runner(true, true)
+            .unwrap();
+        assert!(
+            strict
+                .validate_formula_execution_for_runner(false, true)
+                .unwrap_err()
+                .to_string()
+                .contains("process-group")
+        );
+        assert!(
+            strict
+                .validate_formula_execution_for_runner(true, false)
+                .unwrap_err()
+                .to_string()
+                .contains("descriptor-bound working-directory confinement")
+        );
+
+        let mut incomplete = strict;
+        incomplete.deny_local_sockets = false;
+        assert!(
+            incomplete
+                .validate_formula_execution_for_runner(true, true)
+                .unwrap_err()
+                .to_string()
+                .contains("formula-execution sandbox requires strict")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn formula_execution_binding_rejects_missing_and_replaced_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let readable = tmp.path().join("formula.rb");
+        std::fs::write(&readable, "original").unwrap();
+        let mut strict = SandboxConfig {
+            system_access_profile: SystemAccessProfile::FormulaExecution,
+            allow_read: vec![readable.clone()],
+            ..Default::default()
+        };
+        strict.resolve_paths();
+        strict.bind_formula_execution_paths().unwrap();
+        std::fs::rename(&readable, tmp.path().join("original.rb")).unwrap();
+        std::fs::write(&readable, "foreign").unwrap();
+        assert!(strict.bound_allow_read[0].validate_path().is_err());
+
+        let mut missing = SandboxConfig {
+            system_access_profile: SystemAccessProfile::FormulaExecution,
+            allow_read: vec![tmp.path().join("missing")],
+            ..Default::default()
+        };
+        missing.resolve_paths();
+        assert!(missing.bind_formula_execution_paths().is_err());
+
+        let mut compatibility = SandboxConfig {
+            system_access_profile: SystemAccessProfile::Compatibility,
+            allow_read: vec![tmp.path().join("missing")],
+            ..Default::default()
+        };
+        compatibility.resolve_paths();
+        compatibility.bind_formula_execution_paths().unwrap();
+    }
+
+    #[test]
+    fn default_system_access_profile_preserves_compatibility() {
+        assert_eq!(
+            SandboxConfig::default().system_access_profile,
+            SystemAccessProfile::Compatibility
+        );
+    }
+
+    #[test]
+    fn formula_execution_preflight_rejects_root_and_retained_capabilities() {
+        const ZERO_CAPABILITIES: &str = "\
+CapInh:\t0000000000000000\n\
+CapPrm:\t0000000000000000\n\
+CapEff:\t0000000000000000\n\
+CapBnd:\t000001ffffffffff\n\
+CapAmb:\t0000000000000000\n";
+
+        let error = validate_linux_formula_execution_security("test", 0, "").unwrap_err();
+        assert!(error.to_string().contains("refuses effective UID 0"));
+        validate_linux_formula_execution_security("test", 1000, ZERO_CAPABILITIES).unwrap();
+
+        for field in ["CapInh", "CapPrm", "CapEff", "CapAmb"] {
+            let status = ZERO_CAPABILITIES.replacen(
+                &format!("{field}:\t0000000000000000"),
+                &format!("{field}:\t0000000000000001"),
+                1,
+            );
+            let error =
+                validate_linux_formula_execution_security("test", 1000, &status).unwrap_err();
+            assert!(error.to_string().contains(field));
+            assert!(error.to_string().contains("retained Linux capabilities"));
+        }
+
+        let missing = ZERO_CAPABILITIES.replace("CapAmb:\t0000000000000000\n", "");
+        assert!(
+            validate_linux_formula_execution_security("test", 1000, &missing)
+                .unwrap_err()
+                .to_string()
+                .contains("expected exactly one CapAmb")
+        );
+        let malformed = ZERO_CAPABILITIES.replace("CapEff:\t0000000000000000", "CapEff:\tnot-hex");
+        assert!(
+            validate_linux_formula_execution_security("test", 1000, &malformed)
+                .unwrap_err()
+                .to_string()
+                .contains("malformed CapEff")
+        );
+        let duplicate = format!("{ZERO_CAPABILITIES}CapPrm:\t0000000000000000\n");
+        assert!(
+            validate_linux_formula_execution_security("test", 1000, &duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("expected exactly one CapPrm")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn formula_execution_probe_reports_the_failing_enforcement_stage() {
+        let error = strict_formula_probe_error("seccomp", "operation not supported");
+        assert!(
+            error
+                .to_string()
+                .contains("strict sandbox probe failed during seccomp")
+        );
+        let error = strict_formula_probe_error("", "invalid argument");
+        assert!(error.to_string().contains("during spawn/exec"));
     }
 }

@@ -64,12 +64,37 @@ remove_isolated_env() {
 
 within_isolated_env() {
   local proxy_vars=()
+  local brew_oracle_vars=()
   [[ -n ${http_proxy:-} ]] && proxy_vars+=(http_proxy="$http_proxy")
   [[ -n ${https_proxy:-} ]] && proxy_vars+=(https_proxy="$https_proxy")
   [[ -n ${HTTP_PROXY:-} ]] && proxy_vars+=(HTTP_PROXY="$HTTP_PROXY")
   [[ -n ${HTTPS_PROXY:-} ]] && proxy_vars+=(HTTPS_PROXY="$HTTPS_PROXY")
   [[ -n ${no_proxy:-} ]] && proxy_vars+=(no_proxy="$no_proxy")
   [[ -n ${NO_PROXY:-} ]] && proxy_vars+=(NO_PROXY="$NO_PROXY")
+
+  case "$(realpath "$TEST_SCRIPT")" in
+    "$ROOT/e2e/cli/test_system_install_brew_linux" | \
+      "$ROOT/e2e/cli/test_system_install_brew_source_slow" | \
+      "$ROOT/e2e/cli/test_system_install_brew_formula_lifecycle_macos_slow")
+      brew_oracle_vars+=(
+        # Keep GitHub's process-tree identity so a canceled destructive oracle
+        # cannot outlive its tracked step. This never grants the disposable
+        # capability and is forwarded only to the four oracle entry points.
+        RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
+        MISE_BREW_ORACLE_DISPOSABLE="${MISE_BREW_ORACLE_DISPOSABLE:-}"
+        MISE_BREW_ORACLE_RUNNER_TEMP="${MISE_BREW_ORACLE_RUNNER_TEMP:-}"
+        MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
+        MISE_BREW_ORACLE_BREW_SOURCE="${MISE_BREW_ORACLE_BREW_SOURCE:-}"
+        MISE_BREW_ORACLE_HOMEBREW_REPOSITORY="${MISE_BREW_ORACLE_HOMEBREW_REPOSITORY:-}"
+        MISE_BREW_ORACLE_SOURCE_PREFIX="${MISE_BREW_ORACLE_SOURCE_PREFIX:-}"
+        MISE_BREW_LIFECYCLE_TEST_PREFIX="${MISE_BREW_LIFECYCLE_TEST_PREFIX:-}"
+        MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:-}"
+        MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
+        MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}"
+        MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}"
+      )
+      ;;
+  esac
 
   env \
     -i \
@@ -93,6 +118,7 @@ within_isolated_env() {
     LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
     LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
     ${proxy_vars[@]+"${proxy_vars[@]}"} \
+    ${brew_oracle_vars[@]+"${brew_oracle_vars[@]}"} \
     MISE_CACHE_DIR="$MISE_CACHE_DIR" \
     MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
     MISE_CACHE_PRUNE_AGE="0" \
@@ -112,7 +138,7 @@ within_isolated_env() {
     MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
     MISE_USE_VERSIONS_HOST_TRACK=0 \
     MISE_YES=1 \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin" \
     ROOT="$ROOT" \
     RUSTUP_HOME="$RUSTUP_HOME" \
     RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
@@ -208,6 +234,13 @@ run_in_docker() {
   local docker_args=(
     docker run --rm
   )
+  local is_disposable_brew_oracle=0
+  case "$(realpath "$TEST_SCRIPT")" in
+    "$ROOT/e2e/cli/test_system_install_brew_linux" | \
+      "$ROOT/e2e/cli/test_system_install_brew_source_slow")
+      [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]] && is_disposable_brew_oracle=1
+      ;;
+  esac
   # tests that install real system packages (e.g. apt) must write to /var and
   # /usr and declare that with an "# e2e:writable-rootfs" marker; the container
   # is still ephemeral and the host mounts below stay read-only
@@ -222,8 +255,6 @@ run_in_docker() {
     -v "$ROOT:/mise-src:ro"
     -v "$mise_bin:/usr/local/lib/mise/debug/mise:ro"
     -e ROOT=/mise-src
-    -e CI="${CI:-}"
-    -e GITHUB_ACTION="${GITHUB_ACTION:-}"
     -e MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}"
     -e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
     -e MISE_DEBUG="${MISE_DEBUG:-0}"
@@ -233,6 +264,30 @@ run_in_docker() {
     -e MISE_E2E_INSIDE_DOCKER=1
     -e CARGO_TARGET_DIR=/usr/local/lib/mise
   )
+  if [[ $is_disposable_brew_oracle == 0 ]]; then
+    docker_args+=(
+      -e CI="${CI:-}"
+      -e GITHUB_ACTION="${GITHUB_ACTION:-}"
+    )
+  fi
+  case "$(realpath "$TEST_SCRIPT")" in
+    "$ROOT/e2e/cli/test_system_install_brew_linux" | \
+      "$ROOT/e2e/cli/test_system_install_brew_source_slow")
+      if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
+        docker_args+=(
+          -e RUNNER_TRACKING_ID="${RUNNER_TRACKING_ID:-}"
+          -e MISE_BREW_ORACLE_DISPOSABLE=1
+          -e MISE_BREW_ORACLE_RUNNER_TEMP=/tmp
+          -e MISE_BREW_ORACLE_MISE_SHA="${MISE_BREW_ORACLE_MISE_SHA:-}"
+          -e MISE_BREW_ORACLE_SOURCE_PREFIX="${MISE_BREW_ORACLE_SOURCE_PREFIX:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_RELEASE:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA="${MISE_BREW_ORACLE_HOMEBREW_REFERENCE_SHA:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-}"
+          -e MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA="${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_SHA:-}"
+        )
+      fi
+      ;;
+  esac
 
   local rc=0
   "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?

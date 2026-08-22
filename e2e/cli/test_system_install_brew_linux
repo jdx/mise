@@ -1,18 +1,70 @@
 #!/usr/bin/env bash
+# e2e:writable-rootfs
 
-# Linuxbrew pour test: requires Linux x86_64/arm64 running as root (the CI
-# container case — root can create /home/linuxbrew without sudo) and network
-if [[ "$(uname)" != "Linux" ]] || [[ "$(id -u)" != 0 ]] || [[ -d /home/linuxbrew ]]; then
+# Linuxbrew pour test: the dedicated job runs this as root in the e2e
+# container's fresh writable rootfs and fresh /home bind mount. The host's
+# /home/linuxbrew is never a mutation target.
+if [[ $(uname) != Linux ]]; then
+  echo "SKIP: brew formula oracle requires Linux" >&2
   exit 0
 fi
+[[ $(id -u) == 0 ]] || {
+  echo "brew oracle safety check failed: Linux oracle must run as root" >&2
+  exit 1
+}
 case "$(uname -m)" in
   x86_64 | aarch64) ;;
-  *) exit 0 ;;
+  *)
+    echo "SKIP: unsupported Linux architecture for brew oracle" >&2
+    exit 0
+    ;;
 esac
 
-# the guard above skips when /home/linuxbrew exists, so clean up even when
-# an assertion fails mid-test — otherwise a failed run masks later ones
-trap 'rm -rf /home/linuxbrew' EXIT
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+brew_oracle_require_disposable linux-formula /home/linuxbrew/.linuxbrew
+
+linuxbrew_home_existed=0
+linuxbrew_home_mode=
+if [[ -L /home/linuxbrew ]]; then
+  brew_oracle_fail "Linuxbrew home is a symlink"
+elif [[ -e /home/linuxbrew ]]; then
+  [[ -d /home/linuxbrew ]] || brew_oracle_fail "Linuxbrew home is not a directory"
+  [[ $(stat -c %u:%g /home/linuxbrew) == 0:0 ]] ||
+    brew_oracle_fail "Linuxbrew home is not root-owned"
+  ! mountpoint -q /home/linuxbrew || brew_oracle_fail "Linuxbrew home is a mount point"
+  [[ -z $(find /home/linuxbrew -mindepth 1 -maxdepth 1 -print -quit) ]] ||
+    brew_oracle_fail "ambiguous non-empty Linuxbrew home"
+  linuxbrew_home_existed=1
+  linuxbrew_home_mode=$(stat -c %a /home/linuxbrew)
+fi
+if getent passwd linuxbrew >/dev/null 2>&1; then
+  brew_oracle_fail "pre-existing linuxbrew user is ambiguous"
+fi
+# Do not inspect process command lines: this oracle's own shell and awk source
+# contain the literal canonical prefix and therefore self-match. Inspect live
+# kernel path references instead, excluding this shell and its parent.
+for proc in /proc/[0-9]*; do
+  pid=${proc##*/}
+  [[ $pid != "$$" && $pid != "$PPID" ]] || continue
+  for proc_link in "$proc/cwd" "$proc/exe" "$proc/root" "$proc"/fd/*; do
+    [[ -L $proc_link ]] || continue
+    proc_target=$(readlink -f "$proc_link" 2>/dev/null || true)
+    case "$proc_target" in
+      /home/linuxbrew/.linuxbrew | /home/linuxbrew/.linuxbrew/*)
+        brew_oracle_fail "process $pid references the Linuxbrew prefix through $proc_link"
+        ;;
+    esac
+  done
+done
+
+cleanup_linuxbrew_home() {
+  rm -rf /home/linuxbrew
+  if [[ $linuxbrew_home_existed == 1 ]]; then
+    install -d -m "$linuxbrew_home_mode" -o root -g root /home/linuxbrew
+  fi
+}
+trap cleanup_linuxbrew_home EXIT
 
 cat <<EOF >mise.toml
 [bootstrap.packages]

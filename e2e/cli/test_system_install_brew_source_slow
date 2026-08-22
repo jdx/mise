@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Source-build pipeline test: builds GNU hello from source with mise's
-# formula shim (mise-managed ruby, no Homebrew installed). Uses a throwaway
+# formula shim (mise-managed ruby, no Homebrew runtime). Uses a throwaway
 # prefix, so no root is needed. Requires network and a C toolchain.
 if [[ "$(uname)" != "Linux" ]] || ! command -v cc >/dev/null 2>&1; then
   exit 0
@@ -11,7 +11,36 @@ case "$(uname -m)" in
   *) exit 0 ;;
 esac
 
-export MISE_SYSTEM_BREW_PREFIX="$HOME/brew-source-prefix"
+# shellcheck source=e2e/cli/brew_oracle_guard.sh
+source "${BASH_SOURCE[0]%/*}/brew_oracle_guard.sh"
+if [[ ${MISE_BREW_ORACLE_DISPOSABLE:-} == 1 ]]; then
+  source_prefix=${MISE_BREW_ORACLE_SOURCE_PREFIX:-}
+  brew_oracle_require_disposable linux-source "$source_prefix"
+  brew_oracle_require_absent_path "$source_prefix" "foreign or stale source-build prefix"
+  if [[ ${MISE_BREW_ORACLE_HOMEBREW_RUNTIME_RELEASE:-} == not-installed ]]; then
+    # GitHub's Ubuntu image preinstalls Homebrew outside the source oracle.
+    # Exclude that runtime from the already sanitized E2E PATH, then prove no
+    # other brew executable can influence the build recorded as not-installed.
+    IFS=: read -r -a source_path_entries <<<"$PATH"
+    source_path=
+    for entry in "${source_path_entries[@]}"; do
+      [[ $entry == /home/linuxbrew/.linuxbrew/bin ]] && continue
+      source_path="${source_path:+$source_path:}$entry"
+    done
+    export PATH=$source_path
+    if command -v brew >/dev/null 2>&1; then
+      brew_oracle_fail "Homebrew is available although the source oracle runtime is not-installed"
+    fi
+  fi
+  cleanup_source_prefix() {
+    rm -rf "$source_prefix"
+  }
+  trap cleanup_source_prefix EXIT
+else
+  source_prefix="$HOME/brew-source-prefix"
+fi
+
+export MISE_SYSTEM_BREW_PREFIX="$source_prefix"
 # hello has bottles everywhere; force it down the source-build path
 export MISE_SYSTEM_BREW_FORCE_SOURCE=hello
 # GNU's load-balancing mirror intermittently returns 502s. Use the canonical
@@ -30,9 +59,16 @@ assert_contains "mise bootstrap packages apply --dry-run" "build hello/"
 mise bootstrap packages apply --yes
 assert_contains "mise bootstrap packages status" "installed"
 
-# the built binary runs from the prefix and the keg carries a receipt
+# The built binary runs from the prefix and the keg carries the verified
+# formula snapshot, source receipt, and source-generated SBOM needed for later
+# real-Homebrew adoption.
 assert_contains "$MISE_SYSTEM_BREW_PREFIX/bin/hello --greeting=mise" "mise"
-assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json" '"poured_from_bottle":false'
+assert_succeed "jq -e '.poured_from_bottle == false' $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/INSTALL_RECEIPT.json"
+assert_succeed "test -s $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/.brew/hello.rb"
+assert_contains "cat $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/sbom.spdx.json" '"name": "hello"'
+hello_keg=$(find "$MISE_SYSTEM_BREW_PREFIX/Cellar/hello" -mindepth 1 -maxdepth 1 -type d -print -quit)
+hello_version=${hello_keg##*/}
+assert_succeed "jq -e --arg purl 'pkg:brew/homebrew/core/hello@$hello_version' '.packages[] | select(.name == \"hello\") | .externalRefs[] | select(.referenceType == \"purl\" and .referenceLocator == \$purl)' $MISE_SYSTEM_BREW_PREFIX/Cellar/hello/*/sbom.spdx.json"
 assert_succeed "test -L $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello && test -e $MISE_SYSTEM_BREW_PREFIX/var/homebrew/linked/hello"
 
 # idempotent

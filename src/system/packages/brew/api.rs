@@ -1,14 +1,60 @@
 //! Client for the formulae.brew.sh JSON API (static JSON, no auth).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
+use base64::Engine;
+use base64::alphabet;
+use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+use chrono::{NaiveDate, Utc};
 use eyre::{WrapErr, bail, eyre};
+use ring::signature::{RSA_PSS_2048_8192_SHA512, UnparsedPublicKey};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::http::HTTP_FETCH;
 use crate::result::Result;
 
 const API_BASE: &str = "https://formulae.brew.sh/api";
+const HOMEBREW_1_SPKI_B64: &str = "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyKoOYzp1rhwXISRi61BYXBEr2PalSK8lEVOL2USy7mpy0OubOlFyujawyQcBcCn+uPOJ/WaK+POhNWcLLoiKL2m8GViaQm7SMwdLKUXFgKSPHcG/1m6Vu+TNBKTfQqT60PjEYIrn5NW9ZrM0cUhKREmsbeAMBevdSaW9UwY9iIhprrgovvT8SzKhF8ZOIZKXfJX4VNk0y/7VJYNuGGqH3npxV7OKd4yTGRGqFcC9kJ84me3thiu0yqlOjASmfWIwIwcfp4j6BEM2LuqKd7yXh51/O+MTthkuxV36moDKfdgdOFsvlCFkziaYLScCX9lOlmZHtOfJTAOXxTmM7qGrwTGK0vhvTi8k9dBmH/dccredQBtPOfM/FEdeyakGLoTcDguiBS/4El3I2KtF6B2hOGoBumR915/cI4drr5yPMduZ7gjs7ZEZnVkeVzic24TfUHpnOYzrhucNJtHMBDj96d1Gk82AhtuF9KlusLmCb6qXCWQSp/A4RZpN37E/p9q8rLp/7B/zp8X2TVvecPNyBdMagdktdEqK7WPlYMcUp56JaOph8vqYoU+oGyCpWoLvcXFb75o4eefuu6Rs5SyMc9JCCJ0DDFPjCRFnGPkvsKxFCzMFqH1jpWH0RQIrgmNVM5PO84iRH9YJsSPQzpMjKvK/ZH4YgR9wNkBNagFo7lsCAwEAAQ==";
+const BASE64_URL_NO_PAD: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::URL_SAFE,
+    GeneralPurposeConfig::new()
+        .with_encode_padding(false)
+        .with_decode_padding_mode(DecodePaddingMode::RequireNone),
+);
+const BASE64_URL_SIGNATURE: GeneralPurpose = GeneralPurpose::new(
+    &alphabet::URL_SAFE,
+    GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FetchMode {
+    Cached,
+    Fresh,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct TapSnapshot {
+    pub repository_raw_base: String,
+    pub metadata_commit: String,
+}
+
+#[derive(Deserialize)]
+struct GithubCommit {
+    sha: String,
+}
+
+#[derive(Deserialize)]
+struct GithubContent {
+    name: String,
+    path: String,
+    #[serde(rename = "type")]
+    kind: String,
+    sha: String,
+    content: String,
+    encoding: String,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct Formula {
@@ -44,6 +90,72 @@ pub(super) struct Formula {
     /// homebrew/core commit this API snapshot was generated from
     #[serde(default)]
     pub tap_git_head: Option<String>,
+    /// Authenticated third-party tap repository identity. Private mise state
+    /// persists this with the metadata/source commits; Homebrew receipts do not.
+    #[serde(skip)]
+    pub tap_repository: Option<String>,
+    #[serde(skip)]
+    pub tap_metadata_commit: Option<String>,
+    #[serde(skip)]
+    pub tap_metadata_sha256: Option<String>,
+    #[serde(default)]
+    pub post_install_steps: Vec<Value>,
+    #[serde(default)]
+    pub post_install_defined: bool,
+    /// Homebrew install policy that must be checked before any keg mutation.
+    /// Kept grouped so callers cannot accidentally deserialize a policy field
+    /// without including it in the common validation boundary.
+    #[serde(flatten)]
+    pub(super) install_policy: FormulaInstallPolicy,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub(super) struct FormulaInstallPolicy {
+    #[serde(default)]
+    disabled: bool,
+    #[serde(default)]
+    disable_date: Option<String>,
+    #[serde(default)]
+    disable_reason: Option<String>,
+    #[serde(default)]
+    disable_replacement_formula: Option<String>,
+    #[serde(default)]
+    disable_replacement_cask: Option<String>,
+    #[serde(default)]
+    deprecated: bool,
+    #[serde(default)]
+    deprecation_date: Option<String>,
+    #[serde(default)]
+    deprecation_reason: Option<String>,
+    #[serde(default)]
+    deprecation_replacement_formula: Option<String>,
+    #[serde(default)]
+    deprecation_replacement_cask: Option<String>,
+    #[serde(default)]
+    requirements: Vec<FormulaRequirement>,
+    #[serde(default)]
+    pour_bottle_only_if: Option<String>,
+    #[serde(default)]
+    conflicts_with: Vec<String>,
+    #[serde(default)]
+    conflicts_with_reasons: Vec<Option<String>>,
+    #[serde(default)]
+    link_overwrite: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct FormulaRequirement {
+    name: String,
+    #[serde(default)]
+    cask: Option<String>,
+    #[serde(default)]
+    download: Option<String>,
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    contexts: Vec<String>,
+    #[serde(default)]
+    specs: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +183,8 @@ pub(super) struct Versions {
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct BottleSpec {
     #[serde(default)]
+    pub rebuild: u32,
+    #[serde(default)]
     pub files: HashMap<String, BottleFile>,
 }
 
@@ -91,6 +205,96 @@ pub(super) struct Variation {
 }
 
 impl Formula {
+    /// Validate Homebrew policy that mise must understand before installing.
+    ///
+    /// `link_overwrite` is intentionally represented but does not grant
+    /// overwrite authority: mise's topology preflight remains conservative
+    /// and rejects an occupied destination. This preserves user/Homebrew state
+    /// until exact typed overwrite ownership exists.
+    pub(super) fn validate_install_policy(&self) -> Result<()> {
+        let policy = &self.install_policy;
+        if policy.disabled && lifecycle_policy_is_active(policy.disable_date.as_deref())? {
+            let detail = policy_detail(
+                policy.disable_date.as_deref(),
+                policy.disable_reason.as_deref(),
+                policy.disable_replacement_formula.as_deref(),
+                policy.disable_replacement_cask.as_deref(),
+            );
+            bail!(
+                "brew:{} is disabled by Homebrew{detail}; mise will not install it",
+                self.name
+            );
+        }
+
+        let unsupported_requirements = policy
+            .requirements
+            .iter()
+            .filter(|requirement| !requirement.is_satisfied())
+            .collect::<Vec<_>>();
+        if !unsupported_requirements.is_empty() {
+            let requirements = unsupported_requirements
+                .into_iter()
+                .map(FormulaRequirement::describe)
+                .collect::<Vec<_>>()
+                .join(", ");
+            bail!(
+                "brew:{} declares unsupported Homebrew requirements ({requirements}); refusing to install without exact requirement enforcement",
+                self.name
+            );
+        }
+
+        if let Some(condition) = policy.pour_bottle_only_if.as_deref() {
+            bail!(
+                "brew:{} declares unsupported pour_bottle_only_if policy {condition:?}; refusing to install without exact predicate enforcement",
+                self.name
+            );
+        }
+
+        if self
+            .link_overwrite()
+            .iter()
+            .any(|pattern| pattern.trim().is_empty())
+        {
+            bail!(
+                "brew:{} declares an empty link_overwrite pattern; refusing ambiguous overwrite policy",
+                self.name
+            );
+        }
+
+        if policy.deprecated && lifecycle_policy_is_active(policy.deprecation_date.as_deref())? {
+            let detail = policy_detail(
+                policy.deprecation_date.as_deref(),
+                policy.deprecation_reason.as_deref(),
+                policy.deprecation_replacement_formula.as_deref(),
+                policy.deprecation_replacement_cask.as_deref(),
+            );
+            warn!("brew:{} is deprecated by Homebrew{detail}", self.name);
+        }
+        Ok(())
+    }
+
+    pub(super) fn conflicts_with(&self) -> &[String] {
+        &self.install_policy.conflicts_with
+    }
+
+    pub(super) fn conflict_reason(&self, name: &str) -> Option<&str> {
+        let index = self
+            .install_policy
+            .conflicts_with
+            .iter()
+            .position(|conflict| conflict == name)?;
+        self.install_policy
+            .conflicts_with_reasons
+            .get(index)
+            .and_then(|reason| reason.as_deref())
+    }
+
+    /// Patterns are informational until an exact ownership-aware overwrite
+    /// implementation exists. Callers must not treat them as mutation authority.
+    pub(super) fn link_overwrite(&self) -> &[String] {
+        &self.install_policy.link_overwrite
+    }
+
     /// keg directory name: version plus brew's bottle revision suffix
     pub(super) fn pkg_version(&self) -> Result<String> {
         let stable = self
@@ -135,29 +339,710 @@ impl Formula {
     }
 }
 
-/// Fetch formula metadata by name (or alias — brew's API redirects aliases
-/// to the canonical formula).
-pub(super) async fn formula(name: &str) -> Result<Formula> {
-    let url = format!("{API_BASE}/formula/{name}.json");
-    HTTP_FETCH
-        .json_cached::<Formula, _>(url)
-        .await
-        .wrap_err_with(|| format!("failed to fetch Homebrew formula '{name}'"))
+fn lifecycle_policy_is_active(date: Option<&str>) -> Result<bool> {
+    let Some(date) = date else {
+        return Ok(true);
+    };
+    let effective = NaiveDate::parse_from_str(date, "%Y-%m-%d")
+        .wrap_err_with(|| format!("invalid Homebrew lifecycle policy date {date:?}"))?;
+    Ok(effective <= Utc::now().date_naive())
 }
 
-pub(super) async fn formula_with_tap_name(
+impl FormulaRequirement {
+    fn is_satisfied(&self) -> bool {
+        if cfg!(target_os = "macos")
+            && self.name == "macos"
+            && self.version.is_none()
+            && self.cask.is_none()
+            && self.download.is_none()
+            && self.contexts.is_empty()
+            && !self.specs.is_empty()
+            && self
+                .specs
+                .iter()
+                .all(|spec| matches!(spec.as_str(), "stable" | "head"))
+        {
+            return true;
+        }
+        if !cfg!(target_os = "macos")
+            || self.name != "xcode"
+            || self.version.is_some()
+            || self.cask.is_some()
+            || self.download.is_some()
+            || self.contexts.as_slice() != ["build"]
+            || self.specs.as_slice() != ["stable"]
+        {
+            return false;
+        }
+        let selected = std::process::Command::new("/usr/bin/xcode-select")
+            .arg("-p")
+            .output()
+            .is_ok_and(|output| output.status.success() && !output.stdout.is_empty());
+        let compiler = std::process::Command::new("/usr/bin/xcrun")
+            .args(["--find", "clang"])
+            .output()
+            .is_ok_and(|output| output.status.success() && !output.stdout.is_empty());
+        selected && compiler
+    }
+
+    fn describe(&self) -> String {
+        let mut attributes = Vec::new();
+        if let Some(version) = &self.version {
+            attributes.push(format!("version={version}"));
+        }
+        if let Some(cask) = &self.cask {
+            attributes.push(format!("cask={cask}"));
+        }
+        if let Some(download) = &self.download {
+            attributes.push(format!("download={download}"));
+        }
+        if !self.contexts.is_empty() {
+            attributes.push(format!("contexts={}", self.contexts.join("|")));
+        }
+        if !self.specs.is_empty() {
+            attributes.push(format!("specs={}", self.specs.join("|")));
+        }
+        if attributes.is_empty() {
+            self.name.clone()
+        } else {
+            format!("{}[{}]", self.name, attributes.join(","))
+        }
+    }
+}
+
+fn policy_detail(
+    date: Option<&str>,
+    reason: Option<&str>,
+    replacement_formula: Option<&str>,
+    replacement_cask: Option<&str>,
+) -> String {
+    let mut details = Vec::new();
+    if let Some(date) = date {
+        details.push(format!("date {date}"));
+    }
+    if let Some(reason) = reason {
+        details.push(format!("reason {reason}"));
+    }
+    if let Some(replacement) = replacement_formula {
+        details.push(format!("replacement formula {replacement}"));
+    }
+    if let Some(replacement) = replacement_cask {
+        details.push(format!("replacement cask {replacement}"));
+    }
+    if details.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", details.join(", "))
+    }
+}
+
+/// Fetch formula metadata by name (or alias — brew's API redirects aliases
+/// to the canonical formula).
+pub(super) async fn formula_with_mode(name: &str, mode: FetchMode) -> Result<Formula> {
+    let _ = mode;
+    internal_formula(name).await
+}
+
+#[derive(Deserialize)]
+struct InternalApiEnvelope {
+    payload: String,
+    signatures: Vec<InternalApiSignature>,
+}
+
+#[derive(Deserialize)]
+struct InternalApiSignature {
+    protected: String,
+    signature: String,
+    header: InternalApiSignatureHeader,
+}
+
+#[derive(Deserialize)]
+struct InternalApiSignatureHeader {
+    kid: String,
+}
+
+#[derive(Deserialize)]
+struct InternalApiProtectedHeader {
+    alg: String,
+    b64: bool,
+    crit: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct InternalFormulaIndex {
+    formulae: HashMap<String, InternalFormula>,
+    #[serde(default)]
+    formula_aliases: HashMap<String, String>,
+    #[serde(default)]
+    formula_renames: HashMap<String, String>,
+    formula_tap_git_head: String,
+    metadata: InternalMetadata,
+}
+
+#[derive(Debug, Deserialize)]
+struct InternalMetadata {
+    bottle_tag: String,
+}
+
+/// Homebrew's signed, host-projected install record. Keep this exhaustive so
+/// a new upstream field cannot silently acquire installation semantics.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalFormula {
+    stable_version: Option<String>,
+    #[serde(default)]
+    revision: u32,
+    #[serde(default)]
+    #[serde(rename = "version_scheme")]
+    _version_scheme: u64,
+    #[serde(default)]
+    aliases: Vec<String>,
+    #[serde(default)]
+    #[serde(rename = "oldnames")]
+    _oldnames: Vec<String>,
+    #[serde(default)]
+    stable_url_args: Vec<Value>,
+    #[serde(default)]
+    stable_checksum: Option<String>,
+    #[serde(default)]
+    stable_dependencies: Vec<Value>,
+    #[serde(default)]
+    stable_uses_from_macos: Vec<Value>,
+    #[serde(default)]
+    stable_patches: Vec<Value>,
+    #[serde(default)]
+    bottle_checksum: Option<String>,
+    #[serde(default)]
+    bottle_cellar: Option<String>,
+    #[serde(default)]
+    bottle_rebuild: u32,
+    #[serde(default)]
+    bottle_tag: Option<String>,
+    #[serde(default)]
+    ruby_source_checksum: Option<String>,
+    #[serde(default)]
+    keg_only_args: Vec<Value>,
+    #[serde(default)]
+    disable_args: Option<InternalLifecyclePolicy>,
+    #[serde(default)]
+    deprecate_args: Option<InternalLifecyclePolicy>,
+    #[serde(default)]
+    pour_bottle_args: Option<InternalPourPolicy>,
+    #[serde(default)]
+    conflicts: Vec<InternalConflict>,
+    #[serde(default)]
+    link_overwrite_paths: Vec<String>,
+    #[serde(default)]
+    post_install_steps: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "desc")]
+    _desc: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "executables")]
+    _executables: Vec<String>,
+    #[serde(default)]
+    #[serde(rename = "homepage")]
+    _homepage: Option<String>,
+    #[serde(default)]
+    #[serde(rename = "license")]
+    _license: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "caveats")]
+    _caveats: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "head_dependencies")]
+    _head_dependencies: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "head_url_args")]
+    _head_url_args: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "head_uses_from_macos")]
+    _head_uses_from_macos: Vec<Value>,
+    #[serde(default)]
+    #[serde(rename = "no_autobump_args")]
+    _no_autobump_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_args")]
+    _service_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_name_args")]
+    _service_name_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_run_args")]
+    _service_run_args: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "service_run_kwargs")]
+    _service_run_kwargs: Option<Value>,
+    #[serde(default)]
+    #[serde(rename = "versioned_formulae")]
+    _versioned_formulae: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalLifecyclePolicy {
+    #[serde(default, rename = ":date")]
+    date: Option<String>,
+    #[serde(default, rename = ":because")]
+    reason: Option<String>,
+    #[serde(default, rename = ":replacement_formula")]
+    replacement_formula: Option<String>,
+    #[serde(default, rename = ":replacement_cask")]
+    replacement_cask: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalPourPolicy {
+    #[serde(rename = ":only_if")]
+    only_if: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InternalConflictPolicy {
+    #[serde(default, rename = ":because")]
+    reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum InternalConflict {
+    Bare((String,)),
+    WithPolicy((String, InternalConflictPolicy)),
+}
+
+impl InternalConflict {
+    fn name(&self) -> &str {
+        match self {
+            Self::Bare((name,)) | Self::WithPolicy((name, _)) => name,
+        }
+    }
+
+    fn reason(&self) -> Option<String> {
+        match self {
+            Self::Bare(_) => None,
+            Self::WithPolicy((_, policy)) => policy.reason.clone(),
+        }
+    }
+}
+
+static INTERNAL_FORMULAE: tokio::sync::OnceCell<
+    std::result::Result<Arc<InternalFormulaIndex>, String>,
+> = tokio::sync::OnceCell::const_new();
+
+pub(super) fn verify_internal_api_envelope(raw: &str) -> Result<String> {
+    let spki = base64::engine::general_purpose::STANDARD
+        .decode(HOMEBREW_1_SPKI_B64)
+        .wrap_err("invalid embedded Homebrew API trust anchor")?;
+    verify_internal_api_envelope_with_key(raw, &spki)
+}
+
+fn verify_internal_api_envelope_with_key(raw: &str, spki: &[u8]) -> Result<String> {
+    let envelope: InternalApiEnvelope =
+        serde_json::from_str(raw).wrap_err("invalid Homebrew internal API envelope")?;
+    let signature = envelope
+        .signatures
+        .iter()
+        .find(|signature| signature.header.kid == "homebrew-1")
+        .ok_or_else(|| eyre!("Homebrew internal API envelope has no trusted signature"))?;
+    let protected = BASE64_URL_NO_PAD
+        .decode(&signature.protected)
+        .wrap_err("invalid Homebrew internal API protected header encoding")?;
+    let protected: InternalApiProtectedHeader = serde_json::from_slice(&protected)
+        .wrap_err("invalid Homebrew internal API protected header")?;
+    if protected.alg != "PS512" || protected.b64 || protected.crit.as_slice() != ["b64"] {
+        bail!("unsupported Homebrew internal API signature parameters");
+    }
+    let signature_bytes = BASE64_URL_SIGNATURE
+        .decode(&signature.signature)
+        .wrap_err("invalid Homebrew internal API signature encoding")?;
+    let mut signing_input =
+        Vec::with_capacity(signature.protected.len() + 1 + envelope.payload.len());
+    signing_input.extend_from_slice(signature.protected.as_bytes());
+    signing_input.push(b'.');
+    signing_input.extend_from_slice(envelope.payload.as_bytes());
+    let rsa_public_key = rsa_public_key_from_spki(spki)?;
+    UnparsedPublicKey::new(&RSA_PSS_2048_8192_SHA512, rsa_public_key)
+        .verify(&signing_input, &signature_bytes)
+        .map_err(|_| eyre!("Homebrew internal API signature verification failed"))?;
+    Ok(envelope.payload)
+}
+
+fn rsa_public_key_from_spki(spki: &[u8]) -> Result<&[u8]> {
+    const RSA_ENCRYPTION_ALGORITHM: &[u8] = &[
+        0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00,
+    ];
+    let mut input = spki;
+    let sequence = der_value(&mut input, 0x30)?;
+    if !input.is_empty() {
+        bail!("Homebrew API trust anchor has trailing DER data");
+    }
+    let mut sequence = sequence;
+    let algorithm = der_value(&mut sequence, 0x30)?;
+    if algorithm != RSA_ENCRYPTION_ALGORITHM {
+        bail!("Homebrew API trust anchor uses an unsupported key algorithm");
+    }
+    let bit_string = der_value(&mut sequence, 0x03)?;
+    if !sequence.is_empty() || bit_string.first() != Some(&0) || bit_string.len() == 1 {
+        bail!("Homebrew API trust anchor has an invalid public-key bit string");
+    }
+    Ok(&bit_string[1..])
+}
+
+fn der_value<'a>(input: &mut &'a [u8], expected_tag: u8) -> Result<&'a [u8]> {
+    let (&tag, rest) = input
+        .split_first()
+        .ok_or_else(|| eyre!("truncated Homebrew API trust anchor"))?;
+    if tag != expected_tag {
+        bail!("invalid Homebrew API trust anchor DER tag");
+    }
+    let (&first_length, mut rest) = rest
+        .split_first()
+        .ok_or_else(|| eyre!("truncated Homebrew API trust anchor"))?;
+    let length = if first_length & 0x80 == 0 {
+        usize::from(first_length)
+    } else {
+        let octets = usize::from(first_length & 0x7f);
+        if octets == 0 || octets > std::mem::size_of::<usize>() || rest.len() < octets {
+            bail!("invalid Homebrew API trust anchor DER length");
+        }
+        if rest[0] == 0 {
+            bail!("non-minimal Homebrew API trust anchor DER length");
+        }
+        let mut length = 0usize;
+        for &octet in &rest[..octets] {
+            length = length
+                .checked_mul(256)
+                .and_then(|length| length.checked_add(usize::from(octet)))
+                .ok_or_else(|| eyre!("oversized Homebrew API trust anchor DER length"))?;
+        }
+        if length < 128 {
+            bail!("non-minimal Homebrew API trust anchor DER length");
+        }
+        rest = &rest[octets..];
+        length
+    };
+    if rest.len() < length {
+        bail!("truncated Homebrew API trust anchor DER value");
+    }
+    let (value, trailing) = rest.split_at(length);
+    *input = trailing;
+    Ok(value)
+}
+
+async fn internal_formula(name: &str) -> Result<Formula> {
+    let url = format!(
+        "{API_BASE}/internal/packages.{}.jws.json",
+        super::tag::host_tag()
+    );
+    let result = INTERNAL_FORMULAE
+        .get_or_init(|| async {
+            let raw = HTTP_FETCH
+                .get_text(&url)
+                .await
+                .map_err(|err| err.to_string())?;
+            let payload = verify_internal_api_envelope(&raw).map_err(|err| err.to_string())?;
+            serde_json::from_str(&payload)
+                .map(Arc::new)
+                .map_err(|err| err.to_string())
+        })
+        .await;
+    let index = result
+        .as_ref()
+        .map_err(|err| eyre!("failed to load Homebrew internal formula API: {err}"))?;
+    let canonical = canonical_internal_name(index, name)?;
+    let signed = index
+        .formulae
+        .get(&canonical)
+        .ok_or_else(|| eyre!("Homebrew internal API has no formula '{name}'"))?;
+    formula_from_internal(index, &canonical, signed, &url)
+}
+
+fn canonical_internal_name(index: &InternalFormulaIndex, requested: &str) -> Result<String> {
+    let mut current = requested;
+    for _ in 0..3 {
+        if index.formulae.contains_key(current) {
+            return Ok(current.to_string());
+        }
+        let Some(next) = index
+            .formula_aliases
+            .get(current)
+            .or_else(|| index.formula_renames.get(current))
+        else {
+            bail!("Homebrew internal API has no formula '{requested}'");
+        };
+        current = next;
+    }
+    bail!("Homebrew internal API has a cyclic alias or rename for '{requested}'")
+}
+
+fn formula_from_internal(
+    index: &InternalFormulaIndex,
+    name: &str,
+    signed: &InternalFormula,
+    _source: &str,
+) -> Result<Formula> {
+    validate_formula_name(name)?;
+    let mut dependencies = Vec::new();
+    let mut build_dependencies = Vec::new();
+    for dependency in &signed.stable_dependencies {
+        parse_internal_dependency(dependency, &mut dependencies, &mut build_dependencies)?;
+    }
+    if cfg!(target_os = "linux") {
+        for dependency in &signed.stable_uses_from_macos {
+            parse_uses_from_macos_dependency(
+                dependency,
+                &mut dependencies,
+                &mut build_dependencies,
+            )?;
+        }
+    }
+    let mut seen = HashSet::new();
+    dependencies.retain(|dependency| seen.insert(dependency.clone()));
+    seen.clear();
+    build_dependencies.retain(|dependency| seen.insert(dependency.clone()));
+
+    let stable_url = parse_internal_source(name, signed)?;
+    let bottle_tag = signed
+        .bottle_tag
+        .as_deref()
+        .map(parse_internal_bottle_tag)
+        .transpose()?
+        .unwrap_or_else(|| index.metadata.bottle_tag.clone());
+    let mut bottle = HashMap::new();
+    if let Some(checksum) = signed.bottle_checksum.as_deref() {
+        validate_sha256("bottle", checksum)?;
+        let oci_name = name.replace('@', "/");
+        let file = BottleFile {
+            cellar: signed
+                .bottle_cellar
+                .clone()
+                .unwrap_or_else(|| ":any_skip_relocation".to_string()),
+            url: format!("https://ghcr.io/v2/homebrew/core/{oci_name}/blobs/sha256:{checksum}"),
+            sha256: checksum.to_string(),
+        };
+        bottle.insert(
+            "stable".to_string(),
+            BottleSpec {
+                rebuild: signed.bottle_rebuild,
+                files: HashMap::from([(bottle_tag, file)]),
+            },
+        );
+    }
+
+    let ruby_checksum = signed
+        .ruby_source_checksum
+        .as_deref()
+        .map(|checksum| {
+            validate_sha256("formula source", checksum)?;
+            Ok::<_, eyre::Report>(RubySourceChecksum {
+                sha256: Some(checksum.to_string()),
+            })
+        })
+        .transpose()?;
+    let first = name
+        .chars()
+        .next()
+        .ok_or_else(|| eyre!("empty signed formula name"))?;
+    let mut aliases: Vec<String> = signed
+        .aliases
+        .iter()
+        .cloned()
+        .chain(
+            index
+                .formula_aliases
+                .iter()
+                .filter_map(|(alias, canonical)| (canonical == name).then_some(alias.clone())),
+        )
+        .collect();
+    let mut seen = HashSet::new();
+    aliases.retain(|alias| seen.insert(alias.clone()));
+    let disable = signed.disable_args.as_ref();
+    let deprecate = signed.deprecate_args.as_ref();
+    Ok(Formula {
+        name: name.to_string(),
+        tap: Some("homebrew/core".to_string()),
+        aliases,
+        versions: Versions {
+            stable: signed.stable_version.clone(),
+        },
+        revision: signed.revision,
+        keg_only: !signed.keg_only_args.is_empty(),
+        dependencies,
+        build_dependencies,
+        bottle,
+        variations: HashMap::new(),
+        urls: stable_url
+            .map(|url| HashMap::from([("stable".to_string(), url)]))
+            .unwrap_or_default(),
+        ruby_source_path: Some(format!("Formula/{first}/{name}.rb")),
+        ruby_source_checksum: ruby_checksum,
+        tap_git_head: Some(index.formula_tap_git_head.clone()),
+        tap_repository: None,
+        tap_metadata_commit: None,
+        tap_metadata_sha256: None,
+        post_install_defined: false,
+        post_install_steps: signed.post_install_steps.clone(),
+        install_policy: FormulaInstallPolicy {
+            disabled: disable.is_some(),
+            disable_date: disable.and_then(|p| p.date.clone()),
+            disable_reason: disable.and_then(|p| p.reason.clone()),
+            disable_replacement_formula: disable.and_then(|p| p.replacement_formula.clone()),
+            disable_replacement_cask: disable.and_then(|p| p.replacement_cask.clone()),
+            deprecated: deprecate.is_some(),
+            deprecation_date: deprecate.and_then(|p| p.date.clone()),
+            deprecation_reason: deprecate.and_then(|p| p.reason.clone()),
+            deprecation_replacement_formula: deprecate.and_then(|p| p.replacement_formula.clone()),
+            deprecation_replacement_cask: deprecate.and_then(|p| p.replacement_cask.clone()),
+            requirements: Vec::new(),
+            pour_bottle_only_if: signed.pour_bottle_args.as_ref().map(|p| p.only_if.clone()),
+            conflicts_with: signed
+                .conflicts
+                .iter()
+                .map(|conflict| conflict.name().to_string())
+                .collect(),
+            conflicts_with_reasons: signed
+                .conflicts
+                .iter()
+                .map(InternalConflict::reason)
+                .collect(),
+            link_overwrite: signed.link_overwrite_paths.clone(),
+        },
+    })
+}
+
+fn validate_formula_name(name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"@+._-".contains(&byte))
+    {
+        bail!("Homebrew internal API has an unsafe formula name {name:?}");
+    }
+    Ok(())
+}
+
+fn parse_internal_bottle_tag(tag: &str) -> Result<String> {
+    let tag = tag.strip_prefix(':').unwrap_or(tag);
+    if tag.is_empty()
+        || !tag
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        bail!("Homebrew internal API has an unsafe bottle tag {tag:?}");
+    }
+    Ok(tag.to_string())
+}
+
+fn validate_sha256(kind: &str, checksum: &str) -> Result<()> {
+    if checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("signed Homebrew {kind} checksum is not a sha256");
+    }
+    Ok(())
+}
+
+fn parse_internal_source(name: &str, signed: &InternalFormula) -> Result<Option<SourceUrl>> {
+    if signed.stable_url_args.is_empty() {
+        if signed.stable_checksum.is_some() {
+            bail!("brew:{name} has a signed source checksum without a source URL");
+        }
+        return Ok(None);
+    }
+    let url = signed.stable_url_args[0]
+        .as_str()
+        .ok_or_else(|| eyre!("brew:{name} signed source URL is not a string"))?;
+    let checksum = signed.stable_checksum.as_deref();
+    if let Some(checksum) = checksum {
+        validate_sha256("source", checksum)?;
+    }
+    // Additional URL arguments describe VCS strategies, tags, revisions, or
+    // other download behavior. Preserve the URL for diagnostics but mark the
+    // strategy unsupported instead of guessing at Homebrew DSL semantics.
+    let using = if !signed.stable_patches.is_empty() {
+        Some("signed source patches".to_string())
+    } else {
+        (signed.stable_url_args.len() > 1).then(|| "signed URL options".to_string())
+    };
+    Ok(Some(SourceUrl {
+        url: url.to_string(),
+        checksum: checksum.map(str::to_string),
+        using,
+    }))
+}
+
+fn parse_internal_dependency(
+    value: &Value,
+    runtime: &mut Vec<String>,
+    build: &mut Vec<String>,
+) -> Result<()> {
+    if let Some(name) = value.as_str() {
+        validate_formula_name(name)?;
+        runtime.push(name.to_string());
+        return Ok(());
+    }
+    let object = value
+        .as_object()
+        .filter(|object| object.len() == 1)
+        .ok_or_else(|| eyre!("unsupported signed Homebrew dependency shape: {value}"))?;
+    let (name, qualifier) = object.iter().next().unwrap();
+    validate_formula_name(name)?;
+    let qualifiers = match qualifier {
+        Value::String(value) => vec![value.as_str()],
+        Value::Array(values) => values
+            .iter()
+            .map(|value| {
+                value.as_str().ok_or_else(|| {
+                    eyre!("unsupported signed Homebrew dependency qualifier: {qualifier}")
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        _ => bail!("unsupported signed Homebrew dependency qualifier: {qualifier}"),
+    };
+    if qualifiers.contains(&":build") {
+        build.push(name.clone());
+    } else if qualifiers
+        .iter()
+        .all(|q| *q == ":test" || *q == ":optional")
+    {
+        // Test and opt-in dependencies are not part of a default installation.
+    } else if qualifiers.iter().all(|q| *q == ":recommended") {
+        runtime.push(name.clone());
+    } else {
+        bail!("unsupported signed Homebrew dependency qualifier: {qualifier}");
+    }
+    Ok(())
+}
+
+fn parse_uses_from_macos_dependency(
+    value: &Value,
+    runtime: &mut Vec<String>,
+    build: &mut Vec<String>,
+) -> Result<()> {
+    let dependency = value
+        .as_array()
+        .and_then(|values| values.first())
+        .ok_or_else(|| eyre!("unsupported signed uses_from_macos shape: {value}"))?;
+    parse_internal_dependency(dependency, runtime, build)
+}
+
+pub(super) async fn formula_with_tap_name_mode(
     name: &str,
     tap_name: Option<&str>,
     tap_url: Option<&str>,
+    mode: FetchMode,
 ) -> Result<Formula> {
     let Some((owner, tap, formula_name)) = split_tap_name(name).or_else(|| {
         let (owner, tap) = split_tap(tap_name?)?;
         Some((owner, tap, name))
     }) else {
-        return formula(name).await;
+        return formula_with_mode(name, mode).await;
     };
     if owner == "homebrew" && tap == "core" {
-        return formula(formula_name).await;
+        return formula_with_mode(formula_name, mode).await;
+    }
+    if owner != "homebrew" || tap != "core" {
+        bail!("brew: third-party tap formula '{name}' requires an immutable tap snapshot");
     }
     let Some(url) = tap_formula_api_url(owner, tap, formula_name, tap_url) else {
         bail!(
@@ -165,16 +1050,205 @@ pub(super) async fn formula_with_tap_name(
              so mise can fetch metadata directly without the brew CLI"
         );
     };
-    HTTP_FETCH
-        .json_cached::<Formula, _>(url)
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "failed to fetch Homebrew tap formula '{name}' directly. \
+    let result = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<Formula, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<Formula, _>(url).await,
+    };
+    result.wrap_err_with(|| {
+        format!(
+            "failed to fetch Homebrew tap formula '{name}' directly. \
                  The tap must publish API metadata at api/formula/{formula_name}.json; \
                  mise will not proxy to the brew CLI"
-            )
-        })
+        )
+    })
+}
+
+pub(super) async fn resolve_tap_snapshot(
+    tap_name: &str,
+    tap_url: Option<&str>,
+    mode: FetchMode,
+) -> Result<TapSnapshot> {
+    let tap_url = tap_url.ok_or_else(|| {
+        eyre!(
+            "brew: third-party tap '{tap_name}' must be configured with a GitHub URL in [bootstrap.brew.taps]"
+        )
+    })?;
+    let (owner, repo) = github_repository(tap_url).ok_or_else(|| {
+        eyre!(
+            "brew: third-party tap '{tap_name}' must use an https://github.com/owner/repository URL"
+        )
+    })?;
+    resolve_tap_snapshot_from(
+        tap_name,
+        &format!("https://api.github.com/repos/{owner}/{repo}/commits/HEAD"),
+        &format!("https://raw.githubusercontent.com/{owner}/{repo}"),
+        mode,
+    )
+    .await
+}
+
+async fn resolve_tap_snapshot_from(
+    tap_name: &str,
+    commit_url: &str,
+    repository_raw_base: &str,
+    mode: FetchMode,
+) -> Result<TapSnapshot> {
+    let commit = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<GithubCommit, _>(commit_url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<GithubCommit, _>(commit_url).await,
+    }
+    .wrap_err_with(|| format!("failed to resolve immutable GitHub commit for tap '{tap_name}'"))?;
+    validate_git_commit(&commit.sha, "tap metadata commit")?;
+    Ok(TapSnapshot {
+        repository_raw_base: repository_raw_base.trim_end_matches('/').to_string(),
+        metadata_commit: commit.sha,
+    })
+}
+
+pub(super) async fn formula_with_tap_snapshot_mode(
+    name: &str,
+    snapshot: &TapSnapshot,
+    mode: FetchMode,
+) -> Result<Formula> {
+    let (owner, repo) = raw_github_repository(&snapshot.repository_raw_base)
+        .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    let repository = format!("https://github.com/{owner}/{repo}");
+    let repository_api_base = format!("https://api.github.com/repos/{owner}/{repo}");
+    formula_with_tap_snapshot_from(name, snapshot, &repository, &repository_api_base, mode).await
+}
+
+async fn formula_with_tap_snapshot_from(
+    name: &str,
+    snapshot: &TapSnapshot,
+    repository: &str,
+    repository_api_base: &str,
+    mode: FetchMode,
+) -> Result<Formula> {
+    let formula_name = split_tap_name(name)
+        .map(|(_, _, formula)| formula)
+        .unwrap_or(name);
+    let bytes = fetch_github_content_from(
+        &format!("api/formula/{formula_name}.json"),
+        &snapshot.metadata_commit,
+        repository_api_base,
+        mode,
+    )
+    .await
+    .wrap_err_with(|| {
+        format!(
+            "failed to fetch Homebrew tap formula '{name}' from immutable commit {}",
+            snapshot.metadata_commit
+        )
+    })?;
+    let mut formula: Formula = serde_json::from_slice(&bytes)
+        .wrap_err_with(|| format!("brew: tap formula '{name}' metadata is not valid JSON"))?;
+    let source_commit = formula
+        .tap_git_head
+        .clone()
+        .ok_or_else(|| eyre!("brew: tap formula '{name}' metadata has no tap_git_head"))?;
+    validate_git_commit(&source_commit, "tap source commit")?;
+    let (owner, repo) = github_repository(repository)
+        .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    formula.tap_repository = Some(format!("https://github.com/{owner}/{repo}"));
+    formula.tap_metadata_commit = Some(snapshot.metadata_commit.clone());
+    formula.tap_metadata_sha256 = Some(hex::encode(
+        ring::digest::digest(&ring::digest::SHA256, &bytes).as_ref(),
+    ));
+    Ok(formula)
+}
+
+pub(super) async fn fetch_github_content(
+    repository: &str,
+    path: &str,
+    commit: &str,
+    mode: FetchMode,
+) -> Result<Vec<u8>> {
+    let (owner, repo) = github_repository(repository)
+        .ok_or_else(|| eyre!("brew: invalid authenticated tap repository identity"))?;
+    validate_git_commit(commit, "tap content commit")?;
+    fetch_github_content_from(
+        path,
+        commit,
+        &format!("https://api.github.com/repos/{owner}/{repo}"),
+        mode,
+    )
+    .await
+}
+
+async fn fetch_github_content_from(
+    path: &str,
+    commit: &str,
+    repository_api_base: &str,
+    mode: FetchMode,
+) -> Result<Vec<u8>> {
+    if path.is_empty()
+        || path
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        bail!("brew: invalid tap repository content path {path:?}")
+    }
+    let mut url =
+        url::Url::parse(repository_api_base).wrap_err("invalid GitHub repository API URL")?;
+    {
+        let mut segments = url
+            .path_segments_mut()
+            .map_err(|_| eyre!("GitHub repository API URL cannot contain path segments"))?;
+        segments.push("contents");
+        for part in path.split('/') {
+            segments.push(part);
+        }
+    }
+    url.query_pairs_mut().append_pair("ref", commit);
+    let content = match mode {
+        FetchMode::Cached => HTTP_FETCH.json_cached::<GithubContent, _>(url).await,
+        FetchMode::Fresh => HTTP_FETCH.json::<GithubContent, _>(url).await,
+    }
+    .wrap_err_with(|| format!("failed to fetch authenticated tap content {path:?} at {commit}"))?;
+    if content.encoding != "base64" {
+        bail!(
+            "brew: tap content {path:?} uses unsupported GitHub content encoding {:?}",
+            content.encoding
+        );
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(
+            content
+                .content
+                .bytes()
+                .filter(|byte| !byte.is_ascii_whitespace())
+                .collect::<Vec<_>>(),
+        )
+        .wrap_err_with(|| format!("brew: tap content {path:?} is not valid base64"))?;
+    let expected_name = path.rsplit('/').next().unwrap_or_default();
+    if content.kind != "file" || content.path != path || content.name != expected_name {
+        bail!("brew: GitHub Contents response identity does not match requested file {path:?}")
+    }
+    let mut git_blob = format!("blob {}\0", bytes.len()).into_bytes();
+    git_blob.extend_from_slice(&bytes);
+    let blob_sha = ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, &git_blob);
+    if hex::encode(blob_sha.as_ref()) != content.sha.to_ascii_lowercase() {
+        bail!("brew: GitHub Contents response blob SHA does not match decoded file {path:?}")
+    }
+    Ok(bytes)
+}
+
+pub(super) fn validate_tap_source_commit(formula: &Formula) -> Result<()> {
+    let source_commit = formula.tap_git_head.as_deref().ok_or_else(|| {
+        eyre!(
+            "brew: tap formula '{}' metadata has no tap_git_head",
+            formula.name
+        )
+    })?;
+    validate_git_commit(source_commit, "tap source commit")?;
+    Ok(())
+}
+
+fn validate_git_commit(commit: &str, label: &str) -> Result<()> {
+    if commit.len() != 40 || !commit.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("brew: invalid {label} {commit:?}: expected a full 40-character Git commit");
+    }
+    Ok(())
 }
 
 pub(super) fn tap_name(name: &str) -> Option<String> {
@@ -229,16 +1303,604 @@ pub(super) fn tap_raw_base(owner: &str, tap: &str, tap_url: Option<&str>) -> Opt
 }
 
 pub(super) fn github_raw_base(url: &str) -> Option<String> {
-    let url = url.trim_end_matches(".git").trim_end_matches('/');
-    let rest = url.strip_prefix("https://github.com/")?;
+    let (owner, repo) = github_repository(url)?;
+    Some(format!(
+        "https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
+    ))
+}
+
+pub(super) fn normalize_github_repository_url(url: &str) -> Option<String> {
+    let (owner, repo) = github_repository(url)?;
+    Some(format!("https://github.com/{owner}/{repo}"))
+}
+
+fn github_repository(url: &str) -> Option<(String, String)> {
+    url.strip_prefix("https://github.com/")?;
+    let parsed = url::Url::parse(url).ok()?;
+    if parsed.scheme() != "https"
+        || parsed.host_str() != Some("github.com")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
+    {
+        return None;
+    }
+    let path = parsed.path().strip_prefix('/')?.trim_end_matches('/');
+    let mut parts = path.split('/');
+    let owner = parts.next()?;
+    let repository = parts.next()?;
+    let repo = repository
+        .get(..repository.len().saturating_sub(4))
+        .filter(|_| repository.to_ascii_lowercase().ends_with(".git"))
+        .unwrap_or(repository);
+    if parts.next().is_some()
+        || owner.is_empty()
+        || repo.is_empty()
+        || owner.contains('%')
+        || repo.contains('%')
+    {
+        None
+    } else {
+        Some((owner.to_ascii_lowercase(), repo.to_ascii_lowercase()))
+    }
+}
+
+fn raw_github_repository(url: &str) -> Option<(&str, &str)> {
+    let rest = url.strip_prefix("https://raw.githubusercontent.com/")?;
     let mut parts = rest.split('/');
     let owner = parts.next()?;
     let repo = parts.next()?;
-    if parts.next().is_some() || owner.is_empty() || repo.is_empty() {
-        None
-    } else {
-        Some(format!(
-            "https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
-        ))
+    (parts.next().is_none() && !owner.is_empty() && !repo.is_empty()).then_some((owner, repo))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn third_party_metadata_is_bound_to_immutable_snapshot() {
+        let mut server = mockito::Server::new_async().await;
+        let metadata_commit = "1111111111111111111111111111111111111111";
+        let source_commit = "2222222222222222222222222222222222222222";
+        let formula_json = format!(
+            r#"{{"name":"widget","tap":"owner/tools","versions":{{"stable":"1.0"}},"tap_git_head":"{source_commit}"}}"#
+        );
+        let mut git_blob = format!("blob {}\0", formula_json.len()).into_bytes();
+        git_blob.extend_from_slice(formula_json.as_bytes());
+        let blob_sha = hex::encode(
+            ring::digest::digest(&ring::digest::SHA1_FOR_LEGACY_USE_ONLY, &git_blob).as_ref(),
+        );
+        let head = server
+            .mock("GET", "/repos/owner/homebrew-tools/commits/HEAD")
+            .with_body(format!(r#"{{"sha":"{metadata_commit}"}}"#))
+            .create_async()
+            .await;
+        let metadata = server
+            .mock("GET", "/contents/api/formula/widget.json")
+            .match_query(mockito::Matcher::UrlEncoded(
+                "ref".into(),
+                metadata_commit.into(),
+            ))
+            .with_body(
+                serde_json::json!({
+                    "name": "widget.json",
+                    "path": "api/formula/widget.json",
+                    "type": "file",
+                    "sha": blob_sha,
+                    "encoding": "base64",
+                    "content": base64::engine::general_purpose::STANDARD.encode(&formula_json)
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let snapshot = resolve_tap_snapshot_from(
+            "owner/tools",
+            &format!("{}/repos/owner/homebrew-tools/commits/HEAD", server.url()),
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap();
+        let formula = formula_with_tap_snapshot_from(
+            "widget",
+            &snapshot,
+            "https://github.com/owner/homebrew-tools",
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap();
+        validate_tap_source_commit(&formula).unwrap();
+        assert_eq!(snapshot.metadata_commit, metadata_commit);
+        assert_eq!(formula.tap_git_head.as_deref(), Some(source_commit));
+        head.assert_async().await;
+        metadata.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn github_contents_rejects_path_and_blob_substitution() {
+        let mut server = mockito::Server::new_async().await;
+        let commit = "1".repeat(40);
+        let content = b"trusted";
+        let encoded = base64::engine::general_purpose::STANDARD.encode(content);
+        let wrong_path = server
+            .mock("GET", "/contents/Formula/widget.rb")
+            .match_query(mockito::Matcher::UrlEncoded("ref".into(), commit.clone()))
+            .with_body(
+                json!({
+                    "name": "other.rb", "path": "Formula/other.rb", "type": "file",
+                    "sha": "0".repeat(40), "encoding": "base64", "content": encoded
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let error = fetch_github_content_from(
+            "Formula/widget.rb",
+            &commit,
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("identity does not match"));
+        wrong_path.assert_async().await;
+
+        let wrong_blob = server
+            .mock("GET", "/contents/Formula/widget.rb")
+            .match_query(mockito::Matcher::UrlEncoded("ref".into(), commit.clone()))
+            .with_body(
+                json!({
+                    "name": "widget.rb", "path": "Formula/widget.rb", "type": "file",
+                    "sha": "0".repeat(40), "encoding": "base64", "content": encoded
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let error = fetch_github_content_from(
+            "Formula/widget.rb",
+            &commit,
+            &server.url(),
+            FetchMode::Fresh,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("blob SHA"));
+        wrong_blob.assert_async().await;
+    }
+
+    #[test]
+    fn tap_snapshot_accepts_per_formula_source_commits() {
+        let first: Formula = serde_json::from_value(json!({
+            "name": "one", "versions": {"stable": "1"}, "tap_git_head": "2222222222222222222222222222222222222222"
+        })).unwrap();
+        let second: Formula = serde_json::from_value(json!({
+            "name": "two", "versions": {"stable": "1"}, "tap_git_head": "3333333333333333333333333333333333333333"
+        })).unwrap();
+        validate_tap_source_commit(&first).unwrap();
+        validate_tap_source_commit(&second).unwrap();
+        assert_ne!(first.tap_git_head, second.tap_git_head);
+    }
+
+    #[test]
+    fn github_repository_urls_are_strict_and_normalized() {
+        assert_eq!(
+            github_repository("https://github.com/owner/repo"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+        assert_eq!(
+            github_repository("https://github.com/owner/repo.git/"),
+            Some(("owner".to_string(), "repo".to_string()))
+        );
+        for url in [
+            "http://github.com/owner/repo",
+            "https://user@github.com/owner/repo",
+            "https://github.com:443/owner/repo",
+            "https://github.com/owner/repo/extra",
+            "https://github.com/owner//repo",
+            "https://github.com/owner/repo?ref=main",
+            "https://github.com.evil.test/owner/repo",
+        ] {
+            assert_eq!(github_repository(url), None, "accepted {url}");
+        }
+        assert_eq!(
+            normalize_github_repository_url("https://github.com/owner/repo.git/"),
+            Some("https://github.com/owner/repo".to_string())
+        );
+        assert_eq!(
+            normalize_github_repository_url("https://github.com/Owner/Repo.GIT"),
+            Some("https://github.com/owner/repo".to_string())
+        );
+    }
+
+    const TEST_SPKI_B64: &str = "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwIWspWJVE51stHOwJaaOdZnrECZuI3LH+tzYwTrFaAkcPvC9XEZuV/HX/fV2pFXR6HTjwl1UyIihJ1zGpfaMmy+SYfImuDincSaNQGpJsuLb5xesPilOsP46eu5JwJ7zbzRpMyIntlqZEe6zoNRYnJXxna2hZnauDGrldtYDtj/MSaES0gNIVQemuzSG14L7JFuhK9Pkuh+xW9x5xcIBvk/38B4QC8yMOGB1WWryV+QREC/Zzm3jcSs4GoYVbpakGhVYYHvQvN+HRjDA1CcwGCgJPhNZ76RkOP47da0pSXh9ibrKUVQpLgyN7mC/1ypwELrL7FPmYwjsJqoViC4LYwIDAQAB";
+    const TEST_PROTECTED: &str = "eyJhbGciOiJQUzUxMiIsImI2NCI6ZmFsc2UsImNyaXQiOlsiYjY0Il19";
+    const TEST_SIGNATURE: &str = "jYKZ5fGzdy7jgMu4IlrlGJdGLb9bfcAVlqS0Bmfy1_6Ov0GMLTPgixYlIERMFa5OHptV8eeR3Fvd13e2_72ScxGpV_41cx83LQ-vFbZ19pT-_v6sMqb6oBOWeJTYomC5Tq5CKK7nchqTd6faEPTWl5qelL1yoFIwrq4fdTVL0KG5jvO0iomMkgLI6PhWtDKbLks1nsOwC_S0Pf0XttgDFcelqWe29IYs4GxbTfMBEsbhIKMyPO3V_lhJyGM9trqtMXR4Ks5io6LjbKSJxIT3Gy34CeTjVdrO42D1_hOQbf_E_8rVTIu_ht3oRrocjHkmXT7eA5TS7CPHikNOc0FE6A";
+    const TEST_PAYLOAD: &str = r#"{"formulae":{"hello":{}}}"#;
+
+    fn test_envelope(protected: &str, kid: &str, payload: &str) -> String {
+        serde_json::json!({
+            "payload": payload,
+            "signatures": [{
+                "protected": protected,
+                "header": { "kid": kid },
+                "signature": TEST_SIGNATURE
+            }]
+        })
+        .to_string()
+    }
+
+    fn test_spki() -> Vec<u8> {
+        base64::engine::general_purpose::STANDARD
+            .decode(TEST_SPKI_B64)
+            .unwrap()
+    }
+
+    fn encoded_protected(value: Value) -> String {
+        BASE64_URL_NO_PAD.encode(serde_json::to_vec(&value).unwrap())
+    }
+
+    #[test]
+    fn internal_api_envelope_verifies_detached_payload() {
+        let raw = test_envelope(TEST_PROTECTED, "homebrew-1", TEST_PAYLOAD);
+        assert_eq!(
+            verify_internal_api_envelope_with_key(&raw, &test_spki()).unwrap(),
+            TEST_PAYLOAD
+        );
+    }
+
+    #[test]
+    fn internal_api_envelope_rejects_tampering_and_unknown_keys() {
+        let tampered = test_envelope(TEST_PROTECTED, "homebrew-1", "{}");
+        assert!(verify_internal_api_envelope_with_key(&tampered, &test_spki()).is_err());
+        let unknown = test_envelope(TEST_PROTECTED, "other", TEST_PAYLOAD);
+        assert!(verify_internal_api_envelope_with_key(&unknown, &test_spki()).is_err());
+    }
+
+    #[test]
+    fn internal_api_envelope_rejects_unsupported_protected_headers() {
+        for header in [
+            json!({"alg":"RS512", "b64":false, "crit":["b64"]}),
+            json!({"alg":"PS512", "b64":true, "crit":["b64"]}),
+            json!({"alg":"PS512", "b64":false, "crit":["b64", "other"]}),
+            json!({"alg":"PS512", "b64":false, "crit":[]}),
+        ] {
+            let raw = test_envelope(&encoded_protected(header), "homebrew-1", TEST_PAYLOAD);
+            assert!(verify_internal_api_envelope_with_key(&raw, &test_spki()).is_err());
+        }
+    }
+
+    #[test]
+    fn internal_api_envelope_rejects_malformed_input() {
+        assert!(verify_internal_api_envelope_with_key("not-json", &test_spki()).is_err());
+        let malformed = test_envelope("***", "homebrew-1", TEST_PAYLOAD);
+        assert!(verify_internal_api_envelope_with_key(&malformed, &test_spki()).is_err());
+    }
+
+    fn formula_with_policy(policy: Value) -> Formula {
+        let mut value = json!({
+            "name": "policy-test",
+            "versions": { "stable": "1.0" }
+        });
+        value
+            .as_object_mut()
+            .unwrap()
+            .extend(policy.as_object().unwrap().clone());
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn install_policy_defaults_are_safe() {
+        let formula = formula_with_policy(json!({}));
+        formula.validate_install_policy().unwrap();
+        assert!(formula.conflicts_with().is_empty());
+        assert!(formula.link_overwrite().is_empty());
+    }
+
+    #[test]
+    fn disabled_formula_is_rejected_with_typed_context() {
+        let formula = formula_with_policy(json!({
+            "disabled": true,
+            "disable_date": "2026-08-01",
+            "disable_reason": "does_not_build",
+            "disable_replacement_formula": "replacement"
+        }));
+        let error = formula.validate_install_policy().unwrap_err().to_string();
+        assert!(error.contains("disabled by Homebrew"));
+        assert!(error.contains("does_not_build"));
+        assert!(error.contains("replacement formula replacement"));
+    }
+
+    #[test]
+    fn future_formula_lifecycle_policy_is_not_yet_active() {
+        let formula = formula_with_policy(json!({
+            "disabled": true,
+            "disable_date": "2099-11-01",
+            "disable_reason": "deprecated_upstream"
+        }));
+        formula.validate_install_policy().unwrap();
+    }
+
+    #[test]
+    fn malformed_formula_lifecycle_policy_date_fails_closed() {
+        let formula = formula_with_policy(json!({
+            "disabled": true,
+            "disable_date": "not-a-date"
+        }));
+        assert!(
+            formula
+                .validate_install_policy()
+                .unwrap_err()
+                .to_string()
+                .contains("invalid Homebrew lifecycle policy date")
+        );
+    }
+
+    #[test]
+    fn unsupported_requirements_and_pour_predicates_are_rejected() {
+        let requirement = formula_with_policy(json!({
+            "requirements": [{
+                "name": "xcode",
+                "version": "26.0",
+                "contexts": ["build"],
+                "specs": ["stable"]
+            }]
+        }));
+        let error = requirement
+            .validate_install_policy()
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("xcode[version=26.0,contexts=build,specs=stable]"));
+
+        let predicate = formula_with_policy(json!({
+            "pour_bottle_only_if": "default_prefix"
+        }));
+        assert!(
+            predicate
+                .validate_install_policy()
+                .unwrap_err()
+                .to_string()
+                .contains("default_prefix")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn unversioned_macos_requirement_accepts_current_stable_or_head_platform() {
+        let formula = formula_with_policy(json!({
+            "requirements": [{
+                "name": "macos",
+                "specs": ["stable", "head"]
+            }]
+        }));
+        formula.validate_install_policy().unwrap();
+    }
+
+    #[test]
+    fn conflict_and_link_policy_is_typed_but_link_overwrite_grants_no_authority() {
+        let formula = formula_with_policy(json!({
+            "conflicts_with": ["other", "third"],
+            "conflicts_with_reasons": ["same binary", null],
+            "link_overwrite": ["bin/tool", "share/tool/*"],
+            "deprecated": true,
+            "deprecation_reason": "versioned_formula"
+        }));
+        formula.validate_install_policy().unwrap();
+        assert_eq!(formula.conflicts_with(), ["other", "third"]);
+        assert_eq!(formula.conflict_reason("other"), Some("same binary"));
+        assert_eq!(formula.conflict_reason("third"), None);
+        assert_eq!(formula.link_overwrite(), ["bin/tool", "share/tool/*"]);
+    }
+
+    fn signed_index(value: Value) -> InternalFormulaIndex {
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn signed_core_entry_is_the_authoritative_install_record() {
+        let bottle_sha = "a".repeat(64);
+        let source_sha = "b".repeat(64);
+        let ruby_sha = "c".repeat(64);
+        let index = signed_index(json!({
+            "formulae": {
+                "hello": {
+                    "stable_version": "2.12.3",
+                    "revision": 1,
+                    "aliases": ["z-alias", "a-alias"],
+                    "oldnames": ["old-hi"],
+                    "stable_url_args": ["https://trusted.example/hello.tar.gz"],
+                    "stable_checksum": source_sha,
+                    "stable_dependencies": ["runtime-z", "runtime-a", "runtime-z", {"builder": ":build"}],
+                    "bottle_checksum": bottle_sha,
+                    "bottle_cellar": ":any_skip_relocation",
+                    "bottle_tag": ":arm64_sequoia",
+                    "ruby_source_checksum": ruby_sha,
+                    "keg_only_args": [":versioned_formula"],
+                    "conflicts": [["other", {":because": "same binary"}]],
+                    "link_overwrite_paths": ["bin/hello"],
+                    "deprecate_args": {":because": ":unmaintained"}
+                }
+            },
+            "formula_aliases": {"hi": "hello"},
+            "formula_renames": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "arm64_tahoe"}
+        }));
+        let canonical = canonical_internal_name(&index, "hi").unwrap();
+        let formula = formula_from_internal(
+            &index,
+            &canonical,
+            index.formulae.get(&canonical).unwrap(),
+            "signed-index-url",
+        )
+        .unwrap();
+
+        assert_eq!(formula.name, "hello");
+        assert_eq!(formula.pkg_version().unwrap(), "2.12.3_1");
+        assert!(formula.keg_only);
+        assert_eq!(formula.dependencies, ["runtime-z", "runtime-a"]);
+        assert_eq!(formula.build_dependencies, ["builder"]);
+        assert_eq!(formula.aliases, ["z-alias", "a-alias", "hi"]);
+        assert_eq!(formula.tap_git_head.as_deref(), Some("signed-core-head"));
+        assert_eq!(
+            formula.ruby_source_path.as_deref(),
+            Some("Formula/h/hello.rb")
+        );
+        let bottle = &formula.bottle["stable"].files["arm64_sequoia"];
+        assert_eq!(
+            bottle.url,
+            format!("https://ghcr.io/v2/homebrew/core/hello/blobs/sha256:{bottle_sha}")
+        );
+        assert_eq!(bottle.sha256, bottle_sha);
+        assert_eq!(
+            formula.stable_url().unwrap().url,
+            "https://trusted.example/hello.tar.gz"
+        );
+        assert_eq!(
+            formula.stable_url().unwrap().checksum.as_deref(),
+            Some(source_sha.as_str())
+        );
+        assert_eq!(formula.conflicts_with(), ["other"]);
+        assert_eq!(formula.conflict_reason("other"), Some("same binary"));
+        assert_eq!(formula.link_overwrite(), ["bin/hello"]);
+    }
+
+    #[test]
+    fn signed_bottle_tags_normalize_ruby_symbols_and_reject_paths() {
+        assert_eq!(parse_internal_bottle_tag(":all").unwrap(), "all");
+        assert_eq!(
+            parse_internal_bottle_tag(":arm64_sequoia").unwrap(),
+            "arm64_sequoia"
+        );
+        assert!(parse_internal_bottle_tag(":../foreign").is_err());
+    }
+
+    #[test]
+    fn signed_versioned_formula_uses_homebrew_oci_repository_path() {
+        let checksum = "a".repeat(64);
+        let signed: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "3.0",
+            "bottle_checksum": checksum
+        }))
+        .unwrap();
+        let index = signed_index(json!({
+            "formulae": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        let formula =
+            formula_from_internal(&index, "openssl@3", &signed, "signed-index-url").unwrap();
+        assert_eq!(
+            formula.bottle["stable"].files["all"].url,
+            format!("https://ghcr.io/v2/homebrew/core/openssl/3/blobs/sha256:{checksum}")
+        );
+    }
+
+    #[test]
+    fn signed_core_schema_rejects_unknown_or_unsupported_install_shapes() {
+        let unknown = json!({
+            "stable_version": "1",
+            "attacker_artifact_url": "https://evil.example/tool.tar.gz"
+        });
+        assert!(serde_json::from_value::<InternalFormula>(unknown).is_err());
+
+        let index = signed_index(json!({
+            "formulae": {
+                "patched": {
+                    "stable_version": "1",
+                    "stable_url_args": ["https://example.test/tool.tar.gz"],
+                    "stable_patches": [{"url": "https://example.test/patch"}]
+                }
+            },
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        let formula = formula_from_internal(
+            &index,
+            "patched",
+            &index.formulae["patched"],
+            "signed-index-url",
+        )
+        .unwrap();
+        assert_eq!(
+            formula.stable_url().unwrap().using.as_deref(),
+            Some("signed source patches")
+        );
+    }
+
+    #[test]
+    fn signed_core_rejects_malformed_digest_and_non_archive_source_options() {
+        let malformed: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "1",
+            "bottle_checksum": "not-a-digest"
+        }))
+        .unwrap();
+        let index = signed_index(json!({
+            "formulae": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        assert!(formula_from_internal(&index, "tool", &malformed, "signed-index-url").is_err());
+
+        let vcs: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "1",
+            "stable_url_args": ["https://example.test/tool.git", {":tag": "v1"}]
+        }))
+        .unwrap();
+        let formula = formula_from_internal(&index, "tool", &vcs, "signed-index-url").unwrap();
+        assert_eq!(
+            formula.stable_url().unwrap().using.as_deref(),
+            Some("signed URL options")
+        );
+    }
+
+    #[test]
+    fn signed_conflicts_accept_every_observed_live_shape() {
+        let signed: InternalFormula = serde_json::from_value(json!({
+            "stable_version": "1",
+            "conflicts": [
+                ["parrot"],
+                ["moarvm", {":because": "ships moarvm"}]
+            ]
+        }))
+        .unwrap();
+        let index = signed_index(json!({
+            "formulae": {},
+            "formula_tap_git_head": "signed-core-head",
+            "metadata": {"bottle_tag": "all"}
+        }));
+        let formula =
+            formula_from_internal(&index, "rakudo-star", &signed, "signed-index-url").unwrap();
+
+        assert_eq!(formula.conflicts_with(), ["parrot", "moarvm"]);
+        assert_eq!(formula.conflict_reason("parrot"), None);
+        assert_eq!(formula.conflict_reason("moarvm"), Some("ships moarvm"));
+    }
+
+    #[test]
+    fn signed_conflicts_reject_unobserved_or_malformed_shapes() {
+        for conflict in [
+            json!([]),
+            json!(["one", {}, "extra"]),
+            json!([1]),
+            json!(["one", {":because": 1}]),
+            json!(["one", {":unknown": "value"}]),
+            json!("one"),
+        ] {
+            let value = json!({
+                "stable_version": "1",
+                "conflicts": [conflict]
+            });
+            assert!(
+                serde_json::from_value::<InternalFormula>(value).is_err(),
+                "unexpectedly accepted malformed signed conflict"
+            );
+        }
     }
 }

@@ -8728,6 +8728,7 @@ mod tests {
         assert!(cask.depends_on.formula.is_empty());
         assert!(cask.conflicts_with.cask.is_empty());
         assert!(cask.auto_updates);
+
         Ok(())
     }
 

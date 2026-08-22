@@ -20,7 +20,6 @@ const SYSTEM_READ_PATHS: &[&str] = &[
     "/private/tmp",
     "/private/etc",
     "/private/var/run",
-    "/opt/homebrew",
     "/nix",
 ];
 
@@ -33,8 +32,10 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
     // Filesystem write restrictions
     if config.effective_deny_write() {
         rules.push("(deny file-write*)".to_string());
-        rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
-        rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
+        if !config.deny_system_temp_write {
+            rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
+            rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
+        }
         rules.push("(allow file-write* (subpath \"/dev\"))".to_string());
         for path in &config.allow_write {
             let path_str = sbpl_escape(&path.to_string_lossy());
@@ -48,9 +49,11 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
         for path in SYSTEM_READ_PATHS {
             rules.push(format!("(allow file-read* (subpath \"{path}\"))"));
         }
-        let data_dir = &*crate::env::MISE_DATA_DIR;
-        let data_str = sbpl_escape(&data_dir.to_string_lossy());
-        rules.push(format!("(allow file-read* (subpath \"{data_str}\"))"));
+        if !config.deny_mise_data_read {
+            let data_dir = &*crate::env::MISE_DATA_DIR;
+            let data_str = sbpl_escape(&data_dir.to_string_lossy());
+            rules.push(format!("(allow file-read* (subpath \"{data_str}\"))"));
+        }
         for path in &config.allow_read {
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow file-read* (subpath \"{path_str}\"))"));
@@ -65,14 +68,19 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
     // Network restrictions
     if config.effective_deny_net() {
         rules.push("(deny network*)".to_string());
-        // Always allow local/unix sockets
-        rules.push("(allow network* (local unix))".to_string());
+        if !config.deny_local_sockets {
+            rules.push("(allow network* (local unix))".to_string());
+        }
         if !config.allow_net.is_empty() {
-            // Allow DNS lookups via mDNSResponder (needed for hostname resolution)
-            rules.push(
-                "(allow network* (remote unix-socket (path-literal \"/var/run/mDNSResponder\")))"
-                    .to_string(),
-            );
+            // Allow DNS lookups via mDNSResponder only when Unix sockets are
+            // permitted. Strict callers use the IPs resolved while generating
+            // this profile and retain no child-side local socket escape hatch.
+            if !config.deny_local_sockets {
+                rules.push(
+                    "(allow network* (remote unix-socket (path-literal \"/var/run/mDNSResponder\")))"
+                        .to_string(),
+                );
+            }
             // Resolve all hostnames to IPs in parallel — Seatbelt's `ip` predicate requires IP literals
             let lookups: Vec<_> = config
                 .allow_net
@@ -135,7 +143,23 @@ mod tests {
         };
         let profile = generate_seatbelt_profile(&config).await;
         assert!(profile.contains("(deny network*)"));
+        assert!(profile.contains("(allow network* (local unix))"));
         assert!(!profile.contains("(deny file-write*)"));
+    }
+
+    #[tokio::test]
+    async fn test_strict_network_profile_denies_local_sockets() {
+        let config = SandboxConfig {
+            deny_net: true,
+            deny_local_sockets: true,
+            allow_net: vec!["127.0.0.1".to_string()],
+            ..Default::default()
+        };
+        let profile = generate_seatbelt_profile(&config).await;
+        assert!(profile.contains("(deny network*)"));
+        assert!(!profile.contains("(allow network* (local unix))"));
+        assert!(!profile.contains("mDNSResponder"));
+        assert!(profile.contains("(allow network* (remote ip \"127.0.0.1:*\"))"));
     }
 
     #[tokio::test]
@@ -147,6 +171,20 @@ mod tests {
         let profile = generate_seatbelt_profile(&config).await;
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp/mydir\"))"));
+    }
+
+    #[tokio::test]
+    async fn test_private_temp_does_not_allow_system_temp_writes() {
+        let config = SandboxConfig {
+            deny_write: true,
+            deny_system_temp_write: true,
+            allow_write: vec![PathBuf::from("/private/tmp/mise-private")],
+            ..Default::default()
+        };
+        let profile = generate_seatbelt_profile(&config).await;
+        assert!(!profile.contains("(allow file-write* (subpath \"/tmp\"))"));
+        assert!(!profile.contains("(allow file-write* (subpath \"/private/tmp\"))"));
+        assert!(profile.contains("(allow file-write* (subpath \"/private/tmp/mise-private\"))"));
     }
 
     #[tokio::test]
