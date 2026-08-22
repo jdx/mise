@@ -34,6 +34,6 @@ Skip the confirmation prompt when adding an unmanaged target
 Examples:
 
 ```
-mise bootstrap dotfiles edit ~/.zshrc
-mise bootstrap dotfiles edit --apply ~/.config/starship.toml
+$ mise bootstrap dotfiles edit ~/.zshrc
+$ mise bootstrap dotfiles edit --apply ~/.config/starship.toml
 ```

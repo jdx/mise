@@ -27,5 +27,5 @@ stdout
 Examples:
 
 ```
-mise fmt
+$ mise fmt
 ```

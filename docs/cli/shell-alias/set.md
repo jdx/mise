@@ -23,6 +23,6 @@ The command to run (optional if provided as ALIAS=COMMAND)
 Examples:
 
 ```
-mise shell-alias set ll "ls -la"
-mise shell-alias set gs "git status"
+$ mise shell-alias set ll "ls -la"
+$ mise shell-alias set gs "git status"
 ```

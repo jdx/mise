@@ -169,18 +169,18 @@ Refresh package manager metadata and update configured repos
 Examples:
 
 ```
-mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
-mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
-mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
-mise bootstrap --only tools       # run just tool installation
-mise bootstrap status --missing
-mise bootstrap packages apply --yes
-mise bootstrap repos status
-mise bootstrap repos apply --dry-run
-mise bootstrap dotfiles status
-mise bootstrap mise-shell-activate apply --dry-run
-mise bootstrap macos defaults status
-mise bootstrap macos launchd-agents apply --dry-run
-mise bootstrap linux systemd-units apply --dry-run
-mise bootstrap user apply --dry-run
+$ mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
+$ mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
+$ mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
+$ mise bootstrap --only tools       # run just tool installation
+$ mise bootstrap status --missing
+$ mise bootstrap packages apply --yes
+$ mise bootstrap repos status
+$ mise bootstrap repos apply --dry-run
+$ mise bootstrap dotfiles status
+$ mise bootstrap mise-shell-activate apply --dry-run
+$ mise bootstrap macos defaults status
+$ mise bootstrap macos launchd-agents apply --dry-run
+$ mise bootstrap linux systemd-units apply --dry-run
+$ mise bootstrap user apply --dry-run
 ```

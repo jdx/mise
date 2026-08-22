@@ -35,7 +35,7 @@ Skip the confirmation prompt
 Examples:
 
 ```
-mise bootstrap dotfiles apply
-mise bootstrap dotfiles apply --dry-run
-mise bootstrap dotfiles apply --force --yes
+$ mise bootstrap dotfiles apply
+$ mise bootstrap dotfiles apply --dry-run
+$ mise bootstrap dotfiles apply --force --yes
 ```

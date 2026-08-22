@@ -96,7 +96,7 @@ detected from the URL filename.
 
 Examples:
 --platform-url linux-x64:https://...
---platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
+--platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
 
 ### `--skip-download`
 
@@ -106,7 +106,7 @@ Skip downloading for checksum and binary path detection (faster but less informa
 
 URL for downloading the tool
 
-Example: <https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz>
+Example: https://github.com/owner/repo/releases/download/v2.0.0/tool-linux-x64.tar.gz
 
 ### `--version <VERSION>`
 

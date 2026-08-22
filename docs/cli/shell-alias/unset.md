@@ -19,5 +19,5 @@ The alias to remove
 Examples:
 
 ```
-mise shell-alias unset ll
+$ mise shell-alias unset ll
 ```

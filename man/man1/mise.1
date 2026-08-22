@@ -584,7 +584,6 @@ Run task(s)
 Search for tools in the registry
 .TP
 \fBself\-update\fR
-Updates mise itself.
 .TP
 \fBset\fR
 Set environment variables in mise.toml
@@ -1887,6 +1886,16 @@ usage\-rs's built\-in bash script is self\-contained, so this is now a no\-op.
 Retained for compatibility with older completion generators.
 
 Completions now always use usage\-rs's built\-in protocol, so this is a no\-op.
+.TP
+\fB\-\-install\fR
+Install the script where this shell looks for it, instead of printing it
+
+Writes the script file and nothing else: no shell rc file and no PowerShell profile is
+edited. Where a shell needs a one\-time line of its own — zsh's `fpath+=`, PowerShell's
+dot\-source — it is printed for you to add.
+.TP
+\fB\-\-force\fR
+Replace a file at the target path that mise did not write
 \fBArguments:\fR
 .PP
 .TP
@@ -3756,16 +3765,6 @@ Don't display headers
 \fB<NAME>\fR
 The tool to search for
 .SH "MISE SELF-UPDATE"
-Updates mise itself.
-
-Uses the GitHub Releases API to find the latest release and binary.
-By default, this will also update any installed plugins.
-Uses mise's GitHub token resolution chain for authenticated requests.
-
-Packagers can disable this command so that mise is updated through the
-package manager instead. See
-https://mise.jdx.dev/contributing.html#packaging\-and\-self\-update\-instructions
-.PP
 \fBUsage:\fR mise self\-update [OPTIONS] [<VERSION>]
 .PP
 \fBOptions:\fR

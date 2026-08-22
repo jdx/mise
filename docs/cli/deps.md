@@ -66,14 +66,14 @@ Skip specific deps rule(s)
 Examples:
 
 ```
-mise deps                    # Install all project dependencies
-mise deps install            # Same as bare `mise deps`
-mise deps install --force    # Force reinstall even if fresh
-mise deps install --dry-run  # Show what would run
-mise deps --monorepo         # Install deps from explicit monorepo config roots
-mise deps add npm:react      # Add a dependency
-mise deps add -D npm:vitest  # Add a dev dependency
-mise deps remove npm:lodash  # Remove a dependency
+$ mise deps                    # Install all project dependencies
+$ mise deps install            # Same as bare `mise deps`
+$ mise deps install --force    # Force reinstall even if fresh
+$ mise deps install --dry-run  # Show what would run
+$ mise deps --monorepo         # Install deps from explicit monorepo config roots
+$ mise deps add npm:react      # Add a dependency
+$ mise deps add -D npm:vitest  # Add a dev dependency
+$ mise deps remove npm:lodash  # Remove a dependency
 ```
 
 Configuration:
