@@ -3988,6 +3988,31 @@ mod tests {
         assert!(versions.contains(&("1.0.0".to_string(), "1.0.0")));
     }
 
+    #[tokio::test]
+    async fn test_monorepo_keep_set_retains_root_exact_request_shadowed_by_sibling() {
+        crate::toolset::install_state::init().await.unwrap();
+        let root = ToolSource::MiseToml(PathBuf::from("/repo/mise.toml"));
+        let sibling = ToolSource::MiseToml(PathBuf::from("/repo/packages/b/mise.toml"));
+        let root_exact = basic_tv_from_source("dummy", "1.0.0", "1.0.0", root.clone());
+        let sibling_old = basic_tv_from_source("dummy", "1", "1.0.0", sibling.clone());
+        let new = basic_tv_from_source("dummy", "1", "1.1.0", sibling);
+        let ba = root_exact.request.ba().clone();
+        let mut tvl = crate::toolset::ToolVersionList::new(ba.clone(), root);
+        tvl.requests = vec![root_exact.request.clone(), sibling_old.request.clone()];
+        tvl.versions = vec![root_exact, sibling_old];
+        let mut toolset = Toolset::default();
+        toolset.versions.insert(ba, tvl);
+
+        let tools = tools_by_source_for_monorepo_update(&toolset, &[new]);
+        let keep_versions = tools
+            .values()
+            .flat_map(|by_short| &by_short["dummy"])
+            .map(|tv| tv.version.as_str())
+            .collect::<HashSet<_>>();
+
+        assert_eq!(keep_versions, HashSet::from(["1.0.0", "1.1.0"]));
+    }
+
     fn tool_with_conda_dep(
         version: &str,
         backend: &str,

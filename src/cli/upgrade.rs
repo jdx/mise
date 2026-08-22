@@ -615,7 +615,7 @@ impl Upgrade {
             && config.monorepo_lockfile_root().is_some()
             && !superseded.is_empty()
         {
-            match config.monorepo_union_tool_request_set().await {
+            match config.monorepo_upgrade_tool_request_set().await {
                 Ok(requests) => {
                     let mut omitted_shorts = monorepo_request_set_os_omitted_shorts(&requests);
                     let mut ts: Toolset = requests.into();

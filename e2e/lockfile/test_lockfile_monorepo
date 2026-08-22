@@ -369,3 +369,31 @@ assert "cd monorepo-exact-pin && mise upgrade dummy"
 
 assert_contains "cat monorepo-exact-pin/mise.lock" 'version = "1.0.0"'
 assert_contains "cat monorepo-exact-pin/mise.lock" 'version = "1.1.0"'
+
+echo "=== sibling upgrade preserves an exact monorepo root pin ==="
+mkdir -p monorepo-root-exact/packages/b
+cat >monorepo-root-exact/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-root-exact/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1"
+EOF
+
+assert "cd monorepo-root-exact && mise install"
+assert "cd monorepo-root-exact/packages/b && mise install"
+assert "cd monorepo-root-exact/packages/b && mise upgrade dummy"
+
+assert_contains "cat monorepo-root-exact/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-root-exact/mise.lock" 'version = "1.1.0"'
+assert "cd monorepo-root-exact && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
