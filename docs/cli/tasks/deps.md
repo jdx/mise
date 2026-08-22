@@ -7,6 +7,12 @@
 
 Display a tree visualization of a dependency graph
 
+The graph is built from declared dependencies: `depends`, `depends_post`,
+and `wait_for`. Task references inside a `run` or `run_windows` array
+(`{ task = "..." }` or `{ tasks = [...] }`) are execution steps, not graph
+edges, so they do not appear here. Those nested tasks still run, including
+their own `depends`.
+
 ## Arguments
 
 ### `[TASKS]…`
