@@ -603,7 +603,7 @@ struct BootstrapRemote {
     #[clap(
         long,
         value_name = "COMMAND",
-        conflicts_with_all = ["mise_bin", "remote_mise"]
+        conflicts_with_all = ["mise_bin", "remote_mise", "install_mise"]
     )]
     bootstrap_command: Option<String>,
 
@@ -643,6 +643,20 @@ struct BootstrapRemote {
     #[clap(long, short = 'n')]
     dry_run: bool,
 
+    /// Install the provisioned mise on each host instead of only staging it
+    ///
+    /// Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another
+    /// path.
+    #[clap(
+        long,
+        value_name = "PATH",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "~/.local/bin/mise",
+        conflicts_with_all = ["remote_mise", "bootstrap_command", "no_install_mise"]
+    )]
+    install_mise: Option<String>,
+
     /// Keep the remote staging directory for debugging
     #[clap(long)]
     keep_staging: bool,
@@ -654,6 +668,10 @@ struct BootstrapRemote {
         conflicts_with_all = ["remote_mise", "bootstrap_command"]
     )]
     mise_bin: Option<std::path::PathBuf>,
+
+    /// Do not install mise on the host, even when the selected hosts configure it
+    #[clap(long)]
+    no_install_mise: bool,
 
     /// Run only one or more remote bootstrap parts
     #[clap(long, value_enum, value_delimiter = ',', conflicts_with = "skip")]
@@ -675,7 +693,7 @@ struct BootstrapRemote {
     #[clap(
         long,
         value_name = "COMMAND",
-        conflicts_with_all = ["mise_bin", "bootstrap_command"]
+        conflicts_with_all = ["mise_bin", "bootstrap_command", "install_mise"]
     )]
     remote_mise: Option<String>,
 
@@ -2380,6 +2398,8 @@ impl BootstrapRemote {
             identity_file: self.identity_file,
             exclude: self.exclude,
             ssh_options: self.ssh_option,
+            install_mise: self.install_mise,
+            no_install_mise: self.no_install_mise,
             mise_bin: self.mise_bin,
             remote_mise: self.remote_mise,
             bootstrap_command: self.bootstrap_command,

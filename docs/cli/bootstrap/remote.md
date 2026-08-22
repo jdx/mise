@@ -61,6 +61,12 @@ SSH identity file override
 
 Print the remote bootstrap changes without applying them
 
+### `--install-mise <PATH>`
+
+Install the provisioned mise on each host instead of only staging it
+
+Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another path.
+
 ### `--keep-staging`
 
 Keep the remote staging directory for debugging
@@ -68,6 +74,10 @@ Keep the remote staging directory for debugging
 ### `--mise-bin <MISE_BIN>`
 
 Local mise binary to upload (escape hatch for custom architectures)
+
+### `--no-install-mise`
+
+Do not install mise on the host, even when the selected hosts configure it
 
 ### `--only… <ONLY>`
 

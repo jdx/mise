@@ -12,11 +12,15 @@ use crate::http::HTTP;
 use crate::ui::multi_progress_report::MultiProgressReport;
 
 const RELEASE_BASE_URL: &str = "https://github.com/jdx/mise/releases/download";
+/// Where `install_mise = true` puts the executable. This matches the default
+/// used by <https://mise.run> and is already searched by remote mise discovery.
+const DEFAULT_INSTALL_MISE_PATH: &str = "~/.local/bin/mise";
 
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct RemoteTomlConfig {
     pub source: Option<PathBuf>,
     pub mise_env: Option<Vec<String>>,
+    pub install_mise: Option<InstallMiseTomlConfig>,
     #[serde(default)]
     pub copy_links: bool,
     #[serde(default)]
@@ -44,9 +48,28 @@ pub(crate) struct RemoteHostTomlConfig {
     pub ssh_options: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    pub install_mise: Option<InstallMiseTomlConfig>,
     pub mise_bin: Option<PathBuf>,
     pub remote_mise: Option<String>,
     pub bootstrap_command: Option<String>,
+}
+
+/// `install_mise = true` or `install_mise = "~/bin/mise"`.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum InstallMiseTomlConfig {
+    Enabled(bool),
+    Path(String),
+}
+
+impl InstallMiseTomlConfig {
+    fn path(self) -> Option<String> {
+        match self {
+            Self::Enabled(false) => None,
+            Self::Enabled(true) => Some(DEFAULT_INSTALL_MISE_PATH.to_string()),
+            Self::Path(path) => Some(path),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -63,6 +86,9 @@ pub(crate) struct RemoteHost {
     pub exclude: Vec<String>,
     pub ssh_options: Vec<String>,
     pub tags: IndexSet<String>,
+    /// Remote path the provisioned executable is installed to, keeping mise on
+    /// the host after the staging directory is removed.
+    pub install_mise: Option<String>,
     pub mise_bin: Option<PathBuf>,
     pub remote_mise: Option<String>,
     pub bootstrap_command: Option<String>,
@@ -78,6 +104,8 @@ pub(crate) struct RemoteOverrides {
     pub identity_file: Option<PathBuf>,
     pub exclude: Vec<String>,
     pub ssh_options: Vec<String>,
+    pub install_mise: Option<String>,
+    pub no_install_mise: bool,
     pub mise_bin: Option<PathBuf>,
     pub remote_mise: Option<String>,
     pub bootstrap_command: Option<String>,
@@ -129,6 +157,7 @@ pub(crate) fn hosts_from_config(
         let base = cf.get_path().parent().unwrap_or_else(|| Path::new("."));
         let default_source = resolve_local_path(base, remote.source.as_deref())?;
         let default_mise_env = remote.mise_env;
+        let default_install_mise = remote.install_mise.and_then(InstallMiseTomlConfig::path);
         let default_copy_links = remote.copy_links;
         let default_copy_link = remote.copy_link;
         for (name, host) in remote.hosts {
@@ -162,6 +191,10 @@ pub(crate) fn hosts_from_config(
                 exclude: dedupe(exclude),
                 ssh_options: dedupe(host.ssh_options),
                 tags: host.tags.into_iter().collect(),
+                install_mise: match host.install_mise {
+                    Some(install_mise) => install_mise.path(),
+                    None => default_install_mise.clone(),
+                },
                 mise_bin,
                 remote_mise: host.remote_mise,
                 bootstrap_command: host.bootstrap_command,
@@ -208,6 +241,7 @@ pub(crate) fn ad_hoc_host(
         ),
         ssh_options: vec![],
         tags: IndexSet::new(),
+        install_mise: None,
         mise_bin: None,
         remote_mise: None,
         bootstrap_command: None,
@@ -251,6 +285,16 @@ impl RemoteHost {
             self.remote_mise.clone_from(&overrides.remote_mise);
             self.bootstrap_command
                 .clone_from(&overrides.bootstrap_command);
+            // A command-line strategy that provides its own mise replaces a
+            // configured install rather than conflicting with it.
+            if overrides.remote_mise.is_some() || overrides.bootstrap_command.is_some() {
+                self.install_mise = None;
+            }
+        }
+        if let Some(install_mise) = &overrides.install_mise {
+            self.install_mise = Some(install_mise.clone());
+        } else if overrides.no_install_mise {
+            self.install_mise = None;
         }
         self.validate()
     }
@@ -315,6 +359,17 @@ impl RemoteHost {
                 "remote host '{}' must set at most one of mise_bin, remote_mise, or bootstrap_command",
                 self.name
             );
+        }
+        if let Some(install_mise) = &self.install_mise {
+            if self.remote_mise.is_some() || self.bootstrap_command.is_some() {
+                bail!(
+                    "remote host '{}' cannot combine install_mise with remote_mise or bootstrap_command, which already provide mise on the host",
+                    self.name
+                );
+            }
+            validate_install_mise_path(install_mise).wrap_err_with(|| {
+                format!("remote host '{}' has an invalid install_mise", self.name)
+            })?;
         }
         for option in &self.ssh_options {
             validate_value("SSH option", option)?;
@@ -658,15 +713,137 @@ async fn provision_mise(
                 })?
         }
     };
-    let remote = format!("{staging}/mise");
-    session.upload_executable(&binary, &remote)?;
+    let remote = match &session.host.install_mise {
+        // A dry run stays inside the staging directory it already cleans up.
+        Some(install_mise) if dry_run => {
+            info!(
+                "would install mise to {} on {}",
+                resolve_remote_install_path(session, install_mise)?,
+                session.host.name
+            );
+            stage_mise(session, &binary, staging)?
+        }
+        Some(install_mise) => {
+            let target = resolve_remote_install_path(session, install_mise)?;
+            install_remote_mise(session, &binary, &target)?;
+            target
+        }
+        None => stage_mise(session, &binary, staging)?,
+    };
     session.status(&[&remote, "version"], false).wrap_err_with(|| {
         format!(
-            "uploaded local mise cannot run on remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
+            "provisioned mise cannot run on remote host '{}'; set mise_bin, remote_mise, or bootstrap_command",
             session.host.name
         )
     })?;
+    if session.host.install_mise.is_some() && !dry_run {
+        warn_when_installed_mise_is_off_login_path(session, &remote);
+    }
     Ok(remote)
+}
+
+fn stage_mise(session: &SshSession<'_>, binary: &Path, staging: &str) -> Result<String> {
+    let remote = format!("{staging}/mise");
+    session.upload_executable(binary, &remote)?;
+    Ok(remote)
+}
+
+fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<String> {
+    let Some(suffix) = path.strip_prefix("~/") else {
+        return Ok(path.to_string());
+    };
+    let output = session.output(&["sh", "-lc", "printf '%s\\n' \"$HOME\""])?;
+    let home = validated_absolute_remote_path_output(&output, "remote login home")?;
+    let target = format!("{}/{suffix}", home.trim_end_matches('/'));
+    validate_install_mise_path(&target)?;
+    Ok(target)
+}
+
+/// Installs the provisioned executable at a persistent remote path so the host
+/// keeps a usable mise once the staging directory is removed.
+fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
+    let local = crate::hash::file_hash_sha256(binary, None)?;
+    if remote_executable_sha256(session, target)?.is_some_and(|remote| remote == local) {
+        info!(
+            "mise is already installed at {target} on {}",
+            session.host.name
+        );
+        return Ok(());
+    }
+    let file = File::open(binary)
+        .wrap_err_with(|| format!("failed to open mise binary {}", binary.display()))?;
+    session.status_with_stdin(&["sh", "-c", &install_mise_script(target)], file)?;
+    info!("installed mise to {target} on {}", session.host.name);
+    Ok(())
+}
+
+/// Writes beside the target and renames, so a replaced executable is never
+/// truncated in place and a busy binary cannot fail with ETXTBSY.
+fn install_mise_script(target: &str) -> String {
+    format!(
+        r#"set -eu
+target={}
+mkdir -p {}
+temporary="$target.mise-install.$$"
+trap 'rm -f "$temporary"' EXIT
+cat > "$temporary"
+chmod 755 "$temporary"
+mv -f "$temporary" "$target""#,
+        shell_quote(target),
+        shell_quote(remote_parent_directory(target)),
+    )
+}
+
+fn remote_parent_directory(target: &str) -> &str {
+    match target.rsplit_once('/') {
+        Some(("", _)) | None => "/",
+        Some((directory, _)) => directory,
+    }
+}
+
+/// `None` when the path is missing or the host cannot compute SHA-256, which
+/// only costs an upload that would otherwise have been skipped.
+fn remote_executable_sha256(session: &SshSession<'_>, target: &str) -> Result<Option<String>> {
+    let script = format!(
+        r#"target={}
+if [ ! -f "$target" ]; then
+  exit 0
+fi
+if command -v sha256sum >/dev/null 2>&1; then
+  sha256sum "$target" | cut -d' ' -f1
+elif command -v shasum >/dev/null 2>&1; then
+  shasum -a 256 "$target" | cut -d' ' -f1
+fi"#,
+        shell_quote(target)
+    );
+    let digest = session.output(&["sh", "-c", &script])?.trim().to_string();
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Ok(None);
+    }
+    Ok(Some(digest.to_ascii_lowercase()))
+}
+
+/// An installed executable is only reachable later when its directory is on the
+/// login PATH, so report that once instead of leaving a silent surprise.
+fn warn_when_installed_mise_is_off_login_path(session: &SshSession<'_>, target: &str) {
+    let script = format!(
+        r#"case ":$PATH:" in
+  *:{}:*) printf 'yes\n' ;;
+  *) printf 'no\n' ;;
+esac"#,
+        shell_quote(remote_parent_directory(target))
+    );
+    match session.output(&["sh", "-lc", &script]) {
+        Ok(output) if output.trim() == "no" => warn!(
+            "{target} is not on {}'s login PATH; add its directory to PATH or declare [bootstrap.mise_shell_activate] in the bootstrap project",
+            session.host.name
+        ),
+        Ok(_) => {}
+        Err(error) => debug!(
+            "failed to read the login PATH on {}: {error:#}",
+            session.host.name
+        ),
+    }
 }
 
 fn resolve_remote_mise(session: &SshSession<'_>) -> Result<String> {
@@ -1661,6 +1838,26 @@ fn validated_absolute_remote_path_output(output: &str, kind: &str) -> Result<Str
     Ok(path.to_string())
 }
 
+fn validate_install_mise_path(path: &str) -> Result<()> {
+    validate_value("mise install path", path)?;
+    if path.contains(['\n', '\r']) {
+        bail!("install_mise must not contain a newline: {path:?}");
+    }
+    if !path.starts_with('/') && !path.starts_with("~/") {
+        bail!("install_mise must be an absolute path or start with ~/: {path:?}");
+    }
+    if path.split('/').any(|component| component == "..") {
+        bail!("install_mise must not contain '..': {path:?}");
+    }
+    if matches!(
+        path.rsplit('/').next(),
+        None | Some("") | Some(".") | Some("~")
+    ) {
+        bail!("install_mise must name an executable file: {path:?}");
+    }
+    Ok(())
+}
+
 fn validate_remote_executable(command: &str) -> Result<()> {
     validate_value("mise command", command)?;
     let is_path = command.contains('/');
@@ -1903,6 +2100,91 @@ mod tests {
 
         host.bootstrap_command = Some("install-mise".to_string());
         assert!(host.validate().is_err());
+    }
+
+    #[test]
+    fn parses_install_mise_as_a_flag_or_a_path() {
+        let enabled: RemoteTomlConfig = toml::from_str("install_mise = true").unwrap();
+        assert_eq!(
+            enabled.install_mise.unwrap().path().as_deref(),
+            Some(DEFAULT_INSTALL_MISE_PATH)
+        );
+        let disabled: RemoteTomlConfig = toml::from_str("install_mise = false").unwrap();
+        assert!(disabled.install_mise.unwrap().path().is_none());
+        let path: RemoteTomlConfig =
+            toml::from_str(r#"install_mise = "/usr/local/bin/mise""#).unwrap();
+        assert_eq!(
+            path.install_mise.unwrap().path().as_deref(),
+            Some("/usr/local/bin/mise")
+        );
+    }
+
+    #[test]
+    fn validates_install_mise_paths() {
+        assert!(validate_install_mise_path("~/.local/bin/mise").is_ok());
+        assert!(validate_install_mise_path("/usr/local/bin/mise").is_ok());
+        assert!(validate_install_mise_path("bin/mise").is_err());
+        assert!(validate_install_mise_path("./mise").is_err());
+        assert!(validate_install_mise_path("~/bin/../../mise").is_err());
+        assert!(validate_install_mise_path("~/.local/bin/").is_err());
+        assert!(validate_install_mise_path("~/").is_err());
+        assert!(validate_install_mise_path("/usr/local/bin/mise\nrm -rf /").is_err());
+        assert!(validate_install_mise_path("").is_err());
+    }
+
+    #[test]
+    fn install_mise_composes_only_with_an_uploaded_binary() {
+        let mut host = ad_hoc_host("example.com", std::env::current_dir().unwrap(), &[]).unwrap();
+        host.install_mise = Some(DEFAULT_INSTALL_MISE_PATH.to_string());
+        host.validate().unwrap();
+
+        host.mise_bin = Some(std::env::current_exe().unwrap());
+        host.validate().unwrap();
+
+        host.mise_bin = None;
+        host.remote_mise = Some("mise".to_string());
+        assert!(host.validate().is_err());
+
+        host.remote_mise = None;
+        host.bootstrap_command = Some("curl https://mise.run | sh".to_string());
+        assert!(host.validate().is_err());
+    }
+
+    #[test]
+    fn install_mise_overrides_replace_and_clear_the_configured_path() {
+        let mut host = ad_hoc_host("example.com", std::env::current_dir().unwrap(), &[]).unwrap();
+        host.install_mise = Some(DEFAULT_INSTALL_MISE_PATH.to_string());
+        host.apply_overrides(&RemoteOverrides {
+            install_mise: Some("/usr/local/bin/mise".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(host.install_mise.as_deref(), Some("/usr/local/bin/mise"));
+
+        host.apply_overrides(&RemoteOverrides {
+            no_install_mise: true,
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.install_mise.is_none());
+
+        host.install_mise = Some(DEFAULT_INSTALL_MISE_PATH.to_string());
+        host.apply_overrides(&RemoteOverrides {
+            remote_mise: Some("mise".to_string()),
+            ..Default::default()
+        })
+        .unwrap();
+        assert!(host.install_mise.is_none());
+        assert_eq!(host.remote_mise.as_deref(), Some("mise"));
+    }
+
+    #[test]
+    fn install_script_quotes_the_target_and_renames_into_place() {
+        let script = install_mise_script("/home/deploy dir/.local/bin/mise");
+        assert!(script.contains("target='/home/deploy dir/.local/bin/mise'"));
+        assert!(script.contains("mkdir -p '/home/deploy dir/.local/bin'"));
+        assert_eq!(remote_parent_directory("/mise"), "/");
+        assert!(script.contains(r#"mv -f "$temporary" "$target""#));
     }
 
     #[test]

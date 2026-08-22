@@ -85,7 +85,8 @@ For each target, mise:
 2. creates a validated `/tmp/mise-bootstrap.*` directory;
 3. archives the source directory locally and extracts it into the staging
    directory;
-4. provisions the exact mise executable used for the remote run;
+4. provisions the exact mise executable used for the remote run, staging it
+   unless `install_mise` keeps it on the host;
 5. executes `mise bootstrap` in the staged project; and
 6. removes the staging directory, including after a failed bootstrap.
 
@@ -191,6 +192,61 @@ bootstrap_command = "nix profile install nixpkgs#mise"
 
 Mise verifies every uploaded or selected remote command by running
 `mise version` before bootstrap.
+
+### Leaving mise installed on the host
+
+By default the provisioned executable lives in the staging directory and is
+removed with it, so a target keeps the tools installed under
+`~/.local/share/mise` but not the mise that installed them. Set `install_mise`
+to keep mise on the machine:
+
+```toml
+[bootstrap.remote]
+install_mise = true
+
+[bootstrap.remote.hosts.cache]
+host = "cache.example.com"
+install_mise = "/usr/local/bin/mise"
+```
+
+`true` installs to `~/.local/bin/mise`, the same path used by
+[mise.run](https://mise.run). A string installs to that path instead; it must be
+absolute or start with `~/`, and it names the executable rather than a directory.
+A host-level value replaces `[bootstrap.remote].install_mise`, so
+`install_mise = false` opts one host out of a project-wide default.
+
+```sh
+mise bootstrap remote cache --install-mise
+mise bootstrap remote cache --install-mise=/usr/local/bin/mise
+mise bootstrap remote cache --no-install-mise
+```
+
+`--install-mise` requires `=` before a path so that a bare flag cannot consume a
+target name.
+
+What gets installed is the same executable the default strategy would have
+staged — the local binary or the checksum-verified official release artifact —
+and it is what runs the bootstrap, so the host converges with the mise version
+that orchestrated it. Mise writes a temporary file beside the target and renames
+it into place, so replacing a mise that is currently running cannot truncate it.
+When the target already holds a byte-identical executable, nothing is uploaded.
+A dry run never writes to the host: `--dry-run` reports the path it would
+install to and stages the executable as usual.
+
+`install_mise` composes with `mise_bin`, which installs a locally built
+executable. It cannot be combined with `remote_mise` or `bootstrap_command`,
+because both already provide mise on the host. `bootstrap_command` remains the
+right choice when the host should own the install through a system package,
+`nix profile install`, or a site-specific installer.
+
+The SSH user must be able to write the install path; mise does not elevate for
+it, so a path such as `/usr/local/bin/mise` needs a user who already owns that
+directory.
+
+Installing mise does not put it on the host's `PATH`. Mise warns when the
+install directory is missing from the login `PATH`, and the bootstrap project
+can declare [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html) so the
+same run writes activation or shims into the host's shell startup files.
 
 ## Bootstrap controls and secrets
 

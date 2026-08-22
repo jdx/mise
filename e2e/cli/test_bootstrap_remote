@@ -249,6 +249,50 @@ assert_fail "mise bootstrap remote cross --dry-run --yes --skip tools"
 assert_contains "cat $ssh_log" "uname -s"
 assert_fail "test -d $remote_stage"
 
+# install_mise keeps the provisioned executable after the staging directory is
+# removed. The target lives outside the archived source so the installed binary
+# is not sent back to the host on the next run.
+install_target="$HOME/installed bin/mise"
+
+: >"$ssh_log"
+assert_contains \
+  "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise='$install_target' --dry-run --yes 2>&1" \
+  "would install mise to $install_target"
+assert_fail "test -e '$install_target'"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise='$install_target' --yes --skip tools"
+assert_succeed "test -x '$install_target'"
+assert_succeed "'$install_target' version"
+assert_contains "cat $ssh_log" "mise-install"
+assert_contains "cat $ssh_log" "'$install_target' --cd"
+assert_fail "test -d $remote_stage"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise='$install_target' --yes --skip tools"
+assert_not_contains "cat $ssh_log" "mise-install"
+assert_contains "cat $ssh_log" "'$install_target' --cd"
+
+assert_fail "mise bootstrap remote --host install.test --source . --mise-bin bin/mise --install-mise=relative/mise --yes"
+assert_fail "mise bootstrap remote --host install.test --source . --install-mise --remote-mise mise --yes"
+
+cat >>mise.toml <<'EOF'
+
+[bootstrap.remote.hosts.self-install]
+host = "self-install.test"
+install_mise = true
+mise_bin = "bin/mise"
+EOF
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote self-install --yes --skip tools"
+assert_succeed "cmp -s bin/mise $HOME/.local/bin/mise"
+assert_contains "cat $ssh_log" "$HOME/.local/bin/mise --cd"
+
+: >"$ssh_log"
+assert_succeed "mise bootstrap remote self-install --no-install-mise --dry-run --yes"
+assert_contains "cat $ssh_log" "$remote_stage/mise version"
+
 cat >>"$HOME/.config/mise/config.toml" <<'EOF'
 
 [bootstrap.remote.hosts.stale]
