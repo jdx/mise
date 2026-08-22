@@ -570,10 +570,8 @@ pub(crate) fn is_trusted(path: &Path) -> bool {
         if !trusted {
             return false;
         }
-    } else if cfg!(test) || (ci_info::is_ci() && !Settings::safe_mode()) {
-        // in tests/CI we trust everything -- except under safe mode, whose
-        // whole purpose is running against config CI checked out but does not
-        // trust, which is where the remote-content gates have to hold
+    } else if cfg!(test) || ci_info::is_ci() {
+        // in tests/CI we trust everything
         return true;
     } else if !trust_path(path).exists() {
         // No direct trust record. A config inside a linked git worktree
