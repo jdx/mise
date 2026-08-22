@@ -4,7 +4,7 @@ use indexmap::{IndexMap, IndexSet};
 use itertools::{Either, Itertools};
 use path_absolutize::Absolutize;
 pub(crate) use settings::{CompilePurpose, Settings};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::env::join_paths;
 use std::fmt::{Debug, Formatter};
 use std::iter::once;
@@ -784,6 +784,9 @@ impl Config {
         }
         let roots = match filenames {
             Some(filenames) => {
+                // Declared roots are exact, not recursive. A nested undeclared
+                // config can still route entries to the root lockfile, but it is
+                // invisible to monorepo_union's preservation check.
                 expand_config_roots_with_filenames(&monorepo_root, patterns, None, filenames)?
             }
             None => expand_config_root_dirs(&monorepo_root, patterns, None)?,
@@ -833,6 +836,9 @@ impl Config {
                 root_config_files.entry(path).or_insert(cf);
             }
 
+            // TODO: this uses the active Config's resolved environment and vars when
+            // rendering every sibling. Root-dependent templates can therefore select
+            // the wrong version for install, ls, and upgrade's preservation keep-set.
             let root_trs = ToolRequestSetBuilder::new()
                 .with_config_files(root_config_files)
                 .without_runtime_args()
@@ -3396,11 +3402,54 @@ fn is_global_task_include_path(path: &Path) -> bool {
 }
 
 #[async_backtrace::framed]
+/// Rebuilds active runtime links and shims, then updates lockfiles from the active toolset.
 pub(crate) async fn rebuild_shims_and_runtime_symlinks(
     config: &Arc<Config>,
     ts: &Toolset,
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
+) -> Result<()> {
+    rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
+        config,
+        ts,
+        new_versions,
+        lockfile_update_mode,
+        lockfile::LockfileUpdateScope::Active,
+    )
+    .await
+}
+
+/// Rebuilds active links and shims while using the resolved monorepo union to preserve siblings.
+pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_monorepo(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    monorepo_ts: &Toolset,
+    omitted_shorts: &HashSet<String>,
+    superseded: &[lockfile::SupersededLockfileEntry],
+    new_versions: &[ToolVersion],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
+) -> Result<()> {
+    rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
+        config,
+        ts,
+        new_versions,
+        lockfile_update_mode,
+        lockfile::LockfileUpdateScope::MonorepoUnion {
+            toolset: monorepo_ts,
+            omitted_shorts,
+            superseded,
+        },
+    )
+    .await
+}
+
+/// Runs the shared rebuild flow with an explicit lockfile preservation scope.
+async fn rebuild_shims_and_runtime_symlinks_with_lockfile_toolset(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
+    lockfile_update_scope: lockfile::LockfileUpdateScope<'_>,
 ) -> Result<()> {
     measure!("rebuilding runtime symlinks", {
         runtime_symlinks::rebuild_for_toolset(config, ts)
@@ -3422,8 +3471,14 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
         lockfile::snapshot_pre_install_platforms(config, ts, new_versions)
     };
     let has_deferred_provenance = measure!("updating lockfiles", {
-        lockfile::update_lockfiles(config, ts, new_versions, lockfile_update_mode)
-            .wrap_err("failed to update lockfiles")?
+        lockfile::update_lockfiles(
+            config,
+            ts,
+            new_versions,
+            lockfile_update_mode,
+            lockfile_update_scope,
+        )
+        .wrap_err("failed to update lockfiles")?
     });
     if !new_versions.is_empty() || has_deferred_provenance {
         measure!("auto-locking platforms", {
@@ -6443,6 +6498,7 @@ config_roots = ["apps/api", "apps/web"]
             r#"
 [tools]
 "github:jdx/mise-test-fixtures" = "2"
+missing-monorepo-sibling = "1"
 "#,
         )?;
 
@@ -6492,6 +6548,11 @@ config_roots = ["apps/api", "apps/web"]
             .unwrap_or_default();
 
         assert_eq!(fixture_versions, vec!["1", "2"]);
+        assert!(
+            trs.unknown_tools
+                .iter()
+                .any(|ba| ba.short == "missing-monorepo-sibling")
+        );
         Ok(())
     }
 

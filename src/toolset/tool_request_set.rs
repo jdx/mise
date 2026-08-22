@@ -14,6 +14,8 @@ use heck::{ToKebabCase, ToShoutySnakeCase};
 use indexmap::IndexMap;
 use itertools::Itertools;
 
+// The Debug output is pinned by the mise_toml `test_fixture` insta snapshots;
+// adding a field here requires updating them.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ToolRequestSet {
     pub tools: IndexMap<Arc<BackendArg>, Vec<ToolRequest>>,
@@ -93,10 +95,11 @@ impl ToolRequestSet {
                 tools.extend(rt.backends().iter().map(|s| s.to_string()));
             }
         }
+        let matches = |ba: &BackendArg| tools.contains(&ba.short) || tools.contains(&ba.full());
         self.iter()
-            .filter(|(ba, ..)| tools.contains(&ba.short) || tools.contains(&ba.full()))
+            .filter(|(ba, ..)| matches(ba))
             .map(|(ba, trl, ts)| (ba.clone(), trl.clone(), ts.clone()))
-            .collect::<ToolRequestSet>()
+            .collect()
     }
 
     pub(crate) fn into_toolset(self) -> Toolset {
@@ -116,6 +119,7 @@ impl Display for ToolRequestSet {
     }
 }
 
+/// Builds a request set from request triples, which do not carry omission metadata.
 impl FromIterator<(Arc<BackendArg>, Vec<ToolRequest>, ToolSource)> for ToolRequestSet {
     fn from_iter<T>(iter: T) -> Self
     where
@@ -187,6 +191,14 @@ impl ToolRequestSetBuilder {
             trs = self.load_runtime_args(trs)?;
         }
 
+        self.filter_disabled_tools(&mut trs);
+
+        time!("tool_request_set::build");
+        Ok(trs)
+    }
+
+    /// Removes disabled tools while retaining unknown backends for diagnostics.
+    fn filter_disabled_tools(&self, trs: &mut ToolRequestSet) {
         for ba in trs.tools.keys().cloned().collect_vec() {
             if self.is_disabled(&ba) {
                 if trs
@@ -200,9 +212,6 @@ impl ToolRequestSetBuilder {
                 trs.sources.remove(&ba);
             }
         }
-
-        time!("tool_request_set::build");
-        Ok(trs)
     }
 
     fn is_disabled(&self, ba: &BackendArg) -> bool {
@@ -653,5 +662,21 @@ mod tests {
         };
 
         assert!(!builder.should_report_unknown_tool(&ba, &requests));
+    }
+
+    #[tokio::test]
+    async fn test_filter_disabled_tools_records_unknown_backend() {
+        crate::toolset::install_state::init().await.unwrap();
+        let builder = ToolRequestSetBuilder::default();
+        let (ba, requests) = unknown_tool_request(None);
+        let mut trs = ToolRequestSet::new();
+        for request in requests {
+            trs.add_version(request, &ToolSource::Unknown);
+        }
+
+        builder.filter_disabled_tools(&mut trs);
+
+        assert!(trs.tools.is_empty());
+        assert_eq!(trs.unknown_tools, vec![ba]);
     }
 }

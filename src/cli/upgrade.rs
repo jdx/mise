@@ -15,8 +15,9 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
+    ConfigScope, InstallOptions, ResolveOptions, ToolRequestSet, ToolSource, ToolVersion, Toolset,
+    ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
+    get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -25,6 +26,7 @@ use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
 use indexmap::IndexMap;
+use itertools::Itertools;
 use jiff::{Span, Timestamp, civil::date};
 
 /// Upgrades outdated tools
@@ -466,7 +468,11 @@ impl Upgrade {
         *config = Config::reset().await?;
 
         // Rebuild symlinks BEFORE getting versions needed by tracked configs
-        // This ensures "latest" symlinks point to the new versions, not the old ones
+        // This ensures "latest" symlinks point to the new versions, not the old ones.
+        // Keep this lockfile-writing toolset on the same ToolRequestSetBuilder path as
+        // the monorepo union. Builder-filtered shorts (unknown backends, Windows asdf,
+        // registry OS gates, and settings filters) are then absent from both views and
+        // never reach the preservation loop, so they need no per-short fallback.
         let ts = config.get_toolset().await?;
         runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
@@ -580,13 +586,91 @@ impl Upgrade {
             }
         }
 
-        config::rebuild_shims_and_runtime_symlinks(
-            config,
-            ts,
-            &successful_versions,
-            crate::lockfile::LockfileUpdateMode::AllowLocked,
-        )
-        .await?;
+        // Only a concrete version actually replaced by a successful install is
+        // eligible for pruning. This is intentionally independent of --no-prune,
+        // which controls uninstalling the old installation rather than lock pins.
+        let mut superseded = vec![];
+        for outdated in &outdated {
+            if outdated.tool_version.version == outdated.latest
+                || !successful_versions
+                    .iter()
+                    .any(|tv| successful_upgrade_matches(outdated, tv))
+            {
+                continue;
+            }
+            match crate::lockfile::superseded_monorepo_lockfile_entry(
+                config,
+                &outdated.tool_version,
+            ) {
+                Ok(Some(entry)) => superseded.push(entry),
+                Ok(None) => {}
+                Err(err) => debug!(
+                    "could not identify superseded lockfile entry for {}@{}: {err:#}",
+                    outdated.name, outdated.tool_version.version
+                ),
+            }
+        }
+
+        let monorepo_update = if Settings::get().lockfile_enabled()
+            && config.monorepo_lockfile_root().is_some()
+            && !superseded.is_empty()
+        {
+            match config.monorepo_union_tool_request_set().await {
+                Ok(requests) => {
+                    let mut omitted_shorts = monorepo_request_set_os_omitted_shorts(&requests);
+                    let mut ts: Toolset = requests.into();
+                    match ts.resolve(config).await {
+                        Ok(()) => {
+                            omitted_shorts.extend(monorepo_toolset_unresolved_shorts(&ts));
+                            if !omitted_shorts.is_empty() {
+                                debug!(
+                                    "not pruning superseded lockfile entries for omitted or unresolved monorepo tools: {}",
+                                    omitted_shorts.iter().sorted().join(", ")
+                                );
+                            }
+                            Some((ts, omitted_shorts))
+                        }
+                        Err(err) => {
+                            warn!(
+                                "could not resolve the monorepo toolset for lockfile update: {err:#}; preserving existing sibling entries"
+                            );
+                            None
+                        }
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        "could not load the complete monorepo toolset for lockfile update: {err:#}; preserving existing sibling entries"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        match monorepo_update.as_ref() {
+            None => {
+                config::rebuild_shims_and_runtime_symlinks(
+                    config,
+                    ts,
+                    &successful_versions,
+                    crate::lockfile::LockfileUpdateMode::AllowLocked,
+                )
+                .await?;
+            }
+            Some((monorepo_ts, omitted_shorts)) => {
+                config::rebuild_shims_and_runtime_symlinks_for_monorepo(
+                    config,
+                    ts,
+                    monorepo_ts,
+                    omitted_shorts,
+                    &superseded,
+                    &successful_versions,
+                    crate::lockfile::LockfileUpdateMode::AllowLocked,
+                )
+                .await?;
+            }
+        }
 
         if successful_versions.iter().any(|v| v.short() == "python") {
             PIPXBackend::reinstall_all(config)
@@ -808,6 +892,34 @@ impl Upgrade {
     }
 }
 
+/// Returns request-level OS-gated shorts that cannot safely justify pruning.
+fn monorepo_request_set_os_omitted_shorts(requests: &ToolRequestSet) -> HashSet<String> {
+    requests
+        .iter()
+        .filter(|(_, requests, _)| requests.iter().any(|request| !request.is_os_supported()))
+        .map(|(ba, _, _)| ba.short.to_string())
+        .collect()
+}
+
+/// Returns whether an installed version is the exact replacement for an outdated entry.
+fn successful_upgrade_matches(outdated: &OutdatedInfo, installed: &ToolVersion) -> bool {
+    installed.ba().stored_full() == outdated.tool_request.ba().stored_full()
+        && installed.version == outdated.latest
+        && installed.request.version() == outdated.tool_request.version()
+        && installed.request.options() == outdated.tool_request.options()
+}
+
+/// Returns shorts whose retained request lists did not resolve completely.
+fn monorepo_toolset_unresolved_shorts(ts: &Toolset) -> HashSet<String> {
+    // Toolset::resolve warns and retains partially resolved lists for ordinary
+    // per-tool failures, so compare request and result counts after it returns.
+    ts.versions
+        .iter()
+        .filter(|(_, tvl)| tvl.versions.len() != tvl.requests.len())
+        .map(|(ba, _)| ba.short.to_string())
+        .collect()
+}
+
 fn current_satisfies_hidden_release(
     config: &Arc<Config>,
     tv: &ToolVersion,
@@ -978,9 +1090,105 @@ After removal, `-l` will become shorthand for `--local`. Use `-b` or `--bump` in
 mod tests {
     use super::{
         current_version_satisfies_hidden_release, format_hidden_release_details,
-        release_is_eligible_at,
+        monorepo_request_set_os_omitted_shorts, monorepo_toolset_unresolved_shorts,
+        release_is_eligible_at, successful_upgrade_matches,
+    };
+    use crate::cli::args::BackendArg;
+    use crate::toolset::{
+        ToolRequest, ToolRequestSet, ToolSource, ToolVersion, Toolset, parse_tool_options,
     };
     use jiff::tz::TimeZone;
+    use std::collections::HashSet;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_unresolved_monorepo_request_only_omits_its_short() {
+        crate::toolset::install_state::init().await.unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        let unresolved_ba = Arc::new(BackendArg::new("dummy".to_string(), None));
+        let resolved_ba = Arc::new(BackendArg::new("tiny".to_string(), None));
+        let unresolved =
+            ToolRequest::new(unresolved_ba.clone(), "missing", ToolSource::Unknown).unwrap();
+        let resolved = ToolRequest::new(resolved_ba.clone(), "2", ToolSource::Unknown).unwrap();
+        ts.add_version(unresolved);
+        ts.add_version(resolved.clone());
+        ts.versions
+            .get_mut(&resolved_ba)
+            .unwrap()
+            .versions
+            .push(ToolVersion::new(resolved, "2.0.0".to_string()));
+
+        let unresolved_shorts = monorepo_toolset_unresolved_shorts(&ts);
+        assert_eq!(
+            unresolved_shorts,
+            HashSet::from([unresolved_ba.short.to_string()])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_os_gated_monorepo_request_only_omits_its_short() {
+        crate::toolset::install_state::init().await.unwrap();
+        let mut requests = ToolRequestSet::new();
+        let inactive_ba = Arc::new(BackendArg::new("dummy".to_string(), None));
+        let active_ba = Arc::new(BackendArg::new("tiny".to_string(), None));
+        let inactive_os = match crate::cli::version::OS.as_str() {
+            "linux" => "macos",
+            _ => "linux",
+        };
+        let mut inactive_options = parse_tool_options("");
+        inactive_options.core.os = Some(vec![inactive_os.to_string()]);
+        requests.add_version(
+            ToolRequest::new_opts(
+                inactive_ba.clone(),
+                "2",
+                inactive_options,
+                ToolSource::Unknown,
+            )
+            .unwrap(),
+            &ToolSource::Unknown,
+        );
+        requests.add_version(
+            ToolRequest::new(active_ba, "1", ToolSource::Unknown).unwrap(),
+            &ToolSource::Unknown,
+        );
+
+        let omitted_shorts = monorepo_request_set_os_omitted_shorts(&requests);
+        assert_eq!(
+            omitted_shorts,
+            HashSet::from([inactive_ba.short.to_string()])
+        );
+    }
+
+    #[tokio::test]
+    async fn test_successful_upgrade_match_is_exact() {
+        crate::toolset::install_state::init().await.unwrap();
+        let request = ToolRequest::new(
+            Arc::new(BackendArg::from("dummy")),
+            "1",
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let old = ToolVersion::new(request.clone(), "1.0.0".to_string());
+        let outdated = crate::toolset::outdated_info::OutdatedInfo {
+            name: "dummy".to_string(),
+            tool_request: request.clone(),
+            tool_version: old,
+            requested: "1".to_string(),
+            current: Some("1.0.0".to_string()),
+            bump: None,
+            latest: "1.1.0".to_string(),
+            source: ToolSource::Unknown,
+        };
+
+        assert!(successful_upgrade_matches(
+            &outdated,
+            &ToolVersion::new(request.clone(), "1.1.0".to_string())
+        ));
+        assert!(!successful_upgrade_matches(
+            &outdated,
+            &ToolVersion::new(request, "1.2.0".to_string())
+        ));
+    }
 
     #[test]
     fn test_current_version_satisfies_hidden_release() {

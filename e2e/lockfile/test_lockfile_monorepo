@@ -233,3 +233,139 @@ assert_fail "test -f monorepo-optout/mise.lock"
 output=$(cd monorepo-optout/packages/a && mise lock --dry-run --platform linux-x64 2>&1)
 assert_contains "echo '$output'" "tiny"
 assert_not_contains "echo '$output'" "dummy"
+
+echo "=== upgrade prunes a superseded root pin and preserves sibling versions ==="
+mkdir -p monorepo-upgrade/packages/a
+cat >monorepo-upgrade/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-upgrade/packages/a/mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+
+assert "cd monorepo-upgrade && mise install"
+assert "cd monorepo-upgrade/packages/a && mise install"
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
+
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' monorepo-upgrade/mise.toml
+if ! grep -q 'dummy = "1"' monorepo-upgrade/mise.toml; then
+  echo "failed to loosen the root dummy request" >&2
+  exit 1
+fi
+rm monorepo-upgrade/mise.toml.bak
+assert "cd monorepo-upgrade && mise upgrade dummy"
+
+assert_not_contains "cat monorepo-upgrade/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "1.1.0"'
+assert_contains "cat monorepo-upgrade/mise.lock" 'version = "2.0.0"'
+assert "cd monorepo-upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-upgrade/packages/a && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
+
+echo "=== upgrade pulls matching loose sibling requests forward ==="
+mkdir -p monorepo-shared-loose/packages/b
+cat >monorepo-shared-loose/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-shared-loose/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert "cd monorepo-shared-loose && mise install"
+assert "cd monorepo-shared-loose/packages/b && mise install"
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' \
+  monorepo-shared-loose/mise.toml monorepo-shared-loose/packages/b/mise.toml
+rm monorepo-shared-loose/mise.toml.bak monorepo-shared-loose/packages/b/mise.toml.bak
+assert "cd monorepo-shared-loose && mise upgrade dummy"
+
+assert_not_contains "cat monorepo-shared-loose/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-shared-loose/mise.lock" 'version = "1.1.0"'
+assert "cd monorepo-shared-loose && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-shared-loose/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-shared-loose/packages/b && mise install"
+assert_not_contains "cat monorepo-shared-loose/mise.lock" 'version = "1.0.0"'
+assert "cd monorepo-shared-loose && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd monorepo-shared-loose/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+
+echo "=== upgrade pulls differently spelled overlapping loose requests forward ==="
+mkdir -p monorepo-overlapping-loose/packages/b
+cat >monorepo-overlapping-loose/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+tiny = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-overlapping-loose/packages/b/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+
+assert "cd monorepo-overlapping-loose && mise install"
+assert "cd monorepo-overlapping-loose/packages/b && mise install"
+sed -i.bak 's/tiny = "1.0.0"/tiny = "1.0"/' monorepo-overlapping-loose/mise.toml
+sed -i.bak 's/tiny = "1.0.0"/tiny = "1"/' monorepo-overlapping-loose/packages/b/mise.toml
+rm monorepo-overlapping-loose/mise.toml.bak monorepo-overlapping-loose/packages/b/mise.toml.bak
+assert "cd monorepo-overlapping-loose && mise upgrade tiny"
+
+assert_not_contains "cat monorepo-overlapping-loose/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-overlapping-loose/mise.lock" 'version = "1.0.1"'
+assert "cd monorepo-overlapping-loose && mise ls tiny --json --current | jq -r '.[0].version'" "1.0.1"
+assert "cd monorepo-overlapping-loose/packages/b && mise ls tiny --json --current | jq -r '.[0].version'" "1.0.1"
+
+echo "=== upgrade preserves an exact sibling pin ==="
+mkdir -p monorepo-exact-pin/packages/b
+cat >monorepo-exact-pin/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1.0.0"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >monorepo-exact-pin/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert "cd monorepo-exact-pin && mise install"
+assert "cd monorepo-exact-pin/packages/b && mise install"
+sed -i.bak 's/dummy = "1.0.0"/dummy = "1"/' monorepo-exact-pin/mise.toml
+rm monorepo-exact-pin/mise.toml.bak
+assert "cd monorepo-exact-pin && mise upgrade dummy"
+
+assert_contains "cat monorepo-exact-pin/mise.lock" 'version = "1.0.0"'
+assert_contains "cat monorepo-exact-pin/mise.lock" 'version = "1.1.0"'
