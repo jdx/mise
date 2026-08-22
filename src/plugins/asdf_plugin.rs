@@ -293,7 +293,9 @@ impl Plugin for AsdfPlugin {
                     if !prompt::confirm_with_all(format!(
                         "Would you like to install {}?",
                         self.name
-                    ))? {
+                    ))?
+                    .is_yes()
+                    {
                         Err(PluginNotInstalled(self.name.clone()))?
                     }
                 }

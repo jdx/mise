@@ -679,7 +679,7 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
             .map(|(r, _)| format!("{} ({})", r.path_raw, r.describe_op()))
             .collect::<Vec<_>>()
             .join(", ");
-        if !prompt::confirm(format!("edits: apply {list}?"))? {
+        if !prompt::confirm(format!("edits: apply {list}?"))?.is_yes() {
             info!("edits: skipped");
             return Ok(false);
         }
@@ -843,7 +843,7 @@ pub(crate) fn execute_unapply(todo: &[UnapplyPlan<'_>], opts: &UnapplyOpts) -> R
             .map(|plan| format!("{} ({})", plan.req.path_raw, plan.req.describe_op()))
             .collect::<Vec<_>>()
             .join(", ");
-        if !prompt::confirm(format!("edits: unapply {list}?"))? {
+        if !prompt::confirm(format!("edits: unapply {list}?"))?.is_yes() {
             info!("edits: skipped");
             return Ok(());
         }

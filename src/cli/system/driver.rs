@@ -166,7 +166,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
         if !d.dry_run && !d.yes && console::user_attended_stderr() {
             let msg = format!("{name}: {} {}?", action.verb(), list.join(", "));
-            if !prompt::confirm(msg)? {
+            if !prompt::confirm(msg)?.is_yes() {
                 info!("{name}: skipped");
                 continue;
             }

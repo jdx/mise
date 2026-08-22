@@ -22,6 +22,7 @@ use crate::hooks::Hook;
 use crate::redactions::Redactions;
 use crate::task::{Task, TaskRustCacheConfig, TaskTemplate};
 use crate::toolset::{ToolRequest, ToolRequestSet, ToolSource, ToolVersionList, Toolset};
+use crate::ui::prompt::Confirmation;
 use crate::ui::{prompt, style};
 use crate::watch_files::WatchFile;
 use crate::{
@@ -460,17 +461,25 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         return Ok(());
     }
     if cmd != "hook-env" && !is_ignored(&config_root) && !is_ignored(path) {
-        let ans = (settings::is_loaded() && Settings::get().yes)
-            || prompt::confirm_with_all(format!(
+        let ans = if settings::is_loaded() && Settings::get().yes {
+            Confirmation::Yes
+        } else {
+            prompt::confirm_with_all(format!(
                 "{} config files in {} are not trusted. Trust them?",
                 style::eyellow("mise"),
                 style::epath(&config_root)
-            ))?;
-        if ans {
-            trust(&config_root)?;
-            return Ok(());
-        } else if console::user_attended_stderr() {
-            add_ignored(config_root.to_path_buf())?;
+            ))?
+        };
+        match ans {
+            Confirmation::Yes => {
+                trust(&config_root)?;
+                return Ok(());
+            }
+            // Only a real decline is worth remembering. An ignore marker is
+            // sticky and silent, so recording one for an answer nobody gave
+            // would stop the config from applying with nothing to explain why.
+            Confirmation::No => add_ignored(config_root.to_path_buf())?,
+            Confirmation::Unavailable => {}
         }
     }
     Err(UntrustedConfig(path.into()))?

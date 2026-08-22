@@ -1420,6 +1420,7 @@ impl aube::embed::InstallPromptHandler for AubePromptHandler {
     fn confirm(&self, prompt: aube::embed::InstallPrompt) -> aube::embed::InstallPromptFuture<'_> {
         Box::pin(async move {
             crate::ui::prompt::confirm_with_default(aube_prompt_message(&prompt), false)
+                .map(|answer| answer.is_yes())
                 .map_err(|err| miette::miette!("{err:#}"))
         })
     }

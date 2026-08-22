@@ -58,8 +58,7 @@ impl Implode {
         } else if settings.yes {
             Ok(true)
         } else {
-            let r = prompt::confirm(format!("remove {} ?", f.display()))?;
-            Ok(r)
+            Ok(prompt::confirm(format!("remove {} ?", f.display()))?.is_yes())
         }
     }
 }
