@@ -551,6 +551,13 @@ impl PIPXBackend {
                 VersionInfo {
                     version: r.tag_name,
                     created_at,
+                    // Carry GitHub's authoritative flag so the PEP 440 pattern
+                    // below cannot reclassify a release explicitly published
+                    // as stable. The only current caller feeds
+                    // `github::list_releases`, which pre-filters prereleases,
+                    // so this is always Some(false) today — but copying the
+                    // flag stays correct for unfiltered inputs.
+                    prerelease: Some(r.prerelease),
                     ..Default::default()
                 }
             })
@@ -1514,6 +1521,31 @@ mod tests {
         let versions = PIPXBackend::versions_from_github_releases(vec![]);
 
         assert!(versions.is_empty());
+    }
+
+    #[test]
+    fn test_github_release_stable_flag_survives_pep440_looking_tag() {
+        // A GitHub release explicitly published as a full release keeps its
+        // authoritative Some(false) even when the tag looks like a PEP 440
+        // prerelease, so the pattern stamp (None-gated) cannot reclassify it.
+        let versions = PIPXBackend::versions_from_github_releases(vec![github_release(
+            "1.0.0a1",
+            "2024-01-01T00:00:00Z",
+        )]);
+        assert_eq!(versions[0].prerelease, Some(false));
+
+        let stamped: Vec<_> = versions
+            .into_iter()
+            .map(|mut v| {
+                if v.prerelease.is_none()
+                    && crate::plugins::PEP440_PRERELEASE_REGEX.is_match(&v.version)
+                {
+                    v.prerelease = Some(true);
+                }
+                v
+            })
+            .collect();
+        assert_eq!(stamped[0].prerelease, Some(false));
     }
 
     #[test]
