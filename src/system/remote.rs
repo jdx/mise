@@ -779,13 +779,16 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
     session.status_with_stdin(&["sh", "-c", &install_mise_script(target)], file)?;
     // An install path can be writable by more than the SSH account, so confirm
     // the executable about to run is the one that was just written.
-    if let Some(installed) = remote_executable_sha256(session, target)?
-        && installed != expected
-    {
-        bail!(
+    match remote_executable_sha256(session, target)? {
+        Some(installed) if installed != expected => bail!(
             "{target} on '{}' changed after it was installed; another writer owns that path",
             session.host.name
-        );
+        ),
+        Some(_) => {}
+        None => warn!(
+            "cannot verify the mise installed at {target} on {}; the host returned no SHA-256 digest",
+            session.host.name
+        ),
     }
     info!("installed mise to {target} on {}", session.host.name);
     Ok(())

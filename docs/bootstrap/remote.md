@@ -232,9 +232,11 @@ staged â€” the local binary or the checksum-verified official release artifact â
 and it is what runs the bootstrap, so the host converges with the mise version
 that orchestrated it. Mise writes a temporary file beside the target and renames
 it into place, so replacing a mise that is currently running cannot truncate it.
-When the target already holds a byte-identical executable, nothing is uploaded.
-A dry run never writes to the host: `--dry-run` reports the path it would
-install to and stages the executable as usual.
+When the target already holds a byte-identical executable, nothing is uploaded,
+and after an install mise checks the target's digest before running it, so a
+path another account can write cannot silently substitute the executable. A dry
+run never writes to the host: `--dry-run` reports the path it would install to
+and stages the executable as usual.
 
 `install_mise` composes with `mise_bin`, which installs a locally built
 executable. It cannot be combined with `remote_mise` or `bootstrap_command`,
