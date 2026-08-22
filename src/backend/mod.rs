@@ -1873,6 +1873,14 @@ mod tests {
         });
         assert_eq!(already_flagged.prerelease, Some(true));
 
+        // An authoritative "stable" from the source survives a regex match.
+        let confirmed_stable = mark_prerelease(VersionInfo {
+            version: "1.1.0-rc1".into(),
+            prerelease: Some(false),
+            ..Default::default()
+        });
+        assert_eq!(confirmed_stable.prerelease, Some(false));
+
         // Go pseudo-version (`-DATE-HASH`) must not false-positive on the
         // `[abc][0-9]+` alternative — that pattern lives in
         // PEP440_PRERELEASE_REGEX (pipx-only), not the general regex.
@@ -5156,7 +5164,10 @@ pub(crate) fn filter_cached_prereleases(
 }
 
 pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if version.prerelease != Some(true) && VERSION_REGEX.is_match(&version.version) {
+    // Only fill in unknowns: an authoritative Some(false) from the source
+    // (e.g. a GitHub release explicitly published as a full release) must not
+    // be overridden by pattern detection.
+    if version.prerelease.is_none() && VERSION_REGEX.is_match(&version.version) {
         version.prerelease = Some(true);
     }
     version

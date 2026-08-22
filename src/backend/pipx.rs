@@ -189,7 +189,9 @@ impl Backend for PIPXBackend {
         Ok(versions
             .into_iter()
             .map(|mut v| {
-                if v.prerelease != Some(true) && PEP440_PRERELEASE_REGEX.is_match(&v.version) {
+                // Only fill in unknowns — an authoritative flag from a
+                // GitHub release (either value) wins over pattern detection.
+                if v.prerelease.is_none() && PEP440_PRERELEASE_REGEX.is_match(&v.version) {
                     v.prerelease = Some(true);
                 }
                 v
