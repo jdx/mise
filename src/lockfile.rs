@@ -899,22 +899,24 @@ impl Lockfile {
         specifier: &str,
         version: &str,
         options: &BTreeMap<String, String>,
-    ) {
+    ) -> bool {
         if !self.uses_request_bindings() {
-            return;
+            return false;
         }
         let Some(tools) = self.tools.get_mut(short) else {
-            return;
+            return false;
+        };
+        let Some(target_idx) = tools
+            .iter()
+            .position(|tool| tool.version == version && &tool.options == options)
+        else {
+            return false;
         };
         for tool in tools.iter_mut().filter(|tool| &tool.options == options) {
             tool.specifiers.remove(specifier);
         }
-        if let Some(tool) = tools
-            .iter_mut()
-            .find(|tool| tool.version == version && &tool.options == options)
-        {
-            tool.specifiers.insert(specifier.to_string());
-        }
+        tools[target_idx].specifiers.insert(specifier.to_string());
+        true
     }
 
     pub(crate) fn read<P: AsRef<Path>>(path: P) -> Result<Self> {
@@ -1631,10 +1633,12 @@ pub(crate) fn migrate_monorepo_lockfiles(
         } else if root_lockfile.lockfile_version != subproject_lockfile.lockfile_version
             && allow_format_upgrade
         {
-            // `mise lock --upgrade` immediately rebuilds the merged root from the
-            // authoritative monorepo union. Use legacy semantics for the merge so
-            // neither side's concrete entries become temporarily unreachable.
-            root_lockfile.lockfile_version = 0;
+            // Keep the newer format so request bindings from either input remain
+            // serialized if the subsequent rebuild fails. Entries imported from
+            // version 0 remain reachable through the unbound-entry fallback.
+            root_lockfile.lockfile_version = root_lockfile
+                .lockfile_version
+                .max(subproject_lockfile.lockfile_version);
         } else if root_lockfile.lockfile_version != subproject_lockfile.lockfile_version {
             bail!(
                 "cannot merge lockfile version {} from {} into lockfile version {} at {}; run `mise lock --upgrade` at the monorepo root",
@@ -1754,6 +1758,7 @@ fn legacy_lockfile_path_for_config(config_path: &Path, monorepo_root: &Path) -> 
 fn merge_legacy_lockfile_if_present(lockfile: &mut Lockfile, legacy_path: &Path) -> Result<()> {
     match Lockfile::read(legacy_path) {
         Ok(legacy) => {
+            lockfile.lockfile_version = lockfile.lockfile_version.min(legacy.lockfile_version);
             merge_lockfile_preserving_root(lockfile, legacy);
             Ok(())
         }
@@ -1763,7 +1768,6 @@ fn merge_legacy_lockfile_if_present(lockfile: &mut Lockfile, legacy_path: &Path)
 }
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
-    root.lockfile_version = root.lockfile_version.min(other.lockfile_version);
     for (short, tools) in other.tools {
         let root_tools = root.tools.entry(short).or_default();
         let mut keys: HashSet<(String, BTreeMap<String, String>)> = root_tools
@@ -2019,6 +2023,18 @@ pub(crate) fn update_lockfiles(
                 continue;
             }
             let versions = &tool_versions_by_short[&short];
+            let bindings = entries
+                .iter()
+                .flat_map(|entry| {
+                    entry.specifiers.iter().map(|specifier| {
+                        (
+                            specifier.clone(),
+                            entry.version.clone(),
+                            entry.options.clone(),
+                        )
+                    })
+                })
+                .collect_vec();
             // Normal monorepo installs load only the current config hierarchy,
             // not every sibling project. Consensus among those visible requests
             // is therefore not authoritative for the shared root lockfile. Fail
@@ -2052,23 +2068,10 @@ pub(crate) fn update_lockfiles(
             // gone before auto-lock runs, letting a genuine regression slip through. The
             // stale baseline self-heals on the next update once the new version is locked.
             reinsert_deferred_baselines(&mut merged_tools, &deferred_baselines, &short);
-            existing_lockfile.tools.insert(short, merged_tools);
+            existing_lockfile.tools.insert(short.clone(), merged_tools);
             if existing_lockfile.uses_request_bindings() {
-                for tv in versions {
-                    let options = if let Ok(backend) = tv.request.backend() {
-                        backend.resolve_lockfile_options(
-                            &tv.request,
-                            &PlatformTarget::from_current(),
-                        )?
-                    } else {
-                        BTreeMap::new()
-                    };
-                    existing_lockfile.bind_request(
-                        tv.short(),
-                        &tv.request.version(),
-                        &tv.version,
-                        &options,
-                    );
+                for (specifier, version, options) in bindings {
+                    existing_lockfile.bind_request(&short, &specifier, &version, &options);
                 }
             }
         }
@@ -3378,16 +3381,77 @@ pub(crate) fn get_locked_version(
                     tool.specifiers.contains(specifier) && &tool.options == request_options
                 })
                 .collect_vec();
-            return match matching.as_slice() {
-                [] => Ok(None),
+            match matching.as_slice() {
+                [] => {}
                 [found] => {
                     trace!("[{short}@{specifier}] found {} in lockfile", found.version);
-                    Ok(Some((*found).clone()))
+                    return Ok(Some((*found).clone()));
                 }
-                _ => bail!(
-                    "lockfile contains multiple resolutions for {short}@{specifier} with the same options"
-                ),
+                _ => {
+                    bail!(
+                        "lockfile contains multiple resolutions for {short}@{specifier} with the same options"
+                    )
+                }
+            }
+
+            if legacy_options_fallback && !request_options.is_empty() {
+                let legacy = tools
+                    .iter()
+                    .filter(|tool| tool.specifiers.contains(specifier) && tool.options.is_empty())
+                    .collect_vec();
+                match legacy.as_slice() {
+                    [] => {}
+                    [found] => {
+                        trace!(
+                            "[{short}@{specifier}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
+                            found.version
+                        );
+                        return Ok(Some(lockfile_tool_with_request_options(
+                            found,
+                            request_options,
+                        )));
+                    }
+                    _ => bail!(
+                        "lockfile contains multiple optionless resolutions for {short}@{specifier}"
+                    ),
+                }
+            }
+
+            // Mixed-format monorepo migration can temporarily place legacy
+            // entries without bindings in a version-1 file. Keep those pins
+            // reachable until a successful full format upgrade binds them.
+            let version_matches = |v: &LockfileTool| {
+                v.specifiers.is_empty()
+                    && lockfile_version_matches(prefix, &v.version)
+                    && (!require_prefix_boundary
+                        || lockfile_version_matches_prefix_boundary(prefix, &v.version))
             };
+            if let Some(found) = tools
+                .iter()
+                .find(|v| version_matches(v) && &v.options == request_options)
+            {
+                trace!(
+                    "[{short}@{specifier}] found legacy unbound {} in versioned lockfile",
+                    found.version
+                );
+                return Ok(Some(found.clone()));
+            }
+            if legacy_options_fallback
+                && !request_options.is_empty()
+                && let Some(found) = tools
+                    .iter()
+                    .find(|v| version_matches(v) && v.options.is_empty())
+            {
+                trace!(
+                    "[{short}@{specifier}] found legacy unbound {} without options in versioned lockfile",
+                    found.version
+                );
+                return Ok(Some(lockfile_tool_with_request_options(
+                    found,
+                    request_options,
+                )));
+            }
+            return Ok(None);
         }
         let version_matches = |v: &LockfileTool| {
             lockfile_version_matches(prefix, &v.version)
@@ -3429,20 +3493,30 @@ pub(crate) fn get_locked_version(
                     "[{short}@{prefix}] found {} in lockfile without options, keeping the version pin and dropping its artifact data",
                     found.version
                 );
-                let mut found = (*found).clone();
-                found.options = request_options.clone();
-                found.platforms = found
-                    .platforms
-                    .into_iter()
-                    .map(|(key, info)| (key, info.without_artifact_data()))
-                    .filter(|(_, info)| !info.is_empty())
-                    .collect();
-                return Ok(Some(found));
+                return Ok(Some(lockfile_tool_with_request_options(
+                    found,
+                    request_options,
+                )));
             }
         }
     }
 
     Ok(None)
+}
+
+fn lockfile_tool_with_request_options(
+    found: &LockfileTool,
+    request_options: &BTreeMap<String, String>,
+) -> LockfileTool {
+    let mut found = found.clone();
+    found.options = request_options.clone();
+    found.platforms = found
+        .platforms
+        .into_iter()
+        .map(|(key, info)| (key, info.without_artifact_data()))
+        .filter(|(_, info)| !info.is_empty())
+        .collect();
+    found
 }
 
 fn lockfile_version_matches(prefix: &str, version: &str) -> bool {
@@ -3825,11 +3899,32 @@ mod tests {
             ],
         );
 
-        lockfile.bind_request("dummy", "1", "1.1.0", &BTreeMap::new());
+        assert!(lockfile.bind_request("dummy", "1", "1.1.0", &BTreeMap::new()));
 
         assert!(lockfile.tools["dummy"][0].specifiers.is_empty());
         assert_eq!(
             lockfile.tools["dummy"][1].specifiers,
+            BTreeSet::from(["1".to_string()])
+        );
+    }
+
+    #[test]
+    fn failed_request_binding_preserves_the_existing_binding() {
+        let mut lockfile = Lockfile::default();
+        lockfile.tools.insert(
+            "dummy".to_string(),
+            vec![LockfileTool {
+                version: "1.0.0".to_string(),
+                backend: Some("asdf:dummy".to_string()),
+                specifiers: BTreeSet::from(["1".to_string()]),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::new(),
+            }],
+        );
+
+        assert!(!lockfile.bind_request("dummy", "1", "2.0.0", &BTreeMap::new()));
+        assert_eq!(
+            lockfile.tools["dummy"][0].specifiers,
             BTreeSet::from(["1".to_string()])
         );
     }

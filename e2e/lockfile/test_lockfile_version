@@ -76,3 +76,58 @@ EOF
 
 assert_contains "cd legacy-dry-run && mise lock --upgrade --dry-run" "Would upgrade"
 assert_not_contains "cat legacy-dry-run/mise.lock" "lockfile_version"
+
+echo "=== format upgrades cannot be filtered ==="
+mkdir legacy-filtered
+cat >legacy-filtered/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+tiny = "2.1.0"
+EOF
+cat >legacy-filtered/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+
+[[tools.tiny]]
+version = "2.1.0"
+backend = "asdf:tiny"
+EOF
+
+assert_fail "cd legacy-filtered && mise lock --upgrade dummy"
+assert_not_contains "cat legacy-filtered/mise.lock" "lockfile_version"
+assert_contains "cat legacy-filtered/mise.lock" '[[tools.tiny]]'
+
+echo "=== mixed-format monorepo migration preserves bindings ==="
+mkdir -p mixed-monorepo/packages/b
+cat >mixed-monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1"
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >mixed-monorepo/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >mixed-monorepo/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+EOF
+cat >mixed-monorepo/packages/b/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["1.0.0"]
+EOF
+
+assert_succeed "cd mixed-monorepo && mise lock --upgrade --platform linux-x64"
+assert_fail "test -f mixed-monorepo/packages/b/mise.lock"
+assert_contains "cat mixed-monorepo/mise.lock" 'specifiers = ["1.0.0"]'

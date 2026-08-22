@@ -2285,15 +2285,6 @@ exactly pinned versions resolve to themselves and stay unchanged
 (use `mise upgrade --bump` to rewrite pins in mise.toml).
 """#
     }
-    flag --upgrade help="Upgrade legacy lockfiles to the latest format" {
-        long_help #"""
-Upgrade legacy lockfiles to the latest format
-
-Existing unversioned lockfiles use format version 0 and are otherwise
-preserved to avoid unexpected lockfile drift. This flag upgrades them
-to the latest format with request-specific version bindings.
-"""#
-    }
     flag --json help="Output version changes as JSON" {
         long_help #"""
 Output version changes as JSON
@@ -2322,6 +2313,17 @@ Explicitly pinned versions like "22.5.0" are not filtered.
 Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
 """#
         arg <MINIMUM_RELEASE_AGE>
+    }
+    flag --upgrade help="Upgrade legacy lockfiles to the latest format" {
+        long_help #"""
+Upgrade legacy lockfiles to the latest format
+
+Existing unversioned lockfiles use format version 0 and are otherwise
+preserved to avoid unexpected lockfile drift. This flag upgrades them
+to the latest format with request-specific version bindings.
+Format upgrades always process every configured tool and cannot be
+combined with tool arguments.
+"""#
     }
     arg "[TOOL]…" help=#"""
 Tool(s) to update in lockfile

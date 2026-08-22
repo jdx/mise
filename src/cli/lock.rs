@@ -12,7 +12,7 @@ use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, ToolsetBu
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{cli::args::ToolArg, config::Settings};
 use console::style;
-use eyre::Result;
+use eyre::{Result, bail};
 use jiff::Timestamp;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
@@ -95,14 +95,6 @@ pub(crate) struct Lock {
     #[clap(long, verbatim_doc_comment)]
     pub bump: bool,
 
-    /// Upgrade legacy lockfiles to the latest format
-    ///
-    /// Existing unversioned lockfiles use format version 0 and are otherwise
-    /// preserved to avoid unexpected lockfile drift. This flag upgrades them
-    /// to the latest format with request-specific version bindings.
-    #[clap(long, verbatim_doc_comment)]
-    pub upgrade: bool,
-
     /// Output version changes as JSON
     ///
     /// Prints an array of objects describing lockfile version changes:
@@ -134,6 +126,16 @@ pub(crate) struct Lock {
         verbatim_doc_comment
     )]
     pub minimum_release_age: Option<String>,
+
+    /// Upgrade legacy lockfiles to the latest format
+    ///
+    /// Existing unversioned lockfiles use format version 0 and are otherwise
+    /// preserved to avoid unexpected lockfile drift. This flag upgrades them
+    /// to the latest format with request-specific version bindings.
+    /// Format upgrades always process every configured tool and cannot be
+    /// combined with tool arguments.
+    #[clap(long, verbatim_doc_comment)]
+    pub upgrade: bool,
 }
 
 /// A lockfile version change reported by `--json`
@@ -177,6 +179,9 @@ fn classify_lock_result(
 
 impl Lock {
     pub(crate) async fn run(self) -> Result<()> {
+        if self.upgrade && !self.tool.is_empty() {
+            bail!("`mise lock --upgrade` cannot be combined with tool arguments");
+        }
         let settings = Settings::get();
         let config = Config::get().await?;
         if !self.dry_run {
@@ -289,8 +294,6 @@ impl Lock {
                         .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                         .lock()?;
                     let mut lockfile = Lockfile::read(&lockfile_path)?;
-                    let format_changed =
-                        self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?;
                     if self.json {
                         all_changes.extend(self.compute_version_changes(
                             &lockfile,
@@ -302,6 +305,19 @@ impl Lock {
                         &mut lockfile,
                         configured_selectors.as_ref(),
                     );
+                    let format_changed = if self.upgrade {
+                        if lockfile.tools().is_empty() {
+                            self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?
+                        } else {
+                            bail!(
+                                "cannot upgrade {} because no configured tools were resolved",
+                                display_path(&lockfile_path)
+                            );
+                        }
+                    } else {
+                        self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
+                        false
+                    };
                     if format_changed || !pruned_tools.is_empty() {
                         lockfile.write(&lockfile_path)?;
                         self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
@@ -365,7 +381,9 @@ impl Lock {
                 .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                 .lock()?;
             let mut lockfile = Lockfile::read(&lockfile_path)?;
-            self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?;
+            if !self.upgrade {
+                self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
+            }
             if self.json {
                 all_changes.extend(self.compute_version_changes(&lockfile, &tools, &lockfile_path));
             }
@@ -380,7 +398,7 @@ impl Lock {
             let (results, resolution_errors) = self
                 .process_tools(&settings, &tools, &target_platforms, &mut lockfile)
                 .await?;
-            self.bind_requests(&mut lockfile, &tools, &target_platforms);
+            let resolution_succeeded = resolution_errors.is_empty();
             all_resolution_errors.extend(resolution_errors);
 
             let platform_regressions =
@@ -388,6 +406,18 @@ impl Lock {
             if !platform_regressions.is_empty() {
                 all_platform_regressions.extend(platform_regressions);
                 continue;
+            }
+
+            if self.upgrade && lockfile.lockfile_version() == 0 && resolution_succeeded {
+                self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?;
+                if !self.bind_requests(&mut lockfile, &tools, &target_platforms) {
+                    bail!(
+                        "cannot upgrade {} because not every request binding was resolved",
+                        display_path(&lockfile_path)
+                    );
+                }
+            } else {
+                self.bind_requests(&mut lockfile, &tools, &target_platforms);
             }
 
             // Prune stale versions AFTER provenance checks complete
@@ -595,12 +625,19 @@ impl Lock {
         }
     }
 
-    fn bind_requests(&self, lockfile: &mut Lockfile, tools: &[LockTool], platforms: &[Platform]) {
+    fn bind_requests(
+        &self,
+        lockfile: &mut Lockfile,
+        tools: &[LockTool],
+        platforms: &[Platform],
+    ) -> bool {
         if !lockfile.uses_request_bindings() {
-            return;
+            return false;
         }
+        let mut all_bound = true;
         for (ba, tv) in tools {
             let Ok(backend) = tv.request.backend() else {
+                all_bound = false;
                 continue;
             };
             for platform in platforms {
@@ -609,12 +646,19 @@ impl Lock {
                         &tv.request,
                         &crate::backend::platform_target::PlatformTarget::new(variant),
                     ) else {
+                        all_bound = false;
                         continue;
                     };
-                    lockfile.bind_request(&ba.short, &tv.request.version(), &tv.version, &options);
+                    all_bound &= lockfile.bind_request(
+                        &ba.short,
+                        &tv.request.version(),
+                        &tv.version,
+                        &options,
+                    );
                 }
             }
         }
+        all_bound
     }
 
     fn prune_stale_entries_if_needed(
