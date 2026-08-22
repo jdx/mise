@@ -22,8 +22,7 @@ Packages can also be given explicitly in `manager:package` form.
 
 ### `[PACKAGE]…`
 
-Packages in `manager:package` form; defaults to everything configured
-in [bootstrap.packages]
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
 
 ## Flags
 

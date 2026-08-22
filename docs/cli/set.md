@@ -73,8 +73,7 @@ Prompt for environment variable values
 
 Read the value from stdin (for multiline input)
 
-When using --stdin, provide a single key without a value.
-The value will be read from stdin until EOF.
+When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
 
 Examples:
 

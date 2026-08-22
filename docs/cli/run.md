@@ -130,8 +130,7 @@ Don't show any output except for errors
 
 ### `-t --tool… <TOOL@VERSION>`
 
-Tool(s) to run in addition to what is in mise.toml files
-e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 
 ### `--allow-env… <VAR>`
 

@@ -37,9 +37,7 @@ Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)
 
 Reuse unchanged tool layers from this image instead of the destination ref
 
-Must live in the same repository as the destination. Useful when each
-push gets a unique tag (e.g. per-commit tags in CI):
-`--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+Must live in the same repository as the destination. Useful when each push gets a unique tag (e.g. per-commit tags in CI): `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
 
 ### `--from <FROM>`
 
@@ -71,18 +69,13 @@ Don't embed the mise binary (ignored with --image-dir)
 
 UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
-omitted, it defaults to UID. This affects file ownership only; [oci].user
-controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 
 ### `--update-index`
 
 Maintain the tag as a multi-arch image index
 
-Pushes this build's manifest by digest and points the tag at an OCI
-image index containing one entry per platform, preserving entries
-other architectures pushed. Run `mise oci push --update-index` from
-one runner per platform to assemble a multi-arch tag.
+Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
 
 Examples:
 

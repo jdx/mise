@@ -49,9 +49,7 @@ Use this to pin to a specific version (e.g., "2025.1.0").
 
 Checksum algorithm to use when downloading artifacts
 
-Accepts `blake3` or `sha256` and defaults to `blake3`.
-Cannot be used with `--lock` or `--skip-download` because those modes do not
-calculate checksums.
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lock` or `--skip-download` because those modes do not calculate checksums.
 
 **Choices:**
 
@@ -64,8 +62,7 @@ calculate checksums.
 
 Fetch checksums and sizes for an existing tool stub file
 
-This reads an existing stub file and fills in any missing checksum/size fields
-by downloading the files. URLs must already be present in the stub.
+This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
 
 ### `--http <HTTP>`
 
@@ -75,8 +72,7 @@ HTTP backend type to use
 
 ### `--lock`
 
-Resolve and embed lockfile data (exact version + platform URLs/checksums)
-into an existing stub file for reproducible installs without runtime API calls
+Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
 
 ### `--platform-bin… <PLATFORM_BIN>`
 
@@ -88,15 +84,11 @@ Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
 
 Platform-specific URLs in the format platform:url or just url (auto-detect platform)
 
-When the output file already exists, new platforms will be appended to the existing
-platforms table. Existing platform URLs will be updated if specified again.
+When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
 
-If only a URL is provided (without platform:), the platform will be automatically
-detected from the URL filename.
+If only a URL is provided (without platform:), the platform will be automatically detected from the URL filename.
 
-Examples:
---platform-url linux-x64:https://...
---platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
+Examples: --platform-url linux-x64:https://... --platform-url <https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz>
 
 ### `--skip-download`
 

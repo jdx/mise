@@ -21,8 +21,7 @@ only. `install` is accepted as an alias for this command.
 
 ### `[PACKAGE]…`
 
-Packages in `manager:package` form; defaults to everything configured
-in [bootstrap.packages]
+Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
 
 ## Flags
 

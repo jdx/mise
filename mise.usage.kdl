@@ -67,10 +67,6 @@ flag "-s --shell" hide=#true {
     arg <SHELL>
 }
 flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true hide=#true {
-    long_help #"""
-Tool(s) to run in addition to what is in mise.toml files
-e.g.: node@20 python@3.10
-"""#
     arg <TOOL@VERSION>
 }
 flag "-v --verbose" help="Show extra output (use -vv for even more)" var=#true global=#true count=#true {
@@ -255,10 +251,7 @@ Customize status output with `status` settings.
         long_help #"""
 Do not automatically call hook-env
 
-This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
-you can call `mise hook-env` manually which will output the env vars to stdout without actually
-modifying the environment. That way you can do things like `mise hook-env --trace` to get more
-information or just see the values that hook-env is outputting.
+This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
 """#
     }
     flag --shims help=#"""
@@ -432,8 +425,7 @@ cannot be used together.
         long_help #"""
 Run only one or more bootstrap parts
 
-Can be passed multiple times or as a comma-separated list.
-Cannot be used with `--skip`.
+Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 """#
         arg <ONLY> delimiter=, {
             choices {
@@ -725,10 +717,7 @@ only. `install` is accepted as an alias for this command.
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
             flag --update help="Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)"
-            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" help_long=#"""
-Packages in `manager:package` form; defaults to everything configured
-in [bootstrap.packages]
-"""# required=#false var=#true
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
         }
         cmd brew subcommand_required=#true help="Manage Homebrew taps used by bootstrap packages" effect=read {
             long_help #"""
@@ -830,10 +819,7 @@ Packages can also be given explicitly in `manager:package` form.
             }
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
-            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" help_long=#"""
-Packages in `manager:package` form; defaults to everything configured
-in [bootstrap.packages]
-"""# required=#false var=#true
+            arg "[PACKAGE]…" help="Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]" required=#false var=#true
         }
         cmd use help="Add bootstrap packages to [bootstrap.packages] and install them" effect=write {
             alias u
@@ -855,12 +841,7 @@ a mise version selector. mas uses numeric ADAM IDs and does not support pins.
                 conflicts "--global" "--path"
                 arg <ENV>
             }
-            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one" {
-                long_help #"""
-Write to the global config (~/.config/mise/config.toml) instead of the
-local one
-"""#
-            }
+            flag "-g --global" help="Write to the global config (~/.config/mise/config.toml) instead of the local one"
             flag "-n --dry-run" help="Print the commands that would run without writing config or installing"
             flag "-p --path --file" help="Write to this config file or directory" conflicts=--global {
                 arg <PATH>
@@ -1080,10 +1061,7 @@ Run `mise cache` with no args to view the current cache directory.
             conflicts TOOL "--outdate"
             arg <TASK>
         }
-        arg "[TOOL]…" help="Tool(s) to clear cache for e.g.: node, python" help_long=#"""
-Tool(s) to clear cache for
-e.g.: node, python
-"""# required=#false var=#true
+        arg "[TOOL]…" help="Tool(s) to clear cache for e.g.: node, python" required=#false var=#true
     }
     cmd path help="Show the cache directory path" effect=read {
         alias dir
@@ -1098,10 +1076,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 """#
         flag "-v --verbose" help="Show pruned files" var=#true count=#true
         flag --dry-run help="Just show what would be pruned"
-        arg "[TOOL]…" help="Tool(s) to prune cache for e.g.: node, python" help_long=#"""
-Tool(s) to prune cache for
-e.g.: node, python
-"""# required=#false var=#true
+        arg "[TOOL]…" help="Tool(s) to prune cache for e.g.: node, python" required=#false var=#true
     }
     cmd task help="Inspect output cache entries for a task" effect=read {
         flag "-J --json" help="Output in JSON format"
@@ -1228,10 +1203,7 @@ This is similar to `mise ls --current`, but this only shows the runtime
 and/or version. It's designed to fit into scripts more easily.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # outputs `.tool-versions` compatible format\n    $ \u{1b}[1mmise current\u{1b}[22m\n    python 3.11.0 3.10.0\n    shfmt 3.6.0\n    shellcheck 0.9.0\n    node 20.0.0\n\n    $ \u{1b}[1mmise current node\u{1b}[22m\n    20.0.0\n\n    # can output multiple versions\n    $ \u{1b}[1mmise current python\u{1b}[22m\n    3.11.0 3.10.0\n"
-    arg "[PLUGIN]" help="Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc." help_long=#"""
-Plugin to show versions of
-e.g.: ruby, node, cargo:eza, npm:prettier, etc.
-"""# required=#false
+    arg "[PLUGIN]" help="Plugin to show versions of e.g.: ruby, node, cargo:eza, npm:prettier, etc." required=#false
 }
 cmd deactivate help="Disable mise for current shell session" effect=read {
     long_help #"""
@@ -1471,16 +1443,8 @@ macOS only in v1; on Linux falls back to allowing all network
     flag --deny-write help="Block all filesystem writes"
     flag --fresh-env help="Bypass the environment cache and recompute the environment"
     flag --no-deps help="Skip automatic dependency preparation"
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs {
-        long_help #"""
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
-"""#
-    }
-    arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" help_long=#"""
-Tool(s) to start
-e.g.: node@20 python@3.10
-"""# required=#false var=#true
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs
+    arg "[TOOL@VERSION]…" help="Tool(s) to start e.g.: node@20 python@3.10" required=#false var=#true
     arg "[-- COMMAND]…" help="Command string to execute (same as --command)" required=#false var=#true conflicts=--command required_unless=--command
     complete command type=command
 }
@@ -1493,12 +1457,7 @@ Sorts keys and cleans up whitespace in mise.toml
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise fmt\u{1b}[22m\n"
     flag "-a --all" help="Format all files from the current directory"
     flag "-c --check" help="Check if the configs are formatted, no formatting is done"
-    flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout" {
-        long_help #"""
-Read config from stdin and write its formatted version into
-stdout
-"""#
-    }
+    flag "-s --stdin" help="Read config from stdin and write its formatted version into stdout"
 }
 cmd generate subcommand_required=#true help="Generate files for various tools/services" effect=read {
     alias gen
@@ -1745,9 +1704,7 @@ Use this to pin to a specific version (e.g., "2025.1.0").
             long_help #"""
 Checksum algorithm to use when downloading artifacts
 
-Accepts `blake3` or `sha256` and defaults to `blake3`.
-Cannot be used with `--lock` or `--skip-download` because those modes do not
-calculate checksums.
+Accepts `blake3` or `sha256` and defaults to `blake3`. Cannot be used with `--lock` or `--skip-download` because those modes do not calculate checksums.
 """#
             conflicts "--lock" "--skip-download"
             arg <CHECKSUM_ALGORITHM> {
@@ -1761,8 +1718,7 @@ calculate checksums.
             long_help #"""
 Fetch checksums and sizes for an existing tool stub file
 
-This reads an existing stub file and fills in any missing checksum/size fields
-by downloading the files. URLs must already be present in the stub.
+This reads an existing stub file and fills in any missing checksum/size fields by downloading the files. URLs must already be present in the stub.
 """#
             conflicts "--url" "--platform-url" "--version" "--bin" "--platform-bin" "--skip-download" "--lock"
         }
@@ -1770,10 +1726,6 @@ by downloading the files. URLs must already be present in the stub.
             arg <HTTP>
         }
         flag --lock help="Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls" {
-            long_help #"""
-Resolve and embed lockfile data (exact version + platform URLs/checksums)
-into an existing stub file for reproducible installs without runtime API calls
-"""#
             conflicts "--url" "--platform-url" "--bin" "--platform-bin" "--fetch" "--skip-download"
         }
         flag --platform-bin help="Platform-specific binary paths in the format platform:path" var=#true {
@@ -1788,15 +1740,11 @@ Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
             long_help #"""
 Platform-specific URLs in the format platform:url or just url (auto-detect platform)
 
-When the output file already exists, new platforms will be appended to the existing
-platforms table. Existing platform URLs will be updated if specified again.
+When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
 
-If only a URL is provided (without platform:), the platform will be automatically
-detected from the URL filename.
+If only a URL is provided (without platform:), the platform will be automatically detected from the URL filename.
 
-Examples:
---platform-url linux-x64:https://...
---platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
+Examples: --platform-url linux-x64:https://... --platform-url https://nodejs.org/dist/v22.17.1/node-v22.17.1-darwin-arm64.tar.gz
 """#
             arg <PLATFORM_URL>
         }
@@ -1827,12 +1775,7 @@ authentication issues. The token is masked by default.
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise github token\u{1b}[22m\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise github token --unmask\u{1b}[22m\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise github token github.mycompany.com\u{1b}[22m\n    github.mycompany.com: (none)\n"
         flag --oauth help="Force native GitHub OAuth device flow instead of normal token resolution"
         flag --raw help="Print only the token value"
-        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow" requires=--oauth {
-            long_help #"""
-Mint a fresh OAuth token even if the cached one has not
-expired, via the refresh-token grant or a new device-code flow
-"""#
-        }
+        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow" requires=--oauth
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -2003,12 +1946,7 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
 """#
     }
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs {
-        long_help #"""
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
-"""#
-    }
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs
     flag --shared help="Install tool(s) to a shared directory" conflicts=--system {
         long_help #"""
 Install tool(s) to a shared directory
@@ -2026,10 +1964,7 @@ Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
 """#
     }
-    arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" help_long=#"""
-Tool(s) to install
-e.g.: node@20
-"""# required=#false var=#true
+    arg "[TOOL@VERSION]…" help="Tool(s) to install e.g.: node@20" required=#false var=#true
     complete shared type=dir
 }
 cmd install-into help="Install a tool version to a specific path" effect=write {
@@ -2039,10 +1974,7 @@ Install a tool version to a specific path
 Used for building a tool to a directory for use outside of mise
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # install node@20.0.0 into ./mynode\n    $ \u{1b}[1mmise install-into node@20.0.0 ./mynode && ./mynode/bin/node -v\u{1b}[22m\n    20.0.0\n"
-    arg <TOOL@VERSION> help="Tool to install e.g.: node@20" help_long=#"""
-Tool to install
-e.g.: node@20
-"""#
+    arg <TOOL@VERSION> help="Tool to install e.g.: node@20"
     arg <PATH> help="Path to install the tool into"
     complete path type=dir
 }
@@ -2065,11 +1997,7 @@ Overrides per-tool `minimum_release_age` options and the global `minimum_release
         arg <MINIMUM_RELEASE_AGE>
     }
     arg <TOOL@VERSION> help="Tool to get the latest version of"
-    arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" help_long=#"""
-The version prefix to use when querying the latest version
-same as the first argument after the "@"
-used for asdf compatibility
-"""# required=#false hide=#true
+    arg "[ASDF_VERSION]" help="The version prefix to use when querying the latest version same as the first argument after the \"@\" used for asdf compatibility" required=#false hide=#true
 }
 cmd link help="Symlinks a tool version into mise" effect=write {
     alias ln
@@ -2102,13 +2030,7 @@ is set. A future v2 release of mise will default to using `mise.toml`.
 Recurse up to find a .tool-versions file rather than using the current directory only
 by default this command will only set the tool in the current directory ("$PWD/.tool-versions")
 """#
-    flag --fuzzy help="Save fuzzy version to `.tool-versions` e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless MISE_ASDF_COMPAT=1" overrides=--pin {
-        long_help #"""
-Save fuzzy version to `.tool-versions`
-e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions
-This is the default behavior unless MISE_ASDF_COMPAT=1
-"""#
-    }
+    flag --fuzzy help="Save fuzzy version to `.tool-versions` e.g.: `mise local --fuzzy node@20` will save `node 20` to .tool-versions This is the default behavior unless MISE_ASDF_COMPAT=1" overrides=--pin
     flag --path help="Get the path of the config file"
     flag --pin help=#"""
 Save exact version to `.tool-versions`
@@ -2227,12 +2149,7 @@ It's a useful command to get the current state of your tools.
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise ls\u{1b}[22m\n    node    20.0.0 ~/src/myapp/.tool-versions latest\n    python  3.11.0 ~/.tool-versions           3.10\n    python  3.10.0\n\n    $ \u{1b}[1mmise ls --current\u{1b}[22m\n    node    20.0.0 ~/src/myapp/.tool-versions 20\n    python  3.11.0 ~/.tool-versions           3.11.0\n\n    $ \u{1b}[1mmise ls --json\u{1b}[22m\n    {\n      \"node\": [\n        {\n          \"version\": \"20.0.0\",\n          \"install_path\": \"/Users/jdx/.mise/installs/node/20.0.0\",\n          \"source\": {\n            \"type\": \"mise.toml\",\n            \"path\": \"/Users/jdx/mise.toml\"\n          }\n        }\n      ],\n      \"python\": [...]\n    }\n\n    $ \u{1b}[1mmise ls --all-sources\u{1b}[22m\n    node    20.0.0  ~/src/myapp/mise.toml  20\n                    ~/.config/mise/config.toml  latest\n"
     flag "-c --current" help="Only show tool versions currently specified in a mise.toml"
     flag "-g --global" help="Only show tool versions currently specified in the global mise.toml" conflicts=--local
-    flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)" {
-        long_help #"""
-Only show tool versions that are installed
-(Hides tools defined in mise.toml but not installed)
-"""#
-    }
+    flag "-i --installed" help="Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)"
     flag "-J --json" help="Output in JSON format"
     flag "-l --local" help="Only show tool versions currently specified in the local mise.toml" conflicts=--global
     flag "-m --missing" help="Display missing tool versions" conflicts=--installed
@@ -2375,12 +2292,7 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
             long_help #"""
 Also include tools from the global / system config (default: project-only)
 
-By default `mise oci build` only packages tools declared in the
-project's mise config (and any parent configs at-or-below the
-project root, e.g. a monorepo root config). Personal dev tools in
-`~/.config/mise/config.toml` are excluded so they don't bake into a
-project image. Pass `--include-global` to revert to the old
-"merge all loaded configs" behavior.
+By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old "merge all loaded configs" behavior.
 """#
         }
         flag "-t --tag" help="Tag to record in the image index (the org.opencontainers.image.ref.name annotation)" {
@@ -2394,9 +2306,7 @@ project image. Pass `--include-global` to revert to the old
             long_help #"""
 UID[:GID] to assign to every tar entry in generated layers
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
-omitted, it defaults to UID. This affects file ownership only; [oci].user
-controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 """#
             arg "<UID[:GID]>"
         }
@@ -2429,9 +2339,7 @@ Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
             long_help #"""
 Reuse unchanged tool layers from this image instead of the destination ref
 
-Must live in the same repository as the destination. Useful when each
-push gets a unique tag (e.g. per-commit tags in CI):
-`--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
+Must live in the same repository as the destination. Useful when each push gets a unique tag (e.g. per-commit tags in CI): `--cache-from ghcr.io/me/dev:latest ghcr.io/me/dev:$SHA`.
 """#
             conflicts "--no-cache" "--image-dir"
             arg <REF>
@@ -2459,9 +2367,7 @@ See `mise oci build --help` for details.
             long_help #"""
 UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
-omitted, it defaults to UID. This affects file ownership only; [oci].user
-controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 """#
             arg "<UID[:GID]>"
         }
@@ -2469,10 +2375,7 @@ controls the image USER directive.
             long_help #"""
 Maintain the tag as a multi-arch image index
 
-Pushes this build's manifest by digest and points the tag at an OCI
-image index containing one entry per platform, preserving entries
-other architectures pushed. Run `mise oci push --update-index` from
-one runner per platform to assemble a multi-arch tag.
+Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push --update-index` from one runner per platform to assemble a multi-arch tag.
 """#
         }
         arg <REF> help="Destination registry reference (e.g. `ghcr.io/me/devenv:latest`)"
@@ -2518,11 +2421,7 @@ See `mise oci build --help` for details.
             long_help #"""
 Keep the loaded image in the engine's storage after the run
 
-By default, both the container (`--rm`) and the loaded image are
-removed when the command exits, so repeated `mise oci run` calls
-don't accumulate images in podman / docker storage. Pass `--keep`
-to retain the image under the tag mise used (`mise-oci:run-*` for
-docker; the pulled image ID for podman).
+By default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman).
 """#
         }
         flag --mount-point help="Override in-image mount point (ignored with --image-dir)" {
@@ -2533,9 +2432,7 @@ docker; the pulled image ID for podman).
             long_help #"""
 UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
-omitted, it defaults to UID. This affects file ownership only; [oci].user
-controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 """#
             arg "<UID[:GID]>"
         }
@@ -2544,8 +2441,7 @@ controls the image USER directive.
             long_help #"""
 Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
 
-Note: unlike `docker run -v`, there's no `-v` short flag here because
-mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
+Note: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
 """#
             arg <HOST:CONTAINER>
         }
@@ -2748,18 +2644,8 @@ Examples:
     $ mise plugins ls-remote
 
 """#
-        flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git" {
-            long_help #"""
-Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/mise-poetry.git
-"""#
-        }
-        flag --only-names help="Only show the name of each plugin by default it will show a \"*\" next to installed plugins" {
-            long_help #"""
-Only show the name of each plugin
-by default it will show a "*" next to installed plugins
-"""#
-        }
+        flag "-u --urls" help="Show the git url for each plugin e.g.: https://github.com/mise-plugins/mise-poetry.git"
+        flag --only-names help="Only show the name of each plugin by default it will show a \"*\" next to installed plugins"
     }
     cmd uninstall help="Removes a plugin" effect=destructive {
         alias remove rm
@@ -2914,9 +2800,7 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
         long_help #"""
 Include security features for each tool's backends in JSON output.
 
-Requires --json. Security info is de-duplicated across
-all of a tool's backends. This can add noticeable time for large
-listings since each backend's security info is resolved individually.
+Requires --json. Security info is de-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
 """#
     }
     arg "[NAME]" help="Show only the specified tool's full name" required=#false
@@ -3040,10 +2924,6 @@ Or it can be overridden with the `shell` property on a task.
     }
     flag "-S --silent" help="Don't show any output except for errors" env=MISE_SILENT
     flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
-        long_help #"""
-Tool(s) to run in addition to what is in mise.toml files
-e.g.: node@20 python@3.10
-"""#
         arg <TOOL@VERSION>
     }
     flag --allow-env help=#"""
@@ -3240,8 +3120,7 @@ Can be used multiple times.
         long_help #"""
 Read the value from stdin (for multiline input)
 
-When using --stdin, provide a single key without a value.
-The value will be read from stdin until EOF.
+When using --stdin, provide a single key without a value. The value will be read from stdin until EOF.
 """#
     }
     arg "[ENV_VAR]…" help=#"""
@@ -3352,12 +3231,7 @@ Values below 1 are treated as 1
         arg <JOBS>
     }
     flag "-u --unset" help="Removes a previously set version"
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs {
-        long_help #"""
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
-"""#
-    }
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs
     arg <TOOL@VERSION>… help="Tool(s) to use" var=#true
 }
 cmd shell-alias help="Manage shell aliases." effect=read {
@@ -3718,10 +3592,6 @@ Or it can be overridden with the `shell` property on a task.
         }
         flag "-S --silent" help="Don't show any output except for errors" env=MISE_SILENT
         flag "-t --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
-            long_help #"""
-Tool(s) to run in addition to what is in mise.toml files
-e.g.: node@20 python@3.10
-"""#
             arg <TOOL@VERSION>
         }
         flag --allow-env help=#"""
@@ -3830,12 +3700,7 @@ Values below 1 are treated as 1
         conflicts TOOLS "--all"
     }
     flag --include-non-defined help="Also test tools not defined in registry/, guessing how to test it"
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs {
-        long_help #"""
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
-"""#
-    }
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs
     arg "[TOOLS]…" help="Tool(s) to test" required=#false var=#true {
         required_unless "--all" "--all-config"
     }
@@ -3860,21 +3725,9 @@ Shows which token source mise would use, useful for debugging
 authentication issues. The token is masked by default.
 """#
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise token github\u{1b}[22m\n    github.com: ghp_…xxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise token github --unmask\u{1b}[22m\n    github.com: ghp_xxxxxxxxxxxx (source: GITHUB_TOKEN)\n\n    $ \u{1b}[1mmise token github github.mycompany.com\u{1b}[22m\n    github.mycompany.com: (none)\n\n    $ \u{1b}[1mmise token github --oauth --refresh\u{1b}[22m\n    github.com: gho_…xxxx (source: GitHub OAuth)\n"
-        flag --oauth help="Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources" {
-            long_help #"""
-Resolve only via the native GitHub OAuth source (cache,
-refresh, or device-code flow), bypassing other token sources
-"""#
-        }
+        flag --oauth help="Resolve only via the native GitHub OAuth source (cache, refresh, or device-code flow), bypassing other token sources"
         flag --raw help="Print only the token value"
-        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire" requires=--oauth {
-            long_help #"""
-Mint a fresh OAuth token even if the cached one has not
-expired, via the refresh-token grant or a new device-code flow.
-Use after changing the GitHub App's installations or permissions:
-cached tokens keep their original access until they expire
-"""#
-        }
+        flag --refresh help="Mint a fresh OAuth token even if the cached one has not expired, via the refresh-token grant or a new device-code flow. Use after changing the GitHub App's installations or permissions: cached tokens keep their original access until they expire" requires=--oauth
         flag --unmask help="Show the full unmasked token"
         arg "[HOST]" help="GitHub hostname" required=#false default=github.com
     }
@@ -3907,16 +3760,11 @@ cmd tool-stub disable_help_flag=#true disable_version_flag=#true help="Execute a
     long_help #"""
 Execute a tool stub
 
-Tool stubs are executable files containing TOML configuration that specify
-which tool to run and how to run it. They provide a convenient way to create
-portable, self-contained executables that automatically manage tool installation
-and execution.
+Tool stubs are executable files containing TOML configuration that specify which tool to run and how to run it. They provide a convenient way to create portable, self-contained executables that automatically manage tool installation and execution.
 
 A tool stub consists of:
 
-- A shebang line: #!/usr/bin/env -S mise tool-stub
-- TOML configuration specifying the tool, version, and options
-- Optional comments describing the tool's purpose
+- A shebang line: #!/usr/bin/env -S mise tool-stub - TOML configuration specifying the tool, version, and options - Optional comments describing the tool's purpose
 
 Example stub file:
 
@@ -3929,24 +3777,19 @@ version = "20.0.0"
 bin = "node"
 ```
 
-The stub will automatically install the specified tool version if missing
-and execute it with any arguments passed to the stub.
+The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
 
 For more information, see: https://mise.jdx.dev/dev-tools/tool-stubs.html
 """#
     arg <FILE> help="Path to the TOML tool stub file to execute" help_long=#"""
 Path to the TOML tool stub file to execute
 
-The stub file must contain TOML configuration specifying the tool
-and version to run. At minimum, it should specify a 'version' field.
-Other common fields include 'tool', 'bin', and backend-specific options.
+The stub file must contain TOML configuration specifying the tool and version to run. At minimum, it should specify a 'version' field. Other common fields include 'tool', 'bin', and backend-specific options.
 """# double_dash=automatic
     arg "[ARGS]…" help="Arguments to pass to the tool" help_long=#"""
 Arguments to pass to the tool
 
-All arguments after the stub file path will be forwarded to the
-underlying tool. Use '--' to separate mise arguments from tool arguments
-if needed.
+All arguments after the stub file path will be forwarded to the underlying tool. Use '--' to separate mise arguments from tool arguments if needed.
 """# required=#false double_dash=automatic var=#true
 }
 cmd trust help="Marks a config file as trusted" effect=write {
@@ -4022,8 +3865,7 @@ Specify a file to use instead of `mise.toml`
 
 Can be a file path or directory. If a directory is provided, will create/use mise.toml in that directory.
 
-Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`.
-Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
+Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) environment variable, or `mise.toml`. Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 """#
         arg <FILE>
     }
@@ -4072,8 +3914,7 @@ Will also prune the installed version if no other configurations are using it.
         long_help #"""
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following
-the rules above.
+If a directory is specified, it will look for a config file in that directory following the rules above.
 """#
         overrides "--global" "--env"
         arg <PATH>
@@ -4170,12 +4011,7 @@ This is already the default. Use it to override `upgrade.auto_prune = false`
 for a single run.
 """#
     }
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs {
-        long_help #"""
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
-"""#
-    }
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs
     arg "[INSTALLED_TOOL@VERSION]…" help=#"""
 Tool(s) to upgrade
 e.g.: node@20 python@3.10
@@ -4233,8 +4069,7 @@ Values below 1 are treated as 1
         long_help #"""
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following
-the rules above.
+If a directory is specified, it will look for a config file in that directory following the rules above.
 """#
         overrides "--global" "--env"
         arg <PATH>
@@ -4276,12 +4111,7 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 https://mise.jdx.dev/configuration/settings.html#lockfile
 """#
     }
-    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`" overrides=--jobs {
-        long_help #"""
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies `--jobs=1`
-"""#
-    }
+    flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`" overrides=--jobs
     flag --remove help="Remove the tool(s) from config file" var=#true {
         alias "--rm" "--unset" hide=#true
         arg <TOOL>
@@ -4338,17 +4168,13 @@ Watch a specific file or directory
 
 By default, Watchexec watches the current directory.
 
-When watching a single file, it's often better to watch the containing directory instead,
-and filter on the filename. Some editors may replace the file with a new one when saving,
-and some platforms may not detect that or further changes.
+When watching a single file, it's often better to watch the containing directory instead, and filter on the filename. Some editors may replace the file with a new one when saving, and some platforms may not detect that or further changes.
 
-Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help
-for '--project-origin' for more information.
+Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help for '--project-origin' for more information.
 
 This option can be specified multiple times to watch multiple files or directories.
 
-The special value '/dev/null', provided as the only path watched, will cause Watchexec to
-not watch any paths. Other event sources (like signals or key events) may still be used.
+The special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used.
 """#
         arg <PATH>
     }
@@ -4368,8 +4194,7 @@ Watch files and directories from a file
 
 Each line in the file will be interpreted as if given to '-w'.
 
-For more complex uses (like watching non-recursively), use the argfile capability: build a
-file containing command-line options and pass it to watchexec with `@path/to/argfile`.
+For more complex uses (like watching non-recursively), use the argfile capability: build a file containing command-line options and pass it to watchexec with `@path/to/argfile`.
 
 The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
 """#
@@ -4392,12 +4217,7 @@ If this doesn't completely clear the screen, try '--clear=reset'.
         long_help #"""
 What to do when receiving events while the command is running
 
-Default is to 'do-nothing', which ignores events while the command is running, so that
-changes that occur due to the command are ignored, like compilation outputs. You can also
-use 'queue' which will run the command once again when the current run has finished if any
-events occur while it's running, or 'restart', which terminates the running command and starts
-a new one. Finally, there's 'signal', which only sends a signal; this can be useful with
-programs that can reload their configuration without a full restart.
+Default is to 'do-nothing', which ignores events while the command is running, so that changes that occur due to the command are ignored, like compilation outputs. You can also use 'queue' which will run the command once again when the current run has finished if any events occur while it's running, or 'restart', which terminates the running command and starts a new one. Finally, there's 'signal', which only sends a signal; this can be useful with programs that can reload their configuration without a full restart.
 
 The signal can be specified with the '--signal' option.
 """#
@@ -4421,14 +4241,11 @@ This is a shorthand for '--on-busy-update=restart'.
         long_help #"""
 Send a signal to the process when it's still running
 
-Specify a signal to send to the process when it's still running. This implies
-'--on-busy-update=signal'; otherwise the signal used when that mode is 'restart' is
-controlled by '--stop-signal'.
+Specify a signal to send to the process when it's still running. This implies '--on-busy-update=signal'; otherwise the signal used when that mode is 'restart' is controlled by '--stop-signal'.
 
 See the long documentation for '--stop-signal' for syntax.
 
-Signals are not supported on Windows at the moment, and will always be overridden to 'kill'.
-See '--stop-signal' for more on Windows "signals".
+Signals are not supported on Windows at the moment, and will always be overridden to 'kill'. See '--stop-signal' for more on Windows "signals".
 """#
         arg <SIGNAL>
     }
@@ -4436,20 +4253,13 @@ See '--stop-signal' for more on Windows "signals".
         long_help #"""
 Signal to send to stop the command
 
-This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is
-provided). The restart behaviour is to send the signal, wait for the command to exit, and if
-it hasn't exited after some time (see '--timeout-stop'), forcefully terminate it.
+This is used by 'restart' and 'signal' modes of '--on-busy-update' (unless '--signal' is provided). The restart behaviour is to send the signal, wait for the command to exit, and if it hasn't exited after some time (see '--timeout-stop'), forcefully terminate it.
 
 The default on unix is "SIGTERM".
 
-Input is parsed as a full signal name (like "SIGTERM"), a short signal name (like "TERM"),
-or a signal number (like "15"). All input is case-insensitive.
+Input is parsed as a full signal name (like "SIGTERM"), a short signal name (like "TERM"), or a signal number (like "15"). All input is case-insensitive.
 
-On Windows this option is technically supported but only supports the "KILL" event, as
-Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it
-has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE"
-events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are
-respectively mapped to these.
+On Windows this option is technically supported but only supports the "KILL" event, as Watchexec cannot yet deliver other events. Windows doesn't have signals as such; instead it has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE" events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are respectively mapped to these.
 """#
         arg <SIGNAL>
     }
@@ -4457,17 +4267,13 @@ respectively mapped to these.
         long_help #"""
 Time to wait for the command to exit gracefully
 
-This is used by the 'restart' mode of '--on-busy-update'. After the graceful stop signal
-is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time,
-it is forcefully terminated.
+This is used by the 'restart' mode of '--on-busy-update'. After the graceful stop signal is sent, Watchexec will wait for the command to exit. If it hasn't exited after this time, it is forcefully terminated.
 
-Takes a unit-less value in seconds, or a time span value such as "5min 20s".
-Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+Takes a unit-less value in seconds, or a time span value such as "5min 20s". Providing a unit-less value is deprecated and will warn; it will be an error in the future.
 
 The default is 10 seconds. Set to 0 to immediately force-kill the command.
 
-This has no practical effect on Windows as the command is always forcefully terminated; see
-'--stop-signal' for why.
+This has no practical effect on Windows as the command is always forcefully terminated; see '--stop-signal' for why.
 """#
         arg <TIMEOUT>
     }
@@ -4475,21 +4281,13 @@ This has no practical effect on Windows as the command is always forcefully term
         long_help #"""
 Translate signals from the OS to signals to send to the command
 
-Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to
-SIGINT. The first signal is the one received by watchexec, and the second is the one sent to
-the command. The second can be omitted to discard the first signal, such as "TERM:" to
-not do anything on SIGTERM.
+Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to SIGINT. The first signal is the one received by watchexec, and the second is the one sent to the command. The second can be omitted to discard the first signal, such as "TERM:" to not do anything on SIGTERM.
 
-If SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard
-to quit Watchexec itself, this is useful to send pass a Ctrl-C to the command without also
-terminating Watchexec and the underlying program with it, e.g. with "INT:INT".
+If SIGINT or SIGTERM are mapped, then they no longer quit Watchexec. Besides making it hard to quit Watchexec itself, this is useful to send pass a Ctrl-C to the command without also terminating Watchexec and the underlying program with it, e.g. with "INT:INT".
 
 This option can be specified multiple times to map multiple signals.
 
-Signal syntax is case-insensitive for short names (like "TERM", "USR2") and long names (like
-"SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the
-forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot
-yet deliver other "signals" than a STOP.
+Signal syntax is case-insensitive for short names (like "TERM", "USR2") and long names (like "SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot yet deliver other "signals" than a STOP.
 """#
         arg <SIGNAL:SIGNAL>
     }
@@ -4497,19 +4295,11 @@ yet deliver other "signals" than a STOP.
         long_help #"""
 Time to wait for new events before taking action
 
-When an event is received, Watchexec will wait for up to this amount of time before handling
-it (such as running the command). This is essential as what you might perceive as a single
-change may actually emit many events, and without this behaviour, Watchexec would run much
-too often. Additionally, it's not infrequent that file writes are not atomic, and each write
-may emit an event, so this is a good way to avoid running a command while a file is
-partially written.
+When an event is received, Watchexec will wait for up to this amount of time before handling it (such as running the command). This is essential as what you might perceive as a single change may actually emit many events, and without this behaviour, Watchexec would run much too often. Additionally, it's not infrequent that file writes are not atomic, and each write may emit an event, so this is a good way to avoid running a command while a file is partially written.
 
-An alternative use is to set a high value (like "30min" or longer), to save power or
-bandwidth on intensive tasks, like an ad-hoc backup script. In those use cases, note that
-every accumulated event will build up in memory.
+An alternative use is to set a high value (like "30min" or longer), to save power or bandwidth on intensive tasks, like an ad-hoc backup script. In those use cases, note that every accumulated event will build up in memory.
 
-Takes a unit-less value in milliseconds, or a time span value such as "5sec 20ms".
-Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+Takes a unit-less value in milliseconds, or a time span value such as "5sec 20ms". Providing a unit-less value is deprecated and will warn; it will be an error in the future.
 
 The default is 50 milliseconds. Setting to 0 is highly discouraged.
 """#
@@ -4519,17 +4309,14 @@ The default is 50 milliseconds. Setting to 0 is highly discouraged.
         long_help #"""
 Exit when stdin closes
 
-This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is
-closed. This is used by some process managers to avoid leaving zombie processes around.
+This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is closed. This is used by some process managers to avoid leaving zombie processes around.
 """#
     }
     flag --no-vcs-ignore help="Don't load gitignores" help_heading=Filtering {
         long_help #"""
 Don't load gitignores
 
-Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note
-that Watchexec will detect which of these is in use, if any, and only load the relevant
-files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
+Among other VCS exclude files, like for Mercurial, Subversion, Bazaar, DARCS, Fossil. Note that Watchexec will detect which of these is in use, if any, and only load the relevant files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
 
 This option is useful if you want to watch files that are ignored by Git.
 """#
@@ -4580,17 +4367,14 @@ VCS as used in the project.
         long_help #"""
 Don't use internal default ignores
 
-Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
-`.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
-Watchexec log files.
+Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`, `.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and Watchexec log files.
 """#
     }
     flag --no-discover-ignore help="Don't discover ignore files at all" help_heading=Filtering {
         long_help #"""
 Don't discover ignore files at all
 
-This is a shorthand for '--no-global-ignore', '--no-vcs-ignore', '--no-project-ignore', but
-even more efficient as it will skip all the ignore discovery mechanisms from the get go.
+This is a shorthand for '--no-global-ignore', '--no-vcs-ignore', '--no-project-ignore', but even more efficient as it will skip all the ignore discovery mechanisms from the get go.
 
 Note that default ignores are still loaded, see '--no-default-ignore'.
 """#
@@ -4601,28 +4385,23 @@ Don't ignore anything at all
 
 This is a shorthand for '--no-discover-ignore', '--no-default-ignore'.
 
-Note that ignores explicitly loaded via other command line options, such as '--ignore' or
-'--ignore-file', will still be used.
+Note that ignores explicitly loaded via other command line options, such as '--ignore' or '--ignore-file', will still be used.
 """#
     }
     flag "-p --postpone" help="Wait until first change before running command" {
         long_help #"""
 Wait until first change before running command
 
-By default, Watchexec will run the command once immediately. With this option, it will
-instead wait until an event is detected before running the command as normal.
+By default, Watchexec will run the command once immediately. With this option, it will instead wait until an event is detected before running the command as normal.
 """#
     }
     flag --delay-run help="Sleep before running the command" {
         long_help #"""
 Sleep before running the command
 
-This option will cause Watchexec to sleep for the specified amount of time before running
-the command, after an event is detected. This is like using "sleep 5 && command" in a shell,
-but portable and slightly more efficient.
+This option will cause Watchexec to sleep for the specified amount of time before running the command, after an event is detected. This is like using "sleep 5 && command" in a shell, but portable and slightly more efficient.
 
-Takes a unit-less value in seconds, or a time span value such as "2min 5s".
-Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+Takes a unit-less value in seconds, or a time span value such as "2min 5s". Providing a unit-less value is deprecated and will warn; it will be an error in the future.
 """#
         arg <DURATION>
     }
@@ -4631,14 +4410,9 @@ Providing a unit-less value is deprecated and will warn; it will be an error in 
         long_help #"""
 Poll for filesystem changes
 
-By default, and where available, Watchexec uses the operating system's native file system
-watching capabilities. This option disables that and instead uses a polling mechanism, which
-is less efficient but can work around issues with some file systems (like network shares) or
-edge cases.
+By default, and where available, Watchexec uses the operating system's native file system watching capabilities. This option disables that and instead uses a polling mechanism, which is less efficient but can work around issues with some file systems (like network shares) or edge cases.
 
-Optionally takes a unit-less value in milliseconds, or a time span value such as "2s 500ms",
-to use as the polling interval. If not specified, the default is 30 seconds.
-Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+Optionally takes a unit-less value in milliseconds, or a time span value such as "2s 500ms", to use as the polling interval. If not specified, the default is 30 seconds. Providing a unit-less value is deprecated and will warn; it will be an error in the future.
 
 Aliased as '--force-poll'.
 """#
@@ -4648,26 +4422,17 @@ Aliased as '--force-poll'.
         long_help #"""
 Use a different shell
 
-By default, Watchexec will use '$SHELL' if it's defined or a default of 'sh' on Unix-likes,
-and either 'pwsh', 'powershell', or 'cmd' (CMD.EXE) on Windows, depending on what Watchexec
-detects is the running shell.
+By default, Watchexec will use '$SHELL' if it's defined or a default of 'sh' on Unix-likes, and either 'pwsh', 'powershell', or 'cmd' (CMD.EXE) on Windows, depending on what Watchexec detects is the running shell.
 
-With this option, you can override that and use a different shell, for example one with more
-features or one which has your custom aliases and functions.
+With this option, you can override that and use a different shell, for example one with more features or one which has your custom aliases and functions.
 
-If the value has spaces, it is parsed as a command line, and the first word used as the
-shell program, with the rest as arguments to the shell.
+If the value has spaces, it is parsed as a command line, and the first word used as the shell program, with the rest as arguments to the shell.
 
 The command is run with the '-c' flag (except for 'cmd' on Windows, where it's '/C').
 
-The special value 'none' can be used to disable shell use entirely. In that case, the
-command provided to Watchexec will be parsed, with the first word being the executable and
-the rest being the arguments, and executed directly. Note that this parsing is rudimentary,
-and may not work as expected in all cases.
+The special value 'none' can be used to disable shell use entirely. In that case, the command provided to Watchexec will be parsed, with the first word being the executable and the rest being the arguments, and executed directly. Note that this parsing is rudimentary, and may not work as expected in all cases.
 
-Using 'none' is a little more efficient and can enable a stricter interpretation of the
-input, but it also means that you can't use shell features like globbing, redirection,
-control flow, logic, or pipes.
+Using 'none' is a little more efficient and can enable a stricter interpretation of the input, but it also means that you can't use shell features like globbing, redirection, control flow, logic, or pipes.
 
 Examples:
 
@@ -4813,21 +4578,16 @@ multiple confused queries that have landed in my inbox over the years.
         long_help #"""
 Only emit events to stdout, run no commands.
 
-This is a convenience option for using Watchexec as a file watcher, without running any
-commands. It is almost equivalent to using `cat` as the command, except that it will not
-spawn a new process for each event.
+This is a convenience option for using Watchexec as a file watcher, without running any commands. It is almost equivalent to using `cat` as the command, except that it will not spawn a new process for each event.
 
-This option requires `--emit-events-to` to be set, and restricts the available modes to
-`stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin
-of the command.
+This option requires `--emit-events-to` to be set, and restricts the available modes to `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
 """#
     }
     flag "-E --env" help="Add env vars to the command" var=#true help_heading=Command {
         long_help #"""
 Add env vars to the command
 
-This is a convenience option for setting environment variables for the command, without
-setting them for the Watchexec process itself.
+This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
 
 Use key=value syntax. Multiple variables can be set by repeating the option.
 """#
@@ -4837,13 +4597,11 @@ Use key=value syntax. Multiple variables can be set by repeating the option.
         long_help #"""
 Configure how the process is wrapped
 
-By default, Watchexec will run the command in a session on macOS, in a process group on
-other Unix platforms, and in a Job Object in Windows.
+By default, Watchexec will run the command in a session on macOS, in a process group on other Unix platforms, and in a Job Object in Windows.
 
 Some Unix programs prefer running in a session, while others do not work in a process group.
 
-Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
-the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
+Use 'group' to use a process group, 'session' to use a process session, and 'none' to run the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
 """#
         arg <MODE> {
             choices {
@@ -4857,8 +4615,7 @@ the command directly. On Windows, either of 'group' or 'session' will use a Job 
         long_help #"""
 Alert when commands start and end
 
-With this, Watchexec will emit a desktop notification when a command starts and ends, on
-supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
+With this, Watchexec will emit a desktop notification when a command starts and ends, on supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
 """#
     }
     flag --color help="When to use terminal colours" help_heading=Output default=auto {
@@ -4880,16 +4637,14 @@ Setting the environment variable `NO_COLOR` to any value is equivalent to `--col
         long_help #"""
 Print how long the command took to run
 
-This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use
-the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
+This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
 """#
     }
     flag "-q --quiet" help="Don't print starting and stopping messages" help_heading=Output {
         long_help #"""
 Don't print starting and stopping messages
 
-By default Watchexec will print a message when the command starts and stops. This option
-disables this behaviour, so only the command's output, warnings, and errors will be printed.
+By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
 """#
     }
     flag --bell help="Ring the terminal bell on command completion" help_heading=Output
@@ -4897,12 +4652,9 @@ disables this behaviour, so only the command's output, warnings, and errors will
         long_help #"""
 Set the project origin
 
-Watchexec will attempt to discover the project's "origin" (or "root") by searching for a
-variety of markers, like files or directory patterns. It does its best but sometimes gets it
-it wrong, and you can override that with this option.
+Watchexec will attempt to discover the project's "origin" (or "root") by searching for a variety of markers, like files or directory patterns. It does its best but sometimes gets it it wrong, and you can override that with this option.
 
-The project origin is used to determine the path of certain ignore files, which VCS is being
-used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
+The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
 
 When set, Watchexec will also not bother searching, which can be significantly faster.
 """#
@@ -4912,8 +4664,7 @@ When set, Watchexec will also not bother searching, which can be significantly f
         long_help #"""
 Set the working directory
 
-By default, the working directory of the command is the working directory of Watchexec. You
-can change that with this option. Note that paths may be less intuitive to use with this.
+By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
 """#
         arg <DIRECTORY>
     }
@@ -4921,9 +4672,7 @@ can change that with this option. Note that paths may be less intuitive to use w
         long_help #"""
 Filename extensions to filter to
 
-This is a quick filter to only emit events for files with the given extensions. Extensions
-can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
-be given by repeating the option or by separating them with commas.
+This is a quick filter to only emit events for files with the given extensions. Extensions can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can be given by repeating the option or by separating them with commas.
 """#
         arg <EXTENSIONS> delimiter=,
     }
@@ -4931,9 +4680,7 @@ be given by repeating the option or by separating them with commas.
         long_help #"""
 Filename patterns to filter to
 
-Provide a glob-like filter pattern, and only events for files matching the pattern will be
-emitted. Multiple patterns can be given by repeating the option. Events that are not from
-files (e.g. signals, keyboard events) will pass through untouched.
+Provide a glob-like filter pattern, and only events for files matching the pattern will be emitted. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
 """#
         arg <PATTERN>
     }
@@ -4941,8 +4688,7 @@ files (e.g. signals, keyboard events) will pass through untouched.
         long_help #"""
 Files to load filters from
 
-Provide a path to a file containing filters, one per line. Empty lines and lines starting
-with '#' are ignored. Uses the same pattern format as the '--filter' option.
+Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--filter' option.
 
 This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
 """#
@@ -4954,9 +4700,7 @@ This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
 
 /!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
 
-Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given
-an event in the same format as described in '--emit-events-to' and must return a boolean.
-Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
+Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given an event in the same format as described in '--emit-events-to' and must return a boolean. Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
 
 In addition to the jaq stdlib, watchexec adds some custom filter definitions:
 
@@ -4978,20 +4722,13 @@ In addition to the jaq stdlib, watchexec adds some custom filter definitions:
     value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
     pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
 
-All filtering done with such programs, and especially those using kv or filesystem access,
-is much slower than the other filtering methods. If filtering is too slow, events will back
-up and stall watchexec. Take care when designing your filters.
+All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
 
-If the argument to this option starts with an '@', the rest of the argument is taken to be
-the path to a file containing a jaq program.
+If the argument to this option starts with an '@', the rest of the argument is taken to be the path to a file containing a jaq program.
 
-Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq
-or not) rejects an event, execution stops there, and no other filters are run. Additionally,
-they stop after outputting the first value, so you'll want to use 'any' or 'all' when
-iterating, otherwise only the first item will be processed, which can be quite confusing!
+Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq or not) rejects an event, execution stops there, and no other filters are run. Additionally, they stop after outputting the first value, so you'll want to use 'any' or 'all' when iterating, otherwise only the first item will be processed, which can be quite confusing!
 
-Find user-contributed programs or submit your own useful ones at
-<https://github.com/watchexec/watchexec/discussions/592>.
+Find user-contributed programs or submit your own useful ones at <https://github.com/watchexec/watchexec/discussions/592>.
 
 ## Examples:
 
@@ -5017,9 +4754,7 @@ Ignore files that start with shebangs:
         long_help #"""
 Filename patterns to filter out
 
-Provide a glob-like filter pattern, and events for files matching the pattern will be
-excluded. Multiple patterns can be given by repeating the option. Events that are not from
-files (e.g. signals, keyboard events) will pass through untouched.
+Provide a glob-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
 """#
         arg <PATTERN>
     }
@@ -5027,8 +4762,7 @@ files (e.g. signals, keyboard events) will pass through untouched.
         long_help #"""
 Files to load ignores from
 
-Provide a path to a file containing ignores, one per line. Empty lines and lines starting
-with '#' are ignored. Uses the same pattern format as the '--ignore' option.
+Provide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--ignore' option.
 
 This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
 """#
@@ -5038,13 +4772,9 @@ This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
         long_help #"""
 Filesystem events to filter to
 
-This is a quick filter to only emit events for the given types of filesystem changes. Choose
-from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be
-given by repeating the option or by separating them with commas. By default, this is all
-types except for 'access'.
+This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
 
-This may apply filtering at the kernel level when possible, which can be more efficient, but
-may be more confusing when reading the logs.
+This may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs.
 """#
         arg <EVENTS> delimiter=, {
             choices {
@@ -5061,16 +4791,14 @@ may be more confusing when reading the logs.
         long_help #"""
 Don't emit fs events for metadata changes
 
-This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the
-'--fs-events' option is non-sensical and not allowed.
+This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the '--fs-events' option is non-sensical and not allowed.
 """#
     }
     flag --print-events help="Print events that trigger actions" help_heading=Debugging {
         long_help #"""
 Print events that trigger actions
 
-This prints the events that triggered the action when handling it (after debouncing), in a
-human readable form. This is useful for debugging filters.
+This prints the events that triggered the action when handling it (after debouncing), in a human readable form. This is useful for debugging filters.
 
 Use '-vvv' instead when you need more diagnostic information.
 """#
@@ -5079,9 +4807,7 @@ Use '-vvv' instead when you need more diagnostic information.
         long_help #"""
 Show the manual page
 
-This shows the manual page for Watchexec, if the output is a terminal and the 'man' program
-is available. If not, the manual page is printed to stdout in ROFF format (suitable for
-writing to a watchexec.1 file).
+This shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file).
 """#
     }
     arg "[TASK]" help=#"""

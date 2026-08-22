@@ -105,8 +105,7 @@ for a single run.
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
 
 Deprecation:
 
