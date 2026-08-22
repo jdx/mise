@@ -67,32 +67,34 @@ impl GitRepoStructure {
     }
 }
 
-impl RemoteTaskGit {
-    pub(super) fn validate_remote_path(
-        checkout_root: &Path,
-        path: &Path,
-    ) -> Result<std::fs::Metadata> {
-        let metadata = path.symlink_metadata()?;
-        let checkout_root = checkout_root.canonicalize()?;
-        let canonical_path = path.canonicalize()?;
-        if !canonical_path.starts_with(&checkout_root) {
-            eyre::bail!(
-                "remote task path escapes its Git checkout: {}",
-                display_path(path)
-            );
-        }
-        if metadata.file_type().is_file() || metadata.file_type().is_dir() {
-            return Ok(metadata);
-        }
+/// Ensure a remote task path resolves inside its Git checkout and points at a
+/// regular file or directory.
+pub(crate) fn validate_remote_git_path(
+    checkout_root: &Path,
+    path: &Path,
+) -> Result<std::fs::Metadata> {
+    let metadata = path.symlink_metadata()?;
+    let checkout_root = checkout_root.canonicalize()?;
+    let canonical_path = path.canonicalize()?;
+    if !canonical_path.starts_with(&checkout_root) {
         eyre::bail!(
-            "remote task path is not a regular file or directory: {}",
+            "remote task path escapes its Git checkout: {}",
             display_path(path)
-        )
+        );
     }
+    if metadata.file_type().is_file() || metadata.file_type().is_dir() {
+        return Ok(metadata);
+    }
+    eyre::bail!(
+        "remote task path is not a regular file or directory: {}",
+        display_path(path)
+    )
+}
 
+impl RemoteTaskGit {
     /// Make fetched task files executable while leaving task include directories intact.
     fn prepare_remote_path(checkout_root: &Path, path: &Path) -> Result<()> {
-        let metadata = Self::validate_remote_path(checkout_root, path)?;
+        let metadata = validate_remote_git_path(checkout_root, path)?;
         if metadata.file_type().is_file() {
             file::make_executable(path)?;
         }
