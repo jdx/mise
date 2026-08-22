@@ -1484,6 +1484,12 @@ The default file-task directories are:
 - `.config/mise/tasks`
 - `mise/tasks`
 
+For the user-global scope, the `.config/mise/tasks` entry points at the actual config dir: when
+`MISE_CONFIG_DIR` is set to a non-default location, `$MISE_CONFIG_DIR/tasks` is used instead (and
+the default location is no longer treated as global). The system scope similarly uses
+`$MISE_SYSTEM_DIR/tasks` (default `/etc/mise/tasks`). Both directories are loaded even when no
+config file exists in that scope, so a scripts-only setup works without a `config.toml`.
+
 If you want to keep the defaults and add another directory, include the defaults explicitly:
 
 ```toml

@@ -64,3 +64,56 @@ chmod +x ~/custom-tasks/custom-included
 assert "mise run custom-included" "custom-included"
 assert "mise tasks --global" "custom-included
 system-scripts-only"
+
+# glob metacharacters in the config dir path must not break discovery
+mkdir -p "$HOME/cfg [x]/tasks"
+cat <<'EOF' >"$HOME/cfg [x]/tasks/metachar-task"
+#!/usr/bin/env bash
+echo metachar-task
+EOF
+chmod +x "$HOME/cfg [x]/tasks/metachar-task"
+assert "MISE_CONFIG_DIR='$HOME/cfg [x]' mise run metachar-task" "metachar-task"
+
+unset MISE_CONFIG_DIR
+
+# with the default config dir, the config-dir entry still resolves relative to
+# a custom global root
+cat >~/.config/mise/config.toml <<'TOML'
+tasks.myglobal = { run = 'echo myglobal' }
+TOML
+mkdir -p ~/groot/.config/mise/tasks
+cat <<'EOF' >~/groot/.config/mise/tasks/groot-task
+#!/usr/bin/env bash
+echo groot-task
+EOF
+chmod +x ~/groot/.config/mise/tasks/groot-task
+assert "MISE_GLOBAL_CONFIG_ROOT=$HOME/groot mise tasks --global" "groot-task
+myglobal
+scripts-only
+system-scripts-only"
+
+# run from outside HOME so the ancestor walk cannot reach the global dirs and
+# only the global scopes themselves are observed
+mkdir -p "$TMPDIR/outside"
+
+# a nonexistent MISE_GLOBAL_CONFIG_FILE disables the user scope entirely
+assert "MISE_GLOBAL_CONFIG_FILE=$HOME/nope.toml mise -C '$TMPDIR/outside' tasks --global" "system-scripts-only"
+
+# a scope whose config file was consumed by the other scope stays disabled
+cat >"$HOME/shared-global.toml" <<'TOML'
+[task_config]
+includes = []
+TOML
+assert_empty "MISE_GLOBAL_CONFIG_FILE=$HOME/shared-global.toml MISE_SYSTEM_CONFIG_FILE=$HOME/shared-global.toml mise -C '$TMPDIR/outside' tasks --global"
+
+# --no-config disables global file-task discovery too
+assert_empty "MISE_NO_CONFIG=1 mise -C '$TMPDIR/outside' tasks --global"
+
+# a config dir inside a project keeps that project's task context
+mkdir -p "$HOME/proj/.config/mise/tasks"
+cat <<'EOF' >"$HOME/proj/.config/mise/tasks/proj-pwd"
+#!/usr/bin/env bash
+echo "PWD=$PWD"
+EOF
+chmod +x "$HOME/proj/.config/mise/tasks/proj-pwd"
+assert "MISE_CONFIG_DIR=$HOME/proj/.config/mise mise -C $HOME/proj run proj-pwd" "PWD=$HOME/proj"

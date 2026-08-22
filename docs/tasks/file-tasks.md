@@ -11,6 +11,10 @@ In addition to defining tasks through the configuration, they can also be define
 These are the default file-task directories. If [`task_config.includes`](/tasks/task-configuration.html#task_config.includes)
 is set for the current config scope, mise searches only the paths listed there instead.
 
+Global file tasks live in `$MISE_CONFIG_DIR/tasks` (default `~/.config/mise/tasks`) and system-wide
+file tasks in `$MISE_SYSTEM_DIR/tasks` (default `/etc/mise/tasks`). These directories are picked up
+even when the scope has no config file at all.
+
 Here is an example of a file task that builds a Rust CLI:
 
 ```bash [mise-tasks/build]
