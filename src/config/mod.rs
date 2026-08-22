@@ -3376,33 +3376,25 @@ async fn apply_task_config_inputs(
     Ok(())
 }
 
-const CONFIG_DIR_DEFAULT_TASK_INCLUDE: &str = ".config/mise/tasks";
-
 fn default_task_includes() -> Vec<String> {
+    default_task_includes_with_config_dir(".config/mise/tasks".to_string())
+}
+
+/// Default task includes for a global/system scope. The config-dir entry is
+/// pinned to the scope's own config dir so a relocated `MISE_CONFIG_DIR` (or
+/// the system config dir) keeps owning its `tasks/` directory.
+fn scope_default_task_includes(scope_tasks_dir: &Path) -> Vec<String> {
+    default_task_includes_with_config_dir(scope_tasks_dir.to_string_lossy().to_string())
+}
+
+fn default_task_includes_with_config_dir(config_dir_tasks: String) -> Vec<String> {
     vec![
         "mise-tasks".to_string(),
         ".mise-tasks".to_string(),
         ".mise/tasks".to_string(),
-        CONFIG_DIR_DEFAULT_TASK_INCLUDE.to_string(),
+        config_dir_tasks,
         "mise/tasks".to_string(),
     ]
-}
-
-/// Default task includes for a global/system scope. The root-relative
-/// `.config/mise/tasks` entry is pinned to the scope's own config dir so a
-/// relocated `MISE_CONFIG_DIR` (or the system config dir) keeps owning its
-/// `tasks/` directory.
-fn scope_default_task_includes(scope_tasks_dir: &Path) -> Vec<String> {
-    default_task_includes()
-        .into_iter()
-        .map(|include| {
-            if include == CONFIG_DIR_DEFAULT_TASK_INCLUDE {
-                scope_tasks_dir.to_string_lossy().to_string()
-            } else {
-                include
-            }
-        })
-        .collect()
 }
 
 fn is_global_task_include_path(path: &Path) -> bool {
