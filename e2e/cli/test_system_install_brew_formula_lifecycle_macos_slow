@@ -100,7 +100,7 @@ homebrew_require_formula() {
   esac
   [[ -s $keg/INSTALL_RECEIPT.json ]] ||
     brew_oracle_fail "native Homebrew receipt is missing for $formula"
-  jq -e '.poured_from_bottle == true and (.installed_on_request | type == "boolean") and (.installed_as_dependency | type == "boolean")' \
+  jq -e '(.homebrew_version | type == "string") and .built_as_bottle == true and .poured_from_bottle == true and (.installed_on_request | type == "boolean") and (.source.tap | type == "string")' \
     "$keg/INSTALL_RECEIPT.json" >/dev/null ||
     brew_oracle_fail "native Homebrew receipt is incomplete for $formula"
   "$brew" list --formula --versions "$formula" | grep -Eq "^${formula//+/\\+} [^[:space:]]+" ||
