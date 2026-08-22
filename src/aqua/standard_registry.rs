@@ -83,6 +83,7 @@ static AQUA_STANDARD_REGISTRY_SEARCH: phf::Map<&'static str, AquaSearchBackends>
 );
 
 /// Returns searchable Aqua package IDs and any precomputed backend override.
+/// Packages without a runnable mise backend on the current platform are omitted.
 pub(crate) fn search_entries() -> impl Iterator<Item = (&'static str, Option<&'static str>)> {
     let current_platform = Platform::current();
     let os = match current_platform.os.as_str() {
@@ -98,11 +99,11 @@ pub(crate) fn search_entries() -> impl Iterator<Item = (&'static str, Option<&'s
     let libc = (os == "linux").then(|| current_platform.libc().unwrap_or("gnu").to_string());
     let platform = AquaSearchPlatform { os, arch, libc };
 
-    AQUA_STANDARD_REGISTRY_FILES.keys().map(move |id| {
+    AQUA_STANDARD_REGISTRY_FILES.keys().filter_map(move |id| {
         let backend = AQUA_STANDARD_REGISTRY_SEARCH
             .get(id)
             .and_then(|backends| backends.backend(&platform));
-        (*id, backend)
+        (backend != Some("")).then_some((*id, backend))
     })
 }
 
@@ -152,7 +153,7 @@ mod tests {
             entries.get("golang.org/x/perf/cmd/benchstat"),
             Some(&Some("go:golang.org/x/perf/cmd/benchstat"))
         );
-        assert_eq!(entries.get("goccy/go-yaml/ycat"), Some(&Some("")));
+        assert_eq!(entries.get("goccy/go-yaml/ycat"), None);
         assert_eq!(
             entries.get("Azure/mapotf"),
             Some(&Some("go:github.com/Azure/mapotf"))
@@ -161,7 +162,7 @@ mod tests {
             entries.get("vburenin/ifacemaker"),
             Some(&Some("go:github.com/vburenin/ifacemaker"))
         );
-        assert_eq!(entries.get("golang/tools/gorename"), Some(&Some("")));
+        assert_eq!(entries.get("golang/tools/gorename"), None);
         assert_eq!(entries.get("cli/cli"), Some(&None));
     }
 

@@ -506,9 +506,8 @@ fn aqua_package_registries(rows: &[RegistryPackageRow]) -> Result<Vec<AquaPackag
             ));
         }
         let content = encode_package_rkyv(package)?;
-        let (effective_package, root_package) =
+        let (effective_package, allow_go_repo_fallback) =
             package.clone().with_unconditional_version_override();
-        let allow_go_repo_fallback = root_package;
         let search_backend = aqua_search_backend(&effective_package, allow_go_repo_fallback);
         let mut search_overrides = effective_package
             .platform_overrides()

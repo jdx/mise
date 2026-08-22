@@ -487,16 +487,9 @@ pub(crate) struct AquaSearchEntry {
 }
 
 impl AquaSearchEntry {
+    /// Tool name users search by: the last path segment of the Aqua package id.
     pub(crate) fn name(&self) -> &'static str {
-        let searchable_id = self.backend_override.unwrap_or(self.id);
-        searchable_id.rsplit_once('/').map_or_else(
-            || {
-                searchable_id
-                    .split_once(':')
-                    .map_or(searchable_id, |(_, name)| name)
-            },
-            |(_, name)| name,
-        )
+        self.id.rsplit_once('/').map_or(self.id, |(_, name)| name)
     }
 
     pub(crate) fn backend(&self) -> String {
@@ -506,10 +499,8 @@ impl AquaSearchEntry {
     }
 
     pub(crate) fn backend_matches(&self, query: &str) -> bool {
-        self.backend_override.map_or_else(
-            || query.strip_prefix("aqua:") == Some(self.id),
-            |b| b == query,
-        )
+        query.strip_prefix("aqua:") == Some(self.id)
+            || self.backend_override.is_some_and(|b| b == query)
     }
 }
 
@@ -520,11 +511,9 @@ pub(crate) struct AquaSuggestion {
 }
 
 pub(crate) fn aqua_search_entries() -> impl Iterator<Item = AquaSearchEntry> {
-    super::standard_registry::search_entries().filter_map(|(id, backend_override)| {
-        (backend_override != Some("")).then_some(AquaSearchEntry {
-            id,
-            backend_override,
-        })
+    super::standard_registry::search_entries().map(|(id, backend_override)| AquaSearchEntry {
+        id,
+        backend_override,
     })
 }
 
@@ -552,9 +541,18 @@ pub(crate) fn aqua_suggest(query: &str) -> Vec<AquaSuggestion> {
     for matched_name in &similar_names {
         if let Some(entries) = cache.name_to_entries.get(matched_name.as_str()) {
             for entry in entries {
+                let backend = entry.backend();
+                // Distinct aqua packages can translate to the same backend
+                // (e.g. crates.io/eza and eza-community/eza both to cargo:eza)
+                if results
+                    .iter()
+                    .any(|suggestion: &AquaSuggestion| suggestion.backend == backend)
+                {
+                    continue;
+                }
                 results.push(AquaSuggestion {
                     name: matched_name.clone(),
-                    backend: entry.backend(),
+                    backend,
                 });
                 if results.len() >= 5 {
                     return results;

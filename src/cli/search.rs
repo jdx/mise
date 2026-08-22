@@ -192,6 +192,9 @@ impl Search {
 
                 Some((score, search_backend, description))
             })
+            // Distinct aqua packages can translate to the same backend
+            // (e.g. crates.io/eza and eza-community/eza both to cargo:eza)
+            .unique_by(|(_score, search_backend, _description)| search_backend.clone())
             .collect()
     }
 
@@ -258,16 +261,21 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
             let prefix = backend.split(':').next().unwrap_or("");
             let slug = backend.split(':').next_back().unwrap_or("");
             let slug = regex!(r"^(.*?)\[.*\]$").replace_all(slug, "$1");
-            match prefix {
-                "core" => format!("https://mise.jdx.dev/lang/{slug}.html"),
-                "cargo" => format!("https://crates.io/crates/{slug}"),
-                "go" => format!("https://pkg.go.dev/{slug}"),
-                "pipx" => format!("https://pypi.org/project/{slug}"),
-                "npm" => format!("https://www.npmjs.com/package/{slug}"),
-                _ => format!("https://github.com/{slug}"),
-            }
+            backend_homepage_url(prefix, &slug)
+                .unwrap_or_else(|| format!("https://github.com/{slug}"))
         })
         .collect()
+}
+
+fn backend_homepage_url(prefix: &str, slug: &str) -> Option<String> {
+    match prefix {
+        "core" => Some(format!("https://mise.jdx.dev/lang/{slug}.html")),
+        "cargo" => Some(format!("https://crates.io/crates/{slug}")),
+        "go" => Some(format!("https://pkg.go.dev/{slug}")),
+        "pipx" => Some(format!("https://pypi.org/project/{slug}")),
+        "npm" => Some(format!("https://www.npmjs.com/package/{slug}")),
+        _ => None,
+    }
 }
 
 fn get_aqua_description(id: &str, search_backend: &str) -> String {
@@ -282,11 +290,7 @@ fn get_aqua_description(id: &str, search_backend: &str) -> String {
         format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name)
     } else {
         let (backend_type, tool) = search_backend.split_once(':').unwrap_or_default();
-        match backend_type {
-            "cargo" => format!("https://crates.io/crates/{tool}"),
-            "go" => format!("https://pkg.go.dev/{tool}"),
-            _ => fallback,
-        }
+        backend_homepage_url(backend_type, tool).unwrap_or(fallback)
     };
 
     match pkg.description.as_deref().filter(|d| !d.is_empty()) {

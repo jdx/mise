@@ -415,9 +415,10 @@ impl AquaPackage {
 
     /// Apply a catch-all version fallback when the root package is explicitly disabled.
     ///
-    /// The boolean indicates whether the root package remains the effective
-    /// package. Conditional roots are preserved because determining whether
-    /// they match requires a concrete version.
+    /// The boolean is false when the root package is explicitly disabled,
+    /// even if no catch-all override exists to replace it. Conditional roots
+    /// are preserved because determining whether they match requires a
+    /// concrete version.
     pub fn with_unconditional_version_override(mut self) -> (AquaPackage, bool) {
         if self.version_constraint.trim() != "false" {
             return (self, true);
@@ -431,10 +432,8 @@ impl AquaPackage {
             .cloned()
         {
             self = apply_override(self, &version_override);
-            (self, false)
-        } else {
-            (self, false)
         }
+        (self, false)
     }
 
     /// Return platform overrides after applying them to this package.
@@ -481,15 +480,6 @@ impl AquaPackage {
         {
             self = apply_override(self, &version_override);
         }
-        self.with_platform_runtime(os, arch, runtime)
-    }
-
-    fn with_platform_runtime(
-        mut self,
-        os: &str,
-        arch: &str,
-        runtime: AquaRuntime<'_>,
-    ) -> AquaPackage {
         self.apply_format_override(os);
         if let Some(pkg) = self
             .overrides
