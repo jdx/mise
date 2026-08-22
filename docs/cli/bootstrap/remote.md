@@ -85,17 +85,17 @@ Run only one or more remote bootstrap parts
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
-- `shell`
 - `macos-defaults`
-- `defaults`
 - `macos-launchd-agents`
-- `launchd`
 - `linux-systemd-units`
-- `systemd`
 - `user`
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--port <PORT>`
 
@@ -129,17 +129,17 @@ Skip one or more remote bootstrap parts
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
-- `shell`
 - `macos-defaults`
-- `defaults`
 - `macos-launchd-agents`
-- `launchd`
 - `linux-systemd-units`
-- `systemd`
 - `user`
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--source <SOURCE>`
 

@@ -1,8 +1,7 @@
 use vfox::Vfox;
 use vfox::VfoxResult;
 
-#[derive(clap::Args)]
-#[command(alias = "ls")]
+#[derive(usage_rs::Args)]
 pub(crate) struct List {}
 
 impl List {

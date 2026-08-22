@@ -68,7 +68,9 @@ assert_json "mise tasks info lint --json" "$(
       "args": [],
       "flags": [],
       "mounts": [],
+      "unknown_flags": null,
       "hide": false,
+      "args_override_self": true,
       "help": "",
       "name": "lint",
       "aliases": [],
@@ -77,10 +79,13 @@ assert_json "mise tasks info lint --json" "$(
       "examples": []
     },
     "config": {
-      "props": {}
+      "props": {},
+      "sources": {},
+      "files": []
     },
     "usage": "",
-    "complete": {}
+    "complete": {},
+    "unknown_flags": null
   }
 }
 EOF

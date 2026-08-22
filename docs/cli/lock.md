@@ -33,6 +33,8 @@ By default, only the active project config root is locked
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Show what would be updated without making changes

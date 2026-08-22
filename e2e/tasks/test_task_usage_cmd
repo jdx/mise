@@ -92,6 +92,7 @@ cat <<'EOF' >mise.toml
 [tasks.mixed]
 description = "Root args and subcommands together"
 usage = '''
+subcommand_negates_reqs #true
 arg "<env>"
 cmd "deploy" {
     arg "<version>"

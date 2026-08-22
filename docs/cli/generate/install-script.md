@@ -24,7 +24,7 @@ This is necessary if users may use a different version of mise outside the proje
 
 Specify mise version to fetch
 
-### `-w --write <WRITE>`
+### `-w --write [WRITE]`
 
 instead of outputting the script to stdout, write to a file and make it executable
 

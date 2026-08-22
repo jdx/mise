@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use clap::ValueHint::CommandWithArguments;
 use eyre::Result;
 use itertools::Itertools;
 
@@ -10,11 +9,11 @@ use crate::config::Config;
 use crate::toolset::ToolsetBuilder;
 
 /// [internal] simulates asdf for plugins that call "asdf" internally
-#[derive(Debug, clap::Args)]
-#[clap(hide = true, verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(hide = true, verbatim_doc_comment)]
 pub(crate) struct Asdf {
     /// all arguments
-    #[clap(allow_hyphen_values = true, value_hint = CommandWithArguments, trailing_var_arg = true)]
+    #[arg(allow_hyphen_values = true, value_hint = usage_rs::ValueHint::CommandWithArguments, trailing_var_arg = true)]
     args: Vec<String>,
 }
 

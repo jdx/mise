@@ -1,14 +1,26 @@
 use crate::cli::Cli;
-use clap::CommandFactory;
-use clap::builder::Resettable;
 use eyre::Result;
 
 /// Generate a usage CLI spec
 ///
 /// See https://usage.jdx.dev for more information on this specification.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true)]
+#[derive(Debug, usage_rs::Args)]
+#[command(verbatim_doc_comment, hide = true)]
 pub(crate) struct Usage {}
+
+fn prepare_task_runner(command: &mut usage::SpecCommand) {
+    command.args.clear();
+    for flag in &mut command.flags {
+        flag.conflicts.retain(|selector| selector != "TASK");
+        flag.requires.retain(|selector| selector != "TASK");
+        flag.required_if.retain(|selector| selector != "TASK");
+        flag.required_unless.retain(|selector| selector != "TASK");
+    }
+    command
+        .mounts
+        .push(usage::SpecMount::new("mise tasks --usage".to_string()));
+    command.restart_token = Some(":::".to_string());
+}
 
 /// mise's own usage spec, with everything clap cannot express applied.
 ///
@@ -17,11 +29,7 @@ pub(crate) struct Usage {}
 /// an agent reads is the one that must not.
 pub(super) fn spec() -> usage::Spec {
     {
-        let cli = Cli::command()
-            .version(Resettable::Reset)
-            .disable_help_subcommand(true);
-        let cli = super::expand_deferred_subcommands(cli);
-        let mut spec: usage::Spec = cli.into();
+        let mut spec: usage::Spec = Cli::to_kdl().parse().expect("generated mise usage spec");
 
         // Enable "naked" task completions: `mise foo` completes like `mise run foo`
         spec.default_subcommand = Some("run".to_string());
@@ -33,11 +41,7 @@ pub(super) fn spec() -> usage::Spec {
         // jdx/usage#738 makes the parser scan across any known flag, global or not, and
         // bind each word to the flag it was read as, so the promotion is no longer needed.
         if let Some(run) = spec.cmd.subcommands.get_mut("run") {
-            run.args = vec![];
-            run.mounts
-                .push(usage::SpecMount::new("mise tasks --usage".to_string()));
-            // Enable completions after ::: separator for multi-task invocations
-            run.restart_token = Some(":::".to_string());
+            prepare_task_runner(run);
         }
 
         if let Some(tasks_run) = spec
@@ -46,10 +50,7 @@ pub(super) fn spec() -> usage::Spec {
             .get_mut("tasks")
             .and_then(|tasks| tasks.subcommands.get_mut("run"))
         {
-            tasks_run
-                .mounts
-                .push(usage::SpecMount::new("mise tasks --usage".to_string()));
-            tasks_run.restart_token = Some(":::".to_string());
+            prepare_task_runner(tasks_run);
         }
 
         // Require usage >= 3.5.7, the release that stops the mounting CLI's flags from
@@ -68,6 +69,15 @@ pub(super) fn spec() -> usage::Spec {
     }
 }
 
+pub(super) fn completion_spec() -> usage::Spec {
+    let mut spec = spec();
+    let extra: usage::Spec = include_str!("../assets/mise-extra.usage.kdl")
+        .parse()
+        .expect("mise completion metadata should parse");
+    spec.merge(extra);
+    spec
+}
+
 impl Usage {
     pub(crate) fn run(self) -> Result<()> {
         // 3.6 added `effect=` (jdx/usage#739) and 4.0 added it on flags and args
@@ -75,8 +85,7 @@ impl Usage {
         // "unsupported cmd prop effect", so this moves in lockstep with the
         // fields the spec actually carries.
         let min_version = r#"min_usage_version "4.0""#;
-        let extra = include_str!("../assets/mise-extra.usage.kdl").trim();
-        println!("{min_version}\n{}\n{extra}", spec().to_string().trim());
+        println!("{min_version}\n{}", completion_spec().to_string().trim());
         Ok(())
     }
 }

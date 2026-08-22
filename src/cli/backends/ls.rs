@@ -3,8 +3,8 @@ use eyre::Result;
 use strum::IntoEnumIterator;
 
 /// List built-in backends
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[command(visible_alias = "list", after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct BackendsLs {}
 
 impl BackendsLs {

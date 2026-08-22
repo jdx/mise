@@ -85,22 +85,22 @@ pub(crate) fn append_self_update_instructions(mut message: String) -> String {
 /// Packagers can disable this command so that mise is updated through the
 /// package manager instead. See
 /// https://mise.jdx.dev/contributing.html#packaging-and-self-update-instructions
-#[derive(Debug, Default, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, Default, usage_rs::Args)]
+#[command(verbatim_doc_comment)]
 pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
     /// Update even if already up to date
-    #[clap(long, short)]
+    #[arg(long, short)]
     force: bool,
 
     /// Skip confirmation prompt
-    #[clap(long, short)]
+    #[arg(long, short)]
     yes: bool,
 
     /// Disable auto-updating plugins
-    #[clap(long)]
+    #[arg(long)]
     no_plugins: bool,
 }
 

@@ -32,7 +32,8 @@ Only show tool versions currently specified in the global mise.toml
 
 ### `-i --installed`
 
-Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
+Only show tool versions that are installed
+(Hides tools defined in mise.toml but not installed)
 
 ### `-J --json`
 
@@ -56,6 +57,8 @@ List tools from every [monorepo].config_roots config root
 
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
+
+**Environment Variable:** `MISE_MONOREPO`
 
 ### `--no-header`
 

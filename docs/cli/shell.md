@@ -27,13 +27,16 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-u --unset`
 
 Removes a previously set version
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies --jobs=1
 
 Examples:
 

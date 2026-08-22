@@ -24,7 +24,7 @@ Write to the local config instead of the global config
 
 Print the config change without writing it
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Write to this config file or directory
 

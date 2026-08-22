@@ -242,7 +242,7 @@
 - [mise search](https://mise.jdx.dev/cli/search.html): Search for tools in the registry
 - [mise self-update](https://mise.jdx.dev/cli/self-update.html): Updates mise itself.
 - [mise set](https://mise.jdx.dev/cli/set.html): Set environment variables in mise.toml
-- [mise settings](https://mise.jdx.dev/cli/settings.html): Show current settings
+- [mise settings](https://mise.jdx.dev/cli/settings.html): Manage settings
 - [mise settings add](https://mise.jdx.dev/cli/settings/add.html): Adds a setting to the configuration file
 - [mise settings get](https://mise.jdx.dev/cli/settings/get.html): Show a current setting
 - [mise settings ls](https://mise.jdx.dev/cli/settings/ls.html): Show current settings
@@ -270,9 +270,9 @@
 - [mise tasks validate](https://mise.jdx.dev/cli/tasks/validate.html): Validate tasks for common errors and issues
 - [mise test-tool](https://mise.jdx.dev/cli/test-tool.html): Test a tool installs and executes
 - [mise token](https://mise.jdx.dev/cli/token.html): Display git provider tokens mise will use
-- [mise token forgejo](https://mise.jdx.dev/cli/token/forgejo.html): Forgejo token
-- [mise token github](https://mise.jdx.dev/cli/token/github.html): GitHub token
-- [mise token gitlab](https://mise.jdx.dev/cli/token/gitlab.html): GitLab token
+- [mise token forgejo](https://mise.jdx.dev/cli/token/forgejo.html): Display the Forgejo token mise will use for a given host
+- [mise token github](https://mise.jdx.dev/cli/token/github.html): Display the GitHub token mise will use for a given host
+- [mise token gitlab](https://mise.jdx.dev/cli/token/gitlab.html): Display the GitLab token mise will use for a given host
 - [mise tool](https://mise.jdx.dev/cli/tool.html): Gets information about a tool
 - [mise tool-alias](https://mise.jdx.dev/cli/tool-alias.html): Manage tool version aliases.
 - [mise tool-alias get](https://mise.jdx.dev/cli/tool-alias/get.html): Show an alias for a tool

@@ -41,11 +41,12 @@ Create/modify an environment-specific config file like .mise.&lt;env>.toml
 
 Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following the rules above.
+If a directory is specified, it will look for a config file in that directory following
+the rules above.
 
 ### `--no-prune`
 

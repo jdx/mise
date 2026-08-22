@@ -19,7 +19,8 @@ The "--" separates runtimes from the commands to pass along to the subprocess.
 
 ### `[TOOL@VERSION]…`
 
-Tool(s) to start e.g.: node@20 python@3.10
+Tool(s) to start
+e.g.: node@20 python@3.10
 
 ### `[-- COMMAND]…`
 
@@ -27,7 +28,7 @@ Command string to execute (same as --command)
 
 ## Flags
 
-### `-c --command <C>`
+### `-c --command <COMMAND>`
 
 Command string to execute
 
@@ -36,6 +37,8 @@ Command string to execute
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+
+**Environment Variable:** `MISE_JOBS`
 
 ### `--allow-env… <VAR>`
 
@@ -85,7 +88,8 @@ Skip automatic dependency preparation
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal
+Implies --jobs=1
 
 Examples:
 

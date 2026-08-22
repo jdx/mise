@@ -82,6 +82,8 @@ Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Don't actually run the task(s), just print them in order of execution
@@ -98,9 +100,13 @@ Change how tasks information is output when running tasks
 - `quiet` - Don't show extra output
 - `silent` - Don't show any output including stdout and stderr from the task except for errors
 
+**Environment Variable:** `MISE_TASK_OUTPUT`
+
 ### `-q --quiet`
 
 Don't show extra output
+
+**Environment Variable:** `MISE_QUIET`
 
 ### `-r --raw`
 
@@ -120,9 +126,12 @@ Or it can be overridden with the `shell` property on a task.
 
 Don't show any output except for errors
 
+**Environment Variable:** `MISE_SILENT`
+
 ### `-t --tool… <TOOL@VERSION>`
 
-Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+Tool(s) to run in addition to what is in mise.toml files
+e.g.: node@20 python@3.10
 
 ### `--allow-env… <VAR>`
 
@@ -169,6 +178,8 @@ Bypass the environment cache and recompute the environment
 
 Do not use cache on remote tasks
 
+**Environment Variable:** `MISE_TASK_REMOTE_NO_CACHE`
+
 ### `--no-deps`
 
 Skip automatic dependency preparation
@@ -182,6 +193,8 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 ### `--skip-deps`
 
 Run only the specified tasks skipping all dependencies
+
+**Environment Variable:** `MISE_TASK_SKIP_DEPENDS`
 
 ### `--skip-tools`
 
@@ -209,6 +222,8 @@ Set task output cache access for this run
 - `local-only`
 
 **Default:** `read-write`
+
+**Environment Variable:** `MISE_TASK_CACHE`
 
 ### `--task-cache-explain`
 

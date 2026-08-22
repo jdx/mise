@@ -2,7 +2,7 @@
 min_version = "2024.1.1"
 
 [env]
-_.path = ["./target/debug", "./node_modules/.bin"]
+_.path = ["./target/debug", "./target/usage-cli/bin", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
@@ -18,7 +18,6 @@ cargo-binstall = "latest"
 communique = "latest"
 cargo-insta = "latest"
 git-cliff = "latest"
-usage = "latest"
 gh = "latest"
 hk = "latest"
 jq = "latest"
