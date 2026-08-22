@@ -13,6 +13,7 @@ use crate::Result;
 use async_trait::async_trait;
 use local_task::LocalTask;
 use remote_task_git::RemoteTaskGitBuilder;
+pub(crate) use remote_task_git::validate_remote_git_path;
 use remote_task_http::RemoteTaskHttpBuilder;
 
 #[async_trait]
