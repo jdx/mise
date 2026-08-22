@@ -766,8 +766,11 @@ fn resolve_remote_install_path(session: &SshSession<'_>, path: &str) -> Result<S
 /// Installs the provisioned executable at a persistent remote path so the host
 /// keeps a usable mise once the staging directory is removed.
 fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) -> Result<()> {
-    let local = crate::hash::file_hash_sha256(binary, None)?;
-    if remote_executable_sha256(session, target)?.is_some_and(|remote| remote == local) {
+    // The remote digest comes first so a first install does not hash the local
+    // executable for nothing.
+    if let Some(installed) = remote_executable_sha256(session, target)?
+        && installed == crate::hash::file_hash_sha256(binary, None)?
+    {
         info!(
             "mise is already installed at {target} on {}",
             session.host.name
@@ -784,7 +787,10 @@ fn install_remote_mise(session: &SshSession<'_>, binary: &Path, target: &str) ->
 /// Writes beside the target and renames, so a replaced executable is never
 /// truncated in place and a busy binary cannot fail with ETXTBSY. `mktemp`
 /// creates that file exclusively, so a symbolic link planted in a shared
-/// writable install directory cannot capture the write.
+/// writable install directory cannot capture the write. A directory at the
+/// target is refused before the rename, and again after it in case one appears
+/// in between — `mv` would otherwise move the executable inside it and report
+/// success.
 fn install_mise_script(target: &str) -> String {
     format!(
         r#"set -eu
@@ -799,7 +805,12 @@ temporary=$(mktemp "$directory/.mise-install.XXXXXXXXXX")
 trap 'rm -f "$temporary"' EXIT
 cat > "$temporary"
 chmod 755 "$temporary"
-mv -f "$temporary" "$target""#,
+mv -f "$temporary" "$target"
+if [ ! -f "$target" ]; then
+  rm -f "$target/${{temporary##*/}}"
+  printf 'mise install path is not a regular file: %s\n' "$target" >&2
+  exit 1
+fi"#,
         shell_quote(target),
         shell_quote(remote_parent_directory(target)),
     )
@@ -2207,6 +2218,56 @@ mod tests {
         })
         .unwrap();
         assert!(host.bootstrap_command.is_none());
+    }
+
+    /// Runs the real script rather than asserting on its text, so the install,
+    /// replace, and refuse-a-directory paths are covered end to end.
+    #[test]
+    #[cfg(unix)]
+    fn install_script_installs_replaces_and_refuses_a_directory() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp = tempfile::tempdir()?;
+        let directory = temp.path().join("bin");
+        let target = directory.join("mise");
+        let payload = temp.path().join("payload");
+        let install = |target: &Path, contents: &str| -> Result<Output> {
+            fs::write(&payload, contents)?;
+            Ok(Command::new("sh")
+                .arg("-c")
+                .arg(install_mise_script(
+                    target.to_str().expect("a utf-8 temporary path"),
+                ))
+                .stdin(Stdio::from(File::open(&payload)?))
+                .output()?)
+        };
+
+        // `sh -n` parses every branch, including the post-rename guard that a
+        // deterministic test cannot reach.
+        let script = install_mise_script(target.to_str().expect("a utf-8 temporary path"));
+        assert!(
+            Command::new("sh")
+                .args(["-n", "-c", &script])
+                .output()?
+                .status
+                .success()
+        );
+
+        assert!(install(&target, "first")?.status.success());
+        assert_eq!(fs::read_to_string(&target)?, "first");
+        assert_eq!(fs::metadata(&target)?.permissions().mode() & 0o777, 0o755);
+
+        assert!(install(&target, "second")?.status.success());
+        assert_eq!(fs::read_to_string(&target)?, "second");
+        assert_eq!(fs::read_dir(&directory)?.count(), 1);
+
+        let occupied = directory.join("occupied");
+        fs::create_dir(&occupied)?;
+        let refused = install(&occupied, "third")?;
+        assert!(!refused.status.success());
+        assert!(String::from_utf8_lossy(&refused.stderr).contains("is a directory"));
+        assert_eq!(fs::read_dir(&occupied)?.count(), 0);
+        Ok(())
     }
 
     #[test]
