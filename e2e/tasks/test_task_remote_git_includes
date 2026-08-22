@@ -71,7 +71,7 @@ EOF
 
 # Safe-mode parsing must reject an untrusted remote include before cloning it.
 : >"$REQUEST_LOG"
-assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 mise tasks"
+assert_fail "env -u CI -u GITHUB_ACTION -u GITHUB_ACTIONS MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS=$TMPDIR/not-trusted MISE_YES=0 mise tasks" "not trusted"
 assert_fail "test -s '$REQUEST_LOG'"
 
 # The xtasks/lint directory contains multiple task files
