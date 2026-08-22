@@ -21,6 +21,16 @@ not become available as quickly after a mise release.
 
 ::: tip Which methods auto-update?
 Package managers (apt, dnf, brew, pacman, etc.) update mise when you update system packages. Other methods can be updated with `mise self-update`.
+
+For installations that support `mise self-update`, automatic updates can be enabled globally:
+
+```sh
+mise settings set auto_update true
+```
+
+mise then periodically checks before eligible interactive commands, installs a newer release without
+updating plugins, and re-runs the original command with the new binary. Configure the interval with
+[`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
 :::
 
 ::: tip Keep mise up to date

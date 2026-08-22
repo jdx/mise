@@ -738,6 +738,7 @@ impl Cli {
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        let original_cwd = std::env::current_dir().ok();
         // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
         // This allows setting MISE_ENV in a config file instead of only via env vars.
         crate::config::miserc::init()?;
@@ -789,6 +790,9 @@ impl Cli {
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
+        measure!("auto_update", {
+            self_update::maybe_auto_update(args, original_cwd.as_deref()).await?
+        });
         measure!("trust_active_config", {
             config_file::trust_active_config()?
         });

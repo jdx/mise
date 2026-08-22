@@ -633,6 +633,16 @@
             "type": "string"
           }
         },
+        "auto_update": {
+          "default": false,
+          "description": "Automatically update mise before running eligible commands.",
+          "type": "boolean"
+        },
+        "auto_update_check_duration": {
+          "default": "7d",
+          "description": "How often to check for a new mise release when auto-update is enabled.",
+          "type": "string"
+        },
         "cache_prune_age": {
           "default": "30d",
           "description": "Delete files in cache that have not been accessed in this duration",

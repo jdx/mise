@@ -16,6 +16,24 @@ use std::fs;
 #[cfg(target_os = "macos")]
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
+use std::time::Duration;
+
+const AUTO_UPDATE_REEXEC_ENV: &str = "__MISE_AUTO_UPDATE_REEXEC";
+const AUTO_UPDATE_SKIP_COMMANDS: &[&str] = &[
+    "activate",
+    "completion",
+    "deactivate",
+    "doctor",
+    "hook-env",
+    "implode",
+    "self-update",
+    "settings",
+    "shell",
+    "usage",
+    "v",
+    "version",
+];
 
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
@@ -74,6 +92,137 @@ pub(crate) fn append_self_update_instructions(mut message: String) -> String {
         message.push_str(SELF_UPDATE_DISABLED_HINT);
     }
     message
+}
+
+pub(crate) async fn maybe_auto_update(
+    args: &[String],
+    original_cwd: Option<&std::path::Path>,
+) -> Result<()> {
+    let Ok(settings) = Settings::try_get() else {
+        return Ok(());
+    };
+    let command = crate::cli::first_non_global_arg_idx_cached(args)
+        .and_then(|idx| args.get(idx))
+        .map(String::as_str);
+    if !auto_update_eligible(AutoUpdateContext {
+        enabled: settings.auto_update,
+        offline: settings.offline(),
+        prefer_offline: settings.prefer_offline(),
+        ci: settings.ci || ci_info::is_ci(),
+        attended: console::user_attended_stderr(),
+        already_reexecuted: env::var_os(AUTO_UPDATE_REEXEC_ENV).is_some(),
+        self_update_available: SelfUpdate::is_available(),
+        command,
+    }) {
+        return Ok(());
+    }
+
+    let lock_path = crate::dirs::CACHE.join("auto-update");
+    let update_lock = match crate::lock_file::LockFile::new(&lock_path).try_lock() {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            debug!("skipping auto-update because another mise process is updating");
+            return Ok(());
+        }
+        Err(err) => {
+            debug!("automatic mise update could not acquire its lock: {err:#}");
+            return Ok(());
+        }
+    };
+    let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
+    let check_duration = settings.auto_update_check_duration();
+    if !auto_update_check_due(&last_check_path, check_duration) {
+        return Ok(());
+    }
+    if let Err(err) = crate::file::write(&last_check_path, "") {
+        debug!("automatic mise update could not record its check: {err:#}");
+        return Ok(());
+    }
+    let Some(version) = crate::cli::version::check_for_new_version(check_duration).await else {
+        return Ok(());
+    };
+
+    let update = SelfUpdate {
+        version: Some(version),
+        force: false,
+        yes: true,
+        no_plugins: true,
+    };
+    if let Err(err) = update.run().await {
+        debug!("automatic mise update failed: {err:#}");
+        return Ok(());
+    }
+    drop(update_lock);
+    reexec(args, original_cwd)
+}
+
+fn auto_update_check_due(path: &std::path::Path, duration: Duration) -> bool {
+    crate::file::modified_duration(path).map_or(true, |age| age >= duration)
+}
+
+#[derive(Clone, Copy)]
+struct AutoUpdateContext<'a> {
+    enabled: bool,
+    offline: bool,
+    prefer_offline: bool,
+    ci: bool,
+    attended: bool,
+    already_reexecuted: bool,
+    self_update_available: bool,
+    command: Option<&'a str>,
+}
+
+fn auto_update_eligible(context: AutoUpdateContext<'_>) -> bool {
+    context.enabled
+        && !context.offline
+        && !context.prefer_offline
+        && !context.ci
+        && context.attended
+        && !context.already_reexecuted
+        && context.self_update_available
+        && context
+            .command
+            .is_some_and(|command| !AUTO_UPDATE_SKIP_COMMANDS.contains(&command))
+}
+
+#[cfg(unix)]
+fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+
+    let mut command = Command::new(&*env::MISE_BIN);
+    command
+        .args(std::env::args_os().skip(1))
+        .env(AUTO_UPDATE_REEXEC_ENV, "1");
+    if let Some(cwd) = original_cwd {
+        command.current_dir(cwd);
+    }
+    let err = command.exec();
+    warn!("mise was updated but could not re-execute the command: {err}");
+    Ok(())
+}
+
+#[cfg(windows)]
+fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
+    let mut command = Command::new(&*env::MISE_BIN);
+    command
+        .args(std::env::args_os().skip(1))
+        .env(AUTO_UPDATE_REEXEC_ENV, "1");
+    if let Some(cwd) = original_cwd {
+        command.current_dir(cwd);
+    }
+    let status = command.status()?;
+    Err(crate::request_exit(status.code().unwrap_or(1)))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
+    let mut command = Command::new(&*env::MISE_BIN);
+    command.args(&args[1..]).env(AUTO_UPDATE_REEXEC_ENV, "1");
+    if let Some(cwd) = original_cwd {
+        command.current_dir(cwd);
+    }
+    let status = command.status()?;
+    Err(crate::request_exit(status.code().unwrap_or(1)))
 }
 
 /// Updates mise itself.
@@ -496,6 +645,90 @@ impl SelfUpdate {
 
         debug!("macOS binary signature verified successfully");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod auto_update_tests {
+    use super::*;
+
+    fn eligible_context() -> AutoUpdateContext<'static> {
+        AutoUpdateContext {
+            enabled: true,
+            offline: false,
+            prefer_offline: false,
+            ci: false,
+            attended: true,
+            already_reexecuted: false,
+            self_update_available: true,
+            command: Some("install"),
+        }
+    }
+
+    #[test]
+    fn eligible_interactive_command_updates() {
+        assert!(auto_update_eligible(eligible_context()));
+    }
+
+    #[test]
+    fn safety_conditions_disable_auto_update() {
+        let context = eligible_context();
+        for ineligible in [
+            AutoUpdateContext {
+                enabled: false,
+                ..context
+            },
+            AutoUpdateContext {
+                offline: true,
+                ..context
+            },
+            AutoUpdateContext {
+                prefer_offline: true,
+                ..context
+            },
+            AutoUpdateContext {
+                ci: true,
+                ..context
+            },
+            AutoUpdateContext {
+                attended: false,
+                ..context
+            },
+            AutoUpdateContext {
+                already_reexecuted: true,
+                ..context
+            },
+            AutoUpdateContext {
+                self_update_available: false,
+                ..context
+            },
+        ] {
+            assert!(!auto_update_eligible(ineligible));
+        }
+    }
+
+    #[test]
+    fn shell_and_management_commands_do_not_update() {
+        for command in AUTO_UPDATE_SKIP_COMMANDS {
+            assert!(!auto_update_eligible(AutoUpdateContext {
+                command: Some(command),
+                ..eligible_context()
+            }));
+        }
+        assert!(!auto_update_eligible(AutoUpdateContext {
+            command: None,
+            ..eligible_context()
+        }));
+    }
+
+    #[test]
+    fn automatic_update_attempts_are_throttled() {
+        let temp = tempfile::tempdir().unwrap();
+        let marker = temp.path().join("last-check");
+        assert!(auto_update_check_due(&marker, Duration::from_secs(60)));
+        std::fs::write(&marker, "").unwrap();
+        assert!(!auto_update_check_due(&marker, Duration::from_secs(60)));
+        assert!(auto_update_check_due(&marker, Duration::ZERO));
     }
 }
 
