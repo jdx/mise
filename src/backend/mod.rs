@@ -3312,12 +3312,22 @@ pub trait Backend: Debug + Send + Sync {
         // string whose artifact changed) without requiring a lockfile.
         // verify_checksum already populated tv.lock_platforms during install, so we
         // just mirror it here — no backend needs to do this individually.
+        //
+        // Skip this when the install path is itself a symlink: some backends (e.g.
+        // http's dedup for a raw file with no bin_path) point the install path
+        // directly at a shared, content-addressed cache directory. Writing
+        // `.mise.checksum` there would land inside that shared cache rather than in
+        // an install-specific location, and a later `ls` over the same cache
+        // directory (e.g. http's raw-file re-detection from a cache hit) could pick
+        // up the checksum file instead of the real installed artifact.
         let platform_key = self.get_platform_key();
+        let install_path = tv.install_path();
         if let Some(checksum) = tv
             .lock_platforms
             .get(&platform_key)
             .and_then(|p| p.checksum.clone())
-            && let Err(e) = install_state::write_checksum(&tv.install_path(), &checksum)
+            && !file::is_symlink_or_junction(&install_path)
+            && let Err(e) = install_state::write_checksum(&install_path, &checksum)
         {
             warn!("failed to write checksum for {}: {e}", tv);
         }
