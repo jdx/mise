@@ -274,6 +274,12 @@ of the task definition they are used in. In other words, their return values are
 across task definition(s).
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
+  The command is evaluated with the default inline shell
+  ([`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args) /
+  [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)),
+  which is `sh -c` on Unix. To run fish, nest it in the command:
+  <span v-pre>`{{ exec(command='fish -c "hello mise"') }}`</span>.
+  This setting does not change `[env] _.source`, which always sources bash.
 - `get_env(name, [default]) -> String` – Returns the original process environment
   variable value by name. This helper is provided by mise for compatibility with
   older Tera templates. Prefer the `env` variable in new templates when possible.

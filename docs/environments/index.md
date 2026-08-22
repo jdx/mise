@@ -488,14 +488,49 @@ _.source = "./script.sh"
 ```
 
 ::: info
-This **must** be a script that runs in bash as if it were executed like this:
+`_.source` always runs the file with bash, as if it were executed like this:
 
 ```sh
 source ./script.sh
 ```
 
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
-for a potential alternative that would work with binaries or other script languages.
+The shebang is **ignored**. So are [`MISE_SHELL`](/cli/activate.html),
+[`unix_default_inline_shell_args`](/configuration/settings.html#unix_default_inline_shell_args),
+and [`unix_default_file_shell_args`](/configuration/settings.html#unix_default_file_shell_args).
+Those settings choose the shell for tasks, spawned hooks, and template `exec()` —
+not for `_.source`.
+
+Fish functions from `~/.config/fish/functions` are not available in that bash
+process, so a fish script that calls `hello` fails with `hello: command not found`.
+
+To capture a fish function's output as a mise env var (works with activate, shims,
+and `mise exec` / `cargo`):
+
+```toml
+[env]
+MY_BUILD_VALUE = "{{ exec(command='fish -c \"hello mise\"') | trim }}"
+```
+
+`exec()` still uses the default inline shell (`sh -c` unless you change
+`unix_default_inline_shell_args`), so pass `fish -c '...'` inside the command
+rather than pointing `_.source` at a `.fish` file.
+
+To run fish code in the current interactive session when you enter the project
+(call functions, `set -gx`, `source ./script.fish`), use a
+[current-shell enter hook](/hooks.html#shell-hooks):
+
+```toml
+[hooks.enter]
+shell = "fish"
+script = "set -gx MY_BUILD_VALUE (hello mise)"
+```
+
+Shell hooks require [`mise activate`](/cli/activate.html) and do not apply to
+shims or CI. They also do not clean up on leave the way `[env]` does.
+
+For executing an arbitrary binary and importing env vars, see the
+[hooks](/hooks.html) system (the old `env._.run` idea from
+[#1448](https://github.com/jdx/mise/discussions/6734)).
 :::
 
 ::: info Windows
