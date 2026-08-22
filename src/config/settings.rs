@@ -25,7 +25,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
-use super::{TOML_CONFIG_FILENAMES, load_config_paths};
+use super::{TOML_CONFIG_FILENAMES, load_config_paths, load_config_paths_from};
 use url::Url;
 
 // settings are generated from settings.toml in the project root
@@ -239,6 +239,39 @@ impl serde::Serialize for PythonUvVenvAuto {
 }
 
 pub(crate) type SettingsPartial = <Settings as Config>::Layer;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SettingsSourcePolicy {
+    EnvironmentOnly,
+    Hierarchy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SettingsTrustPolicy {
+    AsDiscovered,
+    TrustedOnly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SettingsLoadPolicy {
+    pub source: SettingsSourcePolicy,
+    pub trust: SettingsTrustPolicy,
+}
+
+impl SettingsLoadPolicy {
+    pub(crate) const BOOTSTRAP: Self = Self {
+        source: SettingsSourcePolicy::EnvironmentOnly,
+        trust: SettingsTrustPolicy::AsDiscovered,
+    };
+    pub(crate) const NORMAL: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::AsDiscovered,
+    };
+    pub(crate) const TRUSTED_HIERARCHY: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::TrustedOnly,
+    };
+}
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 /// Caches the resolved `safe` value from the most recent settings load so
@@ -744,6 +777,67 @@ impl Settings {
         )
     }
 
+    fn cli_settings_layer() -> SettingsPartial {
+        normalize_hidden_config_aliases(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+    }
+
+    /// Load settings sources for an explicit root, or the current directory when `root` is `None`.
+    ///
+    /// This shares source ordering and file parsing with the normal settings load. It deliberately
+    /// does not update process-global settings state or apply the post-load process side effects in
+    /// [`Self::try_get`]. Root-specific callers can require trusted project files without
+    /// reproducing config discovery or precedence rules.
+    pub(crate) fn load_sources_from(
+        root: Option<&Path>,
+        policy: SettingsLoadPolicy,
+    ) -> Result<Self> {
+        if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
+            bail!("trusted settings resolution requires the base settings to be loaded");
+        }
+        let mut builder = Self::builder().preloaded(Self::cli_settings_layer()).env();
+        if policy.source == SettingsSourcePolicy::Hierarchy {
+            for layer in Self::settings_layers_from(root, policy.trust) {
+                builder = builder.preloaded(layer);
+            }
+            builder = builder.preloaded(DEFAULT_SETTINGS.clone());
+        }
+        Ok(builder.load()?)
+    }
+
+    fn settings_layers_from(
+        root: Option<&Path>,
+        trust_policy: SettingsTrustPolicy,
+    ) -> Vec<SettingsPartial> {
+        // In safe mode, ignore `[settings]` from project (non-global) config so
+        // an untrusted repo cannot change mise's behavior during resolution
+        // (e.g. disable verification, redirect a backend/registry). Global and
+        // system config is operator-owned and still applies.
+        let safe_mode = Settings::safe_mode();
+        let paths = match root {
+            Some(root) => load_config_paths_from(root, &TOML_CONFIG_FILENAMES, false),
+            None => load_config_paths(&TOML_CONFIG_FILENAMES, false),
+        };
+        paths
+            .into_iter()
+            .filter(|path| !safe_mode || crate::config::is_global_config(path))
+            .filter(|path| match trust_policy {
+                SettingsTrustPolicy::AsDiscovered => true,
+                SettingsTrustPolicy::TrustedOnly => {
+                    crate::config::is_global_config(path)
+                        || crate::config::config_file::is_path_trusted(path)
+                }
+            })
+            .map(|path| Self::parse_settings_file(&path))
+            .filter_map(|config| match config {
+                Ok(config) => Some(config),
+                Err(err) => {
+                    eprintln!("Error loading settings file: {err}");
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub(crate) fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
@@ -751,14 +845,7 @@ impl Settings {
         time!("try_get");
 
         // Initial pass to obtain cd option
-        let mut sb = Self::builder()
-            .preloaded(normalize_hidden_config_aliases(
-                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
-            ))
-            .env();
-        time!("try_get builder1+env");
-
-        let mut settings = sb.load()?;
+        let mut settings = Self::load_sources_from(None, SettingsLoadPolicy::BOOTSTRAP)?;
         time!("try_get load1");
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
@@ -769,20 +856,7 @@ impl Settings {
         }
 
         // Reload settings after current directory option processed
-        sb = Self::builder()
-            .preloaded(normalize_hidden_config_aliases(
-                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
-            ))
-            .env();
-        time!("try_get builder2+env");
-        for file in Self::all_settings_files() {
-            sb = sb.preloaded(file);
-        }
-        time!("try_get all_settings_files");
-        sb = sb.preloaded(DEFAULT_SETTINGS.clone());
-        time!("try_get default_settings");
-
-        settings = sb.load()?;
+        settings = Self::load_sources_from(None, SettingsLoadPolicy::NORMAL)?;
         time!("try_get load2");
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = Some(false);
@@ -1040,27 +1114,6 @@ impl Settings {
             settings.tera_v1 = tera_v1_from_env;
         }
         Ok(settings)
-    }
-
-    fn all_settings_files() -> Vec<SettingsPartial> {
-        // In safe mode, ignore `[settings]` from project (non-global) config so
-        // an untrusted repo cannot change mise's behavior during resolution
-        // (e.g. disable verification, redirect a backend/registry). Global and
-        // system config is operator-owned and still applies. A specific setting
-        // could be allowlisted here later if it is safe and necessary.
-        let safe_mode = Settings::safe_mode();
-        load_config_paths(&TOML_CONFIG_FILENAMES, false)
-            .into_iter()
-            .filter(|p| !safe_mode || crate::config::is_global_config(p))
-            .map(|p| Self::parse_settings_file(&p))
-            .filter_map(|cfg| match cfg {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    eprintln!("Error loading settings file: {e}");
-                    None
-                }
-            })
-            .collect()
     }
 
     pub(crate) fn hidden_configs() -> &'static HashSet<&'static str> {

@@ -55,20 +55,29 @@ pub(crate) enum ConfigFileType {
 }
 
 /// Settings that control idiomatic version-file discovery for one config root.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct IdiomaticVersionFileSettings {
     pub enable_tools: BTreeSet<String>,
     pub disable_files: BTreeSet<String>,
 }
 
 impl IdiomaticVersionFileSettings {
+    fn from_settings(settings: &Settings) -> Self {
+        Self {
+            enable_tools: settings.idiomatic_version_file_enable_tools.clone(),
+            disable_files: settings.idiomatic_version_file_disable_files.clone(),
+        }
+    }
+
     pub(super) fn current() -> Self {
         Settings::try_get()
-            .map(|settings| Self {
-                enable_tools: settings.idiomatic_version_file_enable_tools.clone(),
-                disable_files: settings.idiomatic_version_file_disable_files.clone(),
-            })
+            .map(|settings| Self::from_settings(&settings))
             .unwrap_or_default()
+    }
+
+    pub(super) fn resolve_from(root: &Path, policy: settings::SettingsLoadPolicy) -> Result<Self> {
+        Settings::load_sources_from(Some(root), policy)
+            .map(|settings| Self::from_settings(&settings))
     }
 }
 

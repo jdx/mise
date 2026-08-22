@@ -34,6 +34,11 @@ output=$(MISE_NO_CONFIG=1 MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>
 assert_contains "echo '$output'" "skipping disabled idiomatic tracked config"
 assert_not_contains "echo '$output'" "error loading tracked config file"
 
+output=$(MISE_NO_CONFIG=1 MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "22.0.0"
+assert_contains "echo '$output'" "repo/packages/app/package.json"
+assert_not_contains "echo '$output'" "error loading tracked config file"
+
 # A higher-precedence config in the owning hierarchy can disable the file. The
 # stale entry should then be ignored without a write error from another directory.
 cat <<'EOF' >repo/packages/app/mise.local.toml
@@ -79,5 +84,11 @@ EOF
 printf '{"name":"untrusted"}\n' >untrusted/package.json
 mkdir -p "$MISE_STATE_DIR/tracked-configs"
 ln -s "$PWD/untrusted/package.json" "$MISE_STATE_DIR/tracked-configs/untrusted-package"
-MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" mise -C other ls --all-sources >/dev/null 2>&1
+
+# Trust the tracked file itself so tracked loading reaches rooted settings resolution, while
+# leaving its owner mise.toml untrusted. The owner setting must be filtered before metadata loads.
+MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" mise trust "$PWD/untrusted/package.json" >/dev/null
+output=$(MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config: ~/workdir/untrusted/package.json"
+assert_not_contains "echo '$output'" "skipping untrusted tracked config: ~/workdir/untrusted/package.json"
 assert_fail "test -e '$marker'"

@@ -817,7 +817,7 @@ impl Config {
         let mut union = ToolRequestSet::new();
         for root in roots {
             let root_idiomatic_filenames =
-                idiomatic_filenames_for_root(&root, &idiomatic_filenames).await;
+                idiomatic_filenames_for_root(&root, &idiomatic_filenames).await?;
             let root_config_filenames = root_idiomatic_filenames
                 .keys()
                 .chain(DEFAULT_CONFIG_FILENAMES.iter())
@@ -1113,8 +1113,6 @@ impl Config {
 
     pub(crate) async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
-        let (default_idiomatic_settings, enable_tools_locked, disable_files_locked) =
-            tracked_idiomatic_default_settings();
         let mut idiomatic_settings_by_root =
             BTreeMap::<PathBuf, config_file::IdiomaticVersionFileSettings>::new();
         for path in Tracker::list_all()?.into_iter() {
@@ -1131,19 +1129,17 @@ impl Config {
                 continue;
             }
             let config_root = config_file::config_root::config_root(&path);
-            let idiomatic_settings = idiomatic_settings_by_root
-                .entry(config_root.clone())
-                .or_insert_with(|| {
-                    idiomatic_version_file_settings_for_root(
+            let idiomatic_settings = match idiomatic_settings_by_root.get(&config_root) {
+                Some(settings) => settings.clone(),
+                None => {
+                    let settings = config_file::IdiomaticVersionFileSettings::resolve_from(
                         &config_root,
-                        &default_idiomatic_settings,
-                        true,
-                        enable_tools_locked,
-                        disable_files_locked,
-                    )
-                    .0
-                })
-                .clone();
+                        settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
+                    )?;
+                    idiomatic_settings_by_root.insert(config_root, settings.clone());
+                    settings
+                }
+            };
             let detection =
                 config_file::detect_config_file_with_settings(&path, &idiomatic_settings).await;
             // Pre-check trust for config files that require it so tracked
@@ -1706,143 +1702,24 @@ fn idiomatic_version_file_disabled(
     })
 }
 
-fn idiomatic_settings_env_locks() -> (bool, bool) {
-    (
-        std::env::var_os("MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS").is_some(),
-        std::env::var_os("MISE_IDIOMATIC_VERSION_FILE_DISABLE_FILES").is_some(),
-    )
-}
-
-fn apply_idiomatic_settings_partial(
-    settings: &mut config_file::IdiomaticVersionFileSettings,
-    partial: settings::SettingsPartial,
-    enable_tools_resolved: &mut bool,
-    disable_files_resolved: &mut bool,
-) -> bool {
-    let mut applied = false;
-    if !*enable_tools_resolved && let Some(tools) = partial.idiomatic_version_file_enable_tools {
-        settings.enable_tools = tools;
-        *enable_tools_resolved = true;
-        applied = true;
-    }
-    if !*disable_files_resolved && let Some(files) = partial.idiomatic_version_file_disable_files {
-        settings.disable_files = files;
-        *disable_files_resolved = true;
-        applied = true;
-    }
-    applied
-}
-
-/// Resolve command-wide idiomatic defaults without inheriting settings from the
-/// invocation directory's project hierarchy.
-fn tracked_idiomatic_default_settings() -> (config_file::IdiomaticVersionFileSettings, bool, bool) {
-    let current = config_file::IdiomaticVersionFileSettings::current();
-    let (enable_tools_locked, disable_files_locked) = idiomatic_settings_env_locks();
-    let mut settings = config_file::IdiomaticVersionFileSettings::default();
-    if enable_tools_locked {
-        settings.enable_tools = current.enable_tools;
-    }
-    if disable_files_locked {
-        settings.disable_files = current.disable_files;
-    }
-    if Settings::no_config() {
-        return (settings, enable_tools_locked, disable_files_locked);
-    }
-    let mut enable_tools_resolved = enable_tools_locked;
-    let mut disable_files_resolved = disable_files_locked;
-    for path in global_config_files()
-        .into_iter()
-        .rev()
-        .chain(system_config_files().into_iter().rev())
-        .filter(|path| !config_path_is_ignored(path, false))
-    {
-        if let Ok(partial) = Settings::parse_settings_file(&path) {
-            apply_idiomatic_settings_partial(
-                &mut settings,
-                partial,
-                &mut enable_tools_resolved,
-                &mut disable_files_resolved,
-            );
-        }
-    }
-    (settings, enable_tools_locked, disable_files_locked)
-}
-
-/// Resolve explicit idiomatic settings from a config root's ancestor hierarchy over
-/// invocation defaults.
+/// Resolves idiomatic version filenames for a single monorepo config root through the
+/// canonical settings loader.
 ///
-/// Tracked loading can require trusted settings only; monorepo discovery preserves its
-/// existing behavior by passing `trusted_only = false`.
-fn idiomatic_version_file_settings_for_root(
-    root: &Path,
-    defaults: &config_file::IdiomaticVersionFileSettings,
-    trusted_only: bool,
-    enable_tools_locked: bool,
-    disable_files_locked: bool,
-) -> (config_file::IdiomaticVersionFileSettings, bool) {
-    let mut settings = defaults.clone();
-    if Settings::no_config() {
-        return (settings, false);
-    }
-    let mut enable_tools_resolved = enable_tools_locked;
-    let mut disable_files_resolved = disable_files_locked;
-    let mut overridden = false;
-    let safe_mode = Settings::safe_mode();
-    let config_dirs = all_dirs_from(root).unwrap_or_else(|_| vec![root.to_path_buf()]);
-    for path in config_dirs
-        .into_iter()
-        .filter(|dir| !config_dir_is_ignored(dir, false))
-        .flat_map(|dir| config_paths_in_dir_with_filenames(&dir, &DEFAULT_CONFIG_FILENAMES))
-    {
-        if safe_mode && !is_global_config(&path) {
-            // Match all_settings_files()'s safe-mode boundary: an untrusted repo's own
-            // [settings] block must not influence resolution, including here.
-            continue;
-        }
-        if trusted_only && config_path_is_ignored(&path, false) {
-            continue;
-        }
-        if trusted_only && !is_global_config(&path) && !is_path_trusted(&path) {
-            continue;
-        }
-        if let Ok(partial) = Settings::parse_settings_file(&path) {
-            overridden |= apply_idiomatic_settings_partial(
-                &mut settings,
-                partial,
-                &mut enable_tools_resolved,
-                &mut disable_files_resolved,
-            );
-        }
-    }
-    (settings, overridden)
-}
-
-/// Resolves idiomatic version filenames for a single monorepo config root, honoring that
-/// root's own `[settings].idiomatic_version_file_enable_tools`/`idiomatic_version_file_disable_files`
-/// if it sets either.
-///
-/// `Settings::get()` is a process-wide snapshot resolved once from the invocation directory
-/// (walking config files upward); it never walks *down* into `[monorepo].config_roots`, so a
-/// config root's own `[settings]` block is otherwise silently ignored by monorepo-wide
-/// commands (e.g. `mise ls --monorepo`) even though the same setting works fine when mise is
-/// actually invoked from within that root. See https://github.com/jdx/mise/discussions/8629.
+/// `Settings::get()` is a process-wide snapshot rooted at the invocation directory. Resolving
+/// from the monorepo config root keeps normal environment, hierarchy, global/system, safe-mode,
+/// and `--no-config` behavior without maintaining a second precedence implementation.
 async fn idiomatic_filenames_for_root(
     root: &Path,
     default_idiomatic_filenames: &BTreeMap<String, Vec<String>>,
-) -> BTreeMap<String, Vec<String>> {
-    let defaults = config_file::IdiomaticVersionFileSettings::current();
-    let (enable_tools_locked, disable_files_locked) = idiomatic_settings_env_locks();
-    let (settings, overridden) = idiomatic_version_file_settings_for_root(
+) -> Result<BTreeMap<String, Vec<String>>> {
+    let rooted = config_file::IdiomaticVersionFileSettings::resolve_from(
         root,
-        &defaults,
-        false,
-        enable_tools_locked,
-        disable_files_locked,
-    );
-    if !overridden {
-        return default_idiomatic_filenames.clone();
+        settings::SettingsLoadPolicy::NORMAL,
+    )?;
+    if rooted == config_file::IdiomaticVersionFileSettings::current() {
+        return Ok(default_idiomatic_filenames.clone());
     }
-    load_idiomatic_filenames_for_tools(&settings.enable_tools, &settings.disable_files).await
+    Ok(load_idiomatic_filenames_for_tools(&rooted.enable_tools, &rooted.disable_files).await)
 }
 
 static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
@@ -2268,15 +2145,11 @@ pub(crate) fn config_file_from_dir(p: &Path) -> PathBuf {
     }
 }
 
-pub(crate) fn load_config_paths(
+fn load_config_paths_from_dirs(
+    dirs: Vec<PathBuf>,
     config_filenames: &[String],
     include_ignored: bool,
 ) -> Vec<PathBuf> {
-    if Settings::no_config() {
-        return vec![];
-    }
-    let dirs = all_dirs().unwrap_or_default();
-
     let mut config_files = dirs
         .iter()
         .flat_map(|dir| {
@@ -2297,6 +2170,35 @@ pub(crate) fn load_config_paths(
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, include_ignored))
         .collect()
+}
+
+pub(crate) fn load_config_paths_from(
+    start_dir: &Path,
+    config_filenames: &[String],
+    include_ignored: bool,
+) -> Vec<PathBuf> {
+    if Settings::no_config() {
+        return vec![];
+    }
+    load_config_paths_from_dirs(
+        all_dirs_from(start_dir).unwrap_or_default(),
+        config_filenames,
+        include_ignored,
+    )
+}
+
+pub(crate) fn load_config_paths(
+    config_filenames: &[String],
+    include_ignored: bool,
+) -> Vec<PathBuf> {
+    if Settings::no_config() {
+        return vec![];
+    }
+    load_config_paths_from_dirs(
+        all_dirs().unwrap_or_default(),
+        config_filenames,
+        include_ignored,
+    )
 }
 
 fn load_global_config_paths(include_ignored: bool) -> Vec<PathBuf> {
