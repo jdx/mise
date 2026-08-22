@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Current-shell enter hooks run in fish and can call autoloaded functions.
+# See https://github.com/jdx/mise/discussions/6095
+require_cmd fish
+
+mkdir -p "$HOME/.config/fish/functions"
+cat >"$HOME/.config/fish/functions/hello.fish" <<'EOF'
+function hello
+    echo $argv
+end
+EOF
+
+cat >mise.toml <<'EOF'
+[hooks.enter]
+shell = "fish"
+script = 'set -gx MY_BUILD_VALUE (hello mise)'
+EOF
+
+# Track session in bash so dir changes schedule enter/leave. The fish hook is
+# only printed when hook-env is asked for fish.
+eval "$(mise hook-env -s bash)"
+
+cd ~ || exit 1
+eval "$(mise hook-env -s bash)"
+
+cd ~/workdir || exit 1
+assert_contains "mise hook-env -s fish 2>&1" "set -gx MY_BUILD_VALUE (hello mise)"
+
+# Re-enter so the hook runs again, then source the fish script for real.
+cd ~ || exit 1
+eval "$(mise hook-env -s bash)"
+cd ~/workdir || exit 1
+assert "fish -c 'command mise hook-env -s fish | source; echo \$MY_BUILD_VALUE'" "mise"
+
+# A bash hook-env must not emit the fish current-shell script.
+cd ~ || exit 1
+eval "$(mise hook-env -s bash)"
+cd ~/workdir || exit 1
+assert_not_contains "mise hook-env -s bash 2>&1" "set -gx MY_BUILD_VALUE (hello mise)"

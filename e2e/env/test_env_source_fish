@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# [env] _.source always uses bash. Fish functions belong in exec() or a bash
+# wrapper — not a .fish file. See https://github.com/jdx/mise/discussions/6095
+require_cmd fish
+
+mkdir -p "$HOME/.config/fish/functions"
+cat >"$HOME/.config/fish/functions/hello.fish" <<'EOF'
+function hello
+    echo $argv
+end
+EOF
+
+# Fish autoloads ~/.config/fish/functions even for non-interactive -c.
+assert "fish -c 'hello mise'" "mise"
+
+cat >script.fish <<'EOF'
+#!/usr/bin/env fish
+hello mise
+EOF
+
+cat >mise.toml <<'EOF'
+[env]
+_.source = "./script.fish"
+EOF
+
+# Shebang is ignored; bash cannot see the autoloaded fish function.
+assert_contains "mise env -s bash 2>&1" "hello: command not found"
+
+# Capture the function's stdout as a mise env var (activate, shims, mise exec).
+cat >mise.toml <<'EOF'
+[env]
+MY_BUILD_VALUE = "{{ exec(command='fish -c \"hello mise\"') | trim }}"
+EOF
+
+assert_json_partial_object "mise env --json" "MY_BUILD_VALUE" '{
+  "MY_BUILD_VALUE": "mise"
+}'
+
+# Same result by wrapping fish in a bash _.source script.
+cat >env.sh <<'EOF'
+export MY_BUILD_VALUE="$(fish -c 'hello mise')"
+EOF
+
+cat >mise.toml <<'EOF'
+[env]
+_.source = "./env.sh"
+EOF
+
+assert_json_partial_object "mise env --json" "MY_BUILD_VALUE" '{
+  "MY_BUILD_VALUE": "mise"
+}'
