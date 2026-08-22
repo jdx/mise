@@ -98,9 +98,9 @@ May require elevated permissions (e.g. sudo).
 Examples:
 
 ```
-$ mise install node@20.0.0  # install specific node version
-$ mise install node@20      # install fuzzy node version
-$ mise install node         # install version specified in mise.toml
-$ mise install              # installs everything specified in mise.toml
-$ mise install --include-task-tools # also install tools required by tasks
+mise install node@20.0.0  # install specific node version
+mise install node@20      # install fuzzy node version
+mise install node         # install version specified in mise.toml
+mise install              # installs everything specified in mise.toml
+mise install --include-task-tools # also install tools required by tasks
 ```

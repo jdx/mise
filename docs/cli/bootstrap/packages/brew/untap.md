@@ -31,5 +31,5 @@ Write to this config file or directory
 Examples:
 
 ```
-$ mise bootstrap packages brew untap railwaycat/emacsmacport
+mise bootstrap packages brew untap railwaycat/emacsmacport
 ```

@@ -12,5 +12,5 @@ This can be used to temporarily disable mise in a shell session.
 Examples:
 
 ```
-$ mise deactivate
+mise deactivate
 ```

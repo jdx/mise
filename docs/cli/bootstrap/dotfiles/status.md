@@ -28,8 +28,8 @@ state (missing, source missing, differs)
 Examples:
 
 ```
-$ mise bootstrap dotfiles status
-$ mise bootstrap dotfiles status ~/.zshrc
-$ mise bootstrap dotfiles status --json
-$ mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
+mise bootstrap dotfiles status
+mise bootstrap dotfiles status ~/.zshrc
+mise bootstrap dotfiles status --json
+mise bootstrap dotfiles status --missing # exit 1 if anything is out of sync
 ```

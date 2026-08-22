@@ -28,5 +28,5 @@ write to .devcontainer/devcontainer.json
 Examples:
 
 ```
-$ mise generate devcontainer
+mise generate devcontainer
 ```

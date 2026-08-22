@@ -20,7 +20,7 @@ Checks the remote for newer versions and only displays plugins that are outdated
 ### `-u --urls`
 
 Show the git url for each plugin
-e.g.: https://github.com/mise-plugins/vfox-cmake.git
+e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
 
 Examples:
 

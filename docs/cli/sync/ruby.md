@@ -16,7 +16,7 @@ Get tool versions from Homebrew
 Examples:
 
 ```
-$ brew install ruby
-$ mise sync ruby --brew
-$ mise use -g ruby - Use the latest version of Ruby installed by Homebrew
+brew install ruby
+mise sync ruby --brew
+mise use -g ruby - Use the latest version of Ruby installed by Homebrew
 ```

@@ -34,8 +34,8 @@ Skip the confirmation prompt
 Examples:
 
 ```
-$ mise bootstrap dotfiles unapply
-$ mise bootstrap dotfiles unapply ~/.zshrc
-$ mise bootstrap dotfiles unapply --dry-run
-$ mise bootstrap dotfiles unapply --force --yes
+mise bootstrap dotfiles unapply
+mise bootstrap dotfiles unapply ~/.zshrc
+mise bootstrap dotfiles unapply --dry-run
+mise bootstrap dotfiles unapply --force --yes
 ```

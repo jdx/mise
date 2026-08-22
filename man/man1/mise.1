@@ -584,6 +584,7 @@ Run task(s)
 Search for tools in the registry
 .TP
 \fBself\-update\fR
+Updates mise itself.
 .TP
 \fBset\fR
 Set environment variables in mise.toml
@@ -3724,6 +3725,16 @@ Don't display headers
 \fB<NAME>\fR
 The tool to search for
 .SH "MISE SELF-UPDATE"
+Updates mise itself.
+
+Uses the GitHub Releases API to find the latest release and binary.
+By default, this will also update any installed plugins.
+Uses mise's GitHub token resolution chain for authenticated requests.
+
+Packagers can disable this command so that mise is updated through the
+package manager instead. See
+https://mise.jdx.dev/contributing.html#packaging\-and\-self\-update\-instructions
+.PP
 \fBUsage:\fR mise self\-update [OPTIONS] [<VERSION>]
 .PP
 \fBOptions:\fR

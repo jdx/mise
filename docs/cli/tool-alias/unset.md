@@ -23,6 +23,6 @@ The alias to remove
 Examples:
 
 ```
-$ mise tool-alias unset maven
-$ mise tool-alias unset node lts-jod
+mise tool-alias unset maven
+mise tool-alias unset node lts-jod
 ```
