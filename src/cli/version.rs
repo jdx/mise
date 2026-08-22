@@ -139,17 +139,21 @@ enum VersionHint {
     AutoUpdate,
     Homebrew,
     OptimizedBinary,
+    OptimizedBinaryWindows,
 }
 
 fn select_version_hint(
     self_update_available: bool,
     auto_update: bool,
     homebrew: bool,
+    windows: bool,
 ) -> Option<VersionHint> {
     if self_update_available {
         (!auto_update).then_some(VersionHint::AutoUpdate)
     } else if homebrew {
         Some(VersionHint::Homebrew)
+    } else if windows {
+        Some(VersionHint::OptimizedBinaryWindows)
     } else {
         Some(VersionHint::OptimizedBinary)
     }
@@ -159,8 +163,12 @@ pub(crate) fn show_auto_update_hint() {
     let Ok(settings) = Settings::try_get() else {
         return;
     };
-    if select_version_hint(SelfUpdate::is_available(), settings.auto_update, false)
-        == Some(VersionHint::AutoUpdate)
+    if select_version_hint(
+        SelfUpdate::is_available(),
+        settings.auto_update,
+        false,
+        cfg!(windows),
+    ) == Some(VersionHint::AutoUpdate)
     {
         hint!(
             "auto_update",
@@ -178,17 +186,23 @@ pub(crate) fn show_version_hint() {
         SelfUpdate::is_available(),
         settings.auto_update,
         is_homebrew_install(),
+        cfg!(windows),
     ) {
         Some(VersionHint::AutoUpdate) => show_auto_update_hint(),
         Some(VersionHint::Homebrew) => hint!(
             "optimized_mise_homebrew",
-            "Homebrew's mise formula is typically 20–30% slower and about 40% larger than the optimized mise.run binary; replace it with",
+            "Homebrew's mise formula can be substantially slower and larger than the optimized mise.run binary; replace it with",
             "brew uninstall mise && curl https://mise.run | sh"
         ),
         Some(VersionHint::OptimizedBinary) => hint!(
             "optimized_mise_binary",
             "third-party package builds may be slower and larger than mise's optimized binary; install the official build with",
             "curl https://mise.run | sh"
+        ),
+        Some(VersionHint::OptimizedBinaryWindows) => hint!(
+            "optimized_mise_binary",
+            "third-party package builds may be slower and larger than mise's optimized binary; download the official build from",
+            "https://github.com/jdx/mise/releases/latest"
         ),
         None => {}
     }
@@ -384,21 +398,25 @@ mod tests {
     #[test]
     fn version_hint_promotes_auto_update_for_official_binaries() {
         assert_eq!(
-            select_version_hint(true, false, false),
+            select_version_hint(true, false, false, false),
             Some(VersionHint::AutoUpdate)
         );
-        assert_eq!(select_version_hint(true, true, false), None);
+        assert_eq!(select_version_hint(true, true, false, false), None);
     }
 
     #[test]
     fn version_hint_promotes_optimized_binaries_for_package_installs() {
         assert_eq!(
-            select_version_hint(false, false, true),
+            select_version_hint(false, false, true, false),
             Some(VersionHint::Homebrew)
         );
         assert_eq!(
-            select_version_hint(false, false, false),
+            select_version_hint(false, false, false, false),
             Some(VersionHint::OptimizedBinary)
+        );
+        assert_eq!(
+            select_version_hint(false, false, false, true),
+            Some(VersionHint::OptimizedBinaryWindows)
         );
     }
 }

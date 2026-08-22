@@ -12,6 +12,7 @@ use crate::env;
 #[cfg(windows)]
 use crate::file::MAX_PATH;
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::fs;
 #[cfg(target_os = "macos")]
 use std::path::Path;
@@ -20,21 +21,6 @@ use std::process::Command;
 use std::time::Duration;
 
 const AUTO_UPDATE_REEXEC_ENV: &str = "__MISE_AUTO_UPDATE_REEXEC";
-const AUTO_UPDATE_SKIP_COMMANDS: &[&str] = &[
-    "activate",
-    "completion",
-    "deactivate",
-    "doctor",
-    "hook-env",
-    "implode",
-    "self-update",
-    "settings",
-    "shell",
-    "usage",
-    "v",
-    "version",
-];
-
 #[derive(Debug, Default, serde::Deserialize)]
 struct InstructionsToml {
     message: Option<String>,
@@ -94,16 +80,16 @@ pub(crate) fn append_self_update_instructions(mut message: String) -> String {
     message
 }
 
+/// Checks for and installs an update before an eligible interactive command.
+/// Failures are deliberately non-fatal so the requested command still runs.
 pub(crate) async fn maybe_auto_update(
     args: &[String],
     original_cwd: Option<&std::path::Path>,
+    command_eligible: bool,
 ) -> Result<()> {
     let Ok(settings) = Settings::try_get() else {
         return Ok(());
     };
-    let command = crate::cli::first_non_global_arg_idx_cached(args)
-        .and_then(|idx| args.get(idx))
-        .map(String::as_str);
     if !auto_update_eligible(AutoUpdateContext {
         enabled: settings.auto_update,
         offline: settings.offline(),
@@ -112,7 +98,7 @@ pub(crate) async fn maybe_auto_update(
         attended: console::user_attended_stderr(),
         already_reexecuted: env::var_os(AUTO_UPDATE_REEXEC_ENV).is_some(),
         self_update_available: SelfUpdate::is_available(),
-        command,
+        command_eligible,
     }) {
         return Ok(());
     }
@@ -130,7 +116,13 @@ pub(crate) async fn maybe_auto_update(
         }
     };
     let last_check_path = crate::dirs::CACHE.join("auto-update-last-check");
-    let check_duration = settings.auto_update_check_duration();
+    let check_duration = match settings.auto_update_check_duration() {
+        Ok(duration) => duration,
+        Err(err) => {
+            debug!("automatic mise update has an invalid check duration: {err:#}");
+            return Ok(());
+        }
+    };
     if !auto_update_check_due(&last_check_path, check_duration) {
         return Ok(());
     }
@@ -138,7 +130,10 @@ pub(crate) async fn maybe_auto_update(
         debug!("automatic mise update could not record its check: {err:#}");
         return Ok(());
     }
-    let Some(version) = crate::cli::version::check_for_new_version(check_duration).await else {
+    // The marker above is the auto-update throttle. Bypass the separate shared
+    // version cache so a shorter-lived `mise version` lookup cannot make this
+    // due check accept stale data and advance the marker for another interval.
+    let Some(version) = crate::cli::version::check_for_new_version(Duration::ZERO).await else {
         return Ok(());
     };
 
@@ -156,12 +151,14 @@ pub(crate) async fn maybe_auto_update(
     reexec(args, original_cwd)
 }
 
+/// Returns whether the automatic-update attempt marker has expired.
 fn auto_update_check_due(path: &std::path::Path, duration: Duration) -> bool {
     crate::file::modified_duration(path).map_or(true, |age| age >= duration)
 }
 
+/// Runtime conditions that gate automatic updates.
 #[derive(Clone, Copy)]
-struct AutoUpdateContext<'a> {
+struct AutoUpdateContext {
     enabled: bool,
     offline: bool,
     prefer_offline: bool,
@@ -169,10 +166,11 @@ struct AutoUpdateContext<'a> {
     attended: bool,
     already_reexecuted: bool,
     self_update_available: bool,
-    command: Option<&'a str>,
+    command_eligible: bool,
 }
 
-fn auto_update_eligible(context: AutoUpdateContext<'_>) -> bool {
+/// Applies the automatic-update safety policy without side effects.
+fn auto_update_eligible(context: AutoUpdateContext) -> bool {
     context.enabled
         && !context.offline
         && !context.prefer_offline
@@ -180,22 +178,29 @@ fn auto_update_eligible(context: AutoUpdateContext<'_>) -> bool {
         && context.attended
         && !context.already_reexecuted
         && context.self_update_available
-        && context
-            .command
-            .is_some_and(|command| !AUTO_UPDATE_SKIP_COMMANDS.contains(&command))
+        && context.command_eligible
+}
+
+/// Builds the replacement process with the original arguments, directory, and
+/// a recursion guard shared by every platform-specific re-exec path.
+fn build_reexec_command<I, S>(args: I, original_cwd: Option<&std::path::Path>) -> Command
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut command = Command::new(&*env::MISE_BIN);
+    command.args(args).env(AUTO_UPDATE_REEXEC_ENV, "1");
+    if let Some(cwd) = original_cwd {
+        command.current_dir(cwd);
+    }
+    command
 }
 
 #[cfg(unix)]
 fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
     use std::os::unix::process::CommandExt;
 
-    let mut command = Command::new(&*env::MISE_BIN);
-    command
-        .args(std::env::args_os().skip(1))
-        .env(AUTO_UPDATE_REEXEC_ENV, "1");
-    if let Some(cwd) = original_cwd {
-        command.current_dir(cwd);
-    }
+    let mut command = build_reexec_command(std::env::args_os().skip(1), original_cwd);
     let err = command.exec();
     warn!("mise was updated but could not re-execute the command: {err}");
     Ok(())
@@ -203,24 +208,14 @@ fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()
 
 #[cfg(windows)]
 fn reexec(_args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
-    let mut command = Command::new(&*env::MISE_BIN);
-    command
-        .args(std::env::args_os().skip(1))
-        .env(AUTO_UPDATE_REEXEC_ENV, "1");
-    if let Some(cwd) = original_cwd {
-        command.current_dir(cwd);
-    }
+    let mut command = build_reexec_command(std::env::args_os().skip(1), original_cwd);
     let status = command.status()?;
     Err(crate::request_exit(status.code().unwrap_or(1)))
 }
 
 #[cfg(not(any(unix, windows)))]
 fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()> {
-    let mut command = Command::new(&*env::MISE_BIN);
-    command.args(&args[1..]).env(AUTO_UPDATE_REEXEC_ENV, "1");
-    if let Some(cwd) = original_cwd {
-        command.current_dir(cwd);
-    }
+    let mut command = build_reexec_command(&args[1..], original_cwd);
     let status = command.status()?;
     Err(crate::request_exit(status.code().unwrap_or(1)))
 }
@@ -653,7 +648,7 @@ impl SelfUpdate {
 mod auto_update_tests {
     use super::*;
 
-    fn eligible_context() -> AutoUpdateContext<'static> {
+    fn eligible_context() -> AutoUpdateContext {
         AutoUpdateContext {
             enabled: true,
             offline: false,
@@ -662,7 +657,7 @@ mod auto_update_tests {
             attended: true,
             already_reexecuted: false,
             self_update_available: true,
-            command: Some("install"),
+            command_eligible: true,
         }
     }
 
@@ -709,16 +704,25 @@ mod auto_update_tests {
     }
 
     #[test]
-    fn shell_and_management_commands_do_not_update() {
-        for command in AUTO_UPDATE_SKIP_COMMANDS {
-            assert!(!auto_update_eligible(AutoUpdateContext {
-                command: Some(command),
-                ..eligible_context()
-            }));
-        }
+    fn ineligible_commands_do_not_update() {
         assert!(!auto_update_eligible(AutoUpdateContext {
-            command: None,
+            command_eligible: false,
             ..eligible_context()
+        }));
+    }
+
+    #[test]
+    fn reexec_preserves_arguments_directory_and_guard() {
+        use std::ffi::OsString;
+
+        let cwd = std::path::Path::new("a directory");
+        let args = [OsString::from("install"), OsString::from("node@22 beta")];
+        let command = build_reexec_command(&args, Some(cwd));
+
+        assert_eq!(command.get_args().collect::<Vec<_>>(), args);
+        assert_eq!(command.get_current_dir(), Some(cwd));
+        assert!(command.get_envs().any(|(key, value)| {
+            key == AUTO_UPDATE_REEXEC_ENV && value == Some(OsStr::new("1"))
         }));
     }
 

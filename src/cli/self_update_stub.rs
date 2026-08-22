@@ -7,6 +7,7 @@ use crate::env;
 pub(crate) async fn maybe_auto_update(
     _args: &[String],
     _original_cwd: Option<&std::path::Path>,
+    _command_eligible: bool,
 ) -> crate::Result<()> {
     Ok(())
 }

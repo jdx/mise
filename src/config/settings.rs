@@ -1188,8 +1188,8 @@ impl Settings {
     }
 
     #[cfg(feature = "self_update")]
-    pub(crate) fn auto_update_check_duration(&self) -> Duration {
-        duration::parse_duration(&self.auto_update_check_duration).unwrap()
+    pub(crate) fn auto_update_check_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.auto_update_check_duration)
     }
 
     pub(crate) fn fetch_remote_versions_timeout(&self) -> Duration {
