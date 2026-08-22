@@ -1,8 +1,10 @@
+use crate::config::config_file::{remote_fetch_allowed, trust_check_remote_content};
 use crate::config::{Config, Settings};
-use crate::task::Task;
+use crate::errors::Error::UntrustedConfig;
 use crate::task::task_file_providers::{TaskFileArtifact, TaskFileProvidersBuilder};
+use crate::task::{Task, remote_header_requires_trust};
 use dashmap::DashMap;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use std::{
     path::PathBuf,
     sync::{Arc, LazyLock, Mutex},
@@ -65,11 +67,21 @@ fn take_remote_task_artifacts() -> Vec<Arc<OnceCell<TaskFileArtifact>>> {
 /// Handles fetching remote task files and converting them to local paths
 pub(crate) struct TaskFetcher {
     no_cache: bool,
+    trust_before_fetch: bool,
 }
 
 impl TaskFetcher {
     pub(crate) fn new(no_cache: bool) -> Self {
-        Self { no_cache }
+        Self {
+            no_cache,
+            trust_before_fetch: false,
+        }
+    }
+
+    /// Require trust before a remote provider performs network or Git work.
+    pub(crate) fn require_trust_before_fetch(mut self) -> Self {
+        self.trust_before_fetch = true;
+        self
     }
 
     /// Fetch remote task files, converting remote paths to local cached paths
@@ -93,6 +105,31 @@ impl TaskFetcher {
                 }
 
                 let original = t.clone();
+                let defining_cf = original
+                    .cf
+                    .clone()
+                    .or_else(|| config.config_files.get(&original.config_source).cloned());
+                let defining_config_source = original
+                    .remote_config_source
+                    .clone()
+                    .or_else(|| defining_cf.as_ref().map(|cf| cf.get_path().to_path_buf()))
+                    .unwrap_or_else(|| original.config_source.clone());
+
+                // Safe mode deliberately does not gate the fetch itself: it is a
+                // code-execution boundary, not a network one, and an untrusted
+                // config can already download arbitrary URLs there through the
+                // HTTP-based backends. What must not happen without trust is the
+                // fetched header acting, which the gate below enforces.
+                if self.trust_before_fetch && !remote_fetch_allowed(&defining_config_source) {
+                    return Err(UntrustedConfig(defining_config_source.clone())).wrap_err_with(
+                        || {
+                            format!(
+                                "fetching remote task {source} requires its defining config to be trusted"
+                            )
+                        },
+                    );
+                }
+
                 let provider = task_file_providers
                     .get_provider(&source)
                     .ok_or_else(|| eyre::eyre!("No provider found for file: {}", source))?;
@@ -127,12 +164,27 @@ impl TaskFetcher {
                 // Parse the downloaded script as a regular file task so all #MISE
                 // metadata is honored. The inline TOML task remains the higher-
                 // precedence overlay, matching local file-task behavior.
+                let body = crate::file::read_to_string(&local_path).wrap_err_with(|| {
+                    format!("failed to read remote task metadata from {source}")
+                })?;
+                let header_requires_trust = remote_header_requires_trust(&body);
                 let mut remote = Task::from_path_unrendered_with_cf(
                     &local_path,
                     prefix,
                     &config_root,
                     original.cf.clone(),
-                )?;
+                )
+                .wrap_err_with(|| format!("failed to parse remote task metadata from {source}"))?;
+                // Rendering a template, or resolving a `#USAGE include`, is
+                // where a remote header acts, so this gate holds even in safe
+                // mode.
+                if header_requires_trust {
+                    trust_check_remote_content(&defining_config_source).wrap_err_with(|| {
+                        format!(
+                            "remote task metadata from {source} requires its defining config to be trusted"
+                        )
+                    })?;
+                }
                 remote.name.clone_from(&original.name);
                 remote.display_name.clone_from(&original.display_name);
 
@@ -145,13 +197,19 @@ impl TaskFetcher {
                 remote.inherited_env.clone_from(&original.inherited_env);
                 remote.overlay_env.clone_from(&original.overlay_env);
                 remote.overlay_vars.clone_from(&original.overlay_vars);
-                remote.render(config, &config_root).await?;
+                remote
+                    .render(config, &config_root)
+                    .await
+                    .wrap_err_with(|| {
+                        format!("failed to render remote task metadata from {source}")
+                    })?;
                 remote.merge_toml_overlay(original.clone());
 
                 // Preserve runtime state that is not task metadata and therefore is
                 // intentionally not handled by merge_toml_overlay().
                 remote.global = original.global;
                 remote.remote_file_source = Some(source);
+                remote.remote_config_source = Some(defining_config_source);
                 *t = remote;
             }
         }

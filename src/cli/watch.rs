@@ -2,7 +2,7 @@ use crate::Result;
 use crate::cli::Cli;
 use crate::cli::args::BackendArg;
 use crate::cmd;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env;
 use crate::request_exit;
@@ -66,6 +66,8 @@ impl Watch {
                 return Ok(());
             }
         }
+        Settings::ensure_not_safe("running tasks")?;
+
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
         if let Err(err) = which::which("watchexec") {
