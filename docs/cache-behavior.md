@@ -57,7 +57,7 @@ Directives can opt out of caching by setting `cacheable = false`:
 ```toml
 [env]
 TIMESTAMP = { value = "{{ now() }}", cacheable = false }
-_.source = { file = "dynamic.sh", cacheable = false }
+_.source = { path = "dynamic.sh", cacheable = false }
 ```
 
 ## Cache auto-pruning
