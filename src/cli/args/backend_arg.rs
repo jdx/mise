@@ -360,13 +360,9 @@ impl BackendArg {
                     .collect();
 
             let mise_names: HashSet<String> = suggestions.iter().cloned().collect();
-            for aqua_id in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
-                // Skip aqua suggestions whose tool name matches an existing mise suggestion
-                let name = aqua_id
-                    .rsplit_once('/')
-                    .map_or(aqua_id.as_str(), |(_, n)| n);
-                if !mise_names.contains(name) {
-                    suggestions.push(format!("aqua:{aqua_id}"));
+            for aqua in crate::aqua::aqua_registry_wrapper::aqua_suggest(&self.short) {
+                if !mise_names.contains(&aqua.name) {
+                    suggestions.push(aqua.backend);
                 }
             }
 
