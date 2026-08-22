@@ -25,6 +25,10 @@ run = [
 ]
 ```
 
+`{ task }` and `{ tasks }` are execution steps for this task, not
+[`depends`](#depends). `mise tasks deps` therefore does not include them.
+See [`mise tasks deps`](/cli/tasks/deps.html).
+
 Simple forms still work and are equivalent:
 
 ```mise-toml
@@ -99,6 +103,9 @@ Tasks that must be run before this task. This is a list of task names or aliases
 passed to the task, e.g.: `depends = ["build --release"]`. If multiple tasks have the same dependency,
 that dependency will only be run once. mise will run whatever it can in parallel (up to [`--jobs`](/cli/run))
 through the use of `depends` and related properties.
+
+[`mise tasks deps`](/cli/tasks/deps.html) visualizes this declared graph
+(`depends`, `wait_for`, `depends_post`), not task references inside `run`.
 
 ```mise-toml
 [tasks.build]
