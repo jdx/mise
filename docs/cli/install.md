@@ -20,8 +20,7 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
 ### `[TOOL@VERSION]…`
 
-Tool(s) to install
-e.g.: node@20
+Tool(s) to install e.g.: node@20
 
 ## Flags
 
@@ -78,8 +77,7 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
 
 ### `--shared <SHARED>`
 

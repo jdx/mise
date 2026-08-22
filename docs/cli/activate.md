@@ -53,10 +53,7 @@ Suppress non-error messages
 
 Do not automatically call hook-env
 
-This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then
-you can call `mise hook-env` manually which will output the env vars to stdout without actually
-modifying the environment. That way you can do things like `mise hook-env --trace` to get more
-information or just see the values that hook-env is outputting.
+This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
 
 ### `--shims`
 

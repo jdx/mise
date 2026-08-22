@@ -20,10 +20,8 @@ mise plugins ls-remote
 
 ### `-u --urls`
 
-Show the git url for each plugin
-e.g.: <https://github.com/mise-plugins/mise-poetry.git>
+Show the git url for each plugin e.g.: <https://github.com/mise-plugins/mise-poetry.git>
 
 ### `--only-names`
 
-Only show the name of each plugin
-by default it will show a "*" next to installed plugins
+Only show the name of each plugin by default it will show a "*" next to installed plugins

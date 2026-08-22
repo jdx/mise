@@ -32,8 +32,7 @@ Write to the config file for this environment (mise.&lt;ENV>.toml)
 
 ### `-g --global`
 
-Write to the global config (~/.config/mise/config.toml) instead of the
-local one
+Write to the global config (~/.config/mise/config.toml) instead of the local one
 
 ### `-n --dry-run`
 

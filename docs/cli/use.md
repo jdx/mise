@@ -71,8 +71,7 @@ Perform a dry run, showing what would be installed and modified without making c
 
 Specify a path to a config file or directory
 
-If a directory is specified, it will look for a config file in that directory following
-the rules above.
+If a directory is specified, it will look for a config file in that directory following the rules above.
 
 ### `--dry-run-code`
 
@@ -107,8 +106,7 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies `--jobs=1`
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`
 
 ### `--remove… <TOOL>`
 

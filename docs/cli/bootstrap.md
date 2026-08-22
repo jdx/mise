@@ -84,8 +84,7 @@ Overwrite existing files that conflict with whole-file dotfile entries
 
 Run only one or more bootstrap parts
 
-Can be passed multiple times or as a comma-separated list.
-Cannot be used with `--skip`.
+Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 
 **Choices:**
 

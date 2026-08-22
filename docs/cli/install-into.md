@@ -13,8 +13,7 @@ Used for building a tool to a directory for use outside of mise
 
 ### `<TOOL@VERSION>`
 
-Tool to install
-e.g.: node@20
+Tool to install e.g.: node@20
 
 ### `<PATH>`
 

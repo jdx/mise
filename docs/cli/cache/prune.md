@@ -15,8 +15,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 
 ### `[TOOL]…`
 
-Tool(s) to prune cache for
-e.g.: node, python
+Tool(s) to prune cache for e.g.: node, python
 
 ## Flags
 

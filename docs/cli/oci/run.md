@@ -52,11 +52,7 @@ See `mise oci build --help` for details.
 
 Keep the loaded image in the engine's storage after the run
 
-By default, both the container (`--rm`) and the loaded image are
-removed when the command exits, so repeated `mise oci run` calls
-don't accumulate images in podman / docker storage. Pass `--keep`
-to retain the image under the tag mise used (`mise-oci:run-*` for
-docker; the pulled image ID for podman).
+By default, both the container (`--rm`) and the loaded image are removed when the command exits, so repeated `mise oci run` calls don't accumulate images in podman / docker storage. Pass `--keep` to retain the image under the tag mise used (`mise-oci:run-*` for docker; the pulled image ID for podman).
 
 ### `--mount-point <MOUNT_POINT>`
 
@@ -70,16 +66,13 @@ Don't embed the mise binary (ignored with --image-dir)
 
 UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
-omitted, it defaults to UID. This affects file ownership only; [oci].user
-controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 
 ### `--volume… <HOST:CONTAINER>`
 
 Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
 
-Note: unlike `docker run -v`, there's no `-v` short flag here because
-mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
+Note: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
 
 ### `-e --env… <KEY=VAL>`
 

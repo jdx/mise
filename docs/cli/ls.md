@@ -32,8 +32,7 @@ Only show tool versions currently specified in the global mise.toml
 
 ### `-i --installed`
 
-Only show tool versions that are installed
-(Hides tools defined in mise.toml but not installed)
+Only show tool versions that are installed (Hides tools defined in mise.toml but not installed)
 
 ### `-J --json`
 

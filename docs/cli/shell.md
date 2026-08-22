@@ -35,8 +35,7 @@ Removes a previously set version
 
 ### `--raw`
 
-Connect backend install command stdin/stdout/stderr directly to the terminal
-Implies --jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
 
 Examples:
 

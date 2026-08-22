@@ -35,12 +35,7 @@ Base image reference (overrides [oci].from and the oci.default_from setting)
 
 Also include tools from the global / system config (default: project-only)
 
-By default `mise oci build` only packages tools declared in the
-project's mise config (and any parent configs at-or-below the
-project root, e.g. a monorepo root config). Personal dev tools in
-`~/.config/mise/config.toml` are excluded so they don't bake into a
-project image. Pass `--include-global` to revert to the old
-"merge all loaded configs" behavior.
+By default `mise oci build` only packages tools declared in the project's mise config (and any parent configs at-or-below the project root, e.g. a monorepo root config). Personal dev tools in `~/.config/mise/config.toml` are excluded so they don't bake into a project image. Pass `--include-global` to revert to the old "merge all loaded configs" behavior.
 
 ### `-t --tag <TAG>`
 
@@ -58,9 +53,7 @@ Do not embed the currently-running mise binary at /usr/local/bin/mise
 
 UID[:GID] to assign to every tar entry in generated layers
 
-Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is
-omitted, it defaults to UID. This affects file ownership only; [oci].user
-controls the image USER directive.
+Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
 
 Examples:
 

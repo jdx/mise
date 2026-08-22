@@ -21,8 +21,7 @@ Check if the configs are formatted, no formatting is done
 
 ### `-s --stdin`
 
-Read config from stdin and write its formatted version into
-stdout
+Read config from stdin and write its formatted version into stdout
 
 Examples:
 
