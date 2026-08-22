@@ -232,11 +232,9 @@ staged — the local binary or the checksum-verified official release artifact �
 and it is what runs the bootstrap, so the host converges with the mise version
 that orchestrated it. Mise writes a temporary file beside the target and renames
 it into place, so replacing a mise that is currently running cannot truncate it.
-When the target already holds a byte-identical executable, nothing is uploaded,
-and after an install mise checks the target's digest before running it, so a
-path another account can write cannot silently substitute the executable. A dry
-run never writes to the host: `--dry-run` reports the path it would install to
-and stages the executable as usual.
+When the target already holds a byte-identical executable, nothing is uploaded.
+A dry run never writes to the host: `--dry-run` reports the path it would
+install to and stages the executable as usual.
 
 `install_mise` composes with `mise_bin`, which installs a locally built
 executable. It cannot be combined with `remote_mise` or `bootstrap_command`,
@@ -246,7 +244,15 @@ right choice when the host should own the install through a system package,
 
 The SSH user must be able to write the install path; mise does not elevate for
 it, so a path such as `/usr/local/bin/mise` needs a user who already owns that
-directory.
+directory. Keep that directory writable only by that user. After installing,
+mise compares the target's digest with what it wrote and fails rather than
+running something else, but that check is best-effort — it is skipped when the
+host provides neither `sha256sum` nor `shasum`, and it cannot cover the window
+between the check and the run. Anyone who can write the install directory
+controls what that account runs as `mise` on every later invocation regardless,
+so the directory's permissions are the real boundary. The staging directory used
+without `install_mise` is created by `mktemp -d` and is private to the SSH
+account.
 
 Installing mise does not put it on the host's `PATH`. Mise warns when the
 install directory is missing from the login `PATH`, and the bootstrap project
