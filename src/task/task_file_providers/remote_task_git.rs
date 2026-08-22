@@ -74,9 +74,10 @@ pub(crate) fn validate_remote_git_path(
     path: &Path,
 ) -> Result<std::fs::Metadata> {
     let metadata = path.symlink_metadata()?;
-    let checkout_root = checkout_root.canonicalize()?;
-    let canonical_path = path.canonicalize()?;
-    if !canonical_path.starts_with(&checkout_root) {
+    if !path
+        .canonicalize()?
+        .starts_with(checkout_root.canonicalize()?)
+    {
         eyre::bail!(
             "remote task path escapes its Git checkout: {}",
             display_path(path)
@@ -94,8 +95,10 @@ pub(crate) fn validate_remote_git_path(
 impl RemoteTaskGit {
     /// Make fetched task files executable while leaving task include directories intact.
     fn prepare_remote_path(checkout_root: &Path, path: &Path) -> Result<()> {
-        let metadata = validate_remote_git_path(checkout_root, path)?;
-        if metadata.file_type().is_file() {
+        if validate_remote_git_path(checkout_root, path)?
+            .file_type()
+            .is_file()
+        {
             file::make_executable(path)?;
         }
         Ok(())
