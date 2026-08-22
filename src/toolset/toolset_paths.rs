@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use std::sync::LazyLock as Lazy;
 
 use crate::config::Config;
@@ -16,6 +16,37 @@ use itertools::Itertools;
 pub(super) static LIST_PATHS_CACHE: Lazy<DashMap<String, Vec<PathBuf>>> = Lazy::new(DashMap::new);
 
 impl Toolset {
+    /// Enumerate install dependency paths without swallowing backend errors.
+    ///
+    /// This deliberately mirrors `list_paths` ordering while leaving that public,
+    /// forgiving API unchanged for existing callers.
+    pub(crate) async fn list_paths_strict(
+        &self,
+        config: &Arc<Config>,
+        dependent: &crate::toolset::ToolRequest,
+    ) -> Result<Vec<PathBuf>> {
+        let mut installed = self.list_current_installed_versions(config);
+        Self::sort_by_overrides(&mut installed)?;
+
+        let mut paths = Vec::new();
+        for (backend, dependency) in installed {
+            let new_paths = backend
+                .list_bin_paths(config, &dependency)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to list bin paths for install dependency '{}' of '{}'",
+                        dependency.request, dependent
+                    )
+                })?;
+            paths.extend(new_paths);
+        }
+        Ok(paths
+            .into_iter()
+            .filter(|path| path.parent().is_some())
+            .collect())
+    }
+
     pub(crate) async fn list_paths(&self, config: &Arc<Config>) -> Vec<PathBuf> {
         // Build a stable cache key based on project_root and current installed versions
         let mut key_parts = vec![];

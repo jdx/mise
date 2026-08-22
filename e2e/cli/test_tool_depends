@@ -19,6 +19,15 @@ assert "MISE_JOBS=1 mise install"
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_contains "mise ls --installed needs-dummy" "1.0.0"
 
+# A dependency installed in an earlier command is valid and must not produce the
+# old current-install-set warning when only the dependent is installed later.
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
+assert "mise install dummy"
+separate_output="$(mise install needs-dummy 2>&1)"
+assert_not_contains_text "$separate_output" "not in the current install set"
+assert_contains "mise ls --installed needs-dummy" "1.0.0"
+
 # Bracket syntax should populate the same core `depends` option as table syntax.
 rm -rf "$MISE_DATA_DIR/installs/dummy"
 rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
@@ -41,3 +50,15 @@ rm -rf "$MISE_DATA_DIR/installs/dummy"
 rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
 
 assert_fail "mise install"
+
+# A dependency that fails in the same batch continues to block its dependent.
+cat <<EOF >mise.toml
+[tools]
+needs-dummy = { version = "1.0.0", depends = ["dummy"] }
+dummy = "other-dummy"
+EOF
+
+rm -rf "$MISE_DATA_DIR/installs/dummy"
+rm -rf "$MISE_DATA_DIR/installs/needs-dummy"
+assert_fail "mise install"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/needs-dummy/1.0.0"

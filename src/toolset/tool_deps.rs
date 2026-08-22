@@ -77,20 +77,6 @@ impl ToolDeps {
                     }
                 }
             }
-            for (raw, dependency) in declarations.direct() {
-                if !requests.iter().any(|other| {
-                    tr_key != tool_key(other)
-                        && dependency
-                            .all_fulls()
-                            .iter()
-                            .any(|identity| other.ba().all_fulls().contains(identity))
-                }) {
-                    warn!(
-                        "tool '{}': depends on '{}' which is not in the current install set",
-                        tr_key, raw
-                    );
-                }
-            }
         }
 
         let inner = DepsGraph::new(nodes, edges, tool_key)?;
