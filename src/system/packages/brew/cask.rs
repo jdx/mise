@@ -6380,7 +6380,7 @@ fn installed_versions(token: &str) -> Vec<String> {
             entry
                 .file_type()
                 .ok()
-                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
+                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-"))
                 .map(|_| name)
         })
         .collect()
@@ -6415,7 +6415,7 @@ fn homebrew_installed_versions(token: &str) -> Result<Vec<String>> {
                 path.display()
             )
         })?;
-        if file_type.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-") {
+        if file_type.is_dir() && name != ".metadata" && !name.starts_with(".mise-") {
             versions.push(name);
         }
     }
@@ -7866,7 +7866,7 @@ mod tests {
     }
 
     #[test]
-    fn recognizes_homebrew_installed_version() -> Result<()> {
+    fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
         let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
@@ -7874,6 +7874,7 @@ mod tests {
         file::create_dir_all(token_dir.join(".metadata"))?;
         file::create_dir_all(token_dir.join("1.0.0"))?;
         file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+        file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
 
         assert_eq!(
             homebrew_installed_version("example")?,
@@ -14393,6 +14394,7 @@ end
         file::create_dir_all(token_dir.join("2.0.0"))?;
         file::create_dir_all(token_dir.join(".metadata/2.0.0/timestamp/Casks"))?;
         file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+        file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
 
         assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
         Ok(())

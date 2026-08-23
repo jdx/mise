@@ -38,7 +38,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 server = HTTPServer(("127.0.0.1", 0), Handler)
-port_file.write_text(str(server.server_address[1]))
+port_file_tmp = port_file.with_suffix(".tmp")
+port_file_tmp.write_text(str(server.server_address[1]))
+port_file_tmp.replace(port_file)
 server.serve_forever()
 PY
 HTTP_SERVER_PID=$!
