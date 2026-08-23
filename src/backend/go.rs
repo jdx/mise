@@ -170,6 +170,16 @@ impl Backend for GoBackend {
             cmd.arg(format!("{}@{v}", self.tool_name()))
                 .with_pr(ctx.pr.as_ref())
                 .envs(self.dependency_env(&ctx.config).await?)
+                // `go` derives GOROOT from where its own executable lives, so it
+                // does not need one. An inherited GOROOT does harm: mise exports
+                // one for the Go it manages and `mise activate` carries it into
+                // the shell, and on unix `spawn_program` hands back the bare name
+                // `go`, so which Go actually runs is up to the child's PATH. The
+                // moment that is a different Go, every compile fails with
+                // `compile: version "..." does not match go tool version "..."`
+                // (#8261, #8877). Dropped before `install_env` so a GOROOT set
+                // there deliberately still wins.
+                .env_remove("GOROOT")
                 .env_values(tv.install_env())
                 .env("GOBIN", tv.install_path().join("bin"))
                 .execute()
