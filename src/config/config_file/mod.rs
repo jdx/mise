@@ -469,7 +469,12 @@ pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
         if ans {
             trust(&config_root)?;
             return Ok(());
-        } else if console::user_attended_stderr() {
+        } else if prompt::can_prompt_dialog() {
+            // Only a real "no" is worth remembering. `confirm_with_all` also
+            // returns false when it could not ask at all -- while generating
+            // usage/completions, or with a terminal on stderr but not on stdin --
+            // and persisting an ignore marker there would silently stop the
+            // config from applying without the user ever declining it.
             add_ignored(config_root.to_path_buf())?;
         }
     }
