@@ -2310,6 +2310,14 @@ type = "Bool"
 
 [raw]
 description = "Connect stdin/stdout/stderr to child processes."
+docs = """
+Connect stdin/stdout/stderr to child processes.
+
+A raw command holds an exclusive lock for as long as it runs, so no other command runs alongside it.
+Enabling this globally therefore serializes task execution whatever `jobs` is set to: the parallel
+execution engine still schedules the tasks, but only one of them can be running a command at a time.
+`mise run --raw` goes further and sets the scheduler itself to a single job.
+"""
 env = "MISE_RAW"
 type = "Bool"
 

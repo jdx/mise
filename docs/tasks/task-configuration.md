@@ -382,12 +382,13 @@ run = "deploy.sh ${usage_environment}"
 - **Default**: `false`
 
 Connects the task directly to the shell's stdin/stdout/stderr. This is useful for tasks that need to
-accept input or output in a way that mise's normal task handling doesn't support. This is not recommended
-to use because it really screws up the output whenever mise runs tasks in parallel. Ensure when using
-this that no other tasks are running at the same time.
+accept input or output in a way that mise's normal task handling doesn't support.
 
-In the future we could have a property like `single = true` or something that prevents multiple tasks
-from running at the same time. If that sounds useful, search/file a ticket.
+A raw command holds an exclusive lock for as long as it runs, so mise will not run another command
+alongside it and you do not have to keep other tasks out of the way yourself. The lock is taken per
+command rather than per task, so two raw tasks can still take turns between their individual
+commands. If you need a whole task to run without interruption, search/file a ticket for a property
+like `single = true`.
 
 ### `raw_args`
 
