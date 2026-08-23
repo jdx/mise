@@ -83,6 +83,22 @@ assert_contains "cd legacy && mise lock --upgrade" "Upgrading"
 assert_contains "cat legacy/mise.lock" "lockfile_version = 1"
 assert_contains "cat legacy/mise.lock" 'specifiers = ["1.0.0"]'
 
+echo "=== upgrades bind distinct requests resolving to the same version ==="
+mkdir same-version
+cat >same-version/mise.toml <<'EOF'
+[tools]
+dummy = ["1.0", "1.0.0"]
+EOF
+cat >same-version/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_succeed "cd same-version && mise lock --upgrade --platform linux-x64"
+assert_contains "sed -n '/specifiers = \[/,/]/p' same-version/mise.lock" '"1.0",'
+assert_contains "sed -n '/specifiers = \[/,/]/p' same-version/mise.lock" '"1.0.0",'
+
 echo "=== dry-run reports but does not upgrade legacy lockfiles ==="
 mkdir legacy-dry-run
 cp legacy/mise.toml legacy-dry-run/mise.toml

@@ -38,6 +38,7 @@ fn request_matches(a: &ToolRequest, b: &ToolRequest) -> bool {
 fn lock_tool_matches(a: &LockTool, b: &LockTool) -> bool {
     a.0.full() == b.0.full()
         && a.1.version == b.1.version
+        && a.1.request.version() == b.1.request.version()
         && a.1.request.options() == b.1.request.options()
 }
 
@@ -1931,7 +1932,8 @@ mod tests {
     fn lock_tool_with_options(
         short: &str,
         backend: &str,
-        version: &str,
+        request: &str,
+        resolved_version: &str,
         option: Option<(&str, &str)>,
     ) -> (BackendArg, ToolVersion) {
         let ba = BackendArg::new(short.to_string(), Some(backend.to_string()));
@@ -1942,9 +1944,9 @@ mod tests {
                 .unwrap();
         }
         let request =
-            ToolRequest::new_opts(Arc::new(ba.clone()), version, options, ToolSource::Argument)
+            ToolRequest::new_opts(Arc::new(ba.clone()), request, options, ToolSource::Argument)
                 .unwrap();
-        let tv = ToolVersion::new(request, version.to_string());
+        let tv = ToolVersion::new(request, resolved_version.to_string());
         (ba, tv)
     }
 
@@ -1953,25 +1955,31 @@ mod tests {
         let mut tools = Vec::new();
         push_unique_lock_tool(
             &mut tools,
-            lock_tool_with_options("dummy", "http:one", "1.0.0", Some(("exe", "one"))),
+            lock_tool_with_options("dummy", "http:one", "1.0.0", "1.0.0", Some(("exe", "one"))),
         );
         push_unique_lock_tool(
             &mut tools,
-            lock_tool_with_options("dummy", "http:one", "1.0.0", Some(("exe", "one"))),
+            lock_tool_with_options("dummy", "http:one", "1.0.0", "1.0.0", Some(("exe", "one"))),
         );
         push_unique_lock_tool(
             &mut tools,
-            lock_tool_with_options("dummy", "http:one", "1.0.0", Some(("exe", "two"))),
+            lock_tool_with_options("dummy", "http:one", "1.0.0", "1.0.0", Some(("exe", "two"))),
         );
         push_unique_lock_tool(
             &mut tools,
-            lock_tool_with_options("dummy", "http:two", "1.0.0", Some(("exe", "one"))),
+            lock_tool_with_options("dummy", "http:two", "1.0.0", "1.0.0", Some(("exe", "one"))),
+        );
+        push_unique_lock_tool(
+            &mut tools,
+            lock_tool_with_options("dummy", "http:one", "1", "1.0.0", Some(("exe", "one"))),
         );
 
-        assert_eq!(tools.len(), 3);
+        assert_eq!(tools.len(), 4);
         assert_eq!(tools[0].0.full(), "http:one");
         assert_eq!(tools[1].0.full(), "http:one");
         assert_eq!(tools[2].0.full(), "http:two");
+        assert_eq!(tools[3].1.request.version(), "1");
+        assert_eq!(tools[3].1.version, "1.0.0");
         assert_ne!(tools[0].1.request.options(), tools[1].1.request.options());
     }
 
