@@ -1,3 +1,4 @@
+use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
 use crate::backend::pkgx::PkgxBackend;
@@ -8,7 +9,7 @@ use crate::file;
 use crate::file::display_path;
 use crate::path::PathExt;
 use crate::platform::Platform;
-use crate::toolset::{ToolSource, ToolVersion, Toolset};
+use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions, Toolset};
 use eyre::{Report, Result, bail, eyre};
 use indexmap::IndexSet;
 use itertools::Itertools;
@@ -3353,6 +3354,8 @@ pub(crate) fn get_locked_version(
     require_prefix_boundary: bool,
     request_options: &BTreeMap<String, String>,
     legacy_options_fallback: bool,
+    backend: Option<&dyn Backend>,
+    selection_options: &ToolVersionOptions,
 ) -> Result<Option<LockfileTool>> {
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
@@ -3426,9 +3429,11 @@ pub(crate) fn get_locked_version(
                     && (!require_prefix_boundary
                         || lockfile_version_matches_prefix_boundary(prefix, &v.version))
             };
-            if let Some(found) = tools
+            let matching = tools
                 .iter()
-                .find(|v| version_matches(v) && &v.options == request_options)
+                .filter(|v| version_matches(v) && &v.options == request_options)
+                .collect_vec();
+            if let Some(found) = select_unbound_lockfile_tool(matching, backend, selection_options)?
             {
                 trace!(
                     "[{short}@{specifier}] found legacy unbound {} in versioned lockfile",
@@ -3436,20 +3441,23 @@ pub(crate) fn get_locked_version(
                 );
                 return Ok(Some(found.clone()));
             }
-            if legacy_options_fallback
-                && !request_options.is_empty()
-                && let Some(found) = tools
+            if legacy_options_fallback && !request_options.is_empty() {
+                let matching = tools
                     .iter()
-                    .find(|v| version_matches(v) && v.options.is_empty())
-            {
-                trace!(
-                    "[{short}@{specifier}] found legacy unbound {} without options in versioned lockfile",
-                    found.version
-                );
-                return Ok(Some(lockfile_tool_with_request_options(
-                    found,
-                    request_options,
-                )));
+                    .filter(|v| version_matches(v) && v.options.is_empty())
+                    .collect_vec();
+                if let Some(found) =
+                    select_unbound_lockfile_tool(matching, backend, selection_options)?
+                {
+                    trace!(
+                        "[{short}@{specifier}] found legacy unbound {} without options in versioned lockfile",
+                        found.version
+                    );
+                    return Ok(Some(lockfile_tool_with_request_options(
+                        found,
+                        request_options,
+                    )));
+                }
             }
             return Ok(None);
         }
@@ -3502,6 +3510,21 @@ pub(crate) fn get_locked_version(
     }
 
     Ok(None)
+}
+
+fn select_unbound_lockfile_tool<'a>(
+    matching: Vec<&'a LockfileTool>,
+    backend: Option<&dyn Backend>,
+    selection_options: &ToolVersionOptions,
+) -> Result<Option<&'a LockfileTool>> {
+    let Some(backend) = backend else {
+        return Ok(matching.first().copied());
+    };
+    Ok(backend
+        .version_order(selection_options)?
+        .order_by(matching, |tool| tool.version.as_str())
+        .last()
+        .copied())
 }
 
 fn lockfile_tool_with_request_options(

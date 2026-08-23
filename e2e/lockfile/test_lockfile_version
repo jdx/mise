@@ -131,3 +131,50 @@ EOF
 assert_succeed "cd mixed-monorepo && mise lock --upgrade --platform linux-x64"
 assert_fail "test -f mixed-monorepo/packages/b/mise.lock"
 assert_contains "cat mixed-monorepo/mise.lock" 'specifiers = ["1.0.0"]'
+
+echo "=== unbound versioned entries use backend version order ==="
+mkdir unbound-versioned
+cat >unbound-versioned/mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+cat >unbound-versioned/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert "cd unbound-versioned && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
+
+echo "=== failed upgrades preserve legacy monorepo lockfiles ==="
+mkdir -p failed-monorepo-upgrade/packages/b
+cat >failed-monorepo-upgrade/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "3.0.0"
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >failed-monorepo-upgrade/packages/b/mise.toml <<'EOF'
+[env]
+CHILD = "true"
+EOF
+cat >failed-monorepo-upgrade/packages/b/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+
+mise cache clear dummy
+assert_fail_contains "cd failed-monorepo-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1" "failed to resolve"
+assert_succeed "test -f failed-monorepo-upgrade/packages/b/mise.lock"
+assert_fail "test -f failed-monorepo-upgrade/mise.lock"

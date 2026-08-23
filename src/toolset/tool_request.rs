@@ -409,7 +409,8 @@ impl ToolRequest {
         prefix: &str,
         require_prefix_boundary: bool,
     ) -> Result<Option<LockfileTool>> {
-        let (request_options, legacy_options_fallback) = if let Ok(backend) = self.backend() {
+        let backend = self.backend().ok();
+        let (request_options, legacy_options_fallback) = if let Some(backend) = &backend {
             let target = PlatformTarget::from_current();
             (
                 backend.resolve_lockfile_options(self, &target)?,
@@ -431,6 +432,8 @@ impl ToolRequest {
             require_prefix_boundary,
             &request_options,
             legacy_options_fallback,
+            backend.as_deref(),
+            &self.options(),
         )
     }
 

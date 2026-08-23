@@ -184,7 +184,7 @@ impl Lock {
         }
         let settings = Settings::get();
         let config = Config::get().await?;
-        if !self.dry_run {
+        if !self.dry_run && !self.upgrade {
             lockfile::migrate_monorepo_lockfiles(&config, self.upgrade)?;
         }
         let before_date = self.get_before_date()?;
@@ -508,6 +508,13 @@ impl Lock {
         all_platform_regressions.extend(all_resolution_errors);
         if !all_platform_regressions.is_empty() {
             return Err(eyre::eyre!(all_platform_regressions.join("\n")));
+        }
+
+        // Format upgrades are transactional with respect to legacy monorepo
+        // lockfiles: do not merge or delete them until every requested
+        // resolution and binding update has succeeded.
+        if !self.dry_run && self.upgrade {
+            lockfile::migrate_monorepo_lockfiles(&config, true)?;
         }
 
         Ok(())
