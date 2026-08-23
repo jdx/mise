@@ -829,7 +829,12 @@ impl Cli {
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
-        let _ = measure!("settings", { Settings::try_get() });
+        // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
+        // that passed the checks above can still refuse the `chdir` — no execute permission, or a
+        // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not
+        // avoid it, it only defers it: `BASE_SETTINGS` stays empty, so the next `Settings::get()`
+        // repeats the same failure and unwraps it.
+        measure!("settings", { Settings::try_get() })?;
         let auto_update_command_eligible = !print_version
             && cli
                 .command
