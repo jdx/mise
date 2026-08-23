@@ -29,49 +29,49 @@ EOF
 mise usage >./mise.usage.kdl
 
 # baseline: completion of the profile arg works without the global flag
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
 
 # regression: with the global -C <dir> flag before `run`, completion must still
 # offer the choices (previously errored: Invalid choice for arg profile: -C)
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . run sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . run sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
 
 # also cover the `tasks run` path, which shares the same flags/mount
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . tasks run sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise -C . tasks run sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
 
 # orphan-short flags: -r/--raw and -S/--silent have no short on the root global, so the
 # shorts exist only on the non-global `run` redeclarations. They must stay recognized
 # before the mounted task (previously errored: unexpected word).
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -r sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -r sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -S sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -S sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
 
 # and the same two over the `tasks run` path
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -r sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -r sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -S sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise tasks run -S sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
 
 # purely-local `run` flags (no root global of the same name at all) must not hide the
 # task either — `mise run --force <task>` used to fail with "unexpected word"
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run --force sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run --force sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -f sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -f sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
 
 # including one that takes a value, which must be consumed rather than read as the task
-assert "usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -o interleave sample:run -- ''" "alpha		alpha
+assert "mise exec -- usage complete-word --shell zsh -f ./mise.usage.kdl -- mise run -o interleave sample:run -- ''" "alpha		alpha
 beta		beta
 gamma		gamma"
