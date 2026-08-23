@@ -135,6 +135,8 @@ jobs:
     timeout-minutes: 90
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
+    env:
+      MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
