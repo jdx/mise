@@ -16,6 +16,10 @@
 PLUGIN_DIR="$PWD/vfox-tools-env-dep"
 INSTALL_MARKER="$PWD/tools-env-install-marker"
 POSTINSTALL_MARKER="$PWD/tools-env-postinstall-marker"
+PLUGIN_DEP_MARKER="$PWD/plugin-dependency-marker"
+USER_DEP_MARKER="$PWD/user-dependency-marker"
+POSTINSTALL_EXEC_MARKER="$PWD/postinstall-dependency-marker"
+UNRELATED_MARKER="$PWD/unrelated-dependency-marker"
 
 mkdir -p "$PLUGIN_DIR/hooks"
 
@@ -26,6 +30,7 @@ PLUGIN.version = "0.1.0"
 PLUGIN.homepage = "https://example.com/tools-env-dep"
 PLUGIN.license = "MIT"
 PLUGIN.description = "tools=true dependency-path env test plugin"
+PLUGIN.depends = { "dummy" }
 LUA
 
 cat >"$PLUGIN_DIR/hooks/available.lua" <<'LUA'
@@ -48,6 +53,9 @@ LUA
 # env value, mirroring how vfox-gcloud runs its install.sh.
 cat >"$PLUGIN_DIR/hooks/post_install.lua" <<LUA
 function PLUGIN:PostInstall(ctx)
+	os.execute("dummy plugin > \"$PLUGIN_DEP_MARKER\"")
+	os.execute("per-tool-dep > \"$USER_DEP_MARKER\"")
+	os.execute("if command -v unrelated-sibling >/dev/null 2>&1; then echo exposed > \"$UNRELATED_MARKER\"; else echo hidden > \"$UNRELATED_MARKER\"; fi")
 	os.execute("printf '%s' \"\$MISE_TEST_TOOLS_PATH\" > \"$INSTALL_MARKER\"")
 end
 LUA
@@ -62,6 +70,26 @@ git -C "$PLUGIN_DIR" init
 git -C "$PLUGIN_DIR" add .
 git -C "$PLUGIN_DIR" -c user.name="mise" -c user.email="mise@example.com" commit -m "initial plugin"
 
+for dependency in per-tool-dep unrelated-sibling; do
+  dependency_plugin="$MISE_DATA_DIR/plugins/asdf-$dependency"
+  mkdir -p "$dependency_plugin/bin"
+  cat >"$dependency_plugin/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+  cat >"$dependency_plugin/bin/install" <<EOF
+#!/usr/bin/env bash
+set -eu
+mkdir -p "\$ASDF_INSTALL_PATH/bin"
+cat >"\$ASDF_INSTALL_PATH/bin/$dependency" <<'SCRIPT'
+#!/usr/bin/env bash
+echo $dependency
+SCRIPT
+chmod +x "\$ASDF_INSTALL_PATH/bin/$dependency"
+EOF
+  chmod +x "$dependency_plugin/bin/list-all" "$dependency_plugin/bin/install"
+done
+
 # The vfox tool depends on `dummy`; the tools=true [env] value references the
 # dependency's resolved path. The tool-level `postinstall` writes the same value
 # to a second marker.
@@ -70,14 +98,16 @@ cat >mise.toml <<EOF
 unix_default_inline_shell_args = "sh -c"
 
 [tools]
+"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", depends = ["asdf:per-tool-dep"], postinstall = "per-tool-dep > '$POSTINSTALL_EXEC_MARKER'; printf '%s' \"\$MISE_TEST_TOOLS_PATH\" > '$POSTINSTALL_MARKER'" }
 dummy = "1.0.0"
-"vfox:file://$PLUGIN_DIR" = { version = "1.0.0", depends = ["dummy"], postinstall = "printf '%s' \"\$MISE_TEST_TOOLS_PATH\" > \"$POSTINSTALL_MARKER\"" }
+"asdf:per-tool-dep" = "1.0.0"
+"asdf:unrelated-sibling" = "1.0.0"
 
 [env]
 MISE_TEST_TOOLS_PATH = { value = "{{ tools.dummy.path | default(value='') }}", tools = true }
 EOF
 
-mise install
+MISE_JOBS=4 mise install
 
 DUMMY_PATH="$(mise where dummy)"
 
@@ -85,3 +115,9 @@ DUMMY_PATH="$(mise where dummy)"
 assert "cat '$INSTALL_MARKER'" "$DUMMY_PATH"
 # tool-level postinstall hook saw the resolved dependency path (Step 2)
 assert "cat '$POSTINSTALL_MARKER'" "$DUMMY_PATH"
+# Plugin and user dependency declarations were unioned for vfox os.execute.
+assert_contains "cat '$PLUGIN_DEP_MARKER'" "This is Dummy 1.0.0"
+assert "cat '$USER_DEP_MARKER'" "per-tool-dep"
+assert "cat '$UNRELATED_MARKER'" "hidden"
+# The same per-tool dependency is callable from generic postinstall.
+assert "cat '$POSTINSTALL_EXEC_MARKER'" "per-tool-dep"

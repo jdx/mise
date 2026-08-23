@@ -53,6 +53,9 @@ mkdir -p "$ASDF_INSTALL_PATH/bin"
 cp "$ASDF_DOWNLOAD_PATH/dependency-path" "$ASDF_INSTALL_PATH/download-dependency-path"
 command -v node >"$ASDF_INSTALL_PATH/install-dependency-path"
 node install >/dev/null
+if command -v undeclared-active >/dev/null 2>&1; then
+  undeclared-active >"$ASDF_INSTALL_PATH/undeclared-active-output"
+fi
 printf '%s\n' "$PATH" >"$ASDF_INSTALL_PATH/install-path"
 cat >"$ASDF_INSTALL_PATH/bin/asdf-path-dependent" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -82,3 +85,36 @@ assert "cat '$DEPENDENT_PATH/download-dependency-path'" "$DEPENDENCY_BIN"
 assert "cat '$DEPENDENT_PATH/install-dependency-path'" "$DEPENDENCY_BIN"
 assert "tr ':' '\n' <'$DEPENDENT_PATH/install-path' | grep -Fxc '$(dirname "$DEPENDENCY_BIN")'" "1"
 assert "mise exec -- asdf-path-dependent" "installed"
+
+# An already-installed active tool is not exposed unless it is declared as an
+# install dependency or is already present on the ambient PATH.
+UNDECLARED_PLUGIN_DIR="$MISE_DATA_DIR/plugins/asdf-undeclared-active"
+mkdir -p "$UNDECLARED_PLUGIN_DIR/bin"
+cat >"$UNDECLARED_PLUGIN_DIR/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+cat >"$UNDECLARED_PLUGIN_DIR/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat >"$ASDF_INSTALL_PATH/bin/undeclared-active" <<'SCRIPT'
+#!/usr/bin/env bash
+echo undeclared-active
+SCRIPT
+chmod +x "$ASDF_INSTALL_PATH/bin/undeclared-active"
+EOF
+chmod +x "$UNDECLARED_PLUGIN_DIR/bin/list-all" "$UNDECLARED_PLUGIN_DIR/bin/install"
+
+mise install asdf:undeclared-active@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+"asdf:asdf-path-dependent" = { version = "1.0.0", depends = ["nodejs"] }
+node = "1.0.0"
+"asdf:undeclared-active" = "1.0.0"
+EOF
+rm -rf "$DEPENDENT_PATH"
+mise install asdf:asdf-path-dependent
+
+DEPENDENT_PATH="$(mise where asdf:asdf-path-dependent)"
+assert_fail "test -f '$DEPENDENT_PATH/undeclared-active-output'"

@@ -9,6 +9,7 @@ use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::{Config, Settings};
 use crate::env::{PATH_KEY, WARN_ON_MISSING_REQUIRED_ENV};
 use crate::env_diff::EnvMap;
+use crate::install_context::InstallDependencyContext;
 use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
@@ -45,7 +46,36 @@ impl Toolset {
         env.extend(self.env_with_path_without_tools(config).await?);
         Ok(env)
     }
+}
 
+impl InstallDependencyContext {
+    /// Build an install-hook base environment from this context's resolved
+    /// dependency toolset and its already-validated paths. `tools = true`
+    /// directives remain excluded because a partial install context cannot
+    /// evaluate arbitrary modules.
+    pub(crate) async fn base_env_for_install(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        let mut full_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
+        let (mut env, add_paths) = self.toolset.env(config).await?;
+        let mut path_env = PathEnv::new();
+        for path in &self.paths {
+            path_env.add(path.clone());
+        }
+        for path in config.path_dirs().await?.clone() {
+            path_env.add(path);
+        }
+        for path in add_paths {
+            path_env.add(path);
+        }
+        for path in pristine_path_without_install_dirs() {
+            path_env.add(path);
+        }
+        env.insert(PATH_KEY.to_string(), path_env.to_string());
+        full_env.extend(env);
+        Ok(full_env)
+    }
+}
+
+impl Toolset {
     /// Like env_with_path but skips `tools=true` env directives.
     /// Used during tool installation where tool-dependent env vars
     /// may reference tools that aren't installed yet, and in

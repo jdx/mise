@@ -23,3 +23,174 @@ else
   echo "Output: $output"
   exit 1
 fi
+
+create_dependency_plugin() {
+  local name="$1"
+  local list_paths_mode="$2"
+  local plugin_dir="$MISE_DATA_DIR/plugins/asdf-$name"
+  mkdir -p "$plugin_dir/bin"
+  cat >"$plugin_dir/bin/list-all" <<'EOF'
+#!/usr/bin/env bash
+echo 1.0.0
+EOF
+  cat >"$plugin_dir/bin/install" <<EOF
+#!/usr/bin/env bash
+set -eu
+mkdir -p "\$ASDF_INSTALL_PATH"
+touch "\$ASDF_INSTALL_PATH/installed"
+if [ "$list_paths_mode" = normal ]; then
+  mkdir -p "\$ASDF_INSTALL_PATH/bin"
+  cat >"\$ASDF_INSTALL_PATH/bin/$name" <<'SCRIPT'
+#!/usr/bin/env bash
+echo managed
+SCRIPT
+  chmod +x "\$ASDF_INSTALL_PATH/bin/$name"
+fi
+EOF
+  if [ "$list_paths_mode" = error ]; then
+    cat >"$plugin_dir/bin/list-bin-paths" <<'EOF'
+#!/usr/bin/env bash
+echo "list-bin-paths failed on purpose" >&2
+exit 1
+EOF
+  elif [ "$list_paths_mode" = zero ]; then
+    cat >"$plugin_dir/bin/list-bin-paths" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  fi
+  chmod +x "$plugin_dir/bin/"*
+}
+
+create_dependency_plugin strict-dependency normal
+mkdir -p "$HOME/bin"
+cat >"$HOME/bin/strict-dependency" <<'EOF'
+#!/usr/bin/env bash
+echo ambient
+EOF
+chmod +x "$HOME/bin/strict-dependency"
+export PATH="$HOME/bin:$PATH"
+
+# A configured dependency must be installed even when a same-named ambient
+# executable exists, and validation occurs before the target path is created.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", depends = ["asdf:strict-dependency"] }
+"asdf:strict-dependency" = "1.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+rm -rf "$MISE_DATA_DIR/installs/strict-dependency/1.0.0"
+assert_fail_contains "mise install dummy" "selected version is not installed"
+assert_fail_contains "mise install dummy" "mise install asdf:strict-dependency@1.0.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Offline resolution failures are strict and also precede target mutation.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", depends = ["asdf:strict-dependency"] }
+"asdf:strict-dependency" = "latest"
+EOF
+assert_fail_contains "mise install dummy" "failed to resolve configured install dependency"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# A lockfile-resolved opaque version is resolved even when it has no dotted
+# release shape. If it is absent, report the actionable missing-install error.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", depends = ["asdf:strict-dependency"] }
+"asdf:strict-dependency" = "latest"
+
+[settings]
+lockfile = true
+EOF
+cat >mise.lock <<'EOF'
+[[tools."asdf:strict-dependency"]]
+version = "20260822"
+EOF
+locked_output="$(quiet_assert_fail "mise install dummy")"
+assert_contains_text "$locked_output" "selected version is not installed"
+assert_contains_text "$locked_output" "mise install asdf:strict-dependency@latest"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# An unconfigured declaration can be satisfied by the existing system PATH.
+SYSTEM_MARKER="$PWD/system-dependency-marker"
+cat >"$HOME/bin/system-only-dependency" <<'EOF'
+#!/usr/bin/env bash
+echo system
+EOF
+chmod +x "$HOME/bin/system-only-dependency"
+cat >mise.toml <<EOF
+[tools]
+dummy = { version = "1.0.0", depends = ["system-only-dependency"], postinstall = "system-only-dependency > '$SYSTEM_MARKER'" }
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise install dummy
+assert "cat '$SYSTEM_MARKER'" "system"
+
+# Backend list-bin-paths errors from an installed dependency are fatal and name
+# both sides of the relationship.
+create_dependency_plugin path-error error
+mise install asdf:path-error@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", depends = ["asdf:path-error"] }
+"asdf:path-error" = "1.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+path_error_output="$(quiet_assert_fail "mise install dummy")"
+assert_contains_text "$path_error_output" "failed to list bin paths for install dependency"
+assert_contains_text "$path_error_output" "path-error@1.0.0"
+assert_contains_text "$path_error_output" "dummy@1.0.0"
+assert_directory_not_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# An installed dependency may intentionally contribute no executable paths.
+create_dependency_plugin zero-paths zero
+mise install asdf:zero-paths@1.0.0
+cat >mise.toml <<'EOF'
+[tools]
+dummy = { version = "1.0.0", depends = ["asdf:zero-paths"] }
+"asdf:zero-paths" = "1.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise install dummy
+assert_contains "mise ls --installed dummy" "1.0.0"
+
+# Generic postinstall PATH ordering is target, declared dependencies, then the
+# existing PATH, with the first exact occurrence winning.
+create_dependency_plugin path-order normal
+cat >"$MISE_DATA_DIR/plugins/asdf-path-order/bin/install" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+mkdir -p "$ASDF_INSTALL_PATH/bin"
+cat >"$ASDF_INSTALL_PATH/bin/dummy" <<'SCRIPT'
+#!/usr/bin/env bash
+echo dependency-dummy
+SCRIPT
+cat >"$ASDF_INSTALL_PATH/bin/dependency-command" <<'SCRIPT'
+#!/usr/bin/env bash
+echo managed-dependency
+SCRIPT
+chmod +x "$ASDF_INSTALL_PATH/bin/dummy" "$ASDF_INSTALL_PATH/bin/dependency-command"
+EOF
+cat >"$HOME/bin/dummy" <<'EOF'
+#!/usr/bin/env bash
+echo ambient-dummy
+EOF
+cat >"$HOME/bin/dependency-command" <<'EOF'
+#!/usr/bin/env bash
+echo ambient-dependency
+EOF
+chmod +x "$HOME/bin/dummy" "$HOME/bin/dependency-command"
+mise install asdf:path-order@1.0.0
+
+TARGET_ORDER_MARKER="$PWD/target-order-marker"
+DEPENDENCY_ORDER_MARKER="$PWD/dependency-order-marker"
+cat >mise.toml <<EOF
+[tools]
+dummy = { version = "1.0.0", depends = ["asdf:path-order"], postinstall = "dummy > '$TARGET_ORDER_MARKER'; dependency-command > '$DEPENDENCY_ORDER_MARKER'" }
+"asdf:path-order" = "1.0.0"
+EOF
+rm -rf "$MISE_DATA_DIR/installs/dummy/1.0.0"
+mise install dummy
+assert_contains "cat '$TARGET_ORDER_MARKER'" "This is Dummy 1.0.0"
+assert "cat '$DEPENDENCY_ORDER_MARKER'" "managed-dependency"
