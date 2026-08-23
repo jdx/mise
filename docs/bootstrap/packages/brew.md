@@ -136,9 +136,8 @@ Privacy & Security grants for that app (Accessibility, Screen Recording, Full
 Disk Access, Automation, and similar). mise does not manage TCC; after a
 replace you may need to re-grant permissions in System Settings.
 
-When migrating a machine that already has casks installed (for example from
-Homebrew or a nix-darwin brew integration), prefer adoption so mise records
-ownership without swapping the live bundle:
+When migrating an unmanaged app bundle that has no Homebrew `.metadata`, prefer
+adoption so mise records ownership without swapping the live bundle:
 
 ```toml
 [bootstrap.brew]
@@ -206,18 +205,26 @@ error instead of delegating to Homebrew.
 
 Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
-receipts. If Homebrew metadata already exists for a cask, mise preserves it and
-fails before mutation rather than taking over Homebrew's lifecycle state.
-Status treats a cask as installed when its receipt and recorded targets are
-still present. App and font content fingerprints are kept for prune and adopt
-safety, but content drift inside an existing app or font does **not** mark the
-cask missing or trigger a reinstall on apply — replacing `/Applications/*.app`
-resets macOS Privacy & Security (TCC) grants. Binary and completion symlinks
-still require the recorded link destination (a cheap `readlink`) and a
-resolvable target, so dangling or retargeted links stay repairable. Missing or
-unknown receipts and pending transactions are still reported as unhealthy so
-the next apply can reconcile them. Version upgrades and an explicit remove +
-apply still replace the app when you want a fresh pour.
+receipts. A Homebrew-owned cask with `.metadata` and exactly one Caskroom version
+satisfies a matching `brew-cask:` entry without transferring ownership.
+Status reports it as installed, apply leaves it unchanged, and upgrade skips its
+lifecycle. mise does not create `.mise-cask.toml`, adopt the cask, or change its
+metadata, app targets, prefix binaries, or completion links; use Homebrew to
+upgrade, reinstall, or remove it.
+Homebrew metadata with no version or multiple versions fails with Homebrew
+repair guidance instead of guessing which installation is valid.
+
+For mise-owned casks, status treats a cask as installed when its receipt and
+recorded targets are still present. App and font content fingerprints are kept
+for prune and adopt safety, but content drift inside an existing app or font
+does **not** mark the cask missing or trigger a reinstall on apply — replacing
+`/Applications/*.app` resets macOS Privacy & Security (TCC) grants. Binary and
+completion symlinks still require the recorded link destination (a cheap
+`readlink`) and a resolvable target, so dangling or retargeted links stay
+repairable. Missing or unknown receipts and pending transactions are still
+reported as unhealthy so the next apply can reconcile them. Version upgrades
+and an explicit remove + apply still replace the app when you want a fresh
+pour.
 
 This exists because shared-library packages — postgres, ffmpeg, imagemagick,
 php — fundamentally can't be served by mise's per-project backends like
