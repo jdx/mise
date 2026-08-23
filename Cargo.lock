@@ -1489,7 +1489,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.10.5",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -2018,55 +2018,6 @@ dependencies = [
  "libc",
  "libloading 0.8.9",
 ]
-
-[[package]]
-name = "clap"
-version = "4.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "473c7e07f409a8d772161724aa8db6a765a2532a70f9667eeb7b49d3d02fbdca"
-dependencies = [
- "clap_builder",
- "clap_derive",
-]
-
-[[package]]
-name = "clap-sort"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c9f374a541bd277ba6f4ccd08d955024ba09fda8dfc69ca1a750799ebed97a9"
-dependencies = [
- "clap",
-]
-
-[[package]]
-name = "clap_builder"
-version = "4.6.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b48fea5a88e9ae728a2dcbedbfc0e730f7d60da42e1cb049a83c9fb8b789889"
-dependencies = [
- "anstream",
- "anstyle",
- "clap_lex",
- "strsim",
-]
-
-[[package]]
-name = "clap_derive"
-version = "4.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d012d2b9d65aca7f18f4d9878a045bc17899bba951561ba5ec3c2ba1eed9a061"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "clap_lex"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "clru"
@@ -4313,7 +4264,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a791e6620676a875f362f3156ed213e73ca099a09bf992c18812abe65cc37b1"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -6364,8 +6315,6 @@ dependencies = [
  "chacha20poly1305 0.11.0",
  "chrono",
  "ci_info",
- "clap",
- "clap-sort",
  "clx",
  "color-eyre",
  "color-print",
@@ -6475,6 +6424,7 @@ dependencies = [
  "url",
  "urlencoding",
  "usage-lib",
+ "usage-rs",
  "versions",
  "vfox",
  "walkdir",
@@ -7299,7 +7249,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bitfields",
  "block-padding",
  "blowfish",
@@ -9582,7 +9532,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
@@ -11116,11 +11066,10 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "5.1.0"
+version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12698ad30baf6deeaf269f22385352c52dfadc27526e886a07b077e6fb25d17e"
+checksum = "7e786797f739c30c4f69bef3e33b6494554522f2f78d8f62260a21d8175c3d8e"
 dependencies = [
- "clap",
  "heck",
  "indexmap 2.14.0",
  "itertools 0.15.0",
@@ -11135,7 +11084,6 @@ dependencies = [
  "tera 2.1.1",
  "thiserror 2.0.20",
  "versions",
- "xx",
 ]
 
 [[package]]
@@ -11243,7 +11191,6 @@ dependencies = [
 name = "vfox"
 version = "2026.7.2"
 dependencies = [
- "clap",
  "env_logger",
  "glob",
  "homedir",
@@ -11262,6 +11209,7 @@ dependencies = [
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "url",
+ "usage-rs",
  "wiremock",
  "xx",
 ]
