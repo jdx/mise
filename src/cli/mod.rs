@@ -1170,7 +1170,7 @@ mod tests {
             vec!["mise", "version"],
             vec!["mise", "v"],
         ] {
-            let cli = Cli::try_parse_from(&args).unwrap();
+            let cli = parse_cli(&args).unwrap();
             assert!(
                 !cli.command
                     .as_ref()
@@ -1179,7 +1179,7 @@ mod tests {
             );
         }
 
-        let cli = Cli::try_parse_from(["mise", "install"]).unwrap();
+        let cli = parse_cli(&["mise", "install"]).unwrap();
         assert!(
             cli.command
                 .as_ref()
