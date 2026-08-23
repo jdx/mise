@@ -463,15 +463,22 @@ fn get_all_run_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(Str
 /// Prefix used to escape flags that should be passed to tasks, not mise
 const TASK_ARG_ESCAPE_PREFIX: &str = "\x00MISE_TASK_ARG\x00";
 
+/// One task-side argument, with a leading flag hidden from the parser.
+///
+/// A lone `-` is the conventional stdin placeholder rather than a flag, so it passes through. That
+/// exception was written out at each of the three places that needed this rule; this is the only
+/// copy of it now.
+fn escape_flag_arg(arg: &str) -> String {
+    if arg.starts_with('-') && arg != "-" {
+        format!("{TASK_ARG_ESCAPE_PREFIX}{arg}")
+    } else {
+        arg.to_string()
+    }
+}
+
 fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<String> {
     let mut result = args[..=separator_idx].to_vec();
-    for arg in &args[separator_idx + 1..] {
-        if arg.starts_with('-') && arg != "-" {
-            result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
-        } else {
-            result.push(arg.clone());
-        }
-    }
+    result.extend(args[separator_idx + 1..].iter().map(|a| escape_flag_arg(a)));
     result
 }
 
@@ -619,14 +626,10 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
         // First protect task-side flags before the separator (`run TASK -q -- ...`),
         // then preserve the existing escaping for its tail.
         let mut result = escape_task_args(cmd, &args[..separator_idx]);
-        result.push("--".to_string());
-        for arg in &args[separator_idx + 1..] {
-            if arg.starts_with('-') && arg != "-" {
-                result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
-            } else {
-                result.push(arg.clone());
-            }
-        }
+        // `separator_idx` was found by matching `"--"`, so the slice starting there begins with it:
+        // `escape_args_after_separator(.., 0)` emits that element and then escapes the tail, which
+        // is what this branch used to build by hand.
+        result.extend(escape_args_after_separator(&args[separator_idx..], 0));
         return result;
     }
 
@@ -699,13 +702,8 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
                 in_task_args = true;
             }
         } else {
-            // In task args - escape flags so clap doesn't parse them
-            if arg.starts_with('-') && arg != "-" {
-                // Escape the flag
-                result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
-            } else {
-                result.push(arg.clone());
-            }
+            // In task args - escape flags so the parser doesn't take them
+            result.push(escape_flag_arg(arg));
         }
 
         i += 1;
@@ -1353,6 +1351,21 @@ mod tests {
         }
 
         check(Cli::command(), &mut Vec::new());
+    }
+
+    #[test]
+    fn test_escape_flag_arg_leaves_a_lone_hyphen_alone() {
+        // The exception the three copies of this rule each carried: `-` on its own is the
+        // conventional stdin placeholder, not a flag, and a task that reads stdin needs it to
+        // arrive unchanged. Now that the rule has one home, it is asserted there.
+        assert_eq!(escape_flag_arg("-"), "-");
+        assert_eq!(escape_flag_arg("plain"), "plain");
+        assert!(escape_flag_arg("--help").starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert!(escape_flag_arg("-q").starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert_eq!(
+            unescape_task_args(&[escape_flag_arg("--help")]),
+            vec!["--help".to_string()]
+        );
     }
 
     #[test]
