@@ -15,8 +15,9 @@ use crate::toolset::is_outdated_version;
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::outdated_info::prefixed_latest_query;
 use crate::toolset::{
-    ConfigScope, InstallOptions, ResolveOptions, ToolSource, ToolVersion, ToolsetBuilder,
-    get_versions_needed_by_tracked_configs_excluding_locks, get_versions_needed_by_tracked_stubs,
+    ConfigScope, InstallOptions, NeededVersions, ResolveOptions, ToolSource, ToolVersion,
+    ToolsetBuilder, get_versions_needed_by_tracked_configs_excluding_locks,
+    get_versions_needed_by_tracked_stubs,
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
@@ -514,7 +515,7 @@ impl Upgrade {
         // actually up for removal — with --no-prune, or when every upgrade was in-place,
         // the answer would be discarded.
         let versions_needed_by_tracked = if to_remove.is_empty() {
-            HashSet::new()
+            NeededVersions::new()
         } else {
             let mut needed = get_versions_needed_by_tracked_configs_excluding_locks(
                 config,
@@ -541,7 +542,7 @@ impl Upgrade {
                 // on the toolset version would give the wrong key.
                 let old_tv = ToolVersion::new(o.tool_version.request.clone(), old_version.clone());
                 let version_key = (old_tv.ba().short.to_string(), old_tv.tv_pathname());
-                if versions_needed_by_tracked.contains(&version_key) {
+                if versions_needed_by_tracked.contains_key(&version_key) {
                     debug!(
                         "Keeping {}@{} because it's still needed by a tracked config or tool stub",
                         o.name, old_version
