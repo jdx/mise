@@ -267,6 +267,7 @@ pub(crate) fn apply_with_dry_run_actions(
             "compose projects: apply {} change(s)?",
             changes.len()
         ))?
+        .is_yes()
     {
         info!("compose projects: skipped");
         return Ok(());

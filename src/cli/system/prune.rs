@@ -83,7 +83,7 @@ impl SystemPrune {
             .collect::<Vec<_>>();
         if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let msg = format!("brew: prune {}?", remove.join(", "));
-            if !prompt::confirm(msg)? {
+            if !prompt::confirm(msg)?.is_yes() {
                 info!("brew: skipped");
                 return Ok(());
             }
@@ -130,7 +130,7 @@ impl SystemPrune {
             .collect::<Vec<_>>();
         if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
             let msg = format!("brew-cask: prune {}?", remove.join(", "));
-            if !prompt::confirm(msg)? {
+            if !prompt::confirm(msg)?.is_yes() {
                 info!("brew-cask: skipped");
                 return Ok(());
             }

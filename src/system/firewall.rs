@@ -742,6 +742,7 @@ pub(crate) fn apply(request: &FirewallRequest, dry_run: bool, yes: bool) -> Resu
                 ""
             }
         ))?
+        .is_yes()
     {
         info!("firewall: skipped");
         return Ok(());

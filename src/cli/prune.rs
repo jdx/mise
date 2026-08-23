@@ -169,7 +169,7 @@ async fn delete(
         }
         if !dry_run
             && !Settings::get().yes
-            && !prompt::confirm_with_all(format!("remove {} ?", tv))?
+            && !prompt::confirm_with_all(format!("remove {} ?", tv))?.is_yes()
         {
             continue;
         }
