@@ -1468,9 +1468,11 @@ Write to this config file or directory
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Supports Homebrew formulae and conservatively removable, mise\-owned casks.
+Supports Homebrew formulae, conservatively removable mise\-owned casks, and
+packages installed by package plugins that implement `PackageUninstall`.
 Pruning keeps packages needed by the current config or by trusted, loadable
-tracked configs.
+tracked configs. Plugin packages that were already installed before mise
+first applied them are never claimed or removed.
 .PP
 \fBUsage:\fR mise bootstrap packages prune [OPTIONS]
 .PP

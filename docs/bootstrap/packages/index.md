@@ -86,8 +86,9 @@ declarative sections work the same way:
   keys. A project can add packages on top of the global list (and override a
   global entry's version pin) but not remove them. For Homebrew formulae,
   `mise bootstrap packages prune` is an explicit destructive command that
-  removes linked formulae or safely prunable mise-owned casks no longer needed
-  by the current config or by trusted, loadable tracked configs.
+  removes linked formulae, safely prunable mise-owned casks, or packages owned
+  by uninstall-capable package plugins when they are no longer needed by the
+  current config or by trusted, loadable tracked configs.
 - **OS-filtered** — entries whose `os` selector does not match and entries for
   a manager that isn't available on the current machine are not acted on, so
   the same config works across platforms: `apt` entries are ignored on macOS,
@@ -141,6 +142,8 @@ mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
 mise bootstrap packages prune --manager brew-cask # remove safely prunable mise casks
 mise bootstrap packages prune --manager brew-cask --dry-run
+mise bootstrap packages prune --manager vscode # remove mise-owned plugin packages
+mise bootstrap packages prune --manager vscode --dry-run
 
 mise bootstrap packages upgrade           # upgrade installed packages to current versions
 mise bootstrap packages upgrade --manager brew
@@ -177,6 +180,13 @@ fingerprints. It skips older receipts, Homebrew-owned casks, pkg and command
 wrapper artifacts, casks with lifecycle actions, changed or shared targets,
 and incomplete transactions. Skips include a reason, and `zap` metadata is
 never applied.
+
+For a package-plugin manager, prune considers only packages mise observed
+transition from missing to installed during `PackageInstall`. Existing or
+manually installed packages are never adopted. The plugin must implement
+`PackageUninstall`; dry runs print the approved removal batch without invoking
+the hook, and mise verifies removals with `PackageInstalled` before updating its
+ownership state.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available

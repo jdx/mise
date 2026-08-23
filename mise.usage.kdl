@@ -778,15 +778,15 @@ Pass `--all` to import every linked formula, including dependencies.
             long_help #"""
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Supports Homebrew formulae and conservatively removable, mise-owned casks.
+Supports Homebrew formulae, conservatively removable mise-owned casks, and
+packages installed by package plugins that implement `PackageUninstall`.
 Pruning keeps packages needed by the current config or by trusted, loadable
-tracked configs.
+tracked configs. Plugin packages that were already installed before mise
+first applied them are never claimed or removed.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew-cask --dry-run\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager brew-cask --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages prune --manager vscode --dry-run\u{1b}[22m\n"
             flag "-m --manager" help="Only prune packages for this manager" default=brew {
-                arg <MANAGER> {
-                    choices brew brew-cask
-                }
+                arg <MANAGER>
             }
             flag "-n --dry-run" help="Print what would be removed without deleting anything"
             flag "-y --yes" help="Skip the confirmation prompt"

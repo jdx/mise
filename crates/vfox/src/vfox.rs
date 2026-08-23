@@ -19,6 +19,7 @@ use crate::hooks::mise_env::{MiseEnvContext, MiseEnvResult};
 use crate::hooks::mise_path::MisePathContext;
 use crate::hooks::package::{
     PackageActionContext, PackageActionResponse, PackageInstalledContext, PackageInstalledResponse,
+    PackageUninstallContext,
 };
 use crate::hooks::parse_legacy_file::ParseLegacyFileResponse;
 use crate::hooks::post_install::PostInstallContext;
@@ -589,6 +590,14 @@ impl Vfox {
         ctx: PackageActionContext,
     ) -> Result<PackageActionResponse> {
         self.get_sdk_with_env(sdk)?.package_upgrade(ctx).await
+    }
+
+    pub async fn package_uninstall(
+        &self,
+        sdk: &str,
+        ctx: PackageUninstallContext,
+    ) -> Result<PackageActionResponse> {
+        self.get_sdk_with_env(sdk)?.package_uninstall(ctx).await
     }
 
     pub async fn mise_path<T: serde::Serialize>(

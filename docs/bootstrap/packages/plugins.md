@@ -32,6 +32,7 @@ mise bootstrap plugins status --missing
 mise bootstrap plugins apply
 mise bootstrap packages status
 mise bootstrap packages apply
+mise bootstrap packages prune --manager vscode --dry-run
 ```
 
 You can install a plugin without declaring it:
@@ -46,8 +47,12 @@ do not create mise installs or shims, never elevate with `sudo`, and are not
 affected by `system_packages.sudo`. The `system_packages.managers` setting is
 name-based and can include or exclude plugin managers just like built-ins.
 
-Package removal and pruning are not supported in the first version of this API.
-Removing a config entry does not uninstall host-managed state.
+Plugins may implement `PackageUninstall` to support the explicit destructive
+command `mise bootstrap packages prune --manager <plugin>`. mise removes only
+packages it observed transition from missing to installed during a plugin
+install; packages that were already present are never claimed. Prune also keeps
+packages referenced by the current config or trusted, loadable tracked configs.
+Removing a config entry alone does not uninstall host-managed state.
 
 See [Package Plugin Development](/package-plugin-development.html) to create a
 plugin.
