@@ -23,7 +23,7 @@ pub(super) struct TaskStubs {
 
     /// Path to a mise bin to use when running the task stub.
     ///
-    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
+    /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
     #[usage(long, short, verbatim_doc_comment, default = "mise")]
     mise_bin: PathBuf,
 }
