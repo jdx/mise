@@ -321,6 +321,19 @@ impl PackagePluginManager {
         changed
     }
 
+    fn reconcile_missing_ownership(
+        state: &mut PackagePluginState,
+        statuses: &[PackageStatus],
+    ) -> bool {
+        let mut changed = false;
+        for status in statuses {
+            if matches!(status.state, PackageState::Missing) {
+                changed |= state.packages.remove(&status.request.name).is_some();
+            }
+        }
+        changed
+    }
+
     pub(crate) async fn prune_plan(
         &self,
         configured: &[PackageRequest],
@@ -357,8 +370,20 @@ impl PackagePluginManager {
         let _lock = self.operation_lock()?;
         let mut state = self.load_state()?;
         let mut state_changed = false;
-        for name in &plan.stale {
-            state_changed |= state.packages.remove(name).is_some();
+        let stale_requests = plan
+            .stale
+            .iter()
+            .filter_map(|name| {
+                state.packages.get(name).map(|owned| PackageRequest {
+                    name: name.clone(),
+                    version: owned.version.clone(),
+                    tap_url: None,
+                })
+            })
+            .collect::<Vec<_>>();
+        if !stale_requests.is_empty() {
+            let stale_statuses = self.installed(&stale_requests).await?;
+            state_changed |= Self::reconcile_missing_ownership(&mut state, &stale_statuses);
         }
         let requests = plan
             .remove
@@ -383,11 +408,7 @@ impl PackagePluginManager {
                 })
             })
             .collect::<Vec<_>>();
-        for status in &before {
-            if matches!(status.state, PackageState::Missing) {
-                state.packages.remove(&status.request.name);
-            }
-        }
+        Self::reconcile_missing_ownership(&mut state, &before);
         self.save_state(&state)?;
         if present.is_empty() {
             return Ok(0);
@@ -719,5 +740,36 @@ mod tests {
             Some("nightly-2026.08")
         );
         assert!(!state.packages.contains_key("manual"));
+    }
+
+    #[test]
+    fn stale_reconciliation_rechecks_status_before_dropping_ownership() {
+        let mut state = state("fake");
+        let statuses = vec![
+            PackageStatus {
+                request: PackageRequest {
+                    name: "keep".to_string(),
+                    version: Some("nightly-2026.07".to_string()),
+                    tap_url: None,
+                },
+                state: PackageState::Installed {
+                    version: "nightly-2026.07".to_string(),
+                },
+            },
+            PackageStatus {
+                request: PackageRequest {
+                    name: "remove".to_string(),
+                    version: Some("release:edge".to_string()),
+                    tap_url: None,
+                },
+                state: PackageState::Missing,
+            },
+        ];
+
+        assert!(PackagePluginManager::reconcile_missing_ownership(
+            &mut state, &statuses
+        ));
+        assert!(state.packages.contains_key("keep"));
+        assert!(!state.packages.contains_key("remove"));
     }
 }
