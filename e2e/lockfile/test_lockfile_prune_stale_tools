@@ -67,6 +67,8 @@ assert_not_contains "echo \"$OUTPUT\"" "No tools configured to lock"
 # empty lockfile should just have header and tools section
 assert "cat mise.lock" "$LOCKFILE_HEADER
 
+lockfile_version = 1
+
 [tools]"
 
 echo "=== Cleanup ==="

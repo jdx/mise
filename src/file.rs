@@ -443,13 +443,44 @@ pub(crate) fn write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Res
     fs::write(path, contents).wrap_err_with(|| format!("failed write: {}", display_path(path)))
 }
 
-/// Writes a complete replacement beside `path`, then atomically renames it into place.
+pub(crate) struct PreparedAtomicWrite {
+    temporary: tempfile::NamedTempFile,
+    target: PathBuf,
+    parent: PathBuf,
+}
+
+impl PreparedAtomicWrite {
+    /// Atomically renames this already-written replacement into place.
+    pub(crate) fn commit(self) -> Result<()> {
+        // The hint matters most here. `tempfile`'s persist does not get the extended-length path
+        // handling `std::fs` applies, so this is the operation that fails first as a path
+        // approaches `MAX_PATH` -- measured breaking at a 253-character target while `fs::rename`
+        // on the same tree succeeded at 415.
+        persist_atomic(self.temporary, &self.target).map_err(|e| {
+            let msg = format!("failed atomic write: {}", display_path(&self.target));
+            // Resolve the hint before `wrap_err` takes `e` by value: `downcast_ref` borrows it,
+            // and doing both in one expression leaves the borrow alive across the move.
+            let msg = match e.downcast_ref::<std::io::Error>() {
+                Some(io) => with_io_hint(msg, &self.target, io),
+                None => msg,
+            };
+            e.wrap_err(msg)
+        })?;
+        sync_dir(&self.parent)?;
+        Ok(())
+    }
+}
+
+/// Writes and syncs a complete replacement beside `path` without changing `path` yet.
 ///
 /// New files use ordinary write permissions subject to the process umask. Replacements preserve
 /// the destination's existing Unix permissions.
-pub(crate) fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+pub(crate) fn prepare_atomic_write<P: AsRef<Path>, C: AsRef<[u8]>>(
+    path: P,
+    contents: C,
+) -> Result<PreparedAtomicWrite> {
     let path = path.as_ref();
-    trace!("write_atomic {}", display_path(path));
+    trace!("prepare_atomic_write {}", display_path(path));
     let target = atomic_write_target(path)?;
     let path = target.as_path();
     let parent = path
@@ -484,22 +515,19 @@ pub(crate) fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C)
     temporary.write_all(contents.as_ref())?;
 
     temporary.as_file_mut().sync_all()?;
-    // The hint matters most here. `tempfile`'s persist does not get the extended-length path
-    // handling `std::fs` applies, so this is the operation that fails first as a path approaches
-    // `MAX_PATH` -- measured breaking at a 253-character target while `fs::rename` on the same
-    // tree succeeded at 415.
-    persist_atomic(temporary, path).map_err(|e| {
-        let msg = format!("failed atomic write: {}", display_path(path));
-        // Resolve the hint before `wrap_err` takes `e` by value: `downcast_ref` borrows it, and
-        // doing both in one expression leaves the borrow alive across the move.
-        let msg = match e.downcast_ref::<std::io::Error>() {
-            Some(io) => with_io_hint(msg, path, io),
-            None => msg,
-        };
-        e.wrap_err(msg)
-    })?;
-    sync_dir(parent)?;
-    Ok(())
+    let parent = parent.to_path_buf();
+    Ok(PreparedAtomicWrite {
+        temporary,
+        target,
+        parent,
+    })
+}
+
+/// Writes a complete replacement beside `path`, then atomically renames it into place.
+pub(crate) fn write_atomic<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+    let path = path.as_ref();
+    trace!("write_atomic {}", display_path(path));
+    prepare_atomic_write(path, contents)?.commit()
 }
 
 pub(crate) fn atomic_write_target(path: &Path) -> Result<PathBuf> {

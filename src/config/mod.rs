@@ -3414,7 +3414,7 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
             .await
             .wrap_err("failed to rebuild shims")?;
     });
-    lockfile::migrate_monorepo_lockfiles(config)?;
+    lockfile::migrate_monorepo_lockfiles(config, false)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
     // current-platform entries — auto-lock uses this to tell a curated lockfile
     // (existing entries are authoritative) from a fresh one (expand to common).

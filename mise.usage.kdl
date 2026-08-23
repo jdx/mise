@@ -2314,6 +2314,17 @@ Existing matching lockfile entries are preserved and are not downgraded solely b
 """#
         arg <MINIMUM_RELEASE_AGE>
     }
+    flag --upgrade help="Upgrade legacy lockfiles to the latest format" {
+        long_help #"""
+Upgrade legacy lockfiles to the latest format
+
+Existing unversioned lockfiles use format version 0 and are otherwise
+preserved to avoid unexpected lockfile drift. This flag upgrades them
+to the latest format with request-specific version bindings.
+Format upgrades always process every configured tool and cannot be
+combined with tool arguments.
+"""#
+    }
     arg "[TOOL]…" help=#"""
 Tool(s) to update in lockfile
 e.g.: node python

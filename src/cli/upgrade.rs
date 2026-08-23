@@ -165,7 +165,7 @@ impl Upgrade {
         }
         let mut config = Config::get().await?;
         if !self.is_dry_run() {
-            crate::lockfile::migrate_monorepo_lockfiles(&config)?;
+            crate::lockfile::migrate_monorepo_lockfiles(&config, false)?;
         }
         let ts = ToolsetBuilder::new()
             .with_args(&self.tool)
