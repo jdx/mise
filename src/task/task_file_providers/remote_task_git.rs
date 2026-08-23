@@ -1,5 +1,5 @@
 use crate::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 
@@ -67,28 +67,49 @@ impl GitRepoStructure {
     }
 }
 
+/// Ensure a remote task path resolves inside its Git checkout and points at a
+/// regular file or directory.
+pub(crate) fn validate_remote_git_path(
+    checkout_root: &Path,
+    path: &Path,
+) -> Result<std::fs::Metadata> {
+    let metadata = path.symlink_metadata()?;
+    if !path
+        .canonicalize()?
+        .starts_with(checkout_root.canonicalize()?)
+    {
+        eyre::bail!(
+            "remote task path escapes its Git checkout: {}",
+            display_path(path)
+        );
+    }
+    if metadata.file_type().is_file() || metadata.file_type().is_dir() {
+        return Ok(metadata);
+    }
+    eyre::bail!(
+        "remote task path is not a regular file or directory: {}",
+        display_path(path)
+    )
+}
+
 impl RemoteTaskGit {
     /// Make fetched task files executable while leaving task include directories intact.
-    fn prepare_remote_path(path: &PathBuf) -> Result<()> {
-        let metadata = path.symlink_metadata()?;
-        if metadata.file_type().is_file() {
-            return file::make_executable(path);
+    fn prepare_remote_path(checkout_root: &Path, path: &Path) -> Result<()> {
+        if validate_remote_git_path(checkout_root, path)?
+            .file_type()
+            .is_file()
+        {
+            file::make_executable(path)?;
         }
-        if metadata.file_type().is_dir() {
-            return Ok(());
-        }
-        eyre::bail!(
-            "remote task path is not a regular file or directory: {}",
-            display_path(path)
-        )
+        Ok(())
     }
 
-    fn prepare_cached_path(path: &PathBuf, destination: &PathBuf) -> Result<()> {
-        if let Err(err) = Self::prepare_remote_path(path) {
-            if let Err(cleanup_err) = crate::file::remove_all(destination) {
+    fn prepare_cached_path(checkout_root: &Path, path: &Path) -> Result<()> {
+        if let Err(err) = Self::prepare_remote_path(checkout_root, path) {
+            if let Err(cleanup_err) = crate::file::remove_all(checkout_root) {
                 warn!(
                     "failed to remove unusable remote Git task checkout {}: {cleanup_err:#}",
-                    display_path(destination)
+                    display_path(checkout_root)
                 );
             }
             return Err(err);
@@ -151,7 +172,7 @@ impl RemoteTaskGit {
 
         if reuse_existing && full_path.exists() {
             debug!("Using cached file: {:?}", full_path);
-            Self::prepare_cached_path(&full_path, destination)?;
+            Self::prepare_cached_path(destination, &full_path)?;
             return Ok(full_path);
         }
 
@@ -184,7 +205,7 @@ impl RemoteTaskGit {
             }
         }
 
-        Self::prepare_cached_path(&full_path, destination)?;
+        Self::prepare_cached_path(destination, &full_path)?;
         Ok(full_path)
     }
 }
@@ -220,7 +241,7 @@ impl TaskFileProvider for RemoteTaskGit {
         let artifact = TaskFileArtifact::temporary(artifact_root.clone(), artifact_root.clone());
         Self::clone_to(&repo_structure, &artifact_root)?;
         let path = artifact_root.join(repo_structure.path);
-        Self::prepare_remote_path(&path)?;
+        Self::prepare_remote_path(&artifact_root, &path)?;
         Ok(artifact.with_path(path))
     }
 }
@@ -263,7 +284,7 @@ mod tests {
         fs::write(&task_file, "#!/usr/bin/env bash\necho ok\n").unwrap();
         fs::set_permissions(&task_file, fs::Permissions::from_mode(0o644)).unwrap();
 
-        RemoteTaskGit::prepare_remote_path(&task_file).unwrap();
+        RemoteTaskGit::prepare_remote_path(temp_dir.path(), &task_file).unwrap();
 
         assert!(file::is_executable(&task_file));
     }
@@ -281,7 +302,7 @@ mod tests {
         fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
         symlink(&target, &task_file).unwrap();
 
-        let error = RemoteTaskGit::prepare_remote_path(&task_file).unwrap_err();
+        let error = RemoteTaskGit::prepare_remote_path(temp_dir.path(), &task_file).unwrap_err();
 
         assert!(error.to_string().contains("not a regular file"));
         assert_eq!(
@@ -294,7 +315,53 @@ mod tests {
     fn test_prepare_remote_path_allows_task_include_directory() {
         let temp_dir = tempfile::tempdir().unwrap();
 
-        RemoteTaskGit::prepare_remote_path(&temp_dir.path().to_path_buf()).unwrap();
+        RemoteTaskGit::prepare_remote_path(temp_dir.path(), temp_dir.path()).unwrap();
+    }
+
+    #[test]
+    fn test_prepare_remote_path_rejects_path_outside_checkout() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let checkout = temp_dir.path().join("checkout");
+        let outside = temp_dir.path().join("outside-task");
+        std::fs::create_dir(&checkout).unwrap();
+        std::fs::write(&outside, "#!/usr/bin/env bash\necho outside\n").unwrap();
+
+        let escaped_path = checkout.join("..").join("outside-task");
+        let error = RemoteTaskGit::prepare_remote_path(&checkout, &escaped_path).unwrap_err();
+
+        assert!(error.to_string().contains("escapes its Git checkout"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn test_prepare_remote_path_rejects_windows_backslash_escape() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let checkout = temp_dir.path().join("checkout");
+        let outside = temp_dir.path().join("outside-task");
+        std::fs::create_dir(&checkout).unwrap();
+        std::fs::write(&outside, "echo outside\n").unwrap();
+
+        let escaped_path = checkout.join(r"..\outside-task");
+        let error = RemoteTaskGit::prepare_remote_path(&checkout, &escaped_path).unwrap_err();
+
+        assert!(error.to_string().contains("escapes its Git checkout"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_prepare_remote_path_rejects_intermediate_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let checkout = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let outside_task = outside.path().join("task");
+        std::fs::write(&outside_task, "#!/usr/bin/env bash\necho outside\n").unwrap();
+        symlink(outside.path(), checkout.path().join("linked-dir")).unwrap();
+
+        let escaped_path = checkout.path().join("linked-dir/task");
+        let error = RemoteTaskGit::prepare_remote_path(checkout.path(), &escaped_path).unwrap_err();
+
+        assert!(error.to_string().contains("escapes its Git checkout"));
     }
 
     #[test]
@@ -310,9 +377,9 @@ mod tests {
         std::fs::write(&target, "#!/usr/bin/env bash\necho ok\n").unwrap();
         symlink(&target, &task_file).unwrap();
 
-        let error = RemoteTaskGit::prepare_cached_path(&task_file, &destination).unwrap_err();
+        let error = RemoteTaskGit::prepare_cached_path(&destination, &task_file).unwrap_err();
 
-        assert!(error.to_string().contains("not a regular file"));
+        assert!(error.to_string().contains("escapes its Git checkout"));
         assert!(!destination.exists());
     }
 
