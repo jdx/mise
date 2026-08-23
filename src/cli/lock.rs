@@ -172,6 +172,11 @@ struct LockfileSnapshot {
     content: Option<Vec<u8>>,
 }
 
+struct PreparedLockfileRollback {
+    path: PathBuf,
+    replacement: Option<crate::file::PreparedAtomicWrite>,
+}
+
 fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     match fs::read(path) {
         Ok(content) => Ok(Some(content)),
@@ -180,19 +185,36 @@ fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
     }
 }
 
-fn restore_lockfile_snapshots(snapshots: &[LockfileSnapshot]) -> Result<()> {
+fn prepare_lockfile_rollback(
+    snapshots: &[LockfileSnapshot],
+) -> Result<Vec<PreparedLockfileRollback>> {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            let replacement = snapshot
+                .content
+                .as_ref()
+                .map(|content| crate::file::prepare_atomic_write(&snapshot.path, content))
+                .transpose()?;
+            let path = crate::file::atomic_write_target(&snapshot.path)?;
+            Ok(PreparedLockfileRollback { path, replacement })
+        })
+        .collect()
+}
+
+fn restore_lockfile_snapshots(rollbacks: Vec<PreparedLockfileRollback>) -> Result<()> {
     let mut errors = Vec::new();
-    for snapshot in snapshots.iter().rev() {
-        let result = match &snapshot.content {
-            Some(content) => crate::file::write_atomic(&snapshot.path, content),
-            None => match fs::remove_file(&snapshot.path) {
+    for rollback in rollbacks.into_iter().rev() {
+        let result = match rollback.replacement {
+            Some(replacement) => replacement.commit(),
+            None => match fs::remove_file(&rollback.path) {
                 Ok(()) => Ok(()),
                 Err(err) if err.kind() == ErrorKind::NotFound => Ok(()),
                 Err(err) => Err(err.into()),
             },
         };
         if let Err(err) = result {
-            errors.push(format!("{}: {err:?}", display_path(&snapshot.path)));
+            errors.push(format!("{}: {err:?}", display_path(&rollback.path)));
         }
     }
     lockfile::invalidate_caches();
@@ -631,6 +653,11 @@ impl Lock {
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
+            // Materialize and sync every rollback replacement before the first
+            // mutation. Recovery then only needs same-directory renames, so a
+            // later disk-full failure cannot prevent restoration by requiring
+            // more file data to be written.
+            let rollbacks = prepare_lockfile_rollback(&snapshots)?;
             let commit_result = (|| -> Result<()> {
                 for staged in &staged_upgrade_writes {
                     staged.lockfile.write(&staged.path)?;
@@ -638,7 +665,7 @@ impl Lock {
                 lockfile::migrate_monorepo_lockfiles_already_locked(&config, true, &migration_paths)
             })();
             if let Err(err) = commit_result {
-                if let Err(rollback_err) = restore_lockfile_snapshots(&snapshots) {
+                if let Err(rollback_err) = restore_lockfile_snapshots(rollbacks) {
                     return Err(err.wrap_err(format!(
                         "failed to roll back lockfile format upgrade: {rollback_err:?}"
                     )));
@@ -1721,7 +1748,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 mod tests {
     use super::{
         Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, classify_lock_result,
-        push_unique_lock_tool, restore_lockfile_snapshots,
+        prepare_lockfile_rollback, push_unique_lock_tool, restore_lockfile_snapshots,
     };
     use crate::cli::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
@@ -1748,10 +1775,11 @@ mod tests {
                 content: None,
             },
         ];
+        let rollbacks = prepare_lockfile_rollback(&snapshots).unwrap();
         fs::write(&replaced, "upgraded").unwrap();
         fs::write(&created, "created").unwrap();
 
-        restore_lockfile_snapshots(&snapshots).unwrap();
+        restore_lockfile_snapshots(rollbacks).unwrap();
 
         assert_eq!(fs::read_to_string(replaced).unwrap(), "original");
         assert!(!created.exists());
