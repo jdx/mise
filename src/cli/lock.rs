@@ -196,8 +196,10 @@ fn prepare_lockfile_rollback(
                 .as_ref()
                 .map(|content| crate::file::prepare_atomic_write(&snapshot.path, content))
                 .transpose()?;
-            let path = crate::file::atomic_write_target(&snapshot.path)?;
-            Ok(PreparedLockfileRollback { path, replacement })
+            Ok(PreparedLockfileRollback {
+                path: snapshot.path.clone(),
+                replacement,
+            })
         })
         .collect()
 }
@@ -1783,6 +1785,28 @@ mod tests {
 
         assert_eq!(fs::read_to_string(replaced).unwrap(), "original");
         assert!(!created.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rollback_removes_file_that_replaced_dangling_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let lockfile = temp.path().join("mise.lock");
+        symlink("missing.lock", &lockfile).unwrap();
+        let snapshots = vec![LockfileSnapshot {
+            path: lockfile.clone(),
+            content: None,
+        }];
+        let rollbacks = prepare_lockfile_rollback(&snapshots).unwrap();
+
+        fs::remove_file(&lockfile).unwrap();
+        fs::write(&lockfile, "created").unwrap();
+        restore_lockfile_snapshots(rollbacks).unwrap();
+
+        assert!(fs::symlink_metadata(lockfile).is_err());
+        assert!(!temp.path().join("missing.lock").exists());
     }
 
     fn lock_cmd(tool_filters: &[&str]) -> Lock {
