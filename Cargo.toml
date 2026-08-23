@@ -72,7 +72,7 @@ aho-corasick = "1"
 aube-registry = { version = "1", default-features = false, features = [
   "rustls",
 ] }
-aube = { version = "1", default-features = false, features = ["rustls"] }
+aube = { version = "2", default-features = false, features = ["rustls"] }
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = [
