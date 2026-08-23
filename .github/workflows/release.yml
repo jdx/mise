@@ -274,7 +274,7 @@ jobs:
       - build-tarball-linux
       - build-tarball-macos
       - build-tarball-windows
-    if: ${{ !cancelled() && !failure() }}
+    if: ${{ !cancelled() && !failure() && (github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)) }}
     steps:
       - name: Verify all build targets succeeded
         if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
@@ -322,11 +322,6 @@ jobs:
             echo "No release found for $VERSION"
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Skip release for untrusted or non-release PRs
-        if: github.event_name == 'pull_request' && (github.head_ref != 'release' || github.event.pull_request.head.repo.full_name != github.repository)
-        run: |
-          echo "Skipping release steps for untrusted or non-release PR"
-          echo "All release operations will be skipped"
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
         if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
         with:
