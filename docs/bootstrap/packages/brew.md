@@ -124,9 +124,10 @@ self-updating apps are also tracked by receipt without a duplicate Caskroom app
 bundle, and ordinary mise upgrades skip them.
 
 `mise bootstrap status` marks these entries as `installed (auto-updates)`.
-The `Current` column is the version recorded in the cask receipt; the live app
-may have updated itself to a different version. JSON status keeps the stable
-`"state": "installed"` value and adds `"auto_updates": true`.
+For mise-owned casks, the `Current` column is the version recorded in the mise
+receipt; the live app may have updated itself to a different version. JSON
+status keeps the stable `"state": "installed"` value and adds
+`"auto_updates": true`.
 
 ### macOS Privacy & Security (TCC)
 
@@ -207,10 +208,11 @@ Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
 receipts. A Homebrew-owned cask with `.metadata` and exactly one Caskroom version
 satisfies a matching `brew-cask:` entry without transferring ownership.
-Status reports it as installed, apply leaves it unchanged, and upgrade skips its
-lifecycle. mise does not create `.mise-cask.toml`, adopt the cask, or change its
-metadata, app targets, prefix binaries, or completion links; use Homebrew to
-upgrade, reinstall, or remove it.
+Status reports it as installed and uses that Caskroom directory name for the
+`Current` version; apply leaves it unchanged, and upgrade skips its lifecycle.
+mise does not create `.mise-cask.toml`, adopt the cask, or change its metadata,
+app targets, prefix binaries, or completion links; use Homebrew to upgrade,
+reinstall, or remove it.
 Homebrew metadata with no version or multiple versions fails with Homebrew
 repair guidance instead of guessing which installation is valid.
 
