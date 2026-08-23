@@ -15,6 +15,74 @@ use crate::{dirs, env};
 const ZSTD_COMPRESSION_LEVEL: i32 = 3;
 const COMPRESSION_THRESHOLD: usize = 1024; // 1KB
 
+/// Why an SSH identity mise loaded cannot actually decrypt anything.
+///
+/// `ssh::Identity::from_buffer` succeeds for these keys, so they look loaded,
+/// but age maps them to `None` when matching stanzas. The decryptor then
+/// reports "No matching keys found", which blames the recipient when the real
+/// problem is that the identity could not be read at all.
+#[derive(Debug, PartialEq, Eq)]
+enum UnusableSshIdentity {
+    Passphrase,
+    EncryptedPem,
+    EncryptedCipher(String),
+    Hardware(String),
+    KeyType(String),
+}
+
+impl UnusableSshIdentity {
+    fn classify(identity: &ssh::Identity) -> Option<Self> {
+        match identity {
+            ssh::Identity::Unencrypted(_) => None,
+            ssh::Identity::Encrypted(_) => Some(Self::Passphrase),
+            ssh::Identity::Unsupported(key) => Some(match key {
+                ssh::UnsupportedKey::EncryptedPem => Self::EncryptedPem,
+                ssh::UnsupportedKey::EncryptedSsh(cipher) => Self::EncryptedCipher(cipher.clone()),
+                ssh::UnsupportedKey::Hardware(kind) => Self::Hardware(kind.clone()),
+                ssh::UnsupportedKey::Type(kind) => Self::KeyType(kind.clone()),
+            }),
+        }
+    }
+
+    fn reason(&self) -> String {
+        match self {
+            Self::Passphrase => {
+                "is protected by a passphrase, which mise does not prompt for".to_string()
+            }
+            Self::EncryptedPem => "is an encrypted PEM key, a format age cannot read".to_string(),
+            Self::EncryptedCipher(cipher) => {
+                format!("is encrypted with {cipher}, a cipher age does not support")
+            }
+            Self::Hardware(kind) => {
+                format!("is a {kind} key held on a hardware security key")
+            }
+            Self::KeyType(kind) => format!("is a {kind} key, a type age does not support"),
+        }
+    }
+}
+
+/// Explain identities that were loaded but could not participate in decryption.
+///
+/// Only worth saying once decryption has already failed: an unreadable key
+/// sitting beside a working one costs the user nothing.
+fn unusable_identity_hint(unusable: &[(PathBuf, UnusableSshIdentity)]) -> String {
+    if unusable.is_empty() {
+        return String::new();
+    }
+    let mut hint = String::new();
+    for (path, reason) in unusable {
+        hint.push_str(&format!(
+            "\nhint: {} {}, so it could not be used",
+            file::display_path(path),
+            reason.reason()
+        ));
+    }
+    hint.push_str(
+        "\nhint: use an identity mise can read, or set settings.age.key_file to an age key",
+    );
+    hint
+}
+
 pub(crate) async fn create_age_directive(
     key: String,
     value: &str,
@@ -69,7 +137,7 @@ pub(crate) async fn decrypt_age_directive(directive: &EnvDirective) -> Result<St
                 Some(AgeFormat::Raw) | None => decoded,
             };
 
-            let identities = load_all_identities().await?;
+            let (identities, unusable) = load_all_identities().await?;
             if identities.is_empty() {
                 return Err(eyre!(
                     "[experimental] No age identities found for decryption"
@@ -89,7 +157,10 @@ pub(crate) async fn decrypt_age_directive(directive: &EnvDirective) -> Result<St
                     reader.read_to_end(&mut decrypted)?;
                 }
                 Err(e) => {
-                    return Err(eyre!("[experimental] Failed to decrypt: {}", e));
+                    return Err(eyre!(
+                        "[experimental] Failed to decrypt: {e}{}",
+                        unusable_identity_hint(&unusable)
+                    ));
                 }
             }
 
@@ -252,13 +323,19 @@ async fn load_ssh_recipient_from_private_key(path: &Path) -> Result<String> {
     ))
 }
 
-async fn load_all_identities() -> Result<Vec<Box<dyn Identity + Send + Sync>>> {
+type LoadedIdentities = (
+    Vec<Box<dyn Identity + Send + Sync>>,
+    Vec<(PathBuf, UnusableSshIdentity)>,
+);
+
+async fn load_all_identities() -> Result<LoadedIdentities> {
     // Get identity files first
     let identity_files = get_all_identity_files().await;
     let ssh_identity_files = get_all_ssh_identity_files();
 
     // Now process identities without holding them across await points
     let mut identities: Vec<Box<dyn Identity + Send + Sync>> = Vec::new();
+    let mut unusable: Vec<(PathBuf, UnusableSshIdentity)> = Vec::new();
 
     // Check MISE_AGE_KEY environment variable
     if let Ok(age_key) = env::var("MISE_AGE_KEY")
@@ -313,6 +390,12 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity + Send + Sync>>> {
                     match ssh::Identity::from_buffer(&mut reader, Some(path.display().to_string()))
                     {
                         Ok(identity) => {
+                            if let Some(reason) = UnusableSshIdentity::classify(&identity) {
+                                // Still keep it: dropping the only identity would
+                                // report "No age identities found" instead, which is
+                                // just as misleading as the message being fixed here.
+                                unusable.push((path.clone(), reason));
+                            }
                             identities.push(Box::new(identity));
                         }
                         Err(e) => {
@@ -333,7 +416,7 @@ async fn load_all_identities() -> Result<Vec<Box<dyn Identity + Send + Sync>>> {
         }
     }
 
-    Ok(identities)
+    Ok((identities, unusable))
 }
 
 async fn get_default_key_file() -> Option<PathBuf> {
@@ -400,6 +483,51 @@ fn get_default_ssh_key_paths() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_classify_unsupported_ssh_identities() {
+        // `Encrypted` needs a real parsed key, so it is covered end-to-end by
+        // e2e/env/test_env_age_ssh_passphrase instead. These variants carry
+        // only a string, so the mapping can be checked directly.
+        let cases = [
+            (
+                ssh::UnsupportedKey::EncryptedPem,
+                UnusableSshIdentity::EncryptedPem,
+            ),
+            (
+                ssh::UnsupportedKey::EncryptedSsh("aes256-cbc".into()),
+                UnusableSshIdentity::EncryptedCipher("aes256-cbc".into()),
+            ),
+            (
+                ssh::UnsupportedKey::Hardware("sk-ssh-ed25519".into()),
+                UnusableSshIdentity::Hardware("sk-ssh-ed25519".into()),
+            ),
+            (
+                ssh::UnsupportedKey::Type("ssh-dss".into()),
+                UnusableSshIdentity::KeyType("ssh-dss".into()),
+            ),
+        ];
+        for (key, expected) in cases {
+            let identity = ssh::Identity::Unsupported(key);
+            assert_eq!(UnusableSshIdentity::classify(&identity), Some(expected));
+        }
+    }
+
+    #[test]
+    fn test_unusable_identity_hint_stays_quiet_when_every_key_is_readable() {
+        assert_eq!(unusable_identity_hint(&[]), "");
+    }
+
+    #[test]
+    fn test_unusable_identity_hint_names_the_file_and_the_way_out() {
+        let path = PathBuf::from("/keys/id_ed25519");
+        let hint = unusable_identity_hint(&[(path.clone(), UnusableSshIdentity::Passphrase)]);
+        // Compare against the rendered form: display_path uses the host
+        // separator, so a literal "/keys/..." never matches on Windows.
+        assert!(hint.contains(&file::display_path(&path)), "{hint}");
+        assert!(hint.contains("passphrase"), "{hint}");
+        assert!(hint.contains("settings.age.key_file"), "{hint}");
+    }
 
     #[tokio::test]
     async fn test_age_x25519_round_trip_small() -> Result<()> {

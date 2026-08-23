@@ -190,6 +190,12 @@ rops = { version = "0.1", default-features = false, features = [
   "toml",
   "age",
 ] }
+# Not used directly. age renders its error messages through fluent, and
+# rust-embed only bakes the translations into the binary for release builds
+# unless `debug-embed` is on. Without it a debug mise that formats an age error
+# outside the crate's source tree — e2e inside a container — panics in age's
+# lazy_static instead of reporting the error.
+rust-embed = { version = "8", features = ["debug-embed"] }
 same-file = "1"
 serde = { version = "1", features = ["derive"] }
 serde_ignored = "0.1"
@@ -348,7 +354,14 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "phf_codegen"]
+ignored = [
+  "aws-lc-rs",
+  "built",
+  "cfg_aliases",
+  "openssl",
+  "phf_codegen",
+  "rust-embed",
+]
 
 [package.metadata.release]
 pre-release-replacements = [
