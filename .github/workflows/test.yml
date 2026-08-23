@@ -140,13 +140,6 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - name: Select Rust 1.95 when the runner is older
-        run: |
-          rust_version="$(rustc --version | awk '{print $2}')"
-          IFS=. read -r rust_major rust_minor _ <<< "$rust_version"
-          if ((rust_major < 1 || (rust_major == 1 && rust_minor < 95))); then
-            rustup default 1.95.0
-          fi
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -170,15 +163,15 @@ jobs:
       - name: Install test tools
         run: brew install fd tmux
       - run: |
-          cargo build --all-features
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- cargo test --all-features
+      - run: mise x -- cargo test --all-features --ignore-rust-version
       # `cargo test` above resolves to the root package, so the workspace members are built as
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
-        run: cargo test --workspace --exclude mise
+        run: cargo test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       - run: sccache --show-stats
