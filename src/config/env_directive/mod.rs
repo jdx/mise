@@ -532,6 +532,13 @@ impl EnvResults {
             // trace!("resolve: ctx.get('env'): {:#?}", &ctx.get("env"));
             match directive {
                 EnvDirective::Val(k, v, _opts) => {
+                    // `[vars]` are template variables rather than environment variables, so the
+                    // PATH rule does not apply to them.
+                    let k = if resolve_opts.vars {
+                        k
+                    } else {
+                        crate::env::normalize_path_key(k)
+                    };
                     r.track_redaction_override(&k, redact);
                     let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
 
@@ -550,6 +557,12 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Default(k, v, _opts) => {
+                    // Same fold as `Val` above, and for the same reason.
+                    let k = if resolve_opts.vars {
+                        k
+                    } else {
+                        crate::env::normalize_path_key(k)
+                    };
                     if resolve_opts.vars {
                         if let Some((v, _)) = r.vars.get(&k).filter(|(v, _)| !v.is_empty()) {
                             if redact.unwrap_or(false) {
@@ -590,6 +603,13 @@ impl EnvResults {
                     }
                 }
                 EnvDirective::Rm(k, _opts) => {
+                    // The same fold as `Val`, so that `_.unset` naming another spelling of PATH
+                    // reaches the key `Val` stored it under rather than missing silently.
+                    let k = if resolve_opts.vars {
+                        k
+                    } else {
+                        crate::env::normalize_path_key(k)
+                    };
                     env.shift_remove(&k);
                     r.redaction_exclusions.remove(&k);
                     // The key is gone from the environment, so its caller value is no longer
@@ -920,24 +940,34 @@ impl EnvResults {
 
         // Check if required variables are defined
         for (var_name, declaring_source, required_value) in required_vars {
+            // Looked up under the folded name, reported under the one the config wrote. On
+            // Windows `Path = { required = true }` asks after the variable that is spelled
+            // `PATH` in the environment, and `Val`/`Default` store it folded, so a lookup on
+            // the literal name reads a variable that is set as missing.
+            let lookup = if vars_mode {
+                var_name.clone()
+            } else {
+                env::normalize_path_key(var_name.clone())
+            };
+
             // Variable must be defined either:
             // 1. In the initial environment (before mise runs), OR
             // 2. In a config file processed later than the one declaring it as required
-            let is_predefined = initial.contains_key(&var_name);
+            let is_predefined = initial.contains_key(&lookup);
 
             let resolved_values = if vars_mode {
                 &env_results.vars
             } else {
                 &env_results.env
             };
-            let is_defined_later = if let Some((_, var_source)) = resolved_values.get(&var_name) {
+            let is_defined_later = if let Some((_, var_source)) = resolved_values.get(&lookup) {
                 // Check if the variable comes from a different config file
                 var_source != &declaring_source
             } else {
                 false
             };
             let is_defined_in_context =
-                vars_mode && context_vars.get(&var_name).is_some_and(|v| !v.is_empty());
+                vars_mode && context_vars.get(&lookup).is_some_and(|v| !v.is_empty());
 
             if !is_predefined && !is_defined_later && !is_defined_in_context {
                 let variable_kind = if vars_mode {

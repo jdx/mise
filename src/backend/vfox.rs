@@ -298,15 +298,8 @@ impl Backend for VfoxBackend {
             match tool_vals {
                 Ok(vals) => {
                     for (k, v) in vals {
-                        // PATH stays owned by dependency_env. On Windows env var
-                        // names are case-insensitive, so exclude any casing
-                        // (e.g. a lowercase `path`); on unix only exact `PATH`.
-                        let is_path = if cfg!(windows) {
-                            k.eq_ignore_ascii_case(crate::env::PATH_KEY.as_str())
-                        } else {
-                            k.as_str() == crate::env::PATH_KEY.as_str()
-                        };
-                        if !is_path {
+                        // PATH stays owned by dependency_env, under any casing on Windows.
+                        if !crate::env::is_path_key(&k) {
                             set_env_var(&mut cmd_env, k, v);
                         }
                     }
