@@ -521,11 +521,6 @@ checksum = "sha256:a8428b18eaf2240c47f36c628219d02a405cca4f65de5b3c649af481d6778
 url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-apple-darwin.tar.gz"
 url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595246"
 
-[tools."github:jdx/mr-boxington"."platforms.macos-x64"]
-checksum = "sha256:569c70e2b84e38c2bfda2ec8f936244393e2a84e74d8799e74d211dc024c2c9b"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595242"
-
 [tools."github:jdx/mr-boxington"."platforms.windows-x64"]
 checksum = "sha256:24e44ab08896284b207fece614fe461db8c9399467cf934b115ef796ebf467e0"
 url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-pc-windows-msvc.zip"
