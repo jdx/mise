@@ -31,7 +31,7 @@ impl DotfilesStatus {
         let mut any_missing = false;
 
         let all_files = system::files::files_from_config(&config)?;
-        system::files::validate_composed_symlink_each(&all_files)?;
+        system::files::validate_composed_file_footprints(&all_files)?;
         let files = all_files
             .iter()
             .filter(|req| {

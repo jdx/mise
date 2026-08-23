@@ -288,6 +288,28 @@ pub(crate) fn expand_deferred_subcommands(mut command: clap::Command) -> clap::C
 }
 
 impl Commands {
+    /// Whether this parsed command may trigger a pre-command automatic update.
+    ///
+    /// This operates on clap's canonical command variant so aliases such as
+    /// `dr` inherit the same policy as `doctor`.
+    fn allows_auto_update(&self) -> bool {
+        !matches!(
+            self,
+            Self::Activate(_)
+                | Self::Completion(_)
+                | Self::Deactivate(_)
+                | Self::Doctor(_)
+                | Self::HookEnv(_)
+                | Self::HookNotFound(_)
+                | Self::Implode(_)
+                | Self::SelfUpdate(_)
+                | Self::Settings(_)
+                | Self::Shell(_)
+                | Self::Usage(_)
+                | Self::Version(_)
+        )
+    }
+
     fn implicitly_trusts_active_config(&self) -> bool {
         matches!(
             self,
@@ -738,6 +760,7 @@ impl Cli {
 
     async fn run_inner(args: &Vec<String>) -> Result<()> {
         crate::env::ARGS.write().unwrap().clone_from(args);
+        let original_cwd = std::env::current_dir().ok();
         // Load .miserc.toml early, before MISE_ENV and other early settings are accessed.
         // This allows setting MISE_ENV in a config file instead of only via env vars.
         crate::config::miserc::init()?;
@@ -789,6 +812,19 @@ impl Cli {
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
         let _ = measure!("settings", { Settings::try_get() });
+        let auto_update_command_eligible = !print_version
+            && cli
+                .command
+                .as_ref()
+                .is_some_and(Commands::allows_auto_update);
+        measure!("auto_update", {
+            self_update::maybe_auto_update(
+                args,
+                original_cwd.as_deref(),
+                auto_update_command_eligible,
+            )
+            .await?
+        });
         measure!("trust_active_config", {
             config_file::trust_active_config()?
         });
@@ -807,6 +843,7 @@ impl Cli {
         trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
         if print_version {
             version::show_latest().await;
+            version::show_version_hint();
             return Err(request_exit(0));
         }
         let _remote_task_artifacts = crate::task::task_fetcher::RemoteTaskArtifactsGuard::new();
@@ -1034,6 +1071,33 @@ mod tests {
                 "expected {args:?} not to imply config trust"
             );
         }
+    }
+
+    #[test]
+    fn shell_commands_and_aliases_do_not_allow_auto_update() {
+        for args in [
+            vec!["mise", "doctor"],
+            vec!["mise", "dr"],
+            vec!["mise", "hook-env"],
+            vec!["mise", "hook-not-found", "missing-bin"],
+            vec!["mise", "version"],
+            vec!["mise", "v"],
+        ] {
+            let cli = Cli::try_parse_from(&args).unwrap();
+            assert!(
+                !cli.command
+                    .as_ref()
+                    .is_some_and(Commands::allows_auto_update),
+                "expected {args:?} to skip automatic updates"
+            );
+        }
+
+        let cli = Cli::try_parse_from(["mise", "install"]).unwrap();
+        assert!(
+            cli.command
+                .as_ref()
+                .is_some_and(Commands::allows_auto_update)
+        );
     }
 
     /// Guards [`GLOBAL_FLAGS_WITH_VALUES`]. It is hardcoded so that startup does

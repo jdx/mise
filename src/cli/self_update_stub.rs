@@ -4,6 +4,14 @@ use std::path::PathBuf;
 
 use crate::env;
 
+pub(crate) async fn maybe_auto_update(
+    _args: &[String],
+    _original_cwd: Option<&std::path::Path>,
+    _command_eligible: bool,
+) -> crate::Result<()> {
+    Ok(())
+}
+
 #[derive(Debug, Default, clap::Args)]
 pub(crate) struct SelfUpdate {
     /// Update to a specific version

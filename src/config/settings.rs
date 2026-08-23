@@ -1187,6 +1187,11 @@ impl Settings {
         if age.as_secs() == 0 { None } else { Some(age) }
     }
 
+    #[cfg(feature = "self_update")]
+    pub(crate) fn auto_update_check_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.auto_update_check_duration)
+    }
+
     pub(crate) fn fetch_remote_versions_timeout(&self) -> Duration {
         let timeout = self.configured_fetch_remote_versions_timeout();
         if self.bound_remote_version_lookups() {

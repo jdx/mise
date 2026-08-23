@@ -1612,11 +1612,19 @@ SSH identity file override
 \fB\-n, \-\-dry\-run\fR
 Print the remote bootstrap changes without applying them
 .TP
+\fB\-\-install\-mise\fR \fI<PATH>\fR
+Install the provisioned mise on each host instead of only staging it
+
+Defaults to `~/.local/bin/mise`; pass `\-\-install\-mise=<PATH>` for another path.
+.TP
 \fB\-\-keep\-staging\fR
 Keep the remote staging directory for debugging
 .TP
 \fB\-\-mise\-bin\fR \fI<MISE_BIN>\fR
 Local mise binary to upload (escape hatch for custom architectures)
+.TP
+\fB\-\-no\-install\-mise\fR
+Do not install mise on the host, even when the selected hosts configure it
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run only one or more remote bootstrap parts

@@ -854,10 +854,19 @@ Examples:
             arg <IDENTITY_FILE>
         }
         flag "-n --dry-run" help="Print the remote bootstrap changes without applying them"
+        flag --install-mise help="Install the provisioned mise on each host instead of only staging it" {
+            long_help #"""
+Install the provisioned mise on each host instead of only staging it
+
+Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another path.
+"""#
+            arg <PATH>
+        }
         flag --keep-staging help="Keep the remote staging directory for debugging"
         flag --mise-bin help="Local mise binary to upload (escape hatch for custom architectures)" {
             arg <MISE_BIN>
         }
+        flag --no-install-mise help="Do not install mise on the host, even when the selected hosts configure it"
         flag --only help="Run only one or more remote bootstrap parts" var=#true {
             arg <ONLY> {
                 choices plugins packages accounts files services firewall compose repos dotfiles mise-shell-activate shell macos-defaults defaults macos-launchd-agents launchd linux-systemd-units systemd user tools task final-hook
