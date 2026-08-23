@@ -1756,16 +1756,31 @@ fn legacy_lockfile_path_for_config(config_path: &Path, monorepo_root: &Path) -> 
     (source.parent() != Some(monorepo_root)).then_some(source)
 }
 
-fn merge_legacy_lockfile_if_present(lockfile: &mut Lockfile, legacy_path: &Path) -> Result<()> {
+fn merge_legacy_lockfile_if_present(
+    lockfile: &mut Lockfile,
+    legacy_path: &Path,
+    primary_exists: bool,
+) -> Result<()> {
     match Lockfile::read(legacy_path) {
         Ok(legacy) => {
-            lockfile.lockfile_version = lockfile.lockfile_version.min(legacy.lockfile_version);
-            merge_lockfile_preserving_root(lockfile, legacy);
+            if primary_exists {
+                merge_lockfile_for_lookup(lockfile, legacy);
+            } else {
+                *lockfile = legacy;
+            }
             Ok(())
         }
         Err(err) if is_not_found_report(&err) => Ok(()),
         Err(err) => Err(err),
     }
+}
+
+fn merge_lockfile_for_lookup(root: &mut Lockfile, other: Lockfile) {
+    // A mixed-format read must keep request bindings enabled. Version-0 entries
+    // have no specifiers and remain available through the versioned lockfile's
+    // unbound-entry fallback.
+    root.lockfile_version = root.lockfile_version.max(other.lockfile_version);
+    merge_lockfile_preserving_root(root, other);
 }
 
 fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
@@ -3109,6 +3124,9 @@ where
                     platforms: BTreeMap::new(),
                 });
                 target
+                    .specifiers
+                    .extend(existing_tool.specifiers.iter().cloned());
+                target
                     .platforms
                     .entry(platform_key.clone())
                     .and_modify(|fresh| *fresh = fresh.merge_with(info))
@@ -3247,21 +3265,7 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         let Some(mut acc) = acc else {
             return Some(l);
         };
-        acc.lockfile_version = acc.lockfile_version.min(l.lockfile_version);
-        for (short, tools) in l.tools {
-            let existing = acc.tools.entry(short).or_default();
-            for tool in tools {
-                // Avoid duplicates (same version+options)
-                if let Some(entry) = existing
-                    .iter_mut()
-                    .find(|t| t.version == tool.version && t.options == tool.options)
-                {
-                    entry.specifiers.extend(tool.specifiers);
-                } else {
-                    existing.push(tool);
-                }
-            }
-        }
+        merge_lockfile_for_lookup(&mut acc, l);
         Some(acc)
     });
 
@@ -3295,10 +3299,12 @@ fn read_lockfile_at(lockfile_path: PathBuf, legacy_path: Option<PathBuf>) -> Arc
         return Arc::clone(cached);
     }
 
+    let primary_exists = lockfile_path.exists();
     let mut lockfile = Lockfile::read(&lockfile_path)
         .unwrap_or_else(|err| handle_lockfile_read_error(err, &lockfile_path));
     if let Some(legacy_path) = &legacy_path
-        && let Err(err) = merge_legacy_lockfile_if_present(&mut lockfile, legacy_path)
+        && let Err(err) =
+            merge_legacy_lockfile_if_present(&mut lockfile, legacy_path, primary_exists)
     {
         warn!(
             "failed to read legacy monorepo lockfile {} (possible corruption): {err:?}",
@@ -4670,7 +4676,7 @@ options = { exe = "rg" }
         let existing = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
-            specifiers: BTreeSet::new(),
+            specifiers: BTreeSet::from(["latest".to_string()]),
             options: BTreeMap::new(),
             platforms: existing_platforms,
         }];
@@ -4689,7 +4695,7 @@ options = { exe = "rg" }
         let fresh = vec![LockfileTool {
             version: "26.0.1".to_string(),
             backend: Some("core:java".to_string()),
-            specifiers: BTreeSet::new(),
+            specifiers: BTreeSet::from(["26".to_string()]),
             options: new_options.clone(),
             platforms: fresh_platforms,
         }];
@@ -4705,6 +4711,10 @@ options = { exe = "rg" }
         );
         let tool = &merged[0];
         assert_eq!(tool.options, new_options);
+        assert_eq!(
+            tool.specifiers,
+            BTreeSet::from(["26".to_string(), "latest".to_string()])
+        );
         assert_eq!(tool.platforms.len(), 2);
         assert_eq!(
             tool.platforms["linux-x64"].checksum.as_deref(),
@@ -5196,6 +5206,81 @@ options = { exe = "rg" }
         assert_eq!(tools[0].version, "20.0.0");
         assert_eq!(tools[0].backend.as_deref(), Some("core:node"));
         assert_eq!(tools[1].version, "22.0.0");
+    }
+
+    #[test]
+    fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
+        for (root_version, other_version) in [(0, 1), (1, 0)] {
+            let mut root = Lockfile::default();
+            root.lockfile_version = root_version;
+            root.tools.insert(
+                "node".to_string(),
+                vec![LockfileTool {
+                    version: "20.0.0".to_string(),
+                    backend: Some("core:node".to_string()),
+                    specifiers: BTreeSet::from(["20".to_string()]),
+                    options: BTreeMap::new(),
+                    platforms: BTreeMap::new(),
+                }],
+            );
+            let mut other = Lockfile::default();
+            other.lockfile_version = other_version;
+            other
+                .tools
+                .insert("node".to_string(), vec![basic_tool("22.0.0", "core:node")]);
+
+            merge_lockfile_for_lookup(&mut root, other);
+
+            assert_eq!(root.lockfile_version(), 1);
+            assert!(root.uses_request_bindings());
+            assert!(root.tools["node"][0].specifiers.contains("20"));
+            assert!(root.tools["node"][1].specifiers.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_read_lockfile_at_only_promotes_when_primary_exists() {
+        let temp = tempfile::tempdir().unwrap();
+        let primary_path = temp.path().join("mise.lock");
+        let legacy_path = temp.path().join("package.lock");
+
+        let mut legacy = Lockfile::default();
+        legacy.lockfile_version = 0;
+        legacy
+            .tools
+            .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);
+        legacy.save(&legacy_path).unwrap();
+
+        let legacy_only = read_lockfile_at(primary_path.clone(), Some(legacy_path.clone()));
+        assert_eq!(legacy_only.lockfile_version(), 0);
+
+        let mut primary = Lockfile::default();
+        primary.tools.insert(
+            "node".to_string(),
+            vec![LockfileTool {
+                version: "22.0.0".to_string(),
+                backend: Some("core:node".to_string()),
+                specifiers: BTreeSet::from(["latest".to_string()]),
+                options: BTreeMap::new(),
+                platforms: BTreeMap::new(),
+            }],
+        );
+        primary.save(&primary_path).unwrap();
+        invalidate_caches();
+
+        let mixed = read_lockfile_at(primary_path, Some(legacy_path));
+        assert_eq!(mixed.lockfile_version(), 1);
+        assert!(mixed.uses_request_bindings());
+        assert!(
+            mixed.tools["node"]
+                .iter()
+                .any(|tool| { tool.version == "22.0.0" && tool.specifiers.contains("latest") })
+        );
+        assert!(
+            mixed.tools["node"]
+                .iter()
+                .any(|tool| { tool.version == "20.0.0" && tool.specifiers.is_empty() })
+        );
     }
 
     #[test]
