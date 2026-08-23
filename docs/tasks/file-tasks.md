@@ -154,6 +154,17 @@ cargo build
 
 Adding `#!/usr/bin/env bash` is usually all it takes, and it costs nothing on the other platforms.
 
+### PowerShell tasks with no `.ps1` extension
+
+Windows PowerShell refuses to open a script whose name does not end in `.ps1` — a rule the Linux
+and macOS builds do not have. So that a `#!/usr/bin/env pwsh` task behaves the same everywhere,
+mise runs it from a `.ps1` copy in the temp directory and removes the copy when the task finishes.
+
+Only the script's view of its own location changes: `$PSScriptRoot` and `$PSCommandPath` name the
+copy rather than the task file. The working directory, `$args`, and the environment are untouched.
+A task that needs to find files sitting next to it should carry a `.ps1` extension, which is run
+in place.
+
 ### Writing one task for both platforms
 
 File tasks have no equivalent of a TOML task's
