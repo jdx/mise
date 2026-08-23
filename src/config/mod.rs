@@ -1096,34 +1096,41 @@ impl Config {
     pub(crate) async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
         let mut idiomatic_settings_by_root =
-            BTreeMap::<PathBuf, config_file::IdiomaticVersionFileSettings>::new();
+            BTreeMap::<PathBuf, settings::IdiomaticVersionFileSettings>::new();
+        let require_trust_before_detection = Settings::get().paranoid && !Settings::safe_mode();
         for path in Tracker::list_all()?.into_iter() {
             if config_path_is_ignored(&path, false) {
                 debug!("skipping ignored tracked config: {}", display_path(&path));
                 continue;
             }
             let trust_root = config_file::config_trust_root(&path);
-            if Settings::get().paranoid
+            // Paranoid mode must not inspect an untrusted owner's settings before
+            // classification. Safe mode intentionally loads configs inertly without trust.
+            if require_trust_before_detection
                 && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
             {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }
-            let config_root = config_file::config_root::config_root(&path);
-            let idiomatic_settings = match idiomatic_settings_by_root.get(&config_root) {
-                Some(settings) => settings.clone(),
+            let detection = match config_file::detect_config_file_type_by_filename(&path) {
+                Some(config_type) => config_file::ConfigFileDetection::Recognized(config_type),
                 None => {
-                    let settings = config_file::IdiomaticVersionFileSettings::resolve_from(
-                        &config_root,
-                        settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
-                    )?;
-                    idiomatic_settings_by_root.insert(config_root, settings.clone());
-                    settings
+                    let config_root = config_file::config_root::config_root(&path);
+                    let idiomatic_settings = match idiomatic_settings_by_root.get(&config_root) {
+                        Some(settings) => settings.clone(),
+                        None => {
+                            let settings = settings::IdiomaticVersionFileSettings::resolve_from(
+                                &config_root,
+                                settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
+                            )?;
+                            idiomatic_settings_by_root.insert(config_root, settings.clone());
+                            settings
+                        }
+                    };
+                    config_file::detect_config_file_with_settings(&path, &idiomatic_settings).await
                 }
             };
-            let detection =
-                config_file::detect_config_file_with_settings(&path, &idiomatic_settings).await;
             // Pre-check trust for config files that require it so tracked
             // config loading (e.g., during `mise upgrade`) never prompts.
             // Plain .tool-versions and idiomatic version files are safe to
@@ -1137,7 +1144,7 @@ impl Config {
             }
             if matches!(
                 &detection,
-                config_file::ConfigFileDetection::DisabledRegistryIdiomatic
+                config_file::ConfigFileDetection::DisabledIdiomatic
             ) {
                 debug!(
                     "skipping disabled idiomatic tracked config: {}",
@@ -1694,11 +1701,11 @@ async fn idiomatic_filenames_for_root(
     root: &Path,
     default_idiomatic_filenames: &BTreeMap<String, Vec<String>>,
 ) -> Result<BTreeMap<String, Vec<String>>> {
-    let rooted = config_file::IdiomaticVersionFileSettings::resolve_from(
+    let rooted = settings::IdiomaticVersionFileSettings::resolve_from(
         root,
-        settings::SettingsLoadPolicy::NORMAL,
+        settings::SettingsLoadPolicy::HIERARCHY,
     )?;
-    if rooted == config_file::IdiomaticVersionFileSettings::current() {
+    if rooted == settings::IdiomaticVersionFileSettings::current() {
         return Ok(default_idiomatic_filenames.clone());
     }
     Ok(load_idiomatic_filenames_for_tools(&rooted.enable_tools, &rooted.disable_files).await)

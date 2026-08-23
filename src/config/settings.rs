@@ -241,29 +241,29 @@ impl serde::Serialize for PythonUvVenvAuto {
 pub(crate) type SettingsPartial = <Settings as Config>::Layer;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SettingsSourcePolicy {
+enum SettingsSourcePolicy {
     EnvironmentOnly,
     Hierarchy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum SettingsTrustPolicy {
+enum SettingsTrustPolicy {
     AsDiscovered,
     TrustedOnly,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct SettingsLoadPolicy {
-    pub source: SettingsSourcePolicy,
-    pub trust: SettingsTrustPolicy,
+    source: SettingsSourcePolicy,
+    trust: SettingsTrustPolicy,
 }
 
 impl SettingsLoadPolicy {
-    pub(crate) const BOOTSTRAP: Self = Self {
+    const ENVIRONMENT_ONLY: Self = Self {
         source: SettingsSourcePolicy::EnvironmentOnly,
         trust: SettingsTrustPolicy::AsDiscovered,
     };
-    pub(crate) const NORMAL: Self = Self {
+    pub(crate) const HIERARCHY: Self = Self {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::AsDiscovered,
     };
@@ -271,6 +271,35 @@ impl SettingsLoadPolicy {
         source: SettingsSourcePolicy::Hierarchy,
         trust: SettingsTrustPolicy::TrustedOnly,
     };
+}
+
+/// Settings that control idiomatic version-file discovery for one config root.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct IdiomaticVersionFileSettings {
+    pub(crate) enable_tools: BTreeSet<String>,
+    pub(crate) disable_files: BTreeSet<String>,
+}
+
+impl IdiomaticVersionFileSettings {
+    fn from_settings(settings: &Settings) -> Self {
+        Self {
+            enable_tools: settings.idiomatic_version_file_enable_tools.clone(),
+            disable_files: settings.idiomatic_version_file_disable_files.clone(),
+        }
+    }
+
+    pub(crate) fn current() -> Self {
+        Settings::try_get()
+            .map(|settings| Self::from_settings(&settings))
+            .unwrap_or_default()
+    }
+
+    /// Resolve through the canonical settings loader, then retain only the fields needed for
+    /// idiomatic discovery. Parsing a reduced schema here would create a second validation path.
+    pub(crate) fn resolve_from(root: &Path, policy: SettingsLoadPolicy) -> Result<Self> {
+        Settings::load_sources_from(Some(root), policy)
+            .map(|settings| Self::from_settings(&settings))
+    }
 }
 
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
@@ -790,10 +819,7 @@ impl Settings {
     /// does not update process-global settings state or apply the post-load process side effects in
     /// [`Self::try_get`]. Root-specific callers can require trusted project files without
     /// reproducing config discovery or precedence rules.
-    pub(crate) fn load_sources_from(
-        root: Option<&Path>,
-        policy: SettingsLoadPolicy,
-    ) -> Result<Self> {
+    fn load_sources_from(root: Option<&Path>, policy: SettingsLoadPolicy) -> Result<Self> {
         if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
             bail!("trusted settings resolution requires the base settings to be loaded");
         }
@@ -848,7 +874,7 @@ impl Settings {
         time!("try_get");
 
         // Initial pass to obtain cd option
-        let mut settings = Self::load_sources_from(None, SettingsLoadPolicy::BOOTSTRAP)?;
+        let mut settings = Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
         time!("try_get load1");
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
@@ -859,7 +885,7 @@ impl Settings {
         }
 
         // Reload settings after current directory option processed
-        settings = Self::load_sources_from(None, SettingsLoadPolicy::NORMAL)?;
+        settings = Self::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
         time!("try_get load2");
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = Some(false);
