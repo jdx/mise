@@ -155,6 +155,15 @@ struct LockTaskResult {
     status: LockTaskStatus,
 }
 
+struct StagedUpgradeWrite {
+    path: PathBuf,
+    lockfile: Lockfile,
+    summary: Option<(usize, usize)>,
+    format_changed: bool,
+    stale_tools: BTreeSet<String>,
+    stale_versions: BTreeMap<String, Vec<String>>,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 enum LockTaskStatus {
     Updated,
@@ -231,8 +240,7 @@ impl Lock {
         let mut all_resolution_errors: Vec<String> = Vec::new();
         let mut all_platform_regressions: Vec<String> = Vec::new();
         let mut all_changes: Vec<LockChange> = Vec::new();
-        let mut staged_upgrade_writes: Vec<(PathBuf, Lockfile, Option<(usize, usize)>)> =
-            Vec::new();
+        let mut staged_upgrade_writes: Vec<StagedUpgradeWrite> = Vec::new();
         let collection_context = LockCollectionContext {
             config: &config,
             toolset: ts,
@@ -309,7 +317,7 @@ impl Lock {
                     );
                     let format_changed = if self.upgrade {
                         if lockfile.tools().is_empty() {
-                            self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?
+                            self.prepare_lockfile_format(&lockfile_path, &mut lockfile)
                         } else {
                             bail!(
                                 "cannot upgrade {} because no configured tools were resolved",
@@ -322,11 +330,20 @@ impl Lock {
                     };
                     if format_changed || !pruned_tools.is_empty() {
                         if self.upgrade {
-                            staged_upgrade_writes.push((lockfile_path.clone(), lockfile, None));
+                            staged_upgrade_writes.push(StagedUpgradeWrite {
+                                path: lockfile_path.clone(),
+                                lockfile,
+                                summary: None,
+                                format_changed,
+                                stale_tools: pruned_tools.clone(),
+                                stale_versions: BTreeMap::new(),
+                            });
                         } else {
                             lockfile.write(&lockfile_path)?;
                         }
-                        self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
+                        if !self.upgrade {
+                            self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
+                        }
                         has_lock_targets = true;
                     }
                 }
@@ -395,7 +412,9 @@ impl Lock {
             }
             let stale_tools =
                 self.prune_stale_entries_if_needed(&mut lockfile, configured_selectors.as_ref());
-            self.show_stale_prune_message(&lockfile_path, &stale_tools, false)?;
+            if !self.upgrade {
+                self.show_stale_prune_message(&lockfile_path, &stale_tools, false)?;
+            }
 
             // Compute stale versions BEFORE process_tools so provenance checks can
             // compare against old version entries. Actual pruning happens after.
@@ -414,8 +433,10 @@ impl Lock {
                 continue;
             }
 
-            if self.upgrade && lockfile.lockfile_version() == 0 && resolution_succeeded {
-                self.prepare_lockfile_format(&lockfile_path, &mut lockfile)?;
+            let format_changed =
+                self.upgrade && lockfile.lockfile_version() == 0 && resolution_succeeded;
+            if format_changed {
+                self.prepare_lockfile_format(&lockfile_path, &mut lockfile);
                 if !self.bind_requests(&mut lockfile, &tools, &target_platforms) {
                     bail!(
                         "cannot upgrade {} because not every request binding was resolved",
@@ -428,7 +449,9 @@ impl Lock {
 
             // Prune stale versions AFTER provenance checks complete
             self.prune_stale_versions(&mut lockfile, &tools);
-            self.show_stale_version_prune_message(&lockfile_path, &stale_versions, false)?;
+            if !self.upgrade {
+                self.show_stale_version_prune_message(&lockfile_path, &stale_versions, false)?;
+            }
 
             let successful = results
                 .iter()
@@ -436,11 +459,14 @@ impl Lock {
                 .count();
             let skipped = results.len() - successful;
             if self.upgrade {
-                staged_upgrade_writes.push((
-                    lockfile_path.clone(),
+                staged_upgrade_writes.push(StagedUpgradeWrite {
+                    path: lockfile_path.clone(),
                     lockfile,
-                    Some((successful, skipped)),
-                ));
+                    summary: Some((successful, skipped)),
+                    format_changed,
+                    stale_tools,
+                    stale_versions,
+                });
             } else {
                 // Normal lock runs preserve successful updates even if another
                 // target reports a non-regressing resolution error.
@@ -516,10 +542,6 @@ impl Lock {
             }
         }
 
-        if self.json {
-            miseprintln!("{}", serde_json::to_string_pretty(&all_changes)?);
-        }
-
         all_platform_regressions.extend(all_resolution_errors);
         if !all_platform_regressions.is_empty() {
             return Err(eyre::eyre!(all_platform_regressions.join("\n")));
@@ -529,13 +551,18 @@ impl Lock {
         // resolved and bound successfully. This also keeps legacy monorepo
         // lockfiles untouched on failure.
         if !self.dry_run && self.upgrade {
-            for (lockfile_path, lockfile, summary) in staged_upgrade_writes {
-                let _lock = crate::lock_file::LockFile::new(&lockfile_path)
+            for staged in staged_upgrade_writes {
+                let _lock = crate::lock_file::LockFile::new(&staged.path)
                     .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                     .lock()?;
-                lockfile.write(&lockfile_path)?;
+                staged.lockfile.write(&staged.path)?;
+                if staged.format_changed {
+                    self.show_lockfile_upgrade_message(&staged.path)?;
+                }
+                self.show_stale_prune_message(&staged.path, &staged.stale_tools, false)?;
+                self.show_stale_version_prune_message(&staged.path, &staged.stale_versions, false)?;
                 if !self.json
-                    && let Some((successful, skipped)) = summary
+                    && let Some((successful, skipped)) = staged.summary
                 {
                     miseprintln!(
                         "{} Updated {} platform entries ({} skipped)",
@@ -546,11 +573,15 @@ impl Lock {
                     miseprintln!(
                         "{} Lockfile written to {}",
                         style("✓").green(),
-                        style(display_path(&lockfile_path)).cyan()
+                        style(display_path(&staged.path)).cyan()
                     );
                 }
             }
             lockfile::migrate_monorepo_lockfiles(&config, true)?;
+        }
+
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&all_changes)?);
         }
 
         Ok(())
@@ -658,14 +689,25 @@ impl Lock {
         Ok(())
     }
 
-    fn prepare_lockfile_format(&self, path: &Path, lockfile: &mut Lockfile) -> Result<bool> {
-        self.report_lockfile_format(path, lockfile, false)?;
+    fn prepare_lockfile_format(&self, path: &Path, lockfile: &mut Lockfile) -> bool {
         if path.exists() && lockfile.lockfile_version() == 0 && self.upgrade {
             lockfile.upgrade();
-            Ok(true)
+            true
         } else {
-            Ok(false)
+            false
         }
+    }
+
+    fn show_lockfile_upgrade_message(&self, path: &Path) -> Result<()> {
+        if self.json {
+            return Ok(());
+        }
+        miseprintln!(
+            "{} Upgrading {} from lockfile version 0 to 1",
+            style("→").yellow(),
+            style(display_path(path)).cyan()
+        );
+        Ok(())
     }
 
     fn bind_requests(

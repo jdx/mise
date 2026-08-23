@@ -198,3 +198,34 @@ assert_fail_contains "cd failed-monorepo-upgrade && RTX_FAILURE=1 mise lock --up
 assert_succeed "test -f failed-monorepo-upgrade/packages/b/mise.lock"
 assert_succeed "cmp failed-monorepo-upgrade/packages/b/mise.lock.before failed-monorepo-upgrade/packages/b/mise.lock"
 assert_fail "test -f failed-monorepo-upgrade/mise.lock"
+
+echo "=== failed upgrades do not commit or report earlier targets ==="
+mkdir failed-multi-target-upgrade
+cat >failed-multi-target-upgrade/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >failed-multi-target-upgrade/mise.local.toml <<'EOF'
+[tools]
+dummy = "3.0.0"
+EOF
+cat >failed-multi-target-upgrade/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+cat >failed-multi-target-upgrade/mise.local.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+cp failed-multi-target-upgrade/mise.lock failed-multi-target-upgrade/mise.lock.before
+cp failed-multi-target-upgrade/mise.local.lock failed-multi-target-upgrade/mise.local.lock.before
+
+mise cache clear dummy
+assert_fail_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1" "failed to resolve"
+assert_succeed "cmp failed-multi-target-upgrade/mise.lock.before failed-multi-target-upgrade/mise.lock"
+assert_succeed "cmp failed-multi-target-upgrade/mise.local.lock.before failed-multi-target-upgrade/mise.local.lock"
+assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Upgrading"
+assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Pruned"
+assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Lockfile written"
