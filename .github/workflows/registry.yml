@@ -22,7 +22,7 @@ env:
 
 jobs:
   check-changes:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
     timeout-minutes: 5
     outputs:
       registry-changed: ${{ steps.check.outputs.registry-changed }}
@@ -51,7 +51,7 @@ jobs:
 
   build:
     timeout-minutes: 20
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
     needs: check-changes
     if: needs.check-changes.outputs.registry-changed == 'true'
     env:
@@ -59,36 +59,27 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-            ~/.cache/sccache
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: sccache }
-      - name: Configure sccache
-        run: |
-          export RUSTC_WRAPPER=sccache
-          export SCCACHE_DIR="$HOME/.cache/sccache"
-          export SCCACHE_CACHE_SIZE=20G
-          {
-            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
-            echo "SCCACHE_DIR=$SCCACHE_DIR"
-            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
-          } >> "$GITHUB_ENV"
-          sccache --zero-stats
-      - run: cargo build --all-features --ignore-rust-version
+            ~/.cache/mbx
+      - uses: ./.github/actions/setup-mbx
+        with:
+          restore-cache: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - run: mbx build build --all-features --ignore-rust-version
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise
           path: target/debug/mise
-      - run: sccache --show-stats
+      - run: mbx cache stats
         if: always()
 
   list-changed-tools:
     timeout-minutes: 10
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ${{ github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
     needs: check-changes
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
@@ -142,7 +133,7 @@ jobs:
           fi
 
   validate-new-tools:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ${{ github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
     timeout-minutes: 5
     needs: list-changed-tools
     if: |
@@ -171,7 +162,7 @@ jobs:
   test-tool:
     name: test-tool-${{ matrix.tranche }}
     timeout-minutes: 90
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
     needs:
       - build
       - list-changed-tools
@@ -356,7 +347,7 @@ jobs:
         run: mise run test-tool-retry --check-only --grace-period ${{ steps.retry.outputs.failed_tools }}
 
   registry-ci:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
     timeout-minutes: 1
     needs:
       - check-changes

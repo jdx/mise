@@ -1,0 +1,64 @@
+name: Set up mbx
+description: Install a pinned mbx release and optionally restore the main-branch GHA cache
+
+inputs:
+  restore-cache:
+    description: Restore the read-only GitHub Actions cache built from main
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      if: inputs.restore-cache == 'true'
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/.global-cache
+          ~/.cache/mbx
+        key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.1.0-${{ github.event.pull_request.base.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.1.0-
+    - name: Install mbx
+      shell: bash
+      env:
+        MBX_VERSION: v0.1.0
+      run: | # zizmor: ignore[github-env] PATH and cache paths use only runner-owned directories and pinned constants
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)
+            target=x86_64-unknown-linux-musl
+            checksum=b6cfe4c5104f79cef94d7bfa0b1c3fd5448265f0e82da312b8ba8a2a1b13ed52
+            ;;
+          Linux-ARM64)
+            target=aarch64-unknown-linux-musl
+            checksum=21e83146163bb10346a7ed098f1a8887c980fed18f4ab8684ee4732587fa43b1
+            ;;
+          macOS-X64)
+            target=x86_64-apple-darwin
+            checksum=0a71cc73b84cf3b6844f96fa8eccba8bcf872a4a211ccf2ccde4e627681c7dee
+            ;;
+          macOS-ARM64)
+            target=aarch64-apple-darwin
+            checksum=013806932a12a97641a572e6d177daf8226d13aa792874abaf89c46eaed6f100
+            ;;
+          *)
+            echo "unsupported mbx runner: ${RUNNER_OS}-${RUNNER_ARCH}" >&2
+            exit 1
+            ;;
+        esac
+
+        install_dir="$RUNNER_TEMP/mbx-$MBX_VERSION"
+        archive="$RUNNER_TEMP/mbx-$MBX_VERSION-$target.tar.gz"
+        curl -fsSL --retry 3 \
+          "https://github.com/jdx/mr-boxington/releases/download/$MBX_VERSION/mbx-$target.tar.gz" \
+          -o "$archive"
+        actual_checksum="$(shasum -a 256 "$archive" | cut -d ' ' -f 1)"
+        if [ "$actual_checksum" != "$checksum" ]; then
+          echo "mbx checksum mismatch: expected $checksum, got $actual_checksum" >&2
+          exit 1
+        fi
+        mkdir -p "$install_dir"
+        tar -xzf "$archive" -C "$install_dir"
+        echo "$install_dir" >> "$GITHUB_PATH"
+        echo "MBX_CACHE_DIR=$HOME/.cache/mbx" >> "$GITHUB_ENV"
