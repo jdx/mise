@@ -3236,29 +3236,19 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
         // to read the most specific (e.g. macos-arm64) first.
         for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
             let p = root.join(format!("mise.{env_name}.local.lock"));
-            if let Ok(l) = Lockfile::read(&p) {
-                all.push(l);
-            }
+            push_existing_lockfile(&mut all, &p);
         }
         let local_path = root.join("mise.local.lock");
-        if let Ok(local) = Lockfile::read(&local_path) {
-            all.push(local);
-        }
+        push_existing_lockfile(&mut all, &local_path);
         for env_name in env::MISE_ENV.iter().chain(env::AUTO_ENV_NAMES.iter().rev()) {
             let p = root.join(format!("mise.{env_name}.lock"));
-            if let Ok(l) = Lockfile::read(&p) {
-                all.push(l);
-            }
+            push_existing_lockfile(&mut all, &p);
         }
         let main_path = root.join("mise.lock");
-        if let Ok(main) = Lockfile::read(&main_path) {
-            all.push(main);
-        }
+        push_existing_lockfile(&mut all, &main_path);
     }
     for legacy_path in legacy_lockfiles {
-        if let Ok(legacy) = Lockfile::read(legacy_path) {
-            all.push(legacy);
-        }
+        push_existing_lockfile(&mut all, legacy_path);
     }
 
     let result = all.into_iter().fold(None, |acc: Option<Lockfile>, l| {
@@ -3274,6 +3264,14 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
     let result = Arc::new(result);
     cache.insert(discovery.cache_key.clone(), Arc::clone(&result));
     result
+}
+
+fn push_existing_lockfile(lockfiles: &mut Vec<Lockfile>, path: &Path) {
+    if path.exists()
+        && let Ok(lockfile) = Lockfile::read(path)
+    {
+        lockfiles.push(lockfile);
+    }
 }
 
 fn read_lockfile_for(config: &Config, path: &Path) -> Arc<Lockfile> {

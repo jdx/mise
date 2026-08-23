@@ -231,6 +231,8 @@ impl Lock {
         let mut all_resolution_errors: Vec<String> = Vec::new();
         let mut all_platform_regressions: Vec<String> = Vec::new();
         let mut all_changes: Vec<LockChange> = Vec::new();
+        let mut staged_upgrade_writes: Vec<(PathBuf, Lockfile, Option<(usize, usize)>)> =
+            Vec::new();
         let collection_context = LockCollectionContext {
             config: &config,
             toolset: ts,
@@ -319,7 +321,11 @@ impl Lock {
                         false
                     };
                     if format_changed || !pruned_tools.is_empty() {
-                        lockfile.write(&lockfile_path)?;
+                        if self.upgrade {
+                            staged_upgrade_writes.push((lockfile_path.clone(), lockfile, None));
+                        } else {
+                            lockfile.write(&lockfile_path)?;
+                        }
                         self.show_stale_prune_message(&lockfile_path, &pruned_tools, false)?;
                         has_lock_targets = true;
                     }
@@ -424,17 +430,26 @@ impl Lock {
             self.prune_stale_versions(&mut lockfile, &tools);
             self.show_stale_version_prune_message(&lockfile_path, &stale_versions, false)?;
 
-            // Save lockfile before raising resolution errors so non-regressing
-            // tools' entries are preserved
-            lockfile.write(&lockfile_path)?;
+            let successful = results
+                .iter()
+                .filter(|result| matches!(result.status, LockTaskStatus::Updated))
+                .count();
+            let skipped = results.len() - successful;
+            if self.upgrade {
+                staged_upgrade_writes.push((
+                    lockfile_path.clone(),
+                    lockfile,
+                    Some((successful, skipped)),
+                ));
+            } else {
+                // Normal lock runs preserve successful updates even if another
+                // target reports a non-regressing resolution error.
+                lockfile.write(&lockfile_path)?;
+            }
 
-            // Print summary
-            if !self.json {
-                let successful = results
-                    .iter()
-                    .filter(|result| matches!(result.status, LockTaskStatus::Updated))
-                    .count();
-                let skipped = results.len() - successful;
+            // Print summaries for normal writes now. Upgrade summaries are
+            // deferred with their writes until every target succeeds.
+            if !self.json && !self.upgrade {
                 miseprintln!(
                     "{} Updated {} platform entries ({} skipped)",
                     style("✓").green(),
@@ -510,10 +525,31 @@ impl Lock {
             return Err(eyre::eyre!(all_platform_regressions.join("\n")));
         }
 
-        // Format upgrades are transactional with respect to legacy monorepo
-        // lockfiles: do not merge or delete them until every requested
-        // resolution and binding update has succeeded.
+        // Format upgrades are committed as a batch only after every target has
+        // resolved and bound successfully. This also keeps legacy monorepo
+        // lockfiles untouched on failure.
         if !self.dry_run && self.upgrade {
+            for (lockfile_path, lockfile, summary) in staged_upgrade_writes {
+                let _lock = crate::lock_file::LockFile::new(&lockfile_path)
+                    .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                    .lock()?;
+                lockfile.write(&lockfile_path)?;
+                if !self.json
+                    && let Some((successful, skipped)) = summary
+                {
+                    miseprintln!(
+                        "{} Updated {} platform entries ({} skipped)",
+                        style("✓").green(),
+                        successful,
+                        skipped
+                    );
+                    miseprintln!(
+                        "{} Lockfile written to {}",
+                        style("✓").green(),
+                        style(display_path(&lockfile_path)).cyan()
+                    );
+                }
+            }
             lockfile::migrate_monorepo_lockfiles(&config, true)?;
         }
 

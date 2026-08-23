@@ -61,6 +61,24 @@ assert_contains "cd legacy && mise lock 2>&1" "uses legacy lockfile format versi
 assert_not_contains "cat legacy/mise.lock" "lockfile_version"
 assert_not_contains "cat legacy/mise.lock" "specifiers"
 
+echo "=== missing variant lockfiles do not promote legacy lookups ==="
+mkdir legacy-argument
+cat >legacy-argument/mise.toml <<'EOF'
+[settings]
+lockfile = true
+EOF
+cat >legacy-argument/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert "cd legacy-argument && mise x dummy@latest -- dummy --version" "This is Dummy 2.0.0! --version"
+
 assert_contains "cd legacy && mise lock --upgrade" "Upgrading"
 assert_contains "cat legacy/mise.lock" "lockfile_version = 1"
 assert_contains "cat legacy/mise.lock" 'specifiers = ["1.0.0"]'
@@ -173,8 +191,10 @@ cat >failed-monorepo-upgrade/packages/b/mise.lock <<'EOF'
 version = "1.0.0"
 backend = "asdf:tiny"
 EOF
+cp failed-monorepo-upgrade/packages/b/mise.lock failed-monorepo-upgrade/packages/b/mise.lock.before
 
 mise cache clear dummy
 assert_fail_contains "cd failed-monorepo-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1" "failed to resolve"
 assert_succeed "test -f failed-monorepo-upgrade/packages/b/mise.lock"
+assert_succeed "cmp failed-monorepo-upgrade/packages/b/mise.lock.before failed-monorepo-upgrade/packages/b/mise.lock"
 assert_fail "test -f failed-monorepo-upgrade/mise.lock"
