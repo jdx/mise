@@ -823,6 +823,7 @@ pub(crate) fn apply(requests: &AccountRequests, dry_run: bool, yes: bool) -> Res
     if !yes
         && console::user_attended_stderr()
         && !crate::ui::prompt::confirm(format!("accounts: apply {} change(s)?", actions.len()))?
+            .is_yes()
     {
         info!("accounts: skipped");
         return Ok(false);

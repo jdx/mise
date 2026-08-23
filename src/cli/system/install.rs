@@ -22,28 +22,28 @@ pub(crate) struct BootstrapApplyReport {
 /// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 /// the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
-    #[clap(value_name = "PACKAGE")]
+    #[usage(value_name = "PACKAGE")]
     packages: Vec<String>,
 
     /// Only install packages for this built-in or plugin manager
-    #[clap(long, short)]
+    #[usage(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
-    #[clap(long)]
+    #[usage(long)]
     update: bool,
 }
 
@@ -115,7 +115,7 @@ pub(crate) async fn apply_defaults_with_report(
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("defaults: write {}?", list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("defaults: skipped");
             return Ok(BootstrapApplyReport::default());
         }
@@ -174,7 +174,7 @@ pub(crate) fn apply_login_shell_with_report(
     let needs_follow_up = status.state != LoginShellState::Set;
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("login_shell: run `chsh -s {}`?", request.shell);
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("login_shell: skipped");
             return Ok(BootstrapApplyReport::default());
         }
@@ -299,7 +299,7 @@ fn mutate_repos(
         .collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("repos: {} {}?", mutation.prompt_verb, list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("repos: skipped");
             return Ok(());
         }
@@ -356,7 +356,7 @@ pub(crate) async fn apply_launchd_with_report(
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("launchd: install/load {}?", list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("launchd: skipped");
             return Ok(BootstrapApplyReport::default());
         }
@@ -416,7 +416,7 @@ pub(crate) async fn apply_systemd_with_report(
     let list = targets.iter().map(|r| r.to_string()).collect::<Vec<_>>();
     if !dry_run && !yes && console::user_attended_stderr() {
         let msg = format!("systemd: apply {}?", list.join(", "));
-        if !crate::ui::prompt::confirm(msg)? {
+        if !crate::ui::prompt::confirm(msg)?.is_yes() {
             info!("systemd: skipped");
             return Ok(BootstrapApplyReport::default());
         }

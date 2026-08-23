@@ -305,12 +305,15 @@ pub(crate) struct VersionInfo {
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checksum: Option<String>,
-    /// Whether this is a pre-release. Backends with a reliable upstream signal
-    /// (e.g. GitHub releases' `prerelease: true`) populate this directly.
-    /// Metadata-free listing backends can opt in to stamping this from mise's
+    /// Whether this is a pre-release. `Some(true)`/`Some(false)` come from
+    /// sources that can actually tell (e.g. GitHub releases' `prerelease`
+    /// flag, or semver/PEP 440 detection where the version grammar is total).
+    /// `None` means the source has no pre-release signal at all, so consumers
+    /// can distinguish "confirmed stable" from "unknown". Metadata-free
+    /// listing backends can opt in to stamping `Some(true)` from mise's
     /// legacy pre-release pattern before caching.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub prerelease: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prerelease: Option<bool>,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -1755,7 +1758,7 @@ mod tests {
             },
             VersionInfo {
                 version: "1.1.0-rc1".into(),
-                prerelease: true,
+                prerelease: Some(true),
                 ..Default::default()
             },
             VersionInfo {
@@ -1795,43 +1798,88 @@ mod tests {
     }
 
     #[test]
+    fn test_version_info_prerelease_json_three_states() {
+        // `ls-remote --json` consumers (e.g. mise-versions) rely on the
+        // distinction: explicit true/false when the source can tell, key
+        // absent when it cannot. A backend without a pre-release signal must
+        // not serialize `prerelease: false` as if the version were confirmed
+        // stable.
+        let known_stable = VersionInfo {
+            version: "1.0.0".into(),
+            prerelease: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&known_stable).unwrap(),
+            r#"{"version":"1.0.0","prerelease":false}"#
+        );
+
+        let known_prerelease = VersionInfo {
+            version: "1.1.0-rc1".into(),
+            prerelease: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&known_prerelease).unwrap(),
+            r#"{"version":"1.1.0-rc1","prerelease":true}"#
+        );
+
+        let unknown = VersionInfo {
+            version: "2.0.0".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&unknown).unwrap(),
+            r#"{"version":"2.0.0"}"#
+        );
+    }
+
+    #[test]
     fn test_mark_prerelease_flags_regex_matches() {
         let stable = mark_prerelease(VersionInfo {
             version: "1.0.0".into(),
             ..Default::default()
         });
-        assert!(!stable.prerelease);
+        assert_eq!(stable.prerelease, None);
 
         let rc = mark_prerelease(VersionInfo {
             version: "1.1.0-rc1".into(),
             ..Default::default()
         });
-        assert!(rc.prerelease);
+        assert_eq!(rc.prerelease, Some(true));
 
         let php_rc = mark_prerelease(VersionInfo {
             version: "8.5.9RC1".into(),
             ..Default::default()
         });
-        assert!(php_rc.prerelease);
+        assert_eq!(php_rc.prerelease, Some(true));
 
         let php_unnumbered_rc = mark_prerelease(VersionInfo {
             version: "4.0.1RC".into(),
             ..Default::default()
         });
-        assert!(php_unnumbered_rc.prerelease);
+        assert_eq!(php_unnumbered_rc.prerelease, Some(true));
 
         let php_qualified_rc = mark_prerelease(VersionInfo {
             version: "8.3.1RC1-clean".into(),
             ..Default::default()
         });
-        assert!(php_qualified_rc.prerelease);
+        assert_eq!(php_qualified_rc.prerelease, Some(true));
 
         let already_flagged = mark_prerelease(VersionInfo {
             version: "2.0.0".into(),
-            prerelease: true,
+            prerelease: Some(true),
             ..Default::default()
         });
-        assert!(already_flagged.prerelease);
+        assert_eq!(already_flagged.prerelease, Some(true));
+
+        // An authoritative "stable" from the source survives a regex match.
+        let confirmed_stable = mark_prerelease(VersionInfo {
+            version: "1.1.0-rc1".into(),
+            prerelease: Some(false),
+            ..Default::default()
+        });
+        assert_eq!(confirmed_stable.prerelease, Some(false));
 
         // Go pseudo-version (`-DATE-HASH`) must not false-positive on the
         // `[abc][0-9]+` alternative — that pattern lives in
@@ -1840,8 +1888,8 @@ mod tests {
             version: "2.0.0-20260404020628-f149714c1d54".into(),
             ..Default::default()
         });
-        assert!(
-            !go_pseudo.prerelease,
+        assert_eq!(
+            go_pseudo.prerelease, None,
             "Go pseudo-version must not be flagged by the general regex"
         );
 
@@ -1851,7 +1899,7 @@ mod tests {
             version: "3.12.0a1".into(),
             ..Default::default()
         });
-        assert!(!py_alpha.prerelease);
+        assert_eq!(py_alpha.prerelease, None);
     }
 
     #[test]
@@ -3290,6 +3338,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let will_uninstall =
             (ctx.force || rolling_reinstall) && self.is_version_installed(&ctx.config, &tv, true);
 
+        if install_satisfied && !will_uninstall {
+            return Ok(tv);
+        }
+
+        // The scheduler has released this tool only after its in-batch dependencies
+        // succeeded. Validate configured dependencies before replacing the target or
+        // creating any of its install directories, then reuse the stored context in
+        // backend and tool-level hooks.
+        ctx.dependency_context(&tv.request).await?;
+
         // Query backend for operation count and set up progress tracking
         let install_ops = self.install_operation_count(&tv, &ctx).await;
         let total_ops = if will_uninstall {
@@ -3303,8 +3361,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
             self.uninstall_version_unlocked(&ctx.config, &tv, ctx.pr.as_ref(), false)
                 .await?;
             ctx.pr.next_operation();
-        } else if install_satisfied {
-            return Ok(tv);
         }
 
         // Track the installation asynchronously (fire-and-forget)
@@ -3392,16 +3448,17 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
             }
         }
+        let dependencies = ctx.dependency_context(&tv_exact.request).await?;
 
         // Surface `tools = true` `[env]` *value* directives (e.g. `CLOUDSDK_PYTHON =
         // "{{ tools.python.path }}/bin/python3"`) for the tool-level `postinstall`
         // hook, resolved against this tool's already-installed dependencies. The
         // config env added above is resolved without tools (`NonToolsOnly`), so it
-        // omits these; `install_dependency_context` is fully resolved (offline) so
+        // omits these; the install dependency context is fully resolved (offline) so
         // `{{ tools.<dep>.path }}` maps to a real install path — `ctx.ts` is the raw,
         // unresolved install toolset during a combined install. PATH stays owned by
-        // `path_env` below. Best-effort: any resolution error leaves the tool-less
-        // env untouched.
+        // `path_env` below. Best-effort: a `tools = true` value evaluation error
+        // leaves the tool-less env untouched.
         //
         // Gated on the tool declaring dependencies. Only a `tools = true` value that
         // can reference a dependency (installed first, by depends ordering) is
@@ -3410,32 +3467,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // (#6418, e2e/config/test_hooks_postinstall_env) — since a *static*
         // `tools = true` value (no `{{ tools.* }}` reference) would otherwise leak in.
         // (#10282, follow-up to #10432)
-        let declares_deps = self
-            .get_all_dependencies(true)
-            .map(|deps| !deps.is_empty())
-            .unwrap_or(false)
-            || tv_exact
-                .request
-                .options()
-                .core
-                .depends
-                .is_some_and(|deps| !deps.is_empty());
-        if declares_deps {
+        if !dependencies.declarations.is_empty() {
             let base = env_vars.clone();
-            let tool_vals = match self.install_dependency_context(ctx, &tv_exact).await {
-                Ok(dependencies) => dependencies.toolset.tool_val_env(&ctx.config, &base).await,
-                Err(e) => Err(e),
-            };
+            let tool_vals = dependencies.toolset.tool_val_env(&ctx.config, &base).await;
             match tool_vals {
                 Ok(vals) => {
                     for (k, v) in vals {
                         // PATH is owned by path_env; exclude any casing on Windows.
-                        let is_path = if cfg!(windows) {
-                            k.eq_ignore_ascii_case(env::PATH_KEY.as_str())
-                        } else {
-                            k.as_str() == env::PATH_KEY.as_str()
-                        };
-                        if !is_path {
+                        if !env::is_path_key(&k) {
                             env_vars.insert(k, v);
                         }
                     }
@@ -3448,9 +3487,15 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // instead of hardcoding install_path/bin, which may not match the actual
         // binary location for backends like aqua.
         let bin_paths = self.list_bin_paths(&ctx.config, &tv_exact).await?;
-        let mut path_env = PathEnv::from_iter(env::PATH.clone());
+        let mut path_env = PathEnv::new();
         for p in bin_paths {
             path_env.add(p);
+        }
+        for p in &dependencies.paths {
+            path_env.add(p.clone());
+        }
+        for p in env::PATH.iter() {
+            path_env.add(p.clone());
         }
 
         // Render tera template variables (e.g. {{tools.ripgrep.path}})
@@ -3743,14 +3788,6 @@ pub(crate) trait Backend: Debug + Send + Sync {
         Ok(ts)
     }
 
-    async fn install_dependency_context<'a>(
-        &self,
-        ctx: &'a InstallContext,
-        tv: &ToolVersion,
-    ) -> eyre::Result<&'a crate::install_context::InstallDependencyContext> {
-        ctx.dependency_context(&tv.request).await
-    }
-
     async fn dependency_which(&self, config: &Arc<Config>, bin: &str) -> Option<PathBuf> {
         if let Some(bin) = which_non_pristine_executable(bin) {
             return Some(bin);
@@ -3919,6 +3956,23 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // filtering only one used to leak recursion through the other (#8475
         // closed the user dir for `dependency_env`, this PR closes the system dir
         // and aligns with the dual-dir guard already in `which_shim` (#8816)).
+        self.remove_dependency_shims(&mut env)?;
+
+        Ok(env)
+    }
+
+    async fn dependency_env_for_install(
+        &self,
+        ctx: &InstallContext,
+        tv: &ToolVersion,
+    ) -> eyre::Result<BTreeMap<String, String>> {
+        let dependencies = ctx.dependency_context(&tv.request).await?;
+        let mut env = dependencies.base_env_for_install(&ctx.config).await?;
+        self.remove_dependency_shims(&mut env)?;
+        Ok(env)
+    }
+
+    fn remove_dependency_shims(&self, env: &mut BTreeMap<String, String>) -> eyre::Result<()> {
         if let Some(path_val) = env.get(&*env::PATH_KEY) {
             let paths: Vec<_> = env::split_paths(path_val).collect();
             let original_len = paths.len();
@@ -3934,8 +3988,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 );
             }
         }
-
-        Ok(env)
+        Ok(())
     }
 
     /// Default fuzzy-match. `filter_prereleases = true` applies the historical
@@ -4526,7 +4579,7 @@ mod latest_version_tests {
             },
             VersionInfo {
                 version: "1.1.0-rc.1".to_string(),
-                prerelease: true,
+                prerelease: Some(true),
                 ..Default::default()
             },
         ];
@@ -5108,13 +5161,19 @@ pub(crate) fn filter_cached_prereleases(
     if want_prereleases {
         versions
     } else {
-        versions.into_iter().filter(|v| !v.prerelease).collect()
+        versions
+            .into_iter()
+            .filter(|v| v.prerelease != Some(true))
+            .collect()
     }
 }
 
 pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if !version.prerelease && VERSION_REGEX.is_match(&version.version) {
-        version.prerelease = true;
+    // Only fill in unknowns: an authoritative Some(false) from the source
+    // (e.g. a GitHub release explicitly published as a full release) must not
+    // be overridden by pattern detection.
+    if version.prerelease.is_none() && VERSION_REGEX.is_match(&version.version) {
+        version.prerelease = Some(true);
     }
     version
 }

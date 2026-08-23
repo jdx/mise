@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::Result;
 
 mod node;
@@ -6,14 +5,14 @@ mod python;
 mod reconcile;
 mod ruby;
 
-#[derive(Debug, clap::Args)]
-#[clap(about = "Synchronize tools from other version managers with mise")]
+#[derive(Debug, usage_rs::Args)]
+#[usage(about = "Synchronize tools from other version managers with mise")]
 pub(crate) struct Sync {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Node(node::SyncNode),
     Python(python::SyncPython),

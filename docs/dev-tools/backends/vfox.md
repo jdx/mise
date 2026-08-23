@@ -148,3 +148,16 @@ use these variables directly.
 [tools]
 "vfox:version-fox/vfox-cmake" = { version = "latest", install_env = { HTTPS_PROXY = "http://proxy.example" } }
 ```
+
+### Install dependencies
+
+Plugin authors should declare intrinsic install requirements with `PLUGIN.depends` in
+`metadata.lua`. Users can supplement those declarations with the
+[`depends` tool option](/dev-tools/#tool-dependencies). Matching configured tools from both
+sources share one install dependency context: they are ordered before the dependent and their
+paths and `tools = true` values are available to install hooks launched through `os.execute` or
+`cmd.exec`.
+
+Declarations do not configure or automatically install a tool. A matching configured dependency
+must resolve and be installed; an unconfigured dependency can still be supplied by the existing
+system or configuration `PATH`. `io.popen` does not receive this install environment.

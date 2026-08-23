@@ -1,4 +1,3 @@
-use clap::ValueEnum;
 use demand::DemandOption;
 use demand::Select;
 use eyre::Result;
@@ -15,8 +14,8 @@ use crate::{
     ui::table::MiseTable,
 };
 
-#[derive(Debug, Clone, ValueEnum)]
-pub(super) enum MatchType {
+#[derive(Debug, Clone, usage_rs::ValueEnum)]
+pub(crate) enum MatchType {
     Equal,
     Contains,
     Fuzzy,
@@ -28,22 +27,22 @@ pub(super) enum MatchType {
 ///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
-#[derive(Debug, clap::Args)]
-#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
 
     /// Show interactive search
-    #[clap(long, short, conflicts_with_all = &["match_type", "no_header"])]
+    #[usage(long, short, conflicts = &["match_type", "no_header"])]
     interactive: bool,
 
     /// Match type: equal, contains, or fuzzy
-    #[clap(long, short, value_enum, default_value = "fuzzy")]
+    #[usage(long, short, value_enum, default = "fuzzy")]
     match_type: MatchType,
 
     /// Don't display headers
-    #[clap(long, alias = "no-headers")]
+    #[usage(long, alias = "no-headers")]
     no_header: bool,
 }
 
@@ -160,31 +159,41 @@ impl Search {
             return vec![];
         }
 
-        crate::aqua::standard_registry::package_ids()
-            .filter_map(|id| {
-                let tool_name = id.rsplit_once('/').map_or(id, |(_, name)| name);
-                let score = match self.match_type {
-                    MatchType::Equal => {
-                        if tool_name == name || id == name || format!("aqua:{id}") == name {
-                            Some(0)
-                        } else {
-                            None
+        crate::aqua::aqua_registry_wrapper::aqua_search_entries()
+            .filter_map(|entry| {
+                let tool_name = entry.name();
+                let score = if entry.backend_matches(name) {
+                    Some(0)
+                } else {
+                    match self.match_type {
+                        MatchType::Equal => {
+                            if tool_name == name || entry.id == name {
+                                Some(0)
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    MatchType::Contains => {
-                        if tool_name.contains(name) || id.contains(name) {
-                            Some(0)
-                        } else {
-                            None
+                        MatchType::Contains => {
+                            if tool_name.contains(name) || entry.id.contains(name) {
+                                Some(0)
+                            } else {
+                                None
+                            }
                         }
-                    }
-                    MatchType::Fuzzy => {
-                        fuzzy_matcher.score_pattern(&tool_name.to_lowercase(), fuzzy_pattern)
+                        MatchType::Fuzzy => {
+                            fuzzy_matcher.score_pattern(&tool_name.to_lowercase(), fuzzy_pattern)
+                        }
                     }
                 }?;
 
-                Some((score, format!("aqua:{id}"), get_aqua_description(id)))
+                let search_backend = entry.backend();
+                let description = get_aqua_description(entry.id, &search_backend);
+
+                Some((score, search_backend, description))
             })
+            // Distinct aqua packages can translate to the same backend
+            // (e.g. crates.io/eza and eza-community/eza both to cargo:eza)
+            .unique_by(|(_score, search_backend, _description)| search_backend.clone())
             .collect()
     }
 
@@ -251,20 +260,25 @@ fn get_backends(backends: Vec<&'static str>) -> Vec<String> {
             let prefix = backend.split(':').next().unwrap_or("");
             let slug = backend.split(':').next_back().unwrap_or("");
             let slug = regex!(r"^(.*?)\[.*\]$").replace_all(slug, "$1");
-            match prefix {
-                "core" => format!("https://mise.jdx.dev/lang/{slug}.html"),
-                "cargo" => format!("https://crates.io/crates/{slug}"),
-                "go" => format!("https://pkg.go.dev/{slug}"),
-                "pipx" => format!("https://pypi.org/project/{slug}"),
-                "npm" => format!("https://www.npmjs.com/package/{slug}"),
-                _ => format!("https://github.com/{slug}"),
-            }
+            backend_homepage_url(prefix, &slug)
+                .unwrap_or_else(|| format!("https://github.com/{slug}"))
         })
         .collect()
 }
 
-fn get_aqua_description(id: &str) -> String {
-    let fallback = format!("aqua:{id}");
+fn backend_homepage_url(prefix: &str, slug: &str) -> Option<String> {
+    match prefix {
+        "core" => Some(format!("https://mise.jdx.dev/lang/{slug}.html")),
+        "cargo" => Some(format!("https://crates.io/crates/{slug}")),
+        "go" => Some(format!("https://pkg.go.dev/{slug}")),
+        "pipx" => Some(format!("https://pypi.org/project/{slug}")),
+        "npm" => Some(format!("https://www.npmjs.com/package/{slug}")),
+        _ => None,
+    }
+}
+
+fn get_aqua_description(id: &str, search_backend: &str) -> String {
+    let fallback = search_backend.to_string();
     let Ok(pkg) =
         crate::aqua::standard_registry::package(id).unwrap_or_else(|| Ok(Default::default()))
     else {
@@ -274,7 +288,8 @@ fn get_aqua_description(id: &str) -> String {
     let backend = if !pkg.repo_owner.is_empty() && !pkg.repo_name.is_empty() {
         format!("https://github.com/{}/{}", pkg.repo_owner, pkg.repo_name)
     } else {
-        fallback
+        let (backend_type, tool) = search_backend.split_once(':').unwrap_or_default();
+        backend_homepage_url(backend_type, tool).unwrap_or(fallback)
     };
 
     match pkg.description.as_deref().filter(|d| !d.is_empty()) {

@@ -47,6 +47,11 @@ Describe 'exec_inactive_tool' {
 
     It 'suggests a command that works' {
         $out = (& $script:miseExe exec usage -- usage --version 2>&1 | Out-String)
-        $out | Should -Match "usage-cli"
+        # Assert that the suggested command ran the tool, not what the tool calls
+        # itself: usage 6.0.0 changed its banner from "usage-cli <ver>" to
+        # "usage <ver>" and broke this on a release with no mise change in it.
+        $LASTEXITCODE | Should -Be 0
+        $out | Should -Match "usage"
+        $out | Should -Match "\d+\.\d+\.\d+"
     }
 }

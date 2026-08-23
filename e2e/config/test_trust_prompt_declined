@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+
+# The other half of test_trust_prompt_non_interactive: when the user actually
+# answers "No", mise must remember it by recording an ignore marker, so the same
+# directory stops asking on every command.
+#
+# Both halves matter together. The marker is written for a decline and withheld
+# when nobody could be asked, and a `bool` return cannot tell those apart -- which
+# is how a marker once got written for an answer no one gave. This test pins the
+# side that a fail-closed reading would quietly drop.
+
+require_cmd script
+
+# Needs a real pty: the answer is delivered as a keystroke to a `demand::Dialog`.
+# macOS's script(1) also wants a terminal on its own stdin, which the harness does
+# not have, so skip where a pty cannot be allocated rather than fail.
+if ! script -qec true /dev/null >/dev/null 2>&1; then
+  echo "skipping: script(1) cannot allocate a pty here" >&2
+  exit 0
+fi
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+cat <<'EOF' >mise.toml
+[env]
+TRUST_PROMPT_TEST = "1"
+EOF
+
+ignored_configs="$MISE_STATE_DIR/ignored-configs"
+
+marker_count() {
+  if [[ -d $ignored_configs ]]; then
+    find "$ignored_configs" -mindepth 1 | wc -l | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+# The dialog's buttons are Yes/No/All and each is bound to its lowercased first
+# letter, so a bare `n` selects "No" and submits. Feeding keystrokes through
+# script(1) is the same pattern as e2e/tasks/test_task_run_all_picker.
+# MISE_PARANOID=1 keeps the trust check deterministic by skipping the
+# implicitly-trust-active-config fast path.
+status=0
+output="$(printf 'n' | timeout 10 script -qec 'MISE_YES=0 MISE_PARANOID=1 mise env' /dev/null 2>&1)" || status=$?
+
+if [[ $status == 124 ]]; then
+  fail "mise did not accept the answer and hung on the trust prompt"
+fi
+# The prompt was shown and answered.
+assert_contains_text "$output" "not trusted"
+
+if [[ $(marker_count) != 1 ]]; then
+  fail "declining the trust prompt did not record an ignore marker"
+fi
+ok "[trust] declining records an ignore marker"
+
+# Declining is not an error. Recording the marker makes the config *ignored*, and
+# an ignored config is skipped rather than fatal -- unlike an untrusted one, which
+# is what test_trust_prompt_non_interactive pins. So this run succeeds and simply
+# does not apply the config.
+if [[ $status != 0 ]]; then
+  fail "expected mise to succeed once the config was ignored, got status $status: $output"
+fi
+assert_not_contains_text "$output" "TRUST_PROMPT_TEST"
+ok "[trust] the declined config is skipped rather than fatal"
+
+# And the marker sticks: the next run neither prompts nor applies the config, with
+# no pty involved at all. Checking only that the config is absent would also pass
+# if mise had asked again and been declined, so assert the trust path is not
+# entered at all.
+status=0
+output="$(MISE_YES=0 MISE_PARANOID=1 mise env 2>&1)" || status=$?
+if [[ $status != 0 ]]; then
+  fail "expected the ignored config to be skipped, got status $status: $output"
+fi
+assert_not_contains_text "$output" "TRUST_PROMPT_TEST"
+assert_not_contains_text "$output" "not trusted"
+if [[ $(marker_count) != 1 ]]; then
+  fail "the ignore marker was not reused on the next run"
+fi
+ok "[trust] the recorded decline suppresses the next prompt"

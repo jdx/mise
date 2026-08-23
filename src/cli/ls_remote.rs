@@ -20,34 +20,35 @@ struct VersionOutputAll {
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
     /// Pre-release flag, sourced from upstream metadata or backend opt-in
-    /// detection. Always emitted so JSON consumers can rely on its presence.
-    prerelease: bool,
+    /// detection. Always emitted so JSON consumers can rely on its presence:
+    /// `true`/`false` when the source can tell, `null` when it cannot.
+    prerelease: Option<bool>,
 }
 
 /// List runtime versions available for install.
 ///
 /// Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
 )]
 pub(crate) struct LsRemote {
     /// Tool to get versions for
-    #[clap(value_name = "TOOL@VERSION", required_unless_present = "all")]
+    #[usage(value_name = "TOOL@VERSION", required_unless = "all")]
     pub plugin: Option<ToolArg>,
 
     /// The version prefix to use when querying the latest version
     /// same as the first argument after the "@"
-    #[clap(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     pub prefix: Option<String>,
 
     /// Show all installed plugins and versions
-    #[clap(long, verbatim_doc_comment, conflicts_with_all = ["plugin", "prefix"])]
+    #[usage(long, verbatim_doc_comment, conflicts = ["plugin", "prefix"])]
     pub all: bool,
 
     /// Only show versions released before this age or date
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
-    #[clap(
+    #[usage(
         long,
         alias = "before",
         value_name = "MINIMUM_RELEASE_AGE",
@@ -56,18 +57,18 @@ pub(crate) struct LsRemote {
     pub minimum_release_age: Option<String>,
 
     /// Output in JSON format (includes version metadata like created_at timestamps when available)
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Disable checking the mise-versions host
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub no_versions_host: bool,
 
     /// Include pre-release versions in the output for backends that report
     /// upstream prerelease metadata or opt in to regex-based prerelease
     /// detection. Equivalent to setting `MISE_PRERELEASES=1` or the
     /// `prereleases` setting for the duration of this command.
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub prerelease: bool,
 
     /// Fail if release metadata fetches fail
@@ -76,7 +77,7 @@ pub(crate) struct LsRemote {
     ///
     /// This prevents metadata consumers from accepting empty fallback results
     /// when a backend's metadata-producing upstream request fails.
-    #[clap(long, verbatim_doc_comment, requires_all = ["json", "no_versions_host"])]
+    #[usage(long, verbatim_doc_comment, requires = ["json", "no_versions_host"])]
     pub strict_metadata: bool,
 }
 
@@ -233,3 +234,36 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     [{"version":"2.62.0","created_at":"2024-11-14T15:40:35Z","prerelease":false},{"version":"2.61.0","created_at":"2024-10-23T19:22:15Z","prerelease":false}]
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_all_json_output_always_carries_prerelease() {
+        // The --all --json contract: the field is always present — true/false
+        // when the source can tell, null when it cannot. (Single-tool --json
+        // serializes VersionInfo instead, which omits the key when unknown.)
+        let known = VersionOutputAll {
+            tool: "a".into(),
+            version: "1.0.0".into(),
+            created_at: None,
+            prerelease: Some(false),
+        };
+        assert_eq!(
+            serde_json::to_string(&known).unwrap(),
+            r#"{"tool":"a","version":"1.0.0","prerelease":false}"#
+        );
+
+        let unknown = VersionOutputAll {
+            tool: "a".into(),
+            version: "2.0.0".into(),
+            created_at: None,
+            prerelease: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&unknown).unwrap(),
+            r#"{"tool":"a","version":"2.0.0","prerelease":null}"#
+        );
+    }
+}

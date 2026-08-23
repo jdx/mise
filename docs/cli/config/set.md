@@ -19,7 +19,7 @@ The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags
 
-### `-f --file <FILE>`
+### `-f --file --path <FILE>`
 
 The path to the mise.toml file to edit
 

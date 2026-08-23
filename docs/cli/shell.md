@@ -27,6 +27,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-u --unset`
 
 Removes a previously set version

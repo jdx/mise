@@ -61,10 +61,10 @@ type = "Bool"
 [all_compile]
 description = "do not use precompiled binaries for any tool"
 docs = """
-Default: false unless running Alpine. NixOS also defaults to true temporarily, but that automatic
-default is deprecated: affected source installs warn beginning in mise 2026.8.0, and the default
-will be removed in mise 2027.8.0. Afterward, NixOS users who require source builds must set
-`all_compile = true` explicitly.
+Default: false unless running Alpine or NixOS. Both automatic defaults are deprecated:
+affected source installs warn beginning in mise 2026.8.0, and the defaults will be removed in
+mise 2027.8.0. Afterward, users who require source builds must set `all_compile = true`
+explicitly.
 
 Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
 like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
@@ -2310,6 +2310,14 @@ type = "Bool"
 
 [raw]
 description = "Connect stdin/stdout/stderr to child processes."
+docs = """
+Connect stdin/stdout/stderr to child processes.
+
+A raw command holds an exclusive lock for as long as it runs, so no other command runs alongside it.
+Enabling this globally therefore serializes task execution whatever `jobs` is set to: the parallel
+execution engine still schedules the tasks, but only one of them can be running a command at a time.
+`mise run --raw` goes further and sets the scheduler itself to a single job.
+"""
 env = "MISE_RAW"
 type = "Bool"
 

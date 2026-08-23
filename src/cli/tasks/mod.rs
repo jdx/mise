@@ -1,4 +1,3 @@
-use clap::Subcommand;
 use eyre::{Result, bail};
 
 use crate::cli::run;
@@ -12,20 +11,20 @@ mod ls;
 mod validate;
 
 /// Manage tasks
-#[derive(clap::Args)]
-#[clap(visible_alias = "t", alias = "task", verbatim_doc_comment)]
+#[derive(usage_rs::Args)]
+#[usage(visible_alias = "t", alias = "task", verbatim_doc_comment)]
 pub(crate) struct Tasks {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     command: Option<Commands>,
 
     /// Task name to get info of
     task: Option<String>,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     ls: ls::TasksLs,
 }
 
-#[derive(Subcommand)]
+#[derive(usage_rs::Subcommands)]
 enum Commands {
     Add(Box<add::TasksAdd>),
     Deps(deps::TasksDeps),

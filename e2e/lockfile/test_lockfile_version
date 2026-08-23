@@ -1,0 +1,247 @@
+#!/usr/bin/env bash
+
+echo "=== new lockfiles use request bindings ==="
+mkdir -p versioned/packages/b
+cat >versioned/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >versioned/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+
+assert_succeed "cd versioned && mise install"
+assert_succeed "cd versioned/packages/b && mise install"
+assert_contains "cat versioned/mise.lock" "lockfile_version = 1"
+assert_contains "cat versioned/mise.lock" 'specifiers = ["1"]'
+assert_contains "cat versioned/mise.lock" 'specifiers = ["1.0.0"]'
+assert "cd versioned && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd versioned/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+
+echo "=== upgrades move only the matching request binding ==="
+mkdir -p upgrade/packages/b
+cp versioned/mise.toml upgrade/mise.toml
+cp versioned/packages/b/mise.toml upgrade/packages/b/mise.toml
+cat >upgrade/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["1", "1.0.0"]
+EOF
+assert "cd upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+assert_succeed "cd upgrade && mise upgrade dummy"
+assert "cd upgrade && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd upgrade/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "1.0.0"
+
+echo "=== legacy lockfiles require an explicit format upgrade ==="
+mkdir legacy
+cat >legacy/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >legacy/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_contains "cd legacy && mise lock 2>&1" "uses legacy lockfile format version 0"
+assert_not_contains "cat legacy/mise.lock" "lockfile_version"
+assert_not_contains "cat legacy/mise.lock" "specifiers"
+
+echo "=== missing variant lockfiles do not promote legacy lookups ==="
+mkdir legacy-argument
+cat >legacy-argument/mise.toml <<'EOF'
+[settings]
+lockfile = true
+EOF
+cat >legacy-argument/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert "cd legacy-argument && mise x dummy@latest -- dummy --version" "This is Dummy 2.0.0! --version"
+
+assert_contains "cd legacy && mise lock --upgrade" "Upgrading"
+assert_contains "cat legacy/mise.lock" "lockfile_version = 1"
+assert_contains "cat legacy/mise.lock" 'specifiers = ["1.0.0"]'
+
+echo "=== upgrades bind distinct requests resolving to the same version ==="
+mkdir same-version
+cat >same-version/mise.toml <<'EOF'
+[tools]
+dummy = ["1.0", "1.0.0"]
+EOF
+cat >same-version/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_succeed "cd same-version && mise lock --upgrade --platform linux-x64"
+assert_contains "sed -n '/specifiers = \[/,/]/p' same-version/mise.lock" '"1.0",'
+assert_contains "sed -n '/specifiers = \[/,/]/p' same-version/mise.lock" '"1.0.0",'
+
+echo "=== dry-run reports but does not upgrade legacy lockfiles ==="
+mkdir legacy-dry-run
+cp legacy/mise.toml legacy-dry-run/mise.toml
+cat >legacy-dry-run/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_contains "cd legacy-dry-run && mise lock --upgrade --dry-run" "Would upgrade"
+assert_not_contains "cat legacy-dry-run/mise.lock" "lockfile_version"
+
+echo "=== format upgrades cannot be filtered ==="
+mkdir legacy-filtered
+cat >legacy-filtered/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+tiny = "2.1.0"
+EOF
+cat >legacy-filtered/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+
+[[tools.tiny]]
+version = "2.1.0"
+backend = "asdf:tiny"
+EOF
+
+assert_fail "cd legacy-filtered && mise lock --upgrade dummy"
+assert_not_contains "cat legacy-filtered/mise.lock" "lockfile_version"
+assert_contains "cat legacy-filtered/mise.lock" '[[tools.tiny]]'
+
+echo "=== mixed-format monorepo migration preserves bindings ==="
+mkdir -p mixed-monorepo/packages/b
+cat >mixed-monorepo/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1"
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >mixed-monorepo/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+cat >mixed-monorepo/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+EOF
+cat >mixed-monorepo/packages/b/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+specifiers = ["1.0.0"]
+EOF
+
+assert_succeed "cd mixed-monorepo && mise lock --upgrade --platform linux-x64"
+assert_fail "test -f mixed-monorepo/packages/b/mise.lock"
+assert_contains "cat mixed-monorepo/mise.lock" 'specifiers = ["1.0.0"]'
+
+echo "=== unbound versioned entries use backend version order ==="
+mkdir unbound-versioned
+cat >unbound-versioned/mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+cat >unbound-versioned/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert "cd unbound-versioned && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
+
+echo "=== failed upgrades preserve legacy monorepo lockfiles ==="
+mkdir -p failed-monorepo-upgrade/packages/b
+cat >failed-monorepo-upgrade/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "3.0.0"
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >failed-monorepo-upgrade/packages/b/mise.toml <<'EOF'
+[env]
+CHILD = "true"
+EOF
+cat >failed-monorepo-upgrade/packages/b/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+cp failed-monorepo-upgrade/packages/b/mise.lock failed-monorepo-upgrade/packages/b/mise.lock.before
+
+mise cache clear dummy
+assert_fail_contains "cd failed-monorepo-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1" "failed to resolve"
+assert_succeed "test -f failed-monorepo-upgrade/packages/b/mise.lock"
+assert_succeed "cmp failed-monorepo-upgrade/packages/b/mise.lock.before failed-monorepo-upgrade/packages/b/mise.lock"
+assert_fail "test -f failed-monorepo-upgrade/mise.lock"
+
+echo "=== failed upgrades do not commit or report earlier targets ==="
+mkdir failed-multi-target-upgrade
+cat >failed-multi-target-upgrade/mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+cat >failed-multi-target-upgrade/mise.local.toml <<'EOF'
+[tools]
+dummy = "3.0.0"
+EOF
+cat >failed-multi-target-upgrade/mise.lock <<'EOF'
+[[tools.tiny]]
+version = "1.0.0"
+backend = "asdf:tiny"
+EOF
+cat >failed-multi-target-upgrade/mise.local.lock <<'EOF'
+[[tools.dummy]]
+version = "1.0.0"
+backend = "asdf:dummy"
+EOF
+cp failed-multi-target-upgrade/mise.lock failed-multi-target-upgrade/mise.lock.before
+cp failed-multi-target-upgrade/mise.local.lock failed-multi-target-upgrade/mise.local.lock.before
+
+mise cache clear dummy
+assert_fail_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1" "failed to resolve"
+assert_succeed "cmp failed-multi-target-upgrade/mise.lock.before failed-multi-target-upgrade/mise.lock"
+assert_succeed "cmp failed-multi-target-upgrade/mise.local.lock.before failed-multi-target-upgrade/mise.local.lock"
+assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Upgrading"
+assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Pruned"
+assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Lockfile written"

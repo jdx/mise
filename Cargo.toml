@@ -43,7 +43,7 @@ include = [
   "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
-rust-version = "1.93"
+rust-version = "1.95"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -69,10 +69,10 @@ opt-level = 3
 [dependencies]
 age = { version = "0.12", features = ["ssh"] }
 aho-corasick = "1"
-aube-registry = { version = "1", default-features = false, features = [
+aube-registry = { version = "2", default-features = false, features = [
   "rustls",
 ] }
-aube = { version = "1", default-features = false, features = ["rustls"] }
+aube = { version = "2", default-features = false, features = ["rustls"] }
 async-backtrace = "0.2"
 async-trait = "0.1"
 aws-config = { version = "1", default-features = false, features = [
@@ -97,7 +97,11 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-clap = { version = "4", features = ["env", "derive", "string"] }
+usage_rs = { package = "usage-rs", version = "6", features = [
+  "completions",
+  "diagnostics",
+  "validation",
+] }
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "8"
@@ -228,7 +232,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.10", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "5", features = ["clap", "docs"] }
+usage-lib = { version = "6", features = ["docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
@@ -285,7 +289,6 @@ serde_yaml = "0.9"
 toml = "1"
 
 [dev-dependencies]
-clap-sort = "1"
 ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"

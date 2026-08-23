@@ -18,11 +18,11 @@ use crate::{dirs, duration, env, file};
 /// Displays the version, os, architecture, and the date of the build.
 ///
 /// If the version is out of date, it will display a warning.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, visible_alias = "v", after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Version {
     /// Print the version information in JSON format
-    #[clap(short = 'J', long)]
+    #[usage(short = 'J', long)]
     json: bool,
 }
 

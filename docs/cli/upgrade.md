@@ -44,6 +44,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Just print what would be done, don't actually do it

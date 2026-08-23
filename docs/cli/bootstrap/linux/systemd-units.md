@@ -2,6 +2,7 @@
 # `mise bootstrap linux systemd-units`
 
 - **Usage**: `mise bootstrap linux systemd-units <SUBCOMMAND>`
+- **Aliases**: `systemd`
 - **Effect**: read-only
 - **Source code**: [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 

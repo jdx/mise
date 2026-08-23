@@ -18,54 +18,55 @@ use crate::ui::prompt;
 /// If the target is already managed, this updates its source from the live
 /// target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 /// under `dotfiles.root` unless `--source` is provided.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesAdd {
     /// Targets to add or update
-    #[clap(value_name = "TARGET", required = true)]
+    #[usage(value_name = "TARGET", required = true)]
     pub(super) targets: Vec<String>,
 
     /// Overwrite existing sources without prompting
-    #[clap(long, short)]
+    #[usage(long, short)]
     pub(super) force: bool,
 
     /// Write to the global config
-    #[clap(long, short, conflicts_with_all = ["local", "path"])]
+    #[usage(long, short, conflicts = ["local", "path"])]
     pub(super) global: bool,
 
     /// Write to the local config instead of the global config
-    #[clap(long, short, conflicts_with_all = ["global", "path"])]
+    #[usage(long, short, conflicts = ["global", "path"])]
     pub(super) local: bool,
 
     /// Dotfile mode to write
-    #[clap(long, short)]
+    #[usage(long, short)]
     pub(super) mode: Option<String>,
 
     /// Print the config/source updates without writing anything
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     pub(super) dry_run: bool,
 
     /// Add the entry without applying it
-    #[clap(long)]
+    #[usage(long)]
     pub(super) no_apply: bool,
 
     /// Write to this config file or directory
     // No `--file` alias here: `-f` on this command is `--force`, and `targets` accepts any
     // string, so `-f <path>` silently adds the config file as a dotfile instead of writing
     // to it. See `mise unset --path` for the commands where the short form is free.
-    #[clap(long, short, value_name = "PATH", conflicts_with_all = ["global", "local"])]
+    #[usage(long, short, value_name = "PATH", conflicts = ["global", "local"])]
     pub(super) path: Option<PathBuf>,
 
     /// Source path to use for a single target
-    #[clap(long, short, value_name = "PATH")]
+    #[usage(long, short, value_name = "PATH")]
     pub(super) source: Option<PathBuf>,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[usage(long, short)]
     pub(super) yes: bool,
 }
 
 impl DotfilesAdd {
+    /// Validate and capture the requested targets as one transactional update.
     pub(crate) async fn run(self) -> Result<()> {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
@@ -133,7 +134,7 @@ impl DotfilesAdd {
                     mode.name()
                 );
             }
-            planned.push(PlannedAdd {
+            let item = PlannedAdd {
                 target_raw: normalized_target_raw(&target),
                 target,
                 source,
@@ -141,8 +142,33 @@ impl DotfilesAdd {
                 implied_source: self.source.is_none(),
                 explicit_mode: self.mode.is_some(),
                 already_managed: existing.cloned(),
-            });
+            };
+            // Wildcard expansion and equivalent spellings can resolve more
+            // than one argument to the same config key. The eventual config
+            // write is unique by target, so plan its filesystem work once too.
+            if !planned
+                .iter()
+                .any(|planned: &PlannedAdd| planned.target == item.target)
+            {
+                planned.push(item);
+            }
         }
+
+        let mut prospective = managed.clone();
+        for item in &planned {
+            if let Some(existing) = &item.already_managed
+                && let Some(index) = prospective.iter().position(|request| {
+                    request.target == existing.target
+                        && request.source == existing.source
+                        && request.mode == existing.mode
+                        && request.origin.config == existing.origin.config
+                })
+            {
+                prospective.remove(index);
+            }
+            prospective.push(item.validation_request(&config_path));
+        }
+        system::files::validate_composed_file_footprints(&prospective)?;
 
         if self.dry_run {
             for item in &planned {
@@ -193,7 +219,8 @@ impl DotfilesAdd {
                             "dotfiles: overwrite source {} from {}?",
                             item.source.display_user(),
                             item.target.display_user()
-                        ))?;
+                        ))?
+                        .is_yes();
                         if !ok {
                             info!("dotfiles: skipped {}", item.target_raw);
                             continue;
@@ -297,7 +324,7 @@ impl DotfilesAdd {
                     updated_targets.push(item.target_raw.as_str());
                 }
                 accepted.push(item);
-                apply_requests.push(item.as_request(&config_path));
+                apply_requests.push(item.managed_request(&config_path));
             }
 
             let apply_opts = system::files::ApplyOpts {
@@ -380,6 +407,30 @@ struct PlannedAdd {
 }
 
 impl PlannedAdd {
+    /// Build the request that will exist after capture, using the live target
+    /// as the future source footprint when add is about to copy or move it.
+    fn validation_request(&self, config_path: &std::path::Path) -> FileRequest {
+        let mut request = self.managed_request(config_path);
+        if self.target.exists() && !same_file(&self.target, &self.source) {
+            request.source = self.target.clone();
+        } else if !self.source.exists() && self.mode != FileMode::SymlinkEach {
+            // Add creates an empty source file in this case. Content mode gives
+            // the validator that known leaf shape without touching the disk.
+            request.mode = FileMode::Content;
+            request.content = Some(String::new());
+        }
+        request
+    }
+
+    /// Preserve an existing declaration's options when an add refreshes its
+    /// source; newly added declarations use the command-derived request.
+    fn managed_request(&self, config_path: &std::path::Path) -> FileRequest {
+        self.already_managed
+            .clone()
+            .unwrap_or_else(|| self.as_request(config_path))
+    }
+
+    /// Convert a newly added target into its configured file request.
     fn as_request(&self, config_path: &std::path::Path) -> FileRequest {
         FileRequest {
             target_raw: self.target_raw.clone(),

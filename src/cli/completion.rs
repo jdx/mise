@@ -1,165 +1,150 @@
-use crate::cmd::cmd;
-use crate::config::Config;
-use crate::toolset::{ConfigScope, ResolveOptions, ToolsetBuilder};
-use clap::ValueEnum;
-use clap::builder::PossibleValue;
+use crate::cli::Cli;
 use eyre::Result;
 use strum::EnumString;
 
 /// Generate shell completions
-#[derive(Debug, clap::Args)]
-#[clap(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(aliases = ["complete", "completions"], verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Completion {
     /// Shell type to generate completions for
-    #[clap(required_unless_present = "shell_type")]
+    #[usage(required_unless = "shell_type", value_enum)]
     shell: Option<Shell>,
 
     /// Shell type to generate completions for
-    #[clap(long = "shell", short = 's', hide = true)]
+    #[usage(long = "shell", short = 's', hide = true, value_enum)]
     shell_type: Option<Shell>,
 
-    /// Include the bash completion library in the bash completion script
+    /// Retained for compatibility with older completion generators.
     ///
-    /// This is required for completions to work in bash, but it is not included by default
-    /// you may source it separately or enable this flag to enable it in the script.
-    #[clap(long, verbatim_doc_comment)]
+    /// usage-rs's built-in bash script is self-contained, so this is now a no-op.
+    #[usage(long, verbatim_doc_comment)]
     include_bash_completion_lib: bool,
 
-    /// Always use usage for completions.
-    /// Currently, usage is the default for fish and bash but not zsh since it has a few quirks
-    /// to work out first.
+    /// Retained for compatibility with older completion generators.
     ///
-    /// This requires the `usage` CLI to be installed.
-    /// https://usage.jdx.dev
-    #[clap(long, verbatim_doc_comment, hide = true)]
+    /// Completions now always use usage-rs's built-in protocol, so this is a no-op.
+    #[usage(long, verbatim_doc_comment, hide = true)]
     usage: bool,
+
+    /// Install the script where this shell looks for it, instead of printing it
+    ///
+    /// Writes the script file and nothing else: no shell rc file and no PowerShell profile is
+    /// edited. Where a shell needs a one-time line of its own — zsh's `fpath+=`, PowerShell's
+    /// dot-source — it is printed for you to add.
+    #[usage(long, verbatim_doc_comment, effect = "write")]
+    install: bool,
+
+    /// Replace a file at the target path that mise did not write
+    #[usage(long, requires = "--install", effect = "write")]
+    force: bool,
 }
 
 impl Completion {
     pub(crate) async fn run(self) -> Result<()> {
         let shell = self.shell.or(self.shell_type).unwrap();
-
-        let script = match self.call_usage(shell).await {
-            Ok(script) => script,
-            Err(e) => {
-                debug!("usage command failed, falling back to prerendered completions");
-                debug!("error: {e:?}");
-                self.prerendered(shell)
-            }
-        };
+        if self.install {
+            return self.install_script(shell.into());
+        }
+        let script = Cli::completion_script(shell.into());
         miseprintln!("{}", script.trim());
 
         Ok(())
     }
 
-    async fn call_usage(&self, shell: Shell) -> Result<String> {
-        let args = self.usage_args(shell);
+    /// Put the script where this shell looks for it, and say what is left to do.
+    ///
+    /// The location comes from usage rather than from a table here, so `mise completion zsh
+    /// --install` and `usage g completion zsh mise --install` cannot disagree about where a mise
+    /// completion lives.
+    fn install_script(&self, shell: usage_rs::complete::Shell) -> Result<()> {
+        use usage_rs::install::{self, OnForeign, Wrote};
 
-        // Prefer an explicitly available usage binary without loading any mise configuration.
-        // This is both the cheapest path and avoids project trust prompts during lazy completion.
-        match cmd("usage", &args).read() {
-            Ok(output) => return Ok(output),
-            Err(err) => debug!("usage command from PATH failed: {err:?}"),
+        let on_foreign = if self.force {
+            OnForeign::Overwrite
+        } else {
+            OnForeign::Refuse
+        };
+        // The environment is described from this process rather than reached for inside the
+        // resolver, which is what lets a test point the same code path somewhere harmless.
+        let done = Cli::install_completion(shell, &install::Env::from_process(), on_foreign)
+            .map_err(|err| match &err {
+                install::Error::Foreign { .. } => eyre::eyre!(
+                    "{err}\n\nPass --force to replace it, or redirect the script yourself."
+                ),
+                _ => eyre::Report::new(err),
+            })?;
+
+        // Everything here goes to stderr, so stdout stays empty under `--install`. The examples
+        // below document `mise completion zsh > …`, and prose on stdout would land in that file.
+        eprintln!("installing to {}", done.plan.path.display());
+        if done.wrote == Wrote::Unchanged {
+            eprintln!("already up to date");
         }
-
-        // A globally managed usage binary is still useful, but project configuration must not be
-        // consulted while the shell is bootstrapping completion. Offline resolution also prevents
-        // shell startup from fetching versions.
-        let config = Config::load_global().await?;
-        let toolset = ToolsetBuilder::new()
-            .with_scope(ConfigScope::GlobalOnly)
-            .with_resolve_options(ResolveOptions {
-                offline: true,
-                ..Default::default()
-            })
-            .build(&config)
-            .await?;
-        Ok(cmd("usage", args)
-            .full_env(toolset.full_env(&config).await?)
-            .read()?)
-    }
-
-    fn usage_args(&self, shell: Shell) -> Vec<String> {
-        let mut args = vec![
-            "generate".into(),
-            "completion".into(),
-            shell.to_string(),
-            "mise".into(),
-            "--usage-cmd".into(),
-            "mise usage".into(),
-            "--cache-key".into(),
-            env!("CARGO_PKG_VERSION").into(),
-        ];
-        if self.include_bash_completion_lib {
-            args.push("--include-bash-completion-lib".into());
+        if let Some(line) = done.plan.loading.instruction() {
+            let file = match &done.plan.loading {
+                install::Loading::Manual { file, .. } => file.as_str(),
+                _ => "your shell's startup file",
+            };
+            eprintln!("\nadd this to {file}, once:\n\n{line}\n");
         }
-        args
-    }
-
-    fn prerendered(&self, shell: Shell) -> String {
-        match shell {
-            Shell::Bash => include_str!("../../completions/mise.bash"),
-            Shell::Fish => include_str!("../../completions/mise.fish"),
-            Shell::Powershell => include_str!("../../completions/mise.ps1"),
-            Shell::Zsh => include_str!("../../completions/_mise"),
+        if let Some(note) = done.plan.note {
+            eprintln!("note: {note}");
         }
-        .to_string()
+        Ok(())
     }
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise</bold>
+    # put it where the shell looks, and print any one-time line it still needs
+    $ <bold>mise completion zsh --install</bold>
+
+    # or choose the path yourself
+    $ <bold>mise completion bash > ~/.local/share/bash-completion/completions/mise</bold>
     $ <bold>mise completion zsh  > /usr/local/share/zsh/site-functions/_mise</bold>
     $ <bold>mise completion fish > ~/.config/fish/completions/mise.fish</bold>
     $ <bold>mise completion powershell >> $PROFILE</bold>
 "#
 );
 
-#[derive(Debug, Clone, Copy, EnumString, strum::Display)]
+#[derive(Debug, Clone, Copy, EnumString, strum::Display, usage_rs::ValueEnum)]
 #[strum(serialize_all = "snake_case")]
+#[usage(rename_all = "snake_case")]
 enum Shell {
     Bash,
     Fish,
     #[strum(serialize = "powershell")]
+    #[usage(name = "powershell", visible_alias = "pwsh")]
     Powershell,
     Zsh,
 }
 
-impl ValueEnum for Shell {
-    fn value_variants<'a>() -> &'a [Self] {
-        &[Self::Bash, Self::Fish, Self::Powershell, Self::Zsh]
-    }
-    fn to_possible_value(&self) -> Option<PossibleValue> {
-        let value = PossibleValue::new(self.to_string());
-        Some(match self {
-            // `mise activate` names this shell `pwsh`, and the two commands are run one after the
-            // other during setup, so whichever name a user learns first is rejected by the other.
-            // The names differ only because the two lists come from different places, not because
-            // they mean different shells.
-            //
-            // `mise usage` renders aliases, so this shows up in the generated CLI docs as a
-            // choice alongside `powershell` rather than being hidden.
-            Self::Powershell => value.alias("pwsh"),
-            _ => value,
-        })
+impl From<Shell> for usage_rs::complete::Shell {
+    fn from(shell: Shell) -> Self {
+        match shell {
+            Shell::Bash => Self::Bash,
+            Shell::Fish => Self::Fish,
+            Shell::Powershell => Self::PowerShell,
+            Shell::Zsh => Self::Zsh,
+        }
     }
 }
 
 #[cfg(test)]
 mod shell_name_tests {
     use super::*;
+    use usage_rs::spec::ValueEnum;
 
     #[test]
     fn pwsh_is_accepted_as_powershell() {
         assert!(matches!(
-            <Shell as ValueEnum>::from_str("pwsh", true),
-            Ok(Shell::Powershell)
+            <Shell as ValueEnum>::from_choice("pwsh"),
+            Some(Shell::Powershell)
         ));
         assert!(matches!(
-            <Shell as ValueEnum>::from_str("powershell", true),
-            Ok(Shell::Powershell)
+            <Shell as ValueEnum>::from_choice("powershell"),
+            Some(Shell::Powershell)
         ));
     }
 
@@ -167,37 +152,14 @@ mod shell_name_tests {
     fn the_primary_names_are_unchanged() {
         // Only the *names* -- the alias is rendered into the CLI docs, so asserting it absent
         // here would state something false. This pins that adding it renamed nothing.
-        let listed: Vec<String> = Shell::value_variants()
-            .iter()
-            .filter_map(|v| v.to_possible_value())
-            .map(|pv| pv.get_name().to_string())
-            .collect();
+        let listed: Vec<&str> = Shell::DETAILS.iter().map(|choice| choice.value).collect();
         assert_eq!(listed, ["bash", "fish", "powershell", "zsh"]);
     }
 
     #[test]
-    fn usage_arguments_preserve_completion_options() {
-        let completion = Completion {
-            shell: None,
-            shell_type: None,
-            include_bash_completion_lib: true,
-            usage: false,
-        };
-        let args = completion.usage_args(Shell::Bash);
-
-        assert_eq!(
-            args,
-            [
-                "generate",
-                "completion",
-                "bash",
-                "mise",
-                "--usage-cmd",
-                "mise usage",
-                "--cache-key",
-                env!("CARGO_PKG_VERSION"),
-                "--include-bash-completion-lib",
-            ]
-        );
+    fn completion_script_calls_back_into_mise() {
+        let script = Cli::completion_script(usage_rs::complete::Shell::Bash);
+        assert!(script.contains("mise' __complete_word__"), "{script}");
+        assert!(!script.contains("command usage"), "{script}");
     }
 }

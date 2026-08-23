@@ -18,7 +18,7 @@ e.g.: NODE_ENV
 
 ## Flags
 
-### `-f --file <FILE>`
+### `-f --file --path <FILE>`
 
 Specify a file to use instead of `mise.toml`
 

@@ -256,9 +256,8 @@ impl Backend for VfoxBackend {
         let (mut vfox, log_rx) = self.plugin.vfox()?;
         Self::forward_plugin_logs(log_rx);
         let mut cmd_env: indexmap::IndexMap<String, String> = self
-            .dependency_env(&ctx.config)
-            .await
-            .unwrap_or_default()
+            .dependency_env_for_install(ctx, &tv)
+            .await?
             .into_iter()
             .collect();
         let tool_options = self.tool_options_for_tv(&ctx.config, &tv).await;
@@ -285,31 +284,22 @@ impl Backend for VfoxBackend {
         // ctx.ts: ctx.ts is the raw install toolset (`Toolset::from(ToolRequestSet)`)
         // whose `.versions` are empty until `resolve()` runs *after* installs, so its
         // `tools.*` tera map is empty and `{{ tools.python.path }}` would render "".
-        // `install_dependency_context` is resolved offline and includes both backend deps
+        // The install dependency context is resolved offline and includes both backend deps
         // and the per-tool mise.toml `depends` option (`gcloud = { depends =
         // ["python"] }`) with real install paths, and is install-safe (it uses
         // `get_tool_request_set()`, not the deadlock-prone `config.get_toolset()`).
         // Best-effort: env *modules* are excluded via `ToolsFilter::ToolsOnlyVals`,
-        // any resolution error falls back to the tool-less env, and PATH is left to
-        // `dependency_env`. (#10282, follow-up to #10432)
+        // any value evaluation error falls back to the tool-less env, and PATH is left to
+        // the strict install dependency environment. (#10282, follow-up to #10432)
         {
             let base: EnvMap = cmd_env.clone().into_iter().collect();
-            let tool_vals = match self.install_dependency_context(ctx, &tv).await {
-                Ok(dependencies) => dependencies.toolset.tool_val_env(&ctx.config, &base).await,
-                Err(e) => Err(e),
-            };
+            let dependencies = ctx.dependency_context(&tv.request).await?;
+            let tool_vals = dependencies.toolset.tool_val_env(&ctx.config, &base).await;
             match tool_vals {
                 Ok(vals) => {
                     for (k, v) in vals {
-                        // PATH stays owned by dependency_env. On Windows env var
-                        // names are case-insensitive, so exclude any casing
-                        // (e.g. a lowercase `path`); on unix only exact `PATH`.
-                        let is_path = if cfg!(windows) {
-                            k.eq_ignore_ascii_case(crate::env::PATH_KEY.as_str())
-                        } else {
-                            k.as_str() == crate::env::PATH_KEY.as_str()
-                        };
-                        if !is_path {
+                        // PATH stays owned by dependency_env, under any casing on Windows.
+                        if !crate::env::is_path_key(&k) {
                             set_env_var(&mut cmd_env, k, v);
                         }
                     }

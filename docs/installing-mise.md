@@ -134,6 +134,13 @@ apk add mise
 _mise lives in
 the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
 
+::: warning Alpine source-build default is deprecated
+Alpine currently compiles tools from source by default. This automatic behavior is deprecated:
+affected source installs warn beginning in mise 2026.8.0, and the default will switch to
+precompiled binaries in mise 2027.8.0. To keep compiling from source, set
+[`all_compile = true`](/configuration/settings.html#all_compile) explicitly.
+:::
+
 ### apt
 
 On Ubuntu 26.04+, mise is available via a PPA:
@@ -476,20 +483,22 @@ Some installation methods automatically install autocompletion scripts.
 :::
 
 The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
-This requires `usage` to be installed. If you don't have it, install it with:
+The generated scripts are self-contained and do not require the separate `usage` CLI.
+
+The simplest way to install the completion script is:
 
 ```shell
-mise use -g usage
+mise completion <shell> --install
 ```
 
-Then, run the following commands to install the completion script for your shell:
+Replace `<shell>` with `bash`, `zsh`, `fish`, or `powershell`. Alternatively, choose the path yourself:
 
 ::: code-group
 
 ```sh [bash]
 # This requires bash-completion to be installed
 mkdir -p ~/.local/share/bash-completion/completions/
-mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
+mise completion bash > ~/.local/share/bash-completion/completions/mise
 ```
 
 ```sh [zsh]

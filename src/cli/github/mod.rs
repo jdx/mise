@@ -1,14 +1,14 @@
 mod token;
 
 /// GitHub related commands
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(crate) struct Github {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     subcommand: Commands,
 }
 
-#[derive(Debug, clap::Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Token(token::Token),
 }

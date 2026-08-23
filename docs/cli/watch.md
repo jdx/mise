@@ -32,49 +32,6 @@ Task and arguments to run
 
 Run only the specified tasks skipping all dependencies
 
-### `-w --watch… <PATH>`
-
-Watch a specific file or directory
-
-By default, Watchexec watches the current directory.
-
-When watching a single file, it's often better to watch the containing directory instead, and filter on the filename. Some editors may replace the file with a new one when saving, and some platforms may not detect that or further changes.
-
-Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help for '--project-origin' for more information.
-
-This option can be specified multiple times to watch multiple files or directories.
-
-The special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used.
-
-### `-W --watch-non-recursive… <PATH>`
-
-Watch a specific directory, non-recursively
-
-Unlike '-w', folders watched with this option are not recursed into.
-
-This option can be specified multiple times to watch multiple directories non-recursively.
-
-### `-F --watch-file <PATH>`
-
-Watch files and directories from a file
-
-Each line in the file will be interpreted as if given to '-w'.
-
-For more complex uses (like watching non-recursively), use the argfile capability: build a file containing command-line options and pass it to watchexec with `@path/to/argfile`.
-
-The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
-
-### `-c --clear <MODE>`
-
-Clear screen before running command
-
-If this doesn't completely clear the screen, try '--clear=reset'.
-
-**Choices:**
-
-- `clear`
-- `reset`
-
 ### `-o --on-busy-update <MODE>`
 
 What to do when receiving events while the command is running
@@ -166,6 +123,80 @@ Exit when stdin closes
 
 This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is closed. This is used by some process managers to avoid leaving zombie processes around.
 
+### `-p --postpone`
+
+Wait until first change before running command
+
+By default, Watchexec will run the command once immediately. With this option, it will instead wait until an event is detected before running the command as normal.
+
+### `--delay-run <DURATION>`
+
+Sleep before running the command
+
+This option will cause Watchexec to sleep for the specified amount of time before running the command, after an event is detected. This is like using "sleep 5 && command" in a shell, but portable and slightly more efficient.
+
+Takes a unit-less value in seconds, or a time span value such as "2min 5s". Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+
+### `--poll [INTERVAL]`
+
+Poll for filesystem changes
+
+By default, and where available, Watchexec uses the operating system's native file system watching capabilities. This option disables that and instead uses a polling mechanism, which is less efficient but can work around issues with some file systems (like network shares) or edge cases.
+
+Optionally takes a unit-less value in milliseconds, or a time span value such as "2s 500ms", to use as the polling interval. If not specified, the default is 30 seconds. Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+
+Aliased as '--force-poll'.
+
+### `--project-origin <DIRECTORY>`
+
+Set the project origin
+
+Watchexec will attempt to discover the project's "origin" (or "root") by searching for a variety of markers, like files or directory patterns. It does its best but sometimes gets it it wrong, and you can override that with this option.
+
+The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
+
+When set, Watchexec will also not bother searching, which can be significantly faster.
+
+### `--workdir <DIRECTORY>`
+
+Set the working directory
+
+By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
+
+## Filtering
+
+### `-w --watch… <PATH>`
+
+Watch a specific file or directory
+
+By default, Watchexec watches the current directory.
+
+When watching a single file, it's often better to watch the containing directory instead, and filter on the filename. Some editors may replace the file with a new one when saving, and some platforms may not detect that or further changes.
+
+Upon starting, Watchexec resolves a "project origin" from the watched paths. See the help for '--project-origin' for more information.
+
+This option can be specified multiple times to watch multiple files or directories.
+
+The special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used.
+
+### `-W --watch-non-recursive… <PATH>`
+
+Watch a specific directory, non-recursively
+
+Unlike '-w', folders watched with this option are not recursed into.
+
+This option can be specified multiple times to watch multiple directories non-recursively.
+
+### `-F --watch-file <PATH>`
+
+Watch files and directories from a file
+
+Each line in the file will be interpreted as if given to '-w'.
+
+For more complex uses (like watching non-recursively), use the argfile capability: build a file containing command-line options and pass it to watchexec with `@path/to/argfile`.
+
+The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
+
 ### `--no-vcs-ignore`
 
 Don't load gitignores
@@ -236,29 +267,189 @@ This is a shorthand for '--no-discover-ignore', '--no-default-ignore'.
 
 Note that ignores explicitly loaded via other command line options, such as '--ignore' or '--ignore-file', will still be used.
 
-### `-p --postpone`
+### `-e --exts… <EXTENSIONS>`
 
-Wait until first change before running command
+Filename extensions to filter to
 
-By default, Watchexec will run the command once immediately. With this option, it will instead wait until an event is detected before running the command as normal.
+This is a quick filter to only emit events for files with the given extensions. Extensions can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can be given by repeating the option or by separating them with commas.
 
-### `--delay-run <DURATION>`
+### `-f --filter… <PATTERN>`
 
-Sleep before running the command
+Filename patterns to filter to
 
-This option will cause Watchexec to sleep for the specified amount of time before running the command, after an event is detected. This is like using "sleep 5 && command" in a shell, but portable and slightly more efficient.
+Provide a glob-like filter pattern, and only events for files matching the pattern will be emitted. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
 
-Takes a unit-less value in seconds, or a time span value such as "2min 5s". Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+### `--filter-file… <PATH>`
 
-### `--poll <INTERVAL>`
+Files to load filters from
 
-Poll for filesystem changes
+Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--filter' option.
 
-By default, and where available, Watchexec uses the operating system's native file system watching capabilities. This option disables that and instead uses a polling mechanism, which is less efficient but can work around issues with some file systems (like network shares) or edge cases.
+This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
 
-Optionally takes a unit-less value in milliseconds, or a time span value such as "2s 500ms", to use as the polling interval. If not specified, the default is 30 seconds. Providing a unit-less value is deprecated and will warn; it will be an error in the future.
+**Environment Variable:** `WATCHEXEC_FILTER_FILES`
 
-Aliased as '--force-poll'.
+### `-J --filter-prog… <EXPRESSION>`
+
+[experimental] Filter programs.
+
+/!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
+
+Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given an event in the same format as described in '--emit-events-to' and must return a boolean. Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
+
+In addition to the jaq stdlib, watchexec adds some custom filter definitions:
+
+  - 'path | file_meta' returns file metadata or null if the file does not exist.
+
+  - 'path | file_size' returns the size of the file at path, or null if it does not exist.
+
+  - 'path | file_read(bytes)' returns a string with the first n bytes of the file at path.
+```
+If the file is smaller than n bytes, the whole file is returned. There is no filter to
+read the whole file at once to encourage limiting the amount of data read and processed.
+```
+
+  - 'string | hash', and 'path | file_hash' return the hash of the string or file at path.
+```
+No guarantee is made about the algorithm used: treat it as an opaque value.
+```
+
+  - 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key-value store.
+```
+Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
+```
+
+  - 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given
+```
+value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
+pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
+```
+
+All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
+
+If the argument to this option starts with an '@', the rest of the argument is taken to be the path to a file containing a jaq program.
+
+Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq or not) rejects an event, execution stops there, and no other filters are run. Additionally, they stop after outputting the first value, so you'll want to use 'any' or 'all' when iterating, otherwise only the first item will be processed, which can be quite confusing!
+
+Find user-contributed programs or submit your own useful ones at &lt;https://github.com/watchexec/watchexec/discussions/592>.
+
+## Examples:
+
+Regexp ignore filter on paths:
+
+  'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
+
+Pass any event that creates a file:
+
+  'any(.tags[] | select(.kind == "fs"); .simple == "create")'
+
+Pass events that touch executable files:
+
+  'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
+
+Ignore files that start with shebangs:
+
+  'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
+
+### `-i --ignore… <PATTERN>`
+
+Filename patterns to filter out
+
+Provide a glob-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
+
+### `--ignore-file… <PATH>`
+
+Files to load ignores from
+
+Provide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--ignore' option.
+
+This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
+
+**Environment Variable:** `WATCHEXEC_IGNORE_FILES`
+
+### `--fs-events… <EVENTS>`
+
+Filesystem events to filter to
+
+This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
+
+This may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs.
+
+**Choices:**
+
+- `access`
+- `create`
+- `remove`
+- `rename`
+- `modify`
+- `metadata`
+
+**Default:** `create,remove,rename,modify,metadata`
+
+### `--no-meta`
+
+Don't emit fs events for metadata changes
+
+This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the '--fs-events' option is non-sensical and not allowed.
+
+## Output
+
+### `-c --clear [MODE]`
+
+Clear screen before running command
+
+If this doesn't completely clear the screen, try '--clear=reset'.
+
+**Choices:**
+
+- `clear`
+- `reset`
+
+### `--only-emit-events`
+
+Only emit events to stdout, run no commands.
+
+This is a convenience option for using Watchexec as a file watcher, without running any commands. It is almost equivalent to using `cat` as the command, except that it will not spawn a new process for each event.
+
+This option requires `--emit-events-to` to be set, and restricts the available modes to `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
+
+### `-N --notify`
+
+Alert when commands start and end
+
+With this, Watchexec will emit a desktop notification when a command starts and ends, on supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
+
+### `--color <MODE>`
+
+When to use terminal colours
+
+Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
+
+**Choices:**
+
+- `auto`
+- `always`
+- `never`
+
+**Default:** `auto`
+
+### `--timings`
+
+Print how long the command took to run
+
+This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
+
+### `-q --quiet`
+
+Don't print starting and stopping messages
+
+By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
+
+### `--bell`
+
+Ring the terminal bell on command completion
+
+## Command
 
 ### `--shell <SHELL>`
 
@@ -280,23 +471,23 @@ Examples:
 
 Use without shell:
 
-$ watchexec -n -- zsh -x -o shwordsplit scr
+  $ watchexec -n -- zsh -x -o shwordsplit scr
 
 Use with powershell core:
 
-$ watchexec --shell=pwsh -- Test-Connection localhost
+  $ watchexec --shell=pwsh -- Test-Connection localhost
 
 Use with CMD.exe:
 
-$ watchexec --shell=cmd -- dir
+  $ watchexec --shell=cmd -- dir
 
 Use with a different unix shell:
 
-$ watchexec --shell=bash -- 'echo $BASH_VERSION'
+  $ watchexec --shell=bash -- 'echo $BASH_VERSION'
 
 Use with a unix shell and options:
 
-$ watchexec --shell='zsh -x -o shwordsplit' -- scr
+  $ watchexec --shell='zsh -x -o shwordsplit' -- scr
 
 ### `-n`
 
@@ -420,14 +611,6 @@ multiple confused queries that have landed in my inbox over the years.
 
 **Default:** `none`
 
-### `--only-emit-events`
-
-Only emit events to stdout, run no commands.
-
-This is a convenience option for using Watchexec as a file watcher, without running any commands. It is almost equivalent to using `cat` as the command, except that it will not spawn a new process for each event.
-
-This option requires `--emit-events-to` to be set, and restricts the available modes to `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin of the command.
-
 ### `-E --env… <KEY=VALUE>`
 
 Add env vars to the command
@@ -452,164 +635,7 @@ Use 'group' to use a process group, 'session' to use a process session, and 'non
 - `session`
 - `none`
 
-### `-N --notify`
-
-Alert when commands start and end
-
-With this, Watchexec will emit a desktop notification when a command starts and ends, on supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
-
-### `--color <MODE>`
-
-When to use terminal colours
-
-Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
-
-**Choices:**
-
-- `auto`
-- `always`
-- `never`
-
-**Default:** `auto`
-
-### `--timings`
-
-Print how long the command took to run
-
-This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
-
-### `-q --quiet`
-
-Don't print starting and stopping messages
-
-By default Watchexec will print a message when the command starts and stops. This option disables this behaviour, so only the command's output, warnings, and errors will be printed.
-
-### `--bell`
-
-Ring the terminal bell on command completion
-
-### `--project-origin <DIRECTORY>`
-
-Set the project origin
-
-Watchexec will attempt to discover the project's "origin" (or "root") by searching for a variety of markers, like files or directory patterns. It does its best but sometimes gets it it wrong, and you can override that with this option.
-
-The project origin is used to determine the path of certain ignore files, which VCS is being used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
-
-When set, Watchexec will also not bother searching, which can be significantly faster.
-
-### `--workdir <DIRECTORY>`
-
-Set the working directory
-
-By default, the working directory of the command is the working directory of Watchexec. You can change that with this option. Note that paths may be less intuitive to use with this.
-
-### `-e --exts… <EXTENSIONS>`
-
-Filename extensions to filter to
-
-This is a quick filter to only emit events for files with the given extensions. Extensions can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can be given by repeating the option or by separating them with commas.
-
-### `-f --filter… <PATTERN>`
-
-Filename patterns to filter to
-
-Provide a glob-like filter pattern, and only events for files matching the pattern will be emitted. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
-
-### `--filter-file… <PATH>`
-
-Files to load filters from
-
-Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--filter' option.
-
-This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
-
-### `-J --filter-prog… <EXPRESSION>`
-
-[experimental] Filter programs.
-
-/!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
-
-Provide your own custom filter programs in jaq (similar to jq) syntax. Programs are given an event in the same format as described in '--emit-events-to' and must return a boolean. Invalid programs will make watchexec fail to start; use '-v' to see program runtime errors.
-
-In addition to the jaq stdlib, watchexec adds some custom filter definitions:
-
-- 'path | file_meta' returns file metadata or null if the file does not exist.
-
-- 'path | file_size' returns the size of the file at path, or null if it does not exist.
-
-- 'path | file_read(bytes)' returns a string with the first n bytes of the file at path. If the file is smaller than n bytes, the whole file is returned. There is no filter to read the whole file at once to encourage limiting the amount of data read and processed.
-
-- 'string | hash', and 'path | file_hash' return the hash of the string or file at path. No guarantee is made about the algorithm used: treat it as an opaque value.
-
-- 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key-value store. Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
-
-- 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
-
-All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
-
-If the argument to this option starts with an '@', the rest of the argument is taken to be the path to a file containing a jaq program.
-
-Jaq programs are run in order, after all other filters, and short-circuit: if a filter (jaq or not) rejects an event, execution stops there, and no other filters are run. Additionally, they stop after outputting the first value, so you'll want to use 'any' or 'all' when iterating, otherwise only the first item will be processed, which can be quite confusing!
-
-Find user-contributed programs or submit your own useful ones at &lt;https://github.com/watchexec/watchexec/discussions/592>.
-
-## Examples:
-
-Regexp ignore filter on paths:
-
-'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
-
-Pass any event that creates a file:
-
-'any(.tags[] | select(.kind == "fs"); .simple == "create")'
-
-Pass events that touch executable files:
-
-'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
-
-Ignore files that start with shebangs:
-
-'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
-
-### `-i --ignore… <PATTERN>`
-
-Filename patterns to filter out
-
-Provide a glob-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
-
-### `--ignore-file… <PATH>`
-
-Files to load ignores from
-
-Provide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--ignore' option.
-
-This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
-
-### `--fs-events… <EVENTS>`
-
-Filesystem events to filter to
-
-This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
-
-This may apply filtering at the kernel level when possible, which can be more efficient, but may be more confusing when reading the logs.
-
-**Choices:**
-
-- `access`
-- `create`
-- `remove`
-- `rename`
-- `modify`
-- `metadata`
-
-**Default:** `create,remove,rename,modify,metadata`
-
-### `--no-meta`
-
-Don't emit fs events for metadata changes
-
-This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the '--fs-events' option is non-sensical and not allowed.
+## Debugging
 
 ### `--print-events`
 

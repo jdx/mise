@@ -455,34 +455,7 @@ impl RubyPlugin {
     /// Get platform identifier for precompiled binaries
     /// Returns platform in jdx/ruby format: "macos", "arm64_linux", or "x86_64_linux"
     fn precompiled_platform(&self) -> Option<String> {
-        let settings = Settings::get();
-
-        // Check for user overrides first
-        if let (Some(arch), Some(os)) = (
-            settings.ruby.precompiled_arch.as_deref(),
-            settings.ruby.precompiled_os.as_deref(),
-        ) {
-            return Some(format!("{}_{}", arch, os));
-        }
-
-        // Auto-detect platform
-        if cfg!(target_os = "macos") {
-            // macOS only supports arm64 and uses "macos" without arch prefix
-            match settings.arch() {
-                "arm64" | "aarch64" => Some("macos".to_string()),
-                _ => None,
-            }
-        } else if cfg!(target_os = "linux") {
-            // Linux uses arch_linux format
-            let arch = match settings.arch() {
-                "arm64" | "aarch64" => "arm64",
-                "x64" | "x86_64" => "x86_64",
-                _ => return None,
-            };
-            Some(format!("{}_linux", arch))
-        } else {
-            None
-        }
+        self.precompiled_platform_for_target(&PlatformTarget::from_current())
     }
 
     /// Get platform identifier for a specific target (used for lockfiles)
@@ -507,6 +480,11 @@ impl RubyPlugin {
                 }
             }
             "linux" => {
+                // jdx/ruby Linux binaries are glibc-only (manylinux2014); there is no
+                // musl build, so a glibc tarball would fail at runtime on Alpine etc.
+                if target.libc() == Some("musl") {
+                    return None;
+                }
                 // Linux uses arch_linux format
                 let arch = match target.arch_name() {
                     "arm64" | "aarch64" => "arm64",
@@ -1588,6 +1566,70 @@ mod tests {
         assert!(!ruby_precompiled_only(None));
         assert!(!ruby_precompiled_only(Some(true)));
         assert!(ruby_precompiled_only(Some(false)));
+    }
+
+    fn ruby_precompiled_platform_for_target(
+        configure_settings: impl FnOnce(&mut SettingsPartial),
+        platform: &str,
+    ) -> Option<String> {
+        with_ruby_settings(configure_settings, |backend| {
+            backend.precompiled_platform_for_target(&PlatformTarget::new(
+                Platform::parse(platform).unwrap(),
+            ))
+        })
+    }
+
+    #[test]
+    fn test_ruby_precompiled_platform_skips_musl_linux() {
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-x64").as_deref(),
+            Some("x86_64_linux")
+        );
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-arm64").as_deref(),
+            Some("arm64_linux")
+        );
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "macos-arm64").as_deref(),
+            Some("macos")
+        );
+
+        // jdx/ruby has no musl builds, so a musl target has no precompiled platform;
+        // installs fall back to ruby-build and lockfiles record the source tarball
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-x64-musl"),
+            None
+        );
+        assert_eq!(
+            ruby_precompiled_platform_for_target(|_| {}, "linux-arm64-musl"),
+            None
+        );
+
+        // Explicit overrides bypass auto-detection, including the musl skip
+        assert_eq!(
+            ruby_precompiled_platform_for_target(
+                |settings| {
+                    settings.ruby.precompiled_arch = Some("x86_64".to_string());
+                    settings.ruby.precompiled_os = Some("linux".to_string());
+                },
+                "linux-x64-musl"
+            )
+            .as_deref(),
+            Some("x86_64_linux")
+        );
+    }
+
+    #[test]
+    fn test_ruby_precompiled_platform_skips_musl_current() {
+        let platform = with_ruby_settings(
+            |settings| {
+                settings.os = Some("linux".to_string());
+                settings.arch = Some("x64".to_string());
+                settings.libc = Some("musl".to_string());
+            },
+            |backend| backend.precompiled_platform(),
+        );
+        assert_eq!(platform, None);
     }
 
     #[test]

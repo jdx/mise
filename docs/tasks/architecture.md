@@ -247,7 +247,7 @@ This automatically reruns tasks when their source files change.
 ### Visualize Dependencies
 
 ```bash
-mise tasks deps build           # Show build's dependencies
+mise tasks deps build           # Show build's declared dependencies
 mise tasks deps --dot > deps.dot # Generate graphviz diagram
 ```
 
@@ -279,7 +279,7 @@ Solution: Define the missing task or remove the dependency.
 **Slow Parallel Execution**:
 
 - Check if tasks have unnecessary dependencies
-- Use `mise tasks deps` to verify dependency graph
+- Use `mise tasks deps` to verify the declared dependency graph (`depends`, `wait_for`, `depends_post`)
 - Consider increasing `--jobs` if you have CPU cores available
 
 The task architecture is designed to scale from simple single-task projects to complex multi-service applications with intricate build dependencies.

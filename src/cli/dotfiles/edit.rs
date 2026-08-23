@@ -10,34 +10,39 @@ use crate::system::edits::{BlockSource, EditOp};
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesEdit {
     /// Target to edit
-    #[clap(value_name = "TARGET")]
+    #[usage(value_name = "TARGET")]
     target: String,
 
     /// Apply this target after the editor exits
-    #[clap(long)]
+    #[usage(long)]
     apply: bool,
 
     /// Dotfile mode to use if the target is not yet managed
-    #[clap(long, short)]
+    #[usage(long, short)]
     mode: Option<String>,
 
     /// Source path to use if the target is not yet managed
-    #[clap(long, short, value_name = "PATH")]
+    #[usage(long, short, value_name = "PATH")]
     source: Option<PathBuf>,
 
     /// Skip the confirmation prompt when adding an unmanaged target
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 
 impl DotfilesEdit {
+    /// Open the managed source and optionally converge its target afterward.
     pub(crate) async fn run(self) -> Result<()> {
         let mut config = Config::get().await?;
         let target = system::files::resolve_target_arg(&self.target);
+        if self.apply {
+            let files = system::files::files_from_config(&config)?;
+            system::files::validate_composed_file_footprints(&files)?;
+        }
 
         if let Some(path) = source_for_target(&config, &target, &self.target)? {
             open_or_create(&path)?;
@@ -49,7 +54,7 @@ impl DotfilesEdit {
         }
 
         if !self.yes && console::user_attended_stderr() {
-            let ok = prompt::confirm(format!("dotfiles: add {}?", self.target))?;
+            let ok = prompt::confirm(format!("dotfiles: add {}?", self.target))?.is_yes();
             if !ok {
                 info!("dotfiles: skipped");
                 return Ok(());
@@ -140,10 +145,13 @@ fn open_or_create(path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
+/// Apply a selected target after validating the complete composed footprint.
 async fn apply_target(target: &str) -> Result<()> {
     let config = Config::reset().await?;
     let targets = vec![target.to_string()];
-    let files = system::files::files_from_config(&config)?
+    let all_files = system::files::files_from_config(&config)?;
+    system::files::validate_composed_file_footprints(&all_files)?;
+    let files = all_files
         .into_iter()
         .filter(|req| system::files::matches_target(&req.target, &req.target_raw, &targets))
         .collect::<Vec<_>>();

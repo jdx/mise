@@ -2,6 +2,7 @@
 # `mise set`
 
 - **Usage**: `mise set [FLAGS] [ENV_VAR]…`
+- **Aliases**: `ev`, `env-vars`
 - **Effect**: modifies state
 - **Source code**: [`src/cli/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/set.rs)
 
@@ -53,7 +54,7 @@ Can be used multiple times. Requires --age-encrypt.
 
 Can be used multiple times. Requires --age-encrypt.
 
-### `--file <FILE>`
+### `--file --path <FILE>`
 
 The TOML file to update
 

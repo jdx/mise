@@ -228,11 +228,33 @@ pub(crate) fn program_stem(program: &Path) -> Option<String> {
 /// child's PATH before spawning.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) fn is_posix_shell_program(program: &Path) -> bool {
-    const POSIX_SHELLS: &[&str] = &["bash", "sh", "zsh", "fish", "ksh", "dash"];
+    // `ash` is here because it is what `/bin/sh` is on Alpine, which mise ships musl builds
+    // for — a task written against it reaches this by name, not through the `sh` symlink.
+    const POSIX_SHELLS: &[&str] = &["bash", "sh", "zsh", "fish", "ksh", "dash", "ash"];
     let Some(stem) = program_stem(program) else {
         return false;
     };
     POSIX_SHELLS.iter().any(|name| *name == stem)
+}
+
+/// The `-c` payload that makes a shell *run* the path which follows it, treating the
+/// arguments after that as the script's own.
+///
+/// A file task hands its shell a script path, and a shell left in `-c` mode reads whatever
+/// follows as a command string instead. Without this in front of the path, the path *is* that
+/// string: the task's own arguments land on `$0` onward and never reach the script, and on
+/// Windows the backslashes are eaten as escapes before the path is even looked up.
+///
+/// `None` for the shells this does not apply to — `cmd`, whose `/c` already takes a program and
+/// forwards its arguments, and PowerShell, which has no `$0`/`$@` and already works.
+pub(crate) fn command_mode_script_payload(program: &Path) -> Option<&'static str> {
+    // fish counts as POSIX for [`is_posix_shell_program`]'s question (it wants a Unix-style
+    // PATH) but not for this one: it has no `$0`/`$@` and rejects `$@` outright. `$argv` is the
+    // whole argument list, and running it runs its first element with the rest as arguments.
+    if program_stem(program).as_deref() == Some("fish") {
+        return Some("$argv");
+    }
+    is_posix_shell_program(program).then_some(r#""$0" "$@""#)
 }
 
 /// Returns true if `program` is `cmd` / `cmd.exe`, the Windows command
@@ -994,6 +1016,7 @@ mod tests {
         assert!(is_posix_shell_program(Path::new("sh")));
         assert!(is_posix_shell_program(Path::new("zsh")));
         assert!(is_posix_shell_program(Path::new("fish")));
+        assert!(is_posix_shell_program(Path::new("ash")));
 
         assert!(!is_posix_shell_program(Path::new("cmd")));
         assert!(!is_posix_shell_program(Path::new("cmd.exe")));
@@ -1001,6 +1024,37 @@ mod tests {
         assert!(!is_posix_shell_program(Path::new("pwsh.exe")));
         assert!(!is_posix_shell_program(Path::new("rustc")));
         assert!(!is_posix_shell_program(Path::new("")));
+    }
+
+    #[test]
+    fn test_command_mode_script_payload() {
+        let payload = |p: &str| command_mode_script_payload(Path::new(p));
+
+        for posix in [
+            "bash",
+            "sh",
+            "zsh",
+            "ksh",
+            "dash",
+            // Alpine's `/bin/sh`. Measured in an alpine container: `ash -c <path> ARG1` drops
+            // the argument exactly as the others do, and the payload restores it.
+            "ash",
+            "/usr/bin/bash",
+            "BASH.EXE",
+        ] {
+            assert_eq!(payload(posix), Some(r#""$0" "$@""#), "{posix}");
+        }
+
+        // The whole reason this is not just `is_posix_shell_program`: fish answers true there
+        // and cannot use `$@`.
+        for fish in ["fish", "fish.exe", "/usr/bin/fish"] {
+            assert_eq!(payload(fish), Some("$argv"), "{fish}");
+        }
+
+        // cmd forwards arguments after `/c` already; PowerShell has no `$0`/`$@`.
+        for other in ["cmd", "cmd.exe", "pwsh", "powershell.exe", "rustc", ""] {
+            assert_eq!(payload(other), None, "{other}");
+        }
     }
 
     #[test]

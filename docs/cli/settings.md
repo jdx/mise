@@ -5,12 +5,7 @@
 - **Effect**: modifies state
 - **Source code**: [`src/cli/settings/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/mod.rs)
 
-Show current settings
-
-This is the contents of ~/.config/mise/config.toml
-
-Note that aliases are also stored in this file
-but managed separately with `mise tool-alias`
+Manage settings
 
 ## Arguments
 

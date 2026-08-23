@@ -10,25 +10,35 @@ use itertools::Itertools;
 use petgraph::dot::Dot;
 
 /// Display a tree visualization of a dependency graph
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+///
+/// The graph is built from declared dependencies: `depends`, `depends_post`,
+/// and `wait_for`. Task references inside a `run` or `run_windows` array
+/// (`{ task = "..." }` or `{ tasks = [...] }`) are execution steps, not graph
+/// edges, so they do not appear here. Those nested tasks still run, including
+/// their own `depends`.
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP,
+    unknown_flags = "error"
+)]
 pub(super) struct TasksDeps {
     /// Tasks to show dependencies for
     /// Can specify multiple tasks by separating with spaces
     /// e.g.: mise tasks deps lint test check
-    #[clap(verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     pub tasks: Option<Vec<String>>,
 
     /// Collapse repeated dependencies after their first occurrence
-    #[clap(long, conflicts_with = "dot", verbatim_doc_comment)]
+    #[usage(long, conflicts = "dot", verbatim_doc_comment)]
     pub compact: bool,
 
     /// Display dependencies in DOT format
-    #[clap(long, alias = "dot", verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub dot: bool,
 
     /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
 }
 

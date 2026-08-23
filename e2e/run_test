@@ -71,6 +71,17 @@ within_isolated_env() {
   [[ -n ${no_proxy:-} ]] && proxy_vars+=(no_proxy="$no_proxy")
   [[ -n ${NO_PROXY:-} ]] && proxy_vars+=(NO_PROXY="$NO_PROXY")
 
+  # Forward the token vars only when they hold something. Passing an unset
+  # variable through as "" is not the same as leaving it unset: mise reads the
+  # first token variable that *exists* and only then rejects empty values, so an
+  # empty MISE_GITHUB_TOKEN means "no token" and hides a real GITHUB_TOKEN (see
+  # get_token in src/env.rs). An empty GITHUB_TOKEN is worse than useless on its
+  # own too: the ubi crate reads it directly, sends an empty bearer, and turns
+  # a request that would have worked unauthenticated into a 401.
+  local token_vars=()
+  [[ -n ${MISE_GITHUB_TOKEN:-} ]] && token_vars+=(MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")
+  [[ -n ${GITHUB_TOKEN:-} ]] && token_vars+=(GITHUB_TOKEN="$GITHUB_TOKEN")
+
   env \
     -i \
     -C "$TEST_WORKDIR" \
@@ -84,8 +95,7 @@ within_isolated_env() {
     GIT_COMMITTER_NAME="test" \
     GIT_COMMITTER_EMAIL="test@test.com" \
     GITHUB_ACTION="${GITHUB_ACTION:-}" \
-    MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}" \
-    GITHUB_TOKEN="${GITHUB_TOKEN:-}" \
+    ${token_vars[@]+"${token_vars[@]}"} \
     GOPROXY="${GOPROXY:-}" \
     HOME="$TEST_HOME" \
     LANG="${LANG:-C.UTF-8}" \
@@ -224,8 +234,6 @@ run_in_docker() {
     -e ROOT=/mise-src
     -e CI="${CI:-}"
     -e GITHUB_ACTION="${GITHUB_ACTION:-}"
-    -e MISE_GITHUB_TOKEN="${MISE_GITHUB_TOKEN:-}"
-    -e GITHUB_TOKEN="${GITHUB_TOKEN:-}"
     -e MISE_DEBUG="${MISE_DEBUG:-0}"
     -e MISE_TRACE="${MISE_TRACE:-0}"
     -e MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}"
@@ -233,6 +241,9 @@ run_in_docker() {
     -e MISE_E2E_INSIDE_DOCKER=1
     -e CARGO_TARGET_DIR=/usr/local/lib/mise
   )
+  # Same rule as the non-docker path: an empty token var is not an absent one.
+  [[ -n ${MISE_GITHUB_TOKEN:-} ]] && docker_args+=(-e MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")
+  [[ -n ${GITHUB_TOKEN:-} ]] && docker_args+=(-e GITHUB_TOKEN="$GITHUB_TOKEN")
 
   local rc=0
   "${docker_args[@]}" "$image" bash /mise-src/e2e/run_test "$TEST" || rc=$?

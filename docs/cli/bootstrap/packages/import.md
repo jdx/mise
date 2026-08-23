@@ -23,7 +23,7 @@ Write to the global config (~/.config/mise/config.toml)
 
 ### `-m --manager <MANAGER>`
 
-Only import packages for this manager. Currently only `brew` is supported
+Only import packages for this manager. Currently only `brew` is supported.
 
 **Choices:**
 
@@ -39,7 +39,7 @@ Import every linked formula, including dependencies
 
 Print the config change without writing config
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Write to this config file or directory
 

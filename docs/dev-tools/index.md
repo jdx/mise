@@ -265,13 +265,13 @@ The `depends` field accepts either a single string or an array of strings:
 "pipx:ruff" = { version = "latest", depends = ["python", "pipx"] }
 ```
 
-User-specified `depends` adds ordering constraints for tools already in the current install set. Use it when one configured tool install must finish before another configured tool install starts, especially when installs would otherwise run in parallel.
+User-specified `[tools].depends` adds ordering constraints and makes matching tools available to install hooks. Backend declarations such as vfox `PLUGIN.depends` are combined with these user declarations in the same install dependency context.
+
+Dependency declarations do not add tools to the configuration or install them automatically. When a matching tool is configured, its selected version must resolve and already be installed (or finish successfully earlier in the same install batch). A declaration with no matching configured tool may still be satisfied by an executable on the existing system or configuration `PATH`.
 
 ### vfox plugin hook dependencies
 
-`depends` in `[tools]` only adds install graph ordering. It does not by itself declare hook-time dependencies or add those tools to the `PATH` used while vfox install hooks run.
-
-For vfox plugins, declare install-hook tool requirements on the `PLUGIN` table in `metadata.lua`:
+Vfox plugin authors should declare requirements intrinsic to the plugin on the `PLUGIN` table in `metadata.lua`:
 
 ```lua
 PLUGIN = {
@@ -281,7 +281,7 @@ PLUGIN = {
 }
 ```
 
-Use tool names as they would appear in `mise.toml`. When matching tools are configured, mise uses those metadata entries to order current install jobs and to build the hook environment. See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
+Use tool names as they would appear in `mise.toml`. Users can supplement plugin declarations with `[tools].depends`; both forms affect install ordering, the `PATH` visible to `os.execute` and `cmd.exec`, and `tools = true` environment values. They do not affect `io.popen`. See [Tool plugin development](/tool-plugin-development#_2-metadata-lua).
 
 ## Caching and Performance
 

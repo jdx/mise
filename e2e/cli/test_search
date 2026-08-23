@@ -15,3 +15,46 @@ assert "mise search --match-type equal jq" "jq  Command-line JSON processor. htt
 assert_contains "mise search 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type contains 7zip" "aqua:ip7z/7zip"
 assert_contains "mise search --match-type equal 7zip" "aqua:ip7z/7zip"
+assert_contains "mise search aqua:ip7z/7zip" "aqua:ip7z/7zip"
+
+# Backend prefixes matching a shorthand do not dump translated aqua packages
+assert_not_contains "mise search cargo" "cargo:broot"
+assert_not_contains "mise search aqua" "aqua:"
+
+# Aqua Cargo and GoInstall packages use runnable backends in search results
+assert_contains "mise search --match-type equal broot" "cargo:broot"
+assert_not_contains "mise search --match-type equal broot" "aqua:crates.io/broot"
+assert_contains "mise search cargo:broot" "cargo:broot"
+assert_contains "mise search --match-type equal benchstat" "go:golang.org/x/perf/cmd/benchstat"
+assert_not_contains "mise search --match-type equal benchstat" "aqua:golang.org/x/perf/cmd/benchstat"
+assert_contains "mise search go:golang.org/x/perf/cmd/benchstat" "go:golang.org/x/perf/cmd/benchstat"
+
+# Pathless and conditional-root GoInstall packages use the repository fallback
+assert_contains "mise search --match-type equal mapotf" "go:github.com/Azure/mapotf"
+assert_contains "mise search --match-type equal ifacemaker" "go:github.com/vburenin/ifacemaker"
+
+# Runtime platform settings select precomputed platform overrides
+assert_contains "MISE_OS=macos mise search --match-type equal rhit" "cargo:rhit"
+assert_contains "MISE_OS=macos mise search --match-type equal dockfmt" "go:github.com/jessfraz/dockfmt"
+
+# Names are searchable by the aqua id even when the backend path tail differs
+assert_contains "mise search --match-type equal mock" "go:go.uber.org/mock/mockgen"
+assert_contains "mise search --match-type equal playwright-go" "go:github.com/playwright-community/playwright-go/cmd/playwright"
+
+# The aqua id form still finds entries whose current platform has a backend override
+assert_contains "MISE_OS=macos mise search aqua:eza-community/eza" "cargo:eza"
+
+# Aqua GoBuild packages are excluded from search
+assert_fail "mise search --match-type equal ycat" "not found in registry"
+assert_fail "mise search --match-type equal kics" "not found in registry"
+
+# A standard shorthand still takes precedence over a translated Cargo fallback
+assert_contains "mise search --match-type equal tokei" "tokei  Count your code"
+assert_not_contains "mise search --match-type equal tokei" "aqua:XAMPPRocky/tokei"
+assert_not_contains "mise search --match-type equal tokei" "cargo:tokei"
+
+# Version-templated GoInstall paths cannot form runnable suggestions
+assert_fail "mise search --match-type equal mosint" "not found in registry"
+
+# Disabled roots whose catch-all override is an error message are excluded
+assert_fail "mise search --match-type equal gorename" "not found in registry"

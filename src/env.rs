@@ -729,6 +729,34 @@ fn path_key_from_env(keys: impl IntoIterator<Item = String>) -> String {
         .find(|k| k.eq_ignore_ascii_case("PATH"))
         .unwrap_or("PATH".into())
 }
+
+/// Whether `key` names PATH.
+///
+/// Windows environment variable names are case-insensitive, so every spelling is the same
+/// variable there — including `Path`, which is how Windows itself writes it. On unix only the
+/// exact [`PATH_KEY`] is PATH, and a `Path` beside it is a variable of its own.
+pub(crate) fn is_path_key(key: &str) -> bool {
+    if cfg!(windows) {
+        key.eq_ignore_ascii_case(&PATH_KEY)
+    } else {
+        key == *PATH_KEY
+    }
+}
+
+/// Fold any spelling of PATH onto [`PATH_KEY`], leaving every other name alone.
+///
+/// mise owns PATH: it writes its own value under `PATH_KEY` after everything else has been
+/// collected. A key that means PATH but is spelled differently would survive that write as a
+/// second entry, and the two would then both be applied — so it has to be folded before it is
+/// stored, not filtered afterwards. The identity on unix, where the only spelling that is PATH
+/// is `PATH_KEY` already.
+pub(crate) fn normalize_path_key(key: String) -> String {
+    if is_path_key(&key) {
+        PATH_KEY.to_string()
+    } else {
+        key
+    }
+}
 pub(crate) static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
     Some(path) => split_paths(path).collect(),
     None => vec![],
@@ -793,11 +821,6 @@ pub(crate) static PYENV_ROOT: Lazy<PathBuf> =
 pub(crate) static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
 });
-
-#[cfg(unix)]
-pub(crate) const PATH_ENV_SEP: char = ':';
-#[cfg(windows)]
-pub(crate) const PATH_ENV_SEP: char = ';';
 
 fn get_env_diff() -> EnvDiff {
     let env = vars_safe().collect::<HashMap<_, _>>();
@@ -1375,6 +1398,36 @@ mod tests {
             "PATH"
         );
         assert_eq!(path_key_from_env(vec!["TEMP".into()]), "PATH");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_is_path_key_accepts_any_casing_on_windows() {
+        for spelling in ["PATH", "Path", "path", "pAtH"] {
+            assert!(is_path_key(spelling), "{spelling}");
+            assert_eq!(normalize_path_key(spelling.to_string()), *PATH_KEY);
+        }
+
+        assert!(!is_path_key("PATHEXT"));
+        assert!(!is_path_key("TEMP"));
+        assert!(!is_path_key(""));
+        // A name that is not PATH keeps the spelling the config gave it.
+        assert_eq!(normalize_path_key("Temp".to_string()), "Temp");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_is_path_key_is_exact_on_unix() {
+        assert!(is_path_key("PATH"));
+        assert_eq!(normalize_path_key("PATH".to_string()), "PATH");
+
+        // `Path` is a variable of its own here, so folding it would drop what was asked for.
+        assert!(!is_path_key("Path"));
+        assert!(!is_path_key("path"));
+        assert_eq!(normalize_path_key("Path".to_string()), "Path");
+
+        assert!(!is_path_key("PATHEXT"));
+        assert!(!is_path_key(""));
     }
 
     #[test]

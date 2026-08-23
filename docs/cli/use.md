@@ -61,6 +61,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Perform a dry run, showing what would be installed and modified without making changes

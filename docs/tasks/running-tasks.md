@@ -2,7 +2,12 @@
 
 See available tasks with `mise tasks`. To show tasks hidden with property `hide=true`, use the option `--hidden`.
 
-List dependencies of tasks with `mise tasks deps [tasks]...`.
+List declared dependencies of tasks with `mise tasks deps [tasks]...`.
+That graph is built from [`depends`](/tasks/task-configuration.html#depends),
+[`wait_for`](/tasks/task-configuration.html#wait-for), and
+[`depends_post`](/tasks/task-configuration.html#depends-post).
+Task references inside a `run` array (`{ task = "..." }` / `{ tasks = [...] }`)
+are execution steps, so they do not appear there.
 
 Run a task with `mise tasks run <task>`, `mise run <task>`, `mise r <task>`, or just `mise <task>`—however
 that last one you should never put into scripts or documentation because if mise ever adds a command with that name in a
@@ -53,7 +58,7 @@ You can define arguments/flags for tasks which will provide validation, parsing,
 - [Arguments in File Tasks](/tasks/file-tasks#arguments)
 - [Arguments in TOML Tasks](/tasks/toml-tasks#arguments)
 
-Autocomplete will work automatically for tasks if the `usage` CLI is installed and mise completions are working.
+Autocomplete will work automatically for tasks when mise's shell completions are installed and enabled.
 
 Markdown documentation can be generated with [`mise generate task-docs`](/cli/generate/task-docs).
 :::
@@ -199,3 +204,11 @@ run = [
     { tasks = ["example2", "example3"] }, # these 2 are run in parallel
 ]
 ```
+
+`mise run one_by_one` runs that pipeline, but `mise tasks deps one_by_one` still
+shows a leaf. Those `{ task }` / `{ tasks }` entries are this task's own `run`
+steps, not graph edges. The nested tasks still run, including their own
+`depends`. Rewriting them as `depends = ["example1", "example2", "example3"]`
+would put them in the graph, but it would also drop the sequential/parallel
+ordering above: `depends` only requires those tasks to finish first, with no
+order among them.

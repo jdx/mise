@@ -33,6 +33,8 @@ By default, only the active project config root is locked
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Show what would be updated without making changes
@@ -80,6 +82,16 @@ Supports absolute dates like "2024-06-01" and relative durations like "90d" or "
 This only affects fuzzy version matches like "20" or "latest".
 Explicitly pinned versions like "22.5.0" are not filtered.
 Existing matching lockfile entries are preserved and are not downgraded solely by this flag.
+
+### `--upgrade`
+
+Upgrade legacy lockfiles to the latest format
+
+Existing unversioned lockfiles use format version 0 and are otherwise
+preserved to avoid unexpected lockfile drift. This flag upgrades them
+to the latest format with request-specific version bindings.
+Format upgrades always process every configured tool and cannot be
+combined with tool arguments.
 
 Examples:
 

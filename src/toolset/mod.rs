@@ -22,9 +22,9 @@ pub(crate) use outdated_info::is_outdated_version;
 use petgraph::Direction;
 use petgraph::graphmap::DiGraphMap;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{
     cmp::Reverse,
@@ -702,15 +702,23 @@ impl From<ToolRequestSet> for Toolset {
     }
 }
 
+/// Tool versions that some tracked file still needs, keyed by
+/// (short_name, tv_pathname) and mapped to the files that need them.
+///
+/// `mise prune` and `mise upgrade` only ask whether a key is present. The paths
+/// exist so `mise prune --dry-run` can say *which* config keeps a version
+/// alive, since the decision to remove one is otherwise made by absence and
+/// leaves nothing to point at (discussion #9045).
+pub(crate) type NeededVersions = HashMap<(String, String), BTreeSet<PathBuf>>;
+
 /// Get all tool versions that are needed by tracked config files.
-/// Returns a set of (short_name, tv_pathname) pairs.
 /// This is used by both `mise prune` and `mise upgrade` to avoid
 /// uninstalling versions that other projects still need.
 pub(crate) async fn get_versions_needed_by_tracked_configs(
     config: &Arc<Config>,
     use_locked_version: bool,
     offline: bool,
-) -> Result<HashSet<(String, String)>> {
+) -> Result<NeededVersions> {
     get_versions_needed_by_tracked_configs_excluding_locks(
         config,
         use_locked_version,
@@ -727,8 +735,8 @@ pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
     use_locked_version: bool,
     offline: bool,
     exclude_locked_config_paths: &HashSet<PathBuf>,
-) -> Result<HashSet<(String, String)>> {
-    let mut needed = HashSet::new();
+) -> Result<NeededVersions> {
+    let mut needed = NeededVersions::new();
     // `mise prune` should keep versions pinned by lockfiles. `mise upgrade`
     // also protects lockfiles for other tracked projects, but excludes configs
     // it just upgraded so stale locks there do not keep the old version alive.
@@ -749,9 +757,15 @@ pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
                     for (short, tools) in lockfile.tools() {
                         for tool in tools {
                             let version = tool.version.replace([':', '/'], "-");
-                            needed.insert((short.clone(), version.clone()));
+                            needed
+                                .entry((short.clone(), version.clone()))
+                                .or_default()
+                                .insert(lockfile_path.clone());
                             if let Some(backend) = &tool.backend {
-                                needed.insert((backend.clone(), version));
+                                needed
+                                    .entry((backend.clone(), version))
+                                    .or_default()
+                                    .insert(lockfile_path.clone());
                             }
                         }
                     }
@@ -764,7 +778,7 @@ pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
         }
         let mut ts = Toolset::from(cf.to_tool_request_set()?);
         ts.resolve_with_opts(config, &opts).await?;
-        collect_needed_versions(&ts, offline, &mut needed);
+        collect_needed_versions(&ts, offline, &path, &mut needed);
     }
     Ok(needed)
 }
@@ -776,8 +790,8 @@ pub(crate) async fn get_versions_needed_by_tracked_configs_excluding_locks(
 /// `mise upgrade` do not delete versions still referenced by a stub.
 pub(crate) async fn get_versions_needed_by_tracked_stubs(
     config: &Arc<Config>,
-) -> Result<HashSet<(String, String)>> {
-    let mut needed = HashSet::new();
+) -> Result<NeededVersions> {
+    let mut needed = NeededVersions::new();
     // Like prune's tracked-config resolution, only installed versions need
     // protecting, so resolve offline to avoid pointless remote lookups.
     let opts = ResolveOptions {
@@ -817,14 +831,22 @@ pub(crate) async fn get_versions_needed_by_tracked_stubs(
             );
             continue;
         }
-        collect_needed_versions(&ts, true, &mut needed);
+        collect_needed_versions(&ts, true, &path, &mut needed);
     }
     Ok(needed)
 }
 
-fn collect_needed_versions(ts: &Toolset, offline: bool, needed: &mut HashSet<(String, String)>) {
+fn collect_needed_versions(
+    ts: &Toolset,
+    offline: bool,
+    source: &Path,
+    needed: &mut NeededVersions,
+) {
     for (_, tv) in ts.list_current_versions() {
-        needed.insert((tv.ba().short.to_string(), tv.tv_pathname()));
+        needed
+            .entry((tv.ba().short.to_string(), tv.tv_pathname()))
+            .or_default()
+            .insert(source.to_path_buf());
         // Offline can't resolve `sub-N:latest` to a concrete version
         // (no remote latest available). Conservatively protect every
         // installed version of this backend so we don't delete the
@@ -836,7 +858,10 @@ fn collect_needed_versions(ts: &Toolset, offline: bool, needed: &mut HashSet<(St
         {
             let short = tv.ba().short.to_string();
             for v in backend.list_installed_versions() {
-                needed.insert((short.clone(), v));
+                needed
+                    .entry((short.clone(), v))
+                    .or_default()
+                    .insert(source.to_path_buf());
             }
         }
     }

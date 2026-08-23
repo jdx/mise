@@ -75,12 +75,12 @@ fn validate_monorepo_setup(config: &Arc<Config>) -> Result<()> {
 
 /// Check if a name is similar to any known CLI subcommands using fuzzy matching
 fn suggest_similar_commands(name: &str) -> Vec<String> {
-    use clap::CommandFactory;
     let cmd = crate::cli::Cli::command();
     let mut matcher = FuzzyMatcher::default();
     let pattern = FuzzyPattern::new(name);
-    cmd.get_subcommands()
-        .flat_map(|s| std::iter::once(s.get_name()).chain(s.get_all_aliases()))
+    cmd.subcommands
+        .iter()
+        .flat_map(|s| std::iter::once(s.name).chain(s.aliases.iter().copied()))
         .filter_map(|subcmd| {
             matcher
                 .score_pattern(subcmd, &pattern)
@@ -223,7 +223,8 @@ async fn make_task_executable(
         display_path(&path)
     );
     let confirmed = config::Settings::get().yes
-        || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?;
+        || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?
+            .is_yes();
     if !confirmed {
         return Ok(None);
     }
