@@ -1599,6 +1599,37 @@ pub(crate) fn migrate_monorepo_lockfiles(
     config: &Config,
     allow_format_upgrade: bool,
 ) -> Result<()> {
+    migrate_monorepo_lockfiles_inner(config, allow_format_upgrade, true, None)
+}
+
+pub(crate) fn monorepo_lockfile_migration_paths(config: &Config) -> Vec<(PathBuf, PathBuf)> {
+    let Some(monorepo_root) = config.monorepo_lockfile_root() else {
+        return Vec::new();
+    };
+    monorepo_legacy_lockfile_paths(config)
+        .into_iter()
+        .filter_map(|source| {
+            let filename = source.file_name()?;
+            let target = monorepo_root.join(filename);
+            (source != target).then_some((source, target))
+        })
+        .collect()
+}
+
+pub(crate) fn migrate_monorepo_lockfiles_already_locked(
+    config: &Config,
+    allow_format_upgrade: bool,
+    migration_paths: &[(PathBuf, PathBuf)],
+) -> Result<()> {
+    migrate_monorepo_lockfiles_inner(config, allow_format_upgrade, false, Some(migration_paths))
+}
+
+fn migrate_monorepo_lockfiles_inner(
+    config: &Config,
+    allow_format_upgrade: bool,
+    acquire_target_locks: bool,
+    migration_paths: Option<&[(PathBuf, PathBuf)]>,
+) -> Result<()> {
     if !Settings::get().lockfile_enabled() {
         return Ok(());
     }
@@ -1607,24 +1638,29 @@ pub(crate) fn migrate_monorepo_lockfiles(
     };
     let mut migrated = 0usize;
 
-    for source in monorepo_legacy_lockfile_paths(config) {
+    let discovered_paths;
+    let migration_paths = match migration_paths {
+        Some(paths) => paths,
+        None => {
+            discovered_paths = monorepo_lockfile_migration_paths(config);
+            &discovered_paths
+        }
+    };
+    for (source, target) in migration_paths {
         if !source.exists() {
             continue;
         }
-        let Some(filename) = source.file_name() else {
-            continue;
-        };
-        let target = monorepo_root.join(filename);
-        if source == target {
-            continue;
-        }
-        let _lock = crate::lock_file::LockFile::new(&target)
-            .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-            .lock()?;
+        let _lock = acquire_target_locks
+            .then(|| {
+                crate::lock_file::LockFile::new(target)
+                    .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                    .lock()
+            })
+            .transpose()?;
         let target_existed = target.exists();
         let mut root_lockfile =
-            Lockfile::read(&target).unwrap_or_else(|err| handle_lockfile_read_error(err, &target));
-        let subproject_lockfile = match Lockfile::read(&source) {
+            Lockfile::read(target).unwrap_or_else(|err| handle_lockfile_read_error(err, target));
+        let subproject_lockfile = match Lockfile::read(source) {
             Ok(lockfile) => lockfile,
             Err(err) if is_not_found_report(&err) => continue,
             Err(err) => return Err(err),
@@ -1650,8 +1686,8 @@ pub(crate) fn migrate_monorepo_lockfiles(
             );
         }
         merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
-        root_lockfile.save(&target)?;
-        if let Err(err) = fs::remove_file(&source)
+        root_lockfile.save(target)?;
+        if let Err(err) = fs::remove_file(source)
             && err.kind() != ErrorKind::NotFound
         {
             return Err(err.into());
@@ -3267,10 +3303,14 @@ fn read_all_lockfiles(config: &Config) -> Arc<Lockfile> {
 }
 
 fn push_existing_lockfile(lockfiles: &mut Vec<Lockfile>, path: &Path) {
-    if path.exists()
-        && let Ok(lockfile) = Lockfile::read(path)
-    {
-        lockfiles.push(lockfile);
+    if !path.exists() {
+        return;
+    }
+    match Lockfile::read(path) {
+        Ok(lockfile) => lockfiles.push(lockfile),
+        Err(err) => {
+            handle_lockfile_read_error(err, path);
+        }
     }
 }
 

@@ -1,4 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -157,11 +159,48 @@ struct LockTaskResult {
 
 struct StagedUpgradeWrite {
     path: PathBuf,
+    original_content: Option<Vec<u8>>,
     lockfile: Lockfile,
     summary: Option<(usize, usize)>,
     format_changed: bool,
     stale_tools: BTreeSet<String>,
     stale_versions: BTreeMap<String, Vec<String>>,
+}
+
+struct LockfileSnapshot {
+    path: PathBuf,
+    content: Option<Vec<u8>>,
+}
+
+fn read_optional_file(path: &Path) -> Result<Option<Vec<u8>>> {
+    match fs::read(path) {
+        Ok(content) => Ok(Some(content)),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+fn restore_lockfile_snapshots(snapshots: &[LockfileSnapshot]) -> Result<()> {
+    let mut errors = Vec::new();
+    for snapshot in snapshots.iter().rev() {
+        let result = match &snapshot.content {
+            Some(content) => crate::file::write_atomic(&snapshot.path, content),
+            None => match fs::remove_file(&snapshot.path) {
+                Ok(()) => Ok(()),
+                Err(err) if err.kind() == ErrorKind::NotFound => Ok(()),
+                Err(err) => Err(err.into()),
+            },
+        };
+        if let Err(err) = result {
+            errors.push(format!("{}: {err:?}", display_path(&snapshot.path)));
+        }
+    }
+    lockfile::invalidate_caches();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        bail!("{}", errors.join("\n"))
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -303,6 +342,7 @@ impl Lock {
                     let _lock = crate::lock_file::LockFile::new(&lockfile_path)
                         .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                         .lock()?;
+                    let original_content = read_optional_file(&lockfile_path)?;
                     let mut lockfile = Lockfile::read(&lockfile_path)?;
                     if self.json {
                         all_changes.extend(self.compute_version_changes(
@@ -332,6 +372,7 @@ impl Lock {
                         if self.upgrade {
                             staged_upgrade_writes.push(StagedUpgradeWrite {
                                 path: lockfile_path.clone(),
+                                original_content,
                                 lockfile,
                                 summary: None,
                                 format_changed,
@@ -403,6 +444,7 @@ impl Lock {
             let _lock = crate::lock_file::LockFile::new(&lockfile_path)
                 .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
                 .lock()?;
+            let original_content = read_optional_file(&lockfile_path)?;
             let mut lockfile = Lockfile::read(&lockfile_path)?;
             if !self.upgrade {
                 self.report_lockfile_format(&lockfile_path, &lockfile, false)?;
@@ -461,6 +503,7 @@ impl Lock {
             if self.upgrade {
                 staged_upgrade_writes.push(StagedUpgradeWrite {
                     path: lockfile_path.clone(),
+                    original_content,
                     lockfile,
                     summary: Some((successful, skipped)),
                     format_changed,
@@ -551,11 +594,60 @@ impl Lock {
         // resolved and bound successfully. This also keeps legacy monorepo
         // lockfiles untouched on failure.
         if !self.dry_run && self.upgrade {
-            for staged in staged_upgrade_writes {
-                let _lock = crate::lock_file::LockFile::new(&staged.path)
-                    .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
-                    .lock()?;
-                staged.lockfile.write(&staged.path)?;
+            let migration_paths = lockfile::monorepo_lockfile_migration_paths(&config);
+            let transaction_paths: BTreeSet<PathBuf> = staged_upgrade_writes
+                .iter()
+                .map(|staged| staged.path.clone())
+                .chain(
+                    migration_paths
+                        .iter()
+                        .flat_map(|(source, target)| [source.clone(), target.clone()]),
+                )
+                .collect();
+            let mut transaction_locks = Vec::with_capacity(transaction_paths.len());
+            for path in &transaction_paths {
+                transaction_locks.push(
+                    crate::lock_file::LockFile::new(path)
+                        .with_callback(|l| debug!("waiting for lock on {}", display_path(l)))
+                        .lock()?,
+                );
+            }
+
+            for staged in &staged_upgrade_writes {
+                if read_optional_file(&staged.path)? != staged.original_content {
+                    bail!(
+                        "lockfile {} changed while the format upgrade was being prepared; retry `mise lock --upgrade`",
+                        display_path(&staged.path)
+                    );
+                }
+            }
+
+            let snapshots = transaction_paths
+                .iter()
+                .map(|path| {
+                    Ok(LockfileSnapshot {
+                        path: path.clone(),
+                        content: read_optional_file(path)?,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let commit_result = (|| -> Result<()> {
+                for staged in &staged_upgrade_writes {
+                    staged.lockfile.write(&staged.path)?;
+                }
+                lockfile::migrate_monorepo_lockfiles_already_locked(&config, true, &migration_paths)
+            })();
+            if let Err(err) = commit_result {
+                if let Err(rollback_err) = restore_lockfile_snapshots(&snapshots) {
+                    return Err(err.wrap_err(format!(
+                        "failed to roll back lockfile format upgrade: {rollback_err:?}"
+                    )));
+                }
+                return Err(err);
+            }
+            drop(transaction_locks);
+
+            for staged in &staged_upgrade_writes {
                 if staged.format_changed {
                     self.show_lockfile_upgrade_message(&staged.path)?;
                 }
@@ -577,7 +669,6 @@ impl Lock {
                     );
                 }
             }
-            lockfile::migrate_monorepo_lockfiles(&config, true)?;
         }
 
         if self.json {
@@ -1629,15 +1720,42 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use super::{
-        Lock, LockTaskResult, LockTaskStatus, classify_lock_result, push_unique_lock_tool,
+        Lock, LockTaskResult, LockTaskStatus, LockfileSnapshot, classify_lock_result,
+        push_unique_lock_tool, restore_lockfile_snapshots,
     };
     use crate::cli::args::{BackendArg, ToolArg};
     use crate::lockfile::{Lockfile, PlatformInfo, apply_lock_result};
     use crate::platform::Platform;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
     use std::collections::BTreeMap;
+    use std::fs;
     use std::str::FromStr;
     use std::sync::Arc;
+
+    #[test]
+    fn rollback_restores_replaced_files_and_removes_created_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let replaced = temp.path().join("mise.lock");
+        let created = temp.path().join("mise.local.lock");
+        fs::write(&replaced, "original").unwrap();
+        let snapshots = vec![
+            LockfileSnapshot {
+                path: replaced.clone(),
+                content: Some(b"original".to_vec()),
+            },
+            LockfileSnapshot {
+                path: created.clone(),
+                content: None,
+            },
+        ];
+        fs::write(&replaced, "upgraded").unwrap();
+        fs::write(&created, "created").unwrap();
+
+        restore_lockfile_snapshots(&snapshots).unwrap();
+
+        assert_eq!(fs::read_to_string(replaced).unwrap(), "original");
+        assert!(!created.exists());
+    }
 
     fn lock_cmd(tool_filters: &[&str]) -> Lock {
         Lock {
