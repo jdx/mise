@@ -177,41 +177,6 @@ jobs:
       - run: sccache --show-stats
         if: always()
 
-  nightly:
-    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux-nightly
-    timeout-minutes: 15
-    # Track rolling nightly for early rustc regressions without blocking PRs on upstream compiler ICEs.
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.head_ref }}
-      - run: rustup default nightly
-      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/sccache
-      - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
-        with: { tool: sccache }
-      - name: Configure sccache
-        run: |
-          export RUSTC_WRAPPER=sccache
-          export SCCACHE_DIR="$HOME/.cache/sccache"
-          export SCCACHE_CACHE_SIZE=20G
-          {
-            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
-            echo "SCCACHE_DIR=$SCCACHE_DIR"
-            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
-          } >> "$GITHUB_ENV"
-          sccache --zero-stats
-      - run: cargo test --all-features
-      - run: sccache --show-stats
-        if: always()
-
   lint:
     runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux
     timeout-minutes: 80
@@ -487,7 +452,6 @@ jobs:
       - build-ubuntu
       - build-windows
       - unit
-      - nightly
       - lint
       - e2e
       - bootstrap-linux-host

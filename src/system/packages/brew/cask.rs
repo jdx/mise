@@ -6055,10 +6055,13 @@ fn collect_pkg_receipt_ids(value: &Value, pkg_ids: &mut Vec<String>) {
             continue;
         };
         match pkgutil {
-            Value::String(id) => pkg_ids.push(id.clone()),
-            Value::Array(ids) => {
-                pkg_ids.extend(ids.iter().filter_map(Value::as_str).map(str::to_string))
-            }
+            Value::String(id) if !id.trim().is_empty() => pkg_ids.push(id.clone()),
+            Value::Array(ids) => pkg_ids.extend(
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .filter(|id| !id.trim().is_empty())
+                    .map(str::to_string),
+            ),
             _ => {}
         }
     }
@@ -6419,15 +6422,22 @@ fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
     bail!("brew-cask: pkgutil receipt check for '{pkg_id}' is only available on macOS");
 
     #[cfg(target_os = "macos")]
+    // Homebrew's pkgutil metadata is a regular expression, not a literal ID.
+    // Match it with pkgutil itself to preserve its nonstandard regexp semantics.
+    // Like Homebrew, use the returned IDs rather than the exit status because a
+    // query with no matches may exit unsuccessfully.
     let output = std::process::Command::new("pkgutil")
-        .arg("--pkg-info")
-        .arg(pkg_id)
+        .arg(format!("--pkgs={pkg_id}"))
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
-        .status()?;
+        .output()?;
     #[cfg(target_os = "macos")]
-    Ok(output.success())
+    Ok(pkgutil_output_has_match(&output.stdout))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn pkgutil_output_has_match(output: &[u8]) -> bool {
+    output.iter().any(|byte| !byte.is_ascii_whitespace())
 }
 
 fn pkg_ids_installed(pkg_ids: &[String]) -> Result<bool> {
@@ -12016,6 +12026,15 @@ end
     }
 
     #[test]
+    fn detects_pkgutil_query_matches() {
+        assert!(pkgutil_output_has_match(
+            b"com.pioneer.rekordbox.7.2.14.0323\n"
+        ));
+        assert!(!pkgutil_output_has_match(b""));
+        assert!(!pkgutil_output_has_match(b"\n"));
+    }
+
+    #[test]
     fn ignores_zap_pkgutil_ids_for_pkg_receipts() -> Result<()> {
         let mut cask = test_cask("google-japanese-ime", "3.33.6130");
         cask.artifacts = vec![
@@ -12044,6 +12063,24 @@ end
 
         let err = cask_artifacts(&cask).unwrap_err().to_string();
         assert!(err.contains("pkg artifacts require pkgutil ids"));
+    }
+
+    #[test]
+    fn rejects_empty_pkgutil_patterns() {
+        for pkgutil in [
+            serde_json::json!(""),
+            serde_json::json!(" \n\t"),
+            serde_json::json!(["", " \t"]),
+        ] {
+            let mut cask = test_cask("example", "1.0.0");
+            cask.artifacts = vec![
+                serde_json::json!({"uninstall": [{"pkgutil": pkgutil}]}),
+                serde_json::json!({"pkg": ["Example.pkg"]}),
+            ];
+
+            let err = cask_artifacts(&cask).unwrap_err().to_string();
+            assert!(err.contains("pkg artifacts require pkgutil ids"));
+        }
     }
 
     #[test]
