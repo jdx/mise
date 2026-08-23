@@ -180,57 +180,80 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
     Ok(composed)
 }
 
-/// Same-target `symlink-each` declarations compose by their expanded target
-/// paths. Shared directories are fine, but two sources cannot own the same
-/// leaf or require a directory where another source places a leaf.
-pub(crate) fn validate_composed_symlink_each(requests: &[FileRequest]) -> Result<()> {
-    let mut groups: IndexMap<&Path, Vec<&FileRequest>> = IndexMap::new();
-    for request in requests
-        .iter()
-        .filter(|request| request.mode == FileMode::SymlinkEach)
-    {
-        groups.entry(&request.target).or_default().push(request);
-    }
+/// Validate the complete paths claimed by composed `[dotfiles]` entries.
+/// Directory copies and `symlink-each` entries may share directories, but no
+/// two entries may own the same leaf or require a directory where another
+/// entry places a leaf.
+pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()> {
+    let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
+    let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
 
-    for siblings in groups.into_values().filter(|siblings| siblings.len() > 1) {
-        let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
-        let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
-        for request in siblings {
-            // Preserve the normal source-missing/type diagnostic. Once every
-            // source directory exists its complete composed footprint can be
-            // checked before status or apply performs any mutation.
-            if !request.source.is_dir() {
-                continue;
-            }
-            for (_, target) in walk_source_files(request)? {
-                if let Some(existing) = leaves.get(&target).or_else(|| directories.get(&target)) {
-                    return Err(composed_symlink_each_conflict(&target, existing, request));
-                }
-                leaves.insert(target, request);
-            }
-            for directory in needed_dirs(request)?
+    for request in requests {
+        // A missing source has an unknown eventual shape, but it still claims
+        // its target. Whole-resource modes reserve a leaf; symlink-each has a
+        // known directory-shaped target even before its children are known.
+        let source_unavailable = request.mode != FileMode::Content
+            && (!request.source.exists()
+                || request.mode == FileMode::SymlinkEach && !request.source.is_dir());
+        let directory_walker = !source_unavailable
+            && matches!(request.mode, FileMode::Copy | FileMode::SymlinkEach)
+            && request.source.is_dir();
+        let unresolved_directory = source_unavailable && request.mode == FileMode::SymlinkEach;
+        let request_leaves = if unresolved_directory {
+            vec![]
+        } else if directory_walker {
+            walk_source_files(request)?
                 .into_iter()
-                .filter(|directory| *directory != request.target)
-            {
-                if let Some(existing) = leaves.get(&directory) {
-                    return Err(composed_symlink_each_conflict(
-                        &directory, existing, request,
-                    ));
-                }
-                directories.entry(directory).or_insert(request);
+                .map(|(_, target)| target)
+                .collect::<Vec<_>>()
+        } else {
+            vec![request.target.clone()]
+        };
+        let mut request_directories = indexmap::IndexSet::new();
+        for leaf in &request_leaves {
+            request_directories.extend(leaf.ancestors().skip(1).map(Path::to_path_buf));
+        }
+        if directory_walker || unresolved_directory {
+            request_directories.insert(request.target.clone());
+            request_directories.extend(request.target.ancestors().skip(1).map(Path::to_path_buf));
+        }
+
+        for leaf in &request_leaves {
+            if let Some(existing) = leaves.get(leaf).or_else(|| directories.get(leaf)) {
+                return Err(composed_file_footprint_conflict(leaf, existing, request));
             }
+        }
+        for directory in &request_directories {
+            if let Some(existing) = leaves.get(directory) {
+                return Err(composed_file_footprint_conflict(
+                    directory, existing, request,
+                ));
+            }
+        }
+        for leaf in request_leaves {
+            leaves.insert(leaf, request);
+        }
+        for directory in request_directories {
+            directories.entry(directory).or_insert(request);
         }
     }
     Ok(())
 }
 
-fn composed_symlink_each_conflict(
+/// Describe a footprint collision while preserving the established
+/// `symlink-each` diagnostic for two contributors in that mode.
+fn composed_file_footprint_conflict(
     path: &Path,
     first: &FileRequest,
     second: &FileRequest,
 ) -> eyre::Report {
+    let kind = if first.mode == FileMode::SymlinkEach && second.mode == FileMode::SymlinkEach {
+        "symlink-each"
+    } else {
+        "dotfile"
+    };
     eyre::eyre!(
-        "conflicting symlink-each declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
+        "conflicting {kind} declarations for {}\n\n  first:\n    {}\n\n  second:\n    {}",
         path.display(),
         first.origin.conflict_description(),
         second.origin.conflict_description(),
@@ -1257,7 +1280,7 @@ pub(crate) fn plan_apply<'a>(
     requests: &'a [FileRequest],
     opts: &ApplyOpts,
 ) -> Result<ApplyPlan<'a>> {
-    validate_composed_symlink_each(requests)?;
+    validate_composed_file_footprints(requests)?;
     // pre-rendered template output rides along so it's written as compared,
     // and exec() in templates runs once per apply
     let mut todo: Vec<(&FileRequest, Option<String>)> = vec![];
@@ -2288,7 +2311,7 @@ mod tests {
         file::write(source_a.join("conf.d/a.toml"), "a")?;
         file::write(source_b.join("conf.d/b.toml"), "b")?;
 
-        validate_composed_symlink_each(&[
+        validate_composed_file_footprints(&[
             link_req(&source_a, &target, FileMode::SymlinkEach),
             link_req(&source_b, &target, FileMode::SymlinkEach),
         ])?;
@@ -2306,7 +2329,7 @@ mod tests {
         file::write(source_a.join("shared"), "a")?;
         file::write(source_b.join("shared"), "b")?;
 
-        let err = validate_composed_symlink_each(&[
+        let err = validate_composed_file_footprints(&[
             link_req(&source_a, &target, FileMode::SymlinkEach),
             link_req(&source_b, &target, FileMode::SymlinkEach),
         ])
@@ -2329,7 +2352,7 @@ mod tests {
         file::write(source_a.join("shared"), "a")?;
         file::write(source_b.join("shared/nested"), "b")?;
 
-        let err = validate_composed_symlink_each(&[
+        let err = validate_composed_file_footprints(&[
             link_req(&source_a, &target, FileMode::SymlinkEach),
             link_req(&source_b, &target, FileMode::SymlinkEach),
         ])
@@ -2338,6 +2361,122 @@ mod tests {
             err.to_string()
                 .contains(&target.join("shared").to_string_lossy().to_string())
         );
+        Ok(())
+    }
+
+    /// Nested declarations may share directories when their concrete leaves
+    /// remain disjoint.
+    #[test]
+    fn composed_file_footprints_allow_disjoint_nested_leaves() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_tree = dir.path().join("tree");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("owned-by-tree"), "tree")?;
+        file::write(&source_file, "nested")?;
+
+        validate_composed_file_footprints(&[
+            link_req(&source_tree, &target, FileMode::Copy),
+            link_req(
+                &source_file,
+                &target.join("owned-separately"),
+                FileMode::Copy,
+            ),
+        ])?;
+        Ok(())
+    }
+
+    /// A nested whole-file declaration cannot also be owned by a directory
+    /// copy, regardless of declaration order.
+    #[test]
+    fn composed_file_footprints_reject_directory_copy_nested_leaf() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_tree = dir.path().join("tree");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("shared"), "tree")?;
+        file::write(&source_file, "nested")?;
+        let tree = link_req(&source_tree, &target, FileMode::Copy);
+        let nested = link_req(&source_file, &target.join("shared"), FileMode::Copy);
+
+        for requests in [
+            [tree.clone(), nested.clone()],
+            [nested.clone(), tree.clone()],
+        ] {
+            let err = validate_composed_file_footprints(&requests).unwrap_err();
+            assert!(err.to_string().contains("conflicting dotfile declarations"));
+            assert!(
+                err.to_string()
+                    .contains(&target.join("shared").to_string_lossy().to_string())
+            );
+        }
+        Ok(())
+    }
+
+    /// A whole-resource leaf cannot occupy a path another declaration needs
+    /// as a directory.
+    #[test]
+    fn composed_file_footprints_reject_leaf_required_as_directory() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source_tree = dir.path().join("tree");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(&source_file, "nested")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&source_tree, &target, FileMode::Symlink),
+            link_req(&source_file, &target.join("nested"), FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        assert!(
+            err.to_string()
+                .contains(&target.to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    /// A declaration whose source is unavailable still reserves its target,
+    /// preventing a filtered apply from writing a nested declaration there.
+    #[test]
+    fn composed_file_footprints_reserve_missing_source_target() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let missing = dir.path().join("missing");
+        let source_file = dir.path().join("nested");
+        let target = dir.path().join("target");
+        file::write(&source_file, "nested")?;
+
+        let err = validate_composed_file_footprints(&[
+            link_req(&missing, &target, FileMode::Copy),
+            link_req(&source_file, &target.join("nested"), FileMode::Copy),
+        ])
+        .unwrap_err();
+        assert!(err.to_string().contains("conflicting dotfile declarations"));
+        assert!(
+            err.to_string()
+                .contains(&target.to_string_lossy().to_string())
+        );
+        Ok(())
+    }
+
+    /// An unavailable symlink-each contributor reserves the shared target as
+    /// a directory, allowing a sibling's known leaves to remain composable.
+    #[test]
+    fn composed_file_footprints_keep_missing_symlink_each_directory_shaped() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let missing = dir.path().join("missing");
+        let source_tree = dir.path().join("tree");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source_tree)?;
+        file::write(source_tree.join("known"), "known")?;
+
+        validate_composed_file_footprints(&[
+            link_req(&missing, &target, FileMode::SymlinkEach),
+            link_req(&source_tree, &target, FileMode::SymlinkEach),
+        ])?;
         Ok(())
     }
 
