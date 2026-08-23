@@ -27,6 +27,7 @@ use crate::task::{TaskCompletionState, TaskDependencyState};
 use crate::tera::{contains_template_syntax, render_str};
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::CachedEnv;
+use crate::ui::prompt::Confirmation;
 use crate::ui::{style, time};
 use duct::IntoExecutablePath;
 use eyre::{Context, Report, Result, ensure, eyre};
@@ -1868,8 +1869,15 @@ impl TaskExecutor {
                 Some(default) => Self::parse_confirm_default(default)?,
                 None => true, // keep backwards compatible default of yes if not specified
             };
-            if !crate::ui::prompt::confirm_with_default(&message, default_yes).unwrap_or(false) {
-                return Err(eyre!("aborted by user"));
+            match crate::ui::prompt::confirm_with_default(&message, default_yes) {
+                Ok(Confirmation::Yes) => {}
+                Ok(Confirmation::No) => return Err(eyre!("aborted by user")),
+                Ok(Confirmation::Unavailable) => {
+                    return Err(eyre!(
+                        "task requires confirmation but there was nobody to ask; pass --yes to accept"
+                    ));
+                }
+                Err(err) => return Err(err),
             }
         }
         Ok(())

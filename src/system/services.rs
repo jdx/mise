@@ -578,6 +578,7 @@ pub(crate) fn apply_with_notifications(
         && !crate::ui::prompt::confirm(format!(
             "services: apply {independent_actions} change(s) not triggered by managed files?"
         ))?
+        .is_yes()
     {
         actions.retain(|action| action.dependency_changed);
         if actions.is_empty() {

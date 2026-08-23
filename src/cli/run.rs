@@ -1386,7 +1386,7 @@ impl Run {
                 )
             }
             let msg = format!("Script `{dp}` is not executable. Make it executable?");
-            if ui::confirm(msg)? {
+            if ui::confirm(msg)?.is_yes() {
                 file::make_executable(path)?;
             } else {
                 bail!(

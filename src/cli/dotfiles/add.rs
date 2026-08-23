@@ -219,7 +219,8 @@ impl DotfilesAdd {
                             "dotfiles: overwrite source {} from {}?",
                             item.source.display_user(),
                             item.target.display_user()
-                        ))?;
+                        ))?
+                        .is_yes();
                         if !ok {
                             info!("dotfiles: skipped {}", item.target_raw);
                             continue;

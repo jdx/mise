@@ -88,6 +88,7 @@ impl DotfilesUnapply {
                 file_plan.len(),
                 edit_plan.len()
             ))?
+            .is_yes()
         {
             info!("dotfiles: skipped");
             return Ok(());

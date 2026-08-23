@@ -804,6 +804,7 @@ pub(crate) fn apply_with_accounts(
             "system files: apply {} change(s)?",
             plan.actions.len()
         ))?
+        .is_yes()
     {
         info!("system files: skipped");
         return Ok(ApplyReport::default());
