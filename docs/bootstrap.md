@@ -42,6 +42,9 @@ roots never acquire precedence from their order in `config_roots`.
 Same-target `symlink-each` declarations are the exception: their source trees
 compose when their leaf paths are disjoint, while overlapping leaves or
 file/directory collisions are reported with both declaring configs.
+Directory `copy` and `symlink-each` footprints are also checked against nested
+dotfile declarations. Disjoint leaves may share directories, but two entries
+cannot own the same leaf or place a file where another entry needs a directory.
 
 Other configuration such as tools, tasks, packages, hooks, and repos is not
 collected from these roots. Use their existing explicit workflows when those
