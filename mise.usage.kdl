@@ -3404,22 +3404,7 @@ and `wait_for`. Task references inside a `run` or `run_windows` array
 edges, so they do not appear here. Those nested tasks still run, including
 their own `depends`.
 """#
-        after_long_help #"""
-Examples:
-
-    # Show dependencies for all tasks
-    $ mise tasks deps
-
-    # Show dependencies for the "lint", "test" and "check" tasks
-    $ mise tasks deps lint test check
-
-    # Show dependencies in DOT format
-    $ mise tasks deps --dot
-
-    # Collapse repeated dependencies
-    $ mise tasks deps --compact
-
-"""#
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Show dependencies for all tasks\n    $ \u{1b}[1mmise tasks deps\u{1b}[22m\n\n    # Show dependencies for the \"lint\", \"test\" and \"check\" tasks\n    $ \u{1b}[1mmise tasks deps lint test check\u{1b}[22m\n\n    # Show dependencies in DOT format\n    $ \u{1b}[1mmise tasks deps --dot\u{1b}[22m\n\n    # Collapse repeated dependencies\n    $ \u{1b}[1mmise tasks deps --compact\u{1b}[22m\n"
         flag --compact help="Collapse repeated dependencies after their first occurrence" conflicts=--dot
         flag --dot help="Display dependencies in DOT format"
         flag --hidden help="Show hidden tasks"
