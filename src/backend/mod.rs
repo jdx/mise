@@ -3474,12 +3474,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 Ok(vals) => {
                     for (k, v) in vals {
                         // PATH is owned by path_env; exclude any casing on Windows.
-                        let is_path = if cfg!(windows) {
-                            k.eq_ignore_ascii_case(env::PATH_KEY.as_str())
-                        } else {
-                            k.as_str() == env::PATH_KEY.as_str()
-                        };
-                        if !is_path {
+                        if !env::is_path_key(&k) {
                             env_vars.insert(k, v);
                         }
                     }
