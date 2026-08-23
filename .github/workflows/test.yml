@@ -252,6 +252,9 @@ jobs:
         run: |
           cargo clippy --ignore-rust-version -- -D warnings
           cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+        env:
+          CARGO_BUILD_JOBS: "1"
+          CARGO_INCREMENTAL: "0"
       - run: sccache --show-stats
         if: always()
 
