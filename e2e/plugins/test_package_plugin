@@ -134,6 +134,9 @@ cat >mise.toml <<'EOF'
 EOF
 mv fake-package-plugin/hooks/package_uninstall.lua fake-package-plugin/hooks/package_uninstall.lua.bak
 assert_fail \
+  "mise bootstrap packages prune --manager fake --dry-run" \
+  "does not support uninstall"
+assert_fail \
   "mise bootstrap packages prune --manager fake --yes" \
   "does not support uninstall"
 assert_succeed "test -e $HOME/.fake-packages/nohook"

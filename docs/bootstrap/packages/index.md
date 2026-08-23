@@ -84,11 +84,12 @@ declarative sections work the same way:
 - **Declarative and additive by default** — entries merge across the
   [config hierarchy](/configuration.html) (global → project) as a union of
   keys. A project can add packages on top of the global list (and override a
-  global entry's version pin) but not remove them. For Homebrew formulae,
-  `mise bootstrap packages prune` is an explicit destructive command that
-  removes linked formulae, safely prunable mise-owned casks, or packages owned
-  by uninstall-capable package plugins when they are no longer needed by the
-  current config or by trusted, loadable tracked configs.
+  global entry's version pin) but not remove them. Pruning is an explicit,
+  manager-scoped destructive operation: `mise bootstrap packages prune`
+  defaults to Homebrew, while plugin-owned packages require
+  `mise bootstrap packages prune --manager <plugin>`. It removes only packages
+  no longer needed by the current config or by trusted, loadable tracked
+  configs.
 - **OS-filtered** — entries whose `os` selector does not match and entries for
   a manager that isn't available on the current machine are not acted on, so
   the same config works across platforms: `apt` entries are ignored on macOS,

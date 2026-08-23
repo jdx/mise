@@ -307,6 +307,20 @@ impl PackagePluginManager {
         self.save_state(state)
     }
 
+    fn reconcile_owned_versions(state: &mut PackagePluginState, after: &[PackageStatus]) -> bool {
+        let mut changed = false;
+        for status in after {
+            if let Some(version) = Self::status_version(status)
+                && let Some(owned) = state.packages.get_mut(&status.request.name)
+            {
+                let version = Some(version);
+                changed |= owned.version != version;
+                owned.version = version;
+            }
+        }
+        changed
+    }
+
     pub(crate) async fn prune_plan(
         &self,
         configured: &[PackageRequest],
@@ -561,7 +575,36 @@ impl SystemPackageManager for PackagePluginManager {
             return self.action(pkgs, opts, true).await;
         }
         let _lock = self.operation_lock()?;
-        self.action(pkgs, opts, true).await
+        let mut state = self.load_state()?;
+        let action_result = self.action(pkgs, opts, true).await;
+        let after = self.installed(pkgs).await;
+        match after {
+            Ok(after) => {
+                if Self::reconcile_owned_versions(&mut state, &after)
+                    && let Err(state_err) = self.save_state(&state)
+                {
+                    if let Err(action_err) = action_result {
+                        warn!(
+                            "{}: failed to save ownership after upgrade error: {state_err:#}",
+                            self.name
+                        );
+                        return Err(action_err);
+                    }
+                    return Err(state_err);
+                }
+            }
+            Err(status_err) => {
+                if let Err(action_err) = action_result {
+                    warn!(
+                        "{}: failed to verify ownership after upgrade error: {status_err:#}",
+                        self.name
+                    );
+                    return Err(action_err);
+                }
+                return Err(status_err);
+            }
+        }
+        action_result
     }
 
     fn supports_version_pins(&self) -> bool {
@@ -640,5 +683,41 @@ mod tests {
                 tap_url: None,
             }]
         );
+    }
+
+    #[test]
+    fn upgrade_reconciliation_updates_only_owned_versions() {
+        let mut state = state("fake");
+        let statuses = vec![
+            PackageStatus {
+                request: PackageRequest {
+                    name: "keep".to_string(),
+                    version: Some("nightly-2026.08".to_string()),
+                    tap_url: None,
+                },
+                state: PackageState::Installed {
+                    version: "nightly-2026.08".to_string(),
+                },
+            },
+            PackageStatus {
+                request: PackageRequest {
+                    name: "manual".to_string(),
+                    version: None,
+                    tap_url: None,
+                },
+                state: PackageState::Installed {
+                    version: "release:edge".to_string(),
+                },
+            },
+        ];
+
+        assert!(PackagePluginManager::reconcile_owned_versions(
+            &mut state, &statuses
+        ));
+        assert_eq!(
+            state.packages["keep"].version.as_deref(),
+            Some("nightly-2026.08")
+        );
+        assert!(!state.packages.contains_key("manual"));
     }
 }

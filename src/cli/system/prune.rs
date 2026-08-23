@@ -3,6 +3,7 @@ use eyre::{Result, bail};
 use crate::config::Config;
 use crate::config::Settings;
 use crate::system;
+#[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
@@ -80,6 +81,12 @@ impl SystemPrune {
             }
             info!("{}: nothing to prune", self.manager);
             return Ok(());
+        }
+        if !manager.supports_uninstall() {
+            bail!(
+                "package plugin '{}' does not support uninstall; add hooks/package_uninstall.lua",
+                self.manager
+            );
         }
         let remove = plan
             .remove
