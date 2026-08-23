@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+# The trust prompt is a `demand::Dialog`, which has no non-tty branch: it drives
+# `Term::stderr().read_key()` unconditionally. With a terminal on stderr but not on
+# stdin (`docker run -t` without `-i`, a `script`-wrapped CI step) `console` falls
+# back to /dev/tty and either blocks forever waiting for a keypress nobody is there
+# to type, or fails with an errno that replaces the actionable "not trusted" error.
+#
+# mise must fail the same way it does with plain pipes, and it must not record an
+# ignore marker -- that marker is sticky and silent, so the config would just stop
+# applying without the user ever having declined it.
+
+require_cmd script
+
+# A terminal on stderr is the whole point of this test, so it needs a pty. macOS's
+# script(1) additionally requires a terminal on its own stdin, which the harness
+# does not have, so skip where a pty cannot be allocated rather than fail.
+if ! script -qec true /dev/null >/dev/null 2>&1; then
+  echo "skipping: script(1) cannot allocate a pty here" >&2
+  exit 0
+fi
+
+export MISE_TRUSTED_CONFIG_PATHS=""
+
+cat <<'EOF' >mise.toml
+[env]
+TRUST_PROMPT_TEST = "1"
+EOF
+
+ignored_configs="$MISE_STATE_DIR/ignored-configs"
+
+# Gives mise a pty on stderr and /dev/null on stdin. Kept under a timeout because
+# the regression this guards against is a hang, not a failure. `-e` makes script(1)
+# exit with the child's status. 10s is well clear of the ~1s a passing run takes,
+# and keeps a regression under the harness's 20s "should be marked slow" warning.
+run_in_pty() {
+  timeout 10 script -qec "$1 </dev/null" /dev/null
+}
+
+marker_count() {
+  if [[ -d $ignored_configs ]]; then
+    find "$ignored_configs" -mindepth 1 | wc -l | tr -d ' '
+  else
+    echo 0
+  fi
+}
+
+# MISE_PARANOID=1 keeps the trust check deterministic by skipping the
+# implicitly-trust-active-config fast path.
+status=0
+output="$(run_in_pty 'MISE_YES=0 MISE_PARANOID=1 mise env' 2>&1)" || status=$?
+
+if [[ $status == 124 ]]; then
+  fail "mise blocked on a trust prompt that nothing could answer"
+fi
+if [[ $status == 0 ]]; then
+  fail "expected mise to fail on untrusted config, got: $output"
+fi
+assert_contains_text "$output" "not trusted"
+assert_contains_text "$output" "mise trust"
+
+if [[ $(marker_count) != 0 ]]; then
+  fail "an ignore marker was recorded without the user declining"
+fi
+ok "[trust] no ignore marker recorded when the prompt cannot be answered"
+
+# Same terminal shape while generating usage/completions. Before the fix this exited
+# 0 -- because it had just recorded the ignore marker -- so the marker is what
+# distinguishes the bug, not the exit status.
+status=0
+run_in_pty '__USAGE=1 MISE_YES=0 MISE_PARANOID=1 mise env' >/dev/null 2>&1 || status=$?
+
+if [[ $status == 124 ]]; then
+  fail "mise blocked while generating usage in an untrusted directory"
+fi
+if [[ $(marker_count) != 0 ]]; then
+  fail "generating usage recorded an ignore marker"
+fi
+ok "[trust] no ignore marker recorded while generating usage"
