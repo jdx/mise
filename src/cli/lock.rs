@@ -137,7 +137,7 @@ pub(crate) struct Lock {
     /// to the latest format with request-specific version bindings.
     /// Format upgrades always process every configured tool and cannot be
     /// combined with tool arguments.
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub upgrade: bool,
 }
 
