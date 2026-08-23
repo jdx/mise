@@ -799,7 +799,7 @@ impl Config {
         let mut union = ToolRequestSet::new();
         for root in roots {
             let root_idiomatic_filenames =
-                idiomatic_filenames_for_root(&root, &idiomatic_filenames).await;
+                idiomatic_filenames_for_root(&root, &idiomatic_filenames).await?;
             let root_config_filenames = root_idiomatic_filenames
                 .keys()
                 .chain(DEFAULT_CONFIG_FILENAMES.iter())
@@ -1095,24 +1095,64 @@ impl Config {
 
     pub(crate) async fn get_tracked_config_files(&self) -> Result<ConfigMap> {
         let mut config_files: ConfigMap = ConfigMap::default();
+        let mut idiomatic_settings_by_root =
+            BTreeMap::<PathBuf, settings::IdiomaticVersionFileSettings>::new();
+        let require_trust_before_detection = Settings::get().paranoid && !Settings::safe_mode();
         for path in Tracker::list_all()?.into_iter() {
             if config_path_is_ignored(&path, false) {
                 debug!("skipping ignored tracked config: {}", display_path(&path));
                 continue;
             }
-            // Pre-check trust for config files that require it so tracked
-            // config loading (e.g., during `mise upgrade`) never prompts.
-            // Plain .tool-versions and idiomatic version files are safe to
-            // parse without trust and must still protect their tool versions.
             let trust_root = config_file::config_trust_root(&path);
-            if config_file::path_requires_trust(&path).await
+            // Paranoid mode must not inspect an untrusted owner's settings before
+            // classification. Safe mode intentionally loads configs inertly without trust.
+            if require_trust_before_detection
                 && !is_global_config(&path)
                 && !config_file::is_trusted(&trust_root)
             {
                 debug!("skipping untrusted tracked config: {}", display_path(&path));
                 continue;
             }
-            match config_file::parse(&path).await {
+            let detection = match config_file::detect_config_file_type_by_filename(&path) {
+                Some(config_type) => config_file::ConfigFileDetection::Recognized(config_type),
+                None => {
+                    let config_root = config_file::config_root::config_root(&path);
+                    let idiomatic_settings = match idiomatic_settings_by_root.get(&config_root) {
+                        Some(settings) => settings.clone(),
+                        None => {
+                            let settings = settings::IdiomaticVersionFileSettings::resolve_from(
+                                &config_root,
+                                settings::SettingsLoadPolicy::TRUSTED_HIERARCHY,
+                            )?;
+                            idiomatic_settings_by_root.insert(config_root, settings.clone());
+                            settings
+                        }
+                    };
+                    config_file::detect_config_file_with_settings(&path, &idiomatic_settings).await
+                }
+            };
+            // Pre-check trust for config files that require it so tracked
+            // config loading (e.g., during `mise upgrade`) never prompts.
+            // Plain .tool-versions and idiomatic version files are safe to
+            // parse without trust and must still protect their tool versions.
+            if config_file::detection_requires_trust(&path, &detection)
+                && !is_global_config(&path)
+                && !config_file::is_trusted(&trust_root)
+            {
+                debug!("skipping untrusted tracked config: {}", display_path(&path));
+                continue;
+            }
+            if matches!(
+                &detection,
+                config_file::ConfigFileDetection::DisabledIdiomatic
+            ) {
+                debug!(
+                    "skipping disabled idiomatic tracked config: {}",
+                    display_path(&path)
+                );
+                continue;
+            }
+            match config_file::parse_detected(&path, detection).await {
                 Ok(cf) => {
                     config_files.insert(path, cf);
                 }
@@ -1651,45 +1691,24 @@ fn idiomatic_version_file_disabled(
     })
 }
 
-/// Resolves idiomatic version filenames for a single monorepo config root, honoring that
-/// root's own `[settings].idiomatic_version_file_enable_tools`/`idiomatic_version_file_disable_files`
-/// if it sets either.
+/// Resolves idiomatic version filenames for a single monorepo config root through the
+/// canonical settings loader.
 ///
-/// `Settings::get()` is a process-wide snapshot resolved once from the invocation directory
-/// (walking config files upward); it never walks *down* into `[monorepo].config_roots`, so a
-/// config root's own `[settings]` block is otherwise silently ignored by monorepo-wide
-/// commands (e.g. `mise ls --monorepo`) even though the same setting works fine when mise is
-/// actually invoked from within that root. See https://github.com/jdx/mise/discussions/8629.
+/// `Settings::get()` is a process-wide snapshot rooted at the invocation directory. Resolving
+/// from the monorepo config root keeps normal environment, hierarchy, global/system, safe-mode,
+/// and `--no-config` behavior without maintaining a second precedence implementation.
 async fn idiomatic_filenames_for_root(
     root: &Path,
     default_idiomatic_filenames: &BTreeMap<String, Vec<String>>,
-) -> BTreeMap<String, Vec<String>> {
-    let settings = Settings::get();
-    let mut enable_tools = settings.idiomatic_version_file_enable_tools.clone();
-    let mut disable_files = settings.idiomatic_version_file_disable_files.clone();
-    let mut overridden = false;
-    let safe_mode = Settings::safe_mode();
-    for path in config_paths_in_dir_with_filenames(root, &DEFAULT_CONFIG_FILENAMES) {
-        if safe_mode && !is_global_config(&path) {
-            // Match all_settings_files()'s safe-mode boundary: an untrusted repo's own
-            // [settings] block must not influence resolution, including here.
-            continue;
-        }
-        if let Ok(partial) = Settings::parse_settings_file(&path) {
-            if let Some(tools) = partial.idiomatic_version_file_enable_tools {
-                enable_tools = tools;
-                overridden = true;
-            }
-            if let Some(files) = partial.idiomatic_version_file_disable_files {
-                disable_files = files;
-                overridden = true;
-            }
-        }
+) -> Result<BTreeMap<String, Vec<String>>> {
+    let rooted = settings::IdiomaticVersionFileSettings::resolve_from(
+        root,
+        settings::SettingsLoadPolicy::HIERARCHY,
+    )?;
+    if rooted == settings::IdiomaticVersionFileSettings::current() {
+        return Ok(default_idiomatic_filenames.clone());
     }
-    if !overridden {
-        return default_idiomatic_filenames.clone();
-    }
-    load_idiomatic_filenames_for_tools(&enable_tools, &disable_files).await
+    Ok(load_idiomatic_filenames_for_tools(&rooted.enable_tools, &rooted.disable_files).await)
 }
 
 static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
@@ -2115,15 +2134,11 @@ pub(crate) fn config_file_from_dir(p: &Path) -> PathBuf {
     }
 }
 
-pub(crate) fn load_config_paths(
+fn load_config_paths_from_dirs(
+    dirs: Vec<PathBuf>,
     config_filenames: &[String],
     include_ignored: bool,
 ) -> Vec<PathBuf> {
-    if Settings::no_config() {
-        return vec![];
-    }
-    let dirs = all_dirs().unwrap_or_default();
-
     let mut config_files = dirs
         .iter()
         .flat_map(|dir| {
@@ -2144,6 +2159,35 @@ pub(crate) fn load_config_paths(
         .unique_by(|p| file::desymlink_path(p))
         .filter(|p| !config_path_is_ignored(p, include_ignored))
         .collect()
+}
+
+pub(crate) fn load_config_paths_from(
+    start_dir: &Path,
+    config_filenames: &[String],
+    include_ignored: bool,
+) -> Vec<PathBuf> {
+    if Settings::no_config() {
+        return vec![];
+    }
+    load_config_paths_from_dirs(
+        all_dirs_from(start_dir).unwrap_or_default(),
+        config_filenames,
+        include_ignored,
+    )
+}
+
+pub(crate) fn load_config_paths(
+    config_filenames: &[String],
+    include_ignored: bool,
+) -> Vec<PathBuf> {
+    if Settings::no_config() {
+        return vec![];
+    }
+    load_config_paths_from_dirs(
+        all_dirs().unwrap_or_default(),
+        config_filenames,
+        include_ignored,
+    )
 }
 
 /// Whether to emit the phase-2 auto_env rollout warning. Pure for unit testing.
