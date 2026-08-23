@@ -43,6 +43,19 @@ impl LockFile {
         }
         Ok(lock)
     }
+
+    #[cfg(feature = "self_update")]
+    pub(crate) fn try_lock(self) -> Result<Option<fslock::LockFile>> {
+        if let Some(parent) = self.path.parent() {
+            create_dir_all(parent)?;
+        }
+        let mut lock = fslock::LockFile::open(&self.path)?;
+        if lock.try_lock()? {
+            Ok(Some(lock))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) fn get(path: &Path, force: bool) -> eyre::Result<Option<fslock::LockFile>> {

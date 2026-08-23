@@ -294,6 +294,28 @@ pub(crate) async fn parse_or_init(path: &Path) -> eyre::Result<Arc<dyn ConfigFil
     Ok(cf)
 }
 
+/// Refuse a path mise would not read back as a TOML config.
+///
+/// [`parse_or_init`] gives this check to every caller that goes through a [`ConfigFile`]. Callers
+/// that write TOML directly — `mise set` builds a `MiseToml` itself — bypassed it and would happily
+/// create a file that `detect_config_file_type` then refuses to recognise, or write TOML into a
+/// name mise reads as `.tool-versions`. One definition of "a path mise can write TOML to", rather
+/// than two that drift apart.
+pub(crate) async fn ensure_writable_as_toml(path: &Path) -> eyre::Result<()> {
+    match detect_config_file_type(path).await {
+        Some(ConfigFileType::MiseToml) => Ok(()),
+        Some(ConfigFileType::ToolVersions) => Err(eyre!(
+            "cannot write TOML to {}: mise reads that name as a .tool-versions file",
+            display_path(path)
+        )),
+        // `unsupported_config_file_error` already says the useful thing for these: they are
+        // idiomatic version files, and it names the alternatives.
+        Some(ConfigFileType::IdiomaticVersion(_)) | None => {
+            Err(unsupported_config_file_error(path))
+        }
+    }
+}
+
 /// Lock a config file for a read-modify-write operation, then read its latest contents.
 ///
 /// Callers must keep the returned lock alive until after [`ConfigFile::save`]. Acquiring the

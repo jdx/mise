@@ -125,6 +125,10 @@ If Landlock is unavailable or cannot apply filesystem restrictions, the command 
 
 Uses Apple's `sandbox-exec` (Seatbelt) with a generated profile. Supports all features including per-host network filtering.
 
+When reads are restricted, Seatbelt requires data access to the root directory for process startup.
+Sandboxed processes can enumerate names directly under `/`, but cannot read unallowed entries or
+their descendants.
+
 ### Windows
 
 Sandboxing is not currently supported on Windows. A warning is printed and the command runs unsandboxed.
