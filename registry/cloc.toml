@@ -1,0 +1,27 @@
+description = "Count Lines of Code"
+test = { cmd = "cloc --version", expected = "{{version}}" }
+version_order = "semver"
+
+bins = ["cloc"]
+
+[[backends]]
+full = "github:AlDanial/cloc"
+
+[backends.options]
+bin = "cloc"
+depends = ["perl"]
+
+[backends.options.platforms.linux-x64]
+asset_pattern = "cloc-{{ version }}.pl"
+
+[backends.options.platforms.linux-arm64]
+asset_pattern = "cloc-{{ version }}.pl"
+
+[backends.options.platforms.macos-x64]
+asset_pattern = "cloc-{{ version }}.pl"
+
+[backends.options.platforms.macos-arm64]
+asset_pattern = "cloc-{{ version }}.pl"
+
+[backends.options.platforms.windows-x64]
+asset_pattern = "cloc-{{ version }}.exe"
