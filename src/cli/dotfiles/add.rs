@@ -66,6 +66,7 @@ pub(crate) struct DotfilesAdd {
 }
 
 impl DotfilesAdd {
+    /// Validate and capture the requested targets as one transactional update.
     pub(crate) async fn run(self) -> Result<()> {
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
@@ -133,7 +134,7 @@ impl DotfilesAdd {
                     mode.name()
                 );
             }
-            planned.push(PlannedAdd {
+            let item = PlannedAdd {
                 target_raw: normalized_target_raw(&target),
                 target,
                 source,
@@ -141,8 +142,33 @@ impl DotfilesAdd {
                 implied_source: self.source.is_none(),
                 explicit_mode: self.mode.is_some(),
                 already_managed: existing.cloned(),
-            });
+            };
+            // Wildcard expansion and equivalent spellings can resolve more
+            // than one argument to the same config key. The eventual config
+            // write is unique by target, so plan its filesystem work once too.
+            if !planned
+                .iter()
+                .any(|planned: &PlannedAdd| planned.target == item.target)
+            {
+                planned.push(item);
+            }
         }
+
+        let mut prospective = managed.clone();
+        for item in &planned {
+            if let Some(existing) = &item.already_managed
+                && let Some(index) = prospective.iter().position(|request| {
+                    request.target == existing.target
+                        && request.source == existing.source
+                        && request.mode == existing.mode
+                        && request.origin.config == existing.origin.config
+                })
+            {
+                prospective.remove(index);
+            }
+            prospective.push(item.validation_request(&config_path));
+        }
+        system::files::validate_composed_file_footprints(&prospective)?;
 
         if self.dry_run {
             for item in &planned {
@@ -297,7 +323,7 @@ impl DotfilesAdd {
                     updated_targets.push(item.target_raw.as_str());
                 }
                 accepted.push(item);
-                apply_requests.push(item.as_request(&config_path));
+                apply_requests.push(item.managed_request(&config_path));
             }
 
             let apply_opts = system::files::ApplyOpts {
@@ -380,6 +406,30 @@ struct PlannedAdd {
 }
 
 impl PlannedAdd {
+    /// Build the request that will exist after capture, using the live target
+    /// as the future source footprint when add is about to copy or move it.
+    fn validation_request(&self, config_path: &std::path::Path) -> FileRequest {
+        let mut request = self.managed_request(config_path);
+        if self.target.exists() && !same_file(&self.target, &self.source) {
+            request.source = self.target.clone();
+        } else if !self.source.exists() && self.mode != FileMode::SymlinkEach {
+            // Add creates an empty source file in this case. Content mode gives
+            // the validator that known leaf shape without touching the disk.
+            request.mode = FileMode::Content;
+            request.content = Some(String::new());
+        }
+        request
+    }
+
+    /// Preserve an existing declaration's options when an add refreshes its
+    /// source; newly added declarations use the command-derived request.
+    fn managed_request(&self, config_path: &std::path::Path) -> FileRequest {
+        self.already_managed
+            .clone()
+            .unwrap_or_else(|| self.as_request(config_path))
+    }
+
+    /// Convert a newly added target into its configured file request.
     fn as_request(&self, config_path: &std::path::Path) -> FileRequest {
         FileRequest {
             target_raw: self.target_raw.clone(),

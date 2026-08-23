@@ -216,3 +216,73 @@ assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
 assert_fail "mise bootstrap dotfiles apply --yes '$shared_tree'" "conflicting symlink-each declarations for $shared_tree/conf.d/a.toml"
 assert "readlink $shared_tree/conf.d/a.toml" "$root_a/tree/conf.d/a.toml"
 assert "readlink $shared_tree/conf.d/b.toml" "$root_b/tree/conf.d/b.toml"
+
+# A directory copy and a nested whole-file entry may share the target tree,
+# but they cannot own the same expanded leaf. Validate all entries even when
+# apply is filtered to only the nested target, and reject before mutation.
+nested_tree="$PWD/nested-tree"
+nested_leaf="$nested_tree/collide.txt"
+mkdir -p "$root_a/copy-tree"
+echo "from a" >"$root_a/copy-tree/collide.txt"
+echo "a only" >"$root_a/copy-tree/own-a.txt"
+echo "from b" >"$root_b/nested.txt"
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$nested_tree" = { source = "copy-tree", mode = "copy" }
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$nested_leaf" = { source = "nested.txt", mode = "copy" }
+EOF
+assert_fail "mise bootstrap dotfiles status" "conflicting dotfile declarations for $nested_leaf"
+assert_fail "mise bootstrap dotfiles status" "$root_a/mise.toml"
+assert_fail "mise bootstrap dotfiles status" "$root_b/mise.toml"
+assert_fail "mise bootstrap dotfiles apply --yes '$nested_leaf'" "conflicting dotfile declarations for $nested_leaf"
+assert_fail "test -e $nested_tree"
+
+# edit --apply validates the complete set before opening the editor, rather
+# than editing a source and then applying only the selected conflicting leaf.
+cat <<EOF >"$PWD/editor-marker"
+#!/usr/bin/env bash
+touch "$PWD/editor-ran"
+EOF
+chmod +x "$PWD/editor-marker"
+assert_fail "EDITOR='$PWD/editor-marker' mise bootstrap dotfiles edit --apply '$nested_leaf'" "conflicting dotfile declarations for $nested_leaf"
+assert_fail "test -e $PWD/editor-ran"
+
+# add validates the prospective complete set before capturing a source or
+# writing the new declaration, including when automatic apply is disabled.
+cat <<EOF >"$root_b/mise.toml"
+[vars]
+keep = true
+EOF
+assert_fail "mise bootstrap dotfiles add '$nested_leaf' --source '$root_b/nested.txt' --path '$root_b/mise.toml' --no-apply --yes" "conflicting dotfile declarations for $nested_leaf"
+assert_not_contains "cat '$root_b/mise.toml'" "$nested_leaf"
+assert_contains "cat '$root_b/mise.toml'" "keep = true"
+
+# A missing directory source has an unknown future shape. It still reserves
+# its target so filtering to a nested declaration cannot bypass validation.
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$nested_tree" = { source = "missing-tree", mode = "copy" }
+EOF
+cat <<EOF >"$root_b/mise.toml"
+[dotfiles]
+"$nested_leaf" = { source = "nested.txt", mode = "copy" }
+EOF
+assert_fail "mise bootstrap dotfiles apply --yes '$nested_leaf'" "conflicting dotfile declarations for $nested_tree"
+assert_fail "test -e $nested_leaf"
+
+# Refreshing an existing directory declaration retains its exclusions while
+# validating the prospective set.
+cat <<EOF >"$root_a/mise.toml"
+[dotfiles]
+"$nested_tree" = { source = "copy-tree", mode = "copy", exclude = ["collide.txt"] }
+EOF
+assert_succeed "mise bootstrap dotfiles add '$nested_tree' --path '$root_a/mise.toml' --no-apply --yes"
+
+# Repeated and aliased arguments resolve to one config target and therefore
+# produce one prospective filesystem operation rather than conflicting.
+duplicate_target="$PWD/duplicate.conf"
+echo duplicate >"$duplicate_target"
+assert_succeed "mise bootstrap dotfiles add '$duplicate_target' '$PWD/roots/../duplicate.conf' --path '$root_b/mise.toml' --no-apply --dry-run --yes"

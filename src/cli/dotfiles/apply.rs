@@ -42,6 +42,7 @@ impl DotfilesApply {
         Vec<system::edits::EditRequest>,
     )> {
         let all_files = system::files::files_from_config(config)?;
+        system::files::validate_composed_file_footprints(&all_files)?;
         let files = all_files
             .iter()
             .filter(|req| {

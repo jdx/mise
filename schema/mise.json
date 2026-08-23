@@ -633,6 +633,16 @@
             "type": "string"
           }
         },
+        "auto_update": {
+          "default": false,
+          "description": "Automatically update mise before running eligible commands.",
+          "type": "boolean"
+        },
+        "auto_update_check_duration": {
+          "default": "7d",
+          "description": "How often to check for a new mise release when auto-update is enabled.",
+          "type": "string"
+        },
         "cache_prune_age": {
           "default": "30d",
           "description": "Delete files in cache that have not been accessed in this duration",
@@ -3525,6 +3535,18 @@
           "additionalProperties": false
         }
       ]
+    },
+    "bootstrap_remote_install_mise": {
+      "oneOf": [
+        {
+          "type": "boolean",
+          "description": "install the provisioned mise to ~/.local/bin/mise, or do not install it"
+        },
+        {
+          "type": "string",
+          "description": "absolute or ~/-relative remote path to install the provisioned mise to"
+        }
+      ]
     }
   },
   "unevaluatedProperties": false,
@@ -3905,6 +3927,10 @@
                 "type": "string"
               }
             },
+            "install_mise": {
+              "$ref": "#/$defs/bootstrap_remote_install_mise",
+              "description": "install the provisioned mise on inventory hosts instead of only staging it"
+            },
             "copy_links": {
               "type": "boolean",
               "description": "dereference every symbolic link in the source archive"
@@ -3990,6 +4016,10 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "install_mise": {
+                    "$ref": "#/$defs/bootstrap_remote_install_mise",
+                    "description": "install the provisioned mise on this host instead of only staging it"
                   },
                   "mise_bin": {
                     "type": "string",
