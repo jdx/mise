@@ -2,6 +2,10 @@
 #![deny(dead_code_pub_in_binary, unreachable_pub)]
 // eyre 0.6.12 emits a trailing semicolon from bail!, which nightly rejects.
 #![allow(semicolon_in_expressions_from_macros)]
+// Boxing async fns into `Pin<Box<dyn Future>>` across the backend and core-plugin
+// traits overruns the default trait-solver depth on rustc 1.100 nightly, which is
+// slated to become a hard error (rust-lang/rust#159228).
+#![recursion_limit = "256"]
 
 use std::{
     panic,
