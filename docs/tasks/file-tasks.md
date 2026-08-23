@@ -259,8 +259,8 @@ documentation when running mise and can be exported to markdown. Essentially thi
 fully-fledged CLIs.
 
 :::tip
-The `usage` CLI is not required to execute mise tasks with the usage spec.
-However, for completions to work, the `usage` CLI must be installed and available in the PATH.
+The separate `usage` CLI is not required to execute or complete mise tasks with a usage spec.
+Task completions work when mise's shell completion script is installed and enabled.
 :::
 
 ### Example file task with arguments
@@ -290,7 +290,7 @@ cargo build --profile "${usage_profile?}" --target "${usage_target?}"
 For details on bash parameter expansion patterns like `${var?}`, `${var:-default}`, and `${var:+value}`, see [Bash Variable Expansion for Usage Variables](/tasks/task-arguments#bash-variable-expansion).
 :::
 
-If you have installed `usage`, completions will be enabled for your task. In this example,
+With mise's shell completions enabled, this example provides the following task completions:
 
 - `mise run -- build --profile <tab><tab>`
   will show `debug` and `release` as options.
@@ -369,7 +369,7 @@ mise run greet invalid.txt --user Alice
 #   0: Invalid choice for arg output_file: invalid.txt, expected one of greeting.txt, file.txt
 ```
 
-Autocomplete will show the available choices for the `output_file` argument if `usage` is installed.
+Autocomplete will show the available choices for the `output_file` argument when mise's shell completions are enabled.
 
 ```shell
 mise run greet <TAB>
