@@ -1242,30 +1242,28 @@ impl TaskExecutor {
         ))
     }
 
+    /// Assemble `(program, args)` for running `file` under an already-resolved `shell`.
+    ///
+    /// The shell arrives resolved rather than being worked out here, because `file` may be a
+    /// [`ps1_shim`] copy: resolving from the copy would let [`shell_from_extension`] answer
+    /// `pwsh -File` where the original had taken its shell from somewhere else.
     fn get_file_program_and_args(
         &self,
         file: &Path,
-        task: &Task,
+        shell: &[String],
         args: &[String],
     ) -> Result<(String, Vec<String>)> {
-        let display = file.display().to_string();
-        if !Settings::get().use_file_shell_for_executable_tasks && can_execute_directly(file) {
-            return Ok((display, args.to_vec()));
-        }
-        let mut shell = task
-            .shell()?
-            .or_else(|| shell_from_shebang(file))
-            .or_else(|| shell_from_extension(file))
-            .unwrap_or(Settings::get().default_file_shell()?);
+        let mut shell = shell.to_vec();
         Settings::get().maybe_no_profile(&mut shell);
         let (program, _) = task_shell_parts(&shell, "file shell")?;
+        let program = program.to_string();
         trace!("using shell: {}", shell.join(" "));
-        let mut full_args = shell.to_vec();
-        full_args.push(display);
+        let mut full_args = shell;
+        full_args.push(file.display().to_string());
         if !args.is_empty() {
             full_args.extend(args.iter().cloned());
         }
-        Ok((program.to_string(), full_args[1..].to_vec()))
+        Ok((program, full_args[1..].to_vec()))
     }
 
     /// Build the `(program, args, cmd_verbatim)` for an inline script. When
@@ -1449,7 +1447,17 @@ impl TaskExecutor {
     }
 
     async fn exec(&self, file: &Path, args: &[String], ctx: TaskExecContext<'_>) -> Result<()> {
-        let (program, args) = self.get_file_program_and_args(file, ctx.task, args)?;
+        if runs_without_a_shell(file) {
+            let program = file.display().to_string();
+            return self.exec_program(&program, args, false, ctx).await;
+        }
+        // Resolved once, from the file the user wrote, and then used for both decisions below.
+        let shell = file_task_shell(file, ctx.task)?;
+        // Held, not dropped: the copy has to outlive the spawn below, and binding it here
+        // is what keeps it on disk for exactly that long. See [`ps1_shim`].
+        let shim = ps1_shim(file, &shell)?;
+        let script = shim.as_deref().unwrap_or(file);
+        let (program, args) = self.get_file_program_and_args(script, &shell, args)?;
         self.exec_program(&program, &args, false, ctx).await
     }
 
@@ -2287,6 +2295,91 @@ fn shell_from_extension(path: &Path) -> Option<Vec<String>> {
         "vbs" => Some(vec!["cscript".to_string(), "//nologo".to_string()]),
         _ => None,
     }
+}
+
+/// True when mise hands the file straight to the OS rather than starting a shell for it,
+/// in which case no shell resolution happens and nothing below applies.
+fn runs_without_a_shell(file: &Path) -> bool {
+    !Settings::get().use_file_shell_for_executable_tasks && can_execute_directly(file)
+}
+
+/// The shell a file task runs under, in precedence order: the task's explicit `shell`,
+/// then the shebang, then the extension, then the default file shell.
+///
+/// Called once per run, before the command line is assembled, and the answer is then used
+/// for both [`ps1_shim`] and [`TaskExecutor::get_file_program_and_args`] — asking a second
+/// time from a shim copy would not give the same answer.
+fn file_task_shell(file: &Path, task: &Task) -> Result<Vec<String>> {
+    Ok(task
+        .shell()?
+        .or_else(|| shell_from_shebang(file))
+        .or_else(|| shell_from_extension(file))
+        .unwrap_or(Settings::get().default_file_shell()?))
+}
+
+/// A `.ps1`-named copy of `file`, for the one case where PowerShell will not run the
+/// original: on **Windows**, `pwsh` rejects a script whose name does not end in `.ps1`.
+///
+/// The Linux and macOS builds have no such rule — measured on the same pwsh 7.6.5, an
+/// extensionless script runs there and is refused here — so `#!/usr/bin/env pwsh`, the
+/// shape the file-task docs show, worked everywhere except Windows. Windows has no kernel
+/// shebang either, so mise is the one starting the interpreter and the one that has to
+/// hand it a name it will accept.
+///
+/// The copy lives exactly as long as the returned [`tempfile::TempPath`], which deletes it
+/// on drop — the caller has to hold it across the spawn. `None` means the original is
+/// runnable as it stands, which is every case off Windows.
+///
+/// The script sees the copy's path in `$PSCommandPath`/`$PSScriptRoot`. `$args` and the
+/// working directory are unaffected.
+fn ps1_shim(file: &Path, shell: &[String]) -> Result<Option<tempfile::TempPath>> {
+    #[cfg(windows)]
+    {
+        if needs_ps1_shim(file, shell) {
+            let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("task");
+            let path = tempfile::Builder::new()
+                .prefix(&format!("mise-task-{stem}-"))
+                .suffix(".ps1")
+                .tempfile()?
+                .into_temp_path();
+            // Overwrites the empty file `tempfile()` just created under a name nothing
+            // else can have claimed, rather than picking a name and hoping.
+            std::fs::copy(file, &path)
+                .wrap_err_with(|| format!("failed to stage {} for pwsh", display_path(file)))?;
+            return Ok(Some(path));
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (file, shell);
+    }
+    Ok(None)
+}
+
+/// Whether [`ps1_shim`] applies: PowerShell is going to resolve this path as a script, and
+/// the name would make it refuse.
+///
+/// The shell's mode does not enter into it. `-File` opens the path; `-Command` resolves it
+/// as a command — and PowerShell's *command* resolution asks for `.ps1` just as its `-File`
+/// handling does, so an extensionless task under `shell = "pwsh -c"` exits 0 having quietly
+/// done nothing. Both readings are fixed by giving it a name pwsh will take.
+///
+/// A name the OS itself can start is left alone. PowerShell resolves `foo.cmd` and `foo.exe`
+/// as commands and runs them correctly, and renaming one to `.ps1` would instead feed a batch
+/// file to the PowerShell parser — which fails *and* still exits 0. That case is reachable
+/// through `use_file_shell_for_executable_tasks` with a PowerShell default file shell.
+#[cfg(windows)]
+fn needs_ps1_shim(file: &Path, shell: &[String]) -> bool {
+    let already_runnable = file
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| {
+            ext.eq_ignore_ascii_case("ps1") || crate::file::os_can_launch_extension(ext)
+        });
+    !already_runnable
+        && shell
+            .first()
+            .is_some_and(|program| crate::path::is_powershell_program(Path::new(program)))
 }
 
 fn task_shell_parts<'a>(shell: &'a [String], shell_kind: &str) -> Result<(&'a str, &'a [String])> {
