@@ -1680,9 +1680,9 @@ fn migrate_monorepo_lockfiles_inner(
             bail!(
                 "cannot merge lockfile version {} from {} into lockfile version {} at {}; run `mise lock --upgrade` at the monorepo root",
                 subproject_lockfile.lockfile_version,
-                display_path(&source),
+                display_path(source),
                 root_lockfile.lockfile_version,
-                display_path(&target)
+                display_path(target)
             );
         }
         merge_lockfile_preserving_root(&mut root_lockfile, subproject_lockfile);
@@ -3389,18 +3389,33 @@ pub(crate) fn read_lockfile_for_tool_source(
 /// entry written before those options existed. The version pin is honored — it
 /// is the only record of what this project resolved to — but the artifact data
 /// is dropped, since there's no way to tell which variant it describes.
+pub(crate) struct LockedVersionQuery<'a> {
+    pub(crate) path: Option<&'a Path>,
+    pub(crate) short: &'a str,
+    pub(crate) specifier: &'a str,
+    pub(crate) prefix: &'a str,
+    pub(crate) require_prefix_boundary: bool,
+    pub(crate) request_options: &'a BTreeMap<String, String>,
+    pub(crate) legacy_options_fallback: bool,
+    pub(crate) backend: Option<&'a dyn Backend>,
+    pub(crate) selection_options: &'a ToolVersionOptions,
+}
+
 pub(crate) fn get_locked_version(
     config: &Config,
-    path: Option<&Path>,
-    short: &str,
-    specifier: &str,
-    prefix: &str,
-    require_prefix_boundary: bool,
-    request_options: &BTreeMap<String, String>,
-    legacy_options_fallback: bool,
-    backend: Option<&dyn Backend>,
-    selection_options: &ToolVersionOptions,
+    query: LockedVersionQuery<'_>,
 ) -> Result<Option<LockfileTool>> {
+    let LockedVersionQuery {
+        path,
+        short,
+        specifier,
+        prefix,
+        require_prefix_boundary,
+        request_options,
+        legacy_options_fallback,
+        backend,
+        selection_options,
+    } = query;
     let settings = Settings::get();
     if !settings.lockfile_enabled() {
         return Ok(None);
@@ -5249,8 +5264,10 @@ options = { exe = "rg" }
     #[test]
     fn test_merge_lockfile_for_lookup_keeps_request_bindings_enabled() {
         for (root_version, other_version) in [(0, 1), (1, 0)] {
-            let mut root = Lockfile::default();
-            root.lockfile_version = root_version;
+            let mut root = Lockfile {
+                lockfile_version: root_version,
+                ..Default::default()
+            };
             root.tools.insert(
                 "node".to_string(),
                 vec![LockfileTool {
@@ -5261,8 +5278,10 @@ options = { exe = "rg" }
                     platforms: BTreeMap::new(),
                 }],
             );
-            let mut other = Lockfile::default();
-            other.lockfile_version = other_version;
+            let mut other = Lockfile {
+                lockfile_version: other_version,
+                ..Default::default()
+            };
             other
                 .tools
                 .insert("node".to_string(), vec![basic_tool("22.0.0", "core:node")]);
@@ -5282,8 +5301,10 @@ options = { exe = "rg" }
         let primary_path = temp.path().join("mise.lock");
         let legacy_path = temp.path().join("package.lock");
 
-        let mut legacy = Lockfile::default();
-        legacy.lockfile_version = 0;
+        let mut legacy = Lockfile {
+            lockfile_version: 0,
+            ..Default::default()
+        };
         legacy
             .tools
             .insert("node".to_string(), vec![basic_tool("20.0.0", "core:node")]);

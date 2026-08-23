@@ -425,15 +425,17 @@ impl ToolRequest {
         };
         lockfile::get_locked_version(
             config,
-            path.map(|p| p.as_path()),
-            &self.ba().short,
-            &self.version(),
-            prefix,
-            require_prefix_boundary,
-            &request_options,
-            legacy_options_fallback,
-            backend.as_deref(),
-            &self.options(),
+            lockfile::LockedVersionQuery {
+                path: path.map(|p| p.as_path()),
+                short: &self.ba().short,
+                specifier: &self.version(),
+                prefix,
+                require_prefix_boundary,
+                request_options: &request_options,
+                legacy_options_fallback,
+                backend: backend.as_deref(),
+                selection_options: &self.options(),
+            },
         )
     }
 
