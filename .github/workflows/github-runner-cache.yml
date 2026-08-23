@@ -20,6 +20,7 @@ env:
 
 jobs:
   warm:
+    if: github.ref == 'refs/heads/main'
     name: warm-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
