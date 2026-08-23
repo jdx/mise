@@ -4,6 +4,13 @@ You can have mise automatically execute scripts during a `mise activate` session
 without the `mise activate` shell hook installed in your shell—except the `preinstall` and `postinstall` hooks.
 The configuration goes into `mise.toml`.
 
+When the same hook type is defined in multiple loaded config files, mise runs every matching hook
+rather than overriding hooks from lower-precedence files. Hooks run from the highest-precedence
+config file to the lowest-precedence config file. Within a single config file, hooks defined as an
+array run in the order listed. For example, hooks in `conf.d/a.toml`, `conf.d/b.toml`, and
+`conf.d/c.toml` run as `c`, `b`, then `a` because later alphabetical fragments have higher
+precedence. Put order-dependent hooks in one array when they need to run in alphabetical order.
+
 ## CD hook
 
 This hook is run anytime the directory is changed.
