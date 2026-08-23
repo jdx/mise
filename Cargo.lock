@@ -6390,6 +6390,7 @@ dependencies = [
  "rmcp",
  "rmp-serde",
  "rops",
+ "rust-embed",
  "same-file",
  "seccompiler",
  "self_update",
