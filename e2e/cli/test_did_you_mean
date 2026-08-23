@@ -12,5 +12,18 @@ assert_fail "mise use nod" "node"
 # Test: Typo of python should suggest python
 assert_fail "mise use pythn" "python"
 
+# Test: Aqua Cargo and GoInstall packages should use runnable backend suggestions
+assert_not_contains "mise use broot 2>&1 || true" "aqua:crates.io/broot"
+assert_fail "mise use broot" "cargo:broot"
+assert_not_contains "mise use benchstat 2>&1 || true" "aqua:golang.org/x/perf/cmd/benchstat"
+assert_fail "mise use benchstat" "go:golang.org/x/perf/cmd/benchstat"
+assert_fail "mise use mapotf" "go:github.com/Azure/mapotf"
+assert_fail "mise use ifacemaker" "go:github.com/vburenin/ifacemaker"
+
+# Test: Aqua GoBuild packages should not appear in suggestions
+assert_not_contains "mise use ycat 2>&1 || true" "aqua:goccy/go-yaml/ycat"
+assert_not_contains "mise use ycat 2>&1 || true" "go:github.com/goccy/go-yaml"
+assert_not_contains "mise use kics 2>&1 || true" "aqua:Checkmarx/kics"
+
 # Test: Completely unrelated name should not show suggestions
 assert_fail "mise use somethingnonexistent" "not found in mise tool registry"
