@@ -134,6 +134,13 @@ apk add mise
 _mise lives in
 the [community repository](https://gitlab.alpinelinux.org/alpine/aports/-/blob/master/community/mise/APKBUILD)._
 
+::: warning Alpine source-build default is deprecated
+Alpine currently compiles tools from source by default. This automatic behavior is deprecated:
+affected source installs warn beginning in mise 2026.8.0, and the default will switch to
+precompiled binaries in mise 2027.8.0. To keep compiling from source, set
+[`all_compile = true`](/configuration/settings.html#all_compile) explicitly.
+:::
+
 ### apt
 
 On Ubuntu 26.04+, mise is available via a PPA:
