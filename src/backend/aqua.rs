@@ -4786,16 +4786,16 @@ fn package_has_asset(pkg: &AquaPackage) -> bool {
 ///
 /// Always fetches the pre-release superset so the shared remote-versions cache
 /// is independent of the `prerelease` tool option; callers filter on the
-/// returned `prerelease` bit at read time. Git tags (the `github_tag` version
-/// source) carry no pre-release flag, so those entries are reported as
-/// `prerelease = false` and rely on the shared regex-based fuzzy-match filter.
+/// returned `prerelease` flag at read time. Git tags (the `github_tag` version
+/// source) carry no pre-release flag, so those entries are reported as `None`
+/// ("unknown") and rely on the shared regex-based fuzzy-match filter.
 async fn get_tags_with_release_dates(
     pkg: &AquaPackage,
-) -> Result<Vec<(String, Option<String>, bool)>> {
+) -> Result<Vec<(String, Option<String>, Option<bool>)>> {
     if let Some("github_tag") = pkg.version_source.as_deref() {
         // Tags don't have created_at timestamps or a prerelease flag
         let versions = github::list_tags(&format!("{}/{}", pkg.repo_owner, pkg.repo_name)).await?;
-        return Ok(versions.into_iter().map(|v| (v, None, false)).collect());
+        return Ok(versions.into_iter().map(|v| (v, None, None)).collect());
     }
     let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
     let releases = github::list_releases_including_prereleases(&repo).await?;
@@ -4803,7 +4803,7 @@ async fn get_tags_with_release_dates(
         .into_iter()
         .map(|r| {
             let released_at = r.released_at().to_string();
-            (r.tag_name, Some(released_at), r.prerelease)
+            (r.tag_name, Some(released_at), Some(r.prerelease))
         })
         .collect())
 }

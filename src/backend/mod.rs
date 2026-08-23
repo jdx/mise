@@ -305,12 +305,15 @@ pub(crate) struct VersionInfo {
     /// Checksum of the release asset, used to detect changes in rolling releases
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub checksum: Option<String>,
-    /// Whether this is a pre-release. Backends with a reliable upstream signal
-    /// (e.g. GitHub releases' `prerelease: true`) populate this directly.
-    /// Metadata-free listing backends can opt in to stamping this from mise's
+    /// Whether this is a pre-release. `Some(true)`/`Some(false)` come from
+    /// sources that can actually tell (e.g. GitHub releases' `prerelease`
+    /// flag, or semver/PEP 440 detection where the version grammar is total).
+    /// `None` means the source has no pre-release signal at all, so consumers
+    /// can distinguish "confirmed stable" from "unknown". Metadata-free
+    /// listing backends can opt in to stamping `Some(true)` from mise's
     /// legacy pre-release pattern before caching.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub prerelease: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prerelease: Option<bool>,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -1755,7 +1758,7 @@ mod tests {
             },
             VersionInfo {
                 version: "1.1.0-rc1".into(),
-                prerelease: true,
+                prerelease: Some(true),
                 ..Default::default()
             },
             VersionInfo {
@@ -1795,43 +1798,88 @@ mod tests {
     }
 
     #[test]
+    fn test_version_info_prerelease_json_three_states() {
+        // `ls-remote --json` consumers (e.g. mise-versions) rely on the
+        // distinction: explicit true/false when the source can tell, key
+        // absent when it cannot. A backend without a pre-release signal must
+        // not serialize `prerelease: false` as if the version were confirmed
+        // stable.
+        let known_stable = VersionInfo {
+            version: "1.0.0".into(),
+            prerelease: Some(false),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&known_stable).unwrap(),
+            r#"{"version":"1.0.0","prerelease":false}"#
+        );
+
+        let known_prerelease = VersionInfo {
+            version: "1.1.0-rc1".into(),
+            prerelease: Some(true),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&known_prerelease).unwrap(),
+            r#"{"version":"1.1.0-rc1","prerelease":true}"#
+        );
+
+        let unknown = VersionInfo {
+            version: "2.0.0".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            serde_json::to_string(&unknown).unwrap(),
+            r#"{"version":"2.0.0"}"#
+        );
+    }
+
+    #[test]
     fn test_mark_prerelease_flags_regex_matches() {
         let stable = mark_prerelease(VersionInfo {
             version: "1.0.0".into(),
             ..Default::default()
         });
-        assert!(!stable.prerelease);
+        assert_eq!(stable.prerelease, None);
 
         let rc = mark_prerelease(VersionInfo {
             version: "1.1.0-rc1".into(),
             ..Default::default()
         });
-        assert!(rc.prerelease);
+        assert_eq!(rc.prerelease, Some(true));
 
         let php_rc = mark_prerelease(VersionInfo {
             version: "8.5.9RC1".into(),
             ..Default::default()
         });
-        assert!(php_rc.prerelease);
+        assert_eq!(php_rc.prerelease, Some(true));
 
         let php_unnumbered_rc = mark_prerelease(VersionInfo {
             version: "4.0.1RC".into(),
             ..Default::default()
         });
-        assert!(php_unnumbered_rc.prerelease);
+        assert_eq!(php_unnumbered_rc.prerelease, Some(true));
 
         let php_qualified_rc = mark_prerelease(VersionInfo {
             version: "8.3.1RC1-clean".into(),
             ..Default::default()
         });
-        assert!(php_qualified_rc.prerelease);
+        assert_eq!(php_qualified_rc.prerelease, Some(true));
 
         let already_flagged = mark_prerelease(VersionInfo {
             version: "2.0.0".into(),
-            prerelease: true,
+            prerelease: Some(true),
             ..Default::default()
         });
-        assert!(already_flagged.prerelease);
+        assert_eq!(already_flagged.prerelease, Some(true));
+
+        // An authoritative "stable" from the source survives a regex match.
+        let confirmed_stable = mark_prerelease(VersionInfo {
+            version: "1.1.0-rc1".into(),
+            prerelease: Some(false),
+            ..Default::default()
+        });
+        assert_eq!(confirmed_stable.prerelease, Some(false));
 
         // Go pseudo-version (`-DATE-HASH`) must not false-positive on the
         // `[abc][0-9]+` alternative — that pattern lives in
@@ -1840,8 +1888,8 @@ mod tests {
             version: "2.0.0-20260404020628-f149714c1d54".into(),
             ..Default::default()
         });
-        assert!(
-            !go_pseudo.prerelease,
+        assert_eq!(
+            go_pseudo.prerelease, None,
             "Go pseudo-version must not be flagged by the general regex"
         );
 
@@ -1851,7 +1899,7 @@ mod tests {
             version: "3.12.0a1".into(),
             ..Default::default()
         });
-        assert!(!py_alpha.prerelease);
+        assert_eq!(py_alpha.prerelease, None);
     }
 
     #[test]
@@ -4526,7 +4574,7 @@ mod latest_version_tests {
             },
             VersionInfo {
                 version: "1.1.0-rc.1".to_string(),
-                prerelease: true,
+                prerelease: Some(true),
                 ..Default::default()
             },
         ];
@@ -5108,13 +5156,19 @@ pub(crate) fn filter_cached_prereleases(
     if want_prereleases {
         versions
     } else {
-        versions.into_iter().filter(|v| !v.prerelease).collect()
+        versions
+            .into_iter()
+            .filter(|v| v.prerelease != Some(true))
+            .collect()
     }
 }
 
 pub(crate) fn mark_prerelease(mut version: VersionInfo) -> VersionInfo {
-    if !version.prerelease && VERSION_REGEX.is_match(&version.version) {
-        version.prerelease = true;
+    // Only fill in unknowns: an authoritative Some(false) from the source
+    // (e.g. a GitHub release explicitly published as a full release) must not
+    // be overridden by pattern detection.
+    if version.prerelease.is_none() && VERSION_REGEX.is_match(&version.version) {
+        version.prerelease = Some(true);
     }
     version
 }
