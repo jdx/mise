@@ -140,7 +140,6 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - run: rustup default 1.95.0
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
@@ -315,10 +314,6 @@ jobs:
           - uses: ./.github/actions/mise-tools
           - name: Pull e2e Docker image
             run: docker pull ghcr.io/jdx/mise:e2e
-      - name: Build matching usage CLI
-        run: |
-          mise run build-usage
-          echo "$PWD/target/usage-cli/bin" >> "$GITHUB_PATH"
       # Each test gets isolated host directories and an ephemeral container.
       # Run four branches on a standard runner; each branch handles two
       # token-isolated tranches sequentially, capped at eight containers total.
