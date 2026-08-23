@@ -573,17 +573,17 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96f32e8b165cd44d00394a0ff19f578a92c99b2cc7ca14575df0da2db69f9eef"
 dependencies = [
- "aube-codes",
+ "aube-codes 1.41.0",
  "aube-linker",
  "aube-lockfile",
- "aube-manifest",
- "aube-registry",
+ "aube-manifest 1.41.0",
+ "aube-registry 1.41.0",
  "aube-resolver",
  "aube-runtime",
  "aube-scripts",
- "aube-settings",
- "aube-store",
- "aube-util",
+ "aube-settings 1.41.0",
+ "aube-store 1.41.0",
+ "aube-util 1.41.0",
  "aube-workspace",
  "base64 0.23.1",
  "blake3",
@@ -635,15 +635,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aube-codes"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12f39140faa43a8ffc28a6b852af89c39b87f3804fa1fb1e7d9785ad60301903"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aube-linker"
 version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "162c3a9ff8ee6be148ed9abf3f8b274fe4b2442a54247b258395e69f4a96d7b5"
 dependencies = [
- "aube-codes",
+ "aube-codes 1.41.0",
  "aube-lockfile",
- "aube-store",
- "aube-util",
+ "aube-store 1.41.0",
+ "aube-util 1.41.0",
  "diffy",
  "glob",
  "hex",
@@ -668,10 +678,10 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f0bb9d924f35f07ccb1ead685e7f45f3a6f488df9b03562e5fbb8ec075d6290"
 dependencies = [
- "aube-codes",
- "aube-manifest",
- "aube-settings",
- "aube-util",
+ "aube-codes 1.41.0",
+ "aube-manifest 1.41.0",
+ "aube-settings 1.41.0",
+ "aube-util 1.41.0",
  "base64 0.23.1",
  "blake3",
  "glob",
@@ -694,8 +704,24 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "75090ee2a1539bb4130d22f6410c2ab835381dee709913f5fb12c205148a37f0"
 dependencies = [
- "aube-codes",
- "aube-util",
+ "aube-codes 1.41.0",
+ "aube-util 1.41.0",
+ "miette",
+ "serde",
+ "serde_json",
+ "sonic-rs",
+ "thiserror 2.0.20",
+ "yaml_serde",
+]
+
+[[package]]
+name = "aube-manifest"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0cae2f7d4da8fcce0609b1872b48d12b4613cad89550e9153df6ff648b51e16"
+dependencies = [
+ "aube-codes 2.0.1",
+ "aube-util 2.0.1",
  "miette",
  "serde",
  "serde_json",
@@ -710,11 +736,38 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f8b7bcdbfde52d4ce96c363b99e577ac73093e82f7ea40a23ed680ffda521ce"
 dependencies = [
- "aube-codes",
- "aube-manifest",
- "aube-settings",
- "aube-store",
- "aube-util",
+ "aube-codes 1.41.0",
+ "aube-manifest 1.41.0",
+ "aube-settings 1.41.0",
+ "aube-store 1.41.0",
+ "aube-util 1.41.0",
+ "base64 0.23.1",
+ "blake3",
+ "bytes",
+ "miette",
+ "node-semver",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "sonic-rs",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "zip 8.6.0",
+]
+
+[[package]]
+name = "aube-registry"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4af9978b38dab3aa47094913e34f60e604547a43680d5bdcbe3d132153f7bff4"
+dependencies = [
+ "aube-codes 2.0.1",
+ "aube-manifest 2.0.1",
+ "aube-settings 2.0.1",
+ "aube-store 2.0.1",
+ "aube-util 2.0.1",
  "base64 0.23.1",
  "blake3",
  "bytes",
@@ -737,12 +790,12 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "deeda8571e6340e6f9bb8ca3ba39f163463260a8c0e6d8411d84f846fa4101f9"
 dependencies = [
- "aube-codes",
+ "aube-codes 1.41.0",
  "aube-lockfile",
- "aube-manifest",
- "aube-registry",
- "aube-store",
- "aube-util",
+ "aube-manifest 1.41.0",
+ "aube-registry 1.41.0",
+ "aube-store 1.41.0",
+ "aube-util 1.41.0",
  "flate2",
  "miette",
  "node-semver",
@@ -767,9 +820,9 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70f9172dbd650d35e6a9b54276998179c9b8a776fc11e0696de2b2a6c1f46110"
 dependencies = [
- "aube-codes",
- "aube-manifest",
- "aube-util",
+ "aube-codes 1.41.0",
+ "aube-manifest 1.41.0",
+ "aube-util 1.41.0",
  "base64 0.23.1",
  "flate2",
  "hex",
@@ -792,9 +845,9 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2526895539b06b2abe99e4e77ed3e37ea54e6aaabf5d3a0d84348ed25d84978e"
 dependencies = [
- "aube-codes",
- "aube-manifest",
- "aube-util",
+ "aube-codes 1.41.0",
+ "aube-manifest 1.41.0",
+ "aube-util 1.41.0",
  "landlock",
  "libc",
  "miette",
@@ -812,8 +865,22 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f08726d73039e2fc9407715b3e6c2f97d72a4dbc85256c5ed21fe7b66d0dbaf"
 dependencies = [
- "aube-codes",
- "aube-util",
+ "aube-codes 1.41.0",
+ "aube-util 1.41.0",
+ "serde",
+ "toml 1.1.4+spec-1.1.0",
+ "tracing",
+ "yaml_serde",
+]
+
+[[package]]
+name = "aube-settings"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34b4c90f3e935040b1688c61ca907abdd4b824a60782195245951986c590c58b"
+dependencies = [
+ "aube-codes 2.0.1",
+ "aube-util 2.0.1",
  "serde",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
@@ -826,7 +893,34 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40eaeec4efdf07458340bcd405ec9c4f0034d48f6fbd9af765cc1d81aaae3cd"
 dependencies = [
- "aube-util",
+ "aube-util 1.41.0",
+ "base64 0.23.1",
+ "blake3",
+ "decmpfs",
+ "flate2",
+ "hex",
+ "libc",
+ "log",
+ "miette",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha1 0.11.0",
+ "sha2 0.11.0",
+ "sonic-rs",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.20",
+ "xx",
+]
+
+[[package]]
+name = "aube-store"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d6ad1e413e0234483ff1262f3ee8e0c38fd512533bb9fab207873e25512c3b1"
+dependencies = [
+ "aube-util 2.0.1",
  "base64 0.23.1",
  "blake3",
  "decmpfs",
@@ -853,7 +947,29 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac99c4c1451782b818dbd0f197925352362caded0d798214a0e9dc809a146d3e"
 dependencies = [
- "aube-codes",
+ "aube-codes 1.41.0",
+ "blake3",
+ "bytes",
+ "foldhash 0.2.0",
+ "libc",
+ "reflink-copy",
+ "reqwest",
+ "rustc-hash 2.1.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+ "webpki-root-certs",
+]
+
+[[package]]
+name = "aube-util"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "712d221a9d6e539e206242dfaff9403776353503118491988c1ed80493fe620e"
+dependencies = [
+ "aube-codes 2.0.1",
  "blake3",
  "bytes",
  "foldhash 0.2.0",
@@ -875,8 +991,8 @@ version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd585c4e04b176043622fd08a60b3a8f33a0245fa485787d2b01b9747da62d3d"
 dependencies = [
- "aube-codes",
- "aube-manifest",
+ "aube-codes 1.41.0",
+ "aube-manifest 1.41.0",
  "glob",
  "miette",
  "pathdiff",
@@ -2224,7 +2340,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3065,7 +3181,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3354,7 +3470,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4324,7 +4440,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a791e6620676a875f362f3156ed213e73ca099a09bf992c18812abe65cc37b1"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -5391,7 +5507,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.61.2",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -5915,7 +6031,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "160f2eade097f30263b548aae5deb12ad349c909baa710fa24b92c9090b2e006"
 dependencies = [
  "scopeguard",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5968,7 +6084,7 @@ version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a1886916523694cd6ea3d175f03a1e5010699a2a4cc13696d83d7bea1d80638"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6361,7 +6477,7 @@ dependencies = [
  "async-backtrace",
  "async-trait",
  "aube",
- "aube-registry",
+ "aube-registry 2.0.1",
  "aws-config",
  "aws-lc-rs",
  "aws-sdk-s3",
@@ -6790,7 +6906,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7034,7 +7150,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7310,7 +7426,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bitfields",
  "block-padding",
  "blowfish",
@@ -7852,7 +7968,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8864,7 +8980,7 @@ dependencies = [
  "errno 0.3.14",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8923,7 +9039,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10262,10 +10378,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10333,7 +10449,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -11446,7 +11562,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

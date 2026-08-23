@@ -69,7 +69,7 @@ opt-level = 3
 [dependencies]
 age = { version = "0.12", features = ["ssh"] }
 aho-corasick = "1"
-aube-registry = { version = "1", default-features = false, features = [
+aube-registry = { version = "2", default-features = false, features = [
   "rustls",
 ] }
 aube = { version = "1", default-features = false, features = ["rustls"] }
