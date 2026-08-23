@@ -38,12 +38,12 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
             ~/.cache/mbx
-          key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.1.0-${{ github.sha }}
+          key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.1.0-
+            ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
       - uses: ./.github/actions/setup-mbx
       - run: mbx build build --all-features --ignore-rust-version
-      # v0.1.0 predates automatic GC. Bound each immutable GHA cache entry so
-      # Linux and macOS can coexist within the repository cache quota.
+      # Bound each immutable GHA cache entry so Linux and macOS can coexist
+      # within the repository cache quota.
       - run: mbx gc --max-size 3GB
         if: always()

@@ -191,9 +191,9 @@ jobs:
                 ~/.cargo/git
                 ~/.cargo/.global-cache
                 ~/.cache/mbx
-              key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.1.0-${{ github.event.pull_request.base.sha }}
+              key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-${{ github.event.pull_request.base.sha }}
               restore-keys: |
-                ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.1.0-
+                ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
           - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
             with:
               name: mise-ubuntu-latest

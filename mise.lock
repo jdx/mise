@@ -482,6 +482,60 @@ checksum = "sha256:3ae3a5549e85c7ad5b20192ebcfee4371269deca51255f6f2f2e051c6541f
 url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405851866"
 
+[[tools."github:jdx/mr-boxington"]]
+version = "0.2.0"
+backend = "github:jdx/mr-boxington"
+
+[tools."github:jdx/mr-boxington"."platforms.linux-arm64"]
+checksum = "sha256:8ed75a027ae0f8e28a76868ba1ad649bb55ece2ac731c06b25ef5750e9e844ca"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595248"
+
+[tools."github:jdx/mr-boxington"."platforms.linux-arm64-musl"]
+checksum = "sha256:8ed75a027ae0f8e28a76868ba1ad649bb55ece2ac731c06b25ef5750e9e844ca"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595248"
+
+[tools."github:jdx/mr-boxington"."platforms.linux-x64"]
+checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+
+[tools."github:jdx/mr-boxington"."platforms.linux-x64-baseline"]
+checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+
+[tools."github:jdx/mr-boxington"."platforms.linux-x64-musl"]
+checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+
+[tools."github:jdx/mr-boxington"."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+
+[tools."github:jdx/mr-boxington"."platforms.macos-arm64"]
+checksum = "sha256:a8428b18eaf2240c47f36c628219d02a405cca4f65de5b3c649af481d6778b8f"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595246"
+
+[tools."github:jdx/mr-boxington"."platforms.macos-x64"]
+checksum = "sha256:569c70e2b84e38c2bfda2ec8f936244393e2a84e74d8799e74d211dc024c2c9b"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595242"
+
+[tools."github:jdx/mr-boxington"."platforms.windows-x64"]
+checksum = "sha256:24e44ab08896284b207fece614fe461db8c9399467cf934b115ef796ebf467e0"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595245"
+
+[tools."github:jdx/mr-boxington"."platforms.windows-x64-baseline"]
+checksum = "sha256:24e44ab08896284b207fece614fe461db8c9399467cf934b115ef796ebf467e0"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595245"
+
 [[tools."github:jdx/tak"]]
 version = "0.0.5"
 backend = "github:jdx/tak"
