@@ -20,13 +20,13 @@ runs:
         key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-${{ github.event.pull_request.base.sha }}
         restore-keys: |
           ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
-    - name: Install mbx
+    - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+      with:
+        cache: false
+        install_args: github:jdx/mr-boxington
+    - name: Verify mbx
       shell: bash
       run:
         | # zizmor: ignore[github-env] PATH and cache paths use only runner-owned directories
-        mise install github:jdx/mr-boxington
-        mise_bin="$(mise where github:jdx/mr-boxington)/bin"
-        echo "$mise_bin" >> "$GITHUB_PATH"
-        export PATH="$mise_bin:$PATH"
         mbx --version
         echo "MBX_CACHE_DIR=$HOME/.cache/mbx" >> "$GITHUB_ENV"
