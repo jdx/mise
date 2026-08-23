@@ -140,7 +140,13 @@ jobs:
         with:
           repository: ${{ github.event.pull_request.head.repo.full_name }}
           ref: ${{ github.head_ref }}
-      - run: rustup default 1.95.0
+      - name: Select Rust 1.95 when the runner is older
+        run: |
+          rust_version="$(rustc --version | awk '{print $2}')"
+          IFS=. read -r rust_major rust_minor _ <<< "$rust_version"
+          if ((rust_major < 1 || (rust_major == 1 && rust_minor < 95))); then
+            rustup default 1.95.0
+          fi
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         with:
           path: |
