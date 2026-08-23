@@ -272,7 +272,13 @@ impl Lock {
             ..Default::default()
         };
         let monorepo_union = if !self.global && config.monorepo_lockfile_root().is_some() {
-            Some(config.monorepo_union().await?)
+            // The plain union lets a sibling's request shadow the monorepo
+            // root's own request for the same short, so lock treated the
+            // root's entry as stale: plain `mise lock` pruned its version and
+            // binding, and `mise lock --upgrade` migrated v0 lockfiles
+            // without it. Lockfile maintenance needs the root-inclusive
+            // variant.
+            Some(config.monorepo_lockfile_union().await?)
         } else {
             None
         };
