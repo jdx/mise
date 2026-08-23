@@ -745,7 +745,7 @@ fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -
     };
 
     // Check if the first non-flag argument is a known subcommand
-    if is_known_subcommand(cmd, &args[i]) || external::COMMANDS.contains_key(&args[i]) {
+    if is_known_subcommand(cmd, &args[i]) {
         return args.to_vec();
     }
 
