@@ -1,5 +1,3 @@
-use clap::Subcommand;
-
 mod build;
 mod common;
 mod push;
@@ -14,14 +12,14 @@ mod run;
 /// This command is experimental and requires `mise settings experimental=true`
 /// (or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change
 /// in future releases.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
 pub(crate) struct Oci {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
     Build(build::Build),
     Push(push::Push),

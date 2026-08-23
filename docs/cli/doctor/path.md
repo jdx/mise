@@ -2,6 +2,7 @@
 # `mise doctor path`
 
 - **Usage**: `mise doctor path [-f --full]`
+- **Aliases**: `paths`
 - **Effect**: read-only
 - **Source code**: [`src/cli/doctor/path.rs`](https://github.com/jdx/mise/blob/main/src/cli/doctor/path.rs)
 

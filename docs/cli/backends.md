@@ -2,6 +2,7 @@
 # `mise backends`
 
 - **Usage**: `mise backends <SUBCOMMAND>`
+- **Aliases**: `b`, `backend`, `backend-list`
 - **Effect**: read-only
 - **Source code**: [`src/cli/backends/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/backends/mod.rs)
 

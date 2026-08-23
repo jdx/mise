@@ -22,6 +22,9 @@ Force the operation
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Dry run, don't actually do anything
@@ -31,6 +34,9 @@ Set the profile (environment)
 .TP
 \fB\-q, \-\-quiet\fR
 Suppress non\-error messages
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-s, \-\-shell\fR \fI<SHELL>\fR
 .TP
@@ -108,6 +114,9 @@ Initializes mise in the current shell session
 .TP
 \fBtool\-alias\fR
 Manage tool version aliases.
+.RS
+\fIAliases: \fRalias, aliases
+.RE
 .TP
 \fBtool\-alias get\fR
 Show an alias for a tool
@@ -132,6 +141,9 @@ Clears an alias for a tool/backend
 .TP
 \fBbackends\fR
 Manage backends
+.RS
+\fIAliases: \fRb, backend, backend\-list
+.RE
 .TP
 \fBbackends ls\fR
 List built\-in backends
@@ -210,6 +222,9 @@ Manage Linux bootstrap config from `[bootstrap.linux]`
 .TP
 \fBbootstrap linux systemd\-units\fR
 Manage systemd user services from `[bootstrap.linux.systemd.units]`
+.RS
+\fIAliases: \fRsystemd
+.RE
 .TP
 \fBbootstrap linux systemd\-units apply\fR
 .TP
@@ -227,6 +242,9 @@ Manage macOS defaults from `[bootstrap.macos.defaults]`
 .TP
 \fBbootstrap macos launchd\-agents\fR
 Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.RS
+\fIAliases: \fRlaunchd
+.RE
 .TP
 \fBbootstrap macos launchd\-agents apply\fR
 .TP
@@ -234,6 +252,9 @@ Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 .TP
 \fBbootstrap mise\-shell\-activate\fR
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+.RS
+\fIAliases: \fRshell
+.RE
 .TP
 \fBbootstrap mise\-shell\-activate apply\fR
 .TP
@@ -245,7 +266,7 @@ Manage bootstrap system packages from `[bootstrap.packages]`
 \fBbootstrap packages apply\fR
 Apply system packages from `[bootstrap.packages]`
 .RS
-\fIAliases: \fRi
+\fIAliases: \fRi, install
 .RE
 .TP
 \fBbootstrap packages brew\fR
@@ -342,7 +363,7 @@ Manage the mise cache
 \fBcache clear\fR
 Deletes all cache files in mise
 .RS
-\fIAliases: \fRc
+\fIAliases: \fRc, clean
 .RE
 .TP
 \fBcache path\fR
@@ -362,11 +383,14 @@ Inspect output cache entries for a task
 .TP
 \fBcompletion\fR
 Generate shell completions
+.RS
+\fIAliases: \fRcomplete, completions
+.RE
 .TP
 \fBconfig\fR
 Manage config files
 .RS
-\fIAliases: \fRcfg
+\fIAliases: \fRcfg, toml
 .RE
 .TP
 \fBconfig get\fR
@@ -392,6 +416,9 @@ Check mise installation for possible problems
 .TP
 \fBdoctor path\fR
 Print the current PATH entries mise is providing
+.RS
+\fIAliases: \fRpaths
+.RE
 .TP
 \fBen\fR
 Starts a new shell with the mise environment built from the current configuration
@@ -414,7 +441,7 @@ Formats mise.toml
 \fBgenerate\fR
 Generate files for various tools/services
 .RS
-\fIAliases: \fRgen
+\fIAliases: \fRgen, g
 .RE
 .TP
 \fBgenerate config\fR
@@ -479,6 +506,9 @@ List installed and active tool versions
 .TP
 \fBls\-remote\fR
 List runtime versions available for install.
+.RS
+\fIAliases: \fRlist\-all, list\-remote
+.RE
 .TP
 \fBmcp\fR
 Run Model Context Protocol (MCP) server
@@ -504,7 +534,7 @@ Show the individuals supporting mise as Patron\-tier members
 \fBplugins\fR
 Manage plugins
 .RS
-\fIAliases: \fRp
+\fIAliases: \fRp, plugin, plugin\-list
 .RE
 .TP
 \fBplugins install\fR
@@ -546,7 +576,7 @@ Updates a plugin to the latest version
 \fBdeps\fR
 [experimental] Manage project dependencies
 .RS
-\fIAliases: \fRdep
+\fIAliases: \fRdep, prepare
 .RE
 .TP
 \fBdeps add\fR
@@ -581,9 +611,12 @@ Updates mise itself.
 .TP
 \fBset\fR
 Set environment variables in mise.toml
+.RS
+\fIAliases: \fRev, env\-vars
+.RE
 .TP
 \fBsettings\fR
-Show current settings
+Manage settings
 .TP
 \fBsettings add\fR
 Adds a setting to the configuration file
@@ -657,7 +690,7 @@ Symlinks all ruby tool versions from an external tool into mise
 \fBtasks\fR
 Manage tasks
 .RS
-\fIAliases: \fRt
+\fIAliases: \fRt, task
 .RE
 .TP
 \fBtasks add\fR
@@ -694,13 +727,13 @@ Test a tool installs and executes
 Display git provider tokens mise will use
 .TP
 \fBtoken forgejo\fR
-Forgejo token
+Display the Forgejo token mise will use for a given host
 .TP
 \fBtoken github\fR
-GitHub token
+Display the GitHub token mise will use for a given host
 .TP
 \fBtoken gitlab\fR
-GitLab token
+Display the GitLab token mise will use for a given host
 .TP
 \fBtool\fR
 Gets information about a tool
@@ -1419,7 +1452,7 @@ Write to the config file for this environment (mise.<ENV>.toml)
 Write to the global config (~/.config/mise/config.toml)
 .TP
 \fB\-m, \-\-manager\fR \fI<MANAGER>\fR
-Only import packages for this manager. Currently only `brew` is supported
+Only import packages for this manager. Currently only `brew` is supported.
 .RS
 \fIDefault: \fRbrew
 .RE
@@ -1859,22 +1892,28 @@ Generate shell completions
 \fBOptions:\fR
 .PP
 .TP
-\fB\-s, \-\-shell\fR \fI<SHELL_TYPE>\fR
+\fB\-s, \-\-shell\fR \fI<SHELL>\fR
 Shell type to generate completions for
 .TP
 \fB\-\-include\-bash\-completion\-lib\fR
-Include the bash completion library in the bash completion script
+Retained for compatibility with older completion generators.
 
-This is required for completions to work in bash, but it is not included by default
-you may source it separately or enable this flag to enable it in the script.
+usage\-rs's built\-in bash script is self\-contained, so this is now a no\-op.
 .TP
 \fB\-\-usage\fR
-Always use usage for completions.
-Currently, usage is the default for fish and bash but not zsh since it has a few quirks
-to work out first.
+Retained for compatibility with older completion generators.
 
-This requires the `usage` CLI to be installed.
-https://usage.jdx.dev
+Completions now always use usage\-rs's built\-in protocol, so this is a no\-op.
+.TP
+\fB\-\-install\fR
+Install the script where this shell looks for it, instead of printing it
+
+Writes the script file and nothing else: no shell rc file and no PowerShell profile is
+edited. Where a shell needs a one\-time line of its own — zsh's `fpath+=`, PowerShell's
+dot\-source — it is printed for you to add.
+.TP
+\fB\-\-force\fR
+Replace a file at the target path that mise did not write
 \fBArguments:\fR
 .PP
 .TP
@@ -2050,13 +2089,16 @@ The "\-\-" separates runtimes from the commands to pass along to the subprocess.
 \fBOptions:\fR
 .PP
 .TP
-\fB\-c, \-\-command\fR \fI<C>\fR
+\fB\-c, \-\-command\fR \fI<COMMAND>\fR
 Command string to execute
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-\-allow\-env\fR \fI<VAR>\fR
 Allow specific env var through (implies \-\-deny\-env for everything else)
@@ -2316,7 +2358,7 @@ Directory to create task stubs inside of
 \fB\-m, \-\-mise\-bin\fR \fI<MISE_BIN>\fR
 Path to a mise bin to use when running the task stub.
 
-Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate install\-script`
+Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate bootstrap`
 .RS
 \fIDefault: \fRmise
 .RE
@@ -2469,6 +2511,9 @@ With no tools specified, reinstall all configured tools
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would be installed without actually installing
@@ -2499,6 +2544,9 @@ Install tools from every [monorepo].config_roots config root
 
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
@@ -2514,11 +2562,6 @@ Install tool(s) to the system\-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
-
-This shares the install location between users; it does not put binaries on
-PATH for use without mise. Every user still needs mise to run these tools.
-For binaries usable without mise, see `mise install\-into` or
-`[bootstrap.packages]`.
 \fBArguments:\fR
 .PP
 .TP
@@ -2607,6 +2650,9 @@ By default, only the active project config root is locked
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Show what would be updated without making changes
@@ -2700,7 +2746,7 @@ Display missing tool versions
 \fB\-o, \-\-offline\fR
 Don't fetch information such as outdated versions
 .TP
-\fB\-p, \-\-plugin\fR \fI<TOOL_FLAG>\fR
+\fB\-p, \-\-plugin\fR \fI<PLUGIN>\fR
 .TP
 \fB\-\-all\-sources\fR
 Display all tracked config sources for tools
@@ -2710,6 +2756,9 @@ List tools from every [monorepo].config_roots config root
 
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
@@ -3150,7 +3199,6 @@ The full list is here: https://github.com/jdx/mise/blob/main/registry/
 Examples:
 
     $ mise plugins ls\-remote
-
 .PP
 \fBUsage:\fR mise plugins ls\-remote [OPTIONS]
 .PP
@@ -3232,6 +3280,9 @@ Install dependencies from every [monorepo].config_roots config root
 
 Requires monorepo_root = true plus explicit [monorepo].config_roots in
 the monorepo root config. Providers are named like //apps/api:uv.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run specific deps rule(s) only
@@ -3289,6 +3340,9 @@ Install dependencies from every [monorepo].config_roots config root
 
 Requires monorepo_root = true plus explicit [monorepo].config_roots in
 the monorepo root config. Providers are named like //apps/api:uv.
+.RS
+\fIEnvironment: \fR\fBMISE_MONOREPO\fR
+.RE
 .TP
 \fB\-\-only\fR \fI<ONLY>\fR
 Run specific deps rule(s) only
@@ -3478,6 +3532,9 @@ Number of tasks to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Don't actually run the task(s), just print them in order of execution
@@ -3492,9 +3549,15 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_OUTPUT\fR
+.RE
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-r, \-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
@@ -3510,6 +3573,9 @@ Or it can be overridden with the `shell` property on a task.
 .TP
 \fB\-S, \-\-silent\fR
 Don't show any output except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_SILENT\fR
+.RE
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
@@ -3547,6 +3613,9 @@ Bypass the environment cache and recompute the environment
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_REMOTE_NO_CACHE\fR
+.RE
 .TP
 \fB\-\-no\-deps\fR
 Skip automatic dependency preparation
@@ -3558,6 +3627,9 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_SKIP_DEPENDS\fR
+.RE
 .TP
 \fB\-\-skip\-tools\fR
 Skip installing tools before running tasks
@@ -3575,6 +3647,9 @@ Set task output cache access for this run
 \- `local\-only` \- Read and write only the local cache; currently equivalent to `read\-write`
 .RS
 \fIDefault: \fRread\-write
+.RE
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_CACHE\fR
 .RE
 .TP
 \fB\-\-task\-cache\-explain\fR
@@ -3723,12 +3798,7 @@ When using \-\-stdin, provide a single key without a value. The value will be re
 Environment variable(s) to set
 e.g.: NODE_ENV=production
 .SH "MISE SETTINGS"
-Show current settings
-
-This is the contents of ~/.config/mise/config.toml
-
-Note that aliases are also stored in this file
-but managed separately with `mise tool\-alias`
+Manage settings
 .PP
 \fBUsage:\fR mise settings [OPTIONS] [<SETTING>] [<VALUE>] [COMMAND]
 .PP
@@ -3892,6 +3962,9 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-u, \-\-unset\fR
 Removes a previously set version
@@ -4271,7 +4344,7 @@ The name of the script will be the name of the tasks.
     EOF
     $ mise run build
 .PP
-\fBUsage:\fR mise tasks run [OPTIONS] [<TASK>] [<ARGS>] ... [<ARGS_LAST>] ...
+\fBUsage:\fR mise tasks run [OPTIONS]
 .PP
 \fBOptions:\fR
 .PP
@@ -4310,6 +4383,9 @@ Number of tasks to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 Configure with `jobs` config or `MISE_JOBS` env var
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Don't actually run the task(s), just print them in order of execution
@@ -4324,9 +4400,15 @@ Change how tasks information is output when running tasks
 \- `keep\-order` \- Print stdout/stderr by line, prefixed with the task's label, but keep the order of the output
 \- `quiet` \- Don't show extra output
 \- `silent` \- Don't show any output including stdout and stderr from the task except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_OUTPUT\fR
+.RE
 .TP
 \fB\-q, \-\-quiet\fR
 Don't show extra output
+.RS
+\fIEnvironment: \fR\fBMISE_QUIET\fR
+.RE
 .TP
 \fB\-r, \-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
@@ -4342,6 +4424,9 @@ Or it can be overridden with the `shell` property on a task.
 .TP
 \fB\-S, \-\-silent\fR
 Don't show any output except for errors
+.RS
+\fIEnvironment: \fR\fBMISE_SILENT\fR
+.RE
 .TP
 \fB\-t, \-\-tool\fR \fI<TOOL@VERSION>\fR
 Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
@@ -4379,6 +4464,9 @@ Bypass the environment cache and recompute the environment
 .TP
 \fB\-\-no\-cache\fR
 Do not use cache on remote tasks
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_REMOTE_NO_CACHE\fR
+.RE
 .TP
 \fB\-\-no\-deps\fR
 Skip automatic dependency preparation
@@ -4390,6 +4478,9 @@ Default to always hide with `MISE_TASK_TIMINGS=0`
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_SKIP_DEPENDS\fR
+.RE
 .TP
 \fB\-\-skip\-tools\fR
 Skip installing tools before running tasks
@@ -4407,6 +4498,9 @@ Set task output cache access for this run
 \- `local\-only` \- Read and write only the local cache; currently equivalent to `read\-write`
 .RS
 \fIDefault: \fRread\-write
+.RE
+.RS
+\fIEnvironment: \fR\fBMISE_TASK_CACHE\fR
 .RE
 .TP
 \fB\-\-task\-cache\-explain\fR
@@ -4426,20 +4520,6 @@ e.g.: 30s, 5m
 Shows elapsed time after each task completes
 
 Default to always show with `MISE_TASK_TIMINGS=1`
-\fBArguments:\fR
-.PP
-.TP
-\fB<TASK>\fR
-Tasks to run
-Can specify multiple tasks by separating with `:::`
-e.g.: mise run task1 arg1 arg2 ::: task2 arg1 arg2
-Defaults to `default` when omitted
-.TP
-\fB<ARGS>\fR
-Arguments to pass to the tasks. Use ":::" to separate tasks
-.TP
-\fB<ARGS_LAST>\fR
-Arguments to pass to the tasks. Use ":::" to separate tasks
 .SH "MISE TASKS VALIDATE"
 Validate tasks for common errors and issues
 .PP
@@ -4474,6 +4554,9 @@ Test every tool specified in registry/
 Number of tool tests to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_TEST_TOOL_JOBS\fR
+.RE
 .TP
 \fB\-\-all\-config\fR
 Test all tools specified in config files
@@ -4489,7 +4572,10 @@ Connect backend install command stdin/stdout/stderr directly to the terminal Imp
 \fB<TOOLS>\fR
 Tool(s) to test
 .SH "MISE TOKEN FORGEJO"
-Forgejo token
+Display the Forgejo token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 .PP
 \fBUsage:\fR mise token forgejo [OPTIONS] [<HOST>]
 .PP
@@ -4507,7 +4593,10 @@ Forgejo hostname
 \fIDefault: \fRcodeberg.org
 .RE
 .SH "MISE TOKEN GITHUB"
-GitHub token
+Display the GitHub token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 .PP
 \fBUsage:\fR mise token github [OPTIONS] [<HOST>]
 .PP
@@ -4534,7 +4623,10 @@ GitHub hostname
 \fIDefault: \fRgithub.com
 .RE
 .SH "MISE TOKEN GITLAB"
-GitLab token
+Display the GitLab token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 .PP
 \fBUsage:\fR mise token gitlab [OPTIONS] [<HOST>]
 .PP
@@ -4592,11 +4684,20 @@ Execute a tool stub
 
 Tool stubs are executable files containing TOML configuration that specify which tool to run and how to run it. They provide a convenient way to create portable, self\-contained executables that automatically manage tool installation and execution.
 
-A tool stub consists of: \- A shebang line: #!/usr/bin/env \-S mise tool\-stub \- TOML configuration specifying the tool, version, and options \- Optional comments describing the tool's purpose
+A tool stub consists of:
 
-Example stub file: #!/usr/bin/env \-S mise tool\-stub # Node.js v20 development environment
+\- A shebang line: #!/usr/bin/env \-S mise tool\-stub \- TOML configuration specifying the tool, version, and options \- Optional comments describing the tool's purpose
 
-tool = "node" version = "20.0.0" bin = "node"
+Example stub file:
+
+```toml
+#!/usr/bin/env \-S mise tool\-stub
+# Node.js v20 development environment
+
+tool = "node"
+version = "20.0.0"
+bin = "node"
+```
 
 The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
 
@@ -4796,6 +4897,9 @@ Display multiselect menu to choose which tools to upgrade
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-l\fR
 Deprecated shorthand for \-\-bump
@@ -4896,6 +5000,9 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
+.RS
+\fIEnvironment: \fR\fBMISE_JOBS\fR
+.RE
 .TP
 \fB\-n, \-\-dry\-run\fR
 Perform a dry run, showing what would be installed and modified without making changes
@@ -5204,23 +5311,23 @@ Examples:
 
 Use without shell:
 
-$ watchexec \-n \-\- zsh \-x \-o shwordsplit scr
+  $ watchexec \-n \-\- zsh \-x \-o shwordsplit scr
 
 Use with powershell core:
 
-$ watchexec \-\-shell=pwsh \-\- Test\-Connection localhost
+  $ watchexec \-\-shell=pwsh \-\- Test\-Connection localhost
 
 Use with CMD.exe:
 
-$ watchexec \-\-shell=cmd \-\- dir
+  $ watchexec \-\-shell=cmd \-\- dir
 
 Use with a different unix shell:
 
-$ watchexec \-\-shell=bash \-\- 'echo $BASH_VERSION'
+  $ watchexec \-\-shell=bash \-\- 'echo $BASH_VERSION'
 
 Use with a unix shell and options:
 
-$ watchexec \-\-shell='zsh \-x \-o shwordsplit' \-\- scr
+  $ watchexec \-\-shell='zsh \-x \-o shwordsplit' \-\- scr
 .TP
 \fB\-n\fR
 Shorthand for '\-\-shell=none'
@@ -5409,6 +5516,9 @@ Files to load filters from
 Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '\-\-filter' option.
 
 This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
+.RS
+\fIEnvironment: \fR\fBWATCHEXEC_FILTER_FILES\fR
+.RE
 .TP
 \fB\-J, \-\-filter\-prog\fR \fI<EXPRESSION>\fR
 [experimental] Filter programs.
@@ -5419,17 +5529,23 @@ Provide your own custom filter programs in jaq (similar to jq) syntax. Programs 
 
 In addition to the jaq stdlib, watchexec adds some custom filter definitions:
 
-\- 'path | file_meta' returns file metadata or null if the file does not exist.
+  \- 'path | file_meta' returns file metadata or null if the file does not exist.
 
-\- 'path | file_size' returns the size of the file at path, or null if it does not exist.
+  \- 'path | file_size' returns the size of the file at path, or null if it does not exist.
 
-\- 'path | file_read(bytes)' returns a string with the first n bytes of the file at path. If the file is smaller than n bytes, the whole file is returned. There is no filter to read the whole file at once to encourage limiting the amount of data read and processed.
+  \- 'path | file_read(bytes)' returns a string with the first n bytes of the file at path.
+    If the file is smaller than n bytes, the whole file is returned. There is no filter to
+    read the whole file at once to encourage limiting the amount of data read and processed.
 
-\- 'string | hash', and 'path | file_hash' return the hash of the string or file at path. No guarantee is made about the algorithm used: treat it as an opaque value.
+  \- 'string | hash', and 'path | file_hash' return the hash of the string or file at path.
+    No guarantee is made about the algorithm used: treat it as an opaque value.
 
-\- 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key\-value store. Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
+  \- 'any | kv_store(key)', 'kv_fetch(key)', and 'kv_clear' provide a simple key\-value store.
+    Data is kept in memory only, there is no persistence. Consistency is not guaranteed.
 
-\- 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
+  \- 'any | printout', 'any | printerr', and 'any | log(level)' will print or log any given
+    value to stdout, stderr, or the log (levels = error, warn, info, debug, trace), and
+    pass the value through (so '[1] | log("debug") | .[]' will produce a '1' and log '[1]').
 
 All filtering done with such programs, and especially those using kv or filesystem access, is much slower than the other filtering methods. If filtering is too slow, events will back up and stall watchexec. Take care when designing your filters.
 
@@ -5443,19 +5559,19 @@ Find user\-contributed programs or submit your own useful ones at <https://githu
 
 Regexp ignore filter on paths:
 
-\&'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
+  'all(.tags[] | select(.kind == "path"); .absolute | test("[.]test[.]js$")) | not'
 
 Pass any event that creates a file:
 
-\&'any(.tags[] | select(.kind == "fs"); .simple == "create")'
+  'any(.tags[] | select(.kind == "fs"); .simple == "create")'
 
 Pass events that touch executable files:
 
-\&'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
+  'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | metadata | .executable)'
 
 Ignore files that start with shebangs:
 
-\&'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
+  'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
 .TP
 \fB\-i, \-\-ignore\fR \fI<PATTERN>\fR
 Filename patterns to filter out
@@ -5468,6 +5584,9 @@ Files to load ignores from
 Provide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '\-\-ignore' option.
 
 This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
+.RS
+\fIEnvironment: \fR\fBWATCHEXEC_IGNORE_FILES\fR
+.RE
 .TP
 \fB\-\-fs\-events\fR \fI<EVENTS>\fR
 Filesystem events to filter to
@@ -5553,3 +5672,5 @@ Show the version instead of the path
 .TP
 \fB<BIN_NAME>\fR
 The bin to look up
+.SH AUTHOR
+Jeff Dickey <@jdx>

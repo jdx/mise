@@ -1,6 +1,6 @@
 use vfox::{Vfox, VfoxResult};
 
-#[derive(clap::Args)]
+#[derive(usage_rs::Args)]
 pub(super) struct Available {}
 
 impl Available {

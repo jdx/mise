@@ -5,7 +5,10 @@
 - **Effect**: read-only
 - **Source code**: [`src/cli/token/gitlab.rs`](https://github.com/jdx/mise/blob/main/src/cli/token/gitlab.rs)
 
-GitLab token
+Display the GitLab token mise will use for a given host
+
+Shows which token source mise would use, useful for debugging
+authentication issues. The token is masked by default.
 
 ## Arguments
 

@@ -8,17 +8,17 @@ use crate::env;
 /// This is an alternative to `mise activate` that allows you to explicitly start a mise session.
 /// It will have the tools and environment variables in the configs loaded.
 /// Note that changing directories will not update the mise environment.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct En {
     /// Directory to start the shell in
-    #[clap(default_value = ".", verbatim_doc_comment, value_hint = clap::ValueHint::DirPath)]
+    #[usage(default = ".", verbatim_doc_comment, value_hint = usage_rs::ValueHint::DirPath)]
     pub dir: PathBuf,
 
     /// Shell to start
     ///
     /// Defaults to $SHELL
-    #[clap(verbatim_doc_comment, long, short = 's')]
+    #[usage(verbatim_doc_comment, long, short = 's')]
     pub shell: Option<String>,
 }
 

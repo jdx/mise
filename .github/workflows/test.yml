@@ -135,6 +135,8 @@ jobs:
     timeout-minutes: 90
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
+    env:
+      MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -163,15 +165,15 @@ jobs:
       - name: Install test tools
         run: brew install fd tmux
       - run: |
-          cargo build --all-features
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- cargo test --all-features
+      - run: mise x -- cargo test --all-features --ignore-rust-version
       # `cargo test` above resolves to the root package, so the workspace members are built as
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
-        run: cargo test --workspace --exclude mise
+        run: cargo test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       - run: sccache --show-stats
@@ -227,8 +229,10 @@ jobs:
             exit 1
           fi
       # Keep these independent checks on one Namespace runner while overlapping
-      # their work. Clippy is stricter than HK's cargo-check, so CI can skip that
-      # redundant compilation while retaining it for local lint runs.
+      # their work. Clippy runs afterward so its all-features test build does not
+      # compete with the MSRV build for memory. Clippy is stricter than HK's
+      # cargo-check, so CI can skip that redundant compilation while retaining it
+      # for local lint runs.
       - parallel:
           - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
           - run: cargo machete --with-metadata
@@ -244,10 +248,13 @@ jobs:
             run: cargo msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
-          - name: Run Clippy
-            run: |
-              cargo clippy --ignore-rust-version -- -D warnings
-              cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      - name: Run Clippy
+        run: |
+          cargo clippy --ignore-rust-version -- -D warnings
+          cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+        env:
+          CARGO_BUILD_JOBS: "1"
+          CARGO_INCREMENTAL: "0"
       - run: sccache --show-stats
         if: always()
 

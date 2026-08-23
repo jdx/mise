@@ -15,7 +15,7 @@ The path of the config to display
 
 ## Flags
 
-### `-f --file <FILE>`
+### `-f --file --path <FILE>`
 
 The path to the mise.toml file to read
 

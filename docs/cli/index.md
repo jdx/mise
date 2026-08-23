@@ -3,6 +3,8 @@
 
 **Usage**: `mise [FLAGS] [TASK] <SUBCOMMAND>`
 
+**Author**: Jeff Dickey <@jdx>
+
 - **Usage**: `mise [FLAGS] [TASK] <SUBCOMMAND>`
 
 ## Arguments
@@ -27,9 +29,13 @@ Set the environment for loading `mise.<ENV>.toml`
 
 How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-q --quiet`
 
 Suppress non-error messages
+
+**Environment Variable:** `MISE_QUIET`
 
 ### `-v --verbose…`
 
@@ -161,7 +167,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise cache path`](/cli/cache/path.md)
 - [`mise cache prune [-v --verbose…] [--dry-run] [TOOL]…`](/cli/cache/prune.md)
 - [`mise cache task [-J --json] <TASK>`](/cli/cache/task.md)
-- [`mise completion [--include-bash-completion-lib] [SHELL]`](/cli/completion.md)
+- [`mise completion [FLAGS] [SHELL]`](/cli/completion.md)
 - [`mise config [FLAGS] <SUBCOMMAND>`](/cli/config.md)
 - [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
 - [`mise config ls [FLAGS]`](/cli/config/ls.md)
@@ -232,7 +238,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise sync <SUBCOMMAND>`](/cli/sync.md)
 - [`mise sync node [FLAGS]`](/cli/sync/node.md)
 - [`mise sync python [--pyenv] [--uv]`](/cli/sync/python.md)
-- [`mise sync ruby [--brew]`](/cli/sync/ruby.md)
+- [`mise sync ruby <--brew>`](/cli/sync/ruby.md)
 - [`mise tasks [FLAGS] [TASK] <SUBCOMMAND>`](/cli/tasks.md)
 - [`mise tasks add [FLAGS] <TASK> [-- RUN]…`](/cli/tasks/add.md)
 - [`mise tasks deps [FLAGS] [TASKS]…`](/cli/tasks/deps.md)
@@ -240,7 +246,7 @@ Can also use `MISE_NO_HOOKS=1`
 - [`mise tasks graph [FLAGS]`](/cli/tasks/graph.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
-- [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
+- [`mise tasks run [FLAGS]`](/cli/tasks/run.md)
 - [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.md)
 - [`mise test-tool [FLAGS] [TOOLS]…`](/cli/test-tool.md)
 - [`mise token <SUBCOMMAND>`](/cli/token.md)

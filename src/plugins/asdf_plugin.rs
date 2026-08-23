@@ -16,7 +16,6 @@ use crate::ui::progress_report::SingleReport;
 use crate::ui::prompt;
 use crate::{backend, dirs, env, file, lock_file, registry};
 use async_trait::async_trait;
-use clap::Command;
 use console::style;
 use contracts::requires;
 use eyre::{Context, bail, eyre};
@@ -424,7 +423,7 @@ impl Plugin for AsdfPlugin {
         }
     }
 
-    fn external_commands(&self) -> eyre::Result<Vec<Command>> {
+    fn external_commands(&self) -> eyre::Result<Vec<super::ExternalCommand>> {
         let command_path = self.plugin_path.join("lib/commands");
         if !self.is_installed() || !command_path.exists() || self.name == "direnv" {
             // asdf-direnv is disabled since it conflicts with mise's built-in direnv functionality
@@ -450,18 +449,10 @@ impl Plugin for AsdfPlugin {
             return Ok(vec![]);
         }
 
-        let topic = Command::new(self.name.clone())
-            .about(format!("Commands provided by {} plugin", self.name))
-            .subcommands(commands.into_iter().map(|cmd| {
-                Command::new(cmd.join("-"))
-                    .about(format!("{} command", cmd.join("-")))
-                    .arg(
-                        clap::Arg::new("args")
-                            .num_args(1..)
-                            .allow_hyphen_values(true)
-                            .trailing_var_arg(true),
-                    )
-            }));
+        let topic = super::ExternalCommand {
+            topic: self.name.clone(),
+            subcommands: commands.into_iter().map(|cmd| cmd.join("-")).collect(),
+        };
         Ok(vec![topic])
     }
 

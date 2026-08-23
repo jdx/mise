@@ -38,7 +38,7 @@ Write to the global config (~/.config/mise/config.toml) instead of the local one
 
 Print the commands that would run without writing config or installing
 
-### `-p --path <PATH>`
+### `-p --path --file <PATH>`
 
 Write to this config file or directory
 

@@ -165,15 +165,9 @@ converge safely. See
 
 ## Installation via zsh zinit
 
-[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH, which this snippet you will get mise (and usage for shell completion):
+[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH. This snippet installs mise and its shell completion:
 
 ```sh
-zinit as="command" lucid from="gh-r" for \
-    id-as="usage" \
-    atpull="%atclone" \
-    jdx/usage
-    #atload='eval "$(mise activate zsh)"' \
-
 zinit as="command" lucid from="gh-r" for \
     id-as="mise" mv="mise* -> mise" \
     atclone="./mise* completion zsh > _mise" \

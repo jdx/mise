@@ -2,7 +2,7 @@
 # `mise cache clear`
 
 - **Usage**: `mise cache clear [--task <TASK>] [TOOL]…`
-- **Aliases**: `c`
+- **Aliases**: `c`, `clean`
 - **Effect**: modifies state
 - **Source code**: [`src/cli/cache/clear.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/clear.rs)
 

@@ -24,6 +24,8 @@ Number of tool tests to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_TEST_TOOL_JOBS`
+
 ### `--all-config`
 
 Test all tools specified in config files

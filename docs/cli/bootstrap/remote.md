@@ -61,7 +61,7 @@ SSH identity file override
 
 Print the remote bootstrap changes without applying them
 
-### `--install-mise <PATH>`
+### `--install-mise[=PATH]`
 
 Install the provisioned mise on each host instead of only staging it
 
@@ -95,17 +95,17 @@ Run only one or more remote bootstrap parts
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
-- `shell`
 - `macos-defaults`
-- `defaults`
 - `macos-launchd-agents`
-- `launchd`
 - `linux-systemd-units`
-- `systemd`
 - `user`
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--port <PORT>`
 
@@ -139,17 +139,17 @@ Skip one or more remote bootstrap parts
 - `repos`
 - `dotfiles`
 - `mise-shell-activate`
-- `shell`
 - `macos-defaults`
-- `defaults`
 - `macos-launchd-agents`
-- `launchd`
 - `linux-systemd-units`
-- `systemd`
 - `user`
 - `tools`
 - `task`
 - `final-hook`
+- `shell`
+- `defaults`
+- `launchd`
+- `systemd`
 
 ### `--source <SOURCE>`
 

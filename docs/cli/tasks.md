@@ -2,7 +2,7 @@
 # `mise tasks`
 
 - **Usage**: `mise tasks [FLAGS] [TASK] <SUBCOMMAND>`
-- **Aliases**: `t`
+- **Aliases**: `t`, `task`
 - **Effect**: read-only
 - **Source code**: [`src/cli/tasks/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/tasks/mod.rs)
 
@@ -77,11 +77,5 @@ Sort order. Default is asc.
 - [`mise tasks graph [FLAGS]`](/cli/tasks/graph.md)
 - [`mise tasks info [-J --json] <TASK>`](/cli/tasks/info.md)
 - [`mise tasks ls [FLAGS]`](/cli/tasks/ls.md)
-- [`mise tasks run [FLAGS] [TASK] [ARGS]…`](/cli/tasks/run.md)
+- [`mise tasks run [FLAGS]`](/cli/tasks/run.md)
 - [`mise tasks validate [--errors-only] [--json] [TASKS]…`](/cli/tasks/validate.md)
-
-Examples:
-
-```
-mise tasks ls
-```

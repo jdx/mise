@@ -35,6 +35,8 @@ Number of jobs to run in parallel
 Values below 1 are treated as 1
 [default: 4]
 
+**Environment Variable:** `MISE_JOBS`
+
 ### `-n --dry-run`
 
 Show what would be installed without actually installing
@@ -71,6 +73,8 @@ Install tools from every [monorepo].config_roots config root
 Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 [monorepo].config_roots in the monorepo root config.
 
+**Environment Variable:** `MISE_MONOREPO`
+
 ### `--raw`
 
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
@@ -88,11 +92,6 @@ Install tool(s) to the system-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
-
-This shares the install location between users; it does not put binaries on
-PATH for use without mise. Every user still needs mise to run these tools.
-For binaries usable without mise, see `mise install-into` or
-`[bootstrap.packages]`.
 
 Examples:
 

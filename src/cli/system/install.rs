@@ -22,28 +22,28 @@ pub(crate) struct BootstrapApplyReport {
 /// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 /// the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
-    #[clap(value_name = "PACKAGE")]
+    #[usage(value_name = "PACKAGE")]
     packages: Vec<String>,
 
     /// Only install packages for this built-in or plugin manager
-    #[clap(long, short)]
+    #[usage(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
-    #[clap(long)]
+    #[usage(long)]
     update: bool,
 }
 

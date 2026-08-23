@@ -67,7 +67,8 @@ Arguments:
   <file>  File to process
 
 Flags:
-  -x --custom  Custom flag"
+  -x, --custom  Custom flag
+  -h, --help    Print help"
 
 # Test 9: Help passed as explicit argument with -- (recreate echo_args task)
 cat <<'EOF' >mise.toml

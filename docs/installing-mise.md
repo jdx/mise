@@ -483,20 +483,22 @@ Some installation methods automatically install autocompletion scripts.
 :::
 
 The [`mise completion`](/cli/completion.html) command can generate autocompletion scripts for your shell.
-This requires `usage` to be installed. If you don't have it, install it with:
+The generated scripts are self-contained and do not require the separate `usage` CLI.
+
+The simplest way to install the completion script is:
 
 ```shell
-mise use -g usage
+mise completion <shell> --install
 ```
 
-Then, run the following commands to install the completion script for your shell:
+Replace `<shell>` with `bash`, `zsh`, `fish`, or `powershell`. Alternatively, choose the path yourself:
 
 ::: code-group
 
 ```sh [bash]
 # This requires bash-completion to be installed
 mkdir -p ~/.local/share/bash-completion/completions/
-mise completion bash --include-bash-completion-lib > ~/.local/share/bash-completion/completions/mise
+mise completion bash > ~/.local/share/bash-completion/completions/mise
 ```
 
 ```sh [zsh]

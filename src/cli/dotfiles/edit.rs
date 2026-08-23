@@ -10,27 +10,27 @@ use crate::system::edits::{BlockSource, EditOp};
 use crate::ui::prompt;
 
 /// Edit a managed dotfile source
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesEdit {
     /// Target to edit
-    #[clap(value_name = "TARGET")]
+    #[usage(value_name = "TARGET")]
     target: String,
 
     /// Apply this target after the editor exits
-    #[clap(long)]
+    #[usage(long)]
     apply: bool,
 
     /// Dotfile mode to use if the target is not yet managed
-    #[clap(long, short)]
+    #[usage(long, short)]
     mode: Option<String>,
 
     /// Source path to use if the target is not yet managed
-    #[clap(long, short, value_name = "PATH")]
+    #[usage(long, short, value_name = "PATH")]
     source: Option<PathBuf>,
 
     /// Skip the confirmation prompt when adding an unmanaged target
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 
