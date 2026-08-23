@@ -40,6 +40,33 @@ impl ResolvedAgeKey {
     }
 }
 
+/// The `--input-type`/`--output-type` value for SOPS dotenv files.
+pub(crate) const DOTENV: &str = "dotenv";
+
+/// Decrypt a SOPS dotenv file.
+///
+/// rops cannot represent dotenv (gibbz00/rops#99), so this always shells out to
+/// the sops CLI. The `F` type parameter is only read on the rops path, which
+/// this never takes.
+pub(crate) async fn decrypt_dotenv<PT>(
+    config: &Arc<Config>,
+    exec_env: &EnvMap,
+    input: &str,
+    parse_template: PT,
+) -> result::Result<String>
+where
+    PT: FnMut(String) -> result::Result<String>,
+{
+    decrypt::<_, rops::file::format::JsonFileFormat>(
+        config,
+        exec_env,
+        input,
+        parse_template,
+        DOTENV,
+    )
+    .await
+}
+
 pub(crate) async fn decrypt<PT, F>(
     config: &Arc<Config>,
     exec_env: &EnvMap,
@@ -53,7 +80,10 @@ where
 {
     static MUTEX: Mutex<()> = Mutex::const_new(());
 
-    let use_rops = Settings::get().sops.rops;
+    // rops has no dotenv FileFormat (gibbz00/rops#99), so a SOPS dotenv file
+    // always goes through the sops CLI, whatever sops.rops says. This is the
+    // mirror of the TOML case below, which the CLI cannot read.
+    let use_rops = Settings::get().sops.rops && format != DOTENV;
     if !use_rops && format == "toml" {
         return Err(eyre!(
             "sops.rops=false is not supported for TOML SOPS files because the sops CLI does not support TOML; set sops.rops=true or use a JSON/YAML SOPS file"
@@ -129,7 +159,13 @@ where
                     } else {
                         env::remove_var("SOPS_AGE_KEY_FILE");
                     }
-                    return Err(eyre!("sops command not found"));
+                    return Err(if format == DOTENV {
+                        eyre!(
+                            "sops command not found; SOPS dotenv files need it because the built-in rops decrypter has no dotenv support. Install it with `mise use sops`, or use a JSON/YAML SOPS file"
+                        )
+                    } else {
+                        eyre!("sops command not found")
+                    });
                 } else {
                     debug!("sops command not found, skipping decryption in non-strict mode");
                     None

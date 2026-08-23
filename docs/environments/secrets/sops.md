@@ -2,7 +2,7 @@
 
 mise reads encrypted secret files and makes values available as environment variables via `env._.file`.
 
-- **Formats**: `.env.json`, `.env.yaml`, `.env.toml`
+- **Formats**: `.env.json`, `.env.yaml`, `.env.toml`, and dotenv (any other extension `env._.file` accepts, such as `.env` or `secrets.sops.env`)
 - **Encryption**: [sops](https://getsops.io), using the built-in age support or the external `sops` CLI
 
 ## Example
@@ -33,6 +33,24 @@ and PGP.
 :::: warning
 The external `sops` CLI does not currently support TOML input/output. mise can decrypt SOPS-encrypted `.env.toml` files only with the default `sops.rops = true` setting. If you set `sops.rops = false`, mise shells out to the `sops` CLI and encrypted TOML env files fail with a configuration error. Use `.env.json` or `.env.yaml` when you need the external CLI path.
 ::::
+:::: warning
+rops has no dotenv support ([gibbz00/rops#99](https://github.com/gibbz00/rops/issues/99)), so mise decrypts SOPS dotenv files by shelling out to the `sops` CLI even under the default `sops.rops = true`. Install it with `mise use sops` — without it, decryption fails in strict mode. Everything else about a dotenv file works the way `.env.json` does, including `redact = true` and re-reading the file when it changes.
+::::
+
+## Dotenv
+
+A dotenv file is detected by its content, not its name: mise looks for the `sops_version=` line SOPS writes together with a `sops_mac=ENC[` line, so any name `env._.file` accepts works. All of that is required, so a plain dotenv file that happens to define `sops_version` — or even both key names — is still read as plain text unless the MAC actually holds SOPS output.
+
+```sh
+sops encrypt -i --input-type dotenv --output-type dotenv --age "<public key>" secrets.sops.env
+```
+
+```toml [mise.toml]
+[env]
+_.file = "secrets.sops.env"
+```
+
+This keeps a single encrypted file usable by both mise and tools that require dotenv input, such as Kustomize's `secretGenerator`.
 
 1. Install tools: `mise use -g sops age`
 

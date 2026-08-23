@@ -48,7 +48,7 @@ impl EnvResults {
                 "json" => Self::json(config, exec_env, &p, parse_template).await?,
                 "yaml" => Self::yaml(config, exec_env, &p, parse_template).await?,
                 "toml" => Self::toml(config, exec_env, &p, parse_template).await?,
-                _ => Self::dotenv(&p, &acc, expand).await?,
+                _ => Self::dotenv(config, exec_env, &p, parse_template, &acc, expand).await?,
             };
             // Structured files are literal by default. With `expand = true`, run
             // their values through the same `$VAR` engine used by `[env]` values
@@ -215,8 +215,30 @@ impl EnvResults {
         }
     }
 
-    async fn dotenv(p: &Path, acc: &TeraEnvMap, expand: bool) -> Result<EnvMap> {
+    async fn dotenv<PT>(
+        config: &Arc<Config>,
+        exec_env: &TeraEnvMap,
+        p: &Path,
+        parse_template: PT,
+        acc: &TeraEnvMap,
+        expand: bool,
+    ) -> Result<EnvMap>
+    where
+        PT: FnMut(String) -> Result<String>,
+    {
         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
+        // Reading ahead only to look for the SOPS marker, so a plain dotenv file
+        // still reaches dotenvy exactly the way it did before.
+        if let Ok(raw) = file::read_to_string(p)
+            && is_sops_dotenv(&raw)
+        {
+            let decrypted = sops::decrypt_dotenv(config, exec_env, &raw, parse_template).await?;
+            if decrypted.is_empty() {
+                // Non-strict mode skipped it, same as the structured formats.
+                return Ok(EnvMap::new());
+            }
+            return Self::parse_dotenv(&decrypted, p, acc, expand);
+        }
         if !expand {
             // Preserve dotenvy's normal behavior unless cross-file expansion was
             // explicitly requested.
@@ -229,12 +251,26 @@ impl EnvResults {
             }
             return Ok(env);
         }
-        // dotenvy substitutes `${VAR}` only against the process env + vars defined
-        // earlier in the same file and has no API for a custom map. Seed the parse
-        // with accumulated values, then retain only keys defined by this file.
         let Ok(content) = file::read_to_string(p) else {
             return Ok(EnvMap::new());
         };
+        Self::parse_dotenv(&content, p, acc, expand)
+    }
+
+    /// Parse dotenv text that is already in hand, decrypted or not.
+    fn parse_dotenv(content: &str, p: &Path, acc: &TeraEnvMap, expand: bool) -> Result<EnvMap> {
+        let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
+        if !expand {
+            let mut env = EnvMap::new();
+            for item in dotenvy::from_read_iter(content.as_bytes()) {
+                let (k, v) = item.wrap_err_with(errfn)?;
+                env.insert(k, v);
+            }
+            return Ok(env);
+        }
+        // dotenvy substitutes `${VAR}` only against the process env + vars defined
+        // earlier in the same file and has no API for a custom map. Seed the parse
+        // with accumulated values, then retain only keys defined by this file.
         let mut own_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         for item in dotenvy::from_read_iter(content.as_bytes()) {
             let (k, _v) = item.wrap_err_with(errfn)?;
@@ -263,6 +299,40 @@ impl EnvResults {
         }
         Ok(env)
     }
+}
+
+/// Does this dotenv text carry SOPS metadata?
+///
+/// SOPS's dotenv store flattens its metadata into `sops_`-prefixed keys. Match
+/// two of them at the start of a line, and require the MAC to carry a SOPS
+/// ciphertext rather than any value at all.
+///
+/// The bar is set there because a false positive is expensive: a plain file read
+/// as encrypted fails the whole config in strict mode and silently drops every
+/// variable in it otherwise. Nothing stops a dotenv file from defining its own
+/// `sops_version`, or even both key names, but `sops_mac=ENC[` additionally
+/// requires it to hold something shaped like SOPS output.
+///
+/// `sops_version` and `sops_mac` are the pair because SOPS writes both in every
+/// mode measured — default, `--unencrypted-suffix`, `--encrypted-regex`,
+/// `mac_only_encrypted`, and a single-key file — always with the MAC encrypted.
+/// `sops_unencrypted_suffix` looks like a candidate until `--encrypted-regex`
+/// drops it.
+///
+/// Sniffing the content rather than the file name is deliberate: `_.file` sends
+/// every extension it does not recognise down the dotenv path, including files
+/// with no extension at all, so there is no name to key off.
+fn is_sops_dotenv(raw: &str) -> bool {
+    let mut version = false;
+    let mut mac = false;
+    for line in raw.lines() {
+        version |= line.starts_with("sops_version=");
+        mac |= line.starts_with("sops_mac=ENC[");
+        if version && mac {
+            return true;
+        }
+    }
+    false
 }
 
 fn is_env_key(k: &str) -> bool {
@@ -313,6 +383,71 @@ mod tests {
             .encrypt::<AES256GCM, SHA512>()
             .unwrap()
             .to_string()
+    }
+
+    #[test]
+    fn detects_sops_metadata_in_dotenv() {
+        // Trimmed from a real `sops encrypt --input-type dotenv` result.
+        let raw = concat!(
+            "SECRET=ENC[AES256_GCM,data:PEpqNWS5S1k=,iv:xEPy,tag:ZE+F,type:str]\n",
+            "sops_age__list_0__map_enc=-----BEGIN AGE ENCRYPTED FILE-----\\n...\n",
+            "sops_lastmodified=2026-08-23T11:10:00Z\n",
+            "sops_mac=ENC[AES256_GCM,data:vzLw,iv:RJNu,tag:4+mn,type:str]\n",
+            "sops_unencrypted_suffix=_unencrypted\n",
+            "sops_version=3.13.3\n",
+        );
+        assert!(is_sops_dotenv(raw));
+    }
+
+    #[test]
+    fn plain_dotenv_is_not_sops() {
+        assert!(!is_sops_dotenv("SECRET=mysecret\nOTHER=\"two words\"\n"));
+        assert!(!is_sops_dotenv(""));
+    }
+
+    #[test]
+    fn a_value_mentioning_the_marker_is_not_sops() {
+        // The marker only counts at the start of a line, so a file that merely
+        // talks about sops keeps its plain-dotenv path.
+        assert!(!is_sops_dotenv("NOTE=\"sops_version=3.13.3\"\n"));
+        assert!(!is_sops_dotenv("MY_sops_version=3.13.3\n"));
+    }
+
+    #[test]
+    fn a_plain_file_defining_sops_version_is_not_sops() {
+        // Nothing stops a dotenv file from having its own `sops_version`
+        // variable. One marker alone would send it to the decrypter, which
+        // fails the config in strict mode and drops every variable otherwise.
+        assert!(!is_sops_dotenv("sops_version=3.13.3\nSECRET=mysecret\n"));
+        assert!(!is_sops_dotenv(
+            "sops_mac=ENC[AES256_GCM,data:x]\nSECRET=s\n"
+        ));
+    }
+
+    #[test]
+    fn both_key_names_without_a_sops_mac_value_is_not_sops() {
+        // Even a file that defines both names is plain text unless the MAC
+        // holds something shaped like SOPS output.
+        assert!(!is_sops_dotenv(
+            "sops_version=3.13.3\nsops_mac=whatever\nSECRET=mysecret\n"
+        ));
+        assert!(is_sops_dotenv(
+            "sops_version=3.13.3\nsops_mac=ENC[AES256_GCM,data:x,type:str]\n"
+        ));
+    }
+
+    #[test]
+    fn parse_dotenv_reads_decrypted_text() {
+        // What the sops CLI hands back: no metadata left to strip.
+        let env = EnvResults::parse_dotenv(
+            "SECRET=mysecret\nOTHER=\"two words\"\n",
+            Path::new(".env"),
+            &TeraEnvMap::new(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(env.get("SECRET").map(String::as_str), Some("mysecret"));
+        assert_eq!(env.get("OTHER").map(String::as_str), Some("two words"));
     }
 
     fn restore_env_var(key: &str, prev: Option<String>) {
