@@ -229,8 +229,10 @@ jobs:
             exit 1
           fi
       # Keep these independent checks on one Namespace runner while overlapping
-      # their work. Clippy is stricter than HK's cargo-check, so CI can skip that
-      # redundant compilation while retaining it for local lint runs.
+      # their work. Clippy runs afterward so its all-features test build does not
+      # compete with the MSRV build for memory. Clippy is stricter than HK's
+      # cargo-check, so CI can skip that redundant compilation while retaining it
+      # for local lint runs.
       - parallel:
           - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
           - run: cargo machete --with-metadata
@@ -246,10 +248,10 @@ jobs:
             run: cargo msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
-          - name: Run Clippy
-            run: |
-              cargo clippy --ignore-rust-version -- -D warnings
-              cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      - name: Run Clippy
+        run: |
+          cargo clippy --ignore-rust-version -- -D warnings
+          cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
       - run: sccache --show-stats
         if: always()
 
