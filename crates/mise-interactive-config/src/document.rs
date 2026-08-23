@@ -28,6 +28,10 @@ pub(crate) struct Entry {
     pub expanded: bool,
     /// Comments appearing before this entry
     pub comments: Vec<String>,
+    /// The value's decor suffix when it carries a same-line comment, kept
+    /// verbatim so spacing survives. It lives in the *suffix*, which is why
+    /// reading only the prefix never picked it up.
+    pub trailing_comment: Option<String>,
 }
 
 /// The value of an entry
@@ -103,9 +107,13 @@ impl TomlDocument {
         // Collect top-level entries (non-table items like min_version)
         let mut root_entries = Vec::new();
         for (key, item) in doc.iter() {
+            let key_prefix = doc
+                .as_table()
+                .key(key)
+                .and_then(|k| k.leaf_decor().prefix());
             if !item.is_table()
                 && !item.is_array_of_tables()
-                && let Some(entry) = Self::parse_entry(key, item)
+                && let Some(entry) = Self::parse_entry(key, item, key_prefix)
             {
                 root_entries.push(entry);
             }
@@ -190,7 +198,12 @@ impl TomlDocument {
         let mut entries = Vec::new();
 
         for (key, item) in table.iter() {
-            if let Some(entry) = Self::parse_entry(key, item) {
+            // The leading comment of a key/value pair belongs to the key, not the
+            // value — the value's prefix is only the space after `=`. Reading the
+            // value meant `comments` was always empty for entries, so nothing was
+            // displayed and nothing could be written back (discussion #10650).
+            let key_prefix = table.key(key).and_then(|k| k.leaf_decor().prefix());
+            if let Some(entry) = Self::parse_entry(key, item, key_prefix) {
                 entries.push(entry);
             }
         }
@@ -206,12 +219,20 @@ impl TomlDocument {
         }
     }
 
-    fn parse_entry(key: &str, item: &Item) -> Option<Entry> {
-        // Extract comments from the item's decor (handle both Values and Tables)
+    fn parse_entry(
+        key: &str,
+        item: &Item,
+        key_prefix: Option<&toml_edit::RawString>,
+    ) -> Option<Entry> {
+        // A nested table carries its own decor; a key/value pair carries it on
+        // the key.
         let comments = match item {
-            Item::Value(v) => Self::extract_comments_from_decor(v.decor().prefix()),
             Item::Table(t) => Self::extract_comments_from_decor(t.decor().prefix()),
-            _ => Vec::new(),
+            _ => Self::extract_comments_from_decor(key_prefix),
+        };
+        let trailing_comment = match item {
+            Item::Value(v) => Self::extract_trailing_comment(v.decor().suffix()),
+            _ => None,
         };
 
         let value = match item {
@@ -238,7 +259,14 @@ impl TomlDocument {
             value,
             expanded: false,
             comments,
+            trailing_comment,
         })
+    }
+
+    /// Keep a decor suffix that carries a same-line comment, spacing and all.
+    fn extract_trailing_comment(suffix: Option<&toml_edit::RawString>) -> Option<String> {
+        let raw = suffix?.as_str()?;
+        raw.trim_start().starts_with('#').then(|| raw.to_string())
     }
 
     /// Extract comment lines from a decor prefix
@@ -312,6 +340,7 @@ impl TomlDocument {
                 for entry in &section.entries {
                     let item = Self::entry_value_to_item(&entry.value);
                     doc.insert(&entry.key, item);
+                    Self::apply_entry_decor(doc.as_table_mut(), entry);
                 }
                 continue;
             }
@@ -323,16 +352,51 @@ impl TomlDocument {
 
                 // Handle dotted keys (like _.path in env section) by creating nested tables
                 if entry.key.contains('.') && section.name == "env" {
+                    // The leaf sits in a subtable, so the decor helper below cannot
+                    // reach it. Comments on a dotted key stay lost for now.
                     Self::insert_dotted_key(&mut table, &entry.key, item);
                 } else {
                     table.insert(&entry.key, item);
+                    Self::apply_entry_decor(&mut table, entry);
                 }
             }
 
+            let prefix = Self::comment_prefix(&section.comments);
+            if !prefix.is_empty() {
+                table.decor_mut().set_prefix(prefix);
+            }
             doc.insert(&section.name, Item::Table(table));
         }
 
         doc.to_string()
+    }
+
+    /// Render comment lines as a decor prefix.
+    fn comment_prefix(comments: &[String]) -> String {
+        comments
+            .iter()
+            .map(|c| format!("{c}\n"))
+            .collect::<Vec<_>>()
+            .concat()
+    }
+
+    /// Put an entry's comments back on the item it was written as.
+    ///
+    /// The leading comment goes on the key and a same-line comment on the value:
+    /// `to_toml` builds a fresh document, so nothing carries over unless it is
+    /// written here (discussion #10650).
+    fn apply_entry_decor(table: &mut Table, entry: &Entry) {
+        let prefix = Self::comment_prefix(&entry.comments);
+        if !prefix.is_empty()
+            && let Some(mut key) = table.key_mut(&entry.key)
+        {
+            key.leaf_decor_mut().set_prefix(prefix);
+        }
+        if let Some(trailing) = &entry.trailing_comment
+            && let Some(Item::Value(value)) = table.get_mut(&entry.key)
+        {
+            value.decor_mut().set_suffix(trailing.clone());
+        }
     }
 
     /// Insert a dotted key into a table by creating nested structure
@@ -455,6 +519,7 @@ impl TomlDocument {
                 value,
                 expanded: false,
                 comments: Vec::new(),
+                trailing_comment: None,
             });
             self.modified = true;
         }
@@ -678,6 +743,52 @@ paths = ["./bin", "./node_modules/.bin"]
     }
 
     #[test]
+    fn test_roundtrip_keeps_comments() {
+        // Everything here came back stripped before: the banner, the comment
+        // above the section, the comment above an entry, and the same-line
+        // comment. See discussion #10650.
+        let content = r#"# managed by the platform team
+
+[tools]
+# language runtimes
+node = "22"
+
+[env]
+FOO = "bar" # why this is set
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(
+            output.contains("# managed by the platform team"),
+            "banner lost: {output}"
+        );
+        assert!(
+            output.contains("# language runtimes"),
+            "section-level comment lost: {output}"
+        );
+        assert!(
+            output.contains("# why this is set"),
+            "trailing comment lost: {output}"
+        );
+        // The trailing comment has to stay on its own line, not become a leading
+        // one for the next entry.
+        assert!(
+            output.contains(r#"FOO = "bar" # why this is set"#),
+            "trailing comment moved: {output}"
+        );
+    }
+
+    #[test]
+    fn test_roundtrip_without_comments_adds_nothing() {
+        let content = r#"[tools]
+node = "22"
+"#;
+        let doc = TomlDocument::parse(content).unwrap();
+        let output = doc.to_toml();
+        assert!(!output.contains('#'), "invented a comment: {output}");
+    }
+
+    #[test]
     fn test_roundtrip() {
         let content = r#"[tools]
 node = "22"
@@ -733,6 +844,7 @@ node = "22"
             value: EntryValue::Array(vec!["./bin".to_string(), "./node_modules/.bin".to_string()]),
             expanded: false,
             comments: Vec::new(),
+            trailing_comment: None,
         });
 
         let output = doc.to_toml();
