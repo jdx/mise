@@ -51,13 +51,15 @@ reported.
 
 ## Community plugins
 
-Unless automatic confirmation is enabled with `--yes`, paranoid mode refuses to
-install an untrusted community plugin by short name. It allows plugin URLs
-registered with mise and plugins maintained under the `mise-plugins` GitHub
-organization.
+Paranoid mode refuses to install an untrusted community plugin by short name
+unless automatic confirmation is enabled with `--yes` or `MISE_YES=1`, mise is
+running in CI, or the installation uses `--force`. A short-name plugin is trusted
+when its resolved URL matches an asdf or vfox remote in mise's built-in registry,
+or when it is maintained under the `mise-plugins` GitHub organization.
 
-To install any other community plugin, specify its full Git repository URL. By
-providing the URL explicitly, you are choosing and trusting that source:
+To install any other community plugin, specify its full Git repository URL on the
+command line or in `[plugins]` configuration. Explicitly providing the URL bypasses
+the registry trust check because you are choosing and trusting that source:
 
 ```sh
 mise plugin install example https://github.com/example/asdf-example
