@@ -71,13 +71,13 @@ cannot be used together.
 - **`-y --yes`** — Skip confirmation prompts
 - **`--skip-dirty`** — Skip configured repos with local changes instead of failing
 - **`--force-dotfiles`** — Overwrite existing files that conflict with whole-file dotfile entries
-- **`--only… <ONLY>`** — Run only one or more bootstrap parts
+- **`--only <ONLY>`** — Run only one or more bootstrap parts
 
   Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 
   **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
-- **`--skip… <SKIP>`** — Skip one or more bootstrap parts
+- **`--skip <SKIP>`** — Skip one or more bootstrap parts
 
   Can be passed multiple times or as a comma-separated list.
 

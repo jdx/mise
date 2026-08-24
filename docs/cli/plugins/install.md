@@ -26,7 +26,7 @@ This behavior can be modified in ~/.config/mise/config.toml
 - **`-f --force`** — Reinstall even if plugin exists
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
-- **`-v --verbose…`** — Show installation output
+- **`-v --verbose`** — Show installation output
 - **`-h --help`** — Print help
 
 Examples:

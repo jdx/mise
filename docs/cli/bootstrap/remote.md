@@ -16,12 +16,12 @@ Bootstrap one or more machines over OpenSSH
 - **`--connect-timeout <CONNECT_TIMEOUT>`** — SSH connection timeout in seconds
 
   **Default:** `10`
-- **`--copy-link… <PATH>`** — Dereference one source-relative symbolic link; repeat for multiple links
+- **`--copy-link <PATH>`** — Dereference one source-relative symbolic link; repeat for multiple links
 - **`--copy-links`** — Dereference every symbolic link in the source archive
-- **`--exclude… <PATTERN>`** — Additional archive pattern to exclude; repeat for multiple patterns
+- **`--exclude <PATTERN>`** — Additional archive pattern to exclude; repeat for multiple patterns
 - **`--fail-fast`** — Stop after the first failed target
 - **`--force-dotfiles`** — Allow remote dotfile conflicts to be replaced
-- **`--host… <[USER@]HOST>`** — Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
+- **`--host <[USER@]HOST>`** — Ad-hoc SSH destination (`[user@]host`); repeat for multiple hosts
 - **`-i --identity-file <IDENTITY_FILE>`** — SSH identity file override
 - **`-n --dry-run`** — Print the remote bootstrap changes without applying them
 - **`--install-mise[=PATH]`** — Install the provisioned mise on each host instead of only staging it
@@ -30,19 +30,19 @@ Bootstrap one or more machines over OpenSSH
 - **`--keep-staging`** — Keep the remote staging directory for debugging
 - **`--mise-bin <MISE_BIN>`** — Local mise binary to upload (escape hatch for custom architectures)
 - **`--no-install-mise`** — Do not install mise on the host, even when the selected hosts configure it
-- **`--only… <ONLY>`** — Run only one or more remote bootstrap parts
+- **`--only <ONLY>`** — Run only one or more remote bootstrap parts
 
   **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--port <PORT>`** — SSH port override
 - **`--prompt-secrets`** — Prompt securely for missing secret inputs on the remote host
-- **`--remote-env… <ENV>`** — Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
+- **`--remote-env <ENV>`** — Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
 - **`--remote-mise <COMMAND>`** — Existing mise executable name or path; relative paths use the staged project
-- **`--skip… <SKIP>`** — Skip one or more remote bootstrap parts
+- **`--skip <SKIP>`** — Skip one or more remote bootstrap parts
 
   **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--source <SOURCE>`** — Local directory archived and sent to each target
-- **`--ssh-option… <OPTION>`** — OpenSSH `-o` option; repeat for multiple options
-- **`--tag… <TAG>`** — Select configured hosts with this tag; repeat to match any tag
+- **`--ssh-option <OPTION>`** — OpenSSH `-o` option; repeat for multiple options
+- **`--tag <TAG>`** — Select configured hosts with this tag; repeat to match any tag
 - **`--update`** — Refresh package manager metadata and update configured repos remotely
 - **`-y --yes`** — Skip remote confirmation prompts
 - **`-h --help`** — Print help

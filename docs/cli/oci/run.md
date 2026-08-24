@@ -36,10 +36,10 @@ one of: `podman`, `docker`.
 - **`--owner <UID[:GID]>`** — UID[:GID] to assign to every tar entry when building (conflicts with --image-dir)
 
   Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
-- **`--volume… <HOST:CONTAINER>`** — Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
+- **`--volume <HOST:CONTAINER>`** — Bind-mount a host path (repeatable, `HOST:CONTAINER[:MODE]`)
 
   Note: unlike `docker run -v`, there's no `-v` short flag here because mise reserves `-v` for --verbose. Use `--volume` or `--mount`.
-- **`-e --env… <KEY=VAL>`** — Set environment variable in the container (repeatable, `KEY=VAL`)
+- **`-e --env <KEY=VAL>`** — Set environment variable in the container (repeatable, `KEY=VAL`)
 - **`-i --interactive`** — Run interactively (pass `-i` to the engine)
 - **`-t --tty`** — Allocate a TTY (pass `-t` to the engine)
 - **`-w --workdir <WORKDIR>`** — Working directory inside the container

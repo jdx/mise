@@ -34,7 +34,7 @@ This will update mise.lock if it is enabled, see <https://mise.jdx.dev/configura
 
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Just print what would be done, don't actually do it
-- **`-x --exclude… <INSTALLED_TOOL>`** — Tool(s) to exclude from upgrading
+- **`-x --exclude <INSTALLED_TOOL>`** — Tool(s) to exclude from upgrading
   e.g.: go python
 - **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are outdated tools
 

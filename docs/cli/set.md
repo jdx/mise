@@ -26,10 +26,10 @@ Use `-E <env>` to create/modify environment-specific config files like `mise.<en
 - **`--age-key-file <PATH>`** — [experimental] Age identity file for encryption
 
   Defaults to ~/.config/mise/age.txt if it exists
-- **`--age-recipient… <RECIPIENT>`** — [experimental] Age recipient (x25519 public key) for encryption
+- **`--age-recipient <RECIPIENT>`** — [experimental] Age recipient (x25519 public key) for encryption
 
   Can be used multiple times. Requires --age-encrypt.
-- **`--age-ssh-recipient… <PATH_OR_PUBKEY>`** — [experimental] SSH recipient (public key or path) for age encryption
+- **`--age-ssh-recipient <PATH_OR_PUBKEY>`** — [experimental] SSH recipient (public key or path) for age encryption
 
   Can be used multiple times. Requires --age-encrypt.
 - **`--file <FILE>`** — The TOML file to update

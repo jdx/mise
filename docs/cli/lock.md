@@ -26,7 +26,7 @@ Operates on the lockfile in the current config root. Use TOOL arguments to targe
 
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Show what would be updated without making changes
-- **`-p --platform… <PLATFORM>`** — Comma-separated list of platforms to target
+- **`-p --platform <PLATFORM>`** — Comma-separated list of platforms to target
   e.g.: linux-x64,macos-arm64,windows-x64
   If not specified, all platforms already in lockfile will be updated
 - **`--bump`** — Re-resolve fuzzy version selectors against the latest available versions

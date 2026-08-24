@@ -16,7 +16,7 @@ the OCI image-layout spec and can be consumed by `skopeo`, `crane`, or
 Requires `mise settings experimental=true` (or `MISE_EXPERIMENTAL=1`).
 
 ## Flags
-- **`--copy… <HOST_PATH:IMAGE_PATH>`** — Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
+- **`--copy <HOST_PATH:IMAGE_PATH>`** — Copy a host file, directory, or symlink into the image (repeatable, HOST:IMAGE)
 - **`-o --output <OUTPUT>`** — Output directory for the OCI image layout
 
   **Default:** `./mise-oci`

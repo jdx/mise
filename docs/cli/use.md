@@ -71,7 +71,7 @@ Use the `--global` flag to use the global config file instead.
   Consider using mise.lock as a better alternative to pinning in mise.toml:
   <https://mise.jdx.dev/configuration/settings.html#lockfile>
 - **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`
-- **`--remove… <TOOL>`** — Remove the tool(s) from config file
+- **`--remove <TOOL>`** — Remove the tool(s) from config file
 - **`-h --help`** — Print help
 
 Examples:

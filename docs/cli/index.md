@@ -14,14 +14,14 @@
 
 ## Global Flags
 - **`-C --cd <DIR>`** — Change directory before running command
-- **`-E --env… <ENV>`** — Set the environment for loading `mise.<ENV>.toml`
+- **`-E --env <ENV>`** — Set the environment for loading `mise.<ENV>.toml`
 - **`-j --jobs <JOBS>`** — How many jobs to run in parallel; values below 1 are treated as 1 [default: 8]
 
   **Environment Variable:** `MISE_JOBS`
 - **`-q --quiet`** — Suppress non-error messages
 
   **Environment Variable:** `MISE_QUIET`
-- **`-v --verbose…`** — Show extra output (use -vv for even more)
+- **`-v --verbose`** — Show extra output (use -vv for even more)
 - **`-y --yes`** — Answer yes to all confirmation prompts
 - **`--raw`** — Read/write directly to stdin/stdout/stderr instead of by line
 - **`--locked`** — Require lockfile URLs to be present during installation
@@ -126,7 +126,7 @@
 - [`mise cache <SUBCOMMAND>`](/cli/cache.md)
 - [`mise cache clear [--task <TASK>] [TOOL]…`](/cli/cache/clear.md)
 - [`mise cache path`](/cli/cache/path.md)
-- [`mise cache prune [-v --verbose…] [--dry-run] [TOOL]…`](/cli/cache/prune.md)
+- [`mise cache prune [-v --verbose] [--dry-run] [TOOL]…`](/cli/cache/prune.md)
 - [`mise cache task [-J --json] <TASK>`](/cli/cache/task.md)
 - [`mise completion [FLAGS] [SHELL]`](/cli/completion.md)
 - [`mise config [FLAGS] <SUBCOMMAND>`](/cli/config.md)
