@@ -9,7 +9,9 @@ on:
 
 concurrency:
   group: github-runner-cache-${{ github.ref }}
-  cancel-in-progress: true
+  # Let the active warmer publish a usable cache when several commits land on
+  # main in quick succession. GitHub still keeps only the newest pending run.
+  cancel-in-progress: false
 
 permissions:
   contents: read
