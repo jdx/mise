@@ -1393,11 +1393,11 @@ impl UnifiedGitBackend {
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
-        if let Some(digest) = &asset.digest {
-            if !lockfile_has_checksum {
-                debug!("using GitHub API digest for checksum verification");
-                platform_info.checksum = Some(digest.clone());
-            }
+        if let Some(digest) = &asset.digest
+            && !lockfile_has_checksum
+        {
+            debug!("using GitHub API digest for checksum verification");
+            platform_info.checksum = Some(digest.clone());
         }
 
         let url = if asset.url_api.is_empty() {
@@ -1522,10 +1522,10 @@ impl UnifiedGitBackend {
         let has_lockfile_integrity = artifact_info.has_checksum_and_verified_provenance();
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
-        if let Some(digest) = &asset.digest {
-            if !lockfile_has_checksum {
-                artifact_info.checksum = Some(digest.clone());
-            }
+        if let Some(digest) = &asset.digest
+            && !lockfile_has_checksum
+        {
+            artifact_info.checksum = Some(digest.clone());
         }
 
         let url = if asset.url_api.is_empty() {
