@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::config::miserc;
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::env_diff::{EnvDiff, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{cli::args::ToolArg, file::display_path};
@@ -882,8 +882,7 @@ pub(crate) fn var_path(key: &str) -> Option<PathBuf> {
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
 fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
-    let patches = mise_diff.reverse().to_patches();
-    let mut env = apply_patches(&orig_env, &patches);
+    let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
 
     // get the current path as a vector
     let path = match env.get(&*PATH_KEY) {
@@ -907,20 +906,28 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
     env
 }
 
-fn apply_patches(env: &EnvMap, patches: &EnvDiffPatches) -> EnvMap {
-    let mut new_env = env.clone();
-    for patch in patches {
-        match patch {
-            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                new_env.insert(k.into(), v.into());
+/// Reverse values that are still in the state mise recorded, while preserving
+/// values changed or removed by the caller after mise applied the environment.
+fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> EnvMap {
+    for (key, old_value) in &mise_diff.old {
+        match mise_diff.new.get(key) {
+            Some(new_value) if env.get(key) == Some(new_value) => {
+                env.insert(key.clone(), old_value.clone());
             }
-            EnvDiffOperation::Remove(k) => {
-                new_env.remove(k);
+            None if !env.contains_key(key) => {
+                env.insert(key.clone(), old_value.clone());
             }
+            _ => {}
         }
     }
 
-    new_env
+    for (key, new_value) in &mise_diff.new {
+        if !mise_diff.old.contains_key(key) && env.get(key) == Some(new_value) {
+            env.remove(key);
+        }
+    }
+
+    env
 }
 
 fn offline(args: &[String]) -> bool {
@@ -1193,21 +1200,86 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_apply_patches() {
-        let _config = Config::get().await.unwrap();
-        let mut env = EnvMap::new();
-        env.insert("foo".into(), "bar".into());
-        env.insert("baz".into(), "qux".into());
-        let patches = vec![
-            EnvDiffOperation::Add("foo".into(), "bar".into()),
-            EnvDiffOperation::Change("baz".into(), "qux".into()),
-            EnvDiffOperation::Remove("quux".into()),
-        ];
-        let new_env = apply_patches(&env, &patches);
-        assert_eq!(new_env.len(), 2);
-        assert_eq!(new_env.get("foo").unwrap(), "bar");
-        assert_eq!(new_env.get("baz").unwrap(), "qux");
+    #[test]
+    fn test_reverse_diff_preserves_runtime_overrides() {
+        let diff = EnvDiff {
+            old: [
+                ("CHANGED".into(), "before".into()),
+                ("REMOVED".into(), "before".into()),
+            ]
+            .into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "override".into()),
+            ("CHANGED".into(), "override".into()),
+            ("REMOVED".into(), "override".into()),
+        ]
+        .into();
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [
+                ("ADDED".into(), "override".into()),
+                ("CHANGED".into(), "override".into()),
+                ("REMOVED".into(), "override".into()),
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_reverse_diff_restores_unchanged_managed_values() {
+        let diff = EnvDiff {
+            old: [
+                ("CHANGED".into(), "before".into()),
+                ("REMOVED".into(), "before".into()),
+            ]
+            .into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "managed".into()),
+        ]
+        .into();
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [
+                ("CHANGED".into(), "before".into()),
+                ("REMOVED".into(), "before".into()),
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_reverse_diff_preserves_runtime_removals() {
+        let diff = EnvDiff {
+            old: [("CHANGED".into(), "before".into())].into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, EnvMap::new()),
+            EnvMap::new()
+        );
     }
 
     #[tokio::test]
