@@ -675,7 +675,11 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
 /// Normalize idiomatic file contents by removing comments and empty lines.
 /// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
 pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
-    contents
+    // Dropping a byte-order mark is normalisation too, and this is the only place every
+    // plain-text idiomatic reader passes through. `trim` below does not do it: U+FEFF does not
+    // carry the Unicode `White_Space` property, so the mark would ride along into the version and
+    // out into a download URL. See `file::strip_utf8_bom`.
+    file::strip_utf8_bom(contents)
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
@@ -720,8 +724,11 @@ fn parse_registry_idiomatic_file(
         return Ok(None);
     }
     let contents = file::read_to_string(path)?;
+    // These parsers see the raw body rather than `normalize_idiomatic_contents`, so the mark has
+    // to come off here: an anchored pattern such as `(?m)^\s*version\s*:` simply stops matching.
+    let contents = file::strip_utf8_bom(&contents);
     version_list::parse_version_list(
-        &contents,
+        contents,
         spec.version_regex,
         spec.version_json_path,
         spec.version_expr,
@@ -934,6 +941,14 @@ mod tests {
         assert_eq!(
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
+        );
+        // A byte-order mark is what Notepad leaves at the front of a file. `trim` does not remove
+        // it, so without the strip the version below carries the mark into a download URL.
+        assert_eq!(normalize_idiomatic_contents("\u{feff}20.0.0"), "20.0.0");
+        // Only a *leading* mark is a mark; anywhere else it is content and must survive.
+        assert_eq!(
+            normalize_idiomatic_contents("20.0.0\n\u{feff}18.0.0"),
+            "20.0.0\n\u{feff}18.0.0"
         );
     }
 

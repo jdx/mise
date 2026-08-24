@@ -52,12 +52,15 @@ impl ToolVersions {
 
     pub(crate) fn from_file(path: &Path) -> Result<Self> {
         trace!("parsing tool-versions: {}", path.display());
-        Self::parse_str(&file::read_to_string(path)?, path.to_path_buf())
+        let body = file::read_to_string(path)?;
+        // The first whitespace-separated token on a line is the tool name, so a leading
+        // byte-order mark becomes part of it and the entry silently resolves to nothing.
+        Self::parse_str(file::strip_utf8_bom(&body), path.to_path_buf())
     }
 
     pub(crate) fn path_requires_trust(path: &Path) -> bool {
         match file::read_to_string(path) {
-            Ok(body) => contains_template_syntax(&body),
+            Ok(body) => contains_template_syntax(file::strip_utf8_bom(&body)),
             Err(_) => true,
         }
     }
