@@ -1615,6 +1615,19 @@ impl ConfigFile for MiseToml {
             .transpose()
     }
 
+    fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
+        self.task_config
+            .excludes
+            .as_ref()
+            .map(|excludes| {
+                excludes
+                    .iter()
+                    .map(|exclude| self.parse_template(exclude))
+                    .collect()
+            })
+            .transpose()
+    }
+
     fn monorepo_root(&self) -> Option<bool> {
         self.monorepo_root
     }

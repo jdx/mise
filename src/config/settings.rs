@@ -678,6 +678,45 @@ fn resolve_aqua_registry_paths(settings: &mut toml::Table, path: &Path) {
     }
 }
 
+/// Resolve task discovery exclusions while the settings file that declared them is still known.
+/// Once settings layers are merged, a relative `PathBuf` no longer carries enough information to
+/// distinguish two config roots.
+fn resolve_task_disable_paths(settings: &mut toml::Table, path: &Path) {
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let resolve = |paths: &mut Vec<toml::Value>| {
+        for entry in paths {
+            let Some(value) = entry.as_str() else {
+                continue;
+            };
+            let value = Path::new(value);
+            if value.is_absolute() || value == Path::new("~") || value.starts_with("~/") {
+                continue;
+            }
+            let joined = config_root.join(value);
+            let resolved = joined
+                .absolutize()
+                .map(|path| path.into_owned())
+                .unwrap_or(joined);
+            *entry = toml::Value::String(resolved.to_string_lossy().into_owned());
+        }
+    };
+
+    if let Some(paths) = settings
+        .get_mut("task")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|task| task.get_mut("disable_paths"))
+        .and_then(toml::Value::as_array_mut)
+    {
+        resolve(paths);
+    }
+    if let Some(paths) = settings
+        .get_mut("task_disable_paths")
+        .and_then(toml::Value::as_array_mut)
+    {
+        resolve(paths);
+    }
+}
+
 /// Resolve age identity paths while the settings file that declared them is
 /// still known. Once settings layers are merged, a relative `PathBuf` no
 /// longer carries enough information to distinguish two config roots.
@@ -1134,6 +1173,7 @@ impl Settings {
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
+            resolve_task_disable_paths(settings, path);
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -2031,6 +2071,36 @@ mod tests {
 
         assert_eq!(partial.default_config_filename, None);
         assert_eq!(partial.default_tool_versions_filename, None);
+    }
+
+    #[test]
+    fn test_parse_settings_file_resolves_task_disable_paths_from_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join(".mise");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let path = config_dir.join("config.toml");
+        let absolute = dir.path().join("absolute");
+        std::fs::write(
+            &path,
+            format!(
+                r#"
+                [settings.task]
+                disable_paths = ["tasks/generated", '{}']
+                "#,
+                absolute.display()
+            ),
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(
+            partial.task.disable_paths,
+            Some(BTreeSet::from([
+                dir.path().join("tasks/generated"),
+                absolute,
+            ]))
+        );
     }
 
     /// Unlike `global_only`, being in the *global* config does not rescue these — the loader

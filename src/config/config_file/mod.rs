@@ -158,6 +158,10 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
         Ok(self.task_config().includes.clone())
     }
 
+    fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
+        Ok(self.task_config().excludes.clone())
+    }
+
     fn task_templates(&self) -> IndexMap<String, TaskTemplate> {
         IndexMap::new()
     }
@@ -1112,6 +1116,7 @@ impl Hash for dyn ConfigFile {
 pub(crate) struct TaskConfig {
     pub cascade: Option<bool>,
     pub includes: Option<Vec<String>>,
+    pub excludes: Option<Vec<String>>,
     pub dir: Option<String>,
     pub shell: Option<String>,
     pub cache: Option<crate::task::TaskCacheConfig>,
