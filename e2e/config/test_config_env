@@ -39,6 +39,15 @@ cat >.mise/conf.d/99-inactive.inactive.toml <<'EOF'
 [env]
 CONF_D_INACTIVE = "loaded"
 EOF
+mkdir -p mise/conf.d
+cat >mise/conf.d/00-visible.toml <<'EOF'
+[env]
+VISIBLE_CONF_D_COMMON = "visible"
+EOF
+cat >mise/conf.d/10-visible-test.test.toml <<'EOF'
+[env]
+VISIBLE_CONF_D_ENV = "test"
+EOF
 
 assert_contains "mise env 2>&1" "deprecated [dotted_conf_d_filename]"
 assert_not_contains "MISE_ENV_CONF_D=false mise env 2>&1" "deprecated [dotted_conf_d_filename]"
@@ -49,6 +58,8 @@ MISE_ENV=test assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL, 
 MISE_ENV_CONF_D=true assert "mise env --json | jq -r '[.CONF_D_COMMON, .CONF_D_ENV, .CONF_D_ALWAYS_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'base\tbase\tlocal\t'
 MISE_ENV_CONF_D=true MISE_ENV=test assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL, .CONF_D_INACTIVE] | @tsv'" $'test\ttest-local\t'
 MISE_ENV_CONF_D=true MISE_ENV=test,ci assert "mise env --json | jq -r '[.CONF_D_ENV, .CONF_D_ENV_LOCAL] | @tsv'" $'ci\ttest-local'
+MISE_ENV_CONF_D=true assert "mise env --json | jq -r '[.VISIBLE_CONF_D_COMMON, .VISIBLE_CONF_D_ENV] | @tsv'" $'visible\t'
+MISE_ENV_CONF_D=true MISE_ENV=test assert "mise env --json | jq -r '[.VISIBLE_CONF_D_COMMON, .VISIBLE_CONF_D_ENV] | @tsv'" $'visible\ttest'
 
 # Environment names are matched literally and by the complete suffix after the first dot
 cat >'.mise/conf.d/30-literal.qa*.toml' <<'EOF'

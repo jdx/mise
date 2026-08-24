@@ -1466,6 +1466,7 @@ impl Lockfile {
 /// - `.config/mise.toml` -> `.config/mise.lock`
 /// - `.mise/config.toml` -> `.mise/mise.lock`
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
+/// - `mise/conf.d/foo.toml` -> `mise/mise.lock`
 pub(crate) fn lockfile_path_for_config(
     config_path: &Path,
     monorepo_root: Option<&Path>,
@@ -4608,6 +4609,12 @@ options = { exe = "rg" }
         let (path, is_local) =
             lockfile_path_for_config(Path::new("/foo/bar/.config/mise/conf.d/foo.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/.config/mise/mise.lock"));
+        assert!(!is_local);
+
+        // Config in mise/conf.d directory
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/mise/conf.d/foo.toml"), None);
+        assert_eq!(path, PathBuf::from("/foo/bar/mise/mise.lock"));
         assert!(!is_local);
     }
 

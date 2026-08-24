@@ -1775,6 +1775,7 @@ static LOCAL_CONFIG_FILENAMES: Lazy<IndexSet<&'static str>> = Lazy::new(|| {
             ".config/mise.toml",
             ".mise/conf.d/*.toml",
             ".mise/config.toml",
+            "mise/conf.d/*.toml",
             "mise/config.toml",
             ".rtx.toml",
             "mise.toml",
@@ -1803,26 +1804,49 @@ fn env_config_patterns(env: &str) -> Vec<String> {
 /// cover both sides of the migration without touching global state.
 fn env_config_patterns_with_conf_d(env: &str, env_conf_d: bool) -> Vec<String> {
     let env = glob::Pattern::escape(env);
-    let mut patterns = vec![
+    let mut patterns = vec![];
+    if env_conf_d {
+        patterns.push(format!(".config/mise/conf.d/*.{env}.toml"));
+    }
+    patterns.extend([
         format!(".config/mise/config.{env}.toml"),
         format!(".config/mise.{env}.toml"),
+    ]);
+    if env_conf_d {
+        patterns.push(format!("mise/conf.d/*.{env}.toml"));
+    }
+    patterns.extend([
         format!("mise/config.{env}.toml"),
         format!("mise.{env}.toml"),
+    ]);
+    if env_conf_d {
+        patterns.push(format!(".mise/conf.d/*.{env}.toml"));
+    }
+    patterns.extend([
         format!(".mise/config.{env}.toml"),
         format!(".mise.{env}.toml"),
+    ]);
+    if env_conf_d {
+        patterns.push(format!(".config/mise/conf.d/*.{env}.local.toml"));
+    }
+    patterns.extend([
         format!(".config/mise/config.{env}.local.toml"),
         format!(".config/mise.{env}.local.toml"),
+    ]);
+    if env_conf_d {
+        patterns.push(format!("mise/conf.d/*.{env}.local.toml"));
+    }
+    patterns.extend([
         format!("mise/config.{env}.local.toml"),
         format!("mise.{env}.local.toml"),
+    ]);
+    if env_conf_d {
+        patterns.push(format!(".mise/conf.d/*.{env}.local.toml"));
+    }
+    patterns.extend([
         format!(".mise/config.{env}.local.toml"),
         format!(".mise.{env}.local.toml"),
-    ];
-    if env_conf_d {
-        patterns.insert(0, format!(".config/mise/conf.d/*.{env}.toml"));
-        patterns.insert(5, format!(".mise/conf.d/*.{env}.toml"));
-        patterns.insert(8, format!(".config/mise/conf.d/*.{env}.local.toml"));
-        patterns.insert(13, format!(".mise/conf.d/*.{env}.local.toml"));
-    }
+    ]);
     patterns
 }
 
@@ -5619,7 +5643,11 @@ mod tests {
     #[test]
     fn test_has_mise_config_with_glob_filenames() -> Result<()> {
         let tmp = TempDir::new()?;
-        for pattern in [".config/mise/conf.d/*.toml", ".mise/conf.d/*.toml"] {
+        for pattern in [
+            ".config/mise/conf.d/*.toml",
+            ".mise/conf.d/*.toml",
+            "mise/conf.d/*.toml",
+        ] {
             let confd = tmp.path().join(pattern.trim_end_matches("/*.toml"));
             fs::create_dir_all(&confd)?;
             fs::write(confd.join("tools.toml"), "[tools]\n")?;
@@ -5634,9 +5662,9 @@ mod tests {
     }
 
     #[test]
-    fn test_project_mise_conf_d_precedence() -> Result<()> {
+    fn test_project_visible_mise_conf_d_precedence() -> Result<()> {
         let tmp = TempDir::new()?;
-        let confd = tmp.path().join(".mise/conf.d");
+        let confd = tmp.path().join("mise/conf.d");
         fs::create_dir_all(&confd)?;
         fs::write(confd.join("01-base.toml"), "[env]\nORDER = 'base'\n")?;
         fs::write(
@@ -5645,13 +5673,13 @@ mod tests {
         )?;
         fs::write(confd.join(".hidden.toml"), "[env]\nORDER = 'hidden'\n")?;
         fs::write(
-            tmp.path().join(".mise/config.toml"),
+            tmp.path().join("mise/config.toml"),
             "[env]\nORDER = 'config'\n",
         )?;
 
         let filenames = vec![
-            ".mise/conf.d/*.toml".to_string(),
-            ".mise/config.toml".to_string(),
+            "mise/conf.d/*.toml".to_string(),
+            "mise/config.toml".to_string(),
         ];
         let paths = config_paths_in_dir_with_filenames(tmp.path(), &filenames);
         let relative = paths
@@ -5661,9 +5689,9 @@ mod tests {
         assert_eq!(
             relative,
             vec![
-                Path::new(".mise/config.toml"),
-                Path::new(".mise/conf.d/02-override.toml"),
-                Path::new(".mise/conf.d/01-base.toml"),
+                Path::new("mise/config.toml"),
+                Path::new("mise/conf.d/02-override.toml"),
+                Path::new("mise/conf.d/01-base.toml"),
             ]
         );
 
@@ -6052,6 +6080,7 @@ mod tests {
                 ".config/mise/conf.d/*.linux.toml",
                 ".config/mise/config.linux.toml",
                 ".config/mise.linux.toml",
+                "mise/conf.d/*.linux.toml",
                 "mise/config.linux.toml",
                 "mise.linux.toml",
                 ".mise/conf.d/*.linux.toml",
@@ -6060,6 +6089,7 @@ mod tests {
                 ".config/mise/conf.d/*.linux.local.toml",
                 ".config/mise/config.linux.local.toml",
                 ".config/mise.linux.local.toml",
+                "mise/conf.d/*.linux.local.toml",
                 "mise/config.linux.local.toml",
                 "mise.linux.local.toml",
                 ".mise/conf.d/*.linux.local.toml",
