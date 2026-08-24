@@ -1,0 +1,5 @@
+backends = ["npm:@kitlangton/ghui"]
+bins = ["ghui"]
+description = "Terminal UI for GitHub pull requests"
+test = { cmd = "ghui --version", expected = "{{version}}" }
+version_order = "semver"
