@@ -636,11 +636,18 @@ impl Backend for AquaBackend {
             }
         }
 
+        // Snapshot before verify_checksum can generate a new checksum.
+        let lockfile_had_checksum = tv
+            .lock_platforms
+            .get(&self.get_platform_key())
+            .is_some_and(|p| p.checksum.is_some());
+
         // Advance to checksum operation if applicable
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
             ctx.pr.next_operation();
         }
-        self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
+        self.verify(ctx, &mut tv, &pkg, &v, &filename, lockfile_had_checksum)
+            .await?;
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -2422,6 +2429,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
+        lockfile_has_checksum: bool,
     ) -> Result<()> {
         // Skip provenance verification if the lockfile already has both a checksum and
         // provenance entry for this platform — the artifact integrity is already guaranteed
@@ -2440,10 +2448,6 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
-        let lockfile_has_checksum = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|p| p.checksum.is_some());
         let locked_provenance = tv
             .lock_platforms
             .get(&platform_key)
