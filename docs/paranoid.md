@@ -45,8 +45,10 @@ If you change your config file, you'll need to trust it again.
 Note that global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check. This allows paranoid mode to be enabled in a global config without requiring a trust prompt for that file itself.
 
 [Safe mode](/security.html#safe-mode) takes precedence when both modes are enabled.
-Because safe mode makes project config inert, it loads untrusted config without a
-trust prompt or untrusted-config error. Other configuration errors are still
+Safe mode disables project-defined code execution and environment injection while
+retaining non-executable configuration such as tool definitions, task metadata,
+plugin declarations, and tool aliases. It therefore loads untrusted config without
+a trust prompt or untrusted-config error. Other configuration errors are still
 reported.
 
 ## Community plugins
