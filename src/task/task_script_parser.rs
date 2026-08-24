@@ -911,6 +911,8 @@ impl TaskScriptParser {
                     tera::Value::from(flag.default.clone())
                 } else if flag.count {
                     tera::Value::from(0)
+                } else if flag.arg.is_some() {
+                    tera::Value::from(flag.default.first().cloned().unwrap_or_default())
                 } else if let Some(default) = flag.default.first() {
                     default
                         .parse::<bool>()
@@ -1784,6 +1786,16 @@ mod tests {
             )
             .await,
             "echo bob"
+        );
+        // Value flags use a string placeholder during the initial template render.
+        assert_eq!(
+            render_usage(
+                r#"flag "-f --file <file>""#,
+                "echo {{ usage.file | dirname }}",
+                &["--file", "data/cmp.csv"]
+            )
+            .await,
+            "echo data"
         );
         // Default value
         assert_eq!(
