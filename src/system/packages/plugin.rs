@@ -63,6 +63,24 @@ impl PackagePluginState {
             })
             .collect()
     }
+
+    fn approved_prune_requests(
+        &self,
+        approved: &[PackageRequest],
+        configured: &[PackageRequest],
+    ) -> Vec<PackageRequest> {
+        let keep = configured
+            .iter()
+            .map(|request| request.name.as_str())
+            .collect::<HashSet<_>>();
+        approved
+            .iter()
+            .filter(|request| {
+                self.packages.contains_key(&request.name) && !keep.contains(request.name.as_str())
+            })
+            .cloned()
+            .collect()
+    }
 }
 
 #[derive(Debug)]
@@ -368,6 +386,12 @@ impl PackagePluginManager {
 
     pub(crate) async fn apply_prune_plan(&self, plan: &PluginPrunePlan) -> Result<usize> {
         let _lock = self.operation_lock()?;
+        let config = Config::reset().await?;
+        let configured =
+            crate::system::package_requests_for_manager_from_config_and_tracked_config_files(
+                &config, &self.name,
+            )
+            .await?;
         let mut state = self.load_state()?;
         let mut state_changed = false;
         let stale_requests = plan
@@ -385,12 +409,10 @@ impl PackagePluginManager {
             let stale_statuses = self.installed(&stale_requests).await?;
             state_changed |= Self::reconcile_missing_ownership(&mut state, &stale_statuses);
         }
-        let requests = plan
-            .remove
-            .iter()
-            .filter(|request| state.packages.contains_key(&request.name))
-            .cloned()
-            .collect::<Vec<_>>();
+        // The confirmed plan is an upper bound. Configuration may have changed
+        // while the confirmation prompt was open, so never remove an approved
+        // package that is now part of the desired set.
+        let requests = state.approved_prune_requests(&plan.remove, &configured);
         if requests.is_empty() {
             if state_changed {
                 self.save_state(&state)?;
@@ -703,6 +725,38 @@ mod tests {
                 version: Some("release:edge".to_string()),
                 tap_url: None,
             }]
+        );
+    }
+
+    #[test]
+    fn approved_prune_candidates_can_only_shrink_after_config_revalidation() {
+        let state = state("fake");
+        let approved = vec![
+            PackageRequest {
+                name: "remove".to_string(),
+                version: Some("release:edge".to_string()),
+                tap_url: None,
+            },
+            PackageRequest {
+                name: "not-owned".to_string(),
+                version: None,
+                tap_url: None,
+            },
+        ];
+        let configured = vec![PackageRequest {
+            name: "remove".to_string(),
+            version: Some("newly-declared".to_string()),
+            tap_url: None,
+        }];
+
+        assert_eq!(
+            state.approved_prune_requests(&approved, &[]),
+            vec![approved[0].clone()]
+        );
+        assert!(
+            state
+                .approved_prune_requests(&approved, &configured)
+                .is_empty()
         );
     }
 

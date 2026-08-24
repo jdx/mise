@@ -112,7 +112,9 @@ ledger persists across plugin removal and reinstallation. Explicit prune still
 works when the desired set is empty, including after the final declaration is
 removed. After the hook returns or fails, mise calls `PackageInstalled` to
 verify each removal when possible and retains ownership for anything still
-present.
+present. After confirmation, mise reloads the complete desired set before
+invoking the hook; newly declared packages are removed from the approved batch,
+and new removal candidates are never added without another confirmation.
 
 ## Hard contracts
 
