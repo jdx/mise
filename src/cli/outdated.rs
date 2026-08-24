@@ -144,8 +144,7 @@ impl Outdated {
         if !self.bump {
             table.with(Remove::column(ByColumnName::new("bump")));
         }
-        table::default_style(&mut table, self.no_header);
-        miseprintln!("{table}");
+        table::print(&mut table, self.no_header)?;
         Ok(())
     }
 

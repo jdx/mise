@@ -28,8 +28,7 @@ impl ShellAliasLs {
             })
             .collect::<Vec<_>>();
         let mut table = tabled::Table::new(rows);
-        table::default_style(&mut table, self.no_header);
-        miseprintln!("{table}");
+        table::print(&mut table, self.no_header)?;
         Ok(())
     }
 }

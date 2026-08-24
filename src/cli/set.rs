@@ -252,8 +252,7 @@ impl Set {
             }
         }
         let mut table = tabled::Table::new(env);
-        table::default_style(&mut table, false);
-        miseprintln!("{table}");
+        table::print(&mut table, false)?;
         Ok(())
     }
 

@@ -23,7 +23,31 @@ pub(crate) fn term_size_settings() -> SettingMinWidth {
     // .with(Height::increase(*TERM_HEIGHT))
 }
 
-pub(crate) fn default_style(table: &mut Table, no_headers: bool) {
+/// Style `table` and print it, with the fill taken off the end of each row.
+///
+/// `tabled` brings every cell up to its column's width, so the last column leaves trailing spaces
+/// on every row shorter than the widest one. The `Padding::zero()` below does not prevent that:
+/// padding is the space *around* a cell, and the fill that brings it up to the column width is
+/// added separately. [`MiseTable::print`] already trims the comfy_table side the same way.
+///
+/// The only entry point on purpose. `default_style` stays private so a table cannot be printed
+/// without this step, which is how the trailing spaces got there in the first place.
+pub(crate) fn print(table: &mut Table, no_headers: bool) -> Result<()> {
+    default_style(table, no_headers);
+    // One `miseprintln!`, not one per line: this way the newlines land exactly where
+    // `miseprintln!("{table}")` used to put them, including for a table with no rows, and the only
+    // difference is the trailing space.
+    let rendered = table.to_string();
+    let trimmed = rendered
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    miseprintln!("{trimmed}");
+    Ok(())
+}
+
+fn default_style(table: &mut Table, no_headers: bool) {
     let header = |h: &_| style(h).italic().magenta().to_string();
 
     if no_headers || !console::user_attended() || cfg!(test) {
