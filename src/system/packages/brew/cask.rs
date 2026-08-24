@@ -40,6 +40,7 @@ const DEFAULT_APP_DIR: &str = "/Applications";
 /// `brew install --appdir`; see [`target_app_dir`] and
 /// docs/bootstrap/packages/brew.md
 const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
+const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 
 pub(crate) struct BrewCaskManager {}
 
@@ -1071,7 +1072,94 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
             )?;
         }
     }
+    extract_nested_cask_archives(&extract_dir, pr)?;
     Ok(extract_dir)
+}
+
+fn extract_nested_cask_archives(extract_dir: &Path, pr: Option<&dyn SingleReport>) -> Result<()> {
+    for depth in 0..MAX_NESTED_CASK_ARCHIVES {
+        let Some(archive) = single_nested_cask_archive(extract_dir)? else {
+            return Ok(());
+        };
+        let filename = archive
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| eyre!("brew-cask: nested archive name is not valid UTF-8"))?
+            .to_string();
+        let nested = extract_dir.with_file_name(format!(
+            ".{}-nested-{depth}",
+            extract_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("cask")
+        ));
+        file::remove_all(&nested)?;
+        file::rename(&archive, &nested)?;
+        file::remove_all(extract_dir)?;
+        file::create_dir_all(extract_dir)?;
+        let result = extract_nested_cask_archive(&nested, extract_dir, &filename, pr);
+        let cleanup = file::remove_all(&nested);
+        result?;
+        cleanup?;
+    }
+    if single_nested_cask_archive(extract_dir)?.is_some() {
+        bail!("brew-cask: nested archive depth exceeds {MAX_NESTED_CASK_ARCHIVES}");
+    }
+    Ok(())
+}
+
+fn single_nested_cask_archive(root: &Path) -> Result<Option<PathBuf>> {
+    let mut entries = std::fs::read_dir(root)?.filter(|entry| match entry {
+        Ok(entry) => entry.file_name() != "__MACOSX",
+        Err(_) => true,
+    });
+    let Some(entry) = entries.next().transpose()? else {
+        return Ok(None);
+    };
+    if entries.next().is_some() || !entry.file_type()?.is_file() {
+        return Ok(None);
+    }
+    let path = entry.path();
+    let filename = entry.file_name();
+    let filename = filename
+        .to_str()
+        .ok_or_else(|| eyre!("brew-cask: nested archive name is not valid UTF-8"))?;
+    if is_dmg_archive(&path, filename)? {
+        return Ok(Some(path));
+    }
+    let format = cask_extraction_format(&path, filename)?;
+    Ok(matches!(
+        format,
+        ExtractionFormat::TarGz
+            | ExtractionFormat::TarXz
+            | ExtractionFormat::TarBz2
+            | ExtractionFormat::TarZst
+            | ExtractionFormat::Tar
+            | ExtractionFormat::Zip
+            | ExtractionFormat::SevenZip
+    )
+    .then_some(path))
+}
+
+fn extract_nested_cask_archive(
+    archive: &Path,
+    extract_dir: &Path,
+    filename: &str,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    if is_dmg_archive(archive, filename)? {
+        file::un_dmg(archive, extract_dir)
+    } else {
+        file::extract_archive(
+            archive,
+            extract_dir,
+            cask_extraction_format(archive, filename)?,
+            &ExtractOptions {
+                pr,
+                ..Default::default()
+            },
+        )
+    }
 }
 
 async fn execute_lifecycle_hook(
@@ -11026,6 +11114,16 @@ end
     }
 
     #[test]
+    fn detects_a_single_nested_dmg() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dmg = tmp.path().join("Display Pilot 2Setup.dmg");
+        std::fs::write(&dmg, b"nested dmg")?;
+
+        assert_eq!(single_nested_cask_archive(tmp.path())?, Some(dmg));
+        Ok(())
+    }
+
+    #[test]
     fn raw_executable_keeps_url_filename() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let archive = tmp.path().join("cached-name");
@@ -11037,6 +11135,59 @@ end
             raw_cask_artifact_name(&cask, &archive, "cached-name")?,
             ("claude".to_string(), true)
         );
+        Ok(())
+    }
+
+    #[test]
+    fn detects_a_single_suffixless_nested_archive() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("download");
+        std::fs::write(&archive, b"PK\x03\x04nested zip")?;
+
+        assert_eq!(single_nested_cask_archive(tmp.path())?, Some(archive));
+        Ok(())
+    }
+
+    #[test]
+    fn detects_a_single_nested_archive_with_macos_metadata() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("nested.zip");
+        std::fs::write(&archive, b"PK\x03\x04nested zip")?;
+        file::create_dir_all(tmp.path().join("__MACOSX"))?;
+        std::fs::write(tmp.path().join("__MACOSX/._nested.zip"), b"metadata")?;
+
+        assert_eq!(single_nested_cask_archive(tmp.path())?, Some(archive));
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_expand_unsupported_nested_formats() -> Result<()> {
+        for filename in [
+            "payload.gz",
+            "archive.rar",
+            "archive.tar.br",
+            "archive.tar.lz4",
+            "archive.tar.sz",
+        ] {
+            let tmp = tempfile::tempdir()?;
+            std::fs::write(tmp.path().join(filename), b"unsupported")?;
+            assert_eq!(single_nested_cask_archive(tmp.path())?, None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_expand_multiple_or_raw_nested_files() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("nested.zip");
+        std::fs::write(&archive, b"PK\x03\x04nested zip")?;
+        std::fs::write(tmp.path().join("readme.txt"), b"readme")?;
+        assert_eq!(single_nested_cask_archive(tmp.path())?, None);
+
+        file::remove_file(tmp.path().join("readme.txt"))?;
+        file::remove_file(&archive)?;
+        std::fs::write(tmp.path().join("binary"), b"#!/bin/sh\n")?;
+        assert_eq!(single_nested_cask_archive(tmp.path())?, None);
         Ok(())
     }
 
