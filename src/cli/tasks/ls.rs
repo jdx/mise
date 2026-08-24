@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::config::{self, Config};
 use crate::dirs;
+use crate::file;
 use crate::file::display_rel_path;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
@@ -164,13 +165,17 @@ impl TasksLs {
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)
         if all_tasks.is_empty()
-            && !cfg!(windows)
             && let Some(cwd) = &*dirs::CWD
         {
             let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
-            if !find_non_executable_task_files(&includes).is_empty() {
+            // One file is enough to act on, and `make_executable_hint` is the only thing that
+            // knows what "make it executable" means on this platform. Bound to a local because
+            // under edition 2024 an `if let` scrutinee temporary is dropped before the body runs.
+            let non_executable = find_non_executable_task_files(&includes);
+            if let Some(path) = non_executable.first() {
                 warn!(
-                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
+                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. {}",
+                    file::make_executable_hint(path)
                 );
             }
         }

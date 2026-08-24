@@ -184,9 +184,6 @@ async fn make_task_executable(
     name: &str,
     task_context: Option<&TaskLoadContext>,
 ) -> Result<Option<Task>> {
-    if cfg!(windows) {
-        return Ok(None);
-    }
     let Some(cwd) = &*dirs::CWD else {
         return Ok(None);
     };
@@ -217,11 +214,24 @@ async fn make_task_executable(
         return Ok(None);
     };
 
+    // The prompt below is the only part Windows cannot use: `make_executable` does not change
+    // whether Windows will run a file, so a "yes" would be taken and change nothing. The warning
+    // itself is still wanted -- when the project has other tasks this is the only place that names
+    // the file at all -- so on Windows it carries the remedy instead of handing off to a prompt.
+    let windows_has_no_prompt = cfg!(windows);
+    let remedy = if windows_has_no_prompt {
+        format!(" {}", file::make_executable_hint(&path))
+    } else {
+        String::new()
+    };
     warn!(
-        "no task {} found, but a non-executable file exists at {}",
+        "no task {} found, but a non-executable file exists at {}{remedy}",
         style::ered(name),
         display_path(&path)
     );
+    if windows_has_no_prompt {
+        return Ok(None);
+    }
     let confirmed = config::Settings::get().yes
         || prompt::confirm("Mark this file as executable to allow it to be run as a task?")?
             .is_yes();
@@ -307,12 +317,13 @@ async fn err_no_task(
         }
 
         // Check if there are non-executable files in task include directories
-        if !cfg!(windows)
-            && let Some(cwd) = &*dirs::CWD
-        {
+        if let Some(cwd) = &*dirs::CWD {
             let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
             let non_exec_files = find_non_executable_task_files(&includes);
-            if !non_exec_files.is_empty() {
+            // The remedy differs by platform and `make_executable_hint` is the only thing that
+            // knows how, so it gets one file to name rather than the list. The count and the
+            // directories below still say how much is affected.
+            if let Some(first) = non_exec_files.first() {
                 let dirs_with_files: Vec<String> = includes
                     .iter()
                     .filter(|d| d.is_dir())
@@ -321,16 +332,11 @@ async fn err_no_task(
                 bail!(
                     "no tasks defined in {}, but found {} non-executable file(s) in {}.\n\
                         Files must be executable to be detected as tasks.\n\
-                        Run `chmod +x` on the task files to fix this, e.g.:\n  chmod +x {}",
+                        {}",
                     display_path(dirs::CWD.clone().unwrap_or_default()),
                     non_exec_files.len(),
                     dirs_with_files.join(", "),
-                    non_exec_files
-                        .iter()
-                        .take(5)
-                        .map(display_path)
-                        .collect::<Vec<_>>()
-                        .join(" "),
+                    file::make_executable_hint(first),
                 );
             }
         }
