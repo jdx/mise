@@ -3,15 +3,20 @@
 use crate::file::display_path;
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use thiserror::Error;
 
 /// A TOML parsing error with source location information for rich display.
+///
+/// The message deliberately does not name the file. `src` already does, and miette prints it above
+/// the snippet, so repeating it here rendered the same path twice in two different forms -- raw
+/// from `Path::display` in the message, shortened by [`display_path`] in the snippet header. On
+/// Windows the duplicate was also the one that wrapped, mid drive letter. Every caller that shows
+/// this error without the snippet names the file itself.
 #[derive(Debug, Error, Diagnostic)]
-#[error("Invalid TOML in config file: {}", path.display())]
+#[error("Invalid TOML in config file")]
 #[diagnostic(code(mise::config::parse_error))]
 pub(crate) struct TomlParseError {
-    path: PathBuf,
     #[source_code]
     src: NamedSource<String>,
     #[label("{message}")]
@@ -62,7 +67,6 @@ pub(crate) fn toml_parse_error(err: &toml::de::Error, source: &str, path: &Path)
         .unwrap_or_else(|| SourceSpan::from((0, 0)));
 
     let diagnostic = TomlParseError {
-        path: path.to_path_buf(),
         src: NamedSource::new(display_path(path), source.to_string()),
         span,
         message,
