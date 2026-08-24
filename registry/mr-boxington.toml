@@ -1,0 +1,5 @@
+backends = ["github:jdx/mr-boxington"]
+bins = ["mbx"]
+description = "A Cargo wrapper with a shared, self-pruning compilation cache"
+test = { cmd = "mbx --version", expected = "mbx {{version}}" }
+version_order = "semver"
