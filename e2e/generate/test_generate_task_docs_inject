@@ -31,6 +31,10 @@ EOF
 
 mise generate task-docs --inject --output task_docs.md
 
+# --inject writes too, so it says so. Run before the content assertion below, which re-runs the
+# command anyway; the injection is idempotent between the two.
+assert_contains "mise generate task-docs --inject --output task_docs.md" "task_docs.md"
+
 assert "cat task_docs.md" 'hello world
 
 <!-- mise-tasks -->

@@ -69,13 +69,17 @@ impl TaskStubs {
             }
             file::write(&stub.path, &stub.output)?;
             file::make_executable(&stub.path)?;
+            miseprintln!("Wrote to {}", display_path(&stub.path));
             // Windows will not execute the `#!/bin/sh` stub, so it needs something it can launch.
             // Written on every host: stubs are committed, and the contributor who runs one on
             // Windows is not the person who generated it.
+            //
+            // Reported like the stub is: it is a second committed file, and a run that names one
+            // path while leaving two behind is how it goes unnoticed into a commit.
             if let Some(launcher_path) = super::windows_launcher_path(&stub.path) {
                 file::write(&launcher_path, &stub.launcher)?;
+                miseprintln!("Wrote to {}", display_path(&launcher_path));
             }
-            miseprintln!("Wrote to {}", display_path(&stub.path));
         }
         Ok(())
     }

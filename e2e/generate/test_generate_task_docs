@@ -109,6 +109,11 @@ mise generate task-docs --output test_docs.md
 assert_contains "cat test_docs.md" '## `file-output`'
 assert_contains "cat test_docs.md" "Task for file output test"
 
+# Writing branches say what they wrote. Only the branch that prints the document to stdout stays
+# quiet, because there the document *is* the output.
+assert_contains "mise generate task-docs --output test_docs.md" "Wrote to"
+assert_contains "mise generate task-docs --output test_docs.md" "test_docs.md"
+
 # Test 7: Multi-file output
 mkdir -p docs_output
 mise generate task-docs --multi --output docs_output
@@ -128,6 +133,10 @@ mise generate task-docs --multi --index --output docs_output
 assert "ls docs_output/index.md" ""
 assert_contains "cat docs_output/index.md" "# Tasks"
 assert_contains "cat docs_output/index.md" "[file-output](./file-output.md)"
+
+# One line per file in --multi, the same way task-stubs reports each stub.
+assert_contains "mise generate task-docs --multi --output docs_output" "file-output.md"
+assert_contains "mise generate task-docs --multi --index --output docs_output" "index.md"
 
 # Test 8: Performance test - should be fast even with complex environment
 cat <<EOF >mise.toml

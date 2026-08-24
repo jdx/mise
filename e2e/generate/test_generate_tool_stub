@@ -203,12 +203,27 @@ assert_succeed "mise generate tool-stub cross-stub --skip-download \
   --platform-url windows-x64:'https://example.com/tool-windows.zip'"
 assert_succeed "test -f cross-stub.cmd"
 
+# The launcher is a second committed file, so the run names it as well as the stub. Same verb as
+# the stub's own line, which is why both are printed from one place.
+assert_contains "mise generate tool-stub named-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz' \
+  --platform-url windows-x64:'https://example.com/tool-windows.zip'" "Windows launcher"
+assert_contains "mise generate tool-stub named-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz' \
+  --platform-url windows-x64:'https://example.com/tool-windows.zip'" "named-stub.cmd"
+
 # Ships for unix only -> no launcher. Without this the check above would pass even if the
 # launcher were written unconditionally.
 assert_succeed "mise generate tool-stub unix-only-stub --skip-download \
   --platform-url linux-x64:'https://example.com/tool-linux.tar.gz' \
   --platform-url macos-arm64:'https://example.com/tool-macos.tar.gz'"
 assert_fail "test -f unix-only-stub.cmd"
+
+# and the negative control: no launcher written, so no launcher line. Without this the assertions
+# above would pass even if the line were printed unconditionally.
+assert_not_contains "mise generate tool-stub unix-only-stub --skip-download \
+  --platform-url linux-x64:'https://example.com/tool-linux.tar.gz' \
+  --platform-url macos-arm64:'https://example.com/tool-macos.tar.gz'" "Windows launcher"
 
 # A stub that stops shipping for Windows loses the launcher, which would otherwise keep working and
 # contradict the platforms the stub now declares.
