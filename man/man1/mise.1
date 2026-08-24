@@ -98,6 +98,9 @@ Default to always show with `MISE_TASK_TIMINGS=1`
 .TP
 \fB\-\-trace\fR
 Sets log level to trace
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH ARGUMENTS
 .TP
 \fB<TASK>\fR
@@ -833,6 +836,9 @@ See https://mise.jdx.dev/dev\-tools/shims.html#shims\-vs\-path for more informat
 .TP
 \fB\-\-status\fR
 Show "mise: <TOOL>@<VERSION>" message when changing directories
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -851,13 +857,21 @@ Filter aliases by tool
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE TOOL-ALIAS GET"
 Show an alias for a tool
 
 This is the contents of a tool_alias.<TOOL> entry in ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise tool\-alias get <TOOL> <ALIAS>
+\fBUsage:\fR mise tool\-alias get [OPTIONS] <TOOL> <ALIAS>
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -883,6 +897,9 @@ For user config, aliases are defined like the following in `~/.config/mise/confi
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -893,8 +910,13 @@ Add/update an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise tool\-alias set <TOOL> <ALIAS> [<VALUE>]
+\fBUsage:\fR mise tool\-alias set [OPTIONS] <TOOL> <ALIAS> [<VALUE>]
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -911,8 +933,13 @@ Clears an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise tool\-alias unset <TOOL> [<ALIAS>]
+\fBUsage:\fR mise tool\-alias unset [OPTIONS] <TOOL> [<ALIAS>]
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -921,6 +948,26 @@ The tool/backend to remove the alias from
 .TP
 \fB<ALIAS>\fR
 The alias to remove
+.SH "MISE BACKENDS"
+Manage backends
+.PP
+\fBUsage:\fR mise backends [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BACKENDS LS"
+List built\-in backends
+.PP
+\fBUsage:\fR mise backends ls [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BIN-PATHS"
 List all the active runtime bin paths
 .PP
@@ -934,6 +981,9 @@ Output executable names instead of bin directories
 .TP
 \fB\-J, \-\-json\fR
 Output executable entries in JSON format (implies \-\-bin\-names)
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1020,6 +1070,19 @@ Can be passed multiple times or as a comma\-separated list.
 .TP
 \fB\-\-update\fR
 Refresh package manager metadata and update configured repos
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP ACCOUNTS"
+Manage Linux users and groups from `[bootstrap.users]` and `[bootstrap.groups]`
+.PP
+\fBUsage:\fR mise bootstrap accounts [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP ACCOUNTS APPLY"
 Apply configured Linux users and groups
 .PP
@@ -1033,6 +1096,9 @@ Print what would change without changing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP ACCOUNTS STATUS"
 Show configured Linux user and group state
 .PP
@@ -1046,6 +1112,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 when any account is not converged
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP COMPOSE"
+Manage Docker Compose projects from `[bootstrap.compose]`
+.PP
+\fBUsage:\fR mise bootstrap compose [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP COMPOSE APPLY"
 Apply configured Docker Compose project state
 .PP
@@ -1059,6 +1138,9 @@ Print what would change without changing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP COMPOSE STATUS"
 Show configured Docker Compose project state
 .PP
@@ -1072,6 +1154,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 when any Compose project is not converged
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP DOTFILES"
+Manage dotfiles from `[dotfiles]`
+.PP
+\fBUsage:\fR mise bootstrap dotfiles [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP DOTFILES ADD"
 Add or update dotfiles in `[dotfiles]`
 
@@ -1110,6 +1205,9 @@ Source path to use for a single target
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1136,6 +1234,9 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1160,6 +1261,9 @@ Source path to use if the target is not yet managed
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt when adding an unmanaged target
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1179,6 +1283,9 @@ Output in JSON format
 \fB\-\-missing\fR
 Exit with code 1 if any configured dotfiles are not in their desired
 state (missing, source missing, differs)
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1204,11 +1311,24 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<TARGET>\fR
 Only unapply these targets
+.SH "MISE BOOTSTRAP FILES"
+Manage privileged files and directories from `[bootstrap.files]` and `[bootstrap.directories]`
+.PP
+\fBUsage:\fR mise bootstrap files [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP FILES APPLY"
 Apply configured privileged files and directories
 .PP
@@ -1225,6 +1345,9 @@ Skip the confirmation prompt
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP FILES STATUS"
 Show configured privileged file and directory state
 .PP
@@ -1241,6 +1364,19 @@ Exit with code 1 when any resource is not converged
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP FIREWALL"
+Manage the Linux host firewall from `[bootstrap.linux.firewall]`
+.PP
+\fBUsage:\fR mise bootstrap firewall [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP FIREWALL APPLY"
 Apply the configured Linux host firewall
 .PP
@@ -1254,6 +1390,9 @@ Print what would change without changing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP FIREWALL STATUS"
 Show configured Linux host firewall state
 .PP
@@ -1267,6 +1406,29 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 when the firewall is not converged
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP LINUX"
+Manage Linux bootstrap config from `[bootstrap.linux]`
+.PP
+\fBUsage:\fR mise bootstrap linux [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS"
+Manage systemd user services from `[bootstrap.linux.systemd.units]`
+.PP
+\fBUsage:\fR mise bootstrap linux systemd\-units [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
 \fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP
@@ -1278,6 +1440,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS STATUS"
 \fBUsage:\fR mise bootstrap linux systemd\-units status [OPTIONS]
 .PP
@@ -1289,6 +1454,29 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured systemd user service is not in its desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MACOS"
+Manage macOS bootstrap config from `[bootstrap.macos]`
+.PP
+\fBUsage:\fR mise bootstrap macos [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MACOS DEFAULTS"
+Manage macOS defaults from `[bootstrap.macos.defaults]`
+.PP
+\fBUsage:\fR mise bootstrap macos defaults [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP MACOS DEFAULTS APPLY"
 \fBUsage:\fR mise bootstrap macos defaults apply [OPTIONS]
 .PP
@@ -1300,6 +1488,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP MACOS DEFAULTS STATUS"
 \fBUsage:\fR mise bootstrap macos defaults status [OPTIONS]
 .PP
@@ -1311,6 +1502,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured defaults are not in their desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS"
+Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.PP
+\fBUsage:\fR mise bootstrap macos launchd\-agents [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS APPLY"
 \fBUsage:\fR mise bootstrap macos launchd\-agents apply [OPTIONS]
 .PP
@@ -1322,6 +1526,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS STATUS"
 \fBUsage:\fR mise bootstrap macos launchd\-agents status [OPTIONS]
 .PP
@@ -1333,6 +1540,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured LaunchAgent is not in its desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE"
+Manage mise shell activation from `[bootstrap.mise_shell_activate]`
+.PP
+\fBUsage:\fR mise bootstrap mise\-shell\-activate [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE APPLY"
 \fBUsage:\fR mise bootstrap mise\-shell\-activate apply [OPTIONS]
 .PP
@@ -1344,6 +1564,9 @@ Print the actions that would run without writing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE STATUS"
 \fBUsage:\fR mise bootstrap mise\-shell\-activate status [OPTIONS]
 .PP
@@ -1355,6 +1578,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured shell activation is not in its desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP PACKAGES"
+Manage bootstrap system packages from `[bootstrap.packages]`
+.PP
+\fBUsage:\fR mise bootstrap packages [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PACKAGES APPLY"
 Apply system packages from `[bootstrap.packages]`
 
@@ -1383,11 +1619,27 @@ Skip the confirmation prompt
 .TP
 \fB\-\-update\fR
 Refresh package manager metadata first (apk: `\-\-update\-cache`, apt: `apt\-get update`)
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<PACKAGE>\fR
 Packages in `manager:package` form; defaults to everything configured in [bootstrap.packages]
+.SH "MISE BOOTSTRAP PACKAGES BREW"
+Manage Homebrew taps used by bootstrap packages
+
+These commands edit `[bootstrap.brew.taps]` so tapped formulae and casks
+can be fetched directly by mise without a Homebrew installation.
+.PP
+\fBUsage:\fR mise bootstrap packages brew [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PACKAGES BREW TAP"
 Add a Homebrew tap URL to [bootstrap.brew.taps]
 .PP
@@ -1404,6 +1656,9 @@ Print the config change without writing it
 .TP
 \fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1428,6 +1683,9 @@ Print the config change without writing it
 .TP
 \fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1465,6 +1723,9 @@ Print the config change without writing config
 .TP
 \fB\-p, \-\-path, \-\-file\fR \fI<PATH>\fR
 Write to this config file or directory
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PACKAGES PRUNE"
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
@@ -1490,6 +1751,9 @@ Print what would be removed without deleting anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PACKAGES STATUS"
 Show the status of system packages from `[bootstrap.packages]`
 .PP
@@ -1503,6 +1767,9 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured packages are not in their desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PACKAGES UPGRADE"
 Upgrade installed bootstrap packages from `[bootstrap.packages]`
 
@@ -1529,6 +1796,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1566,6 +1836,9 @@ Write to this config file or directory
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1587,6 +1860,19 @@ Exit 2 when the plan contains changes, 0 when unchanged, and 1 on errors
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP PLUGINS"
+Manage package manager plugins declared in `[bootstrap.plugins]`
+.PP
+\fBUsage:\fR mise bootstrap plugins [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PLUGINS APPLY"
 \fBUsage:\fR mise bootstrap plugins apply [OPTIONS]
 .PP
@@ -1595,6 +1881,9 @@ Prompt securely for missing bootstrap secret inputs
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print what would happen without installing plugins
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP PLUGINS STATUS"
 \fBUsage:\fR mise bootstrap plugins status [OPTIONS]
 .PP
@@ -1603,6 +1892,9 @@ Print what would happen without installing plugins
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if a declared plugin is missing
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP REMOTE"
 Bootstrap one or more machines over OpenSSH
 .PP
@@ -1693,11 +1985,24 @@ Refresh package manager metadata and update configured repos remotely
 .TP
 \fB\-y, \-\-yes\fR
 Skip remote confirmation prompts
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<TARGET>\fR
 Inventory host names from `[bootstrap.remote.hosts]`
+.SH "MISE BOOTSTRAP REPOS"
+Manage git repo checkouts from `[bootstrap.repos]`
+.PP
+\fBUsage:\fR mise bootstrap repos [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP REPOS APPLY"
 \fBUsage:\fR mise bootstrap repos apply [OPTIONS]
 .PP
@@ -1709,6 +2014,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP REPOS EXEC"
 \fBUsage:\fR mise bootstrap repos exec [OPTIONS] [<PATH>] ... <COMMAND> ...
 .PP
@@ -1720,6 +2028,9 @@ Continue running in other repos after a command fails
 .TP
 \fB\-n, \-\-dry\-run\fR
 Print the commands that would run without running them
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1739,6 +2050,9 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured repo is not in its desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP REPOS UPDATE"
 \fBUsage:\fR mise bootstrap repos update [OPTIONS] [<PATH>] ...
 .PP
@@ -1750,11 +2064,24 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<PATH>\fR
 Update only matching configured or expanded paths
+.SH "MISE BOOTSTRAP SECRETS"
+Inspect bootstrap secret inputs without revealing their values
+.PP
+\fBUsage:\fR mise bootstrap secrets [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP SECRETS STATUS"
 Show whether declared bootstrap secret inputs are available
 .PP
@@ -1768,6 +2095,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if a declared secret input is unavailable
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP SERVICES"
+Manage Linux system services from `[bootstrap.services]`
+.PP
+\fBUsage:\fR mise bootstrap services [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP SERVICES APPLY"
 Apply configured Linux system service state
 .PP
@@ -1781,6 +2121,9 @@ Print what would change without changing anything
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP SERVICES STATUS"
 Show configured Linux system service state
 .PP
@@ -1794,6 +2137,9 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 when any service is not converged
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP STATUS"
 Show the aggregate bootstrap status
 .PP
@@ -1810,6 +2156,19 @@ Exit with code 1 if any configured bootstrap state is not in its desired state
 .TP
 \fB\-\-prompt\-secrets\fR
 Prompt securely for missing bootstrap secret inputs
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP USER"
+Manage current\-user bootstrap settings from `[bootstrap.user]`
+.PP
+\fBUsage:\fR mise bootstrap user [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP USER APPLY"
 \fBUsage:\fR mise bootstrap user apply [OPTIONS]
 .PP
@@ -1821,6 +2180,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE BOOTSTRAP USER STATUS"
 \fBUsage:\fR mise bootstrap user status [OPTIONS]
 .PP
@@ -1832,6 +2194,21 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured user setting is not in its desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE CACHE"
+Manage the mise cache
+
+Run `mise cache` with no args to view the current cache directory.
+.PP
+\fBUsage:\fR mise cache [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE CACHE CLEAR"
 Deletes all cache files in mise
 .PP
@@ -1845,11 +2222,24 @@ Mark all cache files as old
 .TP
 \fB\-\-task\fR \fI<TASK>\fR
 Clear output cache entries for a task name or pattern
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<TOOL>\fR
 Tool(s) to clear cache for e.g.: node, python
+.SH "MISE CACHE PATH"
+Show the cache directory path
+.PP
+\fBUsage:\fR mise cache path [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE CACHE PRUNE"
 Removes stale mise cache files
 
@@ -1866,6 +2256,9 @@ Show pruned files
 .TP
 \fB\-\-dry\-run\fR
 Just show what would be pruned
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1881,6 +2274,9 @@ Inspect output cache entries for a task
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1916,6 +2312,9 @@ dot\-source — it is printed for you to add.
 .TP
 \fB\-\-force\fR
 Replace a file at the target path that mise did not write
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1937,6 +2336,9 @@ Do not print table header
 .TP
 \fB\-\-tracked\-configs\fR
 List all tracked config files
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE CONFIG GET"
 Display the value of a setting in a mise.toml file
 .PP
@@ -1951,6 +2353,9 @@ The path to the mise.toml file to read
 Can be a file path or directory. If a directory is provided, the config file in that directory is used.
 
 If not provided, the nearest mise.toml file will be used
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1972,6 +2377,9 @@ Do not print table header
 .TP
 \fB\-\-tracked\-configs\fR
 List all tracked config files
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE CONFIG SET"
 Set the value of a setting in a mise.toml file
 .PP
@@ -1991,6 +2399,9 @@ If not provided, the nearest mise.toml file will be used
 .RS
 \fIDefault: \fRinfer
 .RE
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -1999,6 +2410,18 @@ The path of the config to display
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
+.SH "MISE DEACTIVATE"
+Disable mise for current shell session
+
+This can be used to temporarily disable mise in a shell session.
+.PP
+\fBUsage:\fR mise deactivate [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE DOCTOR"
 Check mise installation for possible problems
 .PP
@@ -2008,6 +2431,9 @@ Check mise installation for possible problems
 .PP
 .TP
 \fB\-J, \-\-json\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE DOCTOR PATH"
 Print the current PATH entries mise is providing
 .PP
@@ -2018,6 +2444,9 @@ Print the current PATH entries mise is providing
 .TP
 \fB\-f, \-\-full\fR
 Print all entries including those not provided by mise
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE EN"
 Starts a new shell with the mise environment built from the current configuration
 
@@ -2034,6 +2463,9 @@ Note that changing directories will not update the mise environment.
 Shell to start
 
 Defaults to $SHELL
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2070,6 +2502,9 @@ Only show redacted environment variables
 .TP
 \fB\-\-values\fR
 Only show values of environment variables
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2139,6 +2574,9 @@ Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2165,6 +2603,19 @@ Check if the configs are formatted, no formatting is done
 .TP
 \fB\-s, \-\-stdin\fR
 Read config from stdin and write its formatted version into stdout
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE GENERATE"
+Generate files for various tools/services
+.PP
+\fBUsage:\fR mise generate [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE GENERATE CONFIG"
 Generate a mise.toml file
 .PP
@@ -2181,6 +2632,9 @@ Show what would be generated without writing to file
 .TP
 \fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
 Path to a .tool\-versions file to import tools from
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2205,6 +2659,9 @@ The name of the devcontainer
 .TP
 \fB\-w, \-\-write\fR
 write to .devcontainer/devcontainer.json
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE GENERATE GIT-PRE-COMMIT"
 Generate a git pre\-commit hook
 
@@ -2234,6 +2691,9 @@ Which hook to generate (saves to .git/hooks/$hook)
 .RS
 \fIDefault: \fRpre\-commit
 .RE
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2268,6 +2728,9 @@ the name of the workflow to generate
 .RS
 \fIDefault: \fRci
 .RE
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE GENERATE INSTALL-SCRIPT"
 Generate a script to download+execute mise
 
@@ -2307,6 +2770,9 @@ project on Windows has nothing to run without this.
 Generated on every host, not only on Windows: the file is committed, and whoever runs it
 on Windows is not the person who generated it. Requires `\-\-write`, since stdout cannot
 carry two files.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE GENERATE TASK-DOCS"
 Generate documentation for tasks in a project
 .PP
@@ -2339,6 +2805,9 @@ root directory to search for tasks
 .RS
 \fIDefault: \fRsimple
 .RE
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE GENERATE TASK-STUBS"
 Generates shims to run mise tasks
 
@@ -2364,6 +2833,9 @@ Use `\-\-mise\-bin=./bin/mise` to use a mise bin generated from `mise generate i
 .RS
 \fIDefault: \fRmise
 .RE
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE GENERATE TOOL-STUB"
 Generate a tool stub for HTTP\-based tools
 
@@ -2448,6 +2920,9 @@ Version of the tool
 .RS
 \fIDefault: \fRlatest
 .RE
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2468,6 +2943,9 @@ List directories that would be removed without actually removing them
 .TP
 \fB\-\-config\fR
 Also remove config directory
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE EDIT"
 Edit mise.toml interactively
 .PP
@@ -2484,6 +2962,9 @@ Show what would be generated without writing to file
 .TP
 \fB\-t, \-\-tool\-versions\fR \fI<TOOL_VERSIONS>\fR
 Path to a .tool\-versions file to import tools from
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2564,6 +3045,9 @@ Install tool(s) to the system\-wide shared directory
 
 Installs to /usr/local/share/mise/installs (or MISE_SYSTEM_DATA_DIR/installs).
 May require elevated permissions (e.g. sudo).
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2574,8 +3058,13 @@ Install a tool version to a specific path
 
 Used for building a tool to a directory for use outside of mise
 .PP
-\fBUsage:\fR mise install\-into <TOOL@VERSION> <PATH>
+\fBUsage:\fR mise install\-into [OPTIONS] <TOOL@VERSION> <PATH>
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2602,6 +3091,9 @@ Only consider versions released before this date or older than this duration
 
 Supports absolute dates like "2024\-06\-01" and relative durations like "90d" or "1y".
 Overrides per\-tool `minimum_release_age` options and the global `minimum_release_age` setting.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2622,6 +3114,9 @@ Use this for adding installs either custom compiled outside mise or built with a
 .TP
 \fB\-f, \-\-force\fR
 Overwrite an existing tool version if it exists
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2706,6 +3201,9 @@ preserved to avoid unexpected lockfile drift. This flag upgrades them
 to the latest format with request\-specific version bindings.
 Format upgrades always process every configured tool and cannot be
 combined with tool arguments.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2773,6 +3271,9 @@ Display versions matching this prefix
 .TP
 \fB\-\-prunable\fR
 List only tools that can be pruned with `mise prune`
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2815,6 +3316,9 @@ Requires \-\-json and \-\-no\-versions\-host.
 
 This prevents metadata consumers from accepting empty fallback results
 when a backend's metadata\-producing upstream request fails.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -2824,6 +3328,58 @@ Tool to get versions for
 \fB<PREFIX>\fR
 The version prefix to use when querying the latest version
 same as the first argument after the "@"
+.SH "MISE MCP"
+Run Model Context Protocol (MCP) server
+
+This command starts an MCP server that exposes mise functionality
+to AI assistants over stdin/stdout using JSON\-RPC protocol.
+
+The MCP server provides access to:
+\- Installed and available tools
+\- Task definitions and execution
+\- Environment variables
+\- Configuration information
+\- Task execution via the run_task tool
+
+Resources available:
+\- mise://tools \- List all tools (use ?include_inactive=true to include inactive tools)
+\- mise://tasks \- List all tasks with their configurations
+\- mise://env \- List all environment variables
+\- mise://config \- Show configuration files and project root
+
+Tools available:
+\- list_commands \- Every mise command, with its declared effect on the world
+\- install_tool \- Install a tool with an optional version (not yet implemented)
+\- run_task \- Execute a mise task with optional arguments
+
+Note: This is primarily intended for integration with AI assistants like Claude,
+Cursor, or other tools that support the Model Context Protocol.
+.PP
+\fBUsage:\fR mise mcp [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE OCI"
+[experimental] Build OCI container images from a mise.toml
+
+Each tool becomes its own OCI layer, so bumping any single tool version
+only invalidates one content\-addressable blob — unlike a Dockerfile where
+changing an early `RUN` invalidates every layer above it.
+
+This command is experimental and requires `mise settings experimental=true`
+(or `MISE_EXPERIMENTAL=1`). Behavior, flags, and output layout may change
+in future releases.
+.PP
+\fBUsage:\fR mise oci [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE OCI BUILD"
 [experimental] Build an OCI image from the current mise.toml
 
@@ -2870,6 +3426,9 @@ Do not embed the currently\-running mise binary at /usr/local/bin/mise
 UID[:GID] to assign to every tar entry in generated layers
 
 Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it defaults to UID. This affects file ownership only; [oci].user controls the image USER directive.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE OCI PUSH"
 [experimental] Build an OCI image and push it to a registry
 
@@ -2930,6 +3489,9 @@ Overrides [oci].user_id / [oci].group_id. Defaults to 0:0. If GID is omitted, it
 Maintain the tag as a multi\-arch image index
 
 Pushes this build's manifest by digest and points the tag at an OCI image index containing one entry per platform, preserving entries other architectures pushed. Run `mise oci push \-\-update\-index` from one runner per platform to assemble a multi\-arch tag.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3000,6 +3562,9 @@ Allocate a TTY (pass `\-t` to the engine)
 .TP
 \fB\-w, \-\-workdir\fR \fI<WORKDIR>\fR
 Working directory inside the container
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3045,6 +3610,9 @@ Placeholder for future monorepo outdated checks; `mise outdated \-\-monorepo` is
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3071,6 +3639,9 @@ Output in JSON format
 .TP
 \fB\-\-refresh\fR
 Bypass the local cache and re\-fetch
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE PLUGINS"
 Manage plugins
 .PP
@@ -3101,6 +3672,9 @@ List installed plugins
 
 This is the default behavior but can be used with \-\-core
 to show core and user plugins
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE PLUGINS INSTALL"
 Install a plugin
 
@@ -3128,6 +3702,9 @@ Values below 1 are treated as 1
 .TP
 \fB\-v, \-\-verbose\fR
 Show installation output
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3150,6 +3727,9 @@ This is used for developing a plugin.
 .TP
 \fB\-f, \-\-force\fR
 Overwrite existing plugin
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3192,6 +3772,9 @@ e.g.: main 1234abc
 .TP
 \fB\-\-user\fR
 List installed plugins
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE PLUGINS LS-REMOTE"
 
 List all available remote plugins
@@ -3212,6 +3795,9 @@ Show the git url for each plugin e.g.: https://github.com/mise\-plugins/mise\-po
 .TP
 \fB\-\-only\-names\fR
 Only show the name of each plugin by default it will show a "*" next to installed plugins
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE PLUGINS UNINSTALL"
 Removes a plugin
 .PP
@@ -3225,6 +3811,9 @@ Remove all plugins
 .TP
 \fB\-p, \-\-purge\fR
 Also remove the plugin's installs, downloads, and cache
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3244,6 +3833,9 @@ note: this updates the plugin itself, not the runtime versions
 Number of jobs to run in parallel
 Values below 1 are treated as 1
 Default: 4
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3291,6 +3883,9 @@ Run specific deps rule(s) only
 .TP
 \fB\-\-skip\fR \fI<SKIP>\fR
 Skip specific deps rule(s)
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3309,6 +3904,9 @@ Package specs use the format `ecosystem:package`, e.g., `npm:react` or `npm:@typ
 .TP
 \fB\-D, \-\-dev\fR
 Add as a development dependency
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3351,6 +3949,9 @@ Run specific deps rule(s) only
 .TP
 \fB\-\-skip\fR \fI<SKIP>\fR
 Skip specific deps rule(s)
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3362,8 +3963,13 @@ Remove a dependency
 Removes one or more packages from the project using the appropriate package manager.
 Package specs use the format `ecosystem:package`, e.g., `npm:lodash`.
 .PP
-\fBUsage:\fR mise deps remove <PACKAGES> ...
+\fBUsage:\fR mise deps remove [OPTIONS] <PACKAGES> ...
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3403,6 +4009,9 @@ Placeholder for future monorepo pruning; `mise prune \-\-monorepo` is not implem
 .TP
 \fB\-\-tools\fR
 Prune only unused versions of tools
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3436,6 +4045,9 @@ Output in JSON format
 Include security features for each tool's backends in JSON output.
 
 Requires \-\-json. Security info is de\-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3468,6 +4080,9 @@ currently active in mise.toml.
 .TP
 \fB\-f, \-\-force\fR
 Removes all shims before reshimming
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE RUN"
 Run task(s)
 
@@ -3695,6 +4310,9 @@ Match type: equal, contains, or fuzzy
 .TP
 \fB\-\-no\-header\fR
 Don't display headers
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3724,6 +4342,9 @@ Skip confirmation prompt
 .TP
 \fB\-\-no\-plugins\fR
 Disable auto\-updating plugins
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3793,6 +4414,9 @@ Can be used multiple times.
 Read the value from stdin (for multiline input)
 
 When using \-\-stdin, provide a single key without a value. The value will be read from stdin until EOF.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3824,6 +4448,9 @@ Print all settings with descriptions for shell completions
 .TP
 \fB\-\-json\-extended\fR
 Output in JSON format with sources
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3845,6 +4472,9 @@ This modifies the contents of ~/.config/mise/config.toml
 .TP
 \fB\-l, \-\-local\fR
 Use the local config file instead of the global one
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3868,6 +4498,9 @@ but managed separately with `mise tool\-alias get`
 .TP
 \fB\-l, \-\-local\fR
 Use the local config file instead of the global one
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3903,6 +4536,9 @@ Print all settings with descriptions for shell completions
 .TP
 \fB\-\-json\-extended\fR
 Output in JSON format with sources
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3922,6 +4558,9 @@ See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
 .TP
 \fB\-l, \-\-local\fR
 Use the local config file instead of the global one
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3942,6 +4581,9 @@ This modifies the contents of ~/.config/mise/config.toml
 .TP
 \fB\-l, \-\-local\fR
 Use the local config file instead of the global one
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3973,6 +4615,9 @@ Removes a previously set version
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -3988,11 +4633,19 @@ Manage shell aliases.
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE SHELL-ALIAS GET"
 Show the command for a shell alias
 .PP
-\fBUsage:\fR mise shell\-alias get <shell_alias>
+\fBUsage:\fR mise shell\-alias get [OPTIONS] <shell_alias>
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4011,13 +4664,21 @@ These are defined in `mise.toml` under the `[shell_alias]` section.
 .TP
 \fB\-\-no\-header\fR
 Don't show table header
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE SHELL-ALIAS SET"
 Add/update a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise shell\-alias set <shell_alias> [<COMMAND>]
+\fBUsage:\fR mise shell\-alias set [OPTIONS] <shell_alias> [<COMMAND>]
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4031,13 +4692,38 @@ Removes a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
-\fBUsage:\fR mise shell\-alias unset <shell_alias>
+\fBUsage:\fR mise shell\-alias unset [OPTIONS] <shell_alias>
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<shell_alias>\fR
 The alias to remove
+.SH "MISE SPONSORS"
+Show the companies sponsoring mise and the jdx.dev open source tools
+.PP
+\fBUsage:\fR mise sponsors [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE SYNC"
+Synchronize tools from other version managers with mise
+.PP
+\fBUsage:\fR mise sync [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE SYNC NODE"
 Symlinks all tool versions from an external tool into mise
 
@@ -4058,6 +4744,9 @@ Get tool versions from nodenv
 .TP
 \fB\-\-nvm\fR
 Get tool versions from nvm
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE SYNC PYTHON"
 Symlinks all tool versions from an external tool into mise
 
@@ -4075,6 +4764,9 @@ Get tool versions from pyenv
 .TP
 \fB\-\-uv\fR
 Sync tool versions with uv (2\-way sync)
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE SYNC RUBY"
 Symlinks all ruby tool versions from an external tool into mise
 .PP
@@ -4085,6 +4777,9 @@ Symlinks all ruby tool versions from an external tool into mise
 .TP
 \fB\-\-brew\fR
 Get tool versions from Homebrew
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE TASKS"
 Manage tasks
 .PP
@@ -4128,6 +4823,9 @@ Sort by column. Default is name.
 Sort order. Default is asc.
 .TP
 \fB\-\-usage\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4188,6 +4886,9 @@ Run the task in a specific shell
 .TP
 \fB\-\-silent\fR
 Do not print the command or its output
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4215,6 +4916,9 @@ Display dependencies in DOT format
 .TP
 \fB\-\-hidden\fR
 Show hidden tasks
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4234,6 +4938,9 @@ The task will be created as a standalone script if it does not already exist.
 .TP
 \fB\-p, \-\-path\fR
 Display the path to the task instead of editing it
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4255,6 +4962,9 @@ Explain provider attribution for inferred projects and tasks
 .TP
 \fB\-\-no\-header\fR
 Do not print table headers
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE TASKS INFO"
 Get information about a task
 .PP
@@ -4265,6 +4975,9 @@ Get information about a task
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4319,6 +5032,9 @@ Sort by column. Default is name.
 Sort order. Default is asc.
 .TP
 \fB\-\-usage\fR
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE TASKS RUN"
 Run task(s)
 
@@ -4535,6 +5251,9 @@ Only show errors (skip warnings)
 .TP
 \fB\-\-json\fR
 Output validation results in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4568,11 +5287,24 @@ Also test tools not defined in registry/, guessing how to test it
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
 \fB<TOOLS>\fR
 Tool(s) to test
+.SH "MISE TOKEN"
+Display git provider tokens mise will use
+.PP
+\fBUsage:\fR mise token [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE TOKEN FORGEJO"
 Display the Forgejo token mise will use for a given host
 
@@ -4586,6 +5318,9 @@ authentication issues. The token is masked by default.
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4616,6 +5351,9 @@ Mint a fresh OAuth token even if the cached one has not expired, via the refresh
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4637,6 +5375,9 @@ authentication issues. The token is masked by default.
 .TP
 \fB\-\-unmask\fR
 Show the full unmasked token
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4676,6 +5417,9 @@ Only show requested versions
 .TP
 \fB\-\-tool\-options\fR
 Only show tool options
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4761,6 +5505,9 @@ Does not trust or untrust any files.
 .TP
 \fB\-\-untrust\fR
 Remove explicit trust for this config
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4786,6 +5533,9 @@ Do not actually delete anything
 Like \-\-dry\-run but exits with code 1 if there are tools to uninstall
 
 This is useful for scripts to check if tools need to be uninstalled.
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4810,6 +5560,9 @@ Defaults to [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.
 .TP
 \fB\-g, \-\-global\fR
 Use the global config file
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4819,8 +5572,13 @@ e.g.: NODE_ENV
 .SH "MISE UNTRUST"
 Remove explicit trust for a config
 .PP
-\fBUsage:\fR mise untrust [<CONFIG_FILE>]
+\fBUsage:\fR mise untrust [OPTIONS] [<CONFIG_FILE>]
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4864,6 +5622,9 @@ If a directory is specified, it will look for a config file in that directory fo
 .TP
 \fB\-\-no\-prune\fR
 Do not also prune the installed version
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -4956,6 +5717,9 @@ for a single run.
 .TP
 \fB\-\-raw\fR
 Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -5046,6 +5810,9 @@ Connect backend install command stdin/stdout/stderr directly to the terminal Imp
 .TP
 \fB\-\-remove\fR \fI<TOOL>\fR
 Remove the tool(s) from config file
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -5072,6 +5839,9 @@ If the version is out of date, it will display a warning.
 .TP
 \fB\-J, \-\-json\fR
 Print the version information in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE WATCH"
 Run task(s) and watch for changes to rerun it
 
@@ -5616,6 +6386,9 @@ Use '\-vvv' instead when you need more diagnostic information.
 Show the manual page
 
 This shows the manual page for Watchexec, if the output is a terminal and the 'man' program is available. If not, the manual page is printed to stdout in ROFF format (suitable for writing to a watchexec.1 file).
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -5632,8 +6405,13 @@ Display the installation path for a tool
 
 The tool must be installed for this to work.
 .PP
-\fBUsage:\fR mise where <TOOL@VERSION> [<ASDF_VERSION>]
+\fBUsage:\fR mise where [OPTIONS] <TOOL@VERSION> [<ASDF_VERSION>]
 .PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
@@ -5669,6 +6447,9 @@ Show the plugin name instead of the path
 .TP
 \fB\-\-version\fR
 Show the version instead of the path
+.TP
+\fB\-h, \-\-help\fR
+Print help
 \fBArguments:\fR
 .PP
 .TP
