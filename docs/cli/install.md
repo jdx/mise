@@ -28,7 +28,7 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Show what would be installed without actually installing
-- **`-v --verbose…`** — Show installation output
+- **`-v --verbose`** — Show installation output
 
   This argument will print backend output such as download, configuration, and compilation output.
 - **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are tools to install

@@ -79,12 +79,12 @@ $ mise run build
 - **`-S --silent`** — Don't show any output except for errors
 
   **Environment Variable:** `MISE_SILENT`
-- **`-t --tool… <TOOL@VERSION>`** — Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
-- **`--allow-env… <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
+- **`-t --tool <TOOL@VERSION>`** — Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
+- **`--allow-env <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
   Supports wildcards, e.g. --allow-env='MYAPP_*'
-- **`--allow-net… <HOST>`** — Allow network to specific host (implies --deny-net for everything else)
-- **`--allow-read… <PATH>`** — Allow reads from specific path (implies --deny-read for everything else)
-- **`--allow-write… <PATH>`** — Allow writes to specific path (implies --deny-write for everything else)
+- **`--allow-net <HOST>`** — Allow network to specific host (implies --deny-net for everything else)
+- **`--allow-read <PATH>`** — Allow reads from specific path (implies --deny-read for everything else)
+- **`--allow-write <PATH>`** — Allow writes to specific path (implies --deny-write for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars
 - **`--deny-env`** — Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 - **`--deny-net`** — Block all network access

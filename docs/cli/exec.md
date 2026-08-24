@@ -26,12 +26,12 @@ The "--" separates runtimes from the commands to pass along to the subprocess.
   [default: 4]
 
   **Environment Variable:** `MISE_JOBS`
-- **`--allow-env… <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
+- **`--allow-env <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
   Supports wildcards, e.g. --allow-env='MYAPP_*'
-- **`--allow-net… <HOST>`** — Allow network to specific host (implies --deny-net for everything else)
+- **`--allow-net <HOST>`** — Allow network to specific host (implies --deny-net for everything else)
   macOS only in v1; on Linux falls back to allowing all network
-- **`--allow-read… <PATH>`** — Allow reads from specific path (implies --deny-read for everything else)
-- **`--allow-write… <PATH>`** — Allow writes to specific path (implies --deny-write for everything else)
+- **`--allow-read <PATH>`** — Allow reads from specific path (implies --deny-read for everything else)
+- **`--allow-write <PATH>`** — Allow writes to specific path (implies --deny-write for everything else)
 - **`--deny-all`** — Block reads, writes, network, and env vars
 - **`--deny-env`** — Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
 - **`--deny-net`** — Block all network access

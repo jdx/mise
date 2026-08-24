@@ -46,10 +46,10 @@ to incrementally build cross-platform tool stubs.
 
   **Default:** `http`
 - **`--lock`** — Resolve and embed lockfile data (exact version + platform URLs/checksums) into an existing stub file for reproducible installs without runtime API calls
-- **`--platform-bin… <PLATFORM_BIN>`** — Platform-specific binary paths in the format platform:path
+- **`--platform-bin <PLATFORM_BIN>`** — Platform-specific binary paths in the format platform:path
 
   Examples: --platform-bin windows-x64:tool.exe --platform-bin linux-x64:bin/tool
-- **`--platform-url… <PLATFORM_URL>`** — Platform-specific URLs in the format platform:url or just url (auto-detect platform)
+- **`--platform-url <PLATFORM_URL>`** — Platform-specific URLs in the format platform:url or just url (auto-detect platform)
 
   When the output file already exists, new platforms will be appended to the existing platforms table. Existing platform URLs will be updated if specified again.
 

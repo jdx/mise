@@ -24,6 +24,6 @@ and runs install commands if needed.
   the monorepo root config. Providers are named like //apps/api:uv.
 
   **Environment Variable:** `MISE_MONOREPO`
-- **`--only… <ONLY>`** — Run specific deps rule(s) only
-- **`--skip… <SKIP>`** — Skip specific deps rule(s)
+- **`--only <ONLY>`** — Run specific deps rule(s) only
+- **`--skip <SKIP>`** — Skip specific deps rule(s)
 - **`-h --help`** — Print help

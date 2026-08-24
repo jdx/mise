@@ -61,7 +61,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   This has no practical effect on Windows as the command is always forcefully terminated; see '--stop-signal' for why.
 
   **Default:** `10s`
-- **`--map-signal… <SIGNAL:SIGNAL>`** — Translate signals from the OS to signals to send to the command
+- **`--map-signal <SIGNAL:SIGNAL>`** — Translate signals from the OS to signals to send to the command
 
   Takes a pair of signal names, separated by a colon, such as "TERM:INT" to map SIGTERM to SIGINT. The first signal is the one received by watchexec, and the second is the one sent to the command. The second can be omitted to discard the first signal, such as "TERM:" to not do anything on SIGTERM.
 
@@ -112,7 +112,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 - **`-h --help`** — Print help
 
 ## Filtering
-- **`-w --watch… <PATH>`** — Watch a specific file or directory
+- **`-w --watch <PATH>`** — Watch a specific file or directory
 
   By default, Watchexec watches the current directory.
 
@@ -123,7 +123,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   This option can be specified multiple times to watch multiple files or directories.
 
   The special value '/dev/null', provided as the only path watched, will cause Watchexec to not watch any paths. Other event sources (like signals or key events) may still be used.
-- **`-W --watch-non-recursive… <PATH>`** — Watch a specific directory, non-recursively
+- **`-W --watch-non-recursive <PATH>`** — Watch a specific directory, non-recursively
 
   Unlike '-w', folders watched with this option are not recursed into.
 
@@ -187,20 +187,20 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   This is a shorthand for '--no-discover-ignore', '--no-default-ignore'.
 
   Note that ignores explicitly loaded via other command line options, such as '--ignore' or '--ignore-file', will still be used.
-- **`-e --exts… <EXTENSIONS>`** — Filename extensions to filter to
+- **`-e --exts <EXTENSIONS>`** — Filename extensions to filter to
 
   This is a quick filter to only emit events for files with the given extensions. Extensions can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can be given by repeating the option or by separating them with commas.
-- **`-f --filter… <PATTERN>`** — Filename patterns to filter to
+- **`-f --filter <PATTERN>`** — Filename patterns to filter to
 
   Provide a glob-like filter pattern, and only events for files matching the pattern will be emitted. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
-- **`--filter-file… <PATH>`** — Files to load filters from
+- **`--filter-file <PATH>`** — Files to load filters from
 
   Provide a path to a file containing filters, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--filter' option.
 
   This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
 
   **Environment Variable:** `WATCHEXEC_FILTER_FILES`
-- **`-J --filter-prog… <EXPRESSION>`** — [experimental] Filter programs.
+- **`-J --filter-prog <EXPRESSION>`** — [experimental] Filter programs.
 
   /!\ This option is EXPERIMENTAL and may change and/or vanish without notice.
 
@@ -259,17 +259,17 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   Ignore files that start with shebangs:
 
     'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
-- **`-i --ignore… <PATTERN>`** — Filename patterns to filter out
+- **`-i --ignore <PATTERN>`** — Filename patterns to filter out
 
   Provide a glob-like filter pattern, and events for files matching the pattern will be excluded. Multiple patterns can be given by repeating the option. Events that are not from files (e.g. signals, keyboard events) will pass through untouched.
-- **`--ignore-file… <PATH>`** — Files to load ignores from
+- **`--ignore-file <PATH>`** — Files to load ignores from
 
   Provide a path to a file containing ignores, one per line. Empty lines and lines starting with '#' are ignored. Uses the same pattern format as the '--ignore' option.
 
   This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
 
   **Environment Variable:** `WATCHEXEC_IGNORE_FILES`
-- **`--fs-events… <EVENTS>`** — Filesystem events to filter to
+- **`--fs-events <EVENTS>`** — Filesystem events to filter to
 
   This is a quick filter to only emit events for the given types of filesystem changes. Choose from 'access', 'create', 'remove', 'rename', 'modify', 'metadata'. Multiple types can be given by repeating the option or by separating them with commas. By default, this is all types except for 'access'.
 
@@ -456,7 +456,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
   **Choices:** `environment`, `stdio`, `file`, `json-stdio`, `json-file`, `none`
 
   **Default:** `none`
-- **`-E --env… <KEY=VALUE>`** — Add env vars to the command
+- **`-E --env <KEY=VALUE>`** — Add env vars to the command
 
   This is a convenience option for setting environment variables for the command, without setting them for the Watchexec process itself.
 
