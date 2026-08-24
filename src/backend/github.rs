@@ -1386,12 +1386,18 @@ impl UnifiedGitBackend {
 
         // Store the asset URL and digest (if available) in the tool version
         let platform_key = self.get_platform_key();
+        let lockfile_has_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|p| p.checksum.is_some());
         let platform_info = tv.lock_platforms.entry(platform_key).or_default();
         platform_info.url = Some(asset.url.clone());
         platform_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest {
-            debug!("using GitHub API digest for checksum verification");
-            platform_info.checksum = Some(digest.clone());
+            if !lockfile_has_checksum {
+                debug!("using GitHub API digest for checksum verification");
+                platform_info.checksum = Some(digest.clone());
+            }
         }
 
         let url = if asset.url_api.is_empty() {
@@ -1442,10 +1448,6 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|platform| platform.provenance.clone());
-        let lockfile_has_checksum = tv
-            .lock_platforms
-            .get(&platform_key)
-            .is_some_and(|p| p.checksum.is_some());
 
         self.verify_checksum(ctx, tv, &file_path)?;
 
@@ -1517,12 +1519,14 @@ impl UnifiedGitBackend {
             .cloned()
             .unwrap_or_default();
         let lockfile_has_checksum = artifact_info.checksum.is_some();
+        let has_lockfile_integrity = artifact_info.has_checksum_and_verified_provenance();
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest {
-            artifact_info.checksum = Some(digest.clone());
+            if !lockfile_has_checksum {
+                artifact_info.checksum = Some(digest.clone());
+            }
         }
-        let has_lockfile_integrity = artifact_info.has_checksum_and_verified_provenance();
 
         let url = if asset.url_api.is_empty() {
             asset.url.clone()
