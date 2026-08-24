@@ -4264,7 +4264,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1a791e6620676a875f362f3156ed213e73ca099a09bf992c18812abe65cc37b1"
 dependencies = [
  "bstr",
- "hashbrown 0.15.5",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
@@ -6424,6 +6424,7 @@ dependencies = [
  "ubi",
  "url",
  "urlencoding",
+ "usage-cli",
  "usage-lib",
  "usage-rs",
  "versions",
@@ -7250,7 +7251,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bitfields",
  "block-padding",
  "blowfish",
@@ -9533,7 +9534,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.2.8",
+ "errno 0.3.14",
  "libc",
 ]
 
@@ -11055,6 +11056,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "857c0a155957d220665b2257ac7c58e168476ff7de09286940055ff78f622fb0"
 
 [[package]]
+name = "usage-cli"
+version = "6.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f327bbf6a72a7ce13a8a9158f4fc6c1d8a99b9b7cb53feb5f5caca810092787"
+dependencies = [
+ "env_logger",
+ "exec",
+ "indexmap 2.14.0",
+ "itertools 0.15.0",
+ "kdl",
+ "log",
+ "miette",
+ "regex",
+ "rmcp",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "shell-words",
+ "tera 2.1.1",
+ "thiserror 2.0.20",
+ "tokio",
+ "usage-lib",
+ "usage-rs",
+]
+
+[[package]]
 name = "usage-derive"
 version = "6.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11085,6 +11113,7 @@ dependencies = [
  "strum 0.28.0",
  "tera 2.1.1",
  "thiserror 2.0.20",
+ "usage-validation",
 ]
 
 [[package]]
