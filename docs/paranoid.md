@@ -50,9 +50,10 @@ trust prompt or error.
 
 ## Community plugins
 
-Paranoid mode refuses to install an untrusted community plugin by short name. It
-allows plugin URLs registered with mise and plugins maintained under the
-`mise-plugins` GitHub organization.
+Unless automatic confirmation is enabled with `--yes`, paranoid mode refuses to
+install an untrusted community plugin by short name. It allows plugin URLs
+registered with mise and plugins maintained under the `mise-plugins` GitHub
+organization.
 
 To install any other community plugin, specify its full Git repository URL. By
 providing the URL explicitly, you are choosing and trusting that source:
