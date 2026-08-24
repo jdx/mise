@@ -7,20 +7,17 @@
 
 Prune installed system packages no longer declared in `[bootstrap.packages]`
 
-Supports Homebrew formulae and conservatively removable, mise-owned casks.
+Supports Homebrew formulae, conservatively removable mise-owned casks, and
+packages installed by package plugins that implement `PackageUninstall`.
 Pruning keeps packages needed by the current config or by trusted, loadable
-tracked configs.
+tracked configs. Plugin packages that were already installed before mise
+first applied them are never claimed or removed.
 
 ## Flags
 
 ### `-m --manager <MANAGER>`
 
 Only prune packages for this manager
-
-**Choices:**
-
-- `brew`
-- `brew-cask`
 
 **Default:** `brew`
 
@@ -39,4 +36,5 @@ mise bootstrap packages prune --manager brew
 mise bootstrap packages prune --manager brew --dry-run
 mise bootstrap packages prune --manager brew --yes
 mise bootstrap packages prune --manager brew-cask --dry-run
+mise bootstrap packages prune --manager vscode --dry-run
 ```
