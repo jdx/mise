@@ -482,6 +482,44 @@ pub(crate) fn trust_active_config() -> Result<()> {
     Ok(())
 }
 
+/// The line ending a config file is written with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LineEnding {
+    Lf,
+    Crlf,
+}
+
+/// What `path` is currently written with, or [`LineEnding::Lf`] when there is nothing to learn
+/// from — the file does not exist yet, is empty, or is a single line with no terminator.
+///
+/// Only the first line ending is consulted. A file with mixed endings is pathological either way,
+/// and "match the first line" is a rule that can be stated; taking a majority would silently
+/// rewrite the minority instead.
+pub(crate) fn existing_line_ending(path: &Path) -> LineEnding {
+    let Ok(body) = file::read_to_string(path) else {
+        return LineEnding::Lf;
+    };
+    match body.find('\n') {
+        Some(i) if body[..i].ends_with('\r') => LineEnding::Crlf,
+        _ => LineEnding::Lf,
+    }
+}
+
+/// `contents` rewritten to use `eol`.
+///
+/// Both config writers rebuild their text with `\n` — `mise.toml` because serialising the document
+/// returns `\n` whatever was parsed, `.tool-versions` because it re-joins `str::lines()`, which
+/// drops the `\r`. Everything else about either file survives, so the line endings are the one
+/// part that has to be put back by hand. Normalising before expanding keeps this safe to apply to
+/// a string that already uses CRLF.
+pub(crate) fn with_line_ending(contents: String, eol: LineEnding) -> String {
+    let lf = contents.replace("\r\n", "\n");
+    match eol {
+        LineEnding::Lf => lf,
+        LineEnding::Crlf => lf.replace('\n', "\r\n"),
+    }
+}
+
 pub(crate) fn trust_check(path: &Path) -> eyre::Result<()> {
     // In safe mode, config is inert (no code execution, no env injection — see
     // MISE_SAFE / the `safe` setting), so loading an untrusted config is
@@ -1236,6 +1274,56 @@ mod ignored_config_path_tests {
 
         assert!(matcher.is_match(&root.path().join("vendor/jj/mise.toml")));
         assert!(!matcher.is_match(&root.path().join("vendor-other/mise.toml")));
+    }
+
+    /// Every branch of the rule the doc comment states, each with its own fixture — the three that
+    /// fall back to LF are distinct situations, not one.
+    #[test]
+    fn existing_line_ending_reads_the_first_terminator() {
+        let root = tempfile::tempdir().unwrap();
+        let at = |name: &str, body: &str| {
+            let p = root.path().join(name);
+            crate::file::write(&p, body).unwrap();
+            p
+        };
+
+        assert_eq!(
+            existing_line_ending(&at("crlf", "a = 1\r\nb = 2\r\n")),
+            LineEnding::Crlf
+        );
+        assert_eq!(
+            existing_line_ending(&at("lf", "a = 1\nb = 2\n")),
+            LineEnding::Lf
+        );
+        // The first one decides, so a file that starts LF stays LF even with CRLF further down.
+        assert_eq!(
+            existing_line_ending(&at("mixed", "a = 1\nb = 2\r\n")),
+            LineEnding::Lf
+        );
+
+        // Nothing to learn from: each of these is its own case.
+        assert_eq!(existing_line_ending(&at("empty", "")), LineEnding::Lf);
+        assert_eq!(
+            existing_line_ending(&at("unterminated", "a = 1")),
+            LineEnding::Lf
+        );
+        assert_eq!(
+            existing_line_ending(&root.path().join("does-not-exist")),
+            LineEnding::Lf
+        );
+    }
+
+    #[test]
+    fn with_line_ending_is_idempotent_and_lossless() {
+        let lf = "a = 1\nb = 2\n".to_string();
+        let crlf = "a = 1\r\nb = 2\r\n".to_string();
+
+        assert_eq!(with_line_ending(lf.clone(), LineEnding::Lf), lf);
+        assert_eq!(with_line_ending(lf.clone(), LineEnding::Crlf), crlf);
+        // Normalising first is what makes this safe to run on a string that is already CRLF —
+        // without it the carriage returns would double up.
+        assert_eq!(with_line_ending(crlf.clone(), LineEnding::Crlf), crlf);
+        assert_eq!(with_line_ending(crlf, LineEnding::Lf), lf);
     }
 }
 

@@ -20,7 +20,8 @@ use versions::Versioning;
 use crate::backend::unalias_backend;
 use crate::cli::args::BackendArg;
 use crate::config::config_file::{
-    ConfigFile, TaskConfig, ToolConfig, config_trust_root, is_ignored, trust, trust_check,
+    ConfigFile, TaskConfig, ToolConfig, config_trust_root, existing_line_ending, is_ignored, trust,
+    trust_check, with_line_ending,
 };
 use crate::config::config_file::{config_root, toml::deserialize_arr};
 use crate::config::env_directive::{
@@ -1416,7 +1417,9 @@ impl ConfigFile for MiseToml {
     }
 
     fn save(&self) -> eyre::Result<()> {
-        let contents = self.dump()?;
+        // Read before writing: what is on disk is still the file the user wrote, so it is what
+        // says which line ending to give back.
+        let contents = with_line_ending(self.dump()?, existing_line_ending(&self.path));
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
         }
@@ -3091,6 +3094,47 @@ mod tests {
             before, after,
             "save() rewrote the config in place, so a concurrent reader can observe a torn file"
         );
+    }
+
+    /// Serialising the document returns `\n` whatever was parsed, while everything else about the
+    /// file survives the round trip. A config written on Windows would therefore come back with
+    /// every line changed, turning a one-line edit into a whole-file diff.
+    ///
+    /// Runs on unix only, because this whole module does. The Windows path — where CRLF is what an
+    /// editor writes by default, so this is the ordinary case rather than an exotic one — is
+    /// covered by `e2e-win/config_line_endings.Tests.ps1`.
+    #[test]
+    fn save_keeps_the_line_endings_the_file_already_had() {
+        let temp = tempfile::tempdir().unwrap();
+
+        // Counted rather than "contains a CRLF somewhere": a file that came back half converted
+        // would satisfy `any`, and half converted is its own defect.
+        let endings = |p: &Path| {
+            let bytes = std::fs::read(p).unwrap();
+            let lf = bytes.iter().filter(|b| **b == b'\n').count();
+            let crlf = bytes.windows(2).filter(|w| *w == b"\r\n").count();
+            (lf, crlf)
+        };
+
+        let crlf = temp.path().join("crlf.toml");
+        file::write(&crlf, "[tools]\r\nclaude = \"latest\"\r\n").unwrap();
+        MiseToml::from_file(&crlf).unwrap().save().unwrap();
+        let (lf_count, crlf_count) = endings(&crlf);
+        assert!(lf_count > 0, "the saved file has no newlines at all");
+        assert_eq!(
+            crlf_count,
+            lf_count,
+            "a CRLF config came back with {} of its {lf_count} newlines converted",
+            lf_count - crlf_count
+        );
+
+        // Control: putting back what was there must not turn into pushing everything to CRLF.
+        let lf = temp.path().join("lf.toml");
+        file::write(&lf, "[tools]\nclaude = \"latest\"\n").unwrap();
+        MiseToml::from_file(&lf).unwrap().save().unwrap();
+        let (lf_count, crlf_count) = endings(&lf);
+        assert!(lf_count > 0, "the saved file has no newlines at all");
+        assert_eq!(crlf_count, 0, "an LF config gained carriage returns");
     }
 
     #[tokio::test]

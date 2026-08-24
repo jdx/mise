@@ -11,7 +11,7 @@ use itertools::Itertools;
 use tera::Context;
 
 use crate::cli::args::BackendArg;
-use crate::config::config_file::{ConfigFile, trust_check};
+use crate::config::config_file::{ConfigFile, existing_line_ending, trust_check, with_line_ending};
 use crate::file;
 use crate::file::display_path;
 use crate::tera::{BASE_CONTEXT, contains_template_syntax, get_tera, render_str};
@@ -184,7 +184,10 @@ impl ConfigFile for ToolVersions {
     }
 
     fn save(&self) -> Result<()> {
-        let s = self.dump()?;
+        // Read before writing: what is on disk is still the file the user wrote, so it is what
+        // says which line ending to give back. `dump()` rebuilds the text from `str::lines()`,
+        // which drops the `\r`, so without this a CRLF file comes back entirely LF.
+        let s = with_line_ending(self.dump()?, existing_line_ending(&self.path));
         file::write_atomic(&self.path, s)
     }
 
@@ -242,5 +245,54 @@ impl Clone for ToolVersions {
             plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(unix)]
+mod tests {
+    use super::*;
+
+    /// `dump()` rebuilds the file from `str::lines()`, which drops the `\r`, so a CRLF
+    /// `.tool-versions` came back entirely LF — a one-line edit landing as a whole-file diff.
+    ///
+    /// Gated to unix like every other test module under `config_file/`. The bug is
+    /// platform-neutral (mise's own re-join, not anything the OS does), and the shared helper is
+    /// exercised on Windows through `e2e-win/config_line_endings.Tests.ps1`.
+    #[test]
+    fn save_keeps_the_line_endings_the_file_already_had() {
+        let temp = tempfile::tempdir().unwrap();
+
+        // Counted rather than "contains a CRLF somewhere": a half-converted file would satisfy
+        // that, and half-converted is its own defect.
+        let endings = |p: &Path| {
+            let bytes = std::fs::read(p).unwrap();
+            let lf = bytes.iter().filter(|b| **b == b'\n').count();
+            let crlf = bytes.windows(2).filter(|w| *w == b"\r\n").count();
+            (lf, crlf)
+        };
+
+        let crlf = temp.path().join("crlf");
+        file::write(&crlf, "# a comment\r\nnode 20.0.0\r\n").unwrap();
+        ToolVersions::from_file(&crlf).unwrap().save().unwrap();
+        let (lf_count, crlf_count) = endings(&crlf);
+        assert!(lf_count > 0, "the saved file has no newlines at all");
+        assert_eq!(
+            crlf_count,
+            lf_count,
+            "a CRLF .tool-versions came back with {} of its {lf_count} newlines converted",
+            lf_count - crlf_count
+        );
+
+        // Control: putting back what was there must not turn into pushing everything to CRLF.
+        let lf = temp.path().join("lf");
+        file::write(&lf, "# a comment\nnode 20.0.0\n").unwrap();
+        ToolVersions::from_file(&lf).unwrap().save().unwrap();
+        let (lf_count, crlf_count) = endings(&lf);
+        assert!(lf_count > 0, "the saved file has no newlines at all");
+        assert_eq!(
+            crlf_count, 0,
+            "an LF .tool-versions gained carriage returns"
+        );
     }
 }
