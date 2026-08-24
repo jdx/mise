@@ -5,11 +5,14 @@ for a bad actor to compromise your system. These are settings that I
 personally do not use on my own system because I find the behavior too
 restrictive for the benefits.
 
-Paranoid mode can be enabled with either `MISE_PARANOID=1` or a setting:
+Paranoid mode can be enabled with either `MISE_PARANOID=1` or a global setting:
 
 ```sh
 mise settings paranoid=1
 ```
+
+The setting is global-only, so a project config cannot enable or disable paranoid
+mode for itself.
 
 ## Config files
 
@@ -41,30 +44,25 @@ If you change your config file, you'll need to trust it again.
 
 Note that global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check. This allows paranoid mode to be enabled in a global config without requiring a trust prompt for that file itself.
 
+[Safe mode](/security.html#safe-mode) takes precedence when both modes are enabled.
+Because safe mode makes project config inert, it loads untrusted config without a
+trust prompt or error.
+
 ## Community plugins
 
-Community plugins cannot be directly installed via short-name under paranoid.
-You can install plugins that are either core, maintained by the mise team,
-or plugins that mise has marked as "first-party"—meaning plugins developed by
-the same team that builds the tool the plugin installs.
+Paranoid mode refuses to install an untrusted community plugin by short name. It
+allows plugin URLs registered with mise and plugins maintained under the
+`mise-plugins` GitHub organization.
 
-Other than that, say for "shfmt", you'll need to specify the full git repo
-to install:
+To install any other community plugin, specify its full Git repository URL. By
+providing the URL explicitly, you are choosing and trusting that source:
 
 ```sh
-mise plugin install shfmt https://github.com/luizm/asdf-shfmt
+mise plugin install example https://github.com/example/asdf-example
 ```
 
-Unlike in normal mode where `mise plugin install shfmt` would be sufficient.
-
-## Always uses HTTPS
-
-Some endpoints in mise are fetched over HTTP such as checking for the latest mise
-version and pulling version lists of tools. These are not security risks and a
-malicious actor injecting false data would not introduce a security risk.
-Normally mise uses HTTP because loading the TLS module takes about 10ms and this
-affects commonly used commands so it is a noticeably delay.
-In paranoid mode, all endpoints will be fetched over HTTPS.
+In normal mode, mise may instead warn and ask for confirmation before installing
+an untrusted community plugin by short name.
 
 ## Provenance re-verification
 
@@ -83,9 +81,10 @@ This behavior can also be enabled independently via the
 
 ## See also
 
-[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) is a related but distinct control: where
-paranoid tightens _trust_ (which configs are loaded and re-verified), safe mode is a hard boundary
-on _code execution_ for running mise against configuration you do not control.
+[Safe mode](/security.html#safe-mode) (`MISE_SAFE=1`) is a related but distinct
+control: paranoid tightens _trust_ (which configs are loaded and re-verified),
+while safe mode is a hard boundary on _code execution_ for running mise against
+configuration you do not control.
 
 ## More?
 
