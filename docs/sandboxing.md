@@ -121,6 +121,18 @@ If Landlock is unavailable or cannot apply filesystem restrictions, the command 
 
 **Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux in v1. On Linux, `--allow-net` falls back to allowing all network access. This works on macOS via Seatbelt.
 
+**Limitation**: An allow-list entry has to exist when the sandbox is built. Landlock binds each rule to an open descriptor, so a path that has not been created yet cannot be named by one, and mise warns that the rule was dropped. The task can still reach that path if another rule covers it — an allowed ancestor directory, for instance — but nothing else grants access on the dropped rule's behalf. To let a task create something, allow a directory that already exists and contains it.
+
+```toml
+[tasks.install]
+run = "npm install"
+allow_read = ["package.json", "~/.npm"]
+# not ["node_modules"] — that does not exist until the task creates it
+allow_write = [".", "~/.npm"]
+```
+
+Landlock cannot restrict creation to a single name, so allowing the containing directory necessarily grants write access to everything else in it. This applies to Linux only; on macOS, Seatbelt rules are path patterns and do not need the path to exist.
+
 ### macOS
 
 Uses Apple's `sandbox-exec` (Seatbelt) with a generated profile. Supports all features including per-host network filtering.
