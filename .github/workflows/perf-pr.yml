@@ -16,6 +16,13 @@ name: perf-pr
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    # These files change the repository's development environment rather than
+    # the mise binary. In particular, root mise.toml tools are inherited by the
+    # benchmark fixture and would make the head and base inputs differ.
+    paths-ignore:
+      - ".github/**"
+      - "mise.lock"
+      - "mise.toml"
 
 permissions:
   contents: read

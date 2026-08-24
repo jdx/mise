@@ -1,0 +1,32 @@
+name: Set up mbx
+description: Install mbx from mise.toml and optionally restore the main-branch GHA cache
+
+inputs:
+  restore-cache:
+    description: Restore the read-only GitHub Actions cache built from main
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      if: inputs.restore-cache == 'true'
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/.global-cache
+          ~/.cache/mbx
+        key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-${{ github.event.pull_request.base.sha }}
+        restore-keys: |
+          ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
+    - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+      with:
+        cache: false
+        install_args: github:jdx/mr-boxington
+    - name: Verify mbx
+      shell: bash
+      run:
+        | # zizmor: ignore[github-env] PATH and cache paths use only runner-owned directories
+        mbx --version
+        echo "MBX_CACHE_DIR=$HOME/.cache/mbx" >> "$GITHUB_ENV"
