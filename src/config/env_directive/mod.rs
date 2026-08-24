@@ -352,9 +352,15 @@ pub(super) struct EnvDirectiveContext<'a> {
 }
 
 impl EnvDirectiveContext<'_> {
-    fn parse_template(&mut self, input: &str) -> eyre::Result<String> {
-        self.results
-            .parse_template(self.tera_ctx, self.tera, self.source, self.exec_env, input)
+    fn parse_template(&mut self, origin: &str, input: &str) -> eyre::Result<String> {
+        self.results.parse_template(
+            self.tera_ctx,
+            self.tera,
+            self.source,
+            self.exec_env,
+            origin,
+            input,
+        )
     }
 
     fn normalize_path(&self, path: PathBuf) -> PathBuf {
@@ -540,7 +546,7 @@ impl EnvResults {
                         crate::env::normalize_path_key(k)
                     };
                     r.track_redaction_override(&k, redact);
-                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
 
                     if resolve_opts.vars {
                         if redact.unwrap_or(false) {
@@ -587,7 +593,7 @@ impl EnvResults {
                     }
 
                     r.track_redaction_override(&k, redact);
-                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &v)?;
+                    let v = r.parse_template(&ctx, &mut tera, &source, &env_vars, &k, &v)?;
 
                     if resolve_opts.vars {
                         if redact.unwrap_or(false) {
@@ -651,7 +657,7 @@ impl EnvResults {
                     let decrypted_v = match res {
                         Ok(decrypted_v) => {
                             // Parse as template after decryption
-                            r.parse_template(&ctx, &mut tera, &source, &env_vars, &decrypted_v)?
+                            r.parse_template(&ctx, &mut tera, &source, &env_vars, k, &decrypted_v)?
                         }
                         Err(e) if Settings::get().age.strict => {
                             return Err(e)
@@ -1016,6 +1022,7 @@ impl EnvResults {
         tera: &mut Option<TeraEngine>,
         path: &Path,
         exec_env: &EnvMap,
+        origin: &str,
         input: &str,
     ) -> eyre::Result<String> {
         let mut output = input.to_string();
@@ -1055,13 +1062,7 @@ impl EnvResults {
                 .unwrap_or_default();
             let mut missing_vars = Vec::new();
             output = shell_expand_env(&output, &env_vars, &mut missing_vars);
-            for var in missing_vars {
-                warn_once!(
-                    "env var '{var}' is not defined and will be left unexpanded. \
-                     Use ${{{var}:-}} to default to an empty string and suppress \
-                     this warning."
-                );
-            }
+            warn_unexpanded_vars(missing_vars, origin, path);
         }
 
         Ok(output)
@@ -1075,6 +1076,33 @@ impl EnvResults {
             && self.env_paths.is_empty()
             && self.env_scripts.is_empty()
             && self.tool_add_paths.is_empty()
+    }
+}
+
+/// The warning for a `$VAR` that `shell_expand_env` could not expand.
+///
+/// Built as a string rather than warned in place so it can be tested without
+/// `warn_once!`'s process-global dedup set, which would make any test asserting
+/// on emitted output depend on whatever ran before it.
+///
+/// Naming the missing variable alone was not actionable. The reporter in
+/// discussion #8232 could see *which* variable was missing but not which value
+/// referenced it, and `mise env` cannot show that: a missing variable is by
+/// definition absent from the environment. `origin` is the referencing `[env]`
+/// key where one exists, and the directive otherwise.
+fn unexpanded_var_warning(var: &str, origin: &str, path: &Path) -> String {
+    format!(
+        "env var '{var}' is not defined and will be left unexpanded, \
+         referenced by `{origin}` in {}. \
+         Use ${{{var}:-}} to default to an empty string and suppress this warning.",
+        display_path(path)
+    )
+}
+
+/// Warn once for each variable left unexpanded, naming what referenced it.
+pub(crate) fn warn_unexpanded_vars(missing: Vec<String>, origin: &str, path: &Path) {
+    for var in missing {
+        warn_once!("{}", unexpanded_var_warning(&var, origin, path));
     }
 }
 
@@ -1263,6 +1291,19 @@ mod tests {
     use crate::config::Config;
     use crate::env_diff::EnvMap;
     use crate::tera::BASE_CONTEXT;
+
+    /// Naming the missing variable was never the hard part — finding what
+    /// referenced it was. See discussion #8232.
+    #[test]
+    fn test_unexpanded_var_warning_names_the_reference() {
+        let path = Path::new("/p/mise.toml");
+        let msg = unexpanded_var_warning("DB_HOST", "DATABASE_URL", path);
+        assert!(msg.contains("'DB_HOST'"), "{msg}");
+        assert!(msg.contains("`DATABASE_URL`"), "{msg}");
+        assert!(msg.contains(&display_path(path)), "{msg}");
+        // The existing escape hatch has to survive the rewording.
+        assert!(msg.contains("${DB_HOST:-}"), "{msg}");
+    }
 
     /// `ToolsFilter::ToolsOnlyVals` must select only `tools = true` `Val`
     /// directives — excluding `tools = false` vars and `tools = true` *modules*
