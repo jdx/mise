@@ -107,6 +107,25 @@ pub(crate) struct MonorepoUnion {
     pub repo_urls: HashMap<String, String>,
 }
 
+fn extend_monorepo_tool_request_set(union: &mut ToolRequestSet, requests: &ToolRequestSet) {
+    union
+        .unknown_tools
+        .extend(requests.unknown_tools.iter().cloned());
+    for (_ba, tool_requests, source) in requests.iter() {
+        for request in tool_requests {
+            let already_present = union.tools.get(request.ba()).is_some_and(|existing| {
+                existing.iter().any(|existing| {
+                    existing.version() == request.version()
+                        && existing.options() == request.options()
+                })
+            });
+            if !already_present {
+                union.add_version(request.clone(), source);
+            }
+        }
+    }
+}
+
 /// One independently composed bootstrap hierarchy and its scoped template context.
 #[derive(Clone)]
 struct BootstrapConfigMap {
@@ -782,7 +801,27 @@ impl Config {
         Ok(self.monorepo_union().await?.tool_request_set)
     }
 
+    /// Loads the union plus the monorepo root directory's own effective
+    /// requests, for lockfile maintenance of the shared root lockfile.
+    ///
+    /// `monorepo_union` merges the root's configs underneath each declared
+    /// config root, so a sibling's request for a short shadows the monorepo
+    /// root's own request for it. Treating the union as the set of live
+    /// requests for the root lockfile would then drop the root's request:
+    /// `mise lock --upgrade` migrated a v0 monorepo lockfile without binding
+    /// the root's request and pruned its locked version.
+    pub(crate) async fn monorepo_lockfile_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
+        self.monorepo_union_with_root_toolset(true).await
+    }
+
     pub(crate) async fn monorepo_union(self: &Arc<Self>) -> Result<MonorepoUnion> {
+        self.monorepo_union_with_root_toolset(false).await
+    }
+
+    async fn monorepo_union_with_root_toolset(
+        self: &Arc<Self>,
+        include_root_toolset: bool,
+    ) -> Result<MonorepoUnion> {
         let idiomatic_filenames = load_idiomatic_filenames().await;
         let config_filenames = idiomatic_filenames
             .keys()
@@ -820,19 +859,20 @@ impl Config {
                 .without_runtime_args()
                 .build(self)
                 .await?;
-            union.unknown_tools.extend(root_trs.unknown_tools.clone());
-            for (_ba, requests, source) in root_trs.iter() {
-                for request in requests {
-                    let already_present = union.tools.get(request.ba()).is_some_and(|existing| {
-                        existing.iter().any(|r| {
-                            r.version() == request.version() && r.options() == request.options()
-                        })
-                    });
-                    if !already_present {
-                        union.add_version(request.clone(), source);
-                    }
-                }
-            }
+            extend_monorepo_tool_request_set(&mut union, &root_trs);
+        }
+
+        if include_root_toolset {
+            // Each declared root overlays base_config_files, so its request
+            // for a short can shadow the monorepo root's own request. Lockfile
+            // maintenance needs the root directory as an additional effective
+            // hierarchy so its requests stay live.
+            let root_trs = ToolRequestSetBuilder::new()
+                .with_config_files(base_config_files)
+                .without_runtime_args()
+                .build(self)
+                .await?;
+            extend_monorepo_tool_request_set(&mut union, &root_trs);
         }
 
         union.unknown_tools = union.unknown_tools.into_iter().unique().collect();
