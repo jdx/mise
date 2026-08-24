@@ -46,7 +46,8 @@ Note that global and system config files (e.g., `~/.config/mise/config.toml`) ar
 
 [Safe mode](/security.html#safe-mode) takes precedence when both modes are enabled.
 Because safe mode makes project config inert, it loads untrusted config without a
-trust prompt or error.
+trust prompt or untrusted-config error. Other configuration errors are still
+reported.
 
 ## Community plugins
 
