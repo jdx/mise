@@ -1,5 +1,56 @@
 # Changelog
 
+## [2026.8.12](https://github.com/jdx/mise/compare/v2026.8.11..v2026.8.12) - 2026-08-24
+
+### 🚀 Features
+
+- **(bootstrap)** add package plugin uninstall support by @jdx in [#12332](https://github.com/jdx/mise/pull/12332)
+
+### 🐛 Bug Fixes
+
+- **(brew-cask)** recognize Homebrew-owned casks by @donbeave in [#12346](https://github.com/jdx/mise/pull/12346)
+- **(cli)** report a cd target it cannot enter instead of panicking by @JamBalaya56562 in [#12314](https://github.com/jdx/mise/pull/12314)
+- **(config)** skip disabled idiomatic tracked configs by @xqm32 in [#12194](https://github.com/jdx/mise/pull/12194)
+- **(config)** keep comments when saving from mise edit by @Marukome0743 in [#12319](https://github.com/jdx/mise/pull/12319)
+- **(config)** strip a byte-order mark before reading a version file by @JamBalaya56562 in [#12325](https://github.com/jdx/mise/pull/12325)
+- **(doctor)** report installs that provide no executables by @Marukome0743 in [#12321](https://github.com/jdx/mise/pull/12321)
+- **(env)** say why an age SSH identity could not be used by @Marukome0743 in [#12339](https://github.com/jdx/mise/pull/12339)
+- **(env)** name the key and file behind an unexpanded $VAR by @Marukome0743 in [#12316](https://github.com/jdx/mise/pull/12316)
+- **(go)** don't hand go install a GOROOT from another Go by @Marukome0743 in [#12342](https://github.com/jdx/mise/pull/12342)
+- **(task)** treat a SIGINT-killed child as an interruption by @Marukome0743 in [#12323](https://github.com/jdx/mise/pull/12323)
+- **(task)** preserve string type for usage value flags by @jdx in [#12355](https://github.com/jdx/mise/pull/12355)
+- **(tasks)** tell Windows users why a task file was skipped by @JamBalaya56562 in [#12324](https://github.com/jdx/mise/pull/12324)
+- **(tool-stub)** keep env_with_path instead of rebuilding PATH by @tmkx in [#12322](https://github.com/jdx/mise/pull/12322)
+- **(watch)** restore the controlling terminal from a drop guard by @Marukome0743 in [#12328](https://github.com/jdx/mise/pull/12328)
+
+### 🚜 Refactor
+
+- **(cli)** keep one copy of the task-flag escape rule by @JamBalaya56562 in [#12343](https://github.com/jdx/mise/pull/12343)
+
+### 📚 Documentation
+
+- **(tasks)** point extensionless pwsh tasks at MISE_TASK_DIR by @JamBalaya56562 in [#12313](https://github.com/jdx/mise/pull/12313)
+
+### 📦️ Dependency Updates
+
+- update rust crate aube-registry to v2.1.0 by @renovate[bot] in [#12348](https://github.com/jdx/mise/pull/12348)
+- bump aube to 2.1.0 by @jdx in [#12351](https://github.com/jdx/mise/pull/12351)
+- bump usage to 6.2.0 by @jdx in [#12354](https://github.com/jdx/mise/pull/12354)
+
+### 📦 Registry
+
+- fix usage version test by @jdx in [#12349](https://github.com/jdx/mise/pull/12349)
+- install oc from a channel directory by @Marukome0743 in [#12326](https://github.com/jdx/mise/pull/12326)
+
+### Chore
+
+- **(ci)** use github runners for fork prs by @jdx in [#12345](https://github.com/jdx/mise/pull/12345)
+- **(ci)** prevent cache warmer starvation by @jdx in [#12350](https://github.com/jdx/mise/pull/12350)
+
+### New Contributors
+
+- @tmkx made their first contribution in [#12322](https://github.com/jdx/mise/pull/12322)
+
 ## [2026.8.11](https://github.com/jdx/mise/compare/v2026.8.10..v2026.8.11) - 2026-08-23
 
 ### 🚀 Features
