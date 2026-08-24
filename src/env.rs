@@ -944,7 +944,7 @@ fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
 #[cfg(windows)]
 fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
     env.keys()
-        .find(|candidate| candidate.eq_ignore_ascii_case(key))
+        .find(|candidate| windows_env_key_eq(candidate, key))
 }
 
 fn env_map_get<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
@@ -959,8 +959,24 @@ fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a 
 #[cfg(windows)]
 fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
     env.iter()
-        .find(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
+        .find(|(candidate, _)| windows_env_key_eq(candidate, key))
         .map(|(_, value)| value)
+}
+
+#[cfg(windows)]
+fn windows_env_key_eq(left: &str, right: &str) -> bool {
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+
+    let left = left.encode_utf16().collect::<Vec<_>>();
+    let right = right.encode_utf16().collect::<Vec<_>>();
+    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
+    else {
+        return false;
+    };
+
+    unsafe {
+        CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
+    }
 }
 
 fn offline(args: &[String]) -> bool {
@@ -1319,10 +1335,15 @@ mod tests {
     #[test]
     fn test_reverse_diff_matches_environment_keys_case_insensitively_on_windows() {
         let diff = EnvDiff {
-            old: [("Changed".into(), "before".into())].into(),
+            old: [
+                ("Changed".into(), "before".into()),
+                ("MÎSE_FOO".into(), "before-unicode".into()),
+            ]
+            .into(),
             new: [
                 ("Added".into(), "managed".into()),
                 ("Changed".into(), "managed".into()),
+                ("MÎSE_FOO".into(), "managed-unicode".into()),
             ]
             .into(),
             ..Default::default()
@@ -1330,12 +1351,17 @@ mod tests {
         let current = [
             ("ADDED".into(), "managed".into()),
             ("CHANGED".into(), "managed".into()),
+            ("mîse_foo".into(), "managed-unicode".into()),
         ]
         .into();
 
         assert_eq!(
             reverse_diff_preserving_overrides(&diff, current),
-            [("CHANGED".into(), "before".into())].into()
+            [
+                ("CHANGED".into(), "before".into()),
+                ("mîse_foo".into(), "before-unicode".into()),
+            ]
+            .into()
         );
     }
 
