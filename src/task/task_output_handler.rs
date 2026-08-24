@@ -63,7 +63,7 @@ impl KeepOrderState {
     /// Called when a stdout line is produced by a task's process.
     pub(crate) fn on_stdout(&mut self, task: &Task, prefix: String, line: String) {
         if self.done || self.is_active(task) {
-            self.active = Some(task.clone());
+            self.activate(task);
             print_stdout(&prefix, &line);
         } else {
             self.buffers
@@ -77,7 +77,7 @@ impl KeepOrderState {
     /// or when metadata (command echo, timing) is emitted for a task.
     pub(crate) fn on_stderr(&mut self, task: &Task, prefix: String, line: String) {
         if self.done || self.is_active(task) {
-            self.active = Some(task.clone());
+            self.activate(task);
             print_stderr(&prefix, &line);
         } else {
             self.buffers
@@ -95,7 +95,13 @@ impl KeepOrderState {
         if self.is_active(task) {
             // Active task finished — clear it, flush waiting tasks, promote next
             self.active = None;
-            self.buffers.shift_remove(task);
+            // `activate` empties the buffer on the way in, so there should be
+            // nothing here. Print whatever is anyway: no removal in this type is
+            // allowed to drop lines, and losing output silently is the failure
+            // this guards against.
+            if let Some(lines) = self.buffers.shift_remove(task) {
+                Self::print_lines(&lines);
+            }
             self.flush_finished();
             self.promote_next();
         } else {
@@ -121,16 +127,30 @@ impl KeepOrderState {
         self.finished.extend(finished);
     }
 
-    /// Promote the next buffered (still-running) task to active and
-    /// flush its current buffer so it can stream live going forward.
+    /// Promote the next buffered (still-running) task to active so it can
+    /// stream live going forward.
     fn promote_next(&mut self) {
         if let Some((task, _)) = self.buffers.first() {
             let task = task.clone();
-            self.active = Some(task.clone());
-            if let Some(lines) = self.buffers.get_mut(&task) {
-                let lines = std::mem::take(lines);
-                Self::print_lines(&lines);
-            }
+            self.activate(&task);
+        }
+    }
+
+    /// Make `task` the live one, printing whatever it buffered before it got
+    /// here.
+    ///
+    /// A task reaches this with a non-empty buffer whenever it produced output
+    /// before it was eligible to stream: `is_active` only lets the first entry
+    /// in `buffers` claim the stream, and a task started from a task reference
+    /// is not in `buffers` at all until its own first line creates the entry.
+    /// Those buffered lines came *before* the one being printed now, so they
+    /// have to go out first — flushing them at finish instead would reorder the
+    /// task's own output, and dropping them is how #12238 lost it.
+    fn activate(&mut self, task: &Task) {
+        self.active = Some(task.clone());
+        if let Some(lines) = self.buffers.get_mut(task) {
+            let lines = std::mem::take(lines);
+            Self::print_lines(&lines);
         }
     }
 
@@ -493,6 +513,51 @@ mod tests {
         ] {
             assert!(!displays_colored_task_prefix(output));
         }
+    }
+
+    fn task_named(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn buffered(state: &KeepOrderState, task: &Task) -> usize {
+        state.buffers.get(task).map(Vec::len).unwrap_or(0)
+    }
+
+    #[test]
+    fn activating_a_task_flushes_what_it_buffered() {
+        // A task started from a task reference is not in `buffers`, so its first
+        // line is held; from the second on it is `buffers.first()` and streams
+        // live. Those held lines came first and must go out with it, not be
+        // stranded for `on_task_finished` to drop (#12238).
+        let mut state = KeepOrderState::new();
+        let task = task_named("one");
+
+        state.on_stdout(&task, "one".into(), "first".into());
+        assert_eq!(buffered(&state, &task), 1, "first line should be held");
+
+        state.on_stdout(&task, "one".into(), "second".into());
+        assert_eq!(
+            buffered(&state, &task),
+            0,
+            "becoming active must flush what was held"
+        );
+    }
+
+    #[test]
+    fn activating_through_stderr_flushes_too() {
+        // stderr carries the command echo and timing lines, and reaches the same
+        // branch, so it has to flush on the way in as well.
+        let mut state = KeepOrderState::new();
+        let task = task_named("one");
+
+        state.on_stderr(&task, "one".into(), "first".into());
+        assert_eq!(buffered(&state, &task), 1);
+
+        state.on_stderr(&task, "one".into(), "second".into());
+        assert_eq!(buffered(&state, &task), 0);
     }
 
     #[test]

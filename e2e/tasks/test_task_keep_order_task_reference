@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/12238
+#
+# keep-order holds a task's output until that task is eligible to stream. A task
+# started from a task reference is not registered up front, so its first line is
+# always held — and the held lines used to be dropped rather than printed. A
+# task emitting a single line never reaches a second line to become active, so
+# it lost everything.
+#
+# --jobs 1 keeps this deterministic. Block order across tasks is a separate
+# defect and is deliberately not asserted here.
+
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["one", "two"] }
+
+[tasks.one]
+run = 'echo ONLY-LINE-ONE'
+
+[tasks.two]
+run = 'echo ONLY-LINE-TWO'
+TOML
+
+# Every line survives. Before the fix this printed nothing at all.
+out="$(mise run --quiet --jobs 1 --output keep-order launch 2>&1)"
+assert_contains "echo \"$out\"" "[one] ONLY-LINE-ONE"
+assert_contains "echo \"$out\"" "[two] ONLY-LINE-TWO"
+
+# A task's own lines stay in order. Flushing the held lines when the task
+# finishes instead of when it becomes active would print 2, 3, then 1.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["three"] }
+
+[tasks.three]
+run = '''
+echo L1
+echo L2
+echo L3
+'''
+TOML
+
+out="$(mise run --quiet --jobs 1 --output keep-order launch 2>&1)"
+assert "printf '%s\n' \"$out\"" "[three] L1
+[three] L2
+[three] L3"
