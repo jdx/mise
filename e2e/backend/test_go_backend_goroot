@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/8261
+# (and https://github.com/jdx/mise/discussions/8877, the same failure).
+#
+# mise exports GOROOT for the Go it manages, and `mise activate` carries it
+# into the shell. On unix the go backend spawns the bare name `go`, so which
+# Go actually runs is up to PATH. If a different Go runs while that GOROOT is
+# still in the environment, every compile fails with
+# `compile: version "..." does not match go tool version "..."`.
+
+# A stand-in for `go` that refuses to run with an inherited GOROOT, which is
+# what a real Go effectively does once GOROOT names someone else's tree.
+cat >"$HOME/bin/go" <<'GO'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf 'GOROOT=%s\n' "${GOROOT:-<unset>}" >>"$HOME/go-invocations"
+
+if [[ -n ${GOROOT:-} ]]; then
+  echo "compile: GOROOT from another Go leaked: $GOROOT" >&2
+  exit 1
+fi
+
+# Stand in for a successful `go install`.
+mkdir -p "$GOBIN"
+printf '#!/usr/bin/env bash\necho go-example\n' >"$GOBIN/go-example"
+chmod +x "$GOBIN/go-example"
+GO
+chmod +x "$HOME/bin/go"
+export PATH="$HOME/bin:$PATH"
+
+# The environment a user gets from `mise activate` with a mise-managed Go,
+# while the `go` that PATH resolves belongs to a different installation.
+export GOROOT="$HOME/some-other-go"
+
+cat >mise.toml <<'TOML'
+[settings]
+experimental = true
+TOML
+
+# An exact version keeps this off the `go list` path, which needs the network.
+assert "mise install go:github.com/jdx/go-example@0.1.0"
+assert_contains "cat \"$HOME/go-invocations\"" "GOROOT=<unset>"
+assert_not_contains "cat \"$HOME/go-invocations\"" "some-other-go"
+
+# An explicitly configured GOROOT is still the user's call.
+rm -f "$HOME/go-invocations"
+mise uninstall "go:github.com/jdx/go-example@0.1.0"
+cat >mise.toml <<'TOML'
+[settings]
+experimental = true
+
+[tools]
+"go:github.com/jdx/go-example" = { version = "0.1.0", install_env = { GOROOT = "/explicitly/set" } }
+TOML
+assert_fail "mise install"
+assert_contains "cat \"$HOME/go-invocations\"" "GOROOT=/explicitly/set"
