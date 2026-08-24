@@ -431,15 +431,16 @@ impl BrewCaskManager {
         }
         let mut ancestors = ancestors.clone();
         ancestors.insert(cask.token.clone());
-        let artifacts = cask_artifacts(&cask)?;
-        validate_platform_support(&cask, &artifacts)?;
-        if homebrew_metadata_present(&cask.token) {
-            bail!(
-                "brew-cask:{}: Homebrew owns this cask; remove it with Homebrew before installing it with mise",
+        if let Some(version) = homebrew_installed_version(&cask.token)? {
+            info!(
+                "brew-cask:{}: installed and managed by Homebrew; leaving unchanged",
                 cask.token
             );
+            return Ok(version);
         }
-        let installed_version = installed_cask_version(&cask, &artifacts)?;
+        let artifacts = cask_artifacts(&cask)?;
+        validate_platform_support(&cask, &artifacts)?;
+        let installed_version = mise_installed_cask_version(&cask)?;
         if let Some(version) = installed_version.as_ref()
             && (cask.auto_updates || version == &cask.version)
         {
@@ -528,14 +529,8 @@ impl BrewCaskManager {
         }
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
-        if homebrew_metadata_present(&cask.token) {
-            file::remove_all(&stage)?;
-            bail!(
-                "brew-cask:{}: Homebrew took ownership of this cask while installation was pending",
-                cask.token
-            );
-        }
-        if let Some(version) = installed_cask_version(&cask, &artifacts)?
+        ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+        if let Some(version) = mise_installed_cask_version(&cask)?
             && (cask.auto_updates || version == cask.version)
         {
             file::remove_all(stage)?;
@@ -848,28 +843,9 @@ impl SystemPackageManager for BrewCaskManager {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
             let cask = fetch_cask(req).await?;
-            let artifacts = cask_artifacts(&cask)?;
-            if let Some(state) = platform_unavailable_state(&cask, &artifacts) {
-                statuses.push(PackageStatus {
-                    request: req.clone(),
-                    state,
-                });
-                continue;
-            }
-            let version = installed_cask_version(&cask, &artifacts)?;
-            let state = match version {
-                Some(version) => match &req.version {
-                    Some(requested) if version != *requested => {
-                        PackageState::VersionMismatch { installed: version }
-                    }
-                    _ if cask.auto_updates => PackageState::InstalledAutoUpdates { version },
-                    _ => PackageState::Installed { version },
-                },
-                None => PackageState::Missing,
-            };
             statuses.push(PackageStatus {
                 request: req.clone(),
-                state,
+                state: package_state(req, &cask)?,
             });
         }
         Ok(statuses)
@@ -6404,17 +6380,103 @@ fn installed_versions(token: &str) -> Vec<String> {
             entry
                 .file_type()
                 .ok()
-                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
+                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-"))
                 .map(|_| name)
         })
         .collect()
 }
 
-fn homebrew_metadata_present(token: &str) -> bool {
-    caskroom_token_dir(token)
-        .join(".metadata")
-        .symlink_metadata()
-        .is_ok()
+fn homebrew_installed_versions(token: &str) -> Result<Vec<String>> {
+    let dir = caskroom_token_dir(token);
+    let entries = std::fs::read_dir(&dir).wrap_err_with(|| {
+        format!(
+            "brew-cask:{token}: failed to read Homebrew Caskroom directory '{}'",
+            dir.display()
+        )
+    })?;
+    let mut versions = Vec::new();
+    for entry in entries {
+        let entry = entry.wrap_err_with(|| {
+            format!(
+                "brew-cask:{token}: failed to read an entry in Homebrew Caskroom directory '{}'",
+                dir.display()
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().wrap_err_with(|| {
+            format!(
+                "brew-cask:{token}: failed to read type of Homebrew Caskroom entry '{}'",
+                path.display()
+            )
+        })?;
+        let name = entry.file_name().into_string().map_err(|_| {
+            eyre!(
+                "brew-cask:{token}: Homebrew Caskroom entry name is not valid UTF-8: '{}'",
+                path.display()
+            )
+        })?;
+        if file_type.is_dir() && name != ".metadata" && !name.starts_with(".mise-") {
+            versions.push(name);
+        }
+    }
+    Ok(versions)
+}
+
+fn homebrew_installed_version(token: &str) -> Result<Option<String>> {
+    if !homebrew_metadata_present(token)? {
+        return Ok(None);
+    }
+
+    let versions = homebrew_installed_versions(token)?;
+    match versions.as_slice() {
+        [version] => Ok(Some(version.clone())),
+        [] => bail!(
+            "brew-cask:{token}: Homebrew metadata exists, but no installed Caskroom version was found; repair it with `brew reinstall --cask {token}`"
+        ),
+        versions => bail!(
+            "brew-cask:{token}: Homebrew metadata exists with multiple Caskroom versions ({}); repair it with Homebrew",
+            {
+                let mut versions = versions.to_vec();
+                versions.sort();
+                versions.join(", ")
+            }
+        ),
+    }
+}
+
+fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) -> Result<()> {
+    let metadata_present = match homebrew_metadata_present(token) {
+        Ok(present) => present,
+        Err(err) => {
+            file::remove_all(stage).wrap_err_with(|| {
+                format!(
+                    "failed to remove mise stage after Homebrew ownership check failed: {err:#}"
+                )
+            })?;
+            return Err(err);
+        }
+    };
+    if metadata_present {
+        file::remove_all(stage)?;
+        bail!(
+            "brew-cask:{token}: Homebrew took ownership of this cask while installation was pending"
+        );
+    }
+    Ok(())
+}
+
+fn homebrew_metadata_present(token: &str) -> Result<bool> {
+    let path = caskroom_token_dir(token).join(".metadata");
+    match path.symlink_metadata() {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err).wrap_err_with(|| {
+            format!(
+                "brew-cask:{token}: failed to inspect Homebrew metadata at '{}'",
+                path.display()
+            )
+        }),
+    }
 }
 
 fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
@@ -6564,20 +6626,16 @@ fn remove_obsolete_binary_links(
 }
 
 #[cfg(not(test))]
-fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Option<String>> {
-    installed_cask_version_in(cask, artifacts, &crate::dirs::STATE)
+fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>> {
+    installed_cask_version_in(cask, &crate::dirs::STATE)
 }
 
 #[cfg(test)]
-fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Option<String>> {
-    installed_cask_version_in(cask, artifacts, &prefix::prefix().join(".mise-test-state"))
+fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>> {
+    installed_cask_version_in(cask, &prefix::prefix().join(".mise-test-state"))
 }
 
-fn installed_cask_version_in(
-    cask: &Cask,
-    _artifacts: &CaskArtifacts,
-    state_dir: &Path,
-) -> Result<Option<String>> {
+fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<String>> {
     if cask_journal_pending_in(state_dir, &cask.token) {
         return Ok(None);
     }
@@ -6614,6 +6672,29 @@ fn installed_cask_version_in(
         }
         None => Ok(None),
     }
+}
+
+fn state_for_version(req: &PackageRequest, cask: &Cask, version: String) -> PackageState {
+    match &req.version {
+        Some(requested) if version != *requested => {
+            PackageState::VersionMismatch { installed: version }
+        }
+        _ if cask.auto_updates => PackageState::InstalledAutoUpdates { version },
+        _ => PackageState::Installed { version },
+    }
+}
+
+fn package_state(req: &PackageRequest, cask: &Cask) -> Result<PackageState> {
+    if let Some(version) = homebrew_installed_version(&cask.token)? {
+        return Ok(state_for_version(req, cask, version));
+    }
+    let artifacts = cask_artifacts(cask)?;
+    if let Some(state) = platform_unavailable_state(cask, &artifacts) {
+        return Ok(state);
+    }
+    Ok(mise_installed_cask_version(cask)?
+        .map(|version| state_for_version(req, cask, version))
+        .unwrap_or(PackageState::Missing))
 }
 
 fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> {
@@ -7256,7 +7337,7 @@ fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
 }
 
 fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
-    if homebrew_metadata_present(&candidate.token) {
+    if homebrew_metadata_present(&candidate.token)? {
         bail!("Homebrew now owns this cask");
     }
     let receipt = &candidate.receipt;
@@ -7775,12 +7856,278 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let metadata = tmp.path().join("Caskroom/example/.metadata");
-        assert!(!homebrew_metadata_present("example"));
+        assert!(!homebrew_metadata_present("example")?);
         file::create_dir_all(&metadata)?;
-        assert!(homebrew_metadata_present("example"));
+        assert!(homebrew_metadata_present("example")?);
         file::remove_all(&metadata)?;
         crate::file::write(&metadata, "foreign")?;
-        assert!(homebrew_metadata_present("example"));
+        assert!(homebrew_metadata_present("example")?);
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+        file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
+
+        assert_eq!(
+            homebrew_installed_version("example")?,
+            Some("1.0.0".to_string())
+        );
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rejects_non_utf8_homebrew_version_name() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        file::create_dir_all(token_dir.join(Path::new(std::ffi::OsStr::from_bytes(b"\xff"))))?;
+
+        let error = homebrew_installed_version("example").unwrap_err();
+        assert!(error.to_string().contains("name is not valid UTF-8"));
+        assert!(error.to_string().contains("brew-cask:example"));
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_version_enumeration_error_includes_directory() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.parent().unwrap())?;
+        file::write(&token_dir, "not a directory")?;
+
+        let error = homebrew_installed_versions("example").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("failed to read Homebrew Caskroom directory"));
+        assert!(message.contains(&token_dir.display().to_string()));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn homebrew_metadata_probe_error_is_not_absence() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.parent().unwrap())?;
+        file::write(&token_dir, "not a directory")?;
+
+        let error = homebrew_metadata_present("example").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("failed to inspect Homebrew metadata"));
+        assert!(message.contains(".metadata"));
+        Ok(())
+    }
+
+    #[test]
+    fn ignores_version_without_homebrew_metadata() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        file::create_dir_all(caskroom_version_dir("example", "1.0.0"))?;
+
+        assert_eq!(homebrew_installed_version("example")?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_homebrew_metadata_without_installed_version() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        file::create_dir_all(caskroom_token_dir("example").join(".metadata"))?;
+
+        let error = homebrew_installed_version("example").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("repair it with `brew reinstall --cask example`")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_homebrew_metadata_with_multiple_versions() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("2.0.0"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+
+        let error = homebrew_installed_version("example").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("multiple Caskroom versions (1.0.0, 2.0.0)")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![serde_json::json!({
+            "future_artifact": ["unsupported"]
+        })];
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        assert_eq!(
+            package_state(&request, &cask)?,
+            PackageState::Installed {
+                version: "1.0.0".to_string()
+            }
+        );
+        assert!(cask_artifacts(&cask).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("example", "1.0.0");
+        write_test_app_receipt(&cask, "Example.app")?;
+        let metadata = caskroom_token_dir(&cask.token).join(".metadata/receipt.json");
+        file::create_dir_all(metadata.parent().unwrap())?;
+        file::write(&metadata, "homebrew")?;
+        let mise_receipt = caskroom_version_dir(&cask.token, &cask.version).join(".mise-cask.toml");
+        let receipt_before = file::read_to_string(&mise_receipt)?;
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        assert_eq!(
+            package_state(&request, &cask)?,
+            PackageState::Installed {
+                version: "1.0.0".to_string()
+            }
+        );
+        assert_eq!(file::read_to_string(&mise_receipt)?, receipt_before);
+        assert_eq!(file::read_to_string(&metadata)?, "homebrew");
+
+        file::create_dir_all(caskroom_version_dir(&cask.token, "2.0.0"))?;
+        let error = package_state(&request, &cask).unwrap_err();
+        assert!(error.to_string().contains("multiple Caskroom versions"));
+        assert_eq!(file::read_to_string(&mise_receipt)?, receipt_before);
+        assert_eq!(file::read_to_string(&metadata)?, "homebrew");
+        Ok(())
+    }
+
+    #[test]
+    fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("example", "1.0.0");
+        write_test_app_receipt(&cask, "Example.app")?;
+        cask.artifacts = vec![serde_json::json!({
+            "future_artifact": ["unsupported"]
+        })];
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        let error = package_state(&request, &cask).unwrap_err();
+        assert!(error.to_string().contains("unsupported artifact type"));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mise_owned_state_validates_platform_before_receipt() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("example", "1.0.0");
+        write_test_app_receipt(&cask, "Example.app")?;
+        cask.artifacts = vec![serde_json::json!({
+            "app": ["Example.app"]
+        })];
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        assert!(matches!(
+            package_state(&request, &cask)?,
+            PackageState::Unavailable { .. }
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn ownership_race_guard_removes_only_mise_stage() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        file::write(stage.join("download"), "mise")?;
+        let metadata = caskroom_token_dir("example").join(".metadata/receipt.json");
+        file::create_dir_all(metadata.parent().unwrap())?;
+        file::write(&metadata, "homebrew")?;
+
+        let error = ensure_homebrew_did_not_take_ownership("example", &stage).unwrap_err();
+
+        assert!(error.to_string().contains("Homebrew took ownership"));
+        assert!(!stage.exists());
+        assert_eq!(file::read_to_string(metadata)?, "homebrew");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_race_probe_error_removes_mise_stage() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        file::write(stage.join("download"), "mise")?;
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.parent().unwrap())?;
+        file::write(&token_dir, "not a directory")?;
+
+        let error = ensure_homebrew_did_not_take_ownership("example", &stage).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to inspect Homebrew metadata")
+        );
+        assert!(!stage.exists());
         Ok(())
     }
 
@@ -7874,14 +8221,14 @@ mod tests {
             &[],
         )?;
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some(cask.version.clone())
         );
         crate::file::write(app_target.join("Contents/app"), "changed")?;
         // Content drift must not look like "missing" — that would reinstall the
         // app on the next apply and revoke macOS TCC grants.
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some(cask.version.clone())
         );
         assert!(!cask_target_record_matches(
@@ -7923,7 +8270,7 @@ mod tests {
             &[],
         )?;
         file::remove_all(&app_target)?;
-        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -8022,7 +8369,7 @@ mod tests {
         crate::file::write(app_target.join("Contents/app"), "updated by app")?;
         cask.version = "2.0.0".to_string();
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some("1.0.0".to_string())
         );
         let receipt = read_receipt(&caskroom)?.unwrap();
@@ -12530,13 +12877,7 @@ end
         )?;
 
         assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app],
-                    ..Default::default()
-                }
-            )?,
+            mise_installed_cask_version(&cask)?,
             Some("1.0.0".to_string())
         );
         Ok(())
@@ -12571,10 +12912,7 @@ end
             toml::to_string_pretty(&receipt)?,
         )?;
 
-        assert_eq!(
-            installed_cask_version(&cask, &CaskArtifacts::default())?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -12906,31 +13244,13 @@ end
         };
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    binaries: vec![binary.clone()],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         let target = binary.target_path(Path::new("/Applications"))?;
         file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(&target, "binary")?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    binaries: vec![binary],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -12976,24 +13296,16 @@ end
             caskroom.join(".mise-cask.toml"),
             toml::to_string_pretty(&receipt)?,
         )?;
-        let artifacts = CaskArtifacts {
-            apps: vec![app],
-            command_wrappers: vec![wrapper.clone()],
-            ..Default::default()
-        };
 
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some(cask.version.clone())
         );
 
         let target = wrapper.target_path()?;
         file::create_dir_all(target.parent().unwrap())?;
         file::write(target, "wrapper")?;
-        assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
-            Some(cask.version)
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, Some(cask.version));
         Ok(())
     }
 
@@ -13980,16 +14292,7 @@ end
         )?;
 
         assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    pkgs: vec![PkgArtifact {
-                        source: "Example.pkg".to_string(),
-                    }],
-                    pkg_ids: vec!["com.example.missing".to_string()],
-                    ..Default::default()
-                }
-            )?,
+            mise_installed_cask_version(&cask)?,
             Some("1.0.0".to_string())
         );
         Ok(())
@@ -14007,28 +14310,10 @@ end
         };
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app.clone()],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         file::create_dir_all(app_target_path(app.target_name())?)?;
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -14044,17 +14329,13 @@ end
             target: None,
         };
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
-        let artifacts = CaskArtifacts {
-            completions: vec![completion.clone()],
-            ..Default::default()
-        };
 
-        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         let target = completion.target_path()?;
         file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(target, "complete")?;
-        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -14071,16 +14352,7 @@ end
         file::create_dir_all(caskroom_version_dir("configured-name", &cask.version))?;
         file::create_dir_all(app_target_path(app.target_name())?)?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(&caskroom)?;
@@ -14107,16 +14379,7 @@ end
             toml::to_string_pretty(&receipt)?,
         )?;
         assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![AppArtifact {
-                        source: "Example.app".to_string(),
-                        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
-                    }],
-                    ..Default::default()
-                }
-            )?,
+            mise_installed_cask_version(&cask)?,
             Some("2.0.0".to_string())
         );
         Ok(())
@@ -14131,6 +14394,7 @@ end
         file::create_dir_all(token_dir.join("2.0.0"))?;
         file::create_dir_all(token_dir.join(".metadata/2.0.0/timestamp/Casks"))?;
         file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+        file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
 
         assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
         Ok(())
