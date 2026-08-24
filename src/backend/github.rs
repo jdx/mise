@@ -1442,13 +1442,12 @@ impl UnifiedGitBackend {
             .lock_platforms
             .get(&platform_key)
             .and_then(|platform| platform.provenance.clone());
-
-        self.verify_checksum(ctx, tv, &file_path)?;
-
         let lockfile_has_checksum = tv
             .lock_platforms
             .get(&platform_key)
             .is_some_and(|p| p.checksum.is_some());
+
+        self.verify_checksum(ctx, tv, &file_path)?;
 
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
@@ -1514,6 +1513,7 @@ impl UnifiedGitBackend {
             .and_then(|platform| platform.additional_artifacts.get(index))
             .cloned()
             .unwrap_or_default();
+        let lockfile_has_checksum = artifact_info.checksum.is_some();
         artifact_info.url = asset.url.clone();
         artifact_info.url_api = (!asset.url_api.is_empty()).then(|| asset.url_api.clone());
         if let Some(digest) = &asset.digest {
@@ -1544,7 +1544,6 @@ impl UnifiedGitBackend {
             .await?;
         ctx.pr.next_operation();
 
-        let lockfile_has_checksum = artifact_info.checksum.is_some();
         self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)?;
         let expected_provenance = artifact_info.provenance.clone();
         if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
