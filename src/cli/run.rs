@@ -912,7 +912,11 @@ impl Run {
                 &mut main_done_rx,
                 main_deps.clone(),
                 || this.is_stopping(),
-                || this.is_interrupted(),
+                // What overrides `continue_on_error` is the *user* interrupting
+                // mise, not any task being interrupted. A child that took SIGINT
+                // on its own stops that task; it is not a reason to drop work the
+                // user asked to keep going.
+                ctrlc::is_cancelled,
                 this.continue_on_error,
                 |task, deps_for_remove, allow_during_interruption| {
                     let this = this.clone();
@@ -1060,7 +1064,22 @@ impl Run {
                 }
             }
             let interrupted = result.as_ref().is_err_and(|err| {
-                !panicked && ctrlc::is_cancelled() && Error::is_task_interrupted(err)
+                if panicked {
+                    return false;
+                }
+                // A child killed by SIGINT is the kernel reporting an
+                // interruption, so it stands on its own: the terminal delivers
+                // Ctrl-C to the foreground group, and a task that put itself in
+                // another group means mise's own handler never runs. Requiring
+                // `is_cancelled()` here made the same keypress a failure
+                // depending on which process happened to receive the signal
+                // (discussion #9482).
+                //
+                // `TaskInterrupted` still needs it: that variant means mise
+                // abandoned the task before starting it, which only happens
+                // when mise itself was cancelled.
+                Error::is_sigint(err)
+                    || (ctrlc::is_cancelled() && Error::is_task_interrupted_before_start(err))
             });
             if let Err(err) = &result {
                 if interrupted {
@@ -1133,7 +1152,7 @@ impl Run {
         inherited_allow_during_interruption: bool,
     ) -> bool {
         if !this.is_stopping()
-            || (this.continue_on_error && !this.is_interrupted())
+            || (this.continue_on_error && !ctrlc::is_cancelled())
             || inherited_allow_during_interruption
         {
             return false;

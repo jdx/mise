@@ -2081,7 +2081,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert!(crate::errors::Error::is_task_interrupted(&err));
+        assert!(crate::errors::Error::is_task_interrupted_before_start(&err));
     }
 
     #[tokio::test]
