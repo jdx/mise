@@ -1455,7 +1455,10 @@ impl UnifiedGitBackend {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
-        } else if ctx.locked && !force_verify && locked_provenance.is_none() && lockfile_has_checksum
+        } else if ctx.locked
+            && !force_verify
+            && locked_provenance.is_none()
+            && lockfile_has_checksum
         {
             debug!(
                 "locked mode: skipping provenance detection for {} \
