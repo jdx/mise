@@ -1445,12 +1445,24 @@ impl UnifiedGitBackend {
 
         self.verify_checksum(ctx, tv, &file_path)?;
 
+        let lockfile_has_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|p| p.checksum.is_some());
+
         let settings = Settings::get();
         let force_verify = settings.force_provenance_verify();
         if has_lockfile_integrity && !force_verify {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
+        } else if ctx.locked && !force_verify && locked_provenance.is_none() && lockfile_has_checksum
+        {
+            debug!(
+                "locked mode: skipping provenance detection for {} \
+                 (lockfile has checksum but no provenance)",
+                tv.style()
+            );
         } else {
             let provenance_result = self
                 .verify_attestations_or_slsa(
@@ -1532,12 +1544,23 @@ impl UnifiedGitBackend {
             .await?;
         ctx.pr.next_operation();
 
+        let lockfile_has_checksum = artifact_info.checksum.is_some();
         self.verify_additional_artifact_checksum(ctx, &file_path, &mut artifact_info)?;
         let expected_provenance = artifact_info.provenance.clone();
         if has_lockfile_integrity && !Settings::get().force_provenance_verify() {
             if let Some(provenance) = expected_provenance.as_ref() {
                 self.ensure_provenance_type_setting_enabled(tv, opts, provenance)?;
             }
+        } else if ctx.locked
+            && !Settings::get().force_provenance_verify()
+            && expected_provenance.is_none()
+            && lockfile_has_checksum
+        {
+            debug!(
+                "locked mode: skipping provenance detection for additional asset {} \
+                 (lockfile has checksum but no provenance)",
+                asset.name
+            );
         } else {
             let provenance = self
                 .verify_attestations_or_slsa(
