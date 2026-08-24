@@ -40,7 +40,7 @@ Flags:
 
 Global flags:
   -v, --verbose…     verbose
-    (default: false)"
+                     (default: false)"
 assert "mise run greet -v hello -h 2>&1 || true" "say hello
 
 Usage: greet hello [-n --name <name>]
@@ -51,7 +51,7 @@ Flags:
 
 Global flags:
   -v, --verbose…     verbose
-    (default: false)"
+                     (default: false)"
 assert_contains "mise run greet -h 2>&1 || true" "Usage: greet [-v --verbose…] <SUBCOMMAND>"
 assert_contains "mise run greet -h hello 2>&1 || true" "Usage: greet [-v --verbose…] <SUBCOMMAND>"
 
