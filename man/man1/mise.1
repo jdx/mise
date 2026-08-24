@@ -1052,6 +1052,9 @@ Print what would happen without installing anything
 \fB\-y, \-\-yes\fR
 Skip confirmation prompts
 .TP
+\fB\-\-skip\-dirty\fR
+Skip configured repos with local changes instead of failing
+.TP
 \fB\-\-force\-dotfiles\fR
 Overwrite existing files that conflict with whole\-file dotfile entries
 .TP
@@ -2015,6 +2018,9 @@ Print the commands that would run without running them
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
 .TP
+\fB\-\-skip\-dirty\fR
+Skip repos with local changes instead of failing
+.TP
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP REPOS EXEC"
@@ -2064,6 +2070,9 @@ Print the commands that would run without running them
 .TP
 \fB\-y, \-\-yes\fR
 Skip the confirmation prompt
+.TP
+\fB\-\-skip\-dirty\fR
+Skip repos with local changes instead of failing
 .TP
 \fB\-h, \-\-help\fR
 Print help
