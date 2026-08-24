@@ -5,7 +5,7 @@ use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{cli::args::ToolArg, file::display_path};
 use eyre::Context;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use log::LevelFilter;
 pub(crate) use std::env::*;
@@ -910,11 +910,14 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
 /// values changed or removed by the caller after mise applied the environment.
 fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> EnvMap {
     for (key, old_value) in &mise_diff.old {
-        match mise_diff.new.get(key) {
-            Some(new_value) if env.get(key) == Some(new_value) => {
-                env.insert(key.clone(), old_value.clone());
+        match env_diff_get(&mise_diff.new, key) {
+            Some(new_value) if env_map_get(&env, key) == Some(new_value) => {
+                let key = env_map_key(&env, key)
+                    .cloned()
+                    .unwrap_or_else(|| key.clone());
+                env.insert(key, old_value.clone());
             }
-            None if !env.contains_key(key) => {
+            None if env_map_get(&env, key).is_none() => {
                 env.insert(key.clone(), old_value.clone());
             }
             _ => {}
@@ -922,12 +925,42 @@ fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> En
     }
 
     for (key, new_value) in &mise_diff.new {
-        if !mise_diff.old.contains_key(key) && env.get(key) == Some(new_value) {
-            env.remove(key);
+        if env_diff_get(&mise_diff.old, key).is_none()
+            && env_map_get(&env, key) == Some(new_value)
+            && let Some(key) = env_map_key(&env, key).cloned()
+        {
+            env.remove(&key);
         }
     }
 
     env
+}
+
+#[cfg(not(windows))]
+fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
+    env.get_key_value(key).map(|(key, _)| key)
+}
+
+#[cfg(windows)]
+fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
+    env.keys()
+        .find(|candidate| candidate.eq_ignore_ascii_case(key))
+}
+
+fn env_map_get<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
+    env_map_key(env, key).and_then(|key| env.get(key))
+}
+
+#[cfg(not(windows))]
+fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    env.get(key)
+}
+
+#[cfg(windows)]
+fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    env.iter()
+        .find(|(candidate, _)| candidate.eq_ignore_ascii_case(key))
+        .map(|(_, value)| value)
 }
 
 fn offline(args: &[String]) -> bool {
@@ -1279,6 +1312,30 @@ mod tests {
         assert_eq!(
             reverse_diff_preserving_overrides(&diff, EnvMap::new()),
             EnvMap::new()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_reverse_diff_matches_environment_keys_case_insensitively_on_windows() {
+        let diff = EnvDiff {
+            old: [("Changed".into(), "before".into())].into(),
+            new: [
+                ("Added".into(), "managed".into()),
+                ("Changed".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "managed".into()),
+        ]
+        .into();
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [("CHANGED".into(), "before".into())].into()
         );
     }
 
