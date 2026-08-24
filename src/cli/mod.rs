@@ -772,7 +772,7 @@ impl Cli {
         // Handle the hidden completion protocol here, before config or tools load.
         let completion_argv: Vec<std::ffi::OsString> =
             args.iter().skip(1).map(std::ffi::OsString::from).collect();
-        if let Some(answer) = Cli::completion_request(&completion_argv) {
+        if let Some(answer) = completion::completion_request(&completion_argv) {
             print!("{answer}");
             return Ok(());
         }

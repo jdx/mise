@@ -102,6 +102,7 @@ usage_rs = { package = "usage-rs", version = "6", features = [
   "diagnostics",
   "validation",
 ] }
+usage-cli = "6"
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "8"
