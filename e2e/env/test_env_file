@@ -108,3 +108,22 @@ mise.file = ['{{env.HOME}}/.home-test-env']
 EOF
 echo FOO_FROM_FILE=foo_from_file_home >~/.home-test-env
 assert "mise x -- env | grep FOO_FROM_FILE" "FOO_FROM_FILE=foo_from_file_home"
+
+# A byte-order mark is what Notepad, and PowerShell 5.1's `Out-File -Encoding utf8`, leave at the
+# front of a file. It is invisible in an editor, and it used to make the whole file unparseable:
+# every command that read this config failed, pointing at a character nobody can see.
+cat <<TOML >mise.toml
+[env]
+_.file = 'bom-env'
+TOML
+printf '\xef\xbb\xbfBOM_FOO=bar\n' >bom-env
+assert "mise env | grep '^export BOM_FOO='" "export BOM_FOO=bar"
+
+# Same mark, structured file. serde_json rejects it; yaml and toml were measured to accept it and
+# are left alone.
+cat <<TOML >mise.toml
+[env]
+_.file = 'bom.json'
+TOML
+printf '\xef\xbb\xbf{"BOM_BAZ": "qux"}\n' >bom.json
+assert "mise env | grep '^export BOM_BAZ='" "export BOM_BAZ=qux"
