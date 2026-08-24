@@ -619,12 +619,14 @@ impl Backend for AquaBackend {
         let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
         self.download(ctx, &tv, &download_url, &filename).await?;
 
+        // Snapshot before any mutation so verify() knows whether the lockfile
+        // originally contained a checksum (vs. one we just wrote from api_digest).
+        let lockfile_has_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|p| p.checksum.is_some());
+
         if validated_url.is_none() {
-            // Store the asset URL and digest (if available) in the tool version
-            let lockfile_has_checksum = tv
-                .lock_platforms
-                .get(&platform_key)
-                .is_some_and(|p| p.checksum.is_some());
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
             platform_info.url_api = url_api.clone();
@@ -636,17 +638,11 @@ impl Backend for AquaBackend {
             }
         }
 
-        // Snapshot before verify_checksum can generate a new checksum.
-        let lockfile_had_checksum = tv
-            .lock_platforms
-            .get(&self.get_platform_key())
-            .is_some_and(|p| p.checksum.is_some());
-
         // Advance to checksum operation if applicable
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
             ctx.pr.next_operation();
         }
-        self.verify(ctx, &mut tv, &pkg, &v, &filename, lockfile_had_checksum)
+        self.verify(ctx, &mut tv, &pkg, &v, &filename, lockfile_has_checksum)
             .await?;
 
         // Advance to extraction operation if applicable
