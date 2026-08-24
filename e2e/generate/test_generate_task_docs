@@ -49,7 +49,7 @@ assert_contains "mise generate task-docs" '## `parent`'
 assert_contains "mise generate task-docs" "Parent task"
 assert_contains "mise generate task-docs" '## `child`'
 assert_contains "mise generate task-docs" "Child task"
-assert_contains "mise generate task-docs" '**Aliases**: `c`'
+assert_contains "mise generate task-docs" '**Aliases:** `c`'
 
 # Test 3: File-based tasks
 mkdir -p mise-tasks
@@ -63,7 +63,7 @@ chmod +x mise-tasks/file-task
 
 assert_contains "mise generate task-docs" '## `file-task`'
 assert_contains "mise generate task-docs" "A file-based task"
-assert_contains "mise generate task-docs" '**Aliases**: `ft`'
+assert_contains "mise generate task-docs" '**Aliases:** `ft`'
 
 # Test 4: Tasks with complex usage specs
 cat <<'EOF' >mise-tasks/complex-task
@@ -118,7 +118,7 @@ assert "ls docs_output/file-output.md" ""
 # The multi-file output creates separate files for each task
 # Just verify that the file contains task documentation
 assert_contains "cat docs_output/file-output.md" '##'
-assert_contains "cat docs_output/file-output.md" '**Usage**'
+assert_contains "cat docs_output/file-output.md" '**Usage:**'
 
 # Test 7b: Multi-file output with --index
 rm -rf docs_output && mkdir -p docs_output
