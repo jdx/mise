@@ -168,10 +168,11 @@ impl TasksLs {
             && let Some(cwd) = &*dirs::CWD
         {
             let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
+            let excludes = config::task_excludes_for_dir(cwd, &config.config_files)?;
             // One file is enough to act on, and `make_executable_hint` is the only thing that
             // knows what "make it executable" means on this platform. Bound to a local because
             // under edition 2024 an `if let` scrutinee temporary is dropped before the body runs.
-            let non_executable = find_non_executable_task_files(&includes);
+            let non_executable = find_non_executable_task_files(&includes, &excludes);
             if let Some(path) = non_executable.first() {
                 warn!(
                     "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. {}",

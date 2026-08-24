@@ -4361,14 +4361,30 @@ struct LoadTaskIncludesOptions<'a> {
     monorepo_cf: Option<&'a Arc<dyn ConfigFile>>,
     require_trust: bool,
     rendered_file_tasks: Option<&'a mut RenderedTaskCache>,
+    excludes: &'a [PathBuf],
 }
 
-fn collect_task_files(root: &Path) -> Result<Vec<PathBuf>> {
+pub(crate) fn is_task_path_excluded(path: &Path, excludes: &[PathBuf]) -> bool {
+    Settings::get()
+        .task
+        .disable_paths
+        .iter()
+        .chain(excludes)
+        .any(|exclude| file::path_starts_with_resolved(path, exclude))
+}
+
+fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>> {
     WalkDir::new(root)
         .follow_links(true)
         .into_iter()
         // skip hidden directories (if the root is hidden that's ok)
-        .filter_entry(|e| e.path() == root || !e.file_name().to_string_lossy().starts_with('.'))
+        .filter_entry(|entry| {
+            entry.path() == root
+                || (!entry.file_name().to_string_lossy().starts_with('.')
+                    && !excludes
+                        .iter()
+                        .any(|exclude| file::path_starts_with_resolved(entry.path(), exclude)))
+        })
         .filter_map(|entry| match entry {
             Ok(entry) if entry.file_type().is_file() => Some(Ok(entry.path().to_path_buf())),
             Ok(_) => None,
@@ -4398,7 +4414,11 @@ async fn load_tasks_includes(
         monorepo_cf,
         require_trust,
         mut rendered_file_tasks,
+        excludes,
     } = options;
+    if is_task_path_excluded(root, excludes) {
+        return Ok(vec![]);
+    }
     if root.is_file() && root.extension().map(|e| e == "toml").unwrap_or(false) {
         trust_check_task_include(root, require_trust)?;
         load_task_file(
@@ -4412,16 +4432,14 @@ async fn load_tasks_includes(
         )
         .await
     } else if root.is_dir() {
-        let all_files = collect_task_files(root)?
-            .into_iter()
-            .filter(|p| {
-                !Settings::get()
-                    .task
-                    .disable_paths
-                    .iter()
-                    .any(|d| p.starts_with(d))
-            })
+        let all_excludes = Settings::get()
+            .task
+            .disable_paths
+            .iter()
+            .chain(excludes)
+            .cloned()
             .collect::<Vec<_>>();
+        let all_files = collect_task_files(root, &all_excludes)?;
         let is_toml = |p: &Path| p.extension().map(|e| e == "toml").unwrap_or(false);
         let (toml_files, exec_files): (Vec<_>, Vec<_>) = all_files
             .into_iter()
@@ -4612,6 +4630,25 @@ fn expand_task_include(dir: &Path, pattern: &str) -> Vec<PathBuf> {
     }
 }
 
+fn resolve_task_excludes(dir: &Path, patterns: &[String]) -> Vec<PathBuf> {
+    patterns
+        .iter()
+        .flat_map(|pattern| {
+            if is_glob_pattern(pattern) {
+                expand_task_include(dir, pattern)
+            } else {
+                let path = file::replace_path(pattern);
+                if path.is_absolute() {
+                    vec![path]
+                } else {
+                    vec![dir.join(path)]
+                }
+            }
+        })
+        .unique()
+        .collect()
+}
+
 fn task_include_patterns_for_dir(
     dir: &Path,
     config_files: &ConfigMap,
@@ -4664,6 +4701,33 @@ pub(crate) fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Res
         })
         .unique()
         .collect::<Vec<_>>())
+}
+
+pub(crate) fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
+    let configs = configs_at_root(dir, config_files);
+    let cascaded_task_config =
+        if configs.iter().find_map(|cf| cf.task_config().cascade) == Some(false) {
+            None
+        } else {
+            cascaded_task_config_for_dir(dir, config_files)?
+        };
+    let (excludes, resolve_dir) = configs
+        .iter()
+        .find_map(|cf| match cf.task_config_excludes() {
+            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .transpose()?
+        .or_else(|| {
+            cascaded_task_config.and_then(|tc| {
+                tc.task_config
+                    .excludes
+                    .map(|excludes| (excludes, tc.excludes_root))
+            })
+        })
+        .unwrap_or_default();
+    Ok(resolve_task_excludes(&resolve_dir, &excludes))
 }
 
 /// Returns the directory where a new file task should be created.
@@ -4740,6 +4804,7 @@ struct TaskSources {
 struct CascadedTaskConfig {
     task_config: TaskConfig,
     includes_root: PathBuf,
+    excludes_root: PathBuf,
 }
 
 fn merge_cascaded_task_config(
@@ -4785,6 +4850,18 @@ fn merge_cascaded_task_config(
         cascaded.task_config.includes = Some(includes);
         cascaded.includes_root = root;
     }
+    if let Some((excludes, root)) = configs
+        .iter()
+        .find_map(|cf| match cf.task_config_excludes() {
+            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .transpose()?
+    {
+        cascaded.task_config.excludes = Some(excludes);
+        cascaded.excludes_root = root;
+    }
     Ok(())
 }
 
@@ -4812,7 +4889,8 @@ fn cascaded_task_config_for_dir(
             Some(true) if cascaded.is_none() => {
                 cascaded = Some(CascadedTaskConfig {
                     task_config: TaskConfig::default(),
-                    includes_root: root,
+                    includes_root: root.clone(),
+                    excludes_root: root,
                 });
             }
             _ => {}
@@ -4935,6 +5013,24 @@ async fn load_task_sources_from_configs(
             })
         })
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
+    let (excludes, excludes_root) = configs
+        .iter()
+        .find_map(|cf| match cf.task_config_excludes() {
+            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .transpose()?
+        .or_else(|| {
+            cascaded_task_config.and_then(|tc| {
+                tc.task_config
+                    .excludes
+                    .clone()
+                    .map(|excludes| (excludes, tc.excludes_root.clone()))
+            })
+        })
+        .unwrap_or_default();
+    let excludes = resolve_task_excludes(&excludes_root, &excludes);
 
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
@@ -5008,6 +5104,7 @@ async fn load_task_sources_from_configs(
                     monorepo_cf,
                     require_trust: require_task_include_trust,
                     rendered_file_tasks: rendered_file_tasks.as_deref_mut(),
+                    excludes: &excludes,
                 },
             )
             .await?;
@@ -5219,7 +5316,24 @@ mod tests {
         fs::write(&task, "echo ok")?;
         std::os::unix::fs::symlink("missing", tmp.path().join("dangling"))?;
 
-        assert_eq!(collect_task_files(tmp.path())?, vec![task]);
+        assert_eq!(collect_task_files(tmp.path(), &[])?, vec![task]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collect_task_files_prunes_excluded_directories() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let excluded = tmp.path().join("excluded");
+        fs::create_dir(&excluded)?;
+        fs::write(excluded.join("pyproject.toml"), "[project]")?;
+        let task = tmp.path().join("task");
+        fs::write(&task, "echo ok")?;
+
+        assert_eq!(
+            collect_task_files(tmp.path(), std::slice::from_ref(&excluded))?,
+            vec![task]
+        );
 
         Ok(())
     }
@@ -5234,7 +5348,10 @@ mod tests {
         fs::create_dir(&root)?;
         std::os::unix::fs::symlink(&target, root.join("linked"))?;
 
-        assert_eq!(collect_task_files(&root)?, vec![root.join("linked/task")]);
+        assert_eq!(
+            collect_task_files(&root, &[])?,
+            vec![root.join("linked/task")]
+        );
 
         Ok(())
     }
@@ -5244,7 +5361,7 @@ mod tests {
         let tmp = TempDir::new()?;
         std::os::unix::fs::symlink("loop", tmp.path().join("loop"))?;
 
-        assert!(collect_task_files(tmp.path()).is_err());
+        assert!(collect_task_files(tmp.path(), &[]).is_err());
 
         Ok(())
     }

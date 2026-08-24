@@ -23,7 +23,10 @@ const MAX_AVAILABLE_TASKS_IN_ERROR: usize = 20;
 /// Find non-executable files in task include directories.
 /// These are files that likely should be tasks but are missing the executable bit.
 /// Skips hidden files (e.g., .gitkeep, .DS_Store) to match load_tasks_includes behavior.
-pub(crate) fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBuf> {
+pub(crate) fn find_non_executable_task_files(
+    includes: &[PathBuf],
+    excludes: &[PathBuf],
+) -> Vec<PathBuf> {
     includes
         .iter()
         .filter(|d| d.is_dir())
@@ -36,7 +39,11 @@ pub(crate) fn find_non_executable_task_files(includes: &[PathBuf]) -> Vec<PathBu
                     e.path() == root || !e.file_name().to_string_lossy().starts_with('.')
                 })
                 .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file() && !file::is_executable(e.path()))
+                .filter(|e| {
+                    e.file_type().is_file()
+                        && !file::is_executable(e.path())
+                        && !config::is_task_path_excluded(e.path(), excludes)
+                })
                 .map(|e| e.path().to_path_buf())
         })
         .collect()
@@ -204,8 +211,9 @@ async fn make_task_executable(
         (cwd.clone(), name.strip_prefix(':').unwrap_or(name))
     };
     let includes = config::task_includes_for_dir(&task_dir, &config.config_files)?;
+    let excludes = config::task_excludes_for_dir(&task_dir, &config.config_files)?;
     let Some(path) = includes.iter().find_map(|root| {
-        find_non_executable_task_files(std::slice::from_ref(root))
+        find_non_executable_task_files(std::slice::from_ref(root), &excludes)
             .into_iter()
             .find(|path| {
                 Task::new(path, root, &task_dir).is_ok_and(|task| task.is_match(task_name))
@@ -319,7 +327,8 @@ async fn err_no_task(
         // Check if there are non-executable files in task include directories
         if let Some(cwd) = &*dirs::CWD {
             let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
-            let non_exec_files = find_non_executable_task_files(&includes);
+            let excludes = config::task_excludes_for_dir(cwd, &config.config_files)?;
+            let non_exec_files = find_non_executable_task_files(&includes, &excludes);
             // The remedy differs by platform and `make_executable_hint` is the only thing that
             // knows how, so it gets one file to name rather than the list. The count and the
             // directories below still say how much is affected.
