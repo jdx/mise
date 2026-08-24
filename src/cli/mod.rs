@@ -788,7 +788,7 @@ impl Cli {
         // This avoids expensive backend::load_tools() and config loading
         if hook_env_module::should_exit_early_fast() {
             measure!("logger", { logger::init() });
-            Settings::flush_deprecated_warnings_for_fast_exit();
+            Settings::flush_pending_warnings_before_exit();
             return Ok(());
         }
         measure!("logger", { logger::init() });

@@ -312,7 +312,18 @@ static LAST_SAFE: AtomicU8 = AtomicU8::new(2);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
-static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+/// Settings files that failed to parse, held until warnings can be printed.
+///
+/// A set rather than a list because settings are built more than once per run — `add_cli_matches`
+/// resets them so CLI flags take effect — and each build re-reports the same file. The messages
+/// name their file, which is what keeps two files failing the same way from collapsing into one.
+static PENDING_SETTINGS_FILE_ERRORS: Lazy<Mutex<BTreeSet<String>>> = Lazy::new(Default::default);
+/// Whether warnings found while loading settings can be printed yet.
+///
+/// `logger::init()` calls `Settings::try_get()` before installing the logger, so the first build
+/// happens with nothing to print to. Anything found there is queued above and flushed once the
+/// logger exists.
+static WARNINGS_READY: AtomicBool = AtomicBool::new(false);
 // TODO(2027.8.0): Remove the per-tool warning accessors once the NixOS
 // and Alpine `all_compile` deprecation process is complete.
 
@@ -457,8 +468,23 @@ fn warn_deprecated_env_settings() {
     }
 }
 
-fn queue_deprecated(key: &'static str) {
-    PENDING_DEPRECATED_SETTINGS.lock().unwrap().insert(key);
+/// Report a settings file that could not be parsed.
+///
+/// Queued rather than printed when the logger is not up yet. `warn_once!` cannot stand in for the
+/// queue: it records the message as seen even when nothing was printed, so the pre-logger build
+/// would silence the one that comes after it.
+///
+/// Readiness is read while the queue is held, and the flush sets it while holding the same lock, so
+/// a warning cannot be queued into a set that has just been drained.
+fn warn_settings_file_error(msg: String) {
+    {
+        let mut pending = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
+        if !WARNINGS_READY.load(Ordering::SeqCst) {
+            pending.insert(msg);
+            return;
+        }
+    }
+    warn_once!("{msg}");
 }
 
 fn queue_deprecated_settings(keys: impl IntoIterator<Item = &'static str>) {
@@ -495,9 +521,14 @@ fn should_warn_deprecated_value(value: &toml::Value) -> bool {
 }
 
 fn warn_deprecated(key: &'static str) {
-    if !DEPRECATED_WARNINGS_READY.load(Ordering::SeqCst) {
-        queue_deprecated(key);
-        return;
+    // Same lock discipline as `warn_settings_file_error`: the readiness read and the insert have to
+    // be one step against the flush, or a key queued just after the drain is never printed.
+    {
+        let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
+        if !WARNINGS_READY.load(Ordering::SeqCst) {
+            pending.insert(key);
+            return;
+        }
     }
     warn_deprecated_now(key);
 }
@@ -524,6 +555,44 @@ fn warn_deprecated_now(key: &'static str) {
                     "deprecated [setting.{key}]: {msg} This will be removed in mise {remove_at}."
                 );
             }
+        }
+    }
+}
+
+/// Settle the verbosity settings against each other, so `log_level` is the single answer.
+///
+/// `debug`, `trace`, `quiet` and `verbose` each say something about `log_level`, and they overlap:
+/// the order below is the precedence. Kept apart from the rest of the load so it can also be
+/// applied to a partial view of the settings — see [`Settings::cli_log_level`].
+fn normalize_verbosity(settings: &mut Settings) {
+    if settings.debug {
+        settings.log_level = "debug".to_string();
+    }
+    if settings.trace {
+        settings.log_level = "trace".to_string();
+    }
+    if settings.quiet {
+        settings.log_level = "error".to_string();
+    }
+    if settings.log_level == "trace" || settings.log_level == "debug" {
+        settings.verbose = true;
+        settings.debug = true;
+        if settings.log_level == "trace" {
+            settings.trace = true;
+        }
+    }
+    // handle the special case of `mise -v` which should show version, not set verbose.
+    // Use the args mise was invoked with (already captured safely in Cli::run and kept
+    // in sync with internal re-dispatch like `mise asdf ...`) rather than re-reading the
+    // process argv. See also Settings::no_config().
+    let is_version_flag = {
+        let args = env::ARGS.read().unwrap();
+        args.len() == 2 && args[1] == "-v"
+    };
+    if settings.verbose && !is_version_flag {
+        settings.quiet = false;
+        if settings.log_level != "trace" {
+            settings.log_level = "debug".to_string();
         }
     }
 }
@@ -852,6 +921,37 @@ impl Settings {
         normalize_hidden_config_aliases(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
     }
 
+    /// The log level the parsed CLI flags ask for, without a full settings build.
+    ///
+    /// [`Self::try_get`] can keep failing once the CLI flags are part of it — `--cd` naming a
+    /// directory that `validate_cd_path` accepts but the `chdir` refuses is the case `Cli::run`
+    /// propagates — and from then on no build succeeds. A caller that only knows how to give up
+    /// would be left holding the level from before the flags were parsed, and anything printed
+    /// from there on ignores `--quiet`.
+    ///
+    /// `None` when the flags said nothing about verbosity: the level already in force came from a
+    /// build that worked, and that build could see the config files this cannot. Only when the CLI
+    /// does speak is it worth answering, and then it outranks them anyway.
+    pub(crate) fn cli_log_level() -> Option<log::LevelFilter> {
+        let cli = CLI_SETTINGS.lock().unwrap().clone()?;
+        // `add_cli_matches` folds `--trace`/`--debug`/`-vv` into `log_level`, and `--silent` into
+        // `quiet`, so these four cover every flag that moves the level.
+        if cli.quiet.is_none()
+            && cli.silent.is_none()
+            && cli.log_level.is_none()
+            && cli.verbose.is_none()
+        {
+            return None;
+        }
+        // Environment-only: the CLI layer plus `MISE_*`. It skips config discovery, which is both
+        // what makes it survive the failure that sent us here and why its answer is a fallback
+        // rather than the real one.
+        let mut settings =
+            Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY).ok()?;
+        normalize_verbosity(&mut settings);
+        Some(settings.log_level())
+    }
+
     /// Load settings sources for an explicit root, or the current directory when `root` is `None`.
     ///
     /// This shares source ordering and file parsing with the normal settings load. It deliberately
@@ -895,11 +995,16 @@ impl Settings {
                         || crate::config::config_file::is_path_trusted(path)
                 }
             })
-            .map(|path| Self::parse_settings_file(&path))
-            .filter_map(|config| match config {
+            .filter_map(|path| match Self::parse_settings_file(&path) {
                 Ok(config) => Some(config),
                 Err(err) => {
-                    eprintln!("Error loading settings file: {err}");
+                    // Name the file. mise reads several settings files and two of them can fail
+                    // with byte-identical parser text, which leaves the reports
+                    // indistinguishable -- to the reader, and to the queue that collapses repeats.
+                    warn_settings_file_error(format!(
+                        "Error loading settings file {}: {err}",
+                        file::display_path(&path)
+                    ));
                     None
                 }
             })
@@ -938,36 +1043,7 @@ impl Settings {
         if *env::NO_COLOR {
             settings.color = false;
         }
-        if settings.debug {
-            settings.log_level = "debug".to_string();
-        }
-        if settings.trace {
-            settings.log_level = "trace".to_string();
-        }
-        if settings.quiet {
-            settings.log_level = "error".to_string();
-        }
-        if settings.log_level == "trace" || settings.log_level == "debug" {
-            settings.verbose = true;
-            settings.debug = true;
-            if settings.log_level == "trace" {
-                settings.trace = true;
-            }
-        }
-        // handle the special case of `mise -v` which should show version, not set verbose.
-        // Use the args mise was invoked with (already captured safely in Cli::run and kept
-        // in sync with internal re-dispatch like `mise asdf ...`) rather than re-reading the
-        // process argv. See also Settings::no_config().
-        let is_version_flag = {
-            let args = env::ARGS.read().unwrap();
-            args.len() == 2 && args[1] == "-v"
-        };
-        if settings.verbose && !is_version_flag {
-            settings.quiet = false;
-            if settings.log_level != "trace" {
-                settings.log_level = "debug".to_string();
-            }
-        }
+        normalize_verbosity(&mut settings);
         if !settings.color {
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
@@ -999,24 +1075,39 @@ impl Settings {
         Ok(settings)
     }
 
-    pub(crate) fn flush_deprecated_warnings() {
+    pub(crate) fn flush_pending_warnings() {
         if CLI_SETTINGS.lock().unwrap().is_none() {
             return;
         }
-        Self::flush_deprecated_warnings_now();
+        Self::flush_pending_warnings_now();
     }
 
-    pub(crate) fn flush_deprecated_warnings_for_fast_exit() {
-        Self::flush_deprecated_warnings_now();
+    /// Flush without waiting for CLI settings, for a path that is about to leave.
+    ///
+    /// Startup queues warnings before the logger exists and only flushes them once CLI flags are
+    /// known — but several steps in between can fail first, and a diagnostic that was queued and
+    /// never flushed is worse than one printed a moment early.
+    pub(crate) fn flush_pending_warnings_before_exit() {
+        Self::flush_pending_warnings_now();
     }
 
-    fn flush_deprecated_warnings_now() {
-        DEPRECATED_WARNINGS_READY.store(true, Ordering::SeqCst);
-        warn_deprecated_env_settings();
-        let pending = {
-            let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
-            std::mem::take(&mut *pending)
+    fn flush_pending_warnings_now() {
+        // Readiness is set under both queue locks so a producer cannot read "not ready" and then
+        // insert into a set this call has already taken.
+        let (pending_files, pending) = {
+            let mut files = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
+            let mut deprecated = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
+            WARNINGS_READY.store(true, Ordering::SeqCst);
+            (
+                std::mem::take(&mut *files),
+                std::mem::take(&mut *deprecated),
+            )
         };
+        // Outside the locks: these warn, and warning re-enters the queue helpers.
+        warn_deprecated_env_settings();
+        for msg in pending_files {
+            warn_once!("{msg}");
+        }
         for key in pending {
             warn_deprecated_now(key);
         }
@@ -1804,6 +1895,42 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `normalize_verbosity` is the whole answer to "what level is this run at", and it is now
+    /// reached from two places -- the settings load and `cli_log_level`. Pin the precedence so the
+    /// two cannot drift apart.
+    #[test]
+    fn test_normalize_verbosity_quiet_lowers_the_level() {
+        let mut settings = Settings {
+            quiet: true,
+            ..Default::default()
+        };
+        normalize_verbosity(&mut settings);
+        assert_eq!(settings.log_level, "error");
+    }
+
+    #[test]
+    fn test_normalize_verbosity_verbose_outranks_quiet() {
+        let mut settings = Settings {
+            quiet: true,
+            verbose: true,
+            ..Default::default()
+        };
+        normalize_verbosity(&mut settings);
+        assert_eq!(settings.log_level, "debug");
+        assert!(!settings.quiet);
+    }
+
+    #[test]
+    fn test_normalize_verbosity_keeps_trace_above_verbose() {
+        let mut settings = Settings {
+            trace: true,
+            verbose: true,
+            ..Default::default()
+        };
+        normalize_verbosity(&mut settings);
+        assert_eq!(settings.log_level, "trace");
+    }
 
     #[test]
     fn default_all_compile_is_limited_to_alpine_and_deprecated_nixos_behavior() {
