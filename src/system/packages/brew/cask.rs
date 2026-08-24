@@ -1043,12 +1043,16 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
     } else {
         let format = cask_extraction_format(archive, filename)?;
         if format == ExtractionFormat::Raw {
-            // Raw executable binary — copy it using the original URL filename so
-            // find_file_artifact can match against the binary stanza source name (e.g. "claude").
-            let url_filename = archive_filename(&cask.url).unwrap_or_else(|| filename.to_string());
-            let dest = extract_dir.join(&url_filename);
+            // A direct pkg download may have an opaque URL path while the response's
+            // Content-Disposition and the cask artifact supply its real name. Stage
+            // XAR installers under the declared artifact name; other raw downloads
+            // are executable binaries and retain the original URL filename.
+            let (stage_filename, executable) = raw_cask_artifact_name(cask, archive, filename)?;
+            let dest = extract_dir.join(stage_filename);
             file::copy(archive, &dest)?;
-            file::make_executable(&dest)?;
+            if executable {
+                file::make_executable(&dest)?;
+            }
         } else if !format.is_archive() {
             bail!(
                 "brew-cask:{}: unsupported archive type for {}",
@@ -1226,6 +1230,26 @@ fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> 
         return Ok(Some(ExtractionFormat::Zip));
     }
     Ok(None)
+}
+
+fn raw_cask_artifact_name(cask: &Cask, archive: &Path, fallback: &str) -> Result<(String, bool)> {
+    let mut magic = [0; 4];
+    let len = std::fs::File::open(archive)?.read(&mut magic)?;
+    if magic[..len].starts_with(b"xar!") {
+        let pkgs = cask_artifacts(cask)?.pkgs;
+        if let [pkg] = pkgs.as_slice() {
+            let mut components = Path::new(&pkg.source).components();
+            if matches!(components.next(), Some(Component::Normal(_)))
+                && components.next().is_none()
+            {
+                return Ok((pkg.source.clone(), false));
+            }
+        }
+    }
+    Ok((
+        archive_filename(&cask.url).unwrap_or_else(|| fallback.to_string()),
+        true,
+    ))
 }
 
 fn install_app(
@@ -10978,6 +11002,40 @@ end
         assert_eq!(
             cask_extraction_format(&archive, "claude-1.0.0-claude")?,
             ExtractionFormat::Raw
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn stages_bare_pkg_using_declared_artifact_name() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("2026.7.1343.0");
+        std::fs::write(&archive, b"xar!bare pkg")?;
+        let mut cask = test_cask("cloudflare-warp", "2026.7.1343.0");
+        cask.url = "https://example.com/version/2026.7.1343.0".to_string();
+        cask.artifacts = vec![
+            serde_json::json!({"pkg": ["Cloudflare_WARP_2026.7.1343.0.pkg"]}),
+            serde_json::json!({"uninstall": [{"pkgutil": "com.cloudflare.warp"}]}),
+        ];
+
+        assert_eq!(
+            raw_cask_artifact_name(&cask, &archive, "cached-name")?,
+            ("Cloudflare_WARP_2026.7.1343.0.pkg".to_string(), false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn raw_executable_keeps_url_filename() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("cached-name");
+        std::fs::write(&archive, b"#!/bin/sh\n")?;
+        let mut cask = test_cask("claude", "1.0.0");
+        cask.url = "https://example.com/claude".to_string();
+
+        assert_eq!(
+            raw_cask_artifact_name(&cask, &archive, "cached-name")?,
+            ("claude".to_string(), true)
         );
         Ok(())
     }
