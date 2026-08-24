@@ -1457,13 +1457,9 @@ impl UnifiedGitBackend {
             // Still check that the recorded provenance type's setting is enabled —
             // disabling a verification setting with a provenance-bearing lockfile is a downgrade.
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
-        } else if ctx.locked
-            && !force_verify
-            && locked_provenance.is_none()
-            && lockfile_has_checksum
-        {
+        } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
             debug!(
-                "locked mode: skipping provenance detection for {} \
+                "skipping provenance detection for {} \
                  (lockfile has checksum but no provenance)",
                 tv.style()
             );
@@ -1557,13 +1553,12 @@ impl UnifiedGitBackend {
             if let Some(provenance) = expected_provenance.as_ref() {
                 self.ensure_provenance_type_setting_enabled(tv, opts, provenance)?;
             }
-        } else if ctx.locked
-            && !Settings::get().force_provenance_verify()
+        } else if !Settings::get().force_provenance_verify()
             && expected_provenance.is_none()
             && lockfile_has_checksum
         {
             debug!(
-                "locked mode: skipping provenance detection for additional asset {} \
+                "skipping provenance detection for additional asset {} \
                  (lockfile has checksum but no provenance)",
                 asset.name
             );
