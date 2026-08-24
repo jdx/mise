@@ -2085,7 +2085,7 @@ mod tests {
             format!(
                 r#"
                 [settings.task]
-                disable_paths = ["tasks/generated", "{}"]
+                disable_paths = ["tasks/generated", '{}']
                 "#,
                 absolute.display()
             ),
