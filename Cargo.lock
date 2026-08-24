@@ -11012,7 +11012,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "shell-words",
- "tera 2.1.1",
+ "tera 2.2.0",
  "thiserror 2.0.20",
  "tokio",
  "usage-lib",

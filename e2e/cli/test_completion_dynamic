@@ -9,6 +9,11 @@ flag "--environment <name>" {
 }
 '''
 run = 'echo works'
+
+[tasks.paths]
+description = "Accept a path"
+usage = 'arg "<value>"'
+run = 'true'
 EOF
 
 fish_tasks="$(mise __complete_word__ --shell fish --line 'mise run ')"
@@ -34,3 +39,6 @@ assert_not_contains_text "$task_values" $'\001files'
 tools="$(mise __complete_word__ --shell fish --line 'mise install actionl')"
 assert_contains_text "$tools" 'actionlint@'
 assert_not_contains_text "$tools" $'\001files'
+
+task_paths="$(mise __complete_word__ --shell fish --line 'mise run paths ')"
+assert_contains_text "$task_paths" $'\001files'
