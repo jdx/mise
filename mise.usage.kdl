@@ -431,6 +431,7 @@ cannot be used together.
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap\u{1b}[22m                    # packages + repos + dotfiles + tools + bootstrap task\n    $ \u{1b}[1mmise bootstrap --force-dotfiles\u{1b}[22m   # replace conflicting dotfile targets\n    $ \u{1b}[1mmise bootstrap --skip tools,task\u{1b}[22m  # skip tool installation and the bootstrap task\n    $ \u{1b}[1mmise bootstrap --only tools\u{1b}[22m       # run just tool installation\n    $ \u{1b}[1mmise bootstrap status --missing\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap mise-shell-activate apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos defaults status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos launchd-agents apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap linux systemd-units apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap user apply --dry-run\u{1b}[22m\n"
     flag "-n --dry-run" help="Print what would happen without installing anything"
     flag "-y --yes" help="Skip confirmation prompts"
+    flag --skip-dirty help="Skip configured repos with local changes instead of failing"
     flag --force-dotfiles help="Overwrite existing files that conflict with whole-file dotfile entries"
     flag --only help="Run only one or more bootstrap parts" var=#true conflicts=--skip {
         long_help #"""
@@ -1074,6 +1075,7 @@ Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another path.
         cmd apply effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --skip-dirty help="Skip repos with local changes instead of failing"
             flag "-h --help" help="Print help" action=help builtin=#true
         }
         cmd exec {
@@ -1091,6 +1093,7 @@ Defaults to `~/.local/bin/mise`; pass `--install-mise=<PATH>` for another path.
         cmd update effect=write {
             flag "-n --dry-run" help="Print the commands that would run without running them"
             flag "-y --yes" help="Skip the confirmation prompt"
+            flag --skip-dirty help="Skip repos with local changes instead of failing"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[PATH]…" help="Update only matching configured or expanded paths" required=#false var=#true
         }

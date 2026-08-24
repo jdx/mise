@@ -92,6 +92,10 @@ pub(crate) struct Bootstrap {
     #[usage(long, short = 'y')]
     yes: bool,
 
+    /// Skip configured repos with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
+
     /// Overwrite existing files that conflict with whole-file dotfile entries
     #[usage(long)]
     force_dotfiles: bool,
@@ -792,6 +796,10 @@ struct BootstrapReposApply {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Skip repos with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
 }
 
 #[derive(Debug, usage_rs::Args)]
@@ -807,6 +815,10 @@ struct BootstrapReposUpdate {
     /// Skip the confirmation prompt
     #[usage(long, short)]
     yes: bool,
+
+    /// Skip repos with local changes instead of failing
+    #[usage(long)]
+    skip_dirty: bool,
 }
 
 #[derive(Debug, usage_rs::Args)]
@@ -1304,9 +1316,9 @@ impl Bootstrap {
             } else {
                 info!("bootstrap: repos");
                 if self.update {
-                    install::update_repos(repos, self.dry_run, self.yes)?;
+                    install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty)?;
                 } else {
-                    install::apply_repos(repos, self.dry_run, self.yes)?;
+                    install::apply_repos(repos, self.dry_run, self.yes, self.skip_dirty)?;
                 }
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostRepos)
@@ -3436,7 +3448,12 @@ impl BootstrapRepos {
 impl BootstrapReposApply {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        install::apply_repos(system::repos_from_config(&config), self.dry_run, self.yes)
+        install::apply_repos(
+            system::repos_from_config(&config),
+            self.dry_run,
+            self.yes,
+            self.skip_dirty,
+        )
     }
 }
 
@@ -3444,7 +3461,7 @@ impl BootstrapReposUpdate {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
-        install::update_repos(repos, self.dry_run, self.yes)
+        install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty)
     }
 }
 

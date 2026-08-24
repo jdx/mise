@@ -69,6 +69,7 @@ cannot be used together.
 ## Flags
 - **`-n --dry-run`** — Print what would happen without installing anything
 - **`-y --yes`** — Skip confirmation prompts
+- **`--skip-dirty`** — Skip configured repos with local changes instead of failing
 - **`--force-dotfiles`** — Overwrite existing files that conflict with whole-file dotfile entries
 - **`--only… <ONLY>`** — Run only one or more bootstrap parts
 
