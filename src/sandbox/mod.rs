@@ -33,6 +33,43 @@ pub(crate) struct SandboxConfig {
 /// Minimal env vars inherited when deny_env is active.
 const DEFAULT_ENV_KEYS: &[&str] = &["PATH", "HOME", "USER", "SHELL", "TERM", "COLORTERM", "LANG"];
 
+/// The closest ancestor that exists, and so the only one a Landlock rule can
+/// name.
+///
+/// `parent()` is not enough: for `a/b/c` where `a/b` is missing too, allowing
+/// `a/b` would be dropped for exactly the same reason.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn nearest_existing_ancestor(path: &std::path::Path) -> Option<&std::path::Path> {
+    // Confirmed to exist, not merely "no error saying otherwise": pointing the
+    // user at a directory we could not stat would be the same unchecked claim.
+    path.ancestors()
+        .skip(1)
+        .find(|ancestor| matches!(ancestor.try_exists(), Ok(true)))
+}
+
+/// Fold `.` and `..` so two spellings of one missing path are reported once.
+///
+/// Only ever a deduplication key, never displayed. A path that does not exist
+/// cannot be canonicalized, so this is lexical: if a `..` crosses a symlink the
+/// fold is not what the kernel would resolve. The cost of being wrong is one
+/// merged warning, so lexical is the right trade here.
+fn dedup_key(path: &std::path::Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !out.pop() {
+                    out.push("..");
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Check if an env var name matches an allow_env pattern.
 /// Patterns can contain `*` as a wildcard (e.g., `MYAPP_*` matches `MYAPP_FOO`).
 /// Patterns without `*` require an exact match.
@@ -120,6 +157,56 @@ impl SandboxConfig {
         self.deny_env || !self.allow_env.is_empty()
     }
 
+    /// Allow-list paths that do not exist, in declaration order and listed once
+    /// even when named by both `allow_read` and `allow_write`.
+    ///
+    /// Landlock binds a rule to an open descriptor, so it cannot name a path
+    /// that is not there yet and the rule is dropped — see
+    /// <https://github.com/jdx/mise/discussions/10556>. Not gated on Linux:
+    /// this is only a set of existence checks, and keeping it portable keeps it
+    /// testable on any host.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) fn missing_allow_paths(&self) -> Vec<&std::path::Path> {
+        let mut seen = std::collections::HashSet::new();
+        self.allow_read
+            .iter()
+            .chain(self.allow_write.iter())
+            // Only paths confirmed absent. `exists()` would fold a metadata
+            // error — no listing permission on a parent, say — into "missing"
+            // and report a cause nothing checked, which is the habit this whole
+            // change is removing. Those land in `add_path_rule` instead.
+            .filter(|path| matches!(path.try_exists(), Ok(false)))
+            .filter(|path| seen.insert(dedup_key(path)))
+            .map(|path| path.as_path())
+            .collect()
+    }
+
+    /// Report dropped rules before the sandbox starts denying things.
+    ///
+    /// Reported from the parent rather than from `add_path_rule`, which runs
+    /// inside `pre_exec` — after fork, where the logger is not available and
+    /// the same path warns once per allow-list it appears in.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn warn_missing_allow_paths(&self) {
+        for path in self.missing_allow_paths() {
+            let workaround = match nearest_existing_ancestor(path) {
+                Some(dir) => format!(
+                    "To let the task create it, allow a directory that does exist — the closest is {}.",
+                    crate::file::display_path(dir)
+                ),
+                None => {
+                    "To let the task create it, allow a directory that does exist and contains it."
+                        .to_string()
+                }
+            };
+            warn!(
+                "sandbox: {} does not exist, so its rule was dropped.\n\
+                 Landlock can only bind rules to paths that already exist. {workaround}",
+                crate::file::display_path(path)
+            );
+        }
+    }
+
     /// Filter environment variables based on sandbox config.
     ///
     /// When deny_env is active, starts with the mise-computed env (tool paths etc.),
@@ -196,6 +283,7 @@ impl SandboxConfig {
 
         #[cfg(target_os = "linux")]
         {
+            self.warn_missing_allow_paths();
             self.apply_linux()?;
             Ok(None)
         }
@@ -284,6 +372,73 @@ mod tests {
     use super::*;
     use crate::config::settings::SettingsSandbox;
     use std::collections::BTreeMap;
+
+    /// Fixture paths that cannot collide with a previous run or a concurrent one.
+    fn missing_fixture(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("mise-10556-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn test_missing_allow_paths_lists_each_absent_path_once() {
+        // Landlock drops a rule naming a path that is not there yet, and the
+        // same path commonly appears in both allow-lists — the report in
+        // discussion #10556 shows the warning printed twice for one path.
+        let existing = std::env::temp_dir();
+        let missing_a = missing_fixture("a");
+        let missing_b = missing_fixture("b");
+        assert!(existing.exists(), "temp_dir should exist");
+        assert!(!missing_a.exists(), "fixture path should not exist");
+        assert!(!missing_b.exists(), "fixture path should not exist");
+
+        let config = SandboxConfig {
+            allow_read: vec![existing.clone(), missing_a.clone(), missing_b.clone()],
+            allow_write: vec![missing_a.clone(), existing],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.missing_allow_paths(),
+            vec![missing_a.as_path(), missing_b.as_path()]
+        );
+    }
+
+    #[test]
+    fn test_missing_allow_paths_folds_equivalent_spellings() {
+        // A missing path cannot be canonicalized, so `a/../b` and `b` stay
+        // distinct to `Path` and would each warn.
+        let missing = missing_fixture("dotdot");
+        let detoured = std::env::temp_dir()
+            .join("nested")
+            .join("..")
+            .join(missing.file_name().unwrap());
+        assert_ne!(missing.as_path(), detoured.as_path());
+
+        let config = SandboxConfig {
+            allow_read: vec![missing.clone()],
+            allow_write: vec![detoured],
+            ..Default::default()
+        };
+
+        assert_eq!(config.missing_allow_paths(), vec![missing.as_path()]);
+    }
+
+    #[test]
+    fn test_nearest_existing_ancestor_skips_missing_parents() {
+        let existing = std::env::temp_dir();
+        // The immediate parent is missing too, so naming it in the warning
+        // would send the user to a rule that is dropped for the same reason.
+        let nested = missing_fixture("outer").join("inner").join("file");
+        assert_eq!(nearest_existing_ancestor(&nested), Some(existing.as_path()));
+    }
+
+    #[test]
+    fn test_missing_allow_paths_is_empty_when_everything_exists() {
+        let config = SandboxConfig {
+            allow_write: vec![std::env::temp_dir()],
+            ..Default::default()
+        };
+        assert!(config.missing_allow_paths().is_empty());
+    }
 
     #[test]
     fn test_env_pattern_matches_exact() {

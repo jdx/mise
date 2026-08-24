@@ -1566,6 +1566,12 @@ impl<'a> CmdLineRunner<'a> {
                     self.cmd.env(k, v);
                 }
             }
+            // Rules naming a path that does not exist yet get dropped, and the
+            // task is then denied. Say so here: pre_exec runs post-fork, where
+            // the logger is not available.
+            if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
+                sandbox.warn_missing_allow_paths();
+            }
             // Use pre_exec to apply Landlock/seccomp in the child process
             // before it execs the target program. This avoids restricting the mise process.
             let sandbox = sandbox.clone();
