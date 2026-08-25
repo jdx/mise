@@ -921,6 +921,19 @@ fn rewrite_tool_overlay_args(
     ToolOverlayRewrite::Rewritten(rewritten)
 }
 
+pub(crate) fn has_leading_task_tool_overlay(args: &[String]) -> bool {
+    let cmd = Cli::command();
+    let args = preprocess_args_for_naked_run(cmd, args);
+    let Some((_, subcommand)) = tool_overlay_subcommand(cmd, &args) else {
+        return false;
+    };
+    matches!(subcommand.name, "run" | "watch")
+        && matches!(
+            rewrite_tool_overlay_args(cmd, &args, true),
+            ToolOverlayRewrite::Rewritten(_)
+        )
+}
+
 fn preprocess_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
     let task_overlay_enabled = tool_overlay_settings_root(cmd, args)
         .map(|root| Settings::task_run_tool_overlay_from(&root))
@@ -1497,6 +1510,13 @@ mod tests {
                 "input: {input:?}"
             );
         }
+
+        assert!(has_leading_task_tool_overlay(&strings(&[
+            "mise", "run", "+node@27"
+        ])));
+        assert!(!has_leading_task_tool_overlay(&strings(&[
+            "mise", "run", "default", "+literal"
+        ])));
     }
 
     #[test]

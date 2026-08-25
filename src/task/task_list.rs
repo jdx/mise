@@ -1,4 +1,4 @@
-use crate::config::{self, Config, Settings};
+use crate::config::{self, Config};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
@@ -371,12 +371,7 @@ async fn err_no_task(
     }
 
     if name == "default"
-        && Settings::get().task.run_tool_overlay
-        && crate::env::ARGS
-            .read()
-            .unwrap()
-            .iter()
-            .any(|arg| arg.strip_prefix('+').is_some_and(|tool| !tool.is_empty()))
+        && crate::cli::has_leading_task_tool_overlay(&crate::env::ARGS.read().unwrap())
     {
         err_msg.push_str(
             "\n\nA leading `+TOOL@VERSION` argument was interpreted as a temporary tool overlay. \
