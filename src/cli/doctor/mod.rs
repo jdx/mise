@@ -165,7 +165,7 @@ impl Doctor {
         self.analyze_backend_mismatches();
         self.analyze_system_deps(ts).await;
         self.analyze_new_version().await;
-        #[cfg(windows)]
+        #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
         self.check_path_ordering(ts, &config).await;
         self.check_shim_shadowing(&desired_shims).await;
@@ -320,7 +320,7 @@ impl Doctor {
         self.analyze_settings()?;
 
         self.analyze_new_version().await;
-        #[cfg(windows)]
+        #[cfg(all(windows, feature = "self_update"))]
         self.analyze_self_update_leftovers();
 
         miseprintln!();
@@ -421,7 +421,7 @@ impl Doctor {
     /// Only another `self-update` collects them, so without this nothing says they are there: they
     /// sit outside the cache, and their generated names mean nothing to anyone reading a directory
     /// listing. Reported rather than deleted — `doctor` is not a command that should remove files.
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "self_update"))]
     fn analyze_self_update_leftovers(&mut self) {
         let orphans = crate::cli::self_update::helper_orphans();
         if orphans.is_empty() {
