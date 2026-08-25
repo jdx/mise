@@ -1,5 +1,93 @@
 # Changelog
 
+## [2026.8.13](https://github.com/jdx/mise/compare/v2026.8.12..v2026.8.13) - 2026-08-25
+
+### 🚀 Features
+
+- **(bootstrap)** add skip-dirty repo updates by @jdx in [#12364](https://github.com/jdx/mise/pull/12364)
+- **(config)** support mise/conf.d fragments by @jdx in [#12395](https://github.com/jdx/mise/pull/12395)
+- **(task)** add task discovery exclusions by @jdx in [#12366](https://github.com/jdx/mise/pull/12366)
+
+### 🐛 Bug Fixes
+
+- **(backend)** resolve latest from system installs by @jdx in [#12406](https://github.com/jdx/mise/pull/12406)
+- **(brew)** stage bare cask pkg downloads by @jdx in [#12371](https://github.com/jdx/mise/pull/12371)
+- **(brew)** extract nested cask archives by @jdx in [#12373](https://github.com/jdx/mise/pull/12373)
+- **(cli)** default to an editor Windows has, and name the one that failed by @JamBalaya56562 in [#12375](https://github.com/jdx/mise/pull/12375)
+- **(completion)** restore dynamic completions by @jdx in [#12376](https://github.com/jdx/mise/pull/12376)
+- **(completion)** preserve runtime path fallback by @jdx in [#12379](https://github.com/jdx/mise/pull/12379)
+- **(config)** name the config file once in a TOML parse error by @JamBalaya56562 in [#12329](https://github.com/jdx/mise/pull/12329)
+- **(config)** report an unparseable settings file once, through the logger by @JamBalaya56562 in [#12327](https://github.com/jdx/mise/pull/12327)
+- **(config)** say what a backslash does when a config fails to parse by @JamBalaya56562 in [#12330](https://github.com/jdx/mise/pull/12330)
+- **(config)** truncate picker descriptions safely by @jdx in [#12422](https://github.com/jdx/mise/pull/12422)
+- **(elvish)** separate the prepended entry from the existing PATH by @NgoQuocViet2001 in [#12362](https://github.com/jdx/mise/pull/12362)
+- **(env)** strip a byte-order mark before parsing an env file by @JamBalaya56562 in [#12320](https://github.com/jdx/mise/pull/12320)
+- **(env)** preserve command environment overrides by @jdx in [#12390](https://github.com/jdx/mise/pull/12390)
+- **(generate)** name every file a generator writes by @JamBalaya56562 in [#12333](https://github.com/jdx/mise/pull/12333)
+- **(generate)** name a task stub after the task, not its file by @JamBalaya56562 in [#12341](https://github.com/jdx/mise/pull/12341)
+- **(github)** skip provenance API calls when lockfile has checksum but no provenance by @effati in [#12377](https://github.com/jdx/mise/pull/12377)
+- **(lockfile)** include monorepo root requests in lockfile maintenance by @pikeas in [#12382](https://github.com/jdx/mise/pull/12382)
+- **(lockfile)** attribute each new version to its own request source by @pikeas in [#12381](https://github.com/jdx/mise/pull/12381)
+- **(nushell)** unset __MISE_SESSION on deactivate by @NgoQuocViet2001 in [#12361](https://github.com/jdx/mise/pull/12361)
+- **(pipx)** track latest git revisions by @jdx in [#12407](https://github.com/jdx/mise/pull/12407)
+- **(pipx)** reject unavailable configured executable by @jdx in [#12416](https://github.com/jdx/mise/pull/12416)
+- **(prune)** remove tracked configs that cannot be a config file by @Marukome0743 in [#12380](https://github.com/jdx/mise/pull/12380)
+- **(self-update)** do not fail the command when updating plugins fails by @JamBalaya56562 in [#12363](https://github.com/jdx/mise/pull/12363)
+- **(task)** say which sandbox paths do not exist yet by @Marukome0743 in [#12309](https://github.com/jdx/mise/pull/12309)
+- **(task)** flush a keep-order buffer instead of discarding it by @Marukome0743 in [#12370](https://github.com/jdx/mise/pull/12370)
+- **(task)** anchor injected tasks at their parent's keep-order slot by @Marukome0743 in [#12397](https://github.com/jdx/mise/pull/12397)
+- **(task)** stop dropping #MISE header keys that need quoting by @Marukome0743 in [#12415](https://github.com/jdx/mise/pull/12415)
+- **(task)** reject negative template argument bounds by @jdx in [#12421](https://github.com/jdx/mise/pull/12421)
+- **(trust)** refuse a path that does not exist instead of trusting its parent by @JamBalaya56562 in [#12372](https://github.com/jdx/mise/pull/12372)
+- **(ui)** stop padding the last table column past its content by @JamBalaya56562 in [#12334](https://github.com/jdx/mise/pull/12334)
+
+### 📚 Documentation
+
+- **(security)** update paranoid mode behavior by @jdx in [#12394](https://github.com/jdx/mise/pull/12394)
+
+### 🧪 Testing
+
+- **(config)** assert the tracking entry itself is removed by @Marukome0743 in [#12396](https://github.com/jdx/mise/pull/12396)
+- make e2e harness compatible with BSD env by @Marukome0743 in [#12357](https://github.com/jdx/mise/pull/12357)
+- avoid pipefail race in trust e2e test by @Marukome0743 in [#12358](https://github.com/jdx/mise/pull/12358)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#12356](https://github.com/jdx/mise/pull/12356)
+- bump usage to 6.4.0 by @jdx in [#12392](https://github.com/jdx/mise/pull/12392)
+- update ghcr.io/jdx/mise:rpm docker digest to 28f006d by @renovate[bot] in [#12411](https://github.com/jdx/mise/pull/12411)
+- update dependency go to v1.26.6 by @renovate[bot] in [#12412](https://github.com/jdx/mise/pull/12412)
+- update ghcr.io/jdx/mise:alpine docker digest to 0c43677 by @renovate[bot] in [#12409](https://github.com/jdx/mise/pull/12409)
+- update docker/dockerfile:1 docker digest to ecfaec9 by @renovate[bot] in [#12408](https://github.com/jdx/mise/pull/12408)
+- update ghcr.io/jdx/mise:deb docker digest to f220a26 by @renovate[bot] in [#12410](https://github.com/jdx/mise/pull/12410)
+- update jdx/mise-action action to v4.2.5 by @renovate[bot] in [#12413](https://github.com/jdx/mise/pull/12413)
+- update rust crate demand to v2.1.0 by @renovate[bot] in [#12423](https://github.com/jdx/mise/pull/12423)
+
+### 📦 Registry
+
+- add mr-boxington by @jdx in [#12384](https://github.com/jdx/mise/pull/12384)
+- add ori by @jdx in [#12388](https://github.com/jdx/mise/pull/12388)
+- add hey-cli by @jdx in [#12387](https://github.com/jdx/mise/pull/12387)
+- add playwright by @jdx in [#12385](https://github.com/jdx/mise/pull/12385)
+- add ghui by @jdx in [#12386](https://github.com/jdx/mise/pull/12386)
+- use aqua for claude-code on windows by @Marukome0743 in [#12399](https://github.com/jdx/mise/pull/12399)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (6)
+
+- [`crossplane/cli`](https://github.com/crossplane/cli)
+- [`jdx/fnox`](https://github.com/jdx/fnox)
+- [`rafaelespinoza/godfish`](https://github.com/rafaelespinoza/godfish)
+- [`re-taro/tsmcp`](https://github.com/re-taro/tsmcp)
+- [`skyhook-io/radar`](https://github.com/skyhook-io/radar)
+- [`zwasm/zwasm`](https://github.com/zwasm/zwasm)
+
+#### Updated Packages (2)
+
+- [`temporalio/temporal`](https://github.com/temporalio/temporal)
+- [`wasm-bindgen/wasm-pack`](https://github.com/wasm-bindgen/wasm-pack)
+
 ## [2026.8.12](https://github.com/jdx/mise/compare/v2026.8.11..v2026.8.12) - 2026-08-24
 
 ### 🚀 Features
