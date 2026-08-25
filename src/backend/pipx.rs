@@ -175,12 +175,13 @@ impl Backend for PIPXBackend {
                         .collect()
                 }
             }
-            PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
-                let repo = url.strip_prefix("https://github.com/").unwrap();
-                let data = github::list_releases(repo).await?;
-                Self::versions_from_github_releases(data)
-            }
-            PipxRequest::Git(url) => Self::versions_from_git_tags(&url).await?,
+            PipxRequest::Git(url) => match PipxRequest::github_repo(&url) {
+                Some(repo) => {
+                    let data = github::list_releases(&repo).await?;
+                    Self::versions_from_github_releases(data)
+                }
+                None => Self::versions_from_git_tags(&url).await?,
+            },
         };
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
     }
@@ -188,10 +189,13 @@ impl Backend for PIPXBackend {
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
-            PipxRequest::Git(url) if !url.starts_with("https://github.com/") => {
-                return Self::git_head(&url).await.map(Some);
+            PipxRequest::Git(url) => {
+                return if PipxRequest::github_repo(&url).is_some() {
+                    Ok(None)
+                } else {
+                    Self::git_head(&url).await.map(Some)
+                };
             }
-            PipxRequest::Git(_) => return Ok(None),
         };
         let registry_url = self.get_registry_url(config).await?;
         let latest_version_cache = self.latest_version_cache(&registry_url);
@@ -235,15 +239,14 @@ impl Backend for PIPXBackend {
         version == "latest"
             && matches!(
                 self.tool_name().parse::<PipxRequest>(),
-                Ok(PipxRequest::Git(url)) if !url.starts_with("https://github.com/")
+                Ok(PipxRequest::Git(url)) if PipxRequest::github_repo(&url).is_none()
             )
     }
 
-    fn latest_installed_channel_version(&self, channel: &str) -> Option<String> {
-        if !self.is_rolling_channel(channel) {
-            return None;
-        }
-        self.latest_installed_version(None).ok().flatten()
+    fn latest_installed_channel_version(&self, _channel: &str) -> Option<String> {
+        // Installed versions do not retain enough provenance to distinguish a
+        // rolling HEAD resolution from an explicitly installed tag or ref.
+        None
     }
 
     async fn resolve_channel_version(
@@ -266,7 +269,7 @@ impl Backend for PIPXBackend {
 
     fn unresolved_latest_version(&self) -> Option<String> {
         match self.tool_name().parse() {
-            Ok(PipxRequest::Git(url)) if url.starts_with("https://github.com/") => {
+            Ok(PipxRequest::Git(url)) if PipxRequest::github_repo(&url).is_some() => {
                 Some("latest".to_string())
             }
             _ => None,
@@ -850,6 +853,17 @@ enum PipxRequest {
 }
 
 impl PipxRequest {
+    /// Returns the `owner/repo` path for GitHub remotes, regardless of the Git
+    /// transport used to reach GitHub.
+    fn github_repo(url: &str) -> Option<String> {
+        let url = url::Url::parse(url).ok()?;
+        if url.host_str() != Some("github.com") {
+            return None;
+        }
+        let repo = url.path().trim_matches('/').trim_end_matches(".git");
+        (!repo.is_empty()).then(|| repo.to_string())
+    }
+
     fn extras_from_opts(&self, opts: &PipxOptions<'_>) -> String {
         match opts.extras() {
             Some(extras) => format!("[{extras}]"),
@@ -1395,11 +1409,18 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         let gitlab =
             PIPXBackend::from_arg("pipx:git+https://gitlab.example.com/sre/mytool.git".into());
         let github = PIPXBackend::from_arg("pipx:git+https://github.com/psf/black.git".into());
+        let github_ssh =
+            PIPXBackend::from_arg("pipx:git+ssh://git@github.com/psf/black.git".into());
 
         assert!(gitlab.is_rolling_channel("latest"));
         assert!(gitlab.requires_concrete_channel_version("latest"));
         assert!(!gitlab.is_rolling_channel("v0.8.1"));
         assert!(!github.is_rolling_channel("latest"));
+        assert!(!github_ssh.is_rolling_channel("latest"));
+        assert_eq!(
+            PipxRequest::github_repo("ssh://git@github.com/psf/black"),
+            Some("psf/black".to_string())
+        );
     }
 
     #[test]
