@@ -2798,6 +2798,17 @@ impl Task {
         self.name.replace(':', path::MAIN_SEPARATOR_STR).into()
     }
 
+    /// Like [`Self::name_to_path`], but named for the task rather than for the file behind it.
+    ///
+    /// A file task's `name` keeps its file's extension while everything else about the task drops
+    /// it, so the two spellings disagree for exactly the tasks that come from a file. Anything
+    /// naming a file *after* the task -- a task stub, say -- wants this one.
+    pub(crate) fn display_name_to_path(&self) -> PathBuf {
+        self.display_name
+            .replace(':', path::MAIN_SEPARATOR_STR)
+            .into()
+    }
+
     pub(crate) async fn render_env(
         &self,
         config: &Arc<Config>,
