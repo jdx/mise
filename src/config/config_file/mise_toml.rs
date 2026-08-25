@@ -4774,6 +4774,38 @@ run = 'echo "template"'
     }
 
     #[tokio::test]
+    async fn test_npm_table_syntax_preserves_aube_install_options() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            "npm:gws-axi" = {{
+                version = "0.17.0",
+                allow_low_downloads = true,
+                trust_policy_excludes = ["undici"]
+            }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let request = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "npm:gws-axi")
+            .map(|(_, requests)| &requests[0])
+            .expect("npm request should be in tool request set");
+        let options = request.options();
+
+        assert_eq!(
+            options.opts.get("allow_low_downloads"),
+            Some(&toml::Value::String("true".to_string()))
+        );
+        assert_eq!(
+            options.opts.get("trust_policy_excludes"),
+            Some(&toml::Value::Array(vec![toml::Value::String(
+                "undici".to_string()
+            )]))
+        );
+    }
+
+    #[tokio::test]
     async fn test_depends_field_parsing() {
         let _config = Config::get().await.unwrap();
         let cf = parse(formatdoc! {r#"
