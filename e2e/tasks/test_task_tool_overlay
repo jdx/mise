@@ -10,6 +10,19 @@ assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise tasks run +dummy@2.0.0 show" 
 assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise +dummy@1.0.0 show" "Dummy 1.0.0"
 assert_contains "mise run --tool dummy@2.0.0 show" "Dummy 2.0.0"
 
+mkdir project
+cat <<'EOF' >project/mise.toml
+[settings]
+task.run_tool_overlay = true
+
+[tasks.show]
+run = "dummy"
+EOF
+
+# The gate is loaded from the project selected by a global or run-local --cd.
+assert_contains "mise --cd project run +dummy@2.0.0 show" "Dummy 2.0.0"
+assert_contains "mise run --cd project +dummy@1.0.0 show" "Dummy 1.0.0"
+
 # Once the task name is seen, `+` arguments belong to the task.
 assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise run +dummy@1.0.0 show +literal" "+literal"
 

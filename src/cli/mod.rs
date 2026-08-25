@@ -750,6 +750,91 @@ enum ToolOverlayRewrite {
     GatedTask,
 }
 
+fn tool_overlay_subcommand<'a>(
+    cmd: &'a usage_rs::Command<'a>,
+    args: &[String],
+) -> Option<(usize, &'a usage_rs::Command<'a>)> {
+    let mut subcommand_idx = first_non_global_arg_idx(cmd, args)?;
+    let mut subcommand = find_subcommand(cmd, args[subcommand_idx].as_str())?;
+    if subcommand.name == "tasks"
+        && let Some(nested_name) = args.get(subcommand_idx + 1)
+        && let Some(nested) = find_subcommand(subcommand, nested_name)
+        && nested.name == "run"
+    {
+        subcommand_idx += 1;
+        subcommand = nested;
+    }
+    Some((subcommand_idx, subcommand))
+}
+
+/// Find a `--cd` that affects overlay preprocessing. Task arguments after the task name are
+/// deliberately out of scope: `mise run task --cd elsewhere` passes `--cd` to the task.
+fn tool_overlay_settings_root(cmd: &usage_rs::Command<'_>, args: &[String]) -> Option<PathBuf> {
+    let (subcommand_idx, subcommand) = tool_overlay_subcommand(cmd, args)?;
+    if !matches!(subcommand.name, "run" | "watch") {
+        return None;
+    }
+    let (flags_with_values, _) = get_all_subcommand_flags(cmd, subcommand.name);
+    let short_flags_with_values = get_all_subcommand_value_taking_short_flags(cmd, subcommand.name);
+    let mut root = None;
+    let mut i = 1;
+    while i < args.len() {
+        if i == subcommand_idx {
+            i += 1;
+            continue;
+        }
+        let arg = &args[i];
+        if i > subcommand_idx
+            && (arg == "--" || arg == ":::" || (!arg.starts_with('-') && !arg.starts_with('+')))
+        {
+            break;
+        }
+        if let Some(value) = arg.strip_prefix("--cd=") {
+            root = Some(PathBuf::from(value));
+            i += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-C=") {
+            root = Some(PathBuf::from(value));
+            i += 1;
+            continue;
+        }
+        if let Some(value) = arg.strip_prefix("-C").filter(|value| !value.is_empty()) {
+            root = Some(PathBuf::from(value));
+            i += 1;
+            continue;
+        }
+        if matches!(arg.as_str(), "--cd" | "-C") {
+            if let Some(value) = args.get(i + 1) {
+                root = Some(PathBuf::from(value));
+            }
+            i += 2;
+            continue;
+        }
+        if arg.starts_with('-') && arg != "-" {
+            let takes_separate_value = if arg.starts_with("--") {
+                !arg.contains('=') && flags_with_values.iter().any(|flag| flag == arg)
+            } else {
+                short_flags_with_values
+                    .iter()
+                    .any(|(short, _)| arg == short)
+            };
+            i += usize::from(takes_separate_value && i + 1 < args.len()) + 1;
+            continue;
+        }
+        i += 1;
+    }
+    root.map(|root| {
+        if root.is_absolute() {
+            root
+        } else {
+            std::env::current_dir()
+                .map(|cwd| cwd.join(&root))
+                .unwrap_or(root)
+        }
+    })
+}
+
 /// Rewrite leading `+TOOL@VERSION` arguments for commands that support temporary tool overlays.
 ///
 /// `mise x +node@27 node -v` becomes `mise x node@27 -- node -v`. The explicit sigil makes the
@@ -760,20 +845,9 @@ fn rewrite_tool_overlay_args(
     args: &[String],
     task_overlay_enabled: bool,
 ) -> ToolOverlayRewrite {
-    let Some(mut subcommand_idx) = first_non_global_arg_idx(cmd, args) else {
+    let Some((subcommand_idx, subcommand)) = tool_overlay_subcommand(cmd, args) else {
         return ToolOverlayRewrite::Unchanged;
     };
-    let Some(mut subcommand) = find_subcommand(cmd, args[subcommand_idx].as_str()) else {
-        return ToolOverlayRewrite::Unchanged;
-    };
-    if subcommand.name == "tasks"
-        && let Some(nested_name) = args.get(subcommand_idx + 1)
-        && let Some(nested) = find_subcommand(subcommand, nested_name)
-        && nested.name == "run"
-    {
-        subcommand_idx += 1;
-        subcommand = nested;
-    }
     let subcommand_name = args[subcommand_idx].as_str();
     let is_exec = subcommand.name == "exec";
     let is_task_runner = matches!(subcommand.name, "run" | "watch");
@@ -848,8 +922,9 @@ fn rewrite_tool_overlay_args(
 }
 
 fn preprocess_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
-    let task_overlay_enabled = Settings::try_get()
-        .map(|settings| settings.task.run_tool_overlay)
+    let task_overlay_enabled = tool_overlay_settings_root(cmd, args)
+        .map(|root| Settings::task_run_tool_overlay_from(&root))
+        .unwrap_or_else(|| Settings::try_get().map(|settings| settings.task.run_tool_overlay))
         .unwrap_or(false);
     match rewrite_tool_overlay_args(cmd, args, task_overlay_enabled) {
         ToolOverlayRewrite::Unchanged => args.to_vec(),
@@ -1375,6 +1450,26 @@ mod tests {
                 "input: {input:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_tool_overlay_settings_root_honors_cd_before_task_name() {
+        let cmd = Cli::command();
+        for input in [
+            strings(&["mise", "--cd", "project", "run", "+node@27", "build"]),
+            strings(&["mise", "run", "--cd=project", "+node@27", "build"]),
+            strings(&["mise", "tasks", "run", "-Cproject", "+node@27", "build"]),
+        ] {
+            assert!(
+                tool_overlay_settings_root(cmd, &input)
+                    .is_some_and(|root| root.ends_with("project")),
+                "input: {input:?}"
+            );
+        }
+        assert_eq!(
+            tool_overlay_settings_root(cmd, &strings(&["mise", "run", "build", "--cd", "project"])),
+            None
+        );
     }
 
     #[test]

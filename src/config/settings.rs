@@ -856,6 +856,13 @@ impl Settings {
     const WINDOWS_DEFAULT_FILE_SHELL_ARGS: &'static str = "cmd /c";
     const WINDOWS_DEFAULT_INLINE_SHELL_ARGS: &'static str = "cmd /c";
 
+    /// Resolve the task overlay gate for an explicit project root without changing the
+    /// process working directory or populating the global settings cache.
+    pub(crate) fn task_run_tool_overlay_from(root: &Path) -> Result<bool> {
+        Self::load_sources_from(Some(root), SettingsLoadPolicy::HIERARCHY)
+            .map(|settings| settings.task.run_tool_overlay)
+    }
+
     pub(crate) fn parse_default_package_line(package: &str) -> Option<String> {
         let package = package.split('#').next().unwrap_or_default().trim();
         (!package.is_empty()).then(|| package.to_string())

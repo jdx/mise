@@ -1,14 +1,14 @@
 use crate::Result;
-use crate::cli::args::{BackendArg, ToolArg};
+use crate::cli::args::ToolArg;
 use crate::cli::render_subcommand_help;
 use crate::cmd;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::env;
 use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
-use crate::toolset::ToolsetBuilder;
+use crate::toolset::{InstallOptions, ToolsetBuilder};
 use console::style;
 use itertools::Itertools;
 use std::cmp::PartialEq;
@@ -77,19 +77,26 @@ impl Watch {
                 return Ok(());
             }
         }
-        let config = Config::get().await?;
-        let ts = ToolsetBuilder::new()
+        let mut config = Config::get().await?;
+        let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .build(&config)
             .await?;
-        if let Err(err) = which::which("watchexec") {
-            let watchexec: BackendArg = "watchexec".into();
-            if !ts.versions.contains_key(&watchexec) {
-                eprintln!("{}: {}", style("Error").red().bold(), err);
-                eprintln!("{}: Install watchexec with:", style("Hint").bold());
-                eprintln!("  mise use -g watchexec@latest");
-                return Err(request_exit(1));
-            }
+        let opts = InstallOptions {
+            missing_args_only: true,
+            skip_auto_install: !Settings::get().task.run_auto_install
+                || !Settings::get().auto_install,
+            ..Default::default()
+        };
+        let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+        ts.notify_missing_versions(missing);
+        if let Err(err) = which::which("watchexec")
+            && ts.which(&config, "watchexec").await.is_none()
+        {
+            eprintln!("{}: {}", style("Error").red().bold(), err);
+            eprintln!("{}: Install watchexec with:", style("Hint").bold());
+            eprintln!("  mise use -g watchexec@latest");
+            return Err(request_exit(1));
         }
         let mut args = once(self.task)
             .flatten()
