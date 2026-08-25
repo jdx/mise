@@ -365,6 +365,27 @@ fn current_exe_stem() -> Option<String> {
     exe.file_stem().and_then(|s| s.to_str()).map(str::to_owned)
 }
 
+/// Refresh the installed plugins, best effort.
+///
+/// This runs after the binary has already been replaced, so a failure here says nothing about
+/// whether the update worked. Propagating it made a successful update print `Updated mise to X`
+/// and then exit non-zero, which reads as "the update failed" — on Windows that is a bad enough
+/// misreading to send someone looking for a mise that is not broken. Warned about instead, the way
+/// the two housekeeping steps above it already are.
+///
+/// The message names the step because the error often cannot. `duct` attaches the command only
+/// when the child exits non-zero; a child that never starts comes back as the bare OS error, so an
+/// `ACCESS_DENIED` from spawning the freshly written binary arrives as nothing but
+/// "Access is denied. (os error 5)".
+///
+/// Takes the binary to run rather than reading [`env::MISE_BIN`] itself, so a test can drive the
+/// failure without a real update.
+fn update_plugins(bin: &std::path::Path) {
+    if let Err(err) = cmd!(bin, "plugins", "update").run() {
+        warn!("Failed to update plugins: {err}");
+    }
+}
+
 impl SelfUpdate {
     pub(crate) async fn run(self) -> Result<()> {
         if !Self::is_available() && !self.force {
@@ -408,7 +429,7 @@ impl SelfUpdate {
         }
         crate::cli::version::show_auto_update_hint();
         if !self.no_plugins {
-            cmd!(&*env::MISE_BIN, "plugins", "update").run()?;
+            update_plugins(&env::MISE_BIN);
         }
 
         Ok(())
@@ -734,6 +755,30 @@ mod auto_update_tests {
         std::fs::write(&marker, "").unwrap();
         assert!(!auto_update_check_due(&marker, Duration::from_secs(60)));
         assert!(auto_update_check_due(&marker, Duration::ZERO));
+    }
+}
+
+#[cfg(test)]
+mod post_update_tests {
+    use super::*;
+
+    /// By the time plugins are refreshed the new binary is already in place, so a failure there
+    /// must not turn a successful update into a failed command. Driving a real spawn failure
+    /// rather than a stub: a binary that cannot be started is what Windows produces while an AV
+    /// scanner still holds the file mise just wrote, and what discussion #8827 produces over SSH.
+    #[test]
+    fn a_plugins_update_that_cannot_run_is_not_fatal() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("mise-that-is-not-there");
+
+        // Control: without this the test would pass just as well on a spawn that quietly
+        // succeeded, and prove nothing. `run()` has to actually fail for the line below to mean
+        // anything.
+        assert!(cmd!(&missing, "plugins", "update").run().is_err());
+
+        // And the step swallows it. There is no error here to propagate — which is exactly what
+        // the `?` this replaces used to do.
+        update_plugins(&missing);
     }
 }
 
