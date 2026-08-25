@@ -121,6 +121,13 @@ fn main() -> ExitCode {
     if env::invoked_as_self_replace_helper() {
         return ExitCode::SUCCESS;
     }
+    // Embedded aube lifecycle shims re-exec this binary with private commands
+    // (notably `__node-gyp-bootstrap`). Hand those to aube before mise's
+    // naked-run rewrite / clap parser can claim them.
+    let early_args = env::args_safe();
+    if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
+        return exit::status(code);
+    }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();
