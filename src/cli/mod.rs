@@ -750,6 +750,13 @@ enum ToolOverlayRewrite {
     GatedTask,
 }
 
+struct ToolOverlayScan<'a> {
+    subcommand: &'a usage_rs::Command<'a>,
+    overlay_indices: Vec<usize>,
+    boundary_idx: Option<usize>,
+    settings_root: Option<PathBuf>,
+}
+
 fn tool_overlay_subcommand<'a>(
     cmd: &'a usage_rs::Command<'a>,
     args: &[String],
@@ -767,16 +774,21 @@ fn tool_overlay_subcommand<'a>(
     Some((subcommand_idx, subcommand))
 }
 
-/// Find a `--cd` that affects overlay preprocessing. Task arguments after the task name are
-/// deliberately out of scope: `mise run task --cd elsewhere` passes `--cd` to the task.
-fn tool_overlay_settings_root(cmd: &usage_rs::Command<'_>, args: &[String]) -> Option<PathBuf> {
+/// Classify the leading overlay grammar once so settings lookup and rewriting agree on exactly
+/// where command options end. Task arguments after the task name are deliberately out of scope:
+/// `mise run task --cd elsewhere` passes `--cd` to the task.
+fn scan_tool_overlay_args<'a>(
+    cmd: &'a usage_rs::Command<'a>,
+    args: &[String],
+) -> Option<ToolOverlayScan<'a>> {
     let (subcommand_idx, subcommand) = tool_overlay_subcommand(cmd, args)?;
-    if !matches!(subcommand.name, "run" | "watch") {
-        return None;
-    }
-    let (flags_with_values, _) = get_all_subcommand_flags(cmd, subcommand.name);
-    let short_flags_with_values = get_all_subcommand_value_taking_short_flags(cmd, subcommand.name);
-    let mut root = None;
+    let subcommand_name = args[subcommand_idx].as_str();
+    let is_task_runner = matches!(subcommand.name, "run" | "watch");
+    let (flags_with_values, _) = get_all_subcommand_flags(cmd, subcommand_name);
+    let short_flags_with_values = get_all_subcommand_value_taking_short_flags(cmd, subcommand_name);
+    let mut overlay_indices = Vec::new();
+    let mut boundary_idx = None;
+    let mut settings_root = None;
     let mut i = 1;
     while i < args.len() {
         if i == subcommand_idx {
@@ -784,29 +796,41 @@ fn tool_overlay_settings_root(cmd: &usage_rs::Command<'_>, args: &[String]) -> O
             continue;
         }
         let arg = &args[i];
-        if i > subcommand_idx
-            && (arg == "--" || arg == ":::" || (!arg.starts_with('-') && !arg.starts_with('+')))
+        if i > subcommand_idx {
+            if arg == "--" || (is_task_runner && arg == ":::") {
+                boundary_idx = Some(i);
+                break;
+            }
+            if arg.strip_prefix('+').is_some_and(|tool| !tool.is_empty()) {
+                overlay_indices.push(i);
+                i += 1;
+                continue;
+            }
+            if arg == "-" || !arg.starts_with('-') {
+                boundary_idx = Some(i);
+                break;
+            }
+        }
+        if is_task_runner && let Some(value) = arg.strip_prefix("--cd=") {
+            settings_root = Some(PathBuf::from(value));
+            i += 1;
+            continue;
+        }
+        if is_task_runner && let Some(value) = arg.strip_prefix("-C=") {
+            settings_root = Some(PathBuf::from(value));
+            i += 1;
+            continue;
+        }
+        if is_task_runner
+            && let Some(value) = arg.strip_prefix("-C").filter(|value| !value.is_empty())
         {
-            break;
-        }
-        if let Some(value) = arg.strip_prefix("--cd=") {
-            root = Some(PathBuf::from(value));
+            settings_root = Some(PathBuf::from(value));
             i += 1;
             continue;
         }
-        if let Some(value) = arg.strip_prefix("-C=") {
-            root = Some(PathBuf::from(value));
-            i += 1;
-            continue;
-        }
-        if let Some(value) = arg.strip_prefix("-C").filter(|value| !value.is_empty()) {
-            root = Some(PathBuf::from(value));
-            i += 1;
-            continue;
-        }
-        if matches!(arg.as_str(), "--cd" | "-C") {
+        if is_task_runner && matches!(arg.as_str(), "--cd" | "-C") {
             if let Some(value) = args.get(i + 1) {
-                root = Some(PathBuf::from(value));
+                settings_root = Some(PathBuf::from(value));
             }
             i += 2;
             continue;
@@ -824,7 +848,7 @@ fn tool_overlay_settings_root(cmd: &usage_rs::Command<'_>, args: &[String]) -> O
         }
         i += 1;
     }
-    root.map(|root| {
+    let settings_root = settings_root.map(|root| {
         if root.is_absolute() {
             root
         } else {
@@ -832,6 +856,12 @@ fn tool_overlay_settings_root(cmd: &usage_rs::Command<'_>, args: &[String]) -> O
                 .map(|cwd| cwd.join(&root))
                 .unwrap_or(root)
         }
+    });
+    Some(ToolOverlayScan {
+        subcommand,
+        overlay_indices,
+        boundary_idx,
+        settings_root,
     })
 }
 
@@ -840,15 +870,24 @@ fn tool_overlay_settings_root(cmd: &usage_rs::Command<'_>, args: &[String]) -> O
 /// `mise x +node@27 node -v` becomes `mise x node@27 -- node -v`. The explicit sigil makes the
 /// otherwise ambiguous boundary between exec's variadic tool list and its command visible without
 /// requiring the user to type `--`.
+#[cfg(test)]
 fn rewrite_tool_overlay_args(
     cmd: &usage_rs::Command<'_>,
     args: &[String],
     task_overlay_enabled: bool,
 ) -> ToolOverlayRewrite {
-    let Some((subcommand_idx, subcommand)) = tool_overlay_subcommand(cmd, args) else {
+    let Some(scan) = scan_tool_overlay_args(cmd, args) else {
         return ToolOverlayRewrite::Unchanged;
     };
-    let subcommand_name = args[subcommand_idx].as_str();
+    rewrite_scanned_tool_overlay_args(args, &scan, task_overlay_enabled)
+}
+
+fn rewrite_scanned_tool_overlay_args(
+    args: &[String],
+    scan: &ToolOverlayScan<'_>,
+    task_overlay_enabled: bool,
+) -> ToolOverlayRewrite {
+    let subcommand = scan.subcommand;
     let is_exec = subcommand.name == "exec";
     let is_task_runner = matches!(subcommand.name, "run" | "watch");
     let strips_sigil = matches!(subcommand.name, "env" | "shell");
@@ -856,44 +895,7 @@ fn rewrite_tool_overlay_args(
     if !is_exec && !strips_sigil && !uses_tool_flag {
         return ToolOverlayRewrite::Unchanged;
     }
-
-    let (flags_with_values, _) = get_all_subcommand_flags(cmd, subcommand_name);
-    let short_flags_with_values = get_all_subcommand_value_taking_short_flags(cmd, subcommand_name);
-    let mut overlay_indices = Vec::new();
-    let mut boundary_idx = None;
-    let mut i = subcommand_idx + 1;
-
-    while i < args.len() {
-        let arg = &args[i];
-        if arg == "--" {
-            boundary_idx = Some(i);
-            break;
-        }
-        if is_task_runner && arg == ":::" {
-            boundary_idx = Some(i);
-            break;
-        }
-        if arg.strip_prefix('+').is_some_and(|tool| !tool.is_empty()) {
-            overlay_indices.push(i);
-            i += 1;
-            continue;
-        }
-        if arg.starts_with('-') && arg != "-" {
-            let takes_separate_value = if arg.starts_with("--") {
-                !arg.contains('=') && flags_with_values.iter().any(|flag| flag == arg)
-            } else {
-                short_flags_with_values
-                    .iter()
-                    .any(|(short, _)| arg == short)
-            };
-            i += usize::from(takes_separate_value && i + 1 < args.len()) + 1;
-            continue;
-        }
-        boundary_idx = Some(i);
-        break;
-    }
-
-    if overlay_indices.is_empty() {
+    if scan.overlay_indices.is_empty() {
         return ToolOverlayRewrite::Unchanged;
     }
 
@@ -901,9 +903,9 @@ fn rewrite_tool_overlay_args(
         return ToolOverlayRewrite::GatedTask;
     }
 
-    let mut rewritten = Vec::with_capacity(args.len() + overlay_indices.len());
+    let mut rewritten = Vec::with_capacity(args.len() + scan.overlay_indices.len());
     for (idx, arg) in args.iter().enumerate() {
-        if overlay_indices.contains(&idx) {
+        if scan.overlay_indices.contains(&idx) {
             if uses_tool_flag {
                 rewritten.push("--tool".to_string());
             }
@@ -913,7 +915,7 @@ fn rewrite_tool_overlay_args(
         }
     }
     if is_exec
-        && let Some(boundary_idx) = boundary_idx
+        && let Some(boundary_idx) = scan.boundary_idx
         && args[boundary_idx] != "--"
     {
         rewritten.insert(boundary_idx, "--".to_string());
@@ -924,22 +926,27 @@ fn rewrite_tool_overlay_args(
 pub(crate) fn has_leading_task_tool_overlay(args: &[String]) -> bool {
     let cmd = Cli::command();
     let args = preprocess_args_for_naked_run(cmd, args);
-    let Some((_, subcommand)) = tool_overlay_subcommand(cmd, &args) else {
+    let Some(scan) = scan_tool_overlay_args(cmd, &args) else {
         return false;
     };
-    matches!(subcommand.name, "run" | "watch")
+    matches!(scan.subcommand.name, "run" | "watch")
         && matches!(
-            rewrite_tool_overlay_args(cmd, &args, true),
+            rewrite_scanned_tool_overlay_args(&args, &scan, true),
             ToolOverlayRewrite::Rewritten(_)
         )
 }
 
 fn preprocess_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
-    let task_overlay_enabled = tool_overlay_settings_root(cmd, args)
-        .map(|root| Settings::task_run_tool_overlay_from(&root))
+    let Some(scan) = scan_tool_overlay_args(cmd, args) else {
+        return args.to_vec();
+    };
+    let task_overlay_enabled = scan
+        .settings_root
+        .as_ref()
+        .map(|root| Settings::task_run_tool_overlay_from(root))
         .unwrap_or_else(|| Settings::try_get().map(|settings| settings.task.run_tool_overlay))
         .unwrap_or(false);
-    match rewrite_tool_overlay_args(cmd, args, task_overlay_enabled) {
+    match rewrite_scanned_tool_overlay_args(args, &scan, task_overlay_enabled) {
         ToolOverlayRewrite::Unchanged => args.to_vec(),
         ToolOverlayRewrite::Rewritten(args) => args,
         ToolOverlayRewrite::GatedTask => {
@@ -1474,13 +1481,15 @@ mod tests {
             strings(&["mise", "tasks", "run", "-Cproject", "+node@27", "build"]),
         ] {
             assert!(
-                tool_overlay_settings_root(cmd, &input)
+                scan_tool_overlay_args(cmd, &input)
+                    .and_then(|scan| scan.settings_root)
                     .is_some_and(|root| root.ends_with("project")),
                 "input: {input:?}"
             );
         }
         assert_eq!(
-            tool_overlay_settings_root(cmd, &strings(&["mise", "run", "build", "--cd", "project"])),
+            scan_tool_overlay_args(cmd, &strings(&["mise", "run", "build", "--cd", "project"]),)
+                .and_then(|scan| scan.settings_root),
             None
         );
     }
