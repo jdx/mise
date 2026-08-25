@@ -90,17 +90,19 @@ impl Watch {
         };
         let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
         ts.notify_missing_versions(missing);
-        let watchexec = match ts.which_bin_spawnable(&config, "watchexec").await {
-            Some(path) => path,
-            None => match which::which("watchexec") {
-                Ok(path) => path,
-                Err(err) => {
-                    eprintln!("{}: {}", style("Error").red().bold(), err);
-                    eprintln!("{}: Install watchexec with:", style("Hint").bold());
-                    eprintln!("  mise use -g watchexec@latest");
-                    return Err(request_exit(1));
-                }
-            },
+        let watch_env = ts.env_with_path(&config).await?;
+        let watchexec = match which::which_in(
+            "watchexec",
+            watch_env.get(env::PATH_KEY.as_str()).map(String::as_str),
+            std::env::current_dir()?,
+        ) {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!("{}: {}", style("Error").red().bold(), err);
+                eprintln!("{}: Install watchexec with:", style("Hint").bold());
+                eprintln!("  mise use -g watchexec@latest");
+                return Err(request_exit(1));
+            }
         };
         let mut args = once(self.task)
             .flatten()
@@ -362,7 +364,7 @@ impl Watch {
         }
         debug!("$ watchexec {}", args.join(" "));
         let mut cmd = cmd::cmd(&watchexec, &args);
-        for (k, v) in ts.env_with_path(&config).await? {
+        for (k, v) in watch_env {
             cmd = cmd.env(k, v);
         }
         // Propagate profiles selected with -E/--env to the nested `mise run` command.
