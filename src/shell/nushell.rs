@@ -130,7 +130,7 @@ impl Shell for Nushell {
         [
             self.unset_env("MISE_SHELL"),
             self.unset_env("__MISE_DIFF"),
-            self.unset_env("__MISE_DIFF"),
+            self.unset_env("__MISE_SESSION"),
         ]
         .join("")
     }
