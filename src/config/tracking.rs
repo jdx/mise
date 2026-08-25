@@ -137,11 +137,17 @@ mod tests {
         assert!(Tracker::list_all_in(&dir).unwrap().is_empty());
 
         Tracker::clean_in(&dir).unwrap();
-        assert!(!entry.exists());
+        assert!(
+            fs::symlink_metadata(&entry).is_err(),
+            "the tracking entry must be removed"
+        );
     }
 
     #[test]
     fn removes_an_entry_whose_target_is_gone() {
+        // The entry is checked with `symlink_metadata` rather than `exists`,
+        // which follows the link: a dangling symlink reports `false` whether or
+        // not the clean removed it, so `exists` would pass on unix regardless.
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path().join("tracked");
         let config = tmp.path().join("mise.toml");
@@ -151,6 +157,9 @@ mod tests {
         fs::remove_file(&config).unwrap();
 
         Tracker::clean_in(&dir).unwrap();
-        assert!(!entry.exists());
+        assert!(
+            fs::symlink_metadata(&entry).is_err(),
+            "the tracking entry must be removed"
+        );
     }
 }
