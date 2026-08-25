@@ -54,6 +54,7 @@ use xx::file;
 /// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
 static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 type TaskOutputCapture = Arc<StdMutex<Vec<TaskCacheOutput>>>;
+
 const COMMAND_INPUT_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_INPUT_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
@@ -119,6 +120,9 @@ fn task_env_path(path: &Path) -> String {
 #[derive(Clone, Copy)]
 struct TaskInjectionContext<'a> {
     config: &'a Arc<Config>,
+    /// The task whose run entry is injecting these tasks. keep-order anchors the
+    /// injected blocks at this task's position.
+    parent: &'a Task,
     task_env: &'a [(String, String)],
     sched_tx: &'a Arc<mpsc::UnboundedSender<SchedMsg>>,
     completion_state: &'a TaskCompletionState,
@@ -946,6 +950,7 @@ impl TaskExecutor {
                             override_env_ref,
                             TaskInjectionContext {
                                 config,
+                                parent: task,
                                 task_env,
                                 sched_tx: &sched_tx,
                                 completion_state: &completion_state,
@@ -973,6 +978,7 @@ impl TaskExecutor {
                             None,
                             TaskInjectionContext {
                                 config,
+                                parent: task,
                                 task_env,
                                 sched_tx: &sched_tx,
                                 completion_state: &completion_state,
@@ -999,6 +1005,7 @@ impl TaskExecutor {
     ) -> Result<TaskCompletionState> {
         let TaskInjectionContext {
             config,
+            parent,
             task_env,
             sched_tx,
             completion_state,
@@ -1064,7 +1071,33 @@ impl TaskExecutor {
                 to_run.push(t);
             }
         }
+        let injected = to_run.clone();
         let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
+        // Give these tasks their keep-order slots now, while the order they were
+        // written in is still known and before any of them can produce a line.
+        // Reaching this from `&self` is fine: the state is behind the shared
+        // `Arc<Mutex<..>>`, and the guard is a temporary in a statement with no
+        // await in it, so it never crosses a suspension point.
+        {
+            let children: Vec<Task> = injected
+                .into_iter()
+                // A task the sub-graph pruned as already complete never runs, so
+                // it would never call `on_task_finished` — its empty slot would
+                // sit at the front for the rest of the run.
+                .filter(|t| sub_deps.all().any(|scheduled| scheduled == t))
+                // Same reason, for a task whose own `output` opts out of
+                // keep-order: `on_task_finished` is only called for keep-order
+                // tasks (see cli/run.rs).
+                .filter(|t| self.output(Some(t)) == TaskOutput::KeepOrder)
+                .collect();
+            if !children.is_empty() {
+                self.output_handler
+                    .keep_order_state
+                    .lock()
+                    .unwrap()
+                    .insert_tasks_before(parent, &children);
+            }
+        }
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
@@ -1142,10 +1175,33 @@ impl TaskExecutor {
                 // Clean up the dependency graph to ensure completion
                 let mut deps = sub_deps.lock().await;
                 let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                // These tasks are abandoned here, without ever reaching the
+                // scheduler, so nothing else retires the keep-order slots they
+                // were given -- and a slot left behind is an anchor holding the
+                // front of the buffer map.
+                //
+                // Only the ones that never started. A task that did start either
+                // retires its own slot when it ends or is still producing
+                // output, and this path returns after waiting just 100ms for the
+                // subgraph to drain, so one may well still be alive. Retiring a
+                // live task's slot would strand every line it prints afterwards
+                // at the tail of the map.
+                let never_started: Vec<Task> = tasks_to_remove
+                    .iter()
+                    .filter(|t| !deps.has_executed(t))
+                    .cloned()
+                    .collect();
                 for task in tasks_to_remove {
                     deps.remove(&task);
                 }
                 drop(deps);
+                for task in &never_started {
+                    self.output_handler
+                        .keep_order_state
+                        .lock()
+                        .unwrap()
+                        .retire_unused_slot(task);
+                }
                 // Give a short time for the spawned task to finish cleanly
                 let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
                 return Err(eyre!("task sequence aborted due to failure"));
