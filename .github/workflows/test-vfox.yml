@@ -36,13 +36,13 @@ jobs:
             ~/.cargo/.global-cache
       - uses: ./.github/actions/mbx
       - run: |
-          mbx build build --all-features --ignore-rust-version
+          mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - run: mbx build build
+      - run: mbx build
         working-directory: crates/vfox
       - run: mise --cd crates/vfox run lint
-      - run: mbx build test
+      - run: mbx test
         working-directory: crates/vfox
       - run: mbx cache stats
         if: always()

@@ -76,7 +76,7 @@ jobs:
             ~/.cargo/.global-cache
       - uses: ./.github/actions/mbx
       - run: |
-          mbx build build --all-features --ignore-rust-version
+          mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
       # Downstream jobs only execute this binary, so keep full debug symbols in
@@ -108,8 +108,8 @@ jobs:
       - uses: ./.github/actions/mbx
       - shell: pwsh
         run: |
-          mbx build build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
-          mbx build build -p mise-shim
+          mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
+          mbx build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
@@ -147,15 +147,15 @@ jobs:
       - name: Install test tools
         run: brew install fd tmux
       - run: |
-          mbx build build --all-features --ignore-rust-version
+          mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- mbx build test --all-features --ignore-rust-version
+      - run: mise x -- mbx test --all-features --ignore-rust-version
       # `cargo test` above resolves to the root package, so the workspace members are built as
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
-        run: mbx build test --workspace --exclude mise --ignore-rust-version
+        run: mbx test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       - run: mbx cache stats
@@ -220,13 +220,13 @@ jobs:
           # rust-version than their code requires; rustc still rejects genuinely
           # incompatible syntax and APIs when the metadata check is ignored.
           - name: Verify MSRV
-            run: mbx build msrv verify -- cargo check --ignore-rust-version
+            run: mbx msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
       - name: Run Clippy
         run: |
-          mbx build clippy --ignore-rust-version -- -D warnings
-          mbx build clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+          mbx clippy --ignore-rust-version -- -D warnings
+          mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
 
   e2e:
     name: e2e
@@ -382,7 +382,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
       - name: check unused code
-        run: mbx build check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
+        run: mbx check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
         env:
           RUSTFLAGS: -D unused
       - name: cargo test
@@ -391,11 +391,11 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: mbx build test
+          command: mbx test
       # Windows is where the members rot fastest: their tests assume POSIX paths and shells
       # unless something runs them here.
       - name: cargo test (workspace members)
-        run: mbx build test --workspace --exclude mise
+        run: mbx test --workspace --exclude mise
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 100
