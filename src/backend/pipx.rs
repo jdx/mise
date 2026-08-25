@@ -178,12 +178,7 @@ impl Backend for PIPXBackend {
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
                 let data = github::list_releases(repo).await?;
-                let versions = Self::versions_from_github_releases(data);
-                if versions.is_empty() {
-                    Self::versions_from_git_tags(&url).await?
-                } else {
-                    versions
-                }
+                Self::versions_from_github_releases(data)
             }
             PipxRequest::Git(url) => Self::versions_from_git_tags(&url).await?,
         };
@@ -193,6 +188,9 @@ impl Backend for PIPXBackend {
     async fn latest_stable_version(&self, config: &Arc<Config>) -> eyre::Result<Option<String>> {
         let package = match self.tool_name().parse()? {
             PipxRequest::Pypi(package) => package,
+            PipxRequest::Git(url) if !url.starts_with("https://github.com/") => {
+                return Self::git_head(&url).await.map(Some);
+            }
             PipxRequest::Git(_) => return Ok(None),
         };
         let registry_url = self.get_registry_url(config).await?;
@@ -233,9 +231,44 @@ impl Backend for PIPXBackend {
         .cloned()
     }
 
+    fn is_rolling_channel(&self, version: &str) -> bool {
+        version == "latest"
+            && matches!(
+                self.tool_name().parse::<PipxRequest>(),
+                Ok(PipxRequest::Git(url)) if !url.starts_with("https://github.com/")
+            )
+    }
+
+    fn latest_installed_channel_version(&self, channel: &str) -> Option<String> {
+        if !self.is_rolling_channel(channel) {
+            return None;
+        }
+        self.latest_installed_version(None).ok().flatten()
+    }
+
+    async fn resolve_channel_version(
+        &self,
+        _config: &Arc<Config>,
+        version: &str,
+    ) -> Result<Option<String>> {
+        if !self.is_rolling_channel(version) {
+            return Ok(None);
+        }
+        match self.tool_name().parse()? {
+            PipxRequest::Git(url) => Self::git_head(&url).await.map(Some),
+            PipxRequest::Pypi(_) => Ok(None),
+        }
+    }
+
+    fn requires_concrete_channel_version(&self, version: &str) -> bool {
+        self.is_rolling_channel(version)
+    }
+
     fn unresolved_latest_version(&self) -> Option<String> {
         match self.tool_name().parse() {
-            Ok(PipxRequest::Git(_)) => Some("latest".to_string()),
+            Ok(PipxRequest::Git(url)) if url.starts_with("https://github.com/") => {
+                Some("latest".to_string())
+            }
             _ => None,
         }
     }
@@ -432,6 +465,33 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    /// Resolves a Git remote's default-branch HEAD to a concrete commit SHA.
+    async fn git_head(url: &str) -> Result<String> {
+        let remote = format!("{url}.git");
+        timeout::run_with_timeout_async(
+            async || {
+                let output = crate::cmd::cmd_read_async_inherited_env(
+                    "git",
+                    &["ls-remote", &remote, "HEAD"],
+                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+                )
+                .await?;
+                Self::git_head_from_ls_remote(&output)
+                    .ok_or_else(|| eyre!("no HEAD found for {remote}"))
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
+    /// Parses the concrete HEAD commit from `git ls-remote <url> HEAD` output.
+    fn git_head_from_ls_remote(output: &str) -> Option<String> {
+        output.lines().find_map(|line| {
+            let (sha, git_ref) = line.split_once('\t')?;
+            (git_ref == "HEAD").then(|| sha.to_string())
+        })
+    }
+
     /// Lists tags from a Git remote while preserving Git's source ordering.
     async fn versions_from_git_tags(url: &str) -> Result<Vec<VersionInfo>> {
         let remote = format!("{url}.git");
@@ -1105,6 +1165,16 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
         );
     }
 
+    #[test]
+    fn parses_git_head_from_ls_remote() {
+        let output = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\tHEAD\n";
+
+        assert_eq!(
+            PIPXBackend::git_head_from_ls_remote(output).as_deref(),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        );
+    }
+
     #[tokio::test]
     async fn simple_index_resolves_wheel_only_packages() {
         use crate::backend::Backend;
@@ -1316,6 +1386,20 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
                 "{tool} should use remote discovery"
             );
         }
+    }
+
+    #[test]
+    fn non_github_latest_is_a_rolling_channel() {
+        use crate::backend::Backend;
+
+        let gitlab =
+            PIPXBackend::from_arg("pipx:git+https://gitlab.example.com/sre/mytool.git".into());
+        let github = PIPXBackend::from_arg("pipx:git+https://github.com/psf/black.git".into());
+
+        assert!(gitlab.is_rolling_channel("latest"));
+        assert!(gitlab.requires_concrete_channel_version("latest"));
+        assert!(!gitlab.is_rolling_channel("v0.8.1"));
+        assert!(!github.is_rolling_channel("latest"));
     }
 
     #[test]
