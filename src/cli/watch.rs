@@ -90,14 +90,18 @@ impl Watch {
         };
         let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
         ts.notify_missing_versions(missing);
-        if let Err(err) = which::which("watchexec")
-            && ts.which(&config, "watchexec").await.is_none()
-        {
-            eprintln!("{}: {}", style("Error").red().bold(), err);
-            eprintln!("{}: Install watchexec with:", style("Hint").bold());
-            eprintln!("  mise use -g watchexec@latest");
-            return Err(request_exit(1));
-        }
+        let watchexec = match ts.which_bin_spawnable(&config, "watchexec").await {
+            Some(path) => path,
+            None => match which::which("watchexec") {
+                Ok(path) => path,
+                Err(err) => {
+                    eprintln!("{}: {}", style("Error").red().bold(), err);
+                    eprintln!("{}: Install watchexec with:", style("Hint").bold());
+                    eprintln!("  mise use -g watchexec@latest");
+                    return Err(request_exit(1));
+                }
+            },
+        };
         let mut args = once(self.task)
             .flatten()
             .chain(self.task_flag.iter().cloned())
@@ -357,7 +361,7 @@ impl Watch {
             args.push(arg);
         }
         debug!("$ watchexec {}", args.join(" "));
-        let mut cmd = cmd::cmd("watchexec", &args);
+        let mut cmd = cmd::cmd(&watchexec, &args);
         for (k, v) in ts.env_with_path(&config).await? {
             cmd = cmd.env(k, v);
         }
