@@ -841,7 +841,7 @@ fn ignore_path(path: &Path) -> PathBuf {
 /// NOTE: This changes the filename convention for .hash and .monorepo files.
 /// Existing files from prior versions will not be found, requiring a one-time
 /// re-trust of previously trusted configs after upgrade.
-fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
+pub(crate) fn with_appended_extension(path: &Path, ext: &str) -> PathBuf {
     let mut os_string = path.as_os_str().to_owned();
     os_string.push(".");
     os_string.push(ext);
