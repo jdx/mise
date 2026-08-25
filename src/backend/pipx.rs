@@ -178,9 +178,14 @@ impl Backend for PIPXBackend {
             PipxRequest::Git(url) if url.starts_with("https://github.com/") => {
                 let repo = url.strip_prefix("https://github.com/").unwrap();
                 let data = github::list_releases(repo).await?;
-                Self::versions_from_github_releases(data)
+                let versions = Self::versions_from_github_releases(data);
+                if versions.is_empty() {
+                    Self::versions_from_git_tags(&url).await?
+                } else {
+                    versions
+                }
             }
-            PipxRequest::Git { .. } => vec![],
+            PipxRequest::Git(url) => Self::versions_from_git_tags(&url).await?,
         };
         Ok(versions.into_iter().map(stamp_pep440_prerelease).collect())
     }
@@ -427,6 +432,43 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    async fn versions_from_git_tags(url: &str) -> Result<Vec<VersionInfo>> {
+        let remote = format!("{url}.git");
+        timeout::run_with_timeout_async(
+            async || {
+                let output = crate::cmd::cmd_read_async_inherited_env(
+                    "git",
+                    &[
+                        "ls-remote",
+                        "--tags",
+                        "--refs",
+                        "--sort=version:refname",
+                        &remote,
+                    ],
+                    std::iter::empty::<(&str, &std::ffi::OsStr)>(),
+                )
+                .await?;
+                Ok(Self::versions_from_git_ls_remote(&output))
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
+    fn versions_from_git_ls_remote(output: &str) -> Vec<VersionInfo> {
+        output
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .filter_map(|(_, git_ref)| git_ref.strip_prefix("refs/tags/"))
+            .filter(|tag| !tag.is_empty())
+            .unique()
+            .map(|version| VersionInfo {
+                version: version.to_string(),
+                ..Default::default()
+            })
+            .collect()
+    }
+
     fn versions_from_simple_index(package: &str, html: &str) -> Vec<String> {
         let href_re = regex!(r#"(?i)href\s*=\s*["']([^"']+)["']"#);
 
@@ -1048,6 +1090,22 @@ mod tests {
         assert_eq!(
             PIPXBackend::versions_from_simple_index("Demo_Pkg", html),
             vec!["1.0+cpu", "2.0+cpu"]
+        );
+    }
+
+    #[test]
+    fn parses_versions_from_git_ls_remote() {
+        let output = "\
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/tags/v0.8.0\n\
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/v0.8.1\n\
+cccccccccccccccccccccccccccccccccccccccc\trefs/heads/main\n";
+
+        assert_eq!(
+            PIPXBackend::versions_from_git_ls_remote(output)
+                .into_iter()
+                .map(|version| version.version)
+                .collect::<Vec<_>>(),
+            vec!["v0.8.0", "v0.8.1"]
         );
     }
 
