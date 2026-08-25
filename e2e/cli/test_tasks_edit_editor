@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+# `mise tasks edit` launches $VISUAL/$EDITOR, falling back to a default. When that program cannot
+# be started the failure used to be std's bare `program not found`, which names neither the
+# program mise tried to run nor the variables that choose it. On Windows that was the whole of
+# what the command printed, because the default was `nano` and Windows ships no `nano`.
+
+cat <<EOF >mise.toml
+[env]
+E = "1"
+EOF
+
+# Control: an editor that can be started still works, and the task file is created for it. Without
+# this the assertions below would pass just as well on a command that was broken outright.
+assert "EDITOR=true mise tasks edit demo"
+assert "test -f mise-tasks/demo"
+
+# The failure names the program...
+assert_fail_contains "EDITOR=$PWD/no-such-editor mise tasks edit demo" "no-such-editor"
+# ...and the variables that would fix it.
+assert_fail_contains "EDITOR=$PWD/no-such-editor mise tasks edit demo" "EDITOR"
+assert_fail_contains "EDITOR=$PWD/no-such-editor mise tasks edit demo" "VISUAL"
+
+# VISUAL wins over EDITOR, so a broken VISUAL is what gets reported even when EDITOR is fine.
+assert_fail_contains "VISUAL=$PWD/no-such-visual EDITOR=true mise tasks edit demo" "no-such-visual"

@@ -29,8 +29,22 @@
 </p>
 
 <p align="center">
-  Sponsored by <a href="https://entire.io">entire.io</a> and <a href="https://37signals.com">37signals</a>.<br>
-  <a href="https://jdx.dev/sponsors.html">View all sponsors</a>.
+  Sponsored by<br><br>
+  <a href="https://entire.io">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://jdx.dev/sponsors/entire-lockup.svg">
+      <img src="https://jdx.dev/sponsors/entire-lockup-on-light.svg" alt="Entire" height="36">
+    </picture>
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://omarchy.org/patrons/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://jdx.dev/sponsors/omacom-foundation.svg">
+      <img src="https://jdx.dev/sponsors/omacom-foundation-on-light.svg" alt="Omacom Foundation" height="36">
+    </picture>
+  </a>
+  <br><br>
+  <a href="https://jdx.dev/sponsors.html">View all sponsors</a>
 </p>
 
 <hr />
@@ -76,7 +90,7 @@ $ ~/.local/bin/mise --version
  / / / / / / (__  )  __/_____/  __/ / / /_____/ /_/ / / /_/ / /__/  __/
 /_/ /_/ /_/_/____/\___/      \___/_/ /_/     / .___/_/\__,_/\___/\___/
                                             /_/                 by @jdx
-2026.8.12 macos-arm64 (2026-08-24)
+2026.8.13 macos-arm64 (2026-08-25)
 ```
 
 Hook mise into your shell (pick the right one for your shell):

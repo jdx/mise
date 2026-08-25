@@ -35,6 +35,47 @@ pub(crate) struct Scheduler {
     pub in_flight: Arc<AtomicUsize>,
 }
 
+/// What the scheduler needs from its caller to decide when to stop and what to
+/// do with the work it drops.
+///
+/// These travel together rather than as loose parameters so that adding one
+/// does not push `run_loop` over clippy's argument limit.
+pub(crate) struct RunLoopHooks<S, I, D> {
+    /// Whether the run is stopping, because a task failed or the user interrupted.
+    pub should_stop: S,
+    /// Whether the *user* interrupted, which is what overrides `continue_on_error`.
+    pub was_interrupted: I,
+    /// Called for every task the loop removes without ever spawning it. Nothing
+    /// else reports those, since the completion path runs inside the job.
+    pub on_task_dropped: D,
+    pub continue_on_error: bool,
+}
+
+/// Remove a task the loop must not start now that the run is stopping.
+///
+/// Returns true when the task was dropped, so the caller must not spawn it.
+/// Both receive paths go through this: they carried the same logic inline, and
+/// the copy in the `select!` arm was missed when the drop callback was added.
+async fn drop_while_stopping(
+    task: &Task,
+    deps_for_remove: &Arc<Mutex<Deps>>,
+    allow_during_interruption: bool,
+    on_task_dropped: &mut impl FnMut(&Task),
+) -> bool {
+    let mut deps = deps_for_remove.lock().await;
+    // Post-dep (cleanup) tasks still run on failure, but only if their parent
+    // actually started.
+    if allow_during_interruption || deps.is_runnable_post_dep(task) {
+        return false;
+    }
+    deps.remove(task);
+    drop(deps);
+    // Nothing else reports this task: the completion path runs inside the job,
+    // which it never reaches.
+    on_task_dropped(task);
+    true
+}
+
 impl Scheduler {
     pub(crate) fn new(jobs: usize) -> Self {
         let (sched_tx, sched_rx) = mpsc::unbounded_channel::<SchedMsg>();
@@ -170,19 +211,26 @@ impl Scheduler {
     ///
     /// Or if should_stop returns true (for early exit due to failures or interruption).
     /// An interruption always stops new work, even in continue-on-error mode.
-    pub(crate) async fn run_loop<F, Fut>(
+    pub(crate) async fn run_loop<F, Fut, S, I, D>(
         &mut self,
         main_done_rx: &mut tokio::sync::watch::Receiver<bool>,
         main_deps: Arc<Mutex<Deps>>,
-        should_stop: impl Fn() -> bool,
-        was_interrupted: impl Fn() -> bool,
-        continue_on_error: bool,
+        hooks: RunLoopHooks<S, I, D>,
         mut spawn_job: F,
     ) -> Result<()>
     where
         F: FnMut(Task, Arc<Mutex<Deps>>, bool) -> Fut,
         Fut: std::future::Future<Output = Result<()>>,
+        S: Fn() -> bool,
+        I: Fn() -> bool,
+        D: FnMut(&Task),
     {
+        let RunLoopHooks {
+            should_stop,
+            was_interrupted,
+            mut on_task_dropped,
+            continue_on_error,
+        } = hooks;
         let mut sched_rx = self.take_receiver().expect("receiver already taken");
         let mut stop_cleanup_done = false;
 
@@ -199,14 +247,16 @@ impl Scheduler {
                         drained_any = true;
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
-                            // Still allow post-dep (cleanup) tasks to run on failure,
-                            // but only if their parent was actually started
-                            let mut deps = deps_for_remove.lock().await;
-                            if !allow_during_interruption && !deps.is_runnable_post_dep(&task) {
-                                deps.remove(&task);
+                            let dropped = drop_while_stopping(
+                                &task,
+                                &deps_for_remove,
+                                allow_during_interruption,
+                                &mut on_task_dropped,
+                            )
+                            .await;
+                            if dropped {
                                 continue;
                             }
-                            drop(deps);
                         }
                         spawn_job(task, deps_for_remove, allow_during_interruption).await?;
                     }
@@ -229,6 +279,12 @@ impl Scheduler {
                     .filter(|t| !deps.is_runnable_post_dep(t))
                     .cloned()
                     .collect();
+                // Only the ones that never started: a task already executing
+                // reports itself when it ends, and telling the caller twice
+                // would retire it while it is still producing output.
+                for task in tasks_to_remove.iter().filter(|t| !deps.has_executed(t)) {
+                    on_task_dropped(task);
+                }
                 deps.remove_batch(&tasks_to_remove);
                 if deps.is_empty() {
                     drop(deps);
@@ -254,14 +310,16 @@ impl Scheduler {
                     }) = m {
                         trace!("scheduler received: {} {}", task.name, task.args.join(" "));
                         if should_stop() && (!continue_on_error || was_interrupted()) {
-                            let mut deps = deps_for_remove.lock().await;
-                            if !allow_during_interruption
-                                && !deps.is_runnable_post_dep(&task)
-                            {
-                                deps.remove(&task);
+                            let dropped = drop_while_stopping(
+                                &task,
+                                &deps_for_remove,
+                                allow_during_interruption,
+                                &mut on_task_dropped,
+                            )
+                            .await;
+                            if dropped {
                                 continue;
                             }
-                            drop(deps);
                         }
                         spawn_job(task, deps_for_remove, allow_during_interruption).await?;
                     } else {

@@ -37,6 +37,7 @@ pub(crate) use hook_env::HookReason;
 mod command_effects;
 mod deps;
 pub(crate) mod edit;
+mod editor;
 mod implode;
 mod install;
 mod install_into;
@@ -1510,6 +1511,31 @@ mod tests {
             panic!("expected run command");
         };
         assert_eq!(run.task.as_deref(), Some("atask"));
+    }
+
+    #[test]
+    fn test_aube_node_gyp_bootstrap_would_become_naked_run_without_early_intercept() {
+        // Embedded aube re-execs the host as `__node-gyp-bootstrap`. That name is
+        // not a mise subcommand, so the naked-run rewrite injects `run` — which is
+        // exactly the gemini-cli / node-pty failure mode. `main` must intercept
+        // this argv *before* preprocess_args_for_naked_run runs.
+        let cmd = Cli::command();
+        let args = [
+            "mise".to_string(),
+            "__node-gyp-bootstrap".to_string(),
+            "/tmp/project".to_string(),
+        ];
+        let processed = preprocess_args_for_naked_run(cmd, &args);
+        assert_eq!(
+            processed,
+            [
+                "mise".to_string(),
+                "run".to_string(),
+                "__node-gyp-bootstrap".to_string(),
+                "/tmp/project".to_string(),
+            ],
+            "if this no longer rewrites to `run`, update main's early aube dispatch"
+        );
     }
 
     #[test]

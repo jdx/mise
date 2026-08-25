@@ -7,8 +7,15 @@
 # task emitting a single line never reaches a second line to become active, so
 # it lost everything.
 #
-# --jobs 1 keeps this deterministic. Block order across tasks is a separate
-# defect and is deliberately not asserted here.
+# --jobs 1 keeps that part deterministic.
+#
+# Block order across tasks is asserted further down. Those cases need real
+# parallelism -- with --jobs 1 the semaphore serializes the tasks and the
+# ordering defect cannot reproduce.
+#
+# Not covered: a parent whose `run` interleaves scripts and task references.
+# keep-order is one contiguous block per task and cannot express "parent
+# output, children blocks, more parent output".
 
 cat >mise.toml <<'TOML'
 [tasks.launch]
@@ -44,3 +51,67 @@ out="$(mise run --quiet --jobs 1 --output keep-order launch 2>&1)"
 assert "printf '%s\n' \"$out\"" "[three] L1
 [three] L2
 [three] L3"
+
+# Blocks come out in the order the tasks were written, not the order they
+# happened to produce output. `fast` finishes first and used to print first.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["slow", "fast"] }
+
+[tasks.slow]
+run = 'sleep 1; echo SLOW'
+
+[tasks.fast]
+run = 'echo FAST'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order launch 2>&1)"
+assert "printf '%s\n' \"$out\"" "[slow] SLOW
+[fast] FAST"
+
+# Injected tasks take the position of the task that injected them, so they come
+# before a task named after it on the command line -- even though that task
+# finishes first. `:::` separates the two tasks; without it `other` would be an
+# argument to `launch` rather than a second task.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["slow", "fast"] }
+
+[tasks.slow]
+run = 'sleep 1; echo SLOW'
+
+[tasks.fast]
+run = 'echo FAST'
+
+[tasks.other]
+run = 'echo OTHER'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order launch ::: other 2>&1)"
+assert "printf '%s\n' \"$out\"" "[slow] SLOW
+[fast] FAST
+[other] OTHER"
+
+# Nesting: a task injected by a task reference keeps its own slot, so what it
+# injects in turn anchors there rather than at the end.
+cat >mise.toml <<'TOML'
+[tasks.outer]
+run = { tasks = ["inner", "last"] }
+
+[tasks.inner]
+run = { tasks = ["a", "b"] }
+
+[tasks.a]
+run = 'sleep 1; echo A'
+
+[tasks.b]
+run = 'echo B'
+
+[tasks.last]
+run = 'echo LAST'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order outer 2>&1)"
+assert "printf '%s\n' \"$out\"" "[a] A
+[b] B
+[last] LAST"

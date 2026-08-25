@@ -151,3 +151,65 @@ assert_fail_contains \
   "relocated-blocked-bin/work/containers/_default is not a generated task stub"
 assert_contains "cat relocated-blocked-bin/work/containers/_default" "exec custom-tool run work:containers"
 test ! -e relocated-blocked-bin/xxx
+
+# A file task is named after its file, so the stub used to be too: `build.sh` produced
+# `bin/build.sh`, and on Windows `build.bat` produced a `#!/bin/sh` script called `bin/build.bat`,
+# which cmd.exe runs as a batch file line by line. The stub is named after the task now.
+#
+# Nothing is cleared first: the paths below (`bin/deploy*`, `bin/build*`) do not collide with what
+# the scenarios above leave in `bin/` (`xxx*`, `work/containers/*`), so a reset would only be
+# tidiness.
+mkdir -p mise-tasks
+cat >mise-tasks/deploy.sh <<'SH'
+#!/usr/bin/env sh
+echo deploying
+SH
+chmod +x mise-tasks/deploy.sh
+cat >mise.toml <<'EOF2'
+[tools]
+EOF2
+
+assert "mise generate task-stubs"
+assert_succeed "test -f bin/deploy"
+assert_succeed "test -f bin/deploy.cmd"
+# The negative control: without it the assertion above would hold even if both spellings were
+# written, which is the state this replaces.
+assert_fail "test -f bin/deploy.sh"
+assert "./bin/deploy" "deploying"
+
+# A stub written under the old spelling is migrated, launcher and all, rather than left beside the
+# new one still running the task.
+cp bin/deploy bin/deploy.sh
+cp bin/deploy.cmd bin/deploy.sh.cmd
+chmod +x bin/deploy.sh
+assert "mise generate task-stubs"
+assert_fail "test -e bin/deploy.sh"
+assert_fail "test -e bin/deploy.sh.cmd"
+assert_succeed "test -f bin/deploy"
+
+# ...but only a stub mise wrote. Anything else at that path stops the run, the same protection the
+# nested-stub migration already has.
+printf '#!/bin/sh\necho mine\n' >bin/deploy.sh
+chmod +x bin/deploy.sh
+assert_fail_contains "mise generate task-stubs" "is not the generated stub for task"
+assert_contains "cat bin/deploy.sh" "echo mine"
+# Not cleanup: this un-plants the file the two lines above deliberately planted. Left in place it
+# keeps failing validation, and the next scenario asserts a successful run.
+rm -f bin/deploy.sh
+
+# Two file tasks differing only by extension share a display name, and on this platform both
+# survive as separate tasks. They keep their file-named paths: renaming both onto `bin/build` would
+# take a project that generates two stubs today and fail the run instead.
+cat >mise-tasks/build.sh <<'SH'
+#!/usr/bin/env sh
+echo from-sh
+SH
+cat >mise-tasks/build.bat <<'SH'
+#!/usr/bin/env sh
+echo from-bat
+SH
+chmod +x mise-tasks/build.sh mise-tasks/build.bat
+assert "mise generate task-stubs"
+assert_succeed "test -f bin/build.sh"
+assert_succeed "test -f bin/build.bat"
+assert_fail "test -e bin/build"

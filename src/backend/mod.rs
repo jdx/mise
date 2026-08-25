@@ -3054,7 +3054,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 Ok(find_match_in_list(&matches, &query))
             }
             None => {
-                let installed_symlink = self.ba().installs_path.join("latest");
+                // Lazy backend loading keeps the request's primary (user) install
+                // path, even when the only installed versions live in a system or
+                // shared directory. Install state has already applied that fallback
+                // and records the directory that supplied the tool.
+                let installs_path = install_state::get_tool(&self.ba().short)
+                    .and_then(|tool| tool.installs_path)
+                    .unwrap_or_else(|| self.ba().installs_path.clone());
+                let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
@@ -3065,12 +3072,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string();
                     return Ok(Some(version));
                 }
-                Ok(file::dir_subdirs(&self.ba().installs_path)
+                Ok(file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
+                    .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())

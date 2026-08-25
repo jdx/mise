@@ -1,5 +1,5 @@
 use crate::config::Settings;
-use crate::task::task_helpers::task_needs_permit;
+use crate::task::task_helpers::{task_needs_permit, task_runs_task_references};
 use crate::task::task_output::TaskOutput;
 use crate::task::{Task, TaskCacheOutput};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -49,6 +49,44 @@ impl KeepOrderState {
         self.buffers.entry(task.clone()).or_default();
     }
 
+    /// Give `tasks` slots immediately before `parent`'s, keeping their relative
+    /// order, so tasks a parent injects at runtime occupy the position the
+    /// parent itself was declared in rather than landing wherever their first
+    /// line happened to arrive.
+    ///
+    /// `parent` keeps its own (empty) slot afterwards: a later run entry, or a
+    /// nested injection by one of these tasks, has to find the same anchor.
+    /// `on_task_finished` reaps it.
+    ///
+    /// A parent that produces output of its own is left alone. keep-order is one
+    /// contiguous block per task and cannot express "parent output, children
+    /// blocks, more parent output", and moving such a parent behind its children
+    /// would reorder lines it had already buffered. Those tasks keep what this
+    /// did before -- appended -- only now in the order they were written rather
+    /// than the order they happened to print.
+    pub(crate) fn insert_tasks_before(&mut self, parent: &Task, tasks: &[Task]) {
+        let anchor = if task_needs_permit(parent) {
+            None
+        } else {
+            self.buffers.get_index_of(parent)
+        };
+        let Some(mut idx) = anchor else {
+            for task in tasks {
+                self.init_task(task);
+            }
+            return;
+        };
+        for task in tasks {
+            // `shift_insert` *moves* a key it already holds, which would drag a
+            // task out of the position it was given earlier.
+            if self.buffers.contains_key(task) {
+                continue;
+            }
+            self.buffers.shift_insert(idx, task.clone(), Vec::new());
+            idx += 1;
+        }
+    }
+
     /// Whether this task should stream live (is active, or is first in
     /// definition order when no task is active yet).
     fn is_active(&self, task: &Task) -> bool {
@@ -84,6 +122,25 @@ impl KeepOrderState {
                 .entry(task.clone())
                 .or_default()
                 .push(KeepOrderLine::Stderr(prefix, line));
+        }
+    }
+
+    /// Retire the slot of a task the run abandoned before it produced anything.
+    ///
+    /// Only an empty slot is touched. A slot holding lines belongs to a task
+    /// that did produce output, and the normal completion path flushes it in
+    /// turn -- removing it here could print it out of order, and if the task is
+    /// somehow still running its later lines would be stranded at the tail.
+    pub(crate) fn retire_unused_slot(&mut self, task: &Task) {
+        // The live task's buffer is empty too -- `activate` drained it on the
+        // way in -- so "empty" alone does not mean "produced nothing". Retiring
+        // it would hand the stream to another task and strand the rest of its
+        // output at the tail of the map.
+        if self.active.as_ref() == Some(task) {
+            return;
+        }
+        if self.buffers.get(task).is_some_and(|lines| lines.is_empty()) {
+            self.on_task_finished(task);
         }
     }
 
@@ -130,8 +187,19 @@ impl KeepOrderState {
     /// Promote the next buffered (still-running) task to active so it can
     /// stream live going forward.
     fn promote_next(&mut self) {
-        if let Some((task, _)) = self.buffers.first() {
-            let task = task.clone();
+        // Skip an entry holding no lines. That is an anchor: it never produces
+        // output of its own, so activating it would pin the live stream to a
+        // task that cannot release it until it finishes -- which is after
+        // everything it injected -- and the tasks behind it would buffer to the
+        // end of the run. Leaving `active` as None costs nothing, since
+        // `is_active` already lets the front entry claim the stream on its next
+        // line.
+        let next = self
+            .buffers
+            .first()
+            .filter(|(_, lines)| !lines.is_empty())
+            .map(|(task, _)| task.clone());
+        if let Some(task) = next {
             self.activate(&task);
         }
     }
@@ -289,8 +357,12 @@ impl OutputHandler {
     /// Initialize output handling for a task
     pub(crate) fn init_task(&mut self, task: &Task) {
         match self.output(Some(task)) {
-            TaskOutput::KeepOrder if task_needs_permit(task) => {
-                // Only add tasks that produce output (not orchestrator-only tasks)
+            TaskOutput::KeepOrder if task_needs_permit(task) || task_runs_task_references(task) => {
+                // Tasks that produce output, plus the ones that inject other
+                // tasks: those produce nothing themselves but anchor their
+                // children's blocks at their own declared position. A task that
+                // only aggregates `depends` gets neither and stays out, so it
+                // cannot sit at the front holding the live stream all run.
                 self.keep_order_state.lock().unwrap().init_task(task);
             }
             TaskOutput::Replacing => {
@@ -495,6 +567,7 @@ impl OutputHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::task::RunEntry;
 
     #[test]
     fn colored_prefix_modes_require_a_rendered_style() {
@@ -524,6 +597,10 @@ mod tests {
 
     fn buffered(state: &KeepOrderState, task: &Task) -> usize {
         state.buffers.get(task).map(Vec::len).unwrap_or(0)
+    }
+
+    fn keys(state: &KeepOrderState) -> Vec<String> {
+        state.buffers.keys().map(|t| t.name.clone()).collect()
     }
 
     #[test]
@@ -583,5 +660,202 @@ mod tests {
 
         let outputs = handler.timed_outputs.lock().unwrap();
         assert_eq!(outputs.get("build").unwrap().1, ["first", "second"]);
+    }
+
+    #[test]
+    fn injected_tasks_take_the_parents_slot() {
+        // A task started from a run entry is not in the up-front task graph, so
+        // without an anchor its block lands wherever its first line happened to
+        // arrive rather than where the parent was declared (#12238).
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        let other = task_named("other");
+        state.init_task(&launch);
+        state.init_task(&other);
+
+        state.insert_tasks_before(&launch, &[task_named("one"), task_named("two")]);
+
+        assert_eq!(keys(&state), ["one", "two", "launch", "other"]);
+    }
+
+    #[test]
+    fn a_task_declared_after_the_parent_cannot_stream_ahead_of_the_children() {
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        let other = task_named("other");
+        state.init_task(&launch);
+        state.init_task(&other);
+        state.insert_tasks_before(&launch, &[task_named("one"), task_named("two")]);
+
+        state.on_stdout(&other, "other".into(), "first".into());
+        state.on_stdout(&other, "other".into(), "second".into());
+
+        assert_eq!(
+            buffered(&state, &other),
+            2,
+            "a task behind the injected ones must still be held"
+        );
+        assert_eq!(keys(&state)[0], "one");
+    }
+
+    #[test]
+    fn a_second_injection_reuses_the_parent_anchor() {
+        // Consuming the anchor on the first injection would leave the second run
+        // entry with nothing to anchor to, and it would append behind whatever
+        // was declared after the parent.
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        state.init_task(&launch);
+
+        state.insert_tasks_before(&launch, &[task_named("a")]);
+        state.insert_tasks_before(&launch, &[task_named("b")]);
+
+        assert_eq!(keys(&state), ["a", "b", "launch"]);
+    }
+
+    #[test]
+    fn a_task_that_already_has_a_slot_is_not_moved() {
+        // `shift_insert` moves a key it already holds, which would drag a task
+        // out of the position it was given earlier.
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        let a = task_named("a");
+        state.init_task(&launch);
+        state.init_task(&a);
+
+        state.insert_tasks_before(&launch, &[a.clone(), task_named("b")]);
+
+        assert_eq!(keys(&state), ["b", "launch", "a"]);
+    }
+
+    #[test]
+    fn a_parent_with_output_of_its_own_is_not_used_as_an_anchor() {
+        // The mixed case: keep-order cannot express "parent output, children,
+        // more parent output", and anchoring here would move lines the parent
+        // had already buffered behind its children's blocks.
+        let mut state = KeepOrderState::new();
+        let mixed = Task {
+            name: "mixed".to_string(),
+            run: vec![RunEntry::Script("echo A".to_string())],
+            ..Default::default()
+        };
+        state.init_task(&mixed);
+
+        state.insert_tasks_before(&mixed, &[task_named("one"), task_named("two")]);
+
+        assert_eq!(keys(&state), ["mixed", "one", "two"]);
+    }
+
+    #[test]
+    fn retiring_a_task_that_never_ran_releases_the_ones_behind_it() {
+        // The scheduler drops tasks on teardown without ever spawning them, so
+        // nothing else reports them as finished. An anchor left behind that way
+        // would hold the front of the map and keep everything after it buffered
+        // until the final flush.
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        let other = task_named("other");
+        state.init_task(&launch);
+        state.init_task(&other);
+
+        state.on_stdout(&other, "other".into(), "held".into());
+        assert_eq!(
+            buffered(&state, &other),
+            1,
+            "held while the anchor is ahead"
+        );
+
+        state.on_task_finished(&launch);
+
+        assert_eq!(keys(&state), ["other"]);
+        assert!(
+            state.is_active(&other),
+            "and streams once the anchor is gone"
+        );
+    }
+
+    #[test]
+    fn a_task_held_behind_an_anchor_flushes_when_the_anchor_finishes() {
+        // `promote_next` leaves `active` unset when the front slot is an empty
+        // anchor, so nothing streams while the anchor is there. The anchor's own
+        // completion has to release what queued up behind it rather than leaving
+        // it for `flush_all`: with `active` unset, `is_active` is true for the
+        // front entry, so the anchor takes the active path and flushes.
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        let other = task_named("other");
+        state.init_task(&launch);
+        state.init_task(&other);
+
+        state.on_stdout(&other, "other".into(), "held".into());
+        assert_eq!(buffered(&state, &other), 1);
+        assert!(
+            state.active.is_none(),
+            "an empty anchor must not be promoted"
+        );
+
+        state.on_task_finished(&launch);
+
+        assert_eq!(keys(&state), ["other"], "the anchor is gone");
+        assert_eq!(
+            buffered(&state, &other),
+            0,
+            "and what queued behind it has been printed"
+        );
+    }
+
+    #[test]
+    fn retiring_a_slot_never_touches_the_live_task() {
+        // An active task holds an empty buffer, so a retirement that keyed only
+        // off emptiness would take the stream away from a task that is still
+        // writing to it.
+        let mut state = KeepOrderState::new();
+        let a = task_named("a");
+        let other = task_named("other");
+        state.init_task(&a);
+        state.init_task(&other);
+
+        state.on_stdout(&a, "a".into(), "line".into());
+        assert_eq!(buffered(&state, &a), 0, "the live task buffers nothing");
+
+        state.retire_unused_slot(&a);
+
+        assert_eq!(keys(&state), ["a", "other"], "its slot must survive");
+        assert!(state.is_active(&a), "and it keeps the stream");
+    }
+
+    #[test]
+    fn an_unanchored_parent_falls_back_to_appending() {
+        let mut state = KeepOrderState::new();
+        let other = task_named("other");
+        state.init_task(&other);
+
+        state.insert_tasks_before(&task_named("unregistered"), &[task_named("one")]);
+
+        assert_eq!(keys(&state), ["other", "one"]);
+    }
+
+    #[test]
+    fn an_empty_anchor_does_not_pin_the_live_stream() {
+        // An anchor holds no lines and never produces any. Promoting it would
+        // pin the live slot until the parent finishes — which is after every
+        // task it injects — so the next child would buffer to the end of the run
+        // instead of streaming.
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        let a = task_named("a");
+        state.init_task(&a);
+        state.init_task(&launch);
+
+        state.on_stdout(&a, "a".into(), "line".into());
+        state.on_task_finished(&a);
+        assert!(
+            state.active.is_none(),
+            "the anchor must not have claimed the stream"
+        );
+
+        let b = task_named("b");
+        state.insert_tasks_before(&launch, std::slice::from_ref(&b));
+        assert!(state.is_active(&b), "the next child must stream live");
     }
 }
