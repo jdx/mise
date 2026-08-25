@@ -103,6 +103,9 @@ jobs:
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
+      # Keep Windows paths short enough for MSBuild/FileTracker and place the
+      # binaries where downstream artifact steps already expect them.
+      MBX_TARGET_VIEWS: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
@@ -168,6 +171,9 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # Clippy's all-features build can otherwise exhaust the runner's memory.
+      CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
@@ -378,6 +384,9 @@ jobs:
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
+      # The default content-addressed target path can exceed Windows tooling's
+      # path limits during workspace tests.
+      MBX_TARGET_VIEWS: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
