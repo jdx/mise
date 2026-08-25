@@ -319,6 +319,13 @@ impl Backend for PIPXBackend {
         } else {
             None
         };
+        let pipx_available = if uv_program.is_none() {
+            self.spawnable_dependency(&ctx.config, Some(&ctx.ts), "pipx")
+                .await
+                .is_some()
+        } else {
+            false
+        };
 
         if uv_program.is_none() {
             // Only offer uv as an alternative when this package can actually use it.
@@ -345,27 +352,31 @@ impl Backend for PIPXBackend {
                 .await;
 
             // Fail with the instructions above rather than letting `pipx install` die with a
-            // bare "No such file or directory (os error 2)". Skipped when a configured tool
-            // provides pipx, since mise installs that first — same rule as the warning.
+            // bare "No such file or directory (os error 2)". The install graph has already
+            // processed configured dependencies before this backend starts, so a configured
+            // but still unspawnable pipx will not become available later in this invocation.
             //
             // The gate asks `spawnable_dependency`, the same question `spawn_program` asks
             // below, so it cannot pass on evidence the spawn will then reject. On Windows a
             // `pipx.ps1` or a shebang-only `pipx.pyz` satisfies the plain lookup but cannot
             // be launched, and it used to reach `pipx install` and die with
             // "program not found" instead of these instructions.
-            let pipx_configured = match self.dependency_toolset(&ctx.config).await {
-                Ok(ts) => ts.versions.keys().any(|ba| ba.short == "pipx"),
-                Err(_) => false,
-            };
-            if !pipx_configured
-                && self
-                    .spawnable_dependency(&ctx.config, Some(&ctx.ts), "pipx")
-                    .await
-                    .is_none()
-            {
+            if !pipx_available {
+                let pipx_configured = match self.dependency_toolset(&ctx.config).await {
+                    Ok(ts) => ts.versions.keys().any(|ba| ba.short == "pipx"),
+                    Err(_) => false,
+                };
+                let reason = if pipx_configured {
+                    "pipx is configured but its executable was not found or is not runnable"
+                        .to_string()
+                } else {
+                    format!(
+                        "pipx is required to install {} but was not found",
+                        self.ba()
+                    )
+                };
                 bail!(
-                    "pipx is required to install {} but was not found.\n\n{instructions}",
-                    self.ba()
+                    "{reason}.\n\n{instructions}\n\nIf pipx is already installed, verify it with `mise which pipx` and `pipx --version`."
                 );
             }
         }
@@ -435,7 +446,20 @@ impl Backend for PIPXBackend {
             if let Some(args) = options.pipx_args() {
                 cmd = cmd.args(shell_words::split(args)?);
             }
-            cmd.execute()?;
+            if let Err(err) = cmd.execute() {
+                let not_found = err.chain().any(|cause| {
+                    cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
+                });
+                if not_found {
+                    bail!(
+                        "pipx was found during dependency validation but could not be launched while installing {}.\n\nVerify the configured executable with `mise which pipx` and `pipx --version`. If pipx is unavailable, reinstall it with `mise use pipx@latest`.",
+                        self.ba()
+                    );
+                }
+                return Err(err);
+            }
         }
 
         // Fix venv Python symlink to use minor version path
