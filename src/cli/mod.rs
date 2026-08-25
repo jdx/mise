@@ -431,9 +431,7 @@ fn find_subcommand<'a>(
 ) -> Option<&'a usage_rs::Command<'a>> {
     cmd.subcommands
         .iter()
-        .find(|subcommand| {
-            subcommand.name == name || subcommand.aliases.iter().any(|alias| *alias == name)
-        })
+        .find(|subcommand| subcommand.name == name || subcommand.aliases.contains(&name))
         .copied()
 }
 
