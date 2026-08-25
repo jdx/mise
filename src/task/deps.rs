@@ -410,6 +410,13 @@ impl Deps {
         }
     }
 
+    /// Whether this task ever started executing. `mark_executed` runs
+    /// synchronously before the task is spawned, so a task missing here has no
+    /// execution in flight and will never reach the completion callbacks.
+    pub(crate) fn has_executed(&self, task: &Task) -> bool {
+        self.executed.contains(&task_key(task))
+    }
+
     /// Mark a task as having actually started execution.
     /// This is distinct from being scheduled (sent) — a task may be scheduled as a
     /// graph leaf but then skipped because an earlier task failed.

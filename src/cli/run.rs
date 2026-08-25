@@ -18,6 +18,7 @@ use crate::task::task_helpers::task_needs_permit;
 use crate::task::task_list::{get_task_lists, resolve_depends};
 use crate::task::task_output::TaskOutput;
 use crate::task::task_output_handler::OutputHandler;
+use crate::task::task_scheduler::RunLoopHooks;
 use crate::task::{Deps, Task, TaskCacheMode, usage_command_for_args};
 use crate::toolset::{InstallOptions, ResolveOptions, ToolVersion, ToolsetBuilder};
 use crate::ui::{ctrlc, info, style};
@@ -911,13 +912,16 @@ impl Run {
             .run_loop(
                 &mut main_done_rx,
                 main_deps.clone(),
-                || this.is_stopping(),
-                // What overrides `continue_on_error` is the *user* interrupting
-                // mise, not any task being interrupted. A child that took SIGINT
-                // on its own stops that task; it is not a reason to drop work the
-                // user asked to keep going.
-                ctrlc::is_cancelled,
-                this.continue_on_error,
+                RunLoopHooks {
+                    should_stop: || this.is_stopping(),
+                    // What overrides `continue_on_error` is the *user* interrupting
+                    // mise, not any task being interrupted. A child that took SIGINT
+                    // on its own stops that task; it is not a reason to drop work the
+                    // user asked to keep going.
+                    was_interrupted: ctrlc::is_cancelled,
+                    on_task_dropped: |task: &Task| this.retire_keep_order_slot(task),
+                    continue_on_error: this.continue_on_error,
+                },
                 |task, deps_for_remove, allow_during_interruption| {
                     let this = this.clone();
                     let spawn_context = spawn_context.clone();
@@ -1145,6 +1149,21 @@ impl Run {
         Ok(())
     }
 
+    /// Retire a task's keep-order slot because it will never run.
+    ///
+    /// The completion path that normally does this lives inside the task's
+    /// execution closure, so a task abandoned before that point would leave its
+    /// slot in the buffer map. An abandoned parent's slot is an anchor, and
+    /// since only the front entry may stream, everything behind it would stay
+    /// buffered until the final flush.
+    fn retire_keep_order_slot(&self, task: &Task) {
+        if let Some(oh) = &self.output_handler
+            && oh.output(Some(task)) == TaskOutput::KeepOrder
+        {
+            oh.keep_order_state.lock().unwrap().on_task_finished(task);
+        }
+    }
+
     async fn should_abort_while_stopping(
         this: &Self,
         task: &Task,
@@ -1162,6 +1181,8 @@ impl Run {
             return false;
         }
         deps.remove(task);
+        drop(deps);
+        this.retire_keep_order_slot(task);
         true
     }
 
