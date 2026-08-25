@@ -764,11 +764,13 @@ fn tool_overlay_subcommand<'a>(
     let mut subcommand_idx = first_non_global_arg_idx(cmd, args)?;
     let mut subcommand = find_subcommand(cmd, args[subcommand_idx].as_str())?;
     if subcommand.name == "tasks"
-        && let Some(nested_name) = args.get(subcommand_idx + 1)
+        && let Some(nested_idx) = first_non_global_arg_idx(cmd, &args[subcommand_idx..])
+            .map(|nested_idx| subcommand_idx + nested_idx)
+        && let Some(nested_name) = args.get(nested_idx)
         && let Some(nested) = find_subcommand(subcommand, nested_name)
         && nested.name == "run"
     {
-        subcommand_idx += 1;
+        subcommand_idx = nested_idx;
         subcommand = nested;
     }
     Some((subcommand_idx, subcommand))
@@ -1425,6 +1427,14 @@ mod tests {
                 strings(&["mise", "tasks", "run", "--tool", "node@27", "build"]),
             ),
             (
+                strings(&[
+                    "mise", "tasks", "--cd", "project", "run", "+node@27", "build",
+                ]),
+                strings(&[
+                    "mise", "tasks", "--cd", "project", "run", "--tool", "node@27", "build",
+                ]),
+            ),
+            (
                 strings(&["mise", "run", "+node@27", "+python@3.14", "build"]),
                 strings(&[
                     "mise",
@@ -1479,6 +1489,9 @@ mod tests {
             strings(&["mise", "--cd", "project", "run", "+node@27", "build"]),
             strings(&["mise", "run", "--cd=project", "+node@27", "build"]),
             strings(&["mise", "tasks", "run", "-Cproject", "+node@27", "build"]),
+            strings(&[
+                "mise", "tasks", "--cd", "project", "run", "+node@27", "build",
+            ]),
         ] {
             assert!(
                 scan_tool_overlay_args(cmd, &input)
