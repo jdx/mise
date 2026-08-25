@@ -37,6 +37,7 @@ pub(crate) use hook_env::HookReason;
 mod command_effects;
 mod deps;
 pub(crate) mod edit;
+mod editor;
 mod implode;
 mod install;
 mod install_into;

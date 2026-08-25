@@ -80,8 +80,27 @@ pub(crate) static HOME: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| PathBuf::from("/"))
 });
 
-pub(crate) static EDITOR: Lazy<String> =
-    Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
+pub(crate) static EDITOR: Lazy<String> = Lazy::new(|| {
+    var("VISUAL")
+        .or_else(|_| var("EDITOR"))
+        .unwrap_or_else(|_| DEFAULT_EDITOR.to_string())
+});
+
+/// The editor to fall back on when neither `VISUAL` nor `EDITOR` is set.
+///
+/// `nano` everywhere but Windows, which ships none of it — not `nano`, `vi`, `vim`, or anything
+/// else POSIX — so the shared default left `mise tasks edit` there with nothing to run at all.
+/// `notepad` is the one editor Windows can be relied on to have.
+///
+/// It also has to *wait*, because `mise dotfiles edit --apply` converges the target as soon as the
+/// editor returns. Measured on Windows 11 26200, where `System32\notepad.exe` no longer exists and
+/// `notepad` resolves to a zero-byte app-execution alias under `WindowsApps`: spawned the way
+/// `Command::status` does it, the parent was still waiting five seconds later, so the alias hands
+/// back the real process rather than detaching from it.
+#[cfg(windows)]
+const DEFAULT_EDITOR: &str = "notepad";
+#[cfg(not(windows))]
+const DEFAULT_EDITOR: &str = "nano";
 
 #[cfg(macos)]
 pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> =
