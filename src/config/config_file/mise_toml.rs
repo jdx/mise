@@ -4793,6 +4793,7 @@ run = 'echo "template"'
             .expect("npm request should be in tool request set");
         let options = request.options();
 
+        // Backend scalar options are normalized to strings by ToolOptions.
         assert_eq!(
             options.opts.get("allow_low_downloads"),
             Some(&toml::Value::String("true".to_string()))

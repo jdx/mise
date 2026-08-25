@@ -1231,6 +1231,7 @@ impl NPMBackend {
         Ok(())
     }
 
+    /// Build the project-scoped Aube settings shared by embedded and CLI installs.
     fn aube_project_config(
         &self,
         before_date: Option<Timestamp>,
