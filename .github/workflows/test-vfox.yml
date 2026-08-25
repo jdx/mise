@@ -21,7 +21,10 @@ env:
 
 jobs:
   "test-vfox":
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
@@ -31,10 +34,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-            ~/.cache/mbx
-      - uses: ./.github/actions/setup-mbx
-        with:
-          restore-cache: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - uses: ./.github/actions/mbx
       - run: |
           mbx build build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"

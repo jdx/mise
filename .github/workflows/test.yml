@@ -60,7 +60,7 @@ jobs:
           fi
 
   build-ubuntu:
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -71,10 +71,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-            ~/.cache/mbx
-      - uses: ./.github/actions/setup-mbx
-        with:
-          restore-cache: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - uses: ./.github/actions/mbx
       - run: |
           mbx build build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -97,19 +94,19 @@ jobs:
     timeout-minutes: 60
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
+    permissions:
+      contents: read
+      id-token: write
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
-        with:
-          shared-key: build
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
+      - uses: ./.github/actions/mbx
       - shell: pwsh
         run: |
-          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
-          cargo build -p mise-shim
+          mbx build build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
+          mbx build build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
@@ -122,10 +119,13 @@ jobs:
 
   unit:
     name: unit-macos
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=mise-pr-rust-macos' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
     timeout-minutes: 90
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
+    permissions:
+      contents: read
+      id-token: write
     env:
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
     steps:
@@ -140,10 +140,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-            ~/.cache/mbx
-      - uses: ./.github/actions/setup-mbx
-        with:
-          restore-cache: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - uses: ./.github/actions/mbx
       - name: Install test tools
         run: brew install fd tmux
       - run: |
@@ -162,17 +159,21 @@ jobs:
         if: always()
 
   lint:
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
     timeout-minutes: 80
     needs: [build-ubuntu]
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: ./.github/actions/mbx
       - parallel:
           - name: Install mold
             run: sudo apt-get update && sudo apt-get install -y mold
           - uses: taiki-e/install-action@51cd0b8c0499559d9a4d75c0f5c67bec3a894ec8 # v2
             with:
-              tool: cargo-deny,cargo-msrv,cargo-machete,sccache
+              tool: cargo-deny,cargo-msrv,cargo-machete
           - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
             if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
             with:
@@ -180,35 +181,10 @@ jobs:
                 ~/.cargo/registry
                 ~/.cargo/git
                 ~/.cargo/.global-cache
-                ~/.cache/sccache
-          # Clippy is not cacheable by mbx yet, but it can still reuse the
-          # Cargo downloads bundled with the same read-only main cache.
-          - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-            if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
-            with:
-              path: |
-                ~/.cargo/registry
-                ~/.cargo/git
-                ~/.cargo/.global-cache
-                ~/.cache/mbx
-              key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-${{ github.event.pull_request.base.sha }}
-              restore-keys: |
-                ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
           - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
             with:
               name: mise-ubuntu-latest
               path: target/debug
-      - name: Configure sccache
-        run: |
-          export RUSTC_WRAPPER=sccache
-          export SCCACHE_DIR="$HOME/.cache/sccache"
-          export SCCACHE_CACHE_SIZE=20G
-          {
-            echo "RUSTC_WRAPPER=$RUSTC_WRAPPER"
-            echo "SCCACHE_DIR=$SCCACHE_DIR"
-            echo "SCCACHE_CACHE_SIZE=$SCCACHE_CACHE_SIZE"
-          } >> "$GITHUB_ENV"
-          sccache --zero-stats
       - run: echo "$PWD/target/debug" >> "$GITHUB_PATH" && chmod +x target/debug/mise
       - uses: ./.github/actions/mise-tools
       - run: mise x -- bun i
@@ -241,25 +217,20 @@ jobs:
           # rust-version than their code requires; rustc still rejects genuinely
           # incompatible syntax and APIs when the metadata check is ignored.
           - name: Verify MSRV
-            run: cargo msrv verify -- cargo check --ignore-rust-version
+            run: mbx build msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
       - name: Run Clippy
         run: |
-          cargo clippy --ignore-rust-version -- -D warnings
-          cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
-        env:
-          CARGO_BUILD_JOBS: "1"
-          CARGO_INCREMENTAL: "0"
-      - run: sccache --show-stats
-        if: always()
+          mbx build clippy --ignore-rust-version -- -D warnings
+          mbx build clippy --all-features --all-targets --ignore-rust-version -- -D warnings
 
   e2e:
     name: e2e
     # The release PR runs the full suite against the packaged release tarball.
     # Keep that stronger signal instead of also testing the debug artifact.
     if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
     needs: [build-ubuntu, classify-changes]
     timeout-minutes: 125
     steps:
@@ -379,7 +350,7 @@ jobs:
             with: *e2e-retry
 
   bootstrap-linux-host:
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
     timeout-minutes: 20
     needs: [build-ubuntu, classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -398,17 +369,17 @@ jobs:
     timeout-minutes: 30
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
+    permissions:
+      contents: read
+      id-token: write
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if already gates writes to main/release
-        with:
-          shared-key: build
-          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
+      - uses: ./.github/actions/mbx
       - name: check unused code
-        run: cargo check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
+        run: mbx build check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
         env:
           RUSTFLAGS: -D unused
       - name: cargo test
@@ -417,11 +388,11 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: cargo test
+          command: mbx build test
       # Windows is where the members rot fastest: their tests assume POSIX paths and shells
       # unless something runs them here.
       - name: cargo test (workspace members)
-        run: cargo test --workspace --exclude mise
+        run: mbx build test --workspace --exclude mise
   windows-e2e:
     runs-on: windows-latest
     timeout-minutes: 100
@@ -448,7 +419,7 @@ jobs:
           command: pwsh e2e-win\run.ps1
 
   test-ci:
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
     timeout-minutes: 1
     needs:
       - classify-changes

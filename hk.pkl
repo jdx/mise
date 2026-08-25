@@ -50,7 +50,7 @@ local linters = new Mapping<String, Step> {
     }
     ["cargo-check"] = (Builtins.cargo_check) {
       check = new CommandSpec {
-        command = "cargo check --all-features"
+        command = "mbx build check --all-features"
         effect = "write"
       }
     }
