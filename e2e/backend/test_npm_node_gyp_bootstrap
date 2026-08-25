@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Native npm packages with `allow_builds` run install scripts that shell out to
+# node-gyp. Embedded aube trampolines that through `$AUBE_NODE_GYP_EXE
+# __node-gyp-bootstrap`, which is this mise binary — mise must intercept that
+# private command or the install fails with "no tasks defined".
+
+# Hidden trampoline: print the bootstrapped node-gyp path (stdout only).
+bootstrap_out="$(mise __node-gyp-bootstrap "$PWD")"
+assert_contains "$bootstrap_out" "node-gyp"
+assert_succeed "test -x \"$bootstrap_out\""
+
+# node-pty's install script is `node-gyp rebuild`. Before the intercept this
+# failed with mise's "no tasks defined" naked-run error.
+cat >mise.toml <<'EOF'
+[tools]
+node = "20"
+"npm:node-pty" = { version = "1.0.0", allow_builds = ["node-pty"] }
+EOF
+
+assert_succeed "mise install"
+
+# Confirm the package landed and node-gyp produced a native binding.
+pkg_dir="$(find "$MISE_DATA_DIR/installs/npm-node-pty/1.0.0" -type d -name node-pty | head -1)"
+assert_succeed "test -n \"$pkg_dir\""
+assert_succeed "test -d \"$pkg_dir\""
+binding="$(find "$pkg_dir" -path '*/build/Release/*.node' | head -1)"
+assert_succeed "test -n \"$binding\""
+assert_succeed "test -f \"$binding\""
