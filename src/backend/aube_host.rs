@@ -14,6 +14,7 @@
 //! embedded npm installs separately pass invocation-scoped mise-owned cache
 //! and store paths and disable aube's global virtual store.
 
+use std::path::PathBuf;
 use std::sync::Once;
 
 use aube::embed::{AUBE, Host};
@@ -95,18 +96,41 @@ pub(crate) fn init() {
     });
 }
 
-/// Run aube's host-facing CLI when argv is one of its private trampoline
-/// commands. Returns `Some(exit_code)` so `main` can exit before mise's own
-/// parser, tokio runtime, or naked-run rewrite touch the args.
+/// Handle aube's private trampoline argv before mise's own parser, tokio
+/// runtime, or naked-run rewrite touch the args. Returns `Some(exit_code)`.
 ///
-/// Uses [`aube::cli_main`]: aube 2.1 still routes `__node-gyp-bootstrap`
-/// through the CLI surface (`aube::embed::bootstrap_node_gyp` lands in a
-/// later aube release).
+/// Uses [`aube::embed::bootstrap_node_gyp`] (aube ≥ 2.2) rather than routing
+/// through [`aube::cli_main`], matching standalone aube's `__node-gyp-bootstrap`
+/// behavior: bootstrap into the cache and print the executable path.
 pub(crate) fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
     if !is_embedded_cli_command(args) {
         return None;
     }
-    Some(aube::cli_main(&MISE_HOST))
+    let project_dir = args
+        .get(2)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    init();
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(err) => {
+            eprintln!("mise: failed to start runtime for node-gyp bootstrap: {err}");
+            return Some(1);
+        }
+    };
+    match runtime.block_on(aube::embed::bootstrap_node_gyp(&project_dir)) {
+        Ok(path) => {
+            println!("{}", path.display());
+            Some(0)
+        }
+        Err(err) => {
+            eprintln!("{err:?}");
+            Some(1)
+        }
+    }
 }
 
 fn is_embedded_cli_command(args: &[String]) -> bool {
