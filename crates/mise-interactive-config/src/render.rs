@@ -2,11 +2,39 @@
 
 use console::{Style, Term};
 use std::io::{self, Write};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::cursor::{AddButtonKind, Cursor, CursorTarget};
 use crate::document::{EntryValue, TomlDocument};
 use crate::inline_edit::InlineEdit;
 use crate::picker::PickerState;
+
+fn truncate_picker_description(name: &str, description: &str, terminal_width: u16) -> String {
+    const PADDING_WIDTH: usize = 10;
+    const ELLIPSIS: &str = "...";
+
+    let available_width =
+        usize::from(terminal_width).saturating_sub(name.width().saturating_add(PADDING_WIDTH));
+    if description.width() <= available_width {
+        return description.to_owned();
+    }
+    if available_width <= ELLIPSIS.len() {
+        return ".".repeat(available_width);
+    }
+
+    let content_width = available_width - ELLIPSIS.len();
+    let mut used_width: usize = 0;
+    let mut end = 0;
+    for (index, character) in description.char_indices() {
+        let character_width = character.width().unwrap_or(0);
+        if used_width.saturating_add(character_width) > content_width {
+            break;
+        }
+        used_width += character_width;
+        end = index + character.len_utf8();
+    }
+    format!("{}{ELLIPSIS}", &description[..end])
+}
 
 /// What kind of picker is currently active
 #[derive(Debug, Clone)]
@@ -962,12 +990,7 @@ impl Renderer {
 
             // Truncate description if too long
             let (_, width) = self.term.size();
-            let max_desc_len = width.saturating_sub(name.len() as u16 + 10) as usize;
-            let truncated_desc = if desc.len() > max_desc_len && max_desc_len > 3 {
-                format!("{}...", &desc[..max_desc_len.saturating_sub(3)])
-            } else {
-                desc.to_string()
-            };
+            let truncated_desc = truncate_picker_description(name, desc, width);
 
             let line = if visible.is_selected {
                 format!(
@@ -1010,5 +1033,42 @@ impl Renderer {
 impl Default for Renderer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_picker_description;
+
+    #[test]
+    fn truncates_picker_descriptions_at_character_boundaries() {
+        assert_eq!(
+            truncate_picker_description("tool", "café au lait", 21),
+            "café..."
+        );
+        assert_eq!(
+            truncate_picker_description("tool", "日本語 description", 23),
+            "日本語..."
+        );
+    }
+
+    #[test]
+    fn picker_description_truncation_handles_narrow_terminals() {
+        assert_eq!(
+            truncate_picker_description("a very long name", "description", 10),
+            ""
+        );
+        assert_eq!(
+            truncate_picker_description("tool", "description", 17),
+            "..."
+        );
+    }
+
+    #[test]
+    fn picker_description_truncation_preserves_text_that_fits() {
+        assert_eq!(
+            truncate_picker_description("tool", "short description", 40),
+            "short description"
+        );
     }
 }
