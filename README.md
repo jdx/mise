@@ -29,7 +29,7 @@
 </p>
 
 <p align="center">
-  Sponsored by <a href="https://entire.io">entire.io</a> and <a href="https://37signals.com">37signals</a>.<br>
+  Sponsored by <a href="https://entire.io">entire.io</a> and <a href="https://omarchy.org/patrons/">Omacom Foundation</a>.<br>
   <a href="https://jdx.dev/sponsors.html">View all sponsors</a>.
 </p>
 
