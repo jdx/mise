@@ -89,9 +89,9 @@ mise _should_ do this automatically when using `mise up python`.
 | Git syntax for a branch               | `pipx:git+https://github.com/psf/black.git@main`       |
 | Https with zipfile                    | `pipx:https://github.com/psf/black/archive/18.9b0.zip` |
 
-For Git URLs, `latest` resolves to the newest version-sorted tag. GitHub URLs prefer
-published GitHub Releases and fall back to tags if there are no releases. If no tags
-or releases exist, `latest` installs the repository's default-branch HEAD.
+For Git URLs, `latest` resolves from the tags returned by the remote. GitHub URLs
+prefer published GitHub Releases and fall back to tags if there are no releases. If
+no tags or releases exist, `latest` installs the repository's default-branch HEAD.
 
 Other syntax may work but is unsupported and untested.
 

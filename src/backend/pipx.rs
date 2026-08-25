@@ -432,19 +432,14 @@ pub(crate) fn install_time_option_keys() -> Vec<String> {
 }
 
 impl PIPXBackend {
+    /// Lists tags from a Git remote while preserving Git's source ordering.
     async fn versions_from_git_tags(url: &str) -> Result<Vec<VersionInfo>> {
         let remote = format!("{url}.git");
         timeout::run_with_timeout_async(
             async || {
                 let output = crate::cmd::cmd_read_async_inherited_env(
                     "git",
-                    &[
-                        "ls-remote",
-                        "--tags",
-                        "--refs",
-                        "--sort=version:refname",
-                        &remote,
-                    ],
+                    &["ls-remote", "--tags", "--refs", &remote],
                     std::iter::empty::<(&str, &std::ffi::OsStr)>(),
                 )
                 .await?;
@@ -455,6 +450,7 @@ impl PIPXBackend {
         .await
     }
 
+    /// Parses `git ls-remote --tags --refs` output into opaque version candidates.
     fn versions_from_git_ls_remote(output: &str) -> Vec<VersionInfo> {
         output
             .lines()
