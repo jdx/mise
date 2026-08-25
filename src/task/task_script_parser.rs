@@ -1054,6 +1054,24 @@ mod tests {
                 "unexpected error for {argument}: {message}"
             );
         }
+
+        let scripts = vec!["echo {{ arg(i=-1) }}".to_string()];
+        let error = parser
+            .parse_run_scripts_with_args(
+                &config,
+                &task,
+                &scripts,
+                &Default::default(),
+                &[],
+                &usage::Spec::default(),
+            )
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(
+            message.contains("invalid `i` argument"),
+            "unexpected rendering error: {message}"
+        );
     }
 
     #[tokio::test]
