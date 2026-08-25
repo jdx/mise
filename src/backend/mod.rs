@@ -3107,13 +3107,34 @@ pub(crate) trait Backend: Debug + Send + Sync {
             _ => return false, // Not rolling or not found
         };
 
-        // If no checksum available, we can't detect changes - don't assume outdated
-        let Some(latest_checksum) = version_info.checksum else {
-            trace!(
-                "No checksum available for rolling version {}, cannot detect updates",
-                version
-            );
-            return false;
+        // The versions host carries the platform-independent rolling bit, but
+        // not the checksum because release assets vary by OS and architecture.
+        // Fetch direct backend metadata only for rolling entries that need it.
+        let latest_checksum = match version_info.checksum {
+            Some(checksum) => checksum,
+            None => match self._list_remote_versions(config).await {
+                Ok(versions) => match versions
+                    .into_iter()
+                    .find(|info| info.version == version && info.rolling)
+                    .and_then(|info| info.checksum)
+                {
+                    Some(checksum) => checksum,
+                    None => {
+                        trace!(
+                            "No checksum available for rolling version {}, cannot detect updates",
+                            version
+                        );
+                        return false;
+                    }
+                },
+                Err(err) => {
+                    debug!(
+                        "Failed to fetch direct metadata for rolling version {}: {err:#}",
+                        version
+                    );
+                    return false;
+                }
+            },
         };
 
         // Compare with stored checksum
