@@ -1,5 +1,29 @@
 # Changelog
 
+## [2026.8.14](https://github.com/jdx/mise/compare/v2026.8.13..v2026.8.14) - 2026-08-25
+
+### 🐛 Bug Fixes
+
+- **(http)** remove the extraction temp dir when extraction fails by @Marukome0743 in [#12420](https://github.com/jdx/mise/pull/12420)
+- **(npm)** keep aube settings out of npmrc by @jdx in [#12425](https://github.com/jdx/mise/pull/12425)
+- **(npm)** intercept aube node-gyp bootstrap trampoline by @jdx in [#12429](https://github.com/jdx/mise/pull/12429)
+- **(prune)** remove trusted config links whose target is gone on Windows by @JamBalaya56562 in [#12418](https://github.com/jdx/mise/pull/12418)
+
+### 📚 Documentation
+
+- add sponsor logos to readme by @jdx in [#12436](https://github.com/jdx/mise/pull/12436)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:rpm docker digest to a7ada36 by @renovate[bot] in [#12432](https://github.com/jdx/mise/pull/12432)
+- update ghcr.io/jdx/mise:alpine docker digest to b6314a4 by @renovate[bot] in [#12430](https://github.com/jdx/mise/pull/12430)
+- update rust crate aube-registry to v2.2.0 by @renovate[bot] in [#12433](https://github.com/jdx/mise/pull/12433)
+- update ghcr.io/jdx/mise:deb docker digest to baffc30 by @renovate[bot] in [#12431](https://github.com/jdx/mise/pull/12431)
+
+### Chore
+
+- **(sponsors)** replace 37signals with omacom foundation by @jdx in [#12435](https://github.com/jdx/mise/pull/12435)
+
 ## [2026.8.13](https://github.com/jdx/mise/compare/v2026.8.12..v2026.8.13) - 2026-08-25
 
 ### 🚀 Features
