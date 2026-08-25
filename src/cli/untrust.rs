@@ -15,10 +15,10 @@ pub(crate) struct Untrust {
 
 impl Untrust {
     pub(crate) fn run(self) -> Result<()> {
-        trust::untrust_config_file(self.config_file())
+        trust::untrust_config_file(self.config_file()?)
     }
 
-    fn config_file(&self) -> Option<PathBuf> {
+    fn config_file(&self) -> Result<Option<PathBuf>> {
         trust::resolve_config_file(self.config_file.as_ref())
     }
 }
