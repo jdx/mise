@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::render_subcommand_help;
 use crate::cmd;
 use crate::config::Config;
@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 ///
 /// This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 /// It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
+/// When `task.run_tool_overlay` is enabled, use `mise watch +node@22 build` to rerun a task with a
+/// temporary tool version.
 ///
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
@@ -54,6 +56,11 @@ pub(crate) struct Watch {
     #[usage(long, verbatim_doc_comment)]
     pub skip_deps: bool,
 
+    /// Tool(s) to run in addition to what is in mise.toml files
+    /// e.g.: node@20 python@3.10
+    #[usage(short = 'T', long, value_name = "TOOL@VERSION")]
+    tool: Vec<ToolArg>,
+
     #[usage(flatten)]
     watchexec: WatchexecArgs,
 }
@@ -71,7 +78,10 @@ impl Watch {
             }
         }
         let config = Config::get().await?;
-        let ts = ToolsetBuilder::new().build(&config).await?;
+        let ts = ToolsetBuilder::new()
+            .with_args(&self.tool)
+            .build(&config)
+            .await?;
         if let Err(err) = which::which("watchexec") {
             let watchexec: BackendArg = "watchexec".into();
             if !ts.versions.contains_key(&watchexec) {
@@ -319,6 +329,10 @@ impl Watch {
             env::MISE_BIN.to_string_lossy().to_string(),
             "run".to_string(),
         ]);
+        for tool in &self.tool {
+            args.push("--tool".to_string());
+            args.push(tool.to_string());
+        }
         if self.skip_deps {
             args.push("--skip-deps".to_string());
         }

@@ -72,6 +72,12 @@ pub(super) struct TasksAdd {
 
 impl TasksAdd {
     pub(super) async fn run(self) -> Result<()> {
+        if self.task.starts_with('+') {
+            warn!(
+                "task names starting with `+` are reserved for temporary tool overlays and will \
+                 stop being runnable by name when task.run_tool_overlay is enabled"
+            );
+        }
         if self.file {
             let mut path = Task::task_dir()
                 .await?

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks."+weird"]
+run = "echo weird"
+EOF
+
+# The compatibility default still treats a leading `+` as a task name.
+assert "mise run +weird" "weird"
+
+# With overlays enabled, the old task spelling is interpreted as a tool and the
+# error explains the migration.
+assert_fail_contains \
+  "MISE_TASK_RUN_TOOL_OVERLAY=1 mise run +weird" \
+  "was interpreted as a temporary tool overlay"

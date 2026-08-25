@@ -13,6 +13,8 @@ use indexmap::IndexSet;
 ///
 /// Use this if you don't want to permanently install mise. It's not necessary to
 /// use this if you have `mise activate` in your shell rc file.
+/// Tools may be prefixed with `+` to make their temporary overlay role explicit, e.g.
+/// `mise env +node@22`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Env {

@@ -2488,6 +2488,8 @@ Exports env vars to activate mise a single time
 
 Use this if you don't want to permanently install mise. It's not necessary to
 use this if you have `mise activate` in your shell rc file.
+Tools may be prefixed with `+` to make their temporary overlay role explicit, e.g.
+`mise env +node@22`.
 .PP
 \fBUsage:\fR mise env [OPTIONS] [<TOOL@VERSION>] ...
 .PP
@@ -4103,6 +4105,9 @@ If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
+When `task.run_tool_overlay` is enabled, leading `+TOOL@VERSION` arguments temporarily add or
+override tools for the invocation. For example, `mise run +node@22 build` is equivalent to
+`mise run \-\-tool node@22 build`.
 In mise.toml, tasks take this form:
 
     [tasks.build]
@@ -4607,6 +4612,7 @@ Only works in a session where mise is already activated.
 
 This works by setting environment variables for the current shell session
 such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
+Tools may be prefixed with `+`, e.g. `mise shell +node@22`.
 .PP
 \fBUsage:\fR mise shell [OPTIONS] <TOOL@VERSION> ...
 .PP
@@ -5055,6 +5061,9 @@ If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
+When `task.run_tool_overlay` is enabled, leading `+TOOL@VERSION` arguments temporarily add or
+override tools for the invocation. For example, `mise run +node@22 build` is equivalent to
+`mise run \-\-tool node@22 build`.
 In mise.toml, tasks take this form:
 
     [tasks.build]
@@ -5858,6 +5867,8 @@ Run task(s) and watch for changes to rerun it
 
 This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 It must be installed for this command to work, but you can install it with `mise use \-g watchexec@latest`.
+When `task.run_tool_overlay` is enabled, use `mise watch +node@22 build` to rerun a task with a
+temporary tool version.
 
 For more advanced process management (daemon management, auto\-restart, readiness checks,
 cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
@@ -5876,6 +5887,9 @@ Defaults to sources from the task(s)
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
+.TP
+\fB\-T, \-\-tool\fR \fI<TOOL@VERSION>\fR
+Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 .TP
 \fB\-w, \-\-watch\fR \fI<PATH>\fR
 Watch a specific file or directory
@@ -6441,6 +6455,7 @@ used for asdf compatibility
 Shows the path that a tool's bin points to.
 
 Use this to figure out what version of a tool is currently active.
+A leading tool overlay can replace `\-\-tool`, e.g. `mise which +node@22 npm`.
 .PP
 \fBUsage:\fR mise which [OPTIONS] [<BIN_NAME>]
 .PP

@@ -1129,6 +1129,16 @@ impl Config {
         for task in tasks.values_mut() {
             task.display_name = task.display_name(&all_tasks);
         }
+        if let Some(task_name) = tasks.keys().find(|name| name.starts_with('+')) {
+            deprecated_at!(
+                "2026.9.0",
+                "2027.9.0",
+                "tasks.plus_prefix_name",
+                "task name `{task_name}` starts with `+`, which is reserved for temporary tool \
+                 overlays. Rename the task before `task.run_tool_overlay` defaults to true in mise \
+                 2027.3.0."
+            );
+        }
         time!("load_all_tasks {count}", count = tasks.len(),);
         Ok(tasks)
     }

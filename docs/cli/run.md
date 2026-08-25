@@ -13,6 +13,9 @@ If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
+When `task.run_tool_overlay` is enabled, leading `+TOOL@VERSION` arguments temporarily add or
+override tools for the invocation. For example, `mise run +node@22 build` is equivalent to
+`mise run --tool node@22 build`.
 In mise.toml, tasks take this form:
 
 ```
@@ -140,6 +143,9 @@ $ mise run --raw test
 
 # Runs the "lint", "test", and "check" tasks in parallel.
 $ mise run lint ::: test ::: check
+
+# Run "build" with a temporary Node.js version (requires task.run_tool_overlay).
+$ mise run +node@22 build
 
 # Execute multiple tasks each with their own arguments.
 $ mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2

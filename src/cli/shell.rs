@@ -14,6 +14,7 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_na
 ///
 /// This works by setting environment variables for the current shell session
 /// such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
+/// Tools may be prefixed with `+`, e.g. `mise shell +node@22`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Shell {

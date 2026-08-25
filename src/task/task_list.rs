@@ -1,4 +1,4 @@
-use crate::config::{self, Config};
+use crate::config::{self, Config, Settings};
 use crate::file::display_path;
 use crate::task::{
     GetMatchingExt, Task, TaskLoadContext, extract_monorepo_path, is_workspace_project_task,
@@ -361,6 +361,29 @@ async fn err_no_task(
 
     // Suggest similar tasks using fuzzy matching for monorepo tasks
     let mut err_msg = format!("no task {} found", style::ered(name));
+
+    if name.starts_with('+') {
+        err_msg.push_str(
+            "\n\nLeading `+TOOL@VERSION` arguments are temporary tool overlays when \
+             `task.run_tool_overlay` is enabled. Disable that setting to run a legacy task whose \
+             name starts with `+`, and rename the task before the syntax becomes the default.",
+        );
+    }
+
+    if name == "default"
+        && Settings::get().task.run_tool_overlay
+        && crate::env::ARGS
+            .read()
+            .unwrap()
+            .iter()
+            .any(|arg| arg.strip_prefix('+').is_some_and(|tool| !tool.is_empty()))
+    {
+        err_msg.push_str(
+            "\n\nA leading `+TOOL@VERSION` argument was interpreted as a temporary tool overlay. \
+             Add a task name after the overlay, or disable `task.run_tool_overlay` to run a legacy \
+             `+`-prefixed task.",
+        );
+    }
 
     let similar = similar_tasks(name, &tasks_for_error);
     if !similar.is_empty() {

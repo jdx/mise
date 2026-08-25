@@ -8,6 +8,7 @@
 Shows the path that a tool's bin points to.
 
 Use this to figure out what version of a tool is currently active.
+A leading tool overlay can replace `--tool`, e.g. `mise which +node@22 npm`.
 
 ## Arguments
 - **`[BIN_NAME]`** — The bin to look up

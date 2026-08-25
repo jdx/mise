@@ -12,6 +12,7 @@ Only works in a session where mise is already activated.
 
 This works by setting environment variables for the current shell session
 such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
+Tools may be prefixed with `+`, e.g. `mise shell +node@22`.
 
 ## Arguments
 - **`<TOOL@VERSION>…`** — Tool(s) to use

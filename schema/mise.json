@@ -1957,6 +1957,11 @@
               "description": "Automatically install missing tools when executing tasks.",
               "type": "boolean"
             },
+            "run_tool_overlay": {
+              "default": false,
+              "description": "Treat leading `+TOOL@VERSION` arguments to `mise run`, naked tasks, and `mise watch` as temporary tool overlays. This will default to true in mise 2027.3.0. `mise exec` tool overlays are always enabled.",
+              "type": "boolean"
+            },
             "show_full_cmd": {
               "description": "Disable truncation of command lines in task execution output. When true, the full command line will be shown.",
               "type": "boolean"

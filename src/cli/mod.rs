@@ -747,6 +747,7 @@ pub(crate) fn unescape_task_args(args: &[String]) -> Vec<String> {
 enum ToolOverlayRewrite {
     Unchanged,
     Rewritten(Vec<String>),
+    GatedTask,
 }
 
 /// Rewrite leading `+TOOL@VERSION` arguments for commands that support temporary tool overlays.
@@ -754,15 +755,31 @@ enum ToolOverlayRewrite {
 /// `mise x +node@27 node -v` becomes `mise x node@27 -- node -v`. The explicit sigil makes the
 /// otherwise ambiguous boundary between exec's variadic tool list and its command visible without
 /// requiring the user to type `--`.
-fn rewrite_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> ToolOverlayRewrite {
-    let Some(subcommand_idx) = first_non_global_arg_idx(cmd, args) else {
+fn rewrite_tool_overlay_args(
+    cmd: &usage_rs::Command<'_>,
+    args: &[String],
+    task_overlay_enabled: bool,
+) -> ToolOverlayRewrite {
+    let Some(mut subcommand_idx) = first_non_global_arg_idx(cmd, args) else {
         return ToolOverlayRewrite::Unchanged;
     };
+    let Some(mut subcommand) = find_subcommand(cmd, args[subcommand_idx].as_str()) else {
+        return ToolOverlayRewrite::Unchanged;
+    };
+    if subcommand.name == "tasks"
+        && let Some(nested_name) = args.get(subcommand_idx + 1)
+        && let Some(nested) = find_subcommand(subcommand, nested_name)
+        && nested.name == "run"
+    {
+        subcommand_idx += 1;
+        subcommand = nested;
+    }
     let subcommand_name = args[subcommand_idx].as_str();
-    let Some(subcommand) = find_subcommand(cmd, subcommand_name) else {
-        return ToolOverlayRewrite::Unchanged;
-    };
-    if subcommand.name != "exec" {
+    let is_exec = subcommand.name == "exec";
+    let is_task_runner = matches!(subcommand.name, "run" | "watch");
+    let strips_sigil = matches!(subcommand.name, "env" | "shell");
+    let uses_tool_flag = is_task_runner || subcommand.name == "which";
+    if !is_exec && !strips_sigil && !uses_tool_flag {
         return ToolOverlayRewrite::Unchanged;
     }
 
@@ -775,6 +792,10 @@ fn rewrite_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> To
     while i < args.len() {
         let arg = &args[i];
         if arg == "--" {
+            boundary_idx = Some(i);
+            break;
+        }
+        if is_task_runner && arg == ":::" {
             boundary_idx = Some(i);
             break;
         }
@@ -802,12 +823,24 @@ fn rewrite_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> To
         return ToolOverlayRewrite::Unchanged;
     }
 
-    let mut rewritten = args.to_vec();
-    for idx in overlay_indices {
-        rewritten[idx].remove(0);
+    if is_task_runner && !task_overlay_enabled {
+        return ToolOverlayRewrite::GatedTask;
     }
-    if let Some(boundary_idx) = boundary_idx
-        && rewritten[boundary_idx] != "--"
+
+    let mut rewritten = Vec::with_capacity(args.len() + overlay_indices.len());
+    for (idx, arg) in args.iter().enumerate() {
+        if overlay_indices.contains(&idx) {
+            if uses_tool_flag {
+                rewritten.push("--tool".to_string());
+            }
+            rewritten.push(arg[1..].to_string());
+        } else {
+            rewritten.push(arg.clone());
+        }
+    }
+    if is_exec
+        && let Some(boundary_idx) = boundary_idx
+        && args[boundary_idx] != "--"
     {
         rewritten.insert(boundary_idx, "--".to_string());
     }
@@ -815,9 +848,24 @@ fn rewrite_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> To
 }
 
 fn preprocess_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
-    match rewrite_tool_overlay_args(cmd, args) {
+    let task_overlay_enabled = Settings::try_get()
+        .map(|settings| settings.task.run_tool_overlay)
+        .unwrap_or(false);
+    match rewrite_tool_overlay_args(cmd, args, task_overlay_enabled) {
         ToolOverlayRewrite::Unchanged => args.to_vec(),
         ToolOverlayRewrite::Rewritten(args) => args,
+        ToolOverlayRewrite::GatedTask => {
+            deprecated_at!(
+                "2026.9.0",
+                "2027.9.0",
+                "run.plus_tool_overlay",
+                "`+TOOL@VERSION` arguments to `mise run` and `mise watch` will become temporary \
+                 tool overlays (like `mise run --tool`) by default in mise 2027.3.0. Set \
+                 `task.run_tool_overlay = true` to enable now, or rename tasks whose names start \
+                 with `+`."
+            );
+            args.to_vec()
+        }
     }
 }
 
@@ -1242,7 +1290,7 @@ mod tests {
 
         for (input, expected) in cases {
             assert_eq!(
-                rewrite_tool_overlay_args(cmd, &input),
+                rewrite_tool_overlay_args(cmd, &input, false),
                 ToolOverlayRewrite::Rewritten(expected),
                 "input: {input:?}"
             );
@@ -1256,14 +1304,153 @@ mod tests {
             strings(&["mise", "x", "--", "+node@27"]),
             strings(&["mise", "x", "node@27", "node", "-v"]),
             strings(&["mise", "x", "node", "+node@27"]),
-            strings(&["mise", "run", "+node@27", "build"]),
         ] {
             assert_eq!(
-                rewrite_tool_overlay_args(cmd, &input),
+                rewrite_tool_overlay_args(cmd, &input, false),
                 ToolOverlayRewrite::Unchanged,
                 "input: {input:?}"
             );
         }
+    }
+
+    #[test]
+    fn test_rewrite_task_tool_overlays() {
+        let cmd = Cli::command();
+        let cases = [
+            (
+                strings(&["mise", "run", "+node@27", "build"]),
+                strings(&["mise", "run", "--tool", "node@27", "build"]),
+            ),
+            (
+                strings(&["mise", "r", "-j2", "+node@27", "build"]),
+                strings(&["mise", "r", "-j2", "--tool", "node@27", "build"]),
+            ),
+            (
+                strings(&["mise", "tasks", "run", "+node@27", "build"]),
+                strings(&["mise", "tasks", "run", "--tool", "node@27", "build"]),
+            ),
+            (
+                strings(&["mise", "run", "+node@27", "+python@3.14", "build"]),
+                strings(&[
+                    "mise",
+                    "run",
+                    "--tool",
+                    "node@27",
+                    "--tool",
+                    "python@3.14",
+                    "build",
+                ]),
+            ),
+            (
+                strings(&[
+                    "mise",
+                    "run",
+                    "+node@27",
+                    "build",
+                    ":::",
+                    "+python@3.14",
+                    "test",
+                ]),
+                strings(&[
+                    "mise",
+                    "run",
+                    "--tool",
+                    "node@27",
+                    "build",
+                    ":::",
+                    "+python@3.14",
+                    "test",
+                ]),
+            ),
+            (
+                strings(&["mise", "watch", "+node@27", "build"]),
+                strings(&["mise", "watch", "--tool", "node@27", "build"]),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                rewrite_tool_overlay_args(cmd, &input, true),
+                ToolOverlayRewrite::Rewritten(expected),
+                "input: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_task_tool_overlays_are_gated_and_respect_boundaries() {
+        let cmd = Cli::command();
+        for input in [
+            strings(&["mise", "run", "+node@27", "build"]),
+            strings(&["mise", "watch", "+node@27", "build"]),
+        ] {
+            assert_eq!(
+                rewrite_tool_overlay_args(cmd, &input, false),
+                ToolOverlayRewrite::GatedTask,
+                "input: {input:?}"
+            );
+        }
+
+        for input in [
+            strings(&["mise", "run", "--", "+legacy-task"]),
+            strings(&["mise", "run", "build", "+argument"]),
+            strings(&["mise", "run", "build", ":::", "+legacy-task"]),
+        ] {
+            assert_eq!(
+                rewrite_tool_overlay_args(cmd, &input, true),
+                ToolOverlayRewrite::Unchanged,
+                "input: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_rewrite_tool_overlays_for_environment_commands() {
+        let cmd = Cli::command();
+        for (input, expected) in [
+            (
+                strings(&["mise", "env", "+node@27"]),
+                strings(&["mise", "env", "node@27"]),
+            ),
+            (
+                strings(&["mise", "shell", "+node@27"]),
+                strings(&["mise", "shell", "node@27"]),
+            ),
+            (
+                strings(&["mise", "which", "+node@27", "npm"]),
+                strings(&["mise", "which", "--tool", "node@27", "npm"]),
+            ),
+        ] {
+            assert_eq!(
+                rewrite_tool_overlay_args(cmd, &input, false),
+                ToolOverlayRewrite::Rewritten(expected),
+                "input: {input:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_naked_task_tool_overlay_rewrite_round_trips_through_parser() {
+        crate::toolset::install_state::init().await.unwrap();
+        let cmd = Cli::command();
+        let input = strings(&["mise", "+node@27", "build", "+argument"]);
+        let naked = preprocess_args_for_naked_run(cmd, &input);
+        let ToolOverlayRewrite::Rewritten(rewritten) = rewrite_tool_overlay_args(cmd, &naked, true)
+        else {
+            panic!("expected tool overlay rewrite");
+        };
+        let escaped = escape_task_args(cmd, &rewritten);
+        let refs = escaped.iter().map(String::as_str).collect::<Vec<_>>();
+        let cli = parse_cli(&refs).unwrap();
+        let Some(Commands::Run(run)) = cli.command else {
+            panic!("expected run command");
+        };
+        assert_eq!(
+            run.tool.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ["node@27"]
+        );
+        assert_eq!(run.task.as_deref(), Some("build"));
+        assert_eq!(unescape_task_args(&run.args), ["+argument"]);
     }
 
     #[tokio::test]

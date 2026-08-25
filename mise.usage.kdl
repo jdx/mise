@@ -1501,6 +1501,8 @@ Exports env vars to activate mise a single time
 
 Use this if you don't want to permanently install mise. It's not necessary to
 use this if you have `mise activate` in your shell rc file.
+Tools may be prefixed with `+` to make their temporary overlay role explicit, e.g.
+`mise env +node@22`.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1meval \"$(mise env -s bash)\"\u{1b}[22m\n    $ \u{1b}[1meval \"$(mise env -s zsh)\"\u{1b}[22m\n    $ \u{1b}[1mmise env -s fish | source\u{1b}[22m\n    $ \u{1b}[1mexecx($(mise env -s xonsh))\u{1b}[22m\n"
     flag "-D --dotenv" help="Output in dotenv format" overrides=--shell
@@ -3024,6 +3026,9 @@ If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
+When `task.run_tool_overlay` is enabled, leading `+TOOL@VERSION` arguments temporarily add or
+override tools for the invocation. For example, `mise run +node@22 build` is equivalent to
+`mise run --tool node@22 build`.
 In mise.toml, tasks take this form:
 
     [tasks.build]
@@ -3042,7 +3047,7 @@ The name of the script will be the name of the tasks.
     EOF
     $ mise run build
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Execute multiple tasks each with their own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run \"build\" with a temporary Node.js version (requires task.run_tool_overlay).\n    $ \u{1b}[1mmise run +node@22 build\u{1b}[22m\n\n    # Execute multiple tasks each with their own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
     flag --affected help="Run matching tasks only for projects affected by Git changes"
     flag --affected-base help=#"""
 Git base revision for --affected
@@ -3411,6 +3416,7 @@ Only works in a session where mise is already activated.
 
 This works by setting environment variables for the current shell session
 such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
+Tools may be prefixed with `+`, e.g. `mise shell +node@22`.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise shell node@20\u{1b}[22m\n    $ \u{1b}[1mnode -v\u{1b}[22m\n    v20.0.0\n"
     flag "-j --jobs" help=#"""
@@ -3704,6 +3710,9 @@ If source is configured on a task, it will only run if the source
 files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
+When `task.run_tool_overlay` is enabled, leading `+TOOL@VERSION` arguments temporarily add or
+override tools for the invocation. For example, `mise run +node@22 build` is equivalent to
+`mise run --tool node@22 build`.
 In mise.toml, tasks take this form:
 
     [tasks.build]
@@ -3722,7 +3731,7 @@ The name of the script will be the name of the tasks.
     EOF
     $ mise run build
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Execute multiple tasks each with their own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Runs the \"lint\" tasks. This needs to either be defined in mise.toml\n    # or as a standalone script. See the project README for more information.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Forces the \"build\" tasks to run even if its sources are up-to-date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Runs the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run \"build\" with a temporary Node.js version (requires task.run_tool_overlay).\n    $ \u{1b}[1mmise run +node@22 build\u{1b}[22m\n\n    # Execute multiple tasks each with their own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
         flag --affected help="Run matching tasks only for projects affected by Git changes"
         flag --affected-base help=#"""
 Git base revision for --affected
@@ -4356,6 +4365,8 @@ Run task(s) and watch for changes to rerun it
 
 This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
+When `task.run_tool_overlay` is enabled, use `mise watch +node@22 build` to rerun a task with a
+temporary tool version.
 
 For more advanced process management (daemon management, auto-restart, readiness checks,
 cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
@@ -4371,6 +4382,9 @@ Defaults to sources from the task(s)
         arg <GLOB>
     }
     flag --skip-deps help="Run only the specified tasks skipping all dependencies"
+    flag "-T --tool" help="Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10" var=#true {
+        arg <TOOL@VERSION>
+    }
     flag "-w --watch" help="Watch a specific file or directory" var=#true help_heading=Filtering {
         long_help #"""
 Watch a specific file or directory
@@ -5056,6 +5070,7 @@ cmd which help="Shows the path that a tool's bin points to." effect=read {
 Shows the path that a tool's bin points to.
 
 Use this to figure out what version of a tool is currently active.
+A leading tool overlay can replace `--tool`, e.g. `mise which +node@22 npm`.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise which node\u{1b}[22m\n    /home/username/.local/share/mise/installs/node/20.0.0/bin/node\n\n    $ \u{1b}[1mmise which node --plugin\u{1b}[22m\n    node\n\n    $ \u{1b}[1mmise which node --version\u{1b}[22m\n    20.0.0\n"
     flag "-t --tool" help=#"""

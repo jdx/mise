@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+cat <<'EOF' >mise.toml
+[tasks.show]
+run = "dummy"
+EOF
+
+assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise run +dummy@2.0.0 show" "Dummy 2.0.0"
+assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise tasks run +dummy@2.0.0 show" "Dummy 2.0.0"
+assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise +dummy@1.0.0 show" "Dummy 1.0.0"
+assert_contains "mise run --tool dummy@2.0.0 show" "Dummy 2.0.0"
+
+# Once the task name is seen, `+` arguments belong to the task.
+assert_contains "MISE_TASK_RUN_TOOL_OVERLAY=1 mise run +dummy@1.0.0 show +literal" "+literal"
+
+# The same overlay notation is available to environment-oriented commands.
+assert_contains "mise which +dummy@1.0.0 dummy" "/dummy/1.0.0/"
+assert_contains "mise env +dummy@1.0.0 --json" "/dummy/1.0.0/bin"

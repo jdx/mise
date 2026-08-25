@@ -38,6 +38,9 @@ use tokio::sync::Mutex;
 /// files have changed.
 ///
 /// Tasks can be defined in mise.toml or as standalone scripts.
+/// When `task.run_tool_overlay` is enabled, leading `+TOOL@VERSION` arguments temporarily add or
+/// override tools for the invocation. For example, `mise run +node@22 build` is equivalent to
+/// `mise run --tool node@22 build`.
 /// In mise.toml, tasks take this form:
 ///
 ///     [tasks.build]
@@ -1535,6 +1538,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     # Runs the "lint", "test", and "check" tasks in parallel.
     $ <bold>mise run lint ::: test ::: check</bold>
+
+    # Run "build" with a temporary Node.js version (requires task.run_tool_overlay).
+    $ <bold>mise run +node@22 build</bold>
 
     # Execute multiple tasks each with their own arguments.
     $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>

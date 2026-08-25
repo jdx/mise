@@ -9,6 +9,8 @@ Run task(s) and watch for changes to rerun it
 
 This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
 It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
+When `task.run_tool_overlay` is enabled, use `mise watch +node@22 build` to rerun a task with a
+temporary tool version.
 
 For more advanced process management (daemon management, auto-restart, readiness checks,
 cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
@@ -22,6 +24,7 @@ cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 
 ## Flags
 - **`--skip-deps`** — Run only the specified tasks skipping all dependencies
+- **`-T --tool <TOOL@VERSION>`** — Tool(s) to run in addition to what is in mise.toml files e.g.: node@20 python@3.10
 - **`-o --on-busy-update <MODE>`** — What to do when receiving events while the command is running
 
   Default is to 'do-nothing', which ignores events while the command is running, so that changes that occur due to the command are ignored, like compilation outputs. You can also use 'queue' which will run the command once again when the current run has finished if any events occur while it's running, or 'restart', which terminates the running command and starts a new one. Finally, there's 'signal', which only sends a signal; this can be useful with programs that can reload their configuration without a full restart.

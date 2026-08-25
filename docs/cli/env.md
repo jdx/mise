@@ -10,6 +10,8 @@ Exports env vars to activate mise a single time
 
 Use this if you don't want to permanently install mise. It's not necessary to
 use this if you have `mise activate` in your shell rc file.
+Tools may be prefixed with `+` to make their temporary overlay role explicit, e.g.
+`mise env +node@22`.
 
 ## Arguments
 - **`[TOOL@VERSION]…`** — Tool(s) to use

@@ -11,6 +11,7 @@ use itertools::Itertools;
 /// Shows the path that a tool's bin points to.
 ///
 /// Use this to figure out what version of a tool is currently active.
+/// A leading tool overlay can replace `--tool`, e.g. `mise which +node@22 npm`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Which {

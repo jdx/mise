@@ -37,6 +37,25 @@ Extra arguments will be passed to the task, for example, if we want to run in re
 mise run build --release
 ```
 
+## Temporary tool overlays
+
+Enable [`task.run_tool_overlay`](/configuration/settings.html#task-run-tool-overlay) to select tool
+versions for one task invocation with leading `+TOOL@VERSION` arguments:
+
+```bash
+mise run +node@22 +pnpm@10 build
+mise +node@22 build
+mise watch +node@22 build
+```
+
+This is shorthand for `mise run --tool node@22 --tool pnpm@10 build`. Overlays are recognized only
+before the first task name and never after the `:::` separator, so `+argument` remains an ordinary
+task argument in `mise run build +argument`.
+
+Task names beginning with `+` are deprecated because this syntax will become enabled by default in
+mise 2027.3.0. Until then, the setting defaults to false so existing `+`-prefixed tasks continue to
+run. Rename those tasks before the default changes.
+
 For a precise, validated task interface, define arguments and flags with the
 [`usage` field](/tasks/task-arguments#usage-field). Without a `usage` specification, extra arguments
 are forwarded according to how the task is executed:
