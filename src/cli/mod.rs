@@ -425,19 +425,35 @@ fn get_global_flags(cmd: &usage_rs::Command<'_>) -> (Vec<String>, Vec<String>) {
     (flags_with_values, boolean_flags)
 }
 
-/// Get all flags (with values and boolean) from both global Cli and Run subcommand
-fn get_all_run_flags(cmd: &usage_rs::Command<'_>) -> (Vec<String>, Vec<String>) {
+fn find_subcommand<'a>(
+    cmd: &'a usage_rs::Command<'a>,
+    name: &str,
+) -> Option<&'a usage_rs::Command<'a>> {
+    cmd.subcommands
+        .iter()
+        .find(|subcommand| {
+            subcommand.name == name || subcommand.aliases.iter().any(|alias| *alias == name)
+        })
+        .copied()
+}
+
+/// Get all flags (with values and boolean) from both the root CLI and a subcommand.
+fn get_all_subcommand_flags(cmd: &usage_rs::Command<'_>, name: &str) -> (Vec<String>, Vec<String>) {
     // Get global flags from Cli
     let (mut flags_with_values, mut boolean_flags) = get_global_flags(cmd);
 
-    // Get run-specific flags from Run subcommand
-    if let Some(run_cmd) = cmd.subcommands.iter().find(|s| s.name == "run") {
-        let (run_vals, run_bools) = get_global_flags(run_cmd);
-        flags_with_values.extend(run_vals);
-        boolean_flags.extend(run_bools);
+    if let Some(subcommand) = find_subcommand(cmd, name) {
+        let (values, booleans) = get_global_flags(subcommand);
+        flags_with_values.extend(values);
+        boolean_flags.extend(booleans);
     }
 
     (flags_with_values, boolean_flags)
+}
+
+/// Get all flags (with values and boolean) from both global Cli and Run subcommand
+fn get_all_run_flags(cmd: &usage_rs::Command<'_>) -> (Vec<String>, Vec<String>) {
+    get_all_subcommand_flags(cmd, "run")
 }
 
 fn get_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(String, String)> {
@@ -449,16 +465,19 @@ fn get_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(String, Str
         .collect()
 }
 
-fn get_all_run_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(String, String)> {
+fn get_all_subcommand_value_taking_short_flags(
+    cmd: &usage_rs::Command<'_>,
+    name: &str,
+) -> Vec<(String, String)> {
     let mut flags = get_value_taking_short_flags(cmd);
-    if let Some(run_cmd) = cmd
-        .subcommands
-        .iter()
-        .find(|subcommand| subcommand.name == "run")
-    {
-        flags.extend(get_value_taking_short_flags(run_cmd));
+    if let Some(subcommand) = find_subcommand(cmd, name) {
+        flags.extend(get_value_taking_short_flags(subcommand));
     }
     flags
+}
+
+fn get_all_run_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(String, String)> {
+    get_all_subcommand_value_taking_short_flags(cmd, "run")
 }
 
 /// Prefix used to escape flags that should be passed to tasks, not mise
@@ -726,6 +745,84 @@ pub(crate) fn unescape_task_args(args: &[String]) -> Vec<String> {
         .collect()
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum ToolOverlayRewrite {
+    Unchanged,
+    Rewritten(Vec<String>),
+}
+
+/// Rewrite leading `+TOOL@VERSION` arguments for commands that support temporary tool overlays.
+///
+/// `mise x +node@27 node -v` becomes `mise x node@27 -- node -v`. The explicit sigil makes the
+/// otherwise ambiguous boundary between exec's variadic tool list and its command visible without
+/// requiring the user to type `--`.
+fn rewrite_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> ToolOverlayRewrite {
+    let Some(subcommand_idx) = first_non_global_arg_idx(cmd, args) else {
+        return ToolOverlayRewrite::Unchanged;
+    };
+    let subcommand_name = args[subcommand_idx].as_str();
+    let Some(subcommand) = find_subcommand(cmd, subcommand_name) else {
+        return ToolOverlayRewrite::Unchanged;
+    };
+    if subcommand.name != "exec" {
+        return ToolOverlayRewrite::Unchanged;
+    }
+
+    let (flags_with_values, _) = get_all_subcommand_flags(cmd, subcommand_name);
+    let short_flags_with_values = get_all_subcommand_value_taking_short_flags(cmd, subcommand_name);
+    let mut overlay_indices = Vec::new();
+    let mut boundary_idx = None;
+    let mut i = subcommand_idx + 1;
+
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--" {
+            boundary_idx = Some(i);
+            break;
+        }
+        if arg.strip_prefix('+').is_some_and(|tool| !tool.is_empty()) {
+            overlay_indices.push(i);
+            i += 1;
+            continue;
+        }
+        if arg.starts_with('-') && arg != "-" {
+            let takes_separate_value = if arg.starts_with("--") {
+                !arg.contains('=') && flags_with_values.iter().any(|flag| flag == arg)
+            } else {
+                short_flags_with_values
+                    .iter()
+                    .any(|(short, _)| arg == short)
+            };
+            i += usize::from(takes_separate_value && i + 1 < args.len()) + 1;
+            continue;
+        }
+        boundary_idx = Some(i);
+        break;
+    }
+
+    if overlay_indices.is_empty() {
+        return ToolOverlayRewrite::Unchanged;
+    }
+
+    let mut rewritten = args.to_vec();
+    for idx in overlay_indices {
+        rewritten[idx].remove(0);
+    }
+    if let Some(boundary_idx) = boundary_idx
+        && rewritten[boundary_idx] != "--"
+    {
+        rewritten.insert(boundary_idx, "--".to_string());
+    }
+    ToolOverlayRewrite::Rewritten(rewritten)
+}
+
+fn preprocess_tool_overlay_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
+    match rewrite_tool_overlay_args(cmd, args) {
+        ToolOverlayRewrite::Unchanged => args.to_vec(),
+        ToolOverlayRewrite::Rewritten(args) => args,
+    }
+}
+
 fn preprocess_args_for_naked_run(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String> {
     // Check if this might be a naked run (no subcommand)
     if args.len() < 2 {
@@ -807,6 +904,7 @@ impl Cli {
         // Pre-process args to handle naked runs before parsing
         let cmd = measure!("build_cli_command", { Cli::command() });
         let processed_args = preprocess_args_for_naked_run(cmd, args);
+        let processed_args = preprocess_tool_overlay_args(cmd, &processed_args);
         // Escape flags after task names so they go to tasks, not mise
         let processed_args = escape_task_args(cmd, &processed_args);
         let deprecated_backends_alias = uses_deprecated_backends_alias(cmd, args);
@@ -1092,6 +1190,104 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    fn strings(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| (*arg).to_string()).collect()
+    }
+
+    #[test]
+    fn test_rewrite_exec_tool_overlays() {
+        let cmd = Cli::command();
+        let cases = [
+            (
+                strings(&["mise", "x", "+node@27", "node", "-v"]),
+                strings(&["mise", "x", "node@27", "--", "node", "-v"]),
+            ),
+            (
+                strings(&[
+                    "mise",
+                    "exec",
+                    "+node@27",
+                    "+python@3.14",
+                    "--",
+                    "python",
+                    "app.py",
+                ]),
+                strings(&[
+                    "mise",
+                    "exec",
+                    "node@27",
+                    "python@3.14",
+                    "--",
+                    "python",
+                    "app.py",
+                ]),
+            ),
+            (
+                strings(&["mise", "x", "-j2", "+node@27", "node"]),
+                strings(&["mise", "x", "-j2", "node@27", "--", "node"]),
+            ),
+            (
+                strings(&["mise", "x", "+node@27", "-j", "2", "node"]),
+                strings(&["mise", "x", "node@27", "-j", "2", "--", "node"]),
+            ),
+            (
+                strings(&["mise", "x", "+node@27", "-c", "node -v"]),
+                strings(&["mise", "x", "node@27", "-c", "node -v"]),
+            ),
+            (
+                strings(&["mise", "--cd", "project", "x", "+node@27", "node"]),
+                strings(&["mise", "--cd", "project", "x", "node@27", "--", "node"]),
+            ),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(
+                rewrite_tool_overlay_args(cmd, &input),
+                ToolOverlayRewrite::Rewritten(expected),
+                "input: {input:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_exec_tool_overlay_rewrite_leaves_existing_grammar_alone() {
+        let cmd = Cli::command();
+        for input in [
+            strings(&["mise", "x", "--", "+node@27"]),
+            strings(&["mise", "x", "node@27", "node", "-v"]),
+            strings(&["mise", "x", "node", "+node@27"]),
+            strings(&["mise", "run", "+node@27", "build"]),
+        ] {
+            assert_eq!(
+                rewrite_tool_overlay_args(cmd, &input),
+                ToolOverlayRewrite::Unchanged,
+                "input: {input:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_exec_tool_overlay_rewrite_round_trips_through_parser() {
+        crate::toolset::install_state::init().await.unwrap();
+        let cmd = Cli::command();
+        let input = strings(&["mise", "x", "-j2", "+node@27", "+python@3.14", "node", "-v"]);
+        let rewritten = preprocess_tool_overlay_args(cmd, &input);
+        let refs = rewritten.iter().map(String::as_str).collect::<Vec<_>>();
+        let cli = parse_cli(&refs).unwrap();
+        let Some(Commands::Exec(exec)) = cli.command else {
+            panic!("expected exec command");
+        };
+        assert_eq!(
+            exec.tool
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["node@27", "python@3.14"]
+        );
+        assert_eq!(exec.command, Some(strings(&["node", "-v"])));
+        assert_eq!(exec.jobs, Some(2));
     }
 
     #[test]

@@ -399,6 +399,17 @@ $ mise x -- node -v
 20.x.x
 ```
 
+Prefix an explicitly selected tool with `+` to make the command boundary implicit:
+
+```sh
+mise x +python@3.12 ./myscript.py
+mise x +node@22 +python@3.12 node ./build.js
+```
+
+Leading `+TOOL@VERSION` arguments are temporary tool overlays. The first ordinary positional
+argument is the command, so the equivalent long form remains
+`mise x python@3.12 -- ./myscript.py`.
+
 ::: tip
 If you use this a lot, an alias can be helpful:
 

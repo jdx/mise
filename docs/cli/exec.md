@@ -14,6 +14,8 @@ Note that only the plugin specified will be overridden, so if a `mise.toml` file
 includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 
 The "--" separates runtimes from the commands to pass along to the subprocess.
+Prefix tools with "+" to make the command boundary implicit, e.g.
+`mise x +node@22 node -v`.
 
 ## Arguments
 - **`[TOOL@VERSION]…`** — Tool(s) to start e.g.: node@20 python@3.10
@@ -47,6 +49,7 @@ Examples:
 ```
 $ mise exec node@20 -- node ./app.js  # launch app.js using node-20.x
 $ mise x node@20 -- node ./app.js     # shorter alias
+$ mise x +node@22 node -v             # +tool makes -- optional
 
 # Specify command as a string:
 $ mise exec node@20 python@3.11 --command "node -v && python -V"

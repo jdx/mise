@@ -28,6 +28,8 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 /// includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
+/// Prefix tools with "+" to make the command boundary implicit, e.g.
+/// `mise x +node@22 node -v`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Exec {
@@ -631,6 +633,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise exec node@20 -- node ./app.js</bold>  # launch app.js using node-20.x
     $ <bold>mise x node@20 -- node ./app.js</bold>     # shorter alias
+    $ <bold>mise x +node@22 node -v</bold>             # +tool makes -- optional
 
     # Specify command as a string:
     $ <bold>mise exec node@20 python@3.11 --command "node -v && python -V"</bold>
