@@ -302,9 +302,8 @@ impl TaskScriptParser {
             let input_args = input_args.clone();
             let arg_order = arg_order.clone();
             move |args| {
-                let i = Self::template_arg::<i64>(args, "i")?
-                    .unwrap_or(input_args.lock().map_err(Self::lock_error)?.len() as i64)
-                    as usize;
+                let i = Self::template_arg::<usize>(args, "i")?
+                    .unwrap_or(input_args.lock().map_err(Self::lock_error)?.len());
 
                 let required = Self::template_arg::<bool>(args, "required")?.unwrap_or(true);
                 let var = Self::template_arg::<bool>(args, "var")?.unwrap_or(false);
@@ -323,8 +322,8 @@ impl TaskScriptParser {
                 let help_long = Self::template_arg::<String>(args, "help_long")?;
                 let help_md = Self::template_arg::<String>(args, "help_md")?;
 
-                let var_min = Self::template_arg::<i64>(args, "var_min")?.map(|v| v as usize);
-                let var_max = Self::template_arg::<i64>(args, "var_max")?.map(|v| v as usize);
+                let var_min = Self::template_arg::<usize>(args, "var_min")?;
+                let var_max = Self::template_arg::<usize>(args, "var_max")?;
 
                 let hide = Self::template_arg::<bool>(args, "hide")?.unwrap_or(false);
 
@@ -789,8 +788,7 @@ impl TaskScriptParser {
                         let seen_args = Arc::new(Mutex::new(HashSet::new()));
                         {
                             let mut seen_args = seen_args.lock().unwrap();
-                            let i = Self::template_arg::<i64>(args, "i")?
-                                .map(|i| i as usize)
+                            let i = Self::template_arg::<usize>(args, "i")?
                                 .unwrap_or_else(|| seen_args.len());
                             let name = Self::template_arg::<String>(args, "name")?
                                 .unwrap_or(i.to_string());
@@ -1035,6 +1033,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(parsed_scripts, vec!["echo abc"]);
+    }
+
+    #[tokio::test]
+    async fn test_task_parse_arg_rejects_negative_numeric_arguments() {
+        let config = Config::get().await.unwrap();
+        let task = Task::default();
+        let parser = TaskScriptParser::new(None);
+
+        for argument in ["i", "var_min", "var_max"] {
+            let scripts = vec![format!("echo {{{{ arg(name='foo', {argument}=-1) }}}}")];
+            let error = parser
+                .parse_run_scripts(&config, &task, &scripts, &Default::default())
+                .await
+                .unwrap_err();
+
+            let message = format!("{error:#}");
+            assert!(
+                message.contains(&format!("invalid `{argument}` argument")),
+                "unexpected error for {argument}: {message}"
+            );
+        }
     }
 
     #[tokio::test]
