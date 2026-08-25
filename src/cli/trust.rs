@@ -8,7 +8,7 @@ use crate::config::{
 };
 use crate::file::{display_path, remove_file};
 use crate::{config, dirs, env, file};
-use eyre::Result;
+use eyre::{Result, bail};
 use itertools::Itertools;
 
 /// Marks a config file as trusted
@@ -65,7 +65,7 @@ impl Trust {
             return self.show();
         }
         if self.untrust {
-            untrust_config_file(self.config_file())
+            untrust_config_file(self.config_file()?)
         } else if self.ignore {
             self.ignore()
         } else if self.all {
@@ -141,22 +141,42 @@ pub(super) fn untrust_config_file(config_file: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn resolve_config_file(config_file: Option<&PathBuf>) -> Option<PathBuf> {
-    config_file.map(|config_file| {
-        if config_file.is_dir() {
-            config_files_in_dir(config_file)
-                .last()
-                .cloned()
-                .unwrap_or(config_file.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
-        } else {
-            config_file.clone()
-        }
-    })
+/// The config file a user-supplied path refers to, or `None` when none was given.
+///
+/// The path has to exist. Trusting is not done against the path as typed: it is resolved to a
+/// trust root first, and `config_root` does that by counting path components, never by looking at
+/// the filesystem. A path that is not there therefore used to resolve to its *parent*, and mise
+/// would trust or untrust that instead — exit 0, `trusted <parent>`, and a typo silently granting
+/// trust to a directory nobody named.
+///
+/// Existence is the whole check. A directory with no config file in it yet still resolves, since
+/// its trust root is the directory itself and trusting a project before writing its `mise.toml`
+/// is a real thing to want.
+pub(super) fn resolve_config_file(config_file: Option<&PathBuf>) -> Result<Option<PathBuf>> {
+    let Some(config_file) = config_file else {
+        return Ok(None);
+    };
+    if !config_file.exists() {
+        bail!(
+            "Path does not exist: {}\n\
+             mise resolves this to a trust root before recording anything, and that resolution is \
+             lexical — a path that is not there would act on its parent directory instead.",
+            display_path(config_file)
+        );
+    }
+    Ok(Some(if config_file.is_dir() {
+        config_files_in_dir(config_file)
+            .last()
+            .cloned()
+            .unwrap_or(config_file.join(&*env::MISE_DEFAULT_CONFIG_FILENAME))
+    } else {
+        config_file.clone()
+    }))
 }
 
 impl Trust {
     fn ignore(&self) -> Result<()> {
-        let path = match self.config_file() {
+        let path = match self.config_file()? {
             Some(filename) => filename,
             None => match self.get_next() {
                 Some(path) => path,
@@ -183,7 +203,7 @@ impl Trust {
         Ok(())
     }
     fn trust(&self) -> Result<()> {
-        let path = match self.config_file() {
+        let path = match self.config_file()? {
             Some(filename) => config_trust_root(&filename),
             None => match self.get_next_untrusted() {
                 Some(path) => path,
@@ -199,7 +219,7 @@ impl Trust {
         Ok(())
     }
 
-    fn config_file(&self) -> Option<PathBuf> {
+    fn config_file(&self) -> Result<Option<PathBuf>> {
         resolve_config_file(self.config_file.as_ref())
     }
 
@@ -320,3 +340,50 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise trust</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_path_that_does_not_exist_is_refused_and_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let existing = dir.path().join("mise.toml");
+        std::fs::write(&existing, "").unwrap();
+
+        // Control: the same call resolves rather than erroring when the path is there, so the
+        // assertion below is about existence and not about a function that always fails.
+        assert_eq!(
+            resolve_config_file(Some(&existing)).unwrap(),
+            Some(existing.clone())
+        );
+
+        let missing = dir.path().join("nope");
+        let err = resolve_config_file(Some(&missing)).unwrap_err().to_string();
+        // The path is the whole point of the message: what used to happen instead was that this
+        // resolved to `dir` and mise trusted that, reporting success.
+        assert!(
+            err.contains("nope"),
+            "the message has to name the path: {err}"
+        );
+    }
+
+    #[test]
+    fn a_directory_with_no_config_in_it_yet_still_resolves() {
+        // The case the existence check must not break. Trusting a project before its `mise.toml`
+        // exists is a real thing to want, and it works because the trust root is the directory —
+        // which is exactly why "the path must exist" cannot be tightened to "the file must exist".
+        let dir = tempfile::tempdir().unwrap();
+        let resolved = resolve_config_file(Some(&dir.path().to_path_buf()))
+            .unwrap()
+            .unwrap();
+        assert_eq!(resolved.parent(), Some(dir.path()));
+    }
+
+    #[test]
+    fn no_argument_is_still_no_argument() {
+        // `mise trust` with no path falls back to config discovery further up; this must stay a
+        // `None` rather than becoming an error.
+        assert_eq!(resolve_config_file(None).unwrap(), None);
+    }
+}
