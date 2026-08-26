@@ -1245,8 +1245,10 @@ impl Run {
             });
         }
 
-        // Validate and initialize task output
-        for task in tasks.all() {
+        // Validate and initialize task output. In creation order: keep-order
+        // hands out its output slots here, and the same order is used for the
+        // tasks a run entry injects later, so the two agree by construction.
+        for task in tasks.all_in_creation_order() {
             self.validate_task(task)?;
             self.output_handler.as_mut().unwrap().init_task(task);
         }

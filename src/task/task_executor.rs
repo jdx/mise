@@ -12,6 +12,7 @@ use crate::task::task_cache::{
     CommandInput, TaskCacheContext, TaskCacheMissReason, TaskCacheRestore,
 };
 use crate::task::task_context_builder::TaskContextBuilder;
+use crate::task::task_helpers::task_gets_keep_order_slot;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
@@ -1071,7 +1072,6 @@ impl TaskExecutor {
                 to_run.push(t);
             }
         }
-        let injected = to_run.clone();
         let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
         // Give these tasks their keep-order slots now, while the order they were
         // written in is still known and before any of them can produce a line.
@@ -1079,16 +1079,31 @@ impl TaskExecutor {
         // `Arc<Mutex<..>>`, and the guard is a temporary in a statement with no
         // await in it, so it never crosses a suspension point.
         {
-            let children: Vec<Task> = injected
+            // The whole sub-graph, not just the names in the run entry. A
+            // `depends` of one of those names is scheduled here too, and without
+            // a slot its block landed wherever its first line happened to arrive
+            // — so the same tasks came out in a different order from one run to
+            // the next. Creation order is what the identical `mise run a ::: b`
+            // would have given them, since that builds its graph the same way
+            // from the same list.
+            //
+            // A task the sub-graph pruned as already complete is absent from
+            // that order by construction: it never runs, so nothing would ever
+            // call `on_task_finished` and its empty slot would sit at the front
+            // for the rest of the run.
+            let children: Vec<Task> = sub_deps
+                .all_in_creation_order()
                 .into_iter()
-                // A task the sub-graph pruned as already complete never runs, so
-                // it would never call `on_task_finished` — its empty slot would
-                // sit at the front for the rest of the run.
-                .filter(|t| sub_deps.all().any(|scheduled| scheduled == t))
-                // Same reason, for a task whose own `output` opts out of
-                // keep-order: `on_task_finished` is only called for keep-order
-                // tasks (see cli/run.rs).
-                .filter(|t| self.output(Some(t)) == TaskOutput::KeepOrder)
+                .filter(|t| {
+                    // Same reason as the pruned tasks, for one whose own
+                    // `output` opts out of keep-order: `on_task_finished` is
+                    // called for keep-order tasks only (see cli/run.rs), so its
+                    // slot would never be retired. And the rule the up-front
+                    // registration applies, so a task that only aggregates
+                    // `depends` does not take a slot ahead of what it waits on.
+                    self.output(Some(*t)) == TaskOutput::KeepOrder && task_gets_keep_order_slot(t)
+                })
+                .cloned()
                 .collect();
             if !children.is_empty() {
                 self.output_handler
