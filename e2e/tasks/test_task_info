@@ -76,7 +76,8 @@ assert_json "mise tasks info lint --json" "$(
       "aliases": [],
       "hidden_aliases": [],
       "before_help_long": "- Depends: build -v",
-      "examples": []
+      "examples": [],
+      "headings": []
     },
     "config": {
       "props": {},

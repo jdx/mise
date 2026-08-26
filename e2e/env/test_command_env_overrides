@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat >mise.toml <<'EOF'
+[env]
+TMPL = '{{ get_env(name="TMPL", default="tmpl-default") }}'
+DEFAULT = { default = "default-default" }
+PLAIN = "plain-value"
+
+[tasks.probe]
+run = 'printf "%s|%s|%s" "$TMPL" "$DEFAULT" "$PLAIN"'
+EOF
+
+eval "$(mise activate bash)"
+eval "$(mise hook-env -s bash --reason precmd)"
+
+assert \
+  "TMPL=override DEFAULT=override PLAIN=override mise env -J | jq -r '[.TMPL, (if has(\"DEFAULT\") then .DEFAULT else \"omitted\" end), .PLAIN] | join(\"|\")'" \
+  "override|omitted|plain-value"
+assert \
+  "TMPL=override DEFAULT=override PLAIN=override mise run probe" \
+  "override|override|plain-value"

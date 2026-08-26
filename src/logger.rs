@@ -179,20 +179,41 @@ pub(crate) fn thread_id() -> String {
 
 pub(crate) fn init() {
     static LOGGER: OnceLock<Logger> = OnceLock::new();
-    let settings = Settings::try_get().unwrap_or_else(|_| Default::default());
-    let term_level = settings.log_level();
+    let settings = Settings::try_get();
     if let Some(logger) = LOGGER.get() {
-        *logger.term_level.lock().unwrap() = term_level;
-        *logger.level.lock().unwrap() = std::cmp::max(term_level, logger.file_level);
+        // Re-init. A settings build that failed says nothing about the level, so the default is the
+        // wrong answer here: `quiet` resolves to `log_level = "error"` inside `try_get`, and
+        // resetting to `info` would *raise* the bar and let the warnings flushed below through.
+        //
+        // The parsed CLI flags are the exception. Once they are part of the build it can keep
+        // failing — `--cd` naming a directory that `validate_cd_path` accepts but the `chdir`
+        // refuses is the case `Cli::run` propagates — and then no later build succeeds either, so
+        // waiting for one would mean `--quiet` never applying to this run at all. `cli_log_level`
+        // reads the flags without a build, and answers `None` when they say nothing about
+        // verbosity — then the level in force came from a build that could see the config files,
+        // and is still the better answer.
+        let term_level = match &settings {
+            Ok(settings) => Some(settings.log_level()),
+            Err(_) => Settings::cli_log_level(),
+        };
+        if let Some(term_level) = term_level {
+            *logger.term_level.lock().unwrap() = term_level;
+            *logger.level.lock().unwrap() = std::cmp::max(term_level, logger.file_level);
+            log::set_max_level(term_level);
+        }
     } else {
+        // First init: nothing is in force yet, so the default is all there is. A logger at `info`
+        // beats no logger at all — a warning printed too loudly still beats one that vanishes.
+        let settings = settings.unwrap_or_default();
+        let term_level = settings.log_level();
         let file_level = env::MISE_LOG_FILE_LEVEL.unwrap_or(settings.log_level());
         let logger = LOGGER.get_or_init(|| Logger::init(term_level, file_level));
         if let Err(err) = log::set_logger(logger) {
             safe_eprintln!("mise: could not initialize logger: {err}");
         }
+        log::set_max_level(term_level);
     }
-    log::set_max_level(term_level);
-    Settings::flush_deprecated_warnings();
+    Settings::flush_pending_warnings();
 }
 
 fn init_log_file(log_file: &Path) -> Result<File> {

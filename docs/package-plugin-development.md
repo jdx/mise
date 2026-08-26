@@ -14,7 +14,8 @@ mise-vscode-extensions/
 └── hooks/
     ├── package_installed.lua
     ├── package_install.lua
-    └── package_upgrade.lua
+    ├── package_upgrade.lua
+    └── package_uninstall.lua
 ```
 
 The required `hooks/package_installed.lua` and `hooks/package_install.lua` pair
@@ -39,7 +40,19 @@ os = ["macos", "linux"]
 
 ## Hooks
 
-All hooks receive the complete package batch. Managers must be batch-oriented.
+Hooks are batch-oriented, but each hook receives the batch for its own phase:
+
+- `PackageInstalled` receives every request in the current invocation. This may
+  be the merged `[bootstrap.packages]` declarations or an explicit subset named
+  on the command line.
+- `PackageInstall` receives only requests mise selected for installation, such
+  as packages reported missing or at a mismatched requested version.
+- `PackageUpgrade` receives the actionable requests reported as present,
+  including packages that are already current so the manager can no-op them.
+  Requests reported missing or unavailable and unsupported version pins are
+  omitted.
+
+mise does not call an action hook when its action batch is empty.
 
 ```lua
 function PLUGIN:PackageInstalled(ctx)
@@ -70,8 +83,38 @@ end
 ```
 
 `PackageUpgrade` has the same context and response. It is optional; mise calls
-`PackageInstall` when the upgrade hook is absent. The name reserves room for a
-future `PackageUninstall` hook, but uninstall and prune are not part of v1.
+`PackageInstall` when the upgrade hook is absent.
+
+An action batch is not a complete desired-state snapshot. An explicit command
+may target only a subset, and removing the final declaration for a manager
+produces no batch for that manager. A plugin must not infer that an identity
+should be removed merely because it is absent from `ctx.packages`.
+
+`PackageUninstall` is optional and is used only by the explicit destructive
+command `mise bootstrap packages prune --manager <plugin>`. mise passes the
+concrete, approved removal batch after protecting packages declared by the
+current config and trusted, loadable tracked configs:
+
+```lua
+function PLUGIN:PackageUninstall(ctx)
+  for _, package in ipairs(ctx.packages) do
+    -- uninstall package.name; package.version is the observed installed version
+  end
+  return {}
+end
+```
+
+Dry runs do not invoke this hook. mise records ownership only when a package
+reported missing before `PackageInstall` is present afterwards. Packages that
+were already installed, including installations made before ownership tracking
+was introduced, are never claimed or sent to `PackageUninstall`. The ownership
+ledger persists across plugin removal and reinstallation. Explicit prune still
+works when the desired set is empty, including after the final declaration is
+removed. After the hook returns or fails, mise calls `PackageInstalled` to
+verify each removal when possible and retains ownership for anything still
+present. After confirmation, mise reloads the complete desired set before
+invoking the hook; newly declared packages are removed from the approved batch,
+and new removal candidates are never added without another confirmation.
 
 ## Hard contracts
 
@@ -81,7 +124,10 @@ future `PackageUninstall` hook, but uninstall and prune are not part of v1.
   parse or sort them.
 - `PackageInstalled` is side-effect free, non-interactive, never elevates, and
   should be fast.
-- Hooks operate on the full request batch.
+- Hooks operate on phase-specific batches and must not treat absence from a
+  batch as an uninstall request.
+- `PackageUninstall` removes only the identities provided by mise and must not
+  perform manager-wide orphan cleanup.
 - Declare every required host binary in `requires`.
 
 For a VS Code implementation, `PackageInstalled` can parse

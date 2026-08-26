@@ -14,7 +14,7 @@ impl EnvResults {
         // Note: in safe mode `_.source` directives are dropped during env
         // resolution (see EnvResults::resolve), so this is never reached.
         let mut out = IndexMap::new();
-        let s = ctx.parse_template(&input)?;
+        let s = ctx.parse_template("_.source", &input)?;
         let orig_path = ctx
             .exec_env
             .get(&*env::PATH_KEY)

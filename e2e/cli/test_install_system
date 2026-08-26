@@ -14,9 +14,21 @@ USER_INSTALLS="$MISE_DATA_DIR/installs"
 mise install tiny@1.0.0
 mise install --system tiny@2.1.0
 
+# A tool installed only in the system dir must satisfy an unqualified `latest`
+# request without a remote lookup. Lazy backend loading keeps its user-local
+# installs_path, so latest resolution must recover the system path from install
+# state.
+mise install --system dummy@2.1.0
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+assert "MISE_OFFLINE=1 mise current dummy" "2.1.0"
+
 # Both directories should have their respective version installed
 assert_directory_exists "$USER_INSTALLS/tiny/1.0.0"
 assert_directory_exists "$SYSTEM_INSTALLS/tiny/2.1.0"
+assert_directory_exists "$SYSTEM_INSTALLS/dummy/2.1.0"
 
 # The system dir should have a "latest" symlink pointing to its own version
 assert "readlink $SYSTEM_INSTALLS/tiny/latest" "./2.1.0"

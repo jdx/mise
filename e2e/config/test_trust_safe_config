@@ -43,8 +43,8 @@ output=$(MISE_YES=0 mise install 2>&1)
 status=$?
 set -e
 [[ $status -ne 0 ]] || fail "expected community plugin install to abort without confirmation"
-echo "$output" | grep -q "community-developed plugin" || fail "expected community plugin prompt, got: $output"
-echo "$output" | grep -q "github.com/attacker/evil" || fail "expected attacker plugin URL, got: $output"
+grep -q "community-developed plugin" <<<"$output" || fail "expected community plugin prompt, got: $output"
+grep -q "github.com/attacker/evil" <<<"$output" || fail "expected attacker plugin URL, got: $output"
 # `mise install` trusts the active config independently of the later plugin
 # confirmation. Remove that trust so the remaining checks start untrusted.
 assert_contains "mise trust --show" "trusted"
@@ -88,7 +88,7 @@ EOF
 chmod +x mise-tasks/evil
 output=$(MISE_YES=0 mise tasks 2>&1 || true)
 [[ ! -f marker ]] || fail "file task header template executed without trust"
-echo "$output" | grep -qi "trust" || fail "expected trust error for templated file task, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for templated file task, got: $output"
 rm mise-tasks/evil
 
 # a template in a version string requires trust and must not execute
@@ -98,7 +98,7 @@ tiny = "{{ exec(command='echo PWNED > marker') }}"
 EOF
 output=$(MISE_YES=0 mise ls 2>&1 || true)
 [[ ! -f marker ]] || fail "template executed in untrusted config"
-echo "$output" | grep -qi "trust" || fail "expected trust error for template, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for template, got: $output"
 
 # the same holds when the template contains a colon. that used to be rejected earlier, by the
 # version parser rather than by the trust check, so pin that trust is still what stops it.
@@ -108,7 +108,7 @@ tiny = "{{ exec(command='echo PWNED: 1 > marker') }}"
 EOF
 output=$(MISE_YES=0 mise ls 2>&1 || true)
 [[ ! -f marker ]] || fail "colon template executed in untrusted config"
-echo "$output" | grep -qi "trust" || fail "expected trust error for colon template, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for colon template, got: $output"
 
 # a template in a task renders at load time, so it requires trust
 cat <<'EOF' >mise.toml
@@ -118,19 +118,19 @@ description = "{{ exec(command='echo PWNED > marker') }}"
 EOF
 output=$(MISE_YES=0 mise tasks 2>&1 || true)
 [[ ! -f marker ]] || fail "task template executed in untrusted config"
-echo "$output" | grep -qi "trust" || fail "expected trust error for task template, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for task template, got: $output"
 
 # escaped Tera delimiters ({ == '{', } == '}') decode to a template
 # after TOML parsing; this must not bypass the safety check and exec
 printf '[tools]\ntiny = "\\u007b\\u007b exec(command=%stouch marker%s) \\u007d\\u007d"\n' "'" "'" >mise.toml
 output=$(MISE_YES=0 mise ls 2>&1 || true)
 [[ ! -f marker ]] || fail "escaped template executed in untrusted config (tools)"
-echo "$output" | grep -qi "trust" || fail "expected trust error for escaped tools template, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for escaped tools template, got: $output"
 
 printf '[tasks.hi]\nrun = "echo hi"\ndescription = "\\u007b\\u007b exec(command=%stouch marker%s) \\u007d\\u007d"\n' "'" "'" >mise.toml
 output=$(MISE_YES=0 mise tasks 2>&1 || true)
 [[ ! -f marker ]] || fail "escaped template executed in untrusted config (tasks)"
-echo "$output" | grep -qi "trust" || fail "expected trust error for escaped task template, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for escaped task template, got: $output"
 
 # tool options can run code (postinstall) or alter installs (install_env)
 cat <<'EOF' >mise.toml
@@ -138,7 +138,7 @@ cat <<'EOF' >mise.toml
 tiny = { version = "3.1.0", postinstall = "touch marker" }
 EOF
 output=$(MISE_YES=0 mise ls 2>&1 || true)
-echo "$output" | grep -qi "trust" || fail "expected trust error for tool options, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for tool options, got: $output"
 
 # env vars require trust
 cat <<'EOF' >mise.toml
@@ -146,7 +146,7 @@ cat <<'EOF' >mise.toml
 FOO = "bar"
 EOF
 output=$(MISE_YES=0 mise env 2>&1 || true)
-echo "$output" | grep -qi "trust" || fail "expected trust error for env, got: $output"
+grep -qi "trust" <<<"$output" || fail "expected trust error for env, got: $output"
 
 # unsafe configs still load normally once trusted
 mise trust

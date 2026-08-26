@@ -306,8 +306,8 @@ To exempt only selected versions, use aube's package-version pattern syntax:
 "npm:some-tool" = { version = "latest", trust_policy_excludes = ["undici@^5 || >=6 <7"] }
 ```
 
-`trust_policy_excludes` is written to the aube install `.npmrc` as `trustPolicyExclude`. It does
-not affect `npm`, `pnpm`, or `bun` installs.
+`trust_policy_excludes` is written to the aube install's `.config/aube/config.toml` as
+`trustPolicyExclude`. It does not affect `npm`, `pnpm`, or `bun` installs.
 
 ### `allow_low_downloads`
 
@@ -323,9 +323,10 @@ refusing to add some-tool: only 930 weekly downloads (threshold: 1000).
 "npm:some-tool" = { version = "latest", allow_low_downloads = true }
 ```
 
-The exemption is scoped to the package you asked for, written to the aube install `.npmrc` as
-`allowedUnpopularPackages=<package>`. Transitive dependencies stay gated, and the threshold itself
-is left alone — so this cannot silently admit an unpopular dependency you did not choose.
+The exemption is scoped to the package you asked for, written to the aube install's
+`.config/aube/config.toml` under `allowedUnpopularPackages`. Transitive dependencies stay gated,
+and the threshold itself is left alone — so this cannot silently admit an unpopular dependency
+you did not choose.
 
 An npm tool resolved from `mise.lock` is trusted automatically for this download-count check, so
 reproducing an existing lockfile does not require `allow_low_downloads`. The explicit option is

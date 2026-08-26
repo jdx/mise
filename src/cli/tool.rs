@@ -275,8 +275,7 @@ impl Tool {
                 table.push(("Security:", security_str));
             }
             let mut table = tabled::Table::new(table);
-            table::default_style(&mut table, true);
-            miseprintln!("{table}");
+            table::print(&mut table, true)?;
         }
 
         Ok(())

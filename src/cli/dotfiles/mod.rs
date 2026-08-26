@@ -1,4 +1,4 @@
-use eyre::{Result, eyre};
+use eyre::Result;
 use std::path::Path;
 
 mod add;
@@ -89,21 +89,4 @@ pub(crate) fn warn_if_dotfiles_ignored() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-}
-
-fn open_in_editor(file: &Path) -> Result<()> {
-    let (program, mut args) = split_editor_command(&crate::env::EDITOR)?;
-    args.push(file.as_os_str().into());
-    crate::cmd::cmd(&program, args).run()?;
-    Ok(())
-}
-
-fn split_editor_command(editor: &str) -> Result<(String, Vec<std::ffi::OsString>)> {
-    let mut parts = shell_words::split(editor)
-        .map_err(|e| eyre!("failed to parse EDITOR/VISUAL value {:?}: {}", editor, e))?
-        .into_iter();
-    let program = parts
-        .next()
-        .ok_or_else(|| eyre!("EDITOR/VISUAL is empty"))?;
-    Ok((program, parts.map(Into::into).collect()))
 }

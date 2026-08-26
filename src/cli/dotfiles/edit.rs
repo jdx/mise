@@ -46,7 +46,7 @@ impl DotfilesEdit {
 
         if let Some(path) = source_for_target(&config, &target, &self.target)? {
             open_or_create(&path)?;
-            super::open_in_editor(&path)?;
+            crate::cli::editor::open_in_editor(&path)?;
             if self.apply {
                 apply_target(&self.target).await?;
             }
@@ -83,7 +83,7 @@ impl DotfilesEdit {
             bail!("failed to add {}", self.target);
         };
         open_or_create(&path)?;
-        super::open_in_editor(&path)?;
+        crate::cli::editor::open_in_editor(&path)?;
         if self.apply {
             apply_target(&self.target).await?;
         }

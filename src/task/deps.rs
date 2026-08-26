@@ -106,6 +106,7 @@ pub(crate) struct Deps {
     cache_keys: HashMap<TaskKey, String>, // stable artifact identities published by completed tasks
     dep_edges: HashMap<TaskKey, HashSet<TaskKey>>, // maps each task to its direct dependency task keys
     post_dep_parents: HashMap<TaskKey, HashSet<TaskKey>>, // maps each post-subtree task to its triggering parents
+    creation_order: Vec<TaskKey>, // every node in the order the graph created it, see `all_in_creation_order`
     tx: mpsc::UnboundedSender<Option<Task>>,
     // not clone, notify waiters via tx None
 }
@@ -306,6 +307,14 @@ impl Deps {
         let executed = HashSet::new();
         let did_work = HashSet::new();
         let cache_keys = HashMap::new();
+        // Node indices are handed out by `add_idx` alone -- roots in the order
+        // they were named, then dependencies as the worklist reaches them -- and
+        // nothing has removed a node yet, so index order is creation order here
+        // and nowhere later.
+        let creation_order = graph
+            .node_indices()
+            .map(|idx| task_key(&graph[idx]))
+            .collect();
         Ok(Self {
             graph,
             tx,
@@ -316,6 +325,7 @@ impl Deps {
             cache_keys,
             dep_edges,
             post_dep_parents,
+            creation_order,
         })
     }
 
@@ -410,6 +420,13 @@ impl Deps {
         }
     }
 
+    /// Whether this task ever started executing. `mark_executed` runs
+    /// synchronously before the task is spawned, so a task missing here has no
+    /// execution in flight and will never reach the completion callbacks.
+    pub(crate) fn has_executed(&self, task: &Task) -> bool {
+        self.executed.contains(&task_key(task))
+    }
+
     /// Mark a task as having actually started execution.
     /// This is distinct from being scheduled (sent) — a task may be scheduled as a
     /// graph leaf but then skipped because an earlier task failed.
@@ -490,8 +507,40 @@ impl Deps {
             .find(|&idx| &self.graph[idx] == task)
     }
 
+    /// Every task still in the graph, in no particular order.
+    ///
+    /// Node index order is creation order only until the first removal, so
+    /// anything that cares about the order wants
+    /// [`all_in_creation_order`](Self::all_in_creation_order) instead.
     pub(crate) fn all(&self) -> impl Iterator<Item = &Task> {
         self.graph.node_indices().map(|idx| &self.graph[idx])
+    }
+
+    /// Every task still in the graph, in the order the graph created its nodes:
+    /// the roots in the order they were named, then each task's `depends` and
+    /// `depends_post` in the order the worklist reached them.
+    ///
+    /// This is the order keep-order hands out its output slots in, so it has to
+    /// survive removals — and [`all`](Self::all) does not. petgraph's
+    /// `remove_node` swap-removes, moving the last node into the hole, so a
+    /// single pruned or finished task is enough to scramble index order.
+    ///
+    /// Tasks the graph no longer holds are dropped rather than reported: a task
+    /// pruned as already complete never runs, so nothing would ever retire the
+    /// slot it was given, and an empty slot at the front of the buffer map stops
+    /// everything behind it from streaming.
+    pub(crate) fn all_in_creation_order(&self) -> Vec<&Task> {
+        let mut present: HashMap<TaskKey, &Task> = self
+            .graph
+            .node_indices()
+            .map(|idx| (task_key(&self.graph[idx]), &self.graph[idx]))
+            .collect();
+        // `add_idx` deduplicates by key, so key to node is one-to-one and
+        // removing as we go is just that stated out loud.
+        self.creation_order
+            .iter()
+            .filter_map(|key| present.remove(key))
+            .collect()
     }
 
     /// Mark tasks that share a display_name so their prefix includes args
@@ -671,6 +720,7 @@ mod tests {
             cache_keys: HashMap::new(),
             dep_edges,
             post_dep_parents,
+            creation_order: Vec::new(),
             tx,
         }
     }
@@ -799,6 +849,86 @@ mod tests {
         assert_eq!(
             deps.dependency_state(&waiter),
             TaskDependencyState::default()
+        );
+    }
+
+    /// Roots keep the order they were named; a dependency is discovered by the
+    /// worklist and lands after every root. Both halves matter: keep-order hands
+    /// out its output slots in this order.
+    #[tokio::test]
+    async fn creation_order_is_roots_then_discovered_dependencies() {
+        let config = Config::get().await.unwrap();
+        let tasks = config.tasks().await.unwrap();
+        let mut root = tasks["configtask"].clone();
+        root.depends = vec!["lint".parse().unwrap()];
+        let other = tasks["test"].clone();
+
+        let deps = Deps::new(&config, vec![root, other]).await.unwrap();
+
+        assert_eq!(
+            deps.all_in_creation_order()
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect_vec(),
+            ["configtask", "test", "lint"],
+            "roots as named, then what the worklist reached"
+        );
+    }
+
+    /// petgraph's `remove_node` swap-removes, so one departure is enough to
+    /// scramble node index order. That is the whole reason this accessor exists
+    /// rather than callers using `all`.
+    #[tokio::test]
+    async fn creation_order_survives_a_removal() {
+        let config = Config::get().await.unwrap();
+        let tasks = config.tasks().await.unwrap();
+        let mut root = tasks["configtask"].clone();
+        root.depends = vec!["lint".parse().unwrap()];
+        let other = tasks["test"].clone();
+        let mut deps = Deps::new(&config, vec![root.clone(), other]).await.unwrap();
+
+        deps.remove(&root);
+
+        assert_eq!(
+            deps.all_in_creation_order()
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect_vec(),
+            ["test", "lint"],
+            "the survivors, still in the order they were created"
+        );
+        assert_eq!(
+            deps.all().map(|t| t.name.as_str()).collect_vec(),
+            ["lint", "test"],
+            "while index order has the last node moved into the hole"
+        );
+    }
+
+    /// A task pruned as already complete never runs, so nothing would retire the
+    /// slot it was given and everything behind it would stay buffered.
+    #[tokio::test]
+    async fn a_pruned_task_is_absent_from_creation_order() {
+        let config = Config::get().await.unwrap();
+        let tasks = config.tasks().await.unwrap();
+        let mut root = tasks["configtask"].clone();
+        root.depends = vec!["lint".parse().unwrap()];
+        let other = tasks["test"].clone();
+        let completion_state = TaskCompletionState {
+            completed: HashSet::from([task_key(&other)]),
+            ..Default::default()
+        };
+
+        let deps = Deps::new_pruned(&config, vec![root, other], &completion_state)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            deps.all_in_creation_order()
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect_vec(),
+            ["configtask", "lint"],
+            "the completed task is gone, the rest keep their order"
         );
     }
 

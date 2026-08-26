@@ -131,8 +131,7 @@ impl PluginsLs {
                 info!("All plugins are up to date");
             } else {
                 let mut table = Table::new(data);
-                table::default_style(&mut table, false);
-                miseprintln!("{table}");
+                table::print(&mut table, false)?;
             }
         } else if self.urls || self.refs {
             let data = plugins
@@ -164,8 +163,7 @@ impl PluginsLs {
                 })
                 .collect::<Vec<_>>();
             let mut table = Table::new(data);
-            table::default_style(&mut table, false);
-            miseprintln!("{table}");
+            table::print(&mut table, false)?;
         } else {
             hint!("registry", "see available plugins with", "mise registry");
             for tool in plugins.values() {

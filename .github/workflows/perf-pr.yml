@@ -16,6 +16,13 @@ name: perf-pr
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    # These files change the repository's development environment rather than
+    # the mise binary. In particular, root mise.toml tools are inherited by the
+    # benchmark fixture and would make the head and base inputs differ.
+    paths-ignore:
+      - ".github/**"
+      - "mise.lock"
+      - "mise.toml"
 
 permissions:
   contents: read
@@ -59,7 +66,7 @@ jobs:
 
       # Compile inside this disposable VM. Restoring target/ can relabel a
       # binary built on a different runner class as a Bamboo measurement.
-      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           cache: false
         env:

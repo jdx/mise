@@ -57,7 +57,9 @@ where
 impl PackageJsonData {
     fn parse(path: &Path) -> Result<Self> {
         let contents = file::read_to_string(path)?;
-        let pkg: PackageJsonData = serde_json::from_str(&contents)?;
+        // serde_json rejects a leading byte-order mark outright, which would fail the whole file
+        // rather than just the version it declares.
+        let pkg: PackageJsonData = serde_json::from_str(file::strip_utf8_bom(&contents))?;
         Ok(pkg)
     }
 
@@ -206,6 +208,16 @@ mod tests {
 
         assert_eq!(parse(&path, "yarn").unwrap(), vec!["1.22.19".to_string()]);
         assert_eq!(parse(&path, "node").unwrap(), vec!["20.0.0".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_package_json_with_byte_order_mark() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("package.json");
+        // serde_json rejects the mark, which used to fail the file rather than the field.
+        fs::write(&path, "\u{feff}{\"packageManager\": \"pnpm@9.0.0\"}").unwrap();
+
+        assert_eq!(parse(&path, "pnpm").unwrap(), vec!["9.0.0".to_string()]);
     }
 
     #[test]

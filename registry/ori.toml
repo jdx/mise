@@ -1,0 +1,5 @@
+backends = ["aqua:OpenRouterLabs/ori-releases"]
+bins = ["ori"]
+description = "The easiest way to use OpenRouter locally"
+test = { cmd = "ori --version", expected = '"name": "@ori-runtime/cli"' }
+version_order = "source"

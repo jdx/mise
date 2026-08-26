@@ -9,6 +9,7 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `mise.local.toml` - used for local config, this should not be committed to source control
 - `mise.toml`
 - `mise/config.toml`
+- `mise/conf.d/*.toml` - all non-hidden TOML files in this directory are loaded in alphabetical order; dotted names like `x.base.toml` are [being deprecated](/configuration/environments.html#conf-d-environments) and load only for the matching environment under `env_conf_d = true`
 - `.mise/config.toml`
 - `.mise/conf.d/*.toml` - all non-hidden TOML files in this directory are loaded in alphabetical order; dotted names like `x.base.toml` are [being deprecated](/configuration/environments.html#conf-d-environments) and load only for the matching environment under `env_conf_d = true`
 - `.config/mise.toml` - use this in order to group config files into a common directory
@@ -65,6 +66,9 @@ When mise needs configuration, it follows this process:
         └── myproject/
             ├── mise.local.toml       # Local overrides (git-ignored)
             ├── mise.toml             # Project config
+            ├── mise/
+            │   ├── config.toml       # Visible grouped project config
+            │   └── conf.d/*.toml     # Visible project fragments, loaded alphabetically
             ├── .mise/
             │   ├── config.toml       # Project config grouped under .mise
             │   └── conf.d/*.toml     # Project fragments, loaded alphabetically

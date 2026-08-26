@@ -7,7 +7,6 @@ version_order = "semver"
 bins = ["claude"]
 [[backends]]
 full = "aqua:anthropics/claude-code"
-platforms = ["linux", "macos"]
 
 [[backends]]
 full = "http:claude"

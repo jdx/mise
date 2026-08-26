@@ -2500,6 +2500,13 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "excludes": {
+          "description": "config-root-relative paths or glob patterns to exclude from file-task discovery",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       }
     },

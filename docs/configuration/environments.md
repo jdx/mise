@@ -82,10 +82,14 @@ an environment.
 :::
 
 Set `env_conf_d = true` in any `miserc.toml` file (the locations listed above), or set
-`MISE_ENV_CONF_D=true`, to opt into the new behavior now. Files in `.mise/conf.d` and `.config/mise/conf.d` will then use the same environment
+`MISE_ENV_CONF_D=true`, to opt into the new behavior now. Files in `mise/conf.d`, `.mise/conf.d`, and `.config/mise/conf.d` will then use the same environment
 suffixes as other config files:
 
 ```text
+mise/conf.d/tools.toml                    # always loaded
+mise/conf.d/tools.local.toml              # always loaded, usually gitignored
+mise/conf.d/tools.development.toml        # MISE_ENV=development
+mise/conf.d/tools.development.local.toml  # MISE_ENV=development, usually gitignored
 .mise/conf.d/tools.toml                   # always loaded
 .mise/conf.d/tools.local.toml             # always loaded, usually gitignored
 .mise/conf.d/tools.development.toml       # MISE_ENV=development

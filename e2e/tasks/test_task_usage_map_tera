@@ -235,6 +235,20 @@ basename=file.txt
 extname=txt
 file_stem=file"
 
+# Path filters work with value flags that do not declare a default
+cat <<'EOF' >mise.toml
+[tasks.usage-tera-flag-path-filter]
+usage = '''
+arg "<name>"
+flag "-f --file <file>"
+'''
+run = '''
+echo "dirname={{ usage.file | dirname }}"
+'''
+EOF
+
+assert "mise run usage-tera-flag-path-filter -- test -f data/cmp.csv" "dirname=data"
+
 # Count flag renders as integer (e.g. -vvv -> 3)
 cat <<'EOF' >mise.toml
 [tasks.usage-tera-count]

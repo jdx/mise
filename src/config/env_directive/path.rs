@@ -7,7 +7,7 @@ impl EnvResults {
         ctx: &mut EnvDirectiveContext<'_>,
         input: String,
     ) -> result::Result<PathBuf> {
-        ctx.parse_template(&input).map(PathBuf::from)
+        ctx.parse_template("_.path", &input).map(PathBuf::from)
     }
 }
 
