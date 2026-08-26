@@ -167,12 +167,18 @@ impl ToolStub {
 
         file::write(&self.output, &stub_content)?;
         file::make_executable(&self.output)?;
-        self.write_windows_launcher(&stub_content)?;
+        let launcher = self.write_windows_launcher(&stub_content)?;
 
-        if self.fetch || self.lock {
-            miseprintln!("Updated tool stub: {}", display_path(&self.output));
+        // Both lines printed here rather than where each file is written, so the launcher cannot
+        // end up announced with a different verb than the stub it belongs to.
+        let verb = if self.fetch || self.lock {
+            "Updated"
         } else {
-            miseprintln!("Generated tool stub: {}", display_path(&self.output));
+            "Generated"
+        };
+        miseprintln!("{verb} tool stub: {}", display_path(&self.output));
+        if let Some(launcher) = launcher {
+            miseprintln!("{verb} Windows launcher: {}", display_path(&launcher));
         }
         Ok(())
     }
@@ -187,12 +193,17 @@ impl ToolStub {
     /// Linux and committed: the Windows user who runs it is not its author and has no way to
     /// regenerate it (they do not have the original `--url`/`--version`). A host-OS check would
     /// never fire for them.
-    fn write_windows_launcher(&self, stub_content: &str) -> Result<()> {
+    ///
+    /// Returns the launcher when one was written, so the caller can name it. Removing a stale one
+    /// stays silent: this is the path that reports what the command produced, and a deletion is a
+    /// different kind of message.
+    fn write_windows_launcher(&self, stub_content: &str) -> Result<Option<PathBuf>> {
         let Some(launcher) = super::windows_launcher_path(&self.output) else {
-            return Ok(());
+            return Ok(None);
         };
         if wants_windows_launcher(stub_content) {
             file::write(&launcher, &*WINDOWS_LAUNCHER)?;
+            return Ok(Some(launcher));
         } else if file::read_to_string(&launcher).is_ok_and(|c| super::is_generated_launcher(&c)) {
             // A stub that used to ship for Windows and no longer does would otherwise keep a
             // launcher that still runs, contradicting the platforms it now declares. Recognised by
@@ -200,7 +211,7 @@ impl ToolStub {
             // whose body differed -- is still cleaned up; a launcher the user wrote is left alone.
             file::remove_file(&launcher)?;
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Refuse to replace a `.cmd` beside the stub that mise did not write.

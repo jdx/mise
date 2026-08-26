@@ -83,7 +83,11 @@ impl Shell for Elvish {
     fn prepend_env(&self, k: &str, v: &str) -> String {
         let k = shell_escape::unix::escape(k.into());
         let v = shell_escape::unix::escape(v.into());
-        format!("set-env {k} {v}(get-env {k})\n")
+        // The list separator is required: without it the new entry is glued
+        // onto the first existing one, so prepending /new/dir to
+        // /usr/bin:/bin produced /new/dir/usr/bin:/bin. bash and zsh hardcode
+        // ":" here for the same reason.
+        format!("set-env {k} {v}':'(get-env {k})\n")
     }
 
     fn unset_env(&self, k: &str) -> String {

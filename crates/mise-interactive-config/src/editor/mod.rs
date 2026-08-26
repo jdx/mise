@@ -220,6 +220,7 @@ impl InteractiveConfig {
                     value: EntryValue::InlineTable(vec![("auto".to_string(), "true".to_string())]),
                     expanded: false,
                     comments: Vec::new(),
+                    trailing_comment: None,
                 });
             self.doc.modified = true;
         }

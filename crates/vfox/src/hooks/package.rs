@@ -21,6 +21,11 @@ pub struct PackageActionContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageUninstallContext {
+    pub packages: Vec<PackageRequest>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstalledPackage {
     pub name: String,
     pub state: String,
@@ -71,6 +76,18 @@ impl Plugin {
         })
         .await
     }
+
+    pub async fn package_uninstall(
+        &self,
+        ctx: PackageUninstallContext,
+    ) -> Result<PackageActionResponse> {
+        debug!("[vfox:{}] package_uninstall", self.name);
+        self.eval_async(chunk! {
+            require "hooks/package_uninstall"
+            return PLUGIN:PackageUninstall($ctx)
+        })
+        .await
+    }
 }
 
 fn packages_into_lua(packages: Vec<PackageRequest>, lua: &Lua) -> mlua::Result<Value> {
@@ -98,6 +115,14 @@ impl IntoLua for PackageActionContext {
         table.set("packages", packages_into_lua(self.packages, lua)?)?;
         table.set("dry_run", self.dry_run)?;
         table.set("update", self.update)?;
+        Ok(Value::Table(table))
+    }
+}
+
+impl IntoLua for PackageUninstallContext {
+    fn into_lua(self, lua: &Lua) -> mlua::Result<Value> {
+        let table = lua.create_table()?;
+        table.set("packages", packages_into_lua(self.packages, lua)?)?;
         Ok(Value::Table(table))
     }
 }
@@ -162,6 +187,67 @@ mod tests {
         let package = packages.get::<mlua::Table>(1).unwrap();
         assert_eq!(package.get::<String>("version").unwrap(), "nightly-2026.07");
         assert!(table.get::<bool>("dry_run").unwrap());
+    }
+
+    #[test]
+    fn package_uninstall_context_serializes_packages_without_action_flags() {
+        let lua = Lua::new();
+        let value = PackageUninstallContext {
+            packages: vec![PackageRequest {
+                name: "extension".into(),
+                version: Some("nightly-2026.07".into()),
+            }],
+        }
+        .into_lua(&lua)
+        .unwrap();
+        let table = value.as_table().unwrap();
+        let packages = table.get::<mlua::Table>("packages").unwrap();
+        let package = packages.get::<mlua::Table>(1).unwrap();
+        assert_eq!(package.get::<String>("name").unwrap(), "extension");
+        assert_eq!(package.get::<String>("version").unwrap(), "nightly-2026.07");
+        assert!(!table.contains_key("dry_run").unwrap());
+        assert!(!table.contains_key("update").unwrap());
+    }
+
+    #[tokio::test]
+    async fn package_uninstall_dispatches_to_hook() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(tmp.path().join("hooks")).unwrap();
+        std::fs::write(
+            tmp.path().join("metadata.lua"),
+            r#"PLUGIN = {
+                name = "fake",
+                version = "0.1.0",
+                homepage = "",
+                license = "MIT",
+                description = "fake",
+                minRuntimeVersion = "0.3.0",
+                notes = {},
+                legacyFilenames = {},
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            tmp.path().join("hooks/package_uninstall.lua"),
+            r#"function PLUGIN:PackageUninstall(ctx)
+                assert(#ctx.packages == 1)
+                assert(ctx.packages[1].name == "extension")
+                assert(ctx.packages[1].version == "release:edge")
+                assert(ctx.dry_run == nil)
+                return {}
+            end"#,
+        )
+        .unwrap();
+        let plugin = Plugin::from_dir(tmp.path()).unwrap();
+        plugin
+            .package_uninstall(PackageUninstallContext {
+                packages: vec![PackageRequest {
+                    name: "extension".into(),
+                    version: Some("release:edge".into()),
+                }],
+            })
+            .await
+            .unwrap();
     }
 
     #[test]

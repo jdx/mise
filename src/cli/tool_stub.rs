@@ -566,25 +566,28 @@ async fn execute_with_tool_request(
     // Find the binary path using cache
     match find_cached_or_resolve_bin_path(&toolset, &*config, stub, stub_path).await? {
         Ok(bin_path) => {
-            // Get the environment with proper PATH from toolset
+            // env_with_path already has _.path and filters outer install dirs.
+            // Prepend backend dependency bins (e.g. node for npm); see #7777.
             let mut env = toolset.env_with_path(config).await?;
-            let mut path_env = crate::path_env::PathEnv::from_iter(crate::env::PATH.clone());
-            for p in toolset.list_paths(config).await {
-                path_env.add(p);
-            }
-
             if let Some((backend, _tv)) = toolset.list_current_installed_versions(config).first() {
-                let btp = backend
+                let dep_paths = backend
                     .dependency_toolset(config)
                     .await?
                     .list_paths(config)
                     .await;
-                for p in btp {
-                    path_env.add(p);
+                if !dep_paths.is_empty() {
+                    let path = env
+                        .get(crate::env::PATH_KEY.as_str())
+                        .cloned()
+                        .unwrap_or_default();
+                    let mut paths = dep_paths;
+                    paths.extend(std::env::split_paths(&path));
+                    env.insert(
+                        crate::env::PATH_KEY.to_string(),
+                        std::env::join_paths(paths)?.to_string_lossy().to_string(),
+                    );
                 }
             }
-            env.insert(crate::env::PATH_KEY.to_string(), path_env.to_string());
-
             crate::cli::exec::exec_program(bin_path, args, env, &Default::default(), false).await
         }
         Err(e) => match e {

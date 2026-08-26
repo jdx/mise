@@ -121,6 +121,13 @@ fn main() -> ExitCode {
     if env::invoked_as_self_replace_helper() {
         return ExitCode::SUCCESS;
     }
+    // Embedded aube lifecycle shims re-exec this binary with private commands
+    // (notably `__node-gyp-bootstrap`). Hand those to aube before mise's
+    // naked-run rewrite / clap parser can claim them.
+    let early_args = env::args_safe();
+    if let Some(code) = backend::aube_host::try_run_embedded_cli(&early_args) {
+        return exit::status(code);
+    }
     let nprocs = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or_default();
@@ -200,6 +207,19 @@ async fn main_() -> eyre::Result<()> {
 }
 
 fn handle_err(err: Report) -> eyre::Result<()> {
+    // Startup queues warnings found before the logger exists and flushes them once CLI flags are
+    // known. Half a dozen steps sit between those two points and any of them can fail — a bad flag,
+    // an unusable `--cd`, an untrusted config — so this is where a queued diagnostic gets its last
+    // chance to be seen. Before the exit-code check: a requested exit leaves just as finally.
+    //
+    // Re-init the logger first so the flush below runs at whatever level is knowable now.
+    // `auto_update` and `trust_active_config` fail *after* `add_cli_matches` but before startup
+    // reaches its second `logger::init()`, so without this `--quiet` would not reach them. It
+    // cannot help a command whose flags never parsed; `MISE_QUIET` still can, since that is read
+    // from the environment during the first settings build. If the settings cannot be built at all,
+    // `init` leaves the level where it is rather than resetting it to the default.
+    crate::logger::init();
+    crate::config::Settings::flush_pending_warnings_before_exit();
     if exit::requested_exit_code(&err).is_some() {
         return Err(err);
     }

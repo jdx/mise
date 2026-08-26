@@ -503,15 +503,34 @@ impl HttpBackend {
             let _ = file::remove_all(&tmp_path);
         }
 
-        // Perform extraction
+        // Every path out of here from now on removes the temp directory it
+        // created. The name carries this process's pid and the millisecond it
+        // started, so nothing else will ever match it and the cleanup above can
+        // never reclaim what an earlier run left behind — a failure that walks
+        // away leaves a hash-named directory beside the real entries for good.
+        // `extract_to_install_path` already does this; this is the same shape.
+        // Cleanup errors are dropped rather than returned so they cannot hide
+        // the failure that caused them.
         let extraction_type =
-            self.extract_artifact(tv, &tmp_path, file_path, cache.plan, opts, pr)?;
+            match self.extract_artifact(tv, &tmp_path, file_path, cache.plan, opts, pr) {
+                std::result::Result::Ok(extraction_type) => extraction_type,
+                Err(err) => {
+                    let _ = file::remove_all(&tmp_path);
+                    return Err(err);
+                }
+            };
 
         // Atomic replace
-        if cache_path.exists() {
-            file::remove_all(&cache_path)?;
+        if cache_path.exists()
+            && let Err(err) = file::remove_all(&cache_path)
+        {
+            let _ = file::remove_all(&tmp_path);
+            return Err(err);
         }
-        std::fs::rename(&tmp_path, &cache_path)?;
+        if let Err(err) = std::fs::rename(&tmp_path, &cache_path) {
+            let _ = file::remove_all(&tmp_path);
+            return Err(err.into());
+        }
 
         // Write metadata
         self.write_metadata(cache.dir, &cache.plan.key, url, file_path, opts)?;
@@ -559,7 +578,10 @@ impl HttpBackend {
             return Err(err);
         }
 
-        Self::remove_install_path(&install_path)?;
+        if let Err(err) = Self::remove_install_path(&install_path) {
+            let _ = file::remove_all(&tmp_path);
+            return Err(err);
+        }
         if let Err(err) = std::fs::rename(&tmp_path, &install_path) {
             let _ = file::remove_all(&tmp_path);
             return Err(err.into());

@@ -423,4 +423,92 @@ file = "scripts/thing"
             }
         }
     }
+
+    Context 'a task-directory file Windows will not run' {
+        BeforeAll {
+            # Deliberately outside $TestDrive: the config at the TestDrive root includes a tasks
+            # directory, and a project that inherits those tasks never reaches the two diagnostics
+            # that only fire when nothing resolved at all.
+            $script:skipRoot = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+            $script:aloneDir = Join-Path $script:skipRoot 'alone'
+            $script:besideDir = Join-Path $script:skipRoot 'beside'
+            New-Item -ItemType Directory -Path (Join-Path $script:aloneDir 'mise-tasks') -Force | Out-Null
+            New-Item -ItemType Directory -Path (Join-Path $script:besideDir 'mise-tasks') -Force | Out-Null
+
+            # No shebang and no known extension. There is no permission bit for `is_executable` to
+            # consult on this platform, so this file is simply not a task.
+            Set-Content (Join-Path $script:aloneDir 'mise-tasks\skipped') 'echo hi' -NoNewline
+            New-Item -ItemType File -Path (Join-Path $script:aloneDir 'mise.toml') | Out-Null
+
+            # The same file with a working task beside it, which sends `mise run` down its other
+            # branch -- the one that has a task list to suggest from. The warning is the only
+            # thing that names the file there.
+            Set-Content (Join-Path $script:besideDir 'mise-tasks\skipped') 'echo hi' -NoNewline
+            Set-Content (Join-Path $script:besideDir 'mise-tasks\works.bat') "@echo off`r`necho works"
+            New-Item -ItemType File -Path (Join-Path $script:besideDir 'mise.toml') | Out-Null
+
+            # Global tasks would also keep these projects from being empty, and this suite does
+            # not otherwise isolate them.
+            $script:originalConfigDir = [Environment]::GetEnvironmentVariable('MISE_CONFIG_DIR', 'Process')
+            $env:MISE_CONFIG_DIR = Join-Path $script:skipRoot 'config'
+            New-Item -ItemType Directory -Path $env:MISE_CONFIG_DIR | Out-Null
+            $script:describeTrusted = $env:MISE_TRUSTED_CONFIG_PATHS
+            $env:MISE_TRUSTED_CONFIG_PATHS = $script:skipRoot
+        }
+
+        AfterAll {
+            $env:MISE_TRUSTED_CONFIG_PATHS = $script:describeTrusted
+            if ($null -eq $script:originalConfigDir) {
+                Remove-Item -Path Env:\MISE_CONFIG_DIR -ErrorAction SilentlyContinue
+            } else {
+                $env:MISE_CONFIG_DIR = $script:originalConfigDir
+            }
+            Remove-Item -Recurse -Force $script:skipRoot -ErrorAction SilentlyContinue
+        }
+
+        It 'says why `mise tasks ls` found nothing' {
+            Push-Location $script:aloneDir
+            try {
+                $out = mise tasks ls 2>&1 | Out-String
+                $LASTEXITCODE | Should -Be 0
+                $out | Should -BeLike '*non-executable*'
+                $out | Should -BeLike '*shebang*'
+                # Being told to run chmod is why this diagnostic was switched off here at all.
+                $out | Should -Not -BeLike '*chmod*'
+            } finally {
+                Pop-Location
+            }
+        }
+
+        It 'names the file when the project has no other tasks' {
+            Push-Location $script:aloneDir
+            try {
+                $out = mise run skipped 2>&1 | Out-String
+                $LASTEXITCODE | Should -Not -Be 0
+                $out | Should -BeLike '*non-executable*'
+                $out | Should -BeLike '*mise-tasks*'
+                $out | Should -BeLike '*shebang*'
+                $out | Should -Not -BeLike '*chmod*'
+            } finally {
+                Pop-Location
+            }
+        }
+
+        It 'names the file when the project has other tasks' {
+            Push-Location $script:besideDir
+            try {
+                # The control: the sibling really is a task here, so the run below fails over the
+                # skipped file rather than over an empty project.
+                mise run works | Select -Last 1 | Should -Be 'works'
+                $out = mise run skipped 2>&1 | Out-String
+                $LASTEXITCODE | Should -Not -Be 0
+                $out | Should -BeLike '*non-executable*'
+                $out | Should -BeLike '*mise-tasks*'
+                $out | Should -BeLike '*shebang*'
+                $out | Should -Not -BeLike '*chmod*'
+            } finally {
+                Pop-Location
+            }
+        }
+    }
 }

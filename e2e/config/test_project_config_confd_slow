@@ -82,6 +82,24 @@ run = "echo fragment-root"
 EOF
 assert_contains "cd monorepo && mise tasks --all" "app:hello"
 
+# Visible mise/conf.d fragments use the same project config behavior.
+mkdir -p visible/mise/conf.d
+cat >visible/mise/conf.d/01-base.toml <<'EOF'
+[env]
+VISIBLE_CONF_D = "base"
+EOF
+cat >visible/mise/conf.d/02-override.toml <<'EOF'
+[env]
+VISIBLE_CONF_D = "override"
+EOF
+cat >visible/mise/config.toml <<'EOF'
+[env]
+VISIBLE_CONF_D = "config"
+EOF
+assert_contains "cd visible && mise config ls" "mise/conf.d/01-base.toml"
+assert_contains "cd visible && mise config ls" "mise/conf.d/02-override.toml"
+assert "cd visible && mise env --json | jq -r .VISIBLE_CONF_D" "config"
+
 # Deprecated automatic discovery uses the same glob-aware root detection.
 cat >monorepo/mise.toml <<'EOF'
 min_version = "2026.1.0"

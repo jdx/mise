@@ -1964,11 +1964,26 @@ mod tests {
     use super::*;
     use confique::Layer;
     use indexmap::IndexMap;
+    use reqwest::dns::{Name, Resolve, Resolving};
     use std::path::PathBuf;
     use url::Url;
 
     // Mutex to ensure tests don't interfere with each other when modifying global settings
     static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct FailingDnsResolver;
+
+    impl Resolve for FailingDnsResolver {
+        fn resolve(&self, _name: Name) -> Resolving {
+            Box::pin(async {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "test DNS resolution failure",
+                )
+                .into())
+            })
+        }
+    }
 
     // Helper to create test settings with specific URL replacements
     fn with_test_settings<F, R>(replacements: IndexMap<String, String>, test_fn: F) -> R
@@ -3000,6 +3015,7 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let client = Client {
             reqwest: Ok(Client::_new()
                 .no_proxy()
+                .dns_resolver(FailingDnsResolver)
                 .read_timeout(timeout)
                 .connect_timeout(timeout)
                 .build()

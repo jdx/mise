@@ -1,0 +1,58 @@
+name: test-vfox implementation
+
+on:
+  workflow_call:
+    inputs:
+      trusted:
+        required: true
+        type: boolean
+      mbx-backend:
+        required: true
+        type: string
+    secrets:
+      MISE_GH_TOKEN:
+        required: false
+
+concurrency:
+  group: test-vfox-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_EXPERIMENTAL: 1
+  MISE_LOCKFILE: 1
+  RUST_BACKTRACE: 1
+  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+
+jobs:
+  "test-vfox":
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    steps:
+      - name: Assert OIDC is unavailable to untrusted CI
+        if: ${{ !inputs.trusted }}
+        run: |
+          test -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
+          test -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
+        if: inputs.trusted
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/.global-cache
+      - uses: ./.github/actions/mbx
+        with:
+          backend: ${{ inputs.mbx-backend }}
+      - run: |
+          mbx build --all-features --ignore-rust-version
+          echo "$PWD/target/debug" >> "$GITHUB_PATH"
+      - run: mise -v
+      - run: mbx build
+        working-directory: crates/vfox
+      - run: mise --cd crates/vfox run lint
+      - run: mbx test
+        working-directory: crates/vfox
+      - run: mbx cache stats
+        if: always()

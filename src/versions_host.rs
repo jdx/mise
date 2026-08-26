@@ -59,6 +59,11 @@ struct VersionEntry {
     created_at: toml::value::Datetime,
     #[serde(default)]
     release_url: Option<String>,
+    /// Whether this name is a moving release channel. The versions host keeps
+    /// this platform-independent signal, while platform-specific checksums are
+    /// fetched directly from the backend when needed.
+    #[serde(default)]
+    rolling: bool,
     /// Pre-release flag, when the producing source can distinguish it. Absent
     /// in old host data — and for entries from sources that don't track
     /// prereleases — which maps to `None` ("unknown") without any schema
@@ -246,6 +251,7 @@ pub(crate) async fn list_versions(tool: &str) -> eyre::Result<Option<Vec<Version
                     version,
                     created_at: Some(entry.created_at.to_string()),
                     release_url: entry.release_url,
+                    rolling: entry.rolling,
                     prerelease: entry.prerelease,
                     ..Default::default()
                 })
@@ -652,6 +658,21 @@ mod tests {
             version_list_url("node"),
             "https://mise-versions.jdx.dev/data/node.toml"
         );
+    }
+
+    #[test]
+    fn test_version_entry_deserializes_rolling_metadata() {
+        let response: VersionsResponse = toml::from_str(
+            r#"
+[versions]
+"1.0.0" = { created_at = 2026-01-01T00:00:00Z }
+"nightly" = { created_at = 2026-01-02T00:00:00Z, rolling = true }
+"#,
+        )
+        .unwrap();
+
+        assert!(!response.versions["1.0.0"].rolling);
+        assert!(response.versions["nightly"].rolling);
     }
 
     #[test]

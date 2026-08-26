@@ -54,3 +54,13 @@ cat >mise.toml <<'EOF'
 _.file = { path = 'chain.json', expand = true }
 EOF
 assert_contains "MISE_ENV_SHELL_EXPAND=false mise env -s bash" "export BIN='\${BASE}/bin'"
+
+# The expanded path reads the file itself rather than letting dotenvy open it, and it did not strip
+# the mark either -- same defect, the other branch.
+cat >mise.toml <<'TOML'
+[env]
+_.file = { path = ['bom-expand'], expand = true }
+TOML
+printf '\xef\xbb\xbfBOM_A=1\nBOM_B="${BOM_A}"\n' >bom-expand
+assert "mise env | grep '^export BOM_A='" "export BOM_A=1"
+assert "mise env | grep '^export BOM_B='" "export BOM_B=1"

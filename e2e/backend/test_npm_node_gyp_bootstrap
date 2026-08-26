@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Regression for embedded-aube native builds (gemini-cli → node-pty).
+#
+# aube sets AUBE_NODE_GYP_EXE=$current_exe and lazy shims call:
+#   $AUBE_NODE_GYP_EXE __node-gyp-bootstrap <project-dir>
+# mise must intercept that before naked-run rewriting, or installs fail with
+# "no tasks defined". Registry test-tool alone is not enough coverage.
+
+# Trampoline must succeed and must not fall through to `mise run`.
+assert_contains "mise __node-gyp-bootstrap \"$PWD\"" "node-gyp"
+assert_not_contains "mise __node-gyp-bootstrap \"$PWD\"" "no tasks defined"
+assert_not_contains "mise __node-gyp-bootstrap \"$PWD\"" "Are you in a project directory"
+node_gyp_path="$(mise __node-gyp-bootstrap "$PWD")"
+assert_succeed "test -x \"$node_gyp_path\""
+
+# Going through the task runner is the bug path (naked-run rewrite).
+assert_fail "mise run __node-gyp-bootstrap \"$PWD\""
+
+# Full allow_builds install: node-pty's install script is `node-gyp rebuild`.
+cat >mise.toml <<'EOF'
+[tools]
+node = "20"
+"npm:node-pty" = { version = "1.0.0", allow_builds = ["node-pty"] }
+EOF
+
+assert_succeed "mise install"
+
+pkg_dir="$(find "$MISE_DATA_DIR/installs/npm-node-pty/1.0.0" -type d -name node-pty | head -1)"
+assert_succeed "test -n \"$pkg_dir\""
+assert_succeed "test -d \"$pkg_dir\""
+binding="$(find "$pkg_dir" -path '*/build/Release/*.node' | head -1)"
+assert_succeed "test -n \"$binding\""
+assert_succeed "test -f \"$binding\""

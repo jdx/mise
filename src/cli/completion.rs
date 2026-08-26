@@ -1,6 +1,54 @@
 use crate::cli::Cli;
 use eyre::Result;
+use std::ffi::OsString;
 use strum::EnumString;
+
+/// Answer mise's hidden completion protocol with its runtime completion metadata.
+///
+/// The tables compiled by usage-rs cover static commands, flags, choices, and path hints. mise
+/// also augments those tables at runtime with `run=` completers and task commands mounted from
+/// `mise tasks --usage`; those only exist in [`super::usage::completion_spec`]. Try that richer
+/// spec first, preserving its path fallback marker, then leave only unsupported requests to the
+/// compiled usage-rs tables.
+pub(crate) fn completion_request(argv: &[OsString]) -> Option<String> {
+    let request = usage_rs::complete::CompletionRequest::parse(argv)?;
+    if request.candidates_for.is_some() {
+        return Cli::completion_request(argv);
+    }
+
+    let spec = super::usage::completion_spec();
+    let answer = usage_cli::complete_answer(
+        &spec,
+        &request.split.words,
+        request.split.cword,
+        request.shell.as_str(),
+    );
+    match answer {
+        Ok(answer) => {
+            let candidates = if answer.files {
+                vec![]
+            } else {
+                answer
+                    .candidates
+                    .into_iter()
+                    .map(|(value, description)| {
+                        if description.is_empty() {
+                            usage_rs::complete::Candidate::new(value)
+                        } else {
+                            usage_rs::complete::Candidate::described(value, description)
+                        }
+                    })
+                    .collect()
+            };
+            let answer = usage_rs::complete::Completions {
+                candidates,
+                files: answer.files.then_some(usage_rs::complete::Files::Any),
+            };
+            Some(usage_rs::complete::render(&answer, request.shell))
+        }
+        _ => Cli::completion_request(argv),
+    }
+}
 
 /// Generate shell completions
 #[derive(Debug, usage_rs::Args)]

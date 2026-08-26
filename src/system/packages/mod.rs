@@ -209,7 +209,6 @@ pub(crate) trait SystemPackageManager: Send + Sync {
     }
 
     /// Whether this manager is supplied by a package plugin.
-    #[allow(dead_code)] // used by the stacked bootstrap orchestration change
     fn is_plugin(&self) -> bool {
         false
     }

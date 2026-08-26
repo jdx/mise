@@ -21,9 +21,13 @@ cat >"$MISE_CONFIG_DIR/miserc.toml" <<'EOF'
 ceiling_paths = ["{{ env.HOME }}"]
 fdsfads
 EOF
-assert_fail "mise config ls" "Invalid TOML in config file:"
+# The message no longer repeats the path: miette prints it above the snippet, and the two copies
+# used different forms of the same path -- raw in the message, `~`-shortened in the header. Counted
+# exactly, because a substring check cannot tell one naming from two.
+assert_fail "mise config ls" "Invalid TOML in config file"
 assert_fail "mise config ls" "~/.config/mise/miserc.toml:2:8"
 assert_fail "mise config ls" "key with no value, expected"
+assert "mise config ls 2>&1 | grep -oF 'miserc.toml' | wc -l | tr -d ' '" "1"
 rm -f "$MISE_CONFIG_DIR/miserc.toml"
 echo 'env = ["test"]' >.miserc.toml
 mkdir -p subdir

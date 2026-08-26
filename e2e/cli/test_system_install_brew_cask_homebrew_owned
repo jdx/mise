@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+
+if [[ "$(uname)" != "Darwin" && "$(uname)" != "Linux" ]]; then
+  exit 0
+fi
+
+HTTP_PORT_FILE="$TMPDIR/mise_brew_cask_http_port"
+CASK_FIXTURE_FILE="$TMPDIR/mise_brew_cask_fixture.json"
+
+write_cask_fixture() {
+  printf '{"token":"example-homebrew-owned","version":"%s","auto_updates":%s,"url":"https://example.invalid/cask.zip","sha256":"no_check","artifacts":[{"future_artifact":["unsupported"]}]}\n' "$1" "$2" >"$CASK_FIXTURE_FILE"
+}
+
+write_cask_fixture "current-2" false
+python3 -u - "$HTTP_PORT_FILE" "$CASK_FIXTURE_FILE" <<'PY' >/dev/null 2>&1 &
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+
+port_file = Path(sys.argv[1])
+fixture_file = Path(sys.argv[2])
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        return
+
+    def do_GET(self):
+        if self.path.split("?", 1)[0] != "/api/cask/example-homebrew-owned.json":
+            self.send_error(404)
+            return
+        body = fixture_file.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+server = HTTPServer(("127.0.0.1", 0), Handler)
+port_file_tmp = port_file.with_suffix(".tmp")
+port_file_tmp.write_text(str(server.server_address[1]))
+port_file_tmp.replace(port_file)
+server.serve_forever()
+PY
+HTTP_SERVER_PID=$!
+trap 'kill "$HTTP_SERVER_PID" 2>/dev/null || true' EXIT
+wait_for_file "$HTTP_PORT_FILE" "brew-cask fixture server port file" 30 "$HTTP_SERVER_PID"
+HTTP_PORT="$(cat "$HTTP_PORT_FILE")"
+MISE_URL_REPLACEMENTS="$(printf '{"https://formulae.brew.sh":"http://127.0.0.1:%s"}' "$HTTP_PORT")"
+export MISE_URL_REPLACEMENTS
+
+export MISE_SYSTEM_BREW_PREFIX="$PWD/brew-prefix"
+token="example-homebrew-owned"
+token_dir="$MISE_SYSTEM_BREW_PREFIX/Caskroom/$token"
+version_dir="$token_dir/current-2"
+binary="$version_dir/bin/example"
+binary_target="$MISE_SYSTEM_BREW_PREFIX/bin/example"
+app_target="$MISE_SYSTEM_BREW_PREFIX/Applications/External.app"
+
+mkdir -p \
+  "$token_dir/.metadata" \
+  "$version_dir/bin" \
+  "$MISE_SYSTEM_BREW_PREFIX/bin" \
+  "$MISE_SYSTEM_BREW_PREFIX/etc/bash_completion.d" \
+  "$MISE_SYSTEM_BREW_PREFIX/share/fish/vendor_completions.d" \
+  "$MISE_SYSTEM_BREW_PREFIX/share/zsh/site-functions" \
+  "$app_target/Contents"
+printf '{"owned_by":"homebrew"}\n' >"$token_dir/.metadata/INSTALL_RECEIPT.json"
+printf '#!/bin/sh\necho external\n' >"$binary"
+chmod +x "$binary"
+ln -s "$binary" "$binary_target"
+printf 'bash completion\n' >"$MISE_SYSTEM_BREW_PREFIX/etc/bash_completion.d/example"
+printf 'fish completion\n' >"$MISE_SYSTEM_BREW_PREFIX/share/fish/vendor_completions.d/example.fish"
+printf 'zsh completion\n' >"$MISE_SYSTEM_BREW_PREFIX/share/zsh/site-functions/_example"
+printf 'external app\n' >"$app_target/Contents/payload"
+ln -s "$app_target" "$version_dir/External.app"
+
+write_config() {
+  cat >mise.toml <<EOF
+[bootstrap.packages]
+"brew-cask:$token" = "latest"
+EOF
+}
+
+clear_config() {
+  cat >mise.toml <<EOF
+[bootstrap.packages]
+EOF
+}
+
+snapshot_prefix() {
+  tar -cf - -C "$MISE_SYSTEM_BREW_PREFIX" . | cksum
+}
+
+write_config
+before="$(snapshot_prefix)"
+
+assert_contains "mise bootstrap packages status" "installed"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
+assert_contains "mise bootstrap packages upgrade --yes 2>&1" "managed by Homebrew"
+assert_succeed "mise bootstrap packages use brew-cask:$token"
+clear_config
+assert_contains "mise bootstrap packages prune --manager brew-cask --yes 2>&1" "Homebrew owns this cask"
+
+after="$(snapshot_prefix)"
+assert_succeed "test '$before' = '$after'"
+assert_fail "test -e $version_dir/.mise-cask.toml"
+assert "cat $token_dir/.metadata/INSTALL_RECEIPT.json" '{"owned_by":"homebrew"}'
+
+cat >"$version_dir/.mise-cask.toml" <<EOF
+schema_version = 3
+version = "current-2"
+EOF
+write_config
+dual_before="$(snapshot_prefix)"
+
+assert_contains "mise bootstrap packages status" "installed"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
+assert_contains "mise bootstrap packages upgrade --yes 2>&1" "managed by Homebrew"
+clear_config
+assert_contains "mise bootstrap packages prune --manager brew-cask --yes 2>&1" "Homebrew owns this cask"
+
+dual_after="$(snapshot_prefix)"
+assert_succeed "test '$dual_before' = '$dual_after'"
+assert "cat $version_dir/.mise-cask.toml" $'schema_version = 3\nversion = "current-2"'
+assert "cat $token_dir/.metadata/INSTALL_RECEIPT.json" '{"owned_by":"homebrew"}'
+
+write_cask_fixture "future-3" true
+write_config
+auto_before="$(snapshot_prefix)"
+
+assert_contains "mise bootstrap packages status" "auto-updates"
+assert_contains "mise bootstrap packages apply --yes 2>&1" "already installed"
+assert_contains "mise bootstrap packages upgrade --yes 2>&1" "managed by Homebrew"
+
+auto_after="$(snapshot_prefix)"
+assert_succeed "test '$auto_before' = '$auto_after'"
+assert "cat $version_dir/.mise-cask.toml" $'schema_version = 3\nversion = "current-2"'
+assert "cat $token_dir/.metadata/INSTALL_RECEIPT.json" '{"owned_by":"homebrew"}'
+
+mkdir "$token_dir/stale-1"
+malformed_before="$(snapshot_prefix)"
+
+assert_fail_contains "mise bootstrap packages status 2>&1" "multiple Caskroom versions"
+assert_fail_contains "mise bootstrap packages upgrade --yes 2>&1" "multiple Caskroom versions"
+
+malformed_after="$(snapshot_prefix)"
+assert_succeed "test '$malformed_before' = '$malformed_after'"
+assert "cat $version_dir/.mise-cask.toml" $'schema_version = 3\nversion = "current-2"'
+assert "cat $token_dir/.metadata/INSTALL_RECEIPT.json" '{"owned_by":"homebrew"}'

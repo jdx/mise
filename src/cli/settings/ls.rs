@@ -107,8 +107,7 @@ impl SettingsLs {
             self.print_toml(rows)?;
         } else {
             let mut table = Table::new(rows);
-            table::default_style(&mut table, false);
-            miseprintln!("{}", table.to_string());
+            table::print(&mut table, false)?;
         }
         Ok(())
     }

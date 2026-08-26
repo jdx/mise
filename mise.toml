@@ -6,6 +6,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
+"github:jdx/mr-boxington" = "latest"
 # Pinned rather than "latest" because tak is the measuring instrument: an
 # upgrade that changes how it samples would land in the series as a step change
 # in mise's numbers, indistinguishable from a real regression. Bump
@@ -30,7 +31,7 @@ pkl = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
-usage = "6.1.0"
+usage = "6.4.1"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"
@@ -50,8 +51,9 @@ includes = ["tasks.toml", "xtasks"]
 dir = "{{config_root}}"
 # MISE_OFFLINE keeps `ls`, `env` and `hook-env` off the network. Without it they
 # log HTTP warnings and their instruction counts move with whatever the registry
-# happened to answer.
-env = { MISE_OFFLINE = "1" }
+# happened to answer. Ignoring the repository config keeps its development tools
+# out of the fixture so editing this file does not change a benchmark's input.
+env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
 run = ["cargo build --release", "tak run"]
 
 # Same measurement, appended to refs/notes/tak for this commit. Run by the
@@ -59,7 +61,7 @@ run = ["cargo build --release", "tak run"]
 # locally — nothing leaves the machine until `tak push`.
 [tasks."perf:record"]
 dir = "{{config_root}}"
-env = { MISE_OFFLINE = "1" }
+env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
 run = ["cargo build --release", "tak run --record"]
 
 # End-to-end task artifact cache phases. The harness generates an isolated

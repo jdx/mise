@@ -37,6 +37,7 @@ pub(crate) use hook_env::HookReason;
 mod command_effects;
 mod deps;
 pub(crate) mod edit;
+mod editor;
 mod implode;
 mod install;
 mod install_into;
@@ -463,15 +464,22 @@ fn get_all_run_value_taking_short_flags(cmd: &usage_rs::Command<'_>) -> Vec<(Str
 /// Prefix used to escape flags that should be passed to tasks, not mise
 const TASK_ARG_ESCAPE_PREFIX: &str = "\x00MISE_TASK_ARG\x00";
 
+/// One task-side argument, with a leading flag hidden from the parser.
+///
+/// A lone `-` is the conventional stdin placeholder rather than a flag, so it passes through. That
+/// exception was written out at each of the three places that needed this rule; this is the only
+/// copy of it now.
+fn escape_flag_arg(arg: &str) -> String {
+    if arg.starts_with('-') && arg != "-" {
+        format!("{TASK_ARG_ESCAPE_PREFIX}{arg}")
+    } else {
+        arg.to_string()
+    }
+}
+
 fn escape_args_after_separator(args: &[String], separator_idx: usize) -> Vec<String> {
     let mut result = args[..=separator_idx].to_vec();
-    for arg in &args[separator_idx + 1..] {
-        if arg.starts_with('-') && arg != "-" {
-            result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
-        } else {
-            result.push(arg.clone());
-        }
-    }
+    result.extend(args[separator_idx + 1..].iter().map(|a| escape_flag_arg(a)));
     result
 }
 
@@ -619,14 +627,10 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
         // First protect task-side flags before the separator (`run TASK -q -- ...`),
         // then preserve the existing escaping for its tail.
         let mut result = escape_task_args(cmd, &args[..separator_idx]);
-        result.push("--".to_string());
-        for arg in &args[separator_idx + 1..] {
-            if arg.starts_with('-') && arg != "-" {
-                result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
-            } else {
-                result.push(arg.clone());
-            }
-        }
+        // `separator_idx` was found by matching `"--"`, so the slice starting there begins with it:
+        // `escape_args_after_separator(.., 0)` emits that element and then escapes the tail, which
+        // is what this branch used to build by hand.
+        result.extend(escape_args_after_separator(&args[separator_idx..], 0));
         return result;
     }
 
@@ -699,13 +703,8 @@ fn escape_task_args(cmd: &usage_rs::Command<'_>, args: &[String]) -> Vec<String>
                 in_task_args = true;
             }
         } else {
-            // In task args - escape flags so clap doesn't parse them
-            if arg.starts_with('-') && arg != "-" {
-                // Escape the flag
-                result.push(format!("{}{}", TASK_ARG_ESCAPE_PREFIX, arg));
-            } else {
-                result.push(arg.clone());
-            }
+            // In task args - escape flags so the parser doesn't take them
+            result.push(escape_flag_arg(arg));
         }
 
         i += 1;
@@ -774,7 +773,7 @@ impl Cli {
         // Handle the hidden completion protocol here, before config or tools load.
         let completion_argv: Vec<std::ffi::OsString> =
             args.iter().skip(1).map(std::ffi::OsString::from).collect();
-        if let Some(answer) = Cli::completion_request(&completion_argv) {
+        if let Some(answer) = completion::completion_request(&completion_argv) {
             print!("{answer}");
             return Ok(());
         }
@@ -790,7 +789,7 @@ impl Cli {
         // This avoids expensive backend::load_tools() and config loading
         if hook_env_module::should_exit_early_fast() {
             measure!("logger", { logger::init() });
-            Settings::flush_deprecated_warnings_for_fast_exit();
+            Settings::flush_pending_warnings_before_exit();
             return Ok(());
         }
         measure!("logger", { logger::init() });
@@ -829,7 +828,12 @@ impl Cli {
         // Validate --cd path BEFORE Settings processes it and changes the directory
         validate_cd_path(&cli.cd)?;
         measure!("add_cli_matches", { Settings::add_cli_matches(&cli) });
-        let _ = measure!("settings", { Settings::try_get() });
+        // Propagated, not discarded: this is where `--cd` is actually applied, and a directory
+        // that passed the checks above can still refuse the `chdir` — no execute permission, or a
+        // path past the length `SetCurrentDirectory` accepts. Dropping the error here does not
+        // avoid it, it only defers it: `BASE_SETTINGS` stays empty, so the next `Settings::get()`
+        // repeats the same failure and unwraps it.
+        measure!("settings", { Settings::try_get() })?;
         let auto_update_command_eligible = !print_version
             && cli
                 .command
@@ -1356,6 +1360,21 @@ mod tests {
     }
 
     #[test]
+    fn test_escape_flag_arg_leaves_a_lone_hyphen_alone() {
+        // The exception the three copies of this rule each carried: `-` on its own is the
+        // conventional stdin placeholder, not a flag, and a task that reads stdin needs it to
+        // arrive unchanged. Now that the rule has one home, it is asserted there.
+        assert_eq!(escape_flag_arg("-"), "-");
+        assert_eq!(escape_flag_arg("plain"), "plain");
+        assert!(escape_flag_arg("--help").starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert!(escape_flag_arg("-q").starts_with(TASK_ARG_ESCAPE_PREFIX));
+        assert_eq!(
+            unescape_task_args(&[escape_flag_arg("--help")]),
+            vec!["--help".to_string()]
+        );
+    }
+
+    #[test]
     fn test_escape_task_args_preserves_task_separator_tail() {
         let cmd = Cli::command();
         let args = vec![
@@ -1492,6 +1511,31 @@ mod tests {
             panic!("expected run command");
         };
         assert_eq!(run.task.as_deref(), Some("atask"));
+    }
+
+    #[test]
+    fn test_aube_node_gyp_bootstrap_would_become_naked_run_without_early_intercept() {
+        // Embedded aube re-execs the host as `__node-gyp-bootstrap`. That name is
+        // not a mise subcommand, so the naked-run rewrite injects `run` — which is
+        // exactly the gemini-cli / node-pty failure mode. `main` must intercept
+        // this argv *before* preprocess_args_for_naked_run runs.
+        let cmd = Cli::command();
+        let args = [
+            "mise".to_string(),
+            "__node-gyp-bootstrap".to_string(),
+            "/tmp/project".to_string(),
+        ];
+        let processed = preprocess_args_for_naked_run(cmd, &args);
+        assert_eq!(
+            processed,
+            [
+                "mise".to_string(),
+                "run".to_string(),
+                "__node-gyp-bootstrap".to_string(),
+                "/tmp/project".to_string(),
+            ],
+            "if this no longer rewrites to `run`, update main's early aube dispatch"
+        );
     }
 
     #[test]

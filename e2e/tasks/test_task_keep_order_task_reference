@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+# Regression test for https://github.com/jdx/mise/discussions/12238
+#
+# keep-order holds a task's output until that task is eligible to stream. A task
+# started from a task reference is not registered up front, so its first line is
+# always held — and the held lines used to be dropped rather than printed. A
+# task emitting a single line never reaches a second line to become active, so
+# it lost everything.
+#
+# --jobs 1 keeps that part deterministic.
+#
+# Block order across tasks is asserted further down, for the tasks named in the
+# run entry and for the ones their own `depends` bring along. Those cases need
+# real parallelism -- with --jobs 1 the semaphore serializes the tasks and the
+# ordering defect cannot reproduce.
+#
+# Not covered: a parent whose `run` interleaves scripts and task references.
+# keep-order is one contiguous block per task and cannot express "parent
+# output, children blocks, more parent output".
+
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["one", "two"] }
+
+[tasks.one]
+run = 'echo ONLY-LINE-ONE'
+
+[tasks.two]
+run = 'echo ONLY-LINE-TWO'
+TOML
+
+# Every line survives. Before the fix this printed nothing at all.
+out="$(mise run --quiet --jobs 1 --output keep-order launch 2>&1)"
+assert_contains "echo \"$out\"" "[one] ONLY-LINE-ONE"
+assert_contains "echo \"$out\"" "[two] ONLY-LINE-TWO"
+
+# A task's own lines stay in order. Flushing the held lines when the task
+# finishes instead of when it becomes active would print 2, 3, then 1.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["three"] }
+
+[tasks.three]
+run = '''
+echo L1
+echo L2
+echo L3
+'''
+TOML
+
+out="$(mise run --quiet --jobs 1 --output keep-order launch 2>&1)"
+assert "printf '%s\n' \"$out\"" "[three] L1
+[three] L2
+[three] L3"
+
+# Blocks come out in the order the tasks were written, not the order they
+# happened to produce output. `fast` finishes first and used to print first.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["slow", "fast"] }
+
+[tasks.slow]
+run = 'sleep 1; echo SLOW'
+
+[tasks.fast]
+run = 'echo FAST'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order launch 2>&1)"
+assert "printf '%s\n' \"$out\"" "[slow] SLOW
+[fast] FAST"
+
+# Injected tasks take the position of the task that injected them, so they come
+# before a task named after it on the command line -- even though that task
+# finishes first. `:::` separates the two tasks; without it `other` would be an
+# argument to `launch` rather than a second task.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["slow", "fast"] }
+
+[tasks.slow]
+run = 'sleep 1; echo SLOW'
+
+[tasks.fast]
+run = 'echo FAST'
+
+[tasks.other]
+run = 'echo OTHER'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order launch ::: other 2>&1)"
+assert "printf '%s\n' \"$out\"" "[slow] SLOW
+[fast] FAST
+[other] OTHER"
+
+# Nesting: a task injected by a task reference keeps its own slot, so what it
+# injects in turn anchors there rather than at the end.
+cat >mise.toml <<'TOML'
+[tasks.outer]
+run = { tasks = ["inner", "last"] }
+
+[tasks.inner]
+run = { tasks = ["a", "b"] }
+
+[tasks.a]
+run = 'sleep 1; echo A'
+
+[tasks.b]
+run = 'echo B'
+
+[tasks.last]
+run = 'echo LAST'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order outer 2>&1)"
+assert "printf '%s\n' \"$out\"" "[a] A
+[b] B
+[last] LAST"
+
+# A task named in a run entry brings its own `depends` along, and those got no
+# slot: their blocks landed in whatever order they finished in. `dep3` takes the
+# longest and so printed last, but it belongs first -- `mise run r1 ::: r2 :::
+# r3` puts it there, and reaching the same tasks through `launch` must not
+# differ. The sleeps are inverted deliberately, so the old behaviour is wrong
+# every time rather than most of the time.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["r1", "r2", "r3"] }
+
+[tasks.r1]
+depends = ["dep1"]
+run = 'echo R1'
+
+[tasks.r2]
+depends = ["dep2"]
+run = 'echo R2'
+
+[tasks.r3]
+depends = ["dep3"]
+run = 'echo R3'
+
+[tasks.dep1]
+run = 'echo DEP1'
+
+[tasks.dep2]
+run = 'sleep 0.5; echo DEP2'
+
+[tasks.dep3]
+run = 'sleep 1; echo DEP3'
+TOML
+
+out="$(MISE_JOBS=4 mise run --quiet --output keep-order launch 2>&1)"
+assert "printf '%s\n' \"$out\"" "[r1] R1
+[r2] R2
+[r3] R3
+[dep3] DEP3
+[dep2] DEP2
+[dep1] DEP1"
+
+# The invariant behind that literal: the two forms run the same task set, so
+# they must produce the same blocks. `launch` prints nothing of its own, so the
+# outputs are comparable as-is. Asserted separately from the order above, which
+# is only today's answer to this.
+injected="$(MISE_JOBS=4 mise run --quiet --output keep-order launch 2>&1)"
+toplevel="$(MISE_JOBS=4 mise run --quiet --output keep-order r1 ::: r2 ::: r3 2>&1)"
+[[ $injected == "$toplevel" ]] || fail "injected through a run entry:
+$injected
+
+named directly:
+$toplevel"
+
+# And it has to hold every time. Without the sleeps the dependencies finish in
+# whatever order the scheduler happened to start them in, which is the shape
+# that made this report intermittent -- 20 runs of it produced four different
+# orders.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["r1", "r2", "r3"] }
+
+[tasks.r1]
+depends = ["dep1"]
+run = 'echo R1'
+
+[tasks.r2]
+depends = ["dep2"]
+run = 'echo R2'
+
+[tasks.r3]
+depends = ["dep3"]
+run = 'echo R3'
+
+[tasks.dep1]
+run = 'echo DEP1'
+
+[tasks.dep2]
+run = 'echo DEP2'
+
+[tasks.dep3]
+run = 'echo DEP3'
+TOML
+
+first=""
+for run_n in 1 2 3 4 5; do
+  out="$(MISE_JOBS=4 mise run --quiet --output keep-order launch 2>&1)"
+  if [[ -z $first ]]; then
+    first="$out"
+  elif [[ $out != "$first" ]]; then
+    fail "run $run_n reordered the blocks:
+$out
+
+the first run was:
+$first"
+  fi
+done
+
+# `depends_post` arrives through the same path and was equally unslotted.
+# Compared against the top-level form rather than a literal: where a post task's
+# block belongs relative to the tasks that triggered it is a question this change
+# deliberately leaves alone, and equality is the property that does not depend on
+# the answer.
+cat >mise.toml <<'TOML'
+[tasks.launch]
+run = { tasks = ["p1", "p2"] }
+
+[tasks.p1]
+depends_post = ["post1"]
+run = 'echo P1'
+
+[tasks.p2]
+depends_post = ["post2"]
+run = 'echo P2'
+
+[tasks.post1]
+run = 'echo POST1'
+
+[tasks.post2]
+run = 'sleep 0.5; echo POST2'
+TOML
+
+injected="$(MISE_JOBS=4 mise run --quiet --output keep-order launch 2>&1)"
+toplevel="$(MISE_JOBS=4 mise run --quiet --output keep-order p1 ::: p2 2>&1)"
+[[ $injected == "$toplevel" ]] || fail "depends_post, injected through a run entry:
+$injected
+
+named directly:
+$toplevel"

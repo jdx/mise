@@ -12,6 +12,7 @@ use crate::task::task_cache::{
     CommandInput, TaskCacheContext, TaskCacheMissReason, TaskCacheRestore,
 };
 use crate::task::task_context_builder::TaskContextBuilder;
+use crate::task::task_helpers::task_gets_keep_order_slot;
 use crate::task::task_list::split_task_spec;
 use crate::task::task_output::{TaskOutput, trunc};
 use crate::task::task_output_handler::OutputHandler;
@@ -54,6 +55,7 @@ use xx::file;
 /// Interactive tasks acquire a write lock (exclusive), non-interactive tasks acquire a read lock (shared).
 static TASK_RUNTIME_LOCK: LazyLock<RwLock<()>> = LazyLock::new(|| RwLock::new(()));
 type TaskOutputCapture = Arc<StdMutex<Vec<TaskCacheOutput>>>;
+
 const COMMAND_INPUT_TIMEOUT: Duration = Duration::from_secs(30);
 const COMMAND_INPUT_MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
@@ -119,6 +121,9 @@ fn task_env_path(path: &Path) -> String {
 #[derive(Clone, Copy)]
 struct TaskInjectionContext<'a> {
     config: &'a Arc<Config>,
+    /// The task whose run entry is injecting these tasks. keep-order anchors the
+    /// injected blocks at this task's position.
+    parent: &'a Task,
     task_env: &'a [(String, String)],
     sched_tx: &'a Arc<mpsc::UnboundedSender<SchedMsg>>,
     completion_state: &'a TaskCompletionState,
@@ -946,6 +951,7 @@ impl TaskExecutor {
                             override_env_ref,
                             TaskInjectionContext {
                                 config,
+                                parent: task,
                                 task_env,
                                 sched_tx: &sched_tx,
                                 completion_state: &completion_state,
@@ -973,6 +979,7 @@ impl TaskExecutor {
                             None,
                             TaskInjectionContext {
                                 config,
+                                parent: task,
                                 task_env,
                                 sched_tx: &sched_tx,
                                 completion_state: &completion_state,
@@ -999,6 +1006,7 @@ impl TaskExecutor {
     ) -> Result<TaskCompletionState> {
         let TaskInjectionContext {
             config,
+            parent,
             task_env,
             sched_tx,
             completion_state,
@@ -1065,6 +1073,46 @@ impl TaskExecutor {
             }
         }
         let sub_deps = Deps::new_pruned(config, to_run, completion_state).await?;
+        // Give these tasks their keep-order slots now, while the order they were
+        // written in is still known and before any of them can produce a line.
+        // Reaching this from `&self` is fine: the state is behind the shared
+        // `Arc<Mutex<..>>`, and the guard is a temporary in a statement with no
+        // await in it, so it never crosses a suspension point.
+        {
+            // The whole sub-graph, not just the names in the run entry. A
+            // `depends` of one of those names is scheduled here too, and without
+            // a slot its block landed wherever its first line happened to arrive
+            // — so the same tasks came out in a different order from one run to
+            // the next. Creation order is what the identical `mise run a ::: b`
+            // would have given them, since that builds its graph the same way
+            // from the same list.
+            //
+            // A task the sub-graph pruned as already complete is absent from
+            // that order by construction: it never runs, so nothing would ever
+            // call `on_task_finished` and its empty slot would sit at the front
+            // for the rest of the run.
+            let children: Vec<Task> = sub_deps
+                .all_in_creation_order()
+                .into_iter()
+                .filter(|t| {
+                    // Same reason as the pruned tasks, for one whose own
+                    // `output` opts out of keep-order: `on_task_finished` is
+                    // called for keep-order tasks only (see cli/run.rs), so its
+                    // slot would never be retired. And the rule the up-front
+                    // registration applies, so a task that only aggregates
+                    // `depends` does not take a slot ahead of what it waits on.
+                    self.output(Some(*t)) == TaskOutput::KeepOrder && task_gets_keep_order_slot(t)
+                })
+                .cloned()
+                .collect();
+            if !children.is_empty() {
+                self.output_handler
+                    .keep_order_state
+                    .lock()
+                    .unwrap()
+                    .insert_tasks_before(parent, &children);
+            }
+        }
         let sub_deps = Arc::new(Mutex::new(sub_deps));
 
         // Pump subgraph into scheduler and signal completion via oneshot when done
@@ -1142,10 +1190,33 @@ impl TaskExecutor {
                 // Clean up the dependency graph to ensure completion
                 let mut deps = sub_deps.lock().await;
                 let tasks_to_remove: Vec<Task> = deps.all().cloned().collect();
+                // These tasks are abandoned here, without ever reaching the
+                // scheduler, so nothing else retires the keep-order slots they
+                // were given -- and a slot left behind is an anchor holding the
+                // front of the buffer map.
+                //
+                // Only the ones that never started. A task that did start either
+                // retires its own slot when it ends or is still producing
+                // output, and this path returns after waiting just 100ms for the
+                // subgraph to drain, so one may well still be alive. Retiring a
+                // live task's slot would strand every line it prints afterwards
+                // at the tail of the map.
+                let never_started: Vec<Task> = tasks_to_remove
+                    .iter()
+                    .filter(|t| !deps.has_executed(t))
+                    .cloned()
+                    .collect();
                 for task in tasks_to_remove {
                     deps.remove(&task);
                 }
                 drop(deps);
+                for task in &never_started {
+                    self.output_handler
+                        .keep_order_state
+                        .lock()
+                        .unwrap()
+                        .retire_unused_slot(task);
+                }
                 // Give a short time for the spawned task to finish cleanly
                 let _ = tokio::time::timeout(Duration::from_millis(100), done_rx).await;
                 return Err(eyre!("task sequence aborted due to failure"));

@@ -1466,6 +1466,7 @@ impl Lockfile {
 /// - `.config/mise.toml` -> `.config/mise.lock`
 /// - `.mise/config.toml` -> `.mise/mise.lock`
 /// - `.mise/conf.d/foo.toml` -> `.mise/mise.lock` (conf.d files share parent's lockfile)
+/// - `mise/conf.d/foo.toml` -> `mise/mise.lock`
 pub(crate) fn lockfile_path_for_config(
     config_path: &Path,
     monorepo_root: Option<&Path>,
@@ -1853,16 +1854,17 @@ fn merge_lockfile_preserving_root(root: &mut Lockfile, other: Lockfile) {
     }
 }
 
-pub(crate) fn update_lockfiles(
-    config: &Config,
+/// Groups the resolved toolset plus this session's newly installed versions by
+/// the config source that requested each of them.
+///
+/// Each new version must be attributed to its own request's source: one
+/// command can install versions of the same backend requested by different
+/// config files, and grouping them by backend attributed the whole group to
+/// the first request's source, writing entries into the wrong lockfile.
+fn tools_by_source_for_update(
     ts: &Toolset,
     new_versions: &[ToolVersion],
-    mode: LockfileUpdateMode,
-) -> Result<bool> {
-    if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
-        return Ok(false);
-    }
-
+) -> HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>> {
     // Collect tools by source (config file)
     let mut tools_by_source: HashMap<ToolSource, HashMap<String, Vec<ToolVersion>>> =
         HashMap::new();
@@ -1877,18 +1879,32 @@ pub(crate) fn update_lockfiles(
         }
     }
 
-    // Add versions added within this session (from `mise use` or `mise up`)
-    for (backend, group) in &new_versions.iter().chunk_by(|tv| tv.ba()) {
-        let tvs = group.cloned().collect_vec();
-        let source = tvs[0].request.source().clone();
-        let source_tools = tools_by_source.entry(source.clone()).or_default();
-
-        let existing_versions = source_tools.entry(backend.short.to_string()).or_default();
-        for new_tv in tvs {
-            existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
-            existing_versions.push(new_tv);
-        }
+    // Add versions added within this session (from `mise use` or `mise up`),
+    // replacing the resolved entry for the same request within that source.
+    for new_tv in new_versions {
+        let existing_versions = tools_by_source
+            .entry(new_tv.request.source().clone())
+            .or_default()
+            .entry(new_tv.ba().short.to_string())
+            .or_default();
+        existing_versions.retain(|tv| tv.request.version() != new_tv.request.version());
+        existing_versions.push(new_tv.clone());
     }
+
+    tools_by_source
+}
+
+pub(crate) fn update_lockfiles(
+    config: &Config,
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+    mode: LockfileUpdateMode,
+) -> Result<bool> {
+    if !Settings::get().lockfile_enabled() || (Settings::get().locked && !mode.allow_locked()) {
+        return Ok(false);
+    }
+
+    let tools_by_source = tools_by_source_for_update(ts, new_versions);
 
     // Group config files by target lockfile path
     let mut lockfile_configs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
@@ -4091,6 +4107,50 @@ mod tests {
         ToolVersion::new(request, version.to_string())
     }
 
+    fn basic_tv_from_source(
+        backend: &str,
+        request: &str,
+        version: &str,
+        source: ToolSource,
+    ) -> ToolVersion {
+        let prototype = basic_tv(backend, request);
+        let request =
+            crate::toolset::ToolRequest::new(prototype.request.ba().clone(), request, source)
+                .unwrap();
+        ToolVersion::new(request, version.to_string())
+    }
+
+    #[test]
+    fn test_tools_by_source_for_update_attributes_each_new_version_to_its_source() {
+        let source_a = ToolSource::MiseToml(PathBuf::from("/repo/packages/a/mise.toml"));
+        let source_b = ToolSource::MiseToml(PathBuf::from("/repo/packages/b/mise.toml"));
+        let new_versions = vec![
+            basic_tv_from_source("aqua:example/tool", "stable", "release-a", source_a.clone()),
+            basic_tv_from_source("aqua:example/tool", "stable", "release-b", source_b.clone()),
+        ];
+
+        let tools_by_source = tools_by_source_for_update(&Toolset::default(), &new_versions);
+
+        assert_eq!(tools_by_source[&source_a]["tool"].len(), 1);
+        assert_eq!(tools_by_source[&source_a]["tool"][0].version, "release-a");
+        assert_eq!(tools_by_source[&source_b]["tool"].len(), 1);
+        assert_eq!(tools_by_source[&source_b]["tool"][0].version, "release-b");
+    }
+
+    #[test]
+    fn test_tools_by_source_for_update_last_duplicate_request_version_wins() {
+        let source = ToolSource::MiseToml(PathBuf::from("/repo/mise.toml"));
+        let new_versions = vec![
+            basic_tv_from_source("aqua:example/tool", "stable", "release-old", source.clone()),
+            basic_tv_from_source("aqua:example/tool", "stable", "release-new", source.clone()),
+        ];
+
+        let tools_by_source = tools_by_source_for_update(&Toolset::default(), &new_versions);
+
+        assert_eq!(tools_by_source[&source]["tool"].len(), 1);
+        assert_eq!(tools_by_source[&source]["tool"][0].version, "release-new");
+    }
+
     fn tool_with_conda_dep(
         version: &str,
         backend: &str,
@@ -4549,6 +4609,12 @@ options = { exe = "rg" }
         let (path, is_local) =
             lockfile_path_for_config(Path::new("/foo/bar/.config/mise/conf.d/foo.toml"), None);
         assert_eq!(path, PathBuf::from("/foo/bar/.config/mise/mise.lock"));
+        assert!(!is_local);
+
+        // Config in mise/conf.d directory
+        let (path, is_local) =
+            lockfile_path_for_config(Path::new("/foo/bar/mise/conf.d/foo.toml"), None);
+        assert_eq!(path, PathBuf::from("/foo/bar/mise/mise.lock"));
         assert!(!is_local);
     }
 

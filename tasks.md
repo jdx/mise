@@ -1,7 +1,7 @@
 ## `build`
 
-- **Usage**: `build`
-- **Aliases**: `b`
+- **Usage:** `build`
+- **Aliases:** `b`
 
 Build the project
 
@@ -9,13 +9,13 @@ Build the project
 
 - Depends: format, build, test
 
-- **Usage**: `ci`
+- **Usage:** `ci`
 
 Run all CI checks
 
 ## `clean`
 
-- **Usage**: `clean`
+- **Usage:** `clean`
 
 Clean build artifacts
 
@@ -23,7 +23,7 @@ Clean build artifacts
 
 - Depends: docs:setup
 
-- **Usage**: `docs`
+- **Usage:** `docs`
 
 Start the documentation development server
 
@@ -31,13 +31,13 @@ Start the documentation development server
 
 - Depends: docs:setup
 
-- **Usage**: `docs:build`
+- **Usage:** `docs:build`
 
 Build the documentation site
 
 ## `docs:demos`
 
-- **Usage**: `docs:demos`
+- **Usage:** `docs:demos`
 
 Create recordings with vhs
 
@@ -45,7 +45,7 @@ Create recordings with vhs
 
 - Depends: docs:build
 
-- **Usage**: `docs:preview`
+- **Usage:** `docs:preview`
 
 Preview the documentation site
 
@@ -53,31 +53,31 @@ Preview the documentation site
 
 - Depends: docs:build
 
-- **Usage**: `docs:release`
+- **Usage:** `docs:release`
 
 Release documentation site to production or remote
 
 ## `docs:setup`
 
-- **Usage**: `docs:setup`
+- **Usage:** `docs:setup`
 
 Install documentation dependencies
 
 ## `fetch-gpg-keys`
 
-- **Usage**: `fetch-gpg-keys`
+- **Usage:** `fetch-gpg-keys`
 
 Fetch GPG keys for signing or verification
 
 ## `flamegraph`
 
-- **Usage**: `flamegraph`
+- **Usage:** `flamegraph`
 
 Generate a flamegraph for performance analysis
 
 ## `install-dev`
 
-- **Usage**: `install-dev`
+- **Usage:** `install-dev`
 
 Install the current project in debug mode
 
@@ -85,48 +85,48 @@ Install the current project in debug mode
 
 - Depends: lint:*
 
-- **Usage**: `lint`
+- **Usage:** `lint`
 
 Run all lint checks
 
 ## `lint-fix`
 
-- **Usage**: `lint-fix`
-- **Aliases**: `format`, `fix`
+- **Usage:** `lint-fix`
+- **Aliases:** `format`, `fix`
 
 Automatically fix lint issues
 
 ## `lint:hk`
 
-- **Usage**: `lint:hk`
+- **Usage:** `lint:hk`
 
 Lint HK files
 
 ## `perf`
 
-- **Usage**: `perf`
+- **Usage:** `perf`
 
 ## `perf:cache-shim`
 
-- **Usage**: `perf:cache-shim`
+- **Usage:** `perf:cache-shim`
 
 ## `perf:record`
 
-- **Usage**: `perf:record`
+- **Usage:** `perf:record`
 
 ## `perf:task-cache`
 
-- **Usage**: `perf:task-cache`
+- **Usage:** `perf:task-cache`
 
 ## `pre-commit`
 
-- **Usage**: `pre-commit`
+- **Usage:** `pre-commit`
 
 Run pre-commit hooks
 
 ## `release-plz`
 
-- **Usage**: `release-plz`
+- **Usage:** `release-plz`
 
 Release with release-plz
 
@@ -134,7 +134,7 @@ Release with release-plz
 
 - Depends: render:*
 
-- **Usage**: `render`
+- **Usage:** `render`
 
 Run all render tasks
 
@@ -142,7 +142,7 @@ Run all render tasks
 
 - Depends: build
 
-- **Usage**: `render:completions`
+- **Usage:** `render:completions`
 
 Generate shell completions
 
@@ -150,7 +150,7 @@ Generate shell completions
 
 - Depends: build
 
-- **Usage**: `render:help`
+- **Usage:** `render:help`
 
 Render help documentation
 
@@ -158,7 +158,7 @@ Render help documentation
 
 - Depends: render:usage, render:help
 
-- **Usage**: `render:llms`
+- **Usage:** `render:llms`
 
 Generate docs/public/llms.txt (docs index for AI agents)
 
@@ -166,7 +166,7 @@ Generate docs/public/llms.txt (docs index for AI agents)
 
 - Depends: render:usage
 
-- **Usage**: `render:mangen`
+- **Usage:** `render:mangen`
 
 Generate man pages
 
@@ -174,7 +174,7 @@ Generate man pages
 
 - Depends: docs:setup
 
-- **Usage**: `render:schema`
+- **Usage:** `render:schema`
 
 Render JSON schema
 
@@ -182,26 +182,26 @@ Render JSON schema
 
 - Depends: build
 
-- **Usage**: `render:usage`
+- **Usage:** `render:usage`
 
 Generate usage documentation
 
 ## `show-output-on-failure`
 
-- **Usage**: `show-output-on-failure`
+- **Usage:** `show-output-on-failure`
 
 Show output on failure for documentation generation
 
 ## `snapshots`
 
-- **Usage**: `snapshots`
+- **Usage:** `snapshots`
 
 update test snapshots
 
 ## `test`
 
-- **Usage**: `test`
-- **Aliases**: `t`
+- **Usage:** `test`
+- **Aliases:** `t`
 
 run all tests
 
@@ -210,33 +210,24 @@ run all tests
 Retry failed test-tools with grace period for recent upstream releases
 
 
-- **Usage**: `test-tool-retry [--grace-period] [--check-only] <tools>…`
+- **Usage:** `test-tool-retry [--grace-period] [--check-only] <tools>…`
 
 ### Arguments
-
-#### `<tools>…`
-
-Failed tools to retry
+- **`<tools>…`** — Failed tools to retry
 
 ### Flags
-
-#### `--grace-period`
-
-Ignore failures from tools whose upstream released &lt;7 days ago
-
-#### `--check-only`
-
-Skip retrying tools, only check grace period (use with --grace-period)
+- **`--grace-period`** — Ignore failures from tools whose upstream released &lt;7 days ago
+- **`--check-only`** — Skip retrying tools, only check grace period (use with --grace-period)
 
 ## `test:build-perf-workspace`
 
-- **Usage**: `test:build-perf-workspace`
+- **Usage:** `test:build-perf-workspace`
 
 task description
 
 ## `test:coverage`
 
-- **Usage**: `test:coverage`
+- **Usage:** `test:coverage`
 
 Run all tests with coverage report
 
@@ -244,8 +235,8 @@ Run all tests with coverage report
 
 - Depends: build
 
-- **Usage**: `test:e2e`
-- **Aliases**: `e`, `e2e`
+- **Usage:** `test:e2e`
+- **Aliases:** `e`, `e2e`
 
 Run end-to-end tests
 
@@ -253,18 +244,18 @@ Run end-to-end tests
 
 - Depends: test:build-perf-workspace
 
-- **Usage**: `test:perf`
+- **Usage:** `test:perf`
 
 Run performance tests
 
 ## `test:shuffle`
 
-- **Usage**: `test:shuffle`
+- **Usage:** `test:shuffle`
 
 Run tests with shuffling enabled
 
 ## `test:unit`
 
-- **Usage**: `test:unit`
+- **Usage:** `test:unit`
 
 run unit tests
