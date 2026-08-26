@@ -5,6 +5,7 @@ inputs:
   backend:
     description: Explicit backend for structurally trusted or untrusted callers
     default: auto
+
 runs:
   using: composite
   steps:

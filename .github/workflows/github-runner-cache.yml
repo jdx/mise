@@ -36,6 +36,8 @@ jobs:
         run: mbx build --all-features --ignore-rust-version
       - name: Warm the Windows cache
         if: runner.os == 'Windows'
+        env:
+          MBX_TARGET_VIEWS: "0"
         run: |
           mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
           mbx build -p mise-shim
