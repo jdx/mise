@@ -307,6 +307,17 @@ struct CaskReceipt {
     prune_blocker: Option<String>,
 }
 
+impl CaskReceipt {
+    /// Targets owned through the standard artifact stanzas.
+    fn standard_targets(&self) -> impl Iterator<Item = &PathBuf> {
+        self.apps
+            .iter()
+            .chain(&self.binaries)
+            .chain(&self.fonts)
+            .chain(&self.completions)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct CaskTargetRecord {
     path: PathBuf,
@@ -6669,13 +6680,7 @@ fn remove_obsolete_flight_directories(
 }
 
 fn receipt_flight_symlink_targets(receipt: &CaskReceipt) -> Result<Vec<PathBuf>> {
-    let standard_targets = receipt
-        .apps
-        .iter()
-        .chain(&receipt.binaries)
-        .chain(&receipt.fonts)
-        .chain(&receipt.completions)
-        .collect::<BTreeSet<_>>();
+    let standard_targets = receipt.standard_targets().collect::<BTreeSet<_>>();
     let mut targets = Vec::new();
     for record in &receipt.targets {
         if record.fingerprint.kind == CaskTargetKind::Symlink
@@ -6758,13 +6763,7 @@ fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<Str
 
             // Legacy receipts remain usable only from the historical facts they
             // actually contain. Never fill omitted fields from today's API.
-            let targets_exist = receipt
-                .apps
-                .iter()
-                .chain(&receipt.binaries)
-                .chain(&receipt.fonts)
-                .chain(&receipt.completions)
-                .all(|target| target.exists());
+            let targets_exist = receipt.standard_targets().all(|target| target.exists());
             let pkgs_installed = pkg_ids_installed(&receipt.pkg_ids)?;
             Ok((targets_exist && pkgs_installed).then_some(receipt.version))
         }
@@ -7453,14 +7452,7 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
         .iter()
         .map(|record| (record.path.clone(), record))
         .collect::<BTreeMap<_, _>>();
-    let expected = receipt
-        .apps
-        .iter()
-        .chain(&receipt.binaries)
-        .chain(&receipt.fonts)
-        .chain(&receipt.completions)
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let expected = receipt.standard_targets().cloned().collect::<BTreeSet<_>>();
     if expected.is_empty()
         || records.len() != receipt.targets.len()
         || records.len() != expected.len()
