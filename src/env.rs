@@ -1,11 +1,11 @@
 use crate::Result;
 use crate::config::miserc;
-use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvDiffPatches, EnvMap};
+use crate::env_diff::{EnvDiff, EnvMap};
 use crate::file::replace_path;
 use crate::shell::ShellType;
 use crate::{cli::args::ToolArg, file::display_path};
 use eyre::Context;
-use indexmap::IndexSet;
+use indexmap::{IndexMap, IndexSet};
 use itertools::Itertools;
 use log::LevelFilter;
 pub(crate) use std::env::*;
@@ -80,8 +80,27 @@ pub(crate) static HOME: Lazy<PathBuf> = Lazy::new(|| {
         .unwrap_or_else(|| PathBuf::from("/"))
 });
 
-pub(crate) static EDITOR: Lazy<String> =
-    Lazy::new(|| var("VISUAL").unwrap_or_else(|_| var("EDITOR").unwrap_or_else(|_| "nano".into())));
+pub(crate) static EDITOR: Lazy<String> = Lazy::new(|| {
+    var("VISUAL")
+        .or_else(|_| var("EDITOR"))
+        .unwrap_or_else(|_| DEFAULT_EDITOR.to_string())
+});
+
+/// The editor to fall back on when neither `VISUAL` nor `EDITOR` is set.
+///
+/// `nano` everywhere but Windows, which ships none of it — not `nano`, `vi`, `vim`, or anything
+/// else POSIX — so the shared default left `mise tasks edit` there with nothing to run at all.
+/// `notepad` is the one editor Windows can be relied on to have.
+///
+/// It also has to *wait*, because `mise dotfiles edit --apply` converges the target as soon as the
+/// editor returns. Measured on Windows 11 26200, where `System32\notepad.exe` no longer exists and
+/// `notepad` resolves to a zero-byte app-execution alias under `WindowsApps`: spawned the way
+/// `Command::status` does it, the parent was still waiting five seconds later, so the alias hands
+/// back the real process rather than detaching from it.
+#[cfg(windows)]
+const DEFAULT_EDITOR: &str = "notepad";
+#[cfg(not(windows))]
+const DEFAULT_EDITOR: &str = "nano";
 
 #[cfg(macos)]
 pub(crate) static XDG_CACHE_HOME: Lazy<PathBuf> =
@@ -729,6 +748,34 @@ fn path_key_from_env(keys: impl IntoIterator<Item = String>) -> String {
         .find(|k| k.eq_ignore_ascii_case("PATH"))
         .unwrap_or("PATH".into())
 }
+
+/// Whether `key` names PATH.
+///
+/// Windows environment variable names are case-insensitive, so every spelling is the same
+/// variable there — including `Path`, which is how Windows itself writes it. On unix only the
+/// exact [`PATH_KEY`] is PATH, and a `Path` beside it is a variable of its own.
+pub(crate) fn is_path_key(key: &str) -> bool {
+    if cfg!(windows) {
+        key.eq_ignore_ascii_case(&PATH_KEY)
+    } else {
+        key == *PATH_KEY
+    }
+}
+
+/// Fold any spelling of PATH onto [`PATH_KEY`], leaving every other name alone.
+///
+/// mise owns PATH: it writes its own value under `PATH_KEY` after everything else has been
+/// collected. A key that means PATH but is spelled differently would survive that write as a
+/// second entry, and the two would then both be applied — so it has to be folded before it is
+/// stored, not filtered afterwards. The identity on unix, where the only spelling that is PATH
+/// is `PATH_KEY` already.
+pub(crate) fn normalize_path_key(key: String) -> String {
+    if is_path_key(&key) {
+        PATH_KEY.to_string()
+    } else {
+        key
+    }
+}
 pub(crate) static PATH: Lazy<Vec<PathBuf>> = Lazy::new(|| match PRISTINE_ENV.get(&*PATH_KEY) {
     Some(path) => split_paths(path).collect(),
     None => vec![],
@@ -794,11 +841,6 @@ pub(crate) static UV_PYTHON_INSTALL_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("UV_PYTHON_INSTALL_DIR").unwrap_or_else(|| XDG_DATA_HOME.join("uv").join("python"))
 });
 
-#[cfg(unix)]
-pub(crate) const PATH_ENV_SEP: char = ':';
-#[cfg(windows)]
-pub(crate) const PATH_ENV_SEP: char = ';';
-
 fn get_env_diff() -> EnvDiff {
     let env = vars_safe().collect::<HashMap<_, _>>();
     match env.get("__MISE_DIFF") {
@@ -859,8 +901,7 @@ pub(crate) fn var_path(key: &str) -> Option<PathBuf> {
 /// this returns the environment as if __MISE_DIFF was reversed.
 /// putting the shell back into a state before hook-env was run
 fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
-    let patches = mise_diff.reverse().to_patches();
-    let mut env = apply_patches(&orig_env, &patches);
+    let mut env = reverse_diff_preserving_overrides(mise_diff, orig_env);
 
     // get the current path as a vector
     let path = match env.get(&*PATH_KEY) {
@@ -884,20 +925,77 @@ fn get_pristine_env(mise_diff: &EnvDiff, orig_env: EnvMap) -> EnvMap {
     env
 }
 
-fn apply_patches(env: &EnvMap, patches: &EnvDiffPatches) -> EnvMap {
-    let mut new_env = env.clone();
-    for patch in patches {
-        match patch {
-            EnvDiffOperation::Add(k, v) | EnvDiffOperation::Change(k, v) => {
-                new_env.insert(k.into(), v.into());
+/// Reverse values that are still in the state mise recorded, while preserving
+/// values changed or removed by the caller after mise applied the environment.
+fn reverse_diff_preserving_overrides(mise_diff: &EnvDiff, mut env: EnvMap) -> EnvMap {
+    for (key, old_value) in &mise_diff.old {
+        match env_diff_get(&mise_diff.new, key) {
+            Some(new_value) if env_map_get(&env, key) == Some(new_value) => {
+                let key = env_map_key(&env, key)
+                    .cloned()
+                    .unwrap_or_else(|| key.clone());
+                env.insert(key, old_value.clone());
             }
-            EnvDiffOperation::Remove(k) => {
-                new_env.remove(k);
+            None if env_map_get(&env, key).is_none() => {
+                env.insert(key.clone(), old_value.clone());
             }
+            _ => {}
         }
     }
 
-    new_env
+    for (key, new_value) in &mise_diff.new {
+        if env_diff_get(&mise_diff.old, key).is_none()
+            && env_map_get(&env, key) == Some(new_value)
+            && let Some(key) = env_map_key(&env, key).cloned()
+        {
+            env.remove(&key);
+        }
+    }
+
+    env
+}
+
+#[cfg(not(windows))]
+fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
+    env.get_key_value(key).map(|(key, _)| key)
+}
+
+#[cfg(windows)]
+fn env_map_key<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
+    env.keys()
+        .find(|candidate| windows_env_key_eq(candidate, key))
+}
+
+fn env_map_get<'a>(env: &'a EnvMap, key: &str) -> Option<&'a String> {
+    env_map_key(env, key).and_then(|key| env.get(key))
+}
+
+#[cfg(not(windows))]
+fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    env.get(key)
+}
+
+#[cfg(windows)]
+fn env_diff_get<'a>(env: &'a IndexMap<String, String>, key: &str) -> Option<&'a String> {
+    env.iter()
+        .find(|(candidate, _)| windows_env_key_eq(candidate, key))
+        .map(|(_, value)| value)
+}
+
+#[cfg(windows)]
+fn windows_env_key_eq(left: &str, right: &str) -> bool {
+    use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
+
+    let left = left.encode_utf16().collect::<Vec<_>>();
+    let right = right.encode_utf16().collect::<Vec<_>>();
+    let (Ok(left_len), Ok(right_len)) = (i32::try_from(left.len()), i32::try_from(right.len()))
+    else {
+        return false;
+    };
+
+    unsafe {
+        CompareStringOrdinal(left.as_ptr(), left_len, right.as_ptr(), right_len, 1) == CSTR_EQUAL
+    }
 }
 
 fn offline(args: &[String]) -> bool {
@@ -1170,21 +1268,120 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn test_apply_patches() {
-        let _config = Config::get().await.unwrap();
-        let mut env = EnvMap::new();
-        env.insert("foo".into(), "bar".into());
-        env.insert("baz".into(), "qux".into());
-        let patches = vec![
-            EnvDiffOperation::Add("foo".into(), "bar".into()),
-            EnvDiffOperation::Change("baz".into(), "qux".into()),
-            EnvDiffOperation::Remove("quux".into()),
-        ];
-        let new_env = apply_patches(&env, &patches);
-        assert_eq!(new_env.len(), 2);
-        assert_eq!(new_env.get("foo").unwrap(), "bar");
-        assert_eq!(new_env.get("baz").unwrap(), "qux");
+    #[test]
+    fn test_reverse_diff_preserves_runtime_overrides() {
+        let diff = EnvDiff {
+            old: [
+                ("CHANGED".into(), "before".into()),
+                ("REMOVED".into(), "before".into()),
+            ]
+            .into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "override".into()),
+            ("CHANGED".into(), "override".into()),
+            ("REMOVED".into(), "override".into()),
+        ]
+        .into();
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [
+                ("ADDED".into(), "override".into()),
+                ("CHANGED".into(), "override".into()),
+                ("REMOVED".into(), "override".into()),
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_reverse_diff_restores_unchanged_managed_values() {
+        let diff = EnvDiff {
+            old: [
+                ("CHANGED".into(), "before".into()),
+                ("REMOVED".into(), "before".into()),
+            ]
+            .into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "managed".into()),
+        ]
+        .into();
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [
+                ("CHANGED".into(), "before".into()),
+                ("REMOVED".into(), "before".into()),
+            ]
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_reverse_diff_preserves_runtime_removals() {
+        let diff = EnvDiff {
+            old: [("CHANGED".into(), "before".into())].into(),
+            new: [
+                ("ADDED".into(), "managed".into()),
+                ("CHANGED".into(), "managed".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, EnvMap::new()),
+            EnvMap::new()
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_reverse_diff_matches_environment_keys_case_insensitively_on_windows() {
+        let diff = EnvDiff {
+            old: [
+                ("Changed".into(), "before".into()),
+                ("MÎSE_FOO".into(), "before-unicode".into()),
+            ]
+            .into(),
+            new: [
+                ("Added".into(), "managed".into()),
+                ("Changed".into(), "managed".into()),
+                ("MÎSE_FOO".into(), "managed-unicode".into()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let current = [
+            ("ADDED".into(), "managed".into()),
+            ("CHANGED".into(), "managed".into()),
+            ("mîse_foo".into(), "managed-unicode".into()),
+        ]
+        .into();
+
+        assert_eq!(
+            reverse_diff_preserving_overrides(&diff, current),
+            [
+                ("CHANGED".into(), "before".into()),
+                ("mîse_foo".into(), "before-unicode".into()),
+            ]
+            .into()
+        );
     }
 
     #[tokio::test]
@@ -1375,6 +1572,36 @@ mod tests {
             "PATH"
         );
         assert_eq!(path_key_from_env(vec!["TEMP".into()]), "PATH");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_is_path_key_accepts_any_casing_on_windows() {
+        for spelling in ["PATH", "Path", "path", "pAtH"] {
+            assert!(is_path_key(spelling), "{spelling}");
+            assert_eq!(normalize_path_key(spelling.to_string()), *PATH_KEY);
+        }
+
+        assert!(!is_path_key("PATHEXT"));
+        assert!(!is_path_key("TEMP"));
+        assert!(!is_path_key(""));
+        // A name that is not PATH keeps the spelling the config gave it.
+        assert_eq!(normalize_path_key("Temp".to_string()), "Temp");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_is_path_key_is_exact_on_unix() {
+        assert!(is_path_key("PATH"));
+        assert_eq!(normalize_path_key("PATH".to_string()), "PATH");
+
+        // `Path` is a variable of its own here, so folding it would drop what was asked for.
+        assert!(!is_path_key("Path"));
+        assert!(!is_path_key("path"));
+        assert_eq!(normalize_path_key("Path".to_string()), "Path");
+
+        assert!(!is_path_key("PATHEXT"));
+        assert!(!is_path_key(""));
     }
 
     #[test]

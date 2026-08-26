@@ -245,3 +245,46 @@ assert_succeed "cmp failed-multi-target-upgrade/mise.local.lock.before failed-mu
 assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Upgrading"
 assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Pruned"
 assert_not_contains "cd failed-multi-target-upgrade && RTX_FAILURE=1 mise lock --upgrade --platform linux-x64 2>&1 || true" "Lockfile written"
+
+echo "=== monorepo format upgrades retain shadowed root requests ==="
+mkdir -p shadowed-root/packages/b
+cat >shadowed-root/mise.toml <<'EOF'
+monorepo_root = true
+
+[tools]
+dummy = "1"
+
+[settings]
+lockfile = true
+
+[monorepo]
+lockfile = true
+config_roots = ["packages/*"]
+EOF
+cat >shadowed-root/packages/b/mise.toml <<'EOF'
+[tools]
+dummy = "2.0.0"
+EOF
+cat >shadowed-root/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "1.1.0"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "2.0.0"
+backend = "asdf:dummy"
+EOF
+
+assert_succeed "cd shadowed-root && mise install"
+assert_succeed "cd shadowed-root/packages/b && mise install"
+assert_succeed "cd shadowed-root && mise lock --upgrade --platform linux-x64"
+assert_contains "cat shadowed-root/mise.lock" 'specifiers = ["1"]'
+assert_contains "cat shadowed-root/mise.lock" 'specifiers = ["2.0.0"]'
+assert "cd shadowed-root && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"
+assert "cd shadowed-root/packages/b && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
+
+echo "=== plain mise lock retains shadowed root entries ==="
+assert_succeed "cd shadowed-root && mise lock"
+assert_contains "cat shadowed-root/mise.lock" 'specifiers = ["1"]'
+assert_contains "cat shadowed-root/mise.lock" 'specifiers = ["2.0.0"]'
+assert "cd shadowed-root && mise ls dummy --json --current | jq -r '.[0].version'" "1.1.0"

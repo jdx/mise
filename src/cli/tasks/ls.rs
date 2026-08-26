@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::config::{self, Config};
 use crate::dirs;
+use crate::file;
 use crate::file::display_rel_path;
 use crate::task::Task;
 use crate::task::task_fetcher::TaskFetcher;
@@ -19,72 +20,72 @@ use serde_json::json;
 /// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific
 /// tasks will override the global ones if they have the same name.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
-pub(super) struct TasksLs {
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+pub(crate) struct TasksLs {
     /// Only show global tasks
-    #[clap(short, long, overrides_with = "local", verbatim_doc_comment)]
+    #[usage(short, long, overrides = "local", verbatim_doc_comment)]
     pub global: bool,
 
     /// Output in JSON format
-    #[clap(short = 'J', long, verbatim_doc_comment)]
+    #[usage(short = 'J', long, verbatim_doc_comment)]
     pub json: bool,
 
     /// Only show non-global tasks
-    #[clap(short, long, overrides_with = "global", verbatim_doc_comment)]
+    #[usage(short, long, overrides = "global", verbatim_doc_comment)]
     pub local: bool,
 
     /// Show all columns
-    #[clap(short = 'x', long, verbatim_doc_comment)]
+    #[usage(short = 'x', long, verbatim_doc_comment)]
     pub extended: bool,
 
     /// Load all tasks from the entire monorepo, including sibling directories.
     /// By default, only tasks from the current directory hierarchy are loaded.
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub all: bool,
 
     /// Display tasks for usage completion
-    #[clap(long, hide = true)]
+    #[usage(long, hide = true)]
     pub complete: bool,
 
     /// Show hidden tasks
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub hidden: bool,
 
     /// Only show task names, one per line. Useful for piping to fzf and similar tools.
-    #[clap(
+    #[usage(
         long,
         verbatim_doc_comment,
-        conflicts_with_all = ["json", "extended", "usage"]
+        conflicts = ["json", "extended", "usage"]
     )]
     pub name_only: bool,
 
     /// Do not print table header
-    #[clap(long, alias = "no-headers", verbatim_doc_comment)]
+    #[usage(long, alias = "no-headers", verbatim_doc_comment)]
     pub no_header: bool,
 
     /// Sort by column. Default is name.
-    #[clap(long, value_name = "COLUMN", verbatim_doc_comment)]
+    #[usage(long, value_name = "COLUMN", verbatim_doc_comment, value_enum)]
     pub sort: Option<SortColumn>,
 
     /// Sort order. Default is asc.
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment, value_enum)]
     pub sort_order: Option<SortOrder>,
 
-    #[clap(long, hide = true)]
+    #[usage(long, hide = true)]
     pub usage: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub(super) enum SortColumn {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub(crate) enum SortColumn {
     Name,
     Alias,
     Description,
     Source,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub(super) enum SortOrder {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, usage_rs::ValueEnum)]
+pub(crate) enum SortOrder {
     Asc,
     Desc,
 }
@@ -164,13 +165,18 @@ impl TasksLs {
         // Warn about non-executable files only when there are truly no tasks at all
         // (not just filtered out by --hidden/--local/--global)
         if all_tasks.is_empty()
-            && !cfg!(windows)
             && let Some(cwd) = &*dirs::CWD
         {
             let includes = config::task_includes_for_dir(cwd, &config.config_files)?;
-            if !find_non_executable_task_files(&includes).is_empty() {
+            let excludes = config::task_excludes_for_dir(cwd, &config.config_files)?;
+            // One file is enough to act on, and `make_executable_hint` is the only thing that
+            // knows what "make it executable" means on this platform. Bound to a local because
+            // under edition 2024 an `if let` scrutinee temporary is dropped before the body runs.
+            let non_executable = find_non_executable_task_files(&includes, &excludes);
+            if let Some(path) = non_executable.first() {
                 warn!(
-                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. Run `chmod +x` on the task files to fix this."
+                    "no tasks found, but non-executable files exist in task directories.\nFiles must be executable to be detected as tasks. {}",
+                    file::make_executable_hint(path)
                 );
             }
         }

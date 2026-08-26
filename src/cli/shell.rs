@@ -14,26 +14,26 @@ use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_na
 ///
 /// This works by setting environment variables for the current shell session
 /// such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by `mise activate`.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, visible_alias = "sh", after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Shell {
     /// Tool(s) to use
-    #[clap(value_name = "TOOL@VERSION", required = true)]
+    #[usage(value_name = "TOOL@VERSION", required = true)]
     tool: Vec<ToolArg>,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
     /// Removes a previously set version
-    #[clap(long, short)]
+    #[usage(long, short)]
     unset: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[clap(long, overrides_with = "jobs")]
+    #[usage(long, overrides = "jobs")]
     raw: bool,
 }
 

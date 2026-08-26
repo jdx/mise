@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::sync::Arc;
 
-use clap::ValueHint;
 use duct::IntoExecutablePath;
 #[cfg(not(any(test, windows)))]
 use eyre::{Result, bail};
@@ -29,77 +28,77 @@ use crate::toolset::{InstallOptions, ResolveOptions, Toolset, ToolsetBuilder};
 /// includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
 ///
 /// The "--" separates runtimes from the commands to pass along to the subprocess.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "x", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Exec {
     /// Tool(s) to start
     /// e.g.: node@20 python@3.10
-    #[clap(value_name = "TOOL@VERSION")]
+    #[usage(value_name = "TOOL@VERSION")]
     pub tool: Vec<ToolArg>,
 
     /// Command string to execute (same as --command)
-    #[clap(conflicts_with = "c", required_unless_present = "c", last = true)]
+    #[usage(conflicts = "c", required_unless = "c", double_dash = "required")]
     pub command: Option<Vec<String>>,
 
     /// Command string to execute
-    #[clap(short, long = "command", value_hint = ValueHint::CommandString, conflicts_with = "command")]
+    #[usage(short, long = "command", value_hint = usage_rs::ValueHint::CommandString, conflicts = "command")]
     pub c: Option<String>,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
     /// [default: 4]
-    #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
     /// Allow specific env var through (implies --deny-env for everything else)
     /// Supports wildcards, e.g. --allow-env='MYAPP_*'
-    #[clap(long, value_name = "VAR", verbatim_doc_comment)]
+    #[usage(long, value_name = "VAR", verbatim_doc_comment)]
     pub allow_env: Vec<String>,
 
     /// Allow network to specific host (implies --deny-net for everything else)
     /// macOS only in v1; on Linux falls back to allowing all network
-    #[clap(long, value_name = "HOST", verbatim_doc_comment)]
+    #[usage(long, value_name = "HOST", verbatim_doc_comment)]
     pub allow_net: Vec<String>,
 
     /// Allow reads from specific path (implies --deny-read for everything else)
-    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_read: Vec<std::path::PathBuf>,
 
     /// Allow writes to specific path (implies --deny-write for everything else)
-    #[clap(long, value_name = "PATH", verbatim_doc_comment)]
+    #[usage(long, value_name = "PATH", verbatim_doc_comment)]
     pub allow_write: Vec<std::path::PathBuf>,
 
     /// Block reads, writes, network, and env vars
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_all: bool,
 
     /// Block env var inheritance (only PATH, HOME, USER, SHELL, TERM, LANG pass through)
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_env: bool,
 
     /// Block all network access
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_net: bool,
 
     /// Block filesystem reads (system libs and tool dirs still accessible)
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_read: bool,
 
     /// Block all filesystem writes
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub deny_write: bool,
 
     /// Bypass the environment cache and recompute the environment
-    #[clap(long)]
+    #[usage(long)]
     pub fresh_env: bool,
 
     /// Skip automatic dependency preparation
-    #[clap(long)]
+    #[usage(long)]
     pub no_deps: bool,
 
     /// Connect backend install command stdin/stdout/stderr directly to the terminal
     /// Implies --jobs=1
-    #[clap(long, overrides_with = "jobs")]
+    #[usage(long, overrides = "jobs")]
     pub raw: bool,
 }
 

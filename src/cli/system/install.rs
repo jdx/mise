@@ -22,28 +22,28 @@ pub(crate) struct BootstrapApplyReport {
 /// `apk:zlib-dev`, `apt:curl`, `brew:jq`); they are installed whether or not they appear in
 /// the config. Explicit packages and `--manager` scope the run to packages
 /// only. `install` is accepted as an alias for this command.
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemInstall {
     /// Packages in `manager:package` form; defaults to everything configured
     /// in [bootstrap.packages]
-    #[clap(value_name = "PACKAGE")]
+    #[usage(value_name = "PACKAGE")]
     packages: Vec<String>,
 
     /// Only install packages for this built-in or plugin manager
-    #[clap(long, short)]
+    #[usage(long, short)]
     manager: Option<String>,
 
     /// Print the commands that would run without running them
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Refresh package manager metadata first (apk: `--update-cache`, apt: `apt-get update`)
-    #[clap(long)]
+    #[usage(long)]
     update: bool,
 }
 
@@ -224,11 +224,13 @@ pub(crate) fn apply_repos(
     repos: Vec<system::repos::RepoRequest>,
     dry_run: bool,
     yes: bool,
+    skip_dirty: bool,
 ) -> Result<()> {
     mutate_repos(
         repos,
         dry_run,
         yes,
+        skip_dirty,
         RepoMutation {
             prompt_verb: "apply",
             completed_verb: "applied",
@@ -245,11 +247,13 @@ pub(crate) fn update_repos(
     repos: Vec<system::repos::RepoRequest>,
     dry_run: bool,
     yes: bool,
+    skip_dirty: bool,
 ) -> Result<()> {
     mutate_repos(
         repos,
         dry_run,
         yes,
+        skip_dirty,
         RepoMutation {
             prompt_verb: "update",
             completed_verb: "updated",
@@ -272,6 +276,7 @@ fn mutate_repos(
     repos: Vec<system::repos::RepoRequest>,
     dry_run: bool,
     yes: bool,
+    skip_dirty: bool,
     mutation: RepoMutation,
     is_target: impl Fn(&system::repos::RepoStatus) -> bool,
     mutate: impl FnOnce(&[system::repos::RepoStatus], bool) -> Result<()>,
@@ -280,15 +285,28 @@ fn mutate_repos(
     if repos.is_empty() {
         return Ok(());
     }
-    let statuses = repos::status(&repos)?;
+    let mut statuses = repos::status(&repos)?;
+    let mut skipped_dirty = false;
+    if skip_dirty {
+        statuses.retain(|status| {
+            if matches!(status.state, system::repos::RepoState::Dirty) {
+                warn!("repos: {} has local changes, skipping", status.request);
+                skipped_dirty = true;
+                false
+            } else {
+                true
+            }
+        });
+    }
     repos::preflight_statuses(&statuses)?;
+    let eligible = statuses.len();
     let targets: Vec<_> = statuses.into_iter().filter(is_target).collect();
-    let current = repos.len() - targets.len();
+    let current = eligible - targets.len();
     if mutation.report_current_count && current > 0 {
         info!("repos: {current} repo(s) already current");
     }
     if targets.is_empty() {
-        if mutation.report_all_current {
+        if mutation.report_all_current && !skipped_dirty {
             info!("repos: all repo(s) already current");
         }
         return Ok(());

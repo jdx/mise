@@ -1,5 +1,4 @@
-use clap::Subcommand;
-use eyre::{Result, eyre};
+use eyre::Result;
 use std::path::Path;
 
 mod add;
@@ -17,24 +16,24 @@ pub(crate) use unapply::DotfilesUnapply;
 /// Manage dotfiles from `[dotfiles]` (deprecated)
 ///
 /// Use `mise bootstrap dotfiles` instead.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(crate) struct Dotfiles {
-    #[clap(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    #[clap(hide = true)]
+    #[usage(hide = true)]
     Add(add::DotfilesAdd),
-    #[clap(hide = true)]
+    #[usage(hide = true)]
     Apply(apply::DotfilesApply),
-    #[clap(hide = true)]
+    #[usage(hide = true)]
     Edit(edit::DotfilesEdit),
-    #[clap(hide = true)]
+    #[usage(hide = true)]
     Status(status::DotfilesStatus),
-    #[clap(hide = true)]
+    #[usage(hide = true)]
     Unapply(unapply::DotfilesUnapply),
 }
 
@@ -90,21 +89,4 @@ pub(crate) fn warn_if_dotfiles_ignored() {
             .collect::<Vec<_>>()
             .join("\n")
     );
-}
-
-fn open_in_editor(file: &Path) -> Result<()> {
-    let (program, mut args) = split_editor_command(&crate::env::EDITOR)?;
-    args.push(file.as_os_str().into());
-    crate::cmd::cmd(&program, args).run()?;
-    Ok(())
-}
-
-fn split_editor_command(editor: &str) -> Result<(String, Vec<std::ffi::OsString>)> {
-    let mut parts = shell_words::split(editor)
-        .map_err(|e| eyre!("failed to parse EDITOR/VISUAL value {:?}: {}", editor, e))?
-        .into_iter();
-    let program = parts
-        .next()
-        .ok_or_else(|| eyre!("EDITOR/VISUAL is empty"))?;
-    Ok((program, parts.map(Into::into).collect()))
 }

@@ -229,11 +229,6 @@ impl<'a> NpmOptions<'a> {
         Ok((!excludes.is_empty()).then(|| format!("{excludes:?}")))
     }
 
-    fn aube_trust_policy_excludes_npmrc_value(&self) -> eyre::Result<Option<String>> {
-        let excludes = self.trust_policy_excludes()?;
-        Ok((!excludes.is_empty()).then(|| excludes.join(",")))
-    }
-
     fn canonical_allow_builds_lockfile_value(&self) -> eyre::Result<Option<String>> {
         Ok(match self.allow_builds()? {
             AllowBuilds::None => None,
@@ -993,9 +988,9 @@ impl NPMBackend {
     /// (`aube::embed::add`) instead of shelling out to the `aube` binary.
     ///
     /// The install directory doubles as a throwaway project: a seed
-    /// `package.json` + `.npmrc` carry the install-scoped config (release age,
-    /// build-script allowlist) that aube reads during resolution, exactly as
-    /// the `aube add --global` path did via its written `.npmrc`. aube installs
+    /// `package.json` + `.config/aube/config.toml` carry the install-scoped
+    /// config (release age, build-script allowlist) that aube reads during
+    /// resolution. Aube installs
     /// into `<install>/node_modules`; the resulting `node_modules/.bin` shims
     /// are linked into `<install>/bin` so mise's default `list_bin_paths`
     /// (which points at `<install>/bin`) keeps working unchanged.
@@ -1129,9 +1124,9 @@ impl NPMBackend {
     /// the actual reason — a supply-chain trust-policy block on a transitive
     /// dependency surfaces as an opaque resolution failure otherwise. Walk the
     /// cause chain so the real diagnostic is visible, and for the trust
-    /// downgrade code translate aube's own `.npmrc` / `pnpm-workspace.yaml`
-    /// help into the mise-native `trust_policy_excludes` / `npm.shell_out`
-    /// remedies, since mise owns the synthetic `.npmrc` aube's help tells the
+    /// downgrade code translate aube's own config-file help into the
+    /// mise-native `trust_policy_excludes` / `npm.shell_out`
+    /// remedies, since mise owns the synthetic config aube's help tells the
     /// user to edit.
     fn format_aube_install_error(&self, err: miette::Report) -> eyre::Report {
         eyre::eyre!(build_aube_install_error_message(&err, &self.ba().full()))
@@ -1163,10 +1158,11 @@ impl NPMBackend {
         }
     }
 
-    /// Write the throwaway project's `package.json` + `.npmrc` for an embedded
-    /// aube install. `allowBuilds` package lists go in `package.json` (aube's
-    /// manifest namespace); release age and trust-policy excludes go in
-    /// `.npmrc`, which aube's resolver reads from the project dir.
+    /// Write the throwaway project's `package.json` + aube config for an
+    /// embedded aube install. `allowBuilds` package lists go in `package.json`
+    /// (aube's manifest namespace); release age and trust-policy excludes go
+    /// in `.config/aube/config.toml`, which keeps aube-only keys out of npm's
+    /// config.
     fn write_aube_embed_project(
         &self,
         install_path: &Path,
@@ -1177,8 +1173,7 @@ impl NPMBackend {
     ) -> Result<()> {
         // Validate the fallible options before writing anything, so a malformed
         // value fails without leaving a half-written project dir behind.
-        let trust_policy_excludes = options.aube_trust_policy_excludes_npmrc_value()?;
-        let allow_low_downloads = options.allow_low_downloads()?;
+        let aube_config = self.aube_project_config(before_date, options, resolved_from_lockfile)?;
 
         let mut manifest = serde_json::json!({
             "name": "mise-npm-install",
@@ -1196,27 +1191,12 @@ impl NPMBackend {
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
         )?;
 
-        let mut npmrc = String::new();
-        if let Some(before_date) = before_date {
-            let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
-                before_date,
-                process_now(),
-            ));
-            // aube documents minimumReleaseAge in minutes, matching pnpm's setting.
-            npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
-        }
-        if let Some(excludes) = trust_policy_excludes {
-            npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
-        }
-        if allow_low_downloads || resolved_from_lockfile {
-            // Exempt only this tool's own package, not the whole install, so a
-            // transitive dependency below the threshold still fails the gate.
-            // aube gates the directly-requested packages, which for mise is
-            // always exactly this one. A matching mise.lock pin is itself
-            // approval for the download-count check.
-            npmrc.push_str(&format!("allowedUnpopularPackages={}\n", self.tool_name()));
-        }
-        crate::file::write(install_path.join(".npmrc"), npmrc)?;
+        let config_dir = install_path.join(".config/aube");
+        crate::file::create_dir_all(&config_dir)?;
+        crate::file::write(
+            config_dir.join("config.toml"),
+            format!("{}\n", toml::to_string_pretty(&aube_config)?),
+        )?;
         Ok(())
     }
 
@@ -1229,35 +1209,69 @@ impl NPMBackend {
         options: &NpmOptions<'_>,
         resolved_from_lockfile: bool,
     ) -> Result<()> {
-        let trust_policy_excludes = options.aube_trust_policy_excludes_npmrc_value()?;
-        let allow_low_downloads = options.allow_low_downloads()?;
         let bin_dir = install_path.join("bin");
         crate::file::create_dir_all(install_path)?;
         crate::file::create_dir_all(&bin_dir)?;
-        let mut npmrc = format!(
-            "globalDir={}\nglobalBinDir={}\n",
-            Self::npmrc_path_value(install_path),
-            Self::npmrc_path_value(&bin_dir)
+        let mut aube_config =
+            self.aube_project_config(before_date, options, resolved_from_lockfile)?;
+        aube_config.insert(
+            "globalDir".to_string(),
+            toml::Value::String(install_path.to_string_lossy().into_owned()),
         );
+        aube_config.insert(
+            "globalBinDir".to_string(),
+            toml::Value::String(bin_dir.to_string_lossy().into_owned()),
+        );
+        let config_dir = install_path.join(".config/aube");
+        crate::file::create_dir_all(&config_dir)?;
+        crate::file::write(
+            config_dir.join("config.toml"),
+            format!("{}\n", toml::to_string_pretty(&aube_config)?),
+        )?;
+        Ok(())
+    }
+
+    /// Build the project-scoped Aube settings shared by embedded and CLI installs.
+    fn aube_project_config(
+        &self,
+        before_date: Option<Timestamp>,
+        options: &NpmOptions<'_>,
+        resolved_from_lockfile: bool,
+    ) -> Result<toml::Table> {
+        let trust_policy_excludes = options.trust_policy_excludes()?;
+        let allow_low_downloads = options.allow_low_downloads()?;
+        let mut config = toml::Table::new();
         if let Some(before_date) = before_date {
             let minutes = Self::build_aube_minimum_release_age(elapsed_seconds_ceil(
                 before_date,
                 process_now(),
             ));
-            npmrc.push_str(&format!("minimumReleaseAge={minutes}\n"));
+            config.insert(
+                "minimumReleaseAge".to_string(),
+                toml::Value::Integer(minutes.try_into()?),
+            );
         }
-        if let Some(excludes) = trust_policy_excludes {
-            npmrc.push_str(&format!("trustPolicyExclude={excludes}\n"));
+        if !trust_policy_excludes.is_empty() {
+            config.insert(
+                "trustPolicyExclude".to_string(),
+                toml::Value::Array(
+                    trust_policy_excludes
+                        .into_iter()
+                        .map(toml::Value::String)
+                        .collect(),
+                ),
+            );
         }
         if allow_low_downloads || resolved_from_lockfile {
-            npmrc.push_str(&format!("allowedUnpopularPackages={}\n", self.tool_name()));
+            // Exempt only this tool's own package, not the whole install, so a
+            // transitive dependency below the threshold still fails the gate.
+            // A matching mise.lock pin is itself approval for this check.
+            config.insert(
+                "allowedUnpopularPackages".to_string(),
+                toml::Value::Array(vec![toml::Value::String(self.tool_name())]),
+            );
         }
-        crate::file::write(install_path.join(".npmrc"), npmrc)?;
-        Ok(())
-    }
-
-    fn npmrc_path_value(path: &Path) -> String {
-        path.to_string_lossy().replace('\\', "/")
+        Ok(config)
     }
 
     fn build_aube_minimum_release_age(seconds: u64) -> u64 {
@@ -2627,7 +2641,7 @@ pkg@1.2.0 '1.2.0'
     }
 
     #[test]
-    fn test_write_aube_embed_project_emits_npmrc_and_manifest() {
+    fn test_write_aube_embed_project_emits_aube_config_and_manifest() {
         let backend = create_npm_backend("vercel");
         let tmp = tempfile::tempdir().unwrap();
         let install_path = tmp.path().join("npm-vercel").join("54.20.1");
@@ -2651,9 +2665,18 @@ pkg@1.2.0 '1.2.0'
             .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
             .unwrap();
 
-        // Trust-policy excludes go in .npmrc for the resolver to read.
-        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
-        assert!(npmrc.contains("trustPolicyExclude=undici,undici@^5\n"));
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            config["trustPolicyExclude"],
+            toml::Value::Array(vec![
+                toml::Value::String("undici".to_string()),
+                toml::Value::String("undici@^5".to_string()),
+            ])
+        );
+        assert!(!install_path.join(".npmrc").exists());
         // The build-script allowlist goes in package.json's aube namespace.
         let manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(install_path.join("package.json")).unwrap())
@@ -2680,17 +2703,24 @@ pkg@1.2.0 '1.2.0'
             .write_aube_cli_project(&install_path, None, &options, true)
             .unwrap();
 
-        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
-        assert!(npmrc.contains(&format!(
-            "globalDir={}\n",
-            NPMBackend::npmrc_path_value(&install_path)
-        )));
-        assert!(npmrc.contains(&format!(
-            "globalBinDir={}\n",
-            NPMBackend::npmrc_path_value(&install_path.join("bin"))
-        )));
-        assert!(npmrc.contains("trustPolicyExclude=undici\n"));
-        assert!(npmrc.contains("allowedUnpopularPackages=vercel\n"));
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            config["globalDir"].as_str(),
+            Some(install_path.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            config["globalBinDir"].as_str(),
+            Some(install_path.join("bin").to_string_lossy().as_ref())
+        );
+        assert_eq!(config["trustPolicyExclude"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            config["allowedUnpopularPackages"].as_array().unwrap().len(),
+            1
+        );
+        assert!(!install_path.join(".npmrc").exists());
         assert!(install_path.join("bin").is_dir());
         assert!(!install_path.join("package.json").exists());
     }
@@ -2715,10 +2745,16 @@ pkg@1.2.0 '1.2.0'
 
         // Only the requested package is exempt — not a wildcard, so a
         // transitive dependency below the threshold still fails aube's gate.
-        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
-        assert!(npmrc.contains("allowedUnpopularPackages=bibtex-tidy\n"));
-        assert!(!npmrc.contains('*'));
-        assert!(!npmrc.contains("lowDownloadThreshold"));
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            config["allowedUnpopularPackages"],
+            toml::Value::Array(vec![toml::Value::String("bibtex-tidy".to_string())])
+        );
+        assert!(!config.contains_key("lowDownloadThreshold"));
+        assert!(!install_path.join(".npmrc").exists());
     }
 
     #[test]
@@ -2743,7 +2779,7 @@ pkg@1.2.0 '1.2.0'
         // Options are validated up front, so the aborted call leaves no
         // half-written project behind for a later step to trip over.
         assert!(!install_path.join("package.json").exists());
-        assert!(!install_path.join(".npmrc").exists());
+        assert!(!install_path.join(".config/aube/config.toml").exists());
     }
 
     #[test]
@@ -2780,8 +2816,12 @@ pkg@1.2.0 '1.2.0'
             .write_aube_embed_project(&install_path, None, &options, &allow_builds, false)
             .unwrap();
 
-        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
-        assert!(!npmrc.contains("allowedUnpopularPackages"));
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert!(!config.contains_key("allowedUnpopularPackages"));
+        assert!(!install_path.join(".npmrc").exists());
     }
 
     #[test]
@@ -2798,8 +2838,14 @@ pkg@1.2.0 '1.2.0'
             .write_aube_embed_project(&install_path, None, &options, &allow_builds, true)
             .unwrap();
 
-        let npmrc = std::fs::read_to_string(install_path.join(".npmrc")).unwrap();
-        assert!(npmrc.contains("allowedUnpopularPackages=bibtex-tidy\n"));
+        let config: toml::Table = toml::from_str(
+            &std::fs::read_to_string(install_path.join(".config/aube/config.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            config["allowedUnpopularPackages"],
+            toml::Value::Array(vec![toml::Value::String("bibtex-tidy".to_string())])
+        );
     }
 
     #[test]

@@ -41,10 +41,22 @@ pub(crate) enum Error {
 }
 
 fn render_exit_status(exit_status: &Option<ExitStatus>) -> String {
-    match exit_status.and_then(|s| s.code()) {
-        Some(exit_status) => format!("exit code {exit_status}"),
-        None => "no exit status".into(),
+    if let Some(code) = exit_status.and_then(|s| s.code()) {
+        return format!("exit code {code}");
     }
+    // No code means the process was signalled, and the signal is right there.
+    // Reporting "no exit status" threw it away and left nothing to act on.
+    #[cfg(unix)]
+    if let Some(signal) = exit_status.and_then(|s| {
+        use std::os::unix::process::ExitStatusExt;
+        s.signal()
+    }) {
+        return match nix::sys::signal::Signal::try_from(signal) {
+            Ok(signal) => format!("killed by {signal}"),
+            Err(_) => format!("killed by signal {signal}"),
+        };
+    }
+    "no exit status".into()
 }
 
 fn format_install_failures(failed_installations: &[(ToolRequest, Report)]) -> String {
@@ -140,10 +152,6 @@ impl Error {
         false
     }
 
-    pub(crate) fn is_task_interrupted(err: &Report) -> bool {
-        Self::is_task_interrupted_before_start(err) || Self::is_sigint(err)
-    }
-
     pub(crate) fn is_task_interrupted_before_start(err: &Report) -> bool {
         matches!(err.downcast_ref::<Error>(), Some(Error::TaskInterrupted))
     }
@@ -194,9 +202,26 @@ mod tests {
     }
 
     #[test]
+    fn renders_the_signal_that_killed_the_process() {
+        // "no exit status" threw away the one fact that explains the failure.
+        let status = ExitStatus::from_raw(nix::sys::signal::SIGINT as i32);
+        assert_eq!(render_exit_status(&Some(status)), "killed by SIGINT");
+
+        let status = ExitStatus::from_raw(nix::sys::signal::SIGTERM as i32);
+        assert_eq!(render_exit_status(&Some(status)), "killed by SIGTERM");
+    }
+
+    #[test]
+    fn renders_an_exit_code_unchanged() {
+        let status = ExitStatus::from_raw(2 << 8);
+        assert_eq!(render_exit_status(&Some(status)), "exit code 2");
+        assert_eq!(render_exit_status(&None), "no exit status");
+    }
+
+    #[test]
     fn detects_interruption_before_process_start() {
         let err = Report::new(Error::TaskInterrupted);
 
-        assert!(Error::is_task_interrupted(&err));
+        assert!(Error::is_task_interrupted_before_start(&err));
     }
 }

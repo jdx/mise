@@ -547,6 +547,10 @@ impl Backend for JavaPlugin {
 
     async fn _parse_idiomatic_file(&self, path: &Path) -> Result<Vec<String>> {
         let contents = file::read_to_string(path)?;
+        // The `.sdkmanrc` branch matches on the start of a line without going through
+        // `normalize_idiomatic_contents`, so a leading mark defeats `starts_with("java")` and the
+        // fallback yields an empty version.
+        let contents = file::strip_utf8_bom(&contents);
         if path.file_name() == Some(".sdkmanrc".as_ref()) {
             let version = contents
                 .lines()
@@ -578,7 +582,7 @@ impl Backend for JavaPlugin {
             }
             Ok(vec![format!("{vendor}-{version}")])
         } else {
-            Ok(normalize_idiomatic_contents(&contents)
+            Ok(normalize_idiomatic_contents(contents)
                 .lines()
                 .map(|s| s.to_string())
                 .collect())

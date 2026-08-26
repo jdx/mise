@@ -1,0 +1,5 @@
+backends = ["github:basecamp/hey-cli"]
+bins = ["hey"]
+description = "A CLI and TUI for HEY"
+test = { cmd = "hey --version", expected = "hey version {{version}}" }
+version_order = "semver"

@@ -1,4 +1,4 @@
-use clap::Parser;
+use usage_rs::Subcommands;
 use vfox::VfoxResult;
 
 mod available;
@@ -6,19 +6,19 @@ mod env_keys;
 mod install;
 mod plugins;
 
-#[derive(Parser)]
-#[command(version)]
+#[derive(usage_rs::Cli)]
+#[usage(name = "vfox", version, unknown_flags = "error")]
 pub(crate) struct Cli {
-    #[command(subcommand)]
+    #[usage(subcommand)]
     command: Commands,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(Subcommands)]
 enum Commands {
     Available(available::Available),
     EnvKeys(env_keys::EnvKeys),
     Install(install::Install),
-    #[command(alias = "plugin")]
+    #[usage(alias = "plugin")]
     Plugins(plugins::Plugins),
 }
 

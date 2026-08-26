@@ -66,7 +66,8 @@ pub(super) async fn resolve_closure_with_taps(
         .map(|req| {
             (
                 req.name.clone(),
-                api::tap_name(&req.name),
+                api::tap_name(&req.name)
+                    .or_else(|| req.tap_url.as_deref().and_then(api::tap_name_from_url)),
                 req.tap_url.clone(),
             )
         })

@@ -23,7 +23,6 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-#[cfg(unix)]
 use eyre::Result;
 use eyre::bail;
 use indexmap::IndexMap;
@@ -502,6 +501,34 @@ pub(crate) async fn packages_from_config_and_tracked_config_files(
 ) -> Result<Vec<ManagerPackages>> {
     let tracked_config_files = config.get_tracked_config_files().await?;
     packages_from_config_files_and_tracked_config_files(&config.config_files, &tracked_config_files)
+}
+
+/// Return requests for one manager from the current config and every trusted,
+/// loadable tracked config. This does not resolve unrelated managers, which
+/// keeps plugin pruning portable when shared configs contain host-specific
+/// package managers.
+pub(crate) async fn package_requests_for_manager_from_config_and_tracked_config_files(
+    config: &Arc<Config>,
+    manager: &str,
+) -> Result<Vec<PackageRequest>> {
+    let tracked = config.get_tracked_config_files().await?;
+    let mut requests = package_requests_from_config_files(&config.config_files, &IndexMap::new())
+        .0
+        .shift_remove(manager)
+        .unwrap_or_default();
+    for request in package_requests_from_config_files(&tracked, &IndexMap::new())
+        .0
+        .shift_remove(manager)
+        .unwrap_or_default()
+    {
+        if !requests
+            .iter()
+            .any(|existing| existing.name == request.name && existing.version == request.version)
+        {
+            requests.push(request);
+        }
+    }
+    Ok(requests)
 }
 
 #[cfg(unix)]

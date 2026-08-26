@@ -9,31 +9,31 @@ use crate::file::display_path;
 use crate::system::packages::brew::default_tap_url;
 
 /// Add a Homebrew tap URL to [bootstrap.brew.taps]
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemBrewTap {
     /// Tap name, e.g. `owner/repo`
     tap: String,
 
     /// GitHub URL for the tap. Defaults to https://github.com/<owner>/homebrew-<repo>.git
-    #[clap(value_hint = clap::ValueHint::Url)]
+    #[usage(value_hint = usage_rs::ValueHint::Url)]
     url: Option<String>,
 
     /// Write to the local config instead of the global config
-    #[clap(long, short)]
+    #[usage(long, short)]
     local: bool,
 
     /// Print the config change without writing it
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[clap(
+    #[usage(
         long,
         short,
         visible_alias = "file",
         value_name = "PATH",
-        conflicts_with = "local"
+        conflicts = "local"
     )]
     path: Option<PathBuf>,
 }

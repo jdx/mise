@@ -162,8 +162,13 @@ mise runs it from a `.ps1` copy in the temp directory and removes the copy when 
 
 Only the script's view of its own location changes: `$PSScriptRoot` and `$PSCommandPath` name the
 copy rather than the task file. The working directory, `$args`, and the environment are untouched.
-A task that needs to find files sitting next to it should carry a `.ps1` extension, which is run
-in place.
+
+A task that needs to find files next to itself has two ways out, and the first works everywhere:
+
+- Read [`MISE_TASK_DIR`](/tasks/#environment-variables-passed-to-tasks), which names the directory
+  the task file is in. mise sets it from the task rather than from whatever is executing, so the
+  copy does not move it — and it reads the same on Linux and macOS, where nothing is copied at all.
+- Give the task a `.ps1` extension, which is run in place.
 
 ### Writing one task for both platforms
 
@@ -259,8 +264,8 @@ documentation when running mise and can be exported to markdown. Essentially thi
 fully-fledged CLIs.
 
 :::tip
-The `usage` CLI is not required to execute mise tasks with the usage spec.
-However, for completions to work, the `usage` CLI must be installed and available in the PATH.
+The separate `usage` CLI is not required to execute or complete mise tasks with a usage spec.
+Task completions work when mise's shell completion script is installed and enabled.
 :::
 
 ### Example file task with arguments
@@ -290,7 +295,7 @@ cargo build --profile "${usage_profile?}" --target "${usage_target?}"
 For details on bash parameter expansion patterns like `${var?}`, `${var:-default}`, and `${var:+value}`, see [Bash Variable Expansion for Usage Variables](/tasks/task-arguments#bash-variable-expansion).
 :::
 
-If you have installed `usage`, completions will be enabled for your task. In this example,
+With mise's shell completions enabled, this example provides the following task completions:
 
 - `mise run -- build --profile <tab><tab>`
   will show `debug` and `release` as options.
@@ -369,7 +374,7 @@ mise run greet invalid.txt --user Alice
 #   0: Invalid choice for arg output_file: invalid.txt, expected one of greeting.txt, file.txt
 ```
 
-Autocomplete will show the available choices for the `output_file` argument if `usage` is installed.
+Autocomplete will show the available choices for the `output_file` argument when mise's shell completions are enabled.
 
 ```shell
 mise run greet <TAB>

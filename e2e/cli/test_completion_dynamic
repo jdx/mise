@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tasks.test]
+description = "Run the test task"
+usage = '''
+flag "--environment <name>" {
+  choices "dev" "production"
+}
+'''
+run = 'echo works'
+
+[tasks.paths]
+description = "Accept a path"
+usage = 'arg "<value>"'
+run = 'true'
+EOF
+
+fish_tasks="$(mise __complete_word__ --shell fish --line 'mise run ')"
+assert_contains_text "$fish_tasks" $'test\tRun the test task'
+assert_not_contains_text "$fish_tasks" $'\001files'
+
+zsh_tasks="$(mise __complete_word__ --shell zsh --line 'mise run ')"
+assert_contains_text "$zsh_tasks" $'test\tRun the test task\ttest'
+assert_not_contains_text "$zsh_tasks" $'\001files'
+
+naked_tasks="$(mise __complete_word__ --shell fish --line 'mise te')"
+assert_contains_text "$naked_tasks" $'test\tRun the test task'
+
+task_flags="$(mise __complete_word__ --shell fish --line 'mise run test --')"
+assert_contains_text "$task_flags" '--environment'
+assert_not_contains_text "$task_flags" '--silent'
+
+task_values="$(mise __complete_word__ --shell fish --line 'mise run test --environment ')"
+assert_contains_text "$task_values" 'dev'
+assert_contains_text "$task_values" 'production'
+assert_not_contains_text "$task_values" $'\001files'
+
+tools="$(mise __complete_word__ --shell fish --line 'mise install actionl')"
+assert_contains_text "$tools" 'actionlint@'
+assert_not_contains_text "$tools" $'\001files'
+
+task_paths="$(mise __complete_word__ --shell fish --line 'mise run paths ')"
+assert_contains_text "$task_paths" $'\001files'

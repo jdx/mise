@@ -8,28 +8,28 @@ use crate::config::{ConfigPathOptions, resolve_target_config_path};
 use crate::file::display_path;
 
 /// Remove Homebrew tap URLs from [bootstrap.brew.taps]
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemBrewUntap {
     /// Tap name(s), e.g. `owner/repo`
-    #[clap(required = true)]
+    #[usage(required = true)]
     taps: Vec<String>,
 
     /// Write to the local config instead of the global config
-    #[clap(long, short)]
+    #[usage(long, short)]
     local: bool,
 
     /// Print the config change without writing it
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Write to this config file or directory
-    #[clap(
+    #[usage(
         long,
         short,
         visible_alias = "file",
         value_name = "PATH",
-        conflicts_with = "local"
+        conflicts = "local"
     )]
     path: Option<PathBuf>,
 }

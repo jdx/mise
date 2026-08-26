@@ -12,8 +12,8 @@ use crate::toolset::ToolsetBuilder;
 
 /// [internal] This is an internal command that writes an envrc file
 /// for direnv to consume.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, hide = true)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, hide = true)]
 pub(super) struct Envrc {}
 
 impl Envrc {

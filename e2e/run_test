@@ -82,59 +82,61 @@ within_isolated_env() {
   [[ -n ${MISE_GITHUB_TOKEN:-} ]] && token_vars+=(MISE_GITHUB_TOKEN="$MISE_GITHUB_TOKEN")
   [[ -n ${GITHUB_TOKEN:-} ]] && token_vars+=(GITHUB_TOKEN="$GITHUB_TOKEN")
 
-  env \
-    -i \
-    -C "$TEST_WORKDIR" \
-    - \
-    CARGO_HOME="$CARGO_HOME" \
-    CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
-    CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
-    CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
-    GIT_AUTHOR_NAME="test" \
-    GIT_AUTHOR_EMAIL="test@test.com" \
-    GIT_COMMITTER_NAME="test" \
-    GIT_COMMITTER_EMAIL="test@test.com" \
-    GITHUB_ACTION="${GITHUB_ACTION:-}" \
-    ${token_vars[@]+"${token_vars[@]}"} \
-    GOPROXY="${GOPROXY:-}" \
-    HOME="$TEST_HOME" \
-    LANG="${LANG:-C.UTF-8}" \
-    LC_ALL="${LC_ALL:-}" \
-    LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
-    LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
-    ${proxy_vars[@]+"${proxy_vars[@]}"} \
-    MISE_CACHE_DIR="$MISE_CACHE_DIR" \
-    MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
-    MISE_CACHE_PRUNE_AGE="0" \
-    MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
-    MISE_DATA_DIR="$MISE_DATA_DIR" \
-    MISE_DEBUG="${MISE_DEBUG:-0}" \
-    MISE_EXPERIMENTAL=1 \
-    MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
-    MISE_HTTP_TEST_PORT_FILE="$TEST_TMPDIR/mise_http_test_port" \
-    MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
-    MISE_STATE_DIR="$MISE_STATE_DIR" \
-    MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
-    MISE_TIMINGS="${MISE_TIMINGS:-0}" \
-    MISE_TMP_DIR="$TEST_TMPDIR" \
-    MISE_TRACE="${MISE_TRACE:-0}" \
-    MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
-    MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
-    MISE_USE_VERSIONS_HOST_TRACK=0 \
-    MISE_YES=1 \
-    PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
-    ROOT="$ROOT" \
-    RUSTUP_HOME="$RUSTUP_HOME" \
-    RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
-    SHELL="$(type -p bash)" \
-    TEST_DIR="$(dirname "$TEST_SCRIPT")" \
-    TEST_NAME="$TEST" \
-    TEST_ROOT="$SCRIPT_DIR" \
-    TEST_SCRIPT="$TEST_SCRIPT" \
-    TMPDIR="$TEST_TMPDIR" \
-    EXCLUDE_FROM_CI="${CI:-}" \
-    MISE_E2E_INSIDE_DOCKER="${MISE_E2E_INSIDE_DOCKER:-}" \
-    "$@" || return $?
+  (
+    cd "$TEST_WORKDIR" &&
+      exec env \
+        -i \
+        - \
+        CARGO_HOME="$CARGO_HOME" \
+        CARGO_LLVM_COV="${CARGO_LLVM_COV:-}" \
+        CARGO_LLVM_COV_SHOW_ENV="${CARGO_LLVM_COV_SHOW_ENV:-}" \
+        CARGO_LLVM_COV_TARGET_DIR="${CARGO_LLVM_COV_TARGET_DIR:-}" \
+        GIT_AUTHOR_NAME="test" \
+        GIT_AUTHOR_EMAIL="test@test.com" \
+        GIT_COMMITTER_NAME="test" \
+        GIT_COMMITTER_EMAIL="test@test.com" \
+        GITHUB_ACTION="${GITHUB_ACTION:-}" \
+        ${token_vars[@]+"${token_vars[@]}"} \
+        GOPROXY="${GOPROXY:-}" \
+        HOME="$TEST_HOME" \
+        LANG="${LANG:-C.UTF-8}" \
+        LC_ALL="${LC_ALL:-}" \
+        LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}" \
+        LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
+        ${proxy_vars[@]+"${proxy_vars[@]}"} \
+        MISE_CACHE_DIR="$MISE_CACHE_DIR" \
+        MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
+        MISE_CACHE_PRUNE_AGE="0" \
+        MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \
+        MISE_DATA_DIR="$MISE_DATA_DIR" \
+        MISE_DEBUG="${MISE_DEBUG:-0}" \
+        MISE_EXPERIMENTAL=1 \
+        MISE_GPG_VERIFY="${MISE_GPG_VERIFY:-}" \
+        MISE_HTTP_TEST_PORT_FILE="$TEST_TMPDIR/mise_http_test_port" \
+        MISE_LOG_LEVEL="${MISE_LOG_LEVEL:-}" \
+        MISE_STATE_DIR="$MISE_STATE_DIR" \
+        MISE_SYSTEM_DIR="$MISE_SYSTEM_DIR" \
+        MISE_TIMINGS="${MISE_TIMINGS:-0}" \
+        MISE_TMP_DIR="$TEST_TMPDIR" \
+        MISE_TRACE="${MISE_TRACE:-0}" \
+        MISE_TRUSTED_CONFIG_PATHS="$TEST_ISOLATED_DIR" \
+        MISE_USE_VERSIONS_HOST="${MISE_USE_VERSIONS_HOST:-1}" \
+        MISE_USE_VERSIONS_HOST_TRACK=0 \
+        MISE_YES=1 \
+        PATH="${CARGO_TARGET_DIR:-$ROOT/target}/debug:$HOME/mise/bin:$CARGO_HOME/bin:$TEST_HOME/bin:$HOME/.local/bin:/opt/homebrew/bin:/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin" \
+        ROOT="$ROOT" \
+        RUSTUP_HOME="$RUSTUP_HOME" \
+        RUST_BACKTRACE="${RUST_BACKTRACE:-1}" \
+        SHELL="$(type -p bash)" \
+        TEST_DIR="$(dirname "$TEST_SCRIPT")" \
+        TEST_NAME="$TEST" \
+        TEST_ROOT="$SCRIPT_DIR" \
+        TEST_SCRIPT="$TEST_SCRIPT" \
+        TMPDIR="$TEST_TMPDIR" \
+        EXCLUDE_FROM_CI="${CI:-}" \
+        MISE_E2E_INSIDE_DOCKER="${MISE_E2E_INSIDE_DOCKER:-}" \
+        "$@"
+  ) || return $?
 }
 
 run_test() {

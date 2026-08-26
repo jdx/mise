@@ -50,6 +50,19 @@ function PLUGIN:PackageInstall(ctx)
 end
 EOF
 
+cat >fake-package-plugin/hooks/package_uninstall.lua <<'EOF'
+function PLUGIN:PackageUninstall(ctx)
+  local cmd = require("cmd")
+  for _, package in ipairs(ctx.packages) do
+    if package.name == "z-fails" then
+      error("intentional uninstall failure")
+    end
+    cmd.exec("rm -f " .. os.getenv("HOME") .. "/.fake-packages/" .. package.name)
+  end
+  return {}
+end
+EOF
+
 assert "mise plugin link -f fake $PWD/fake-package-plugin" ""
 assert_contains "mise plugin ls" "fake"
 
@@ -73,13 +86,101 @@ assert_contains "mise bootstrap packages status" "version mismatch"
 assert "mise bootstrap packages apply --yes" ""
 assert "cat $HOME/.fake-packages/extension" "2.0"
 
+# Packages already present before apply are not claimed by mise.
+printf 'manual' >"$HOME/.fake-packages/manual"
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:extension" = "2.0"
+"fake:manual" = "latest"
+EOF
+assert "mise bootstrap packages apply --yes" ""
+
+# A trusted tracked config protects an owned package from plugin pruning.
+mkdir -p tracked
+cat >tracked/mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:extension" = "latest"
+EOF
+assert_succeed "mise -C tracked bootstrap packages status"
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+assert_contains "mise bootstrap packages prune --manager fake --dry-run 2>&1" "nothing to prune"
+assert "cat $HOME/.fake-packages/extension" "2.0"
+
+# Once the final declaration disappears everywhere, dry-run reports the owned
+# package without invoking the hook and confirmed prune removes it. The manual
+# package is never included.
+cat >tracked/mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+assert_succeed "mise -C tracked bootstrap packages status"
+output=$(mise bootstrap packages prune --manager fake --dry-run)
+assert_contains "echo '$output'" "remove fake:extension@2.0"
+assert_not_contains "echo '$output'" "manual"
+assert "cat $HOME/.fake-packages/extension" "2.0"
+assert "mise bootstrap packages prune --manager fake --yes" ""
+assert_fail "test -e $HOME/.fake-packages/extension"
+assert "cat $HOME/.fake-packages/manual" "manual"
+
+# An owned candidate requires the optional uninstall hook.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:nohook" = "latest"
+EOF
+assert "mise bootstrap packages apply --yes" ""
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+mv fake-package-plugin/hooks/package_uninstall.lua fake-package-plugin/hooks/package_uninstall.lua.bak
+assert_fail \
+  "mise bootstrap packages prune --manager fake --dry-run" \
+  "does not support uninstall"
+assert_fail \
+  "mise bootstrap packages prune --manager fake --yes" \
+  "does not support uninstall"
+assert_succeed "test -e $HOME/.fake-packages/nohook"
+mv fake-package-plugin/hooks/package_uninstall.lua.bak fake-package-plugin/hooks/package_uninstall.lua
+
+# Ownership state survives plugin removal and relinking.
+assert "mise plugin uninstall fake" ""
+assert "mise plugin link -f fake $PWD/fake-package-plugin" ""
+assert "mise bootstrap packages prune --manager fake --yes" ""
+assert_fail "test -e $HOME/.fake-packages/nohook"
+
+# Partial uninstall failures still reconcile packages verified as removed.
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:a-removed" = "latest"
+"fake:z-fails" = "latest"
+EOF
+assert "mise bootstrap packages apply --yes" ""
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+EOF
+assert_fail \
+  "mise bootstrap packages prune --manager fake --yes" \
+  "intentional uninstall failure"
+assert_fail "test -e $HOME/.fake-packages/a-removed"
+assert_succeed "test -e $HOME/.fake-packages/z-fails"
+output=$(mise bootstrap packages prune --manager fake --dry-run)
+assert_not_contains "echo '$output'" "a-removed"
+assert_contains "echo '$output'" "z-fails"
+rm -f "$HOME/.fake-packages/z-fails"
+assert_contains "mise bootstrap packages prune --manager fake --dry-run 2>&1" "nothing to prune"
+
 cat >fake-package-plugin/mise.plugin.toml <<'EOF'
 [package-manager]
 requires = ["definitely-not-a-real-binary"]
 EOF
+cat >mise.toml <<'EOF'
+[bootstrap.packages]
+"fake:unavailable" = "latest"
+EOF
 
 assert_contains "mise bootstrap packages status" "required binary"
 assert_fail "mise bootstrap packages apply --manager fake --yes" "not available"
+assert_fail "mise bootstrap packages prune --manager fake --yes" "not available"
 
 # Without plugin packages, post-packages retains its original position before
 # the tools phase.
@@ -108,6 +209,9 @@ run = "touch post-packages-ran"
 [bootstrap.hooks.pre-tools]
 run = "test -f post-packages-ran"
 EOF
+assert_fail \
+  "mise bootstrap packages prune --manager fake --yes" \
+  "excluded by the system_packages.managers setting"
 assert "mise bootstrap --yes" ""
 
 cp -R fake-package-plugin declared-package-plugin

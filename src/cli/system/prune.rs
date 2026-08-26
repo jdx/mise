@@ -1,35 +1,35 @@
 use eyre::{Result, bail};
 
-#[cfg(unix)]
 use crate::config::Config;
 use crate::config::Settings;
-#[cfg(unix)]
 use crate::system;
 #[cfg(unix)]
 use crate::system::packages::SystemPackageManager;
 #[cfg(unix)]
 use crate::system::packages::brew;
-#[cfg(unix)]
+use crate::system::packages::plugin::PackagePluginManager;
 use crate::ui::prompt;
 
 /// Prune installed system packages no longer declared in `[bootstrap.packages]`
 ///
-/// Supports Homebrew formulae and conservatively removable, mise-owned casks.
+/// Supports Homebrew formulae, conservatively removable mise-owned casks, and
+/// packages installed by package plugins that implement `PackageUninstall`.
 /// Pruning keeps packages needed by the current config or by trusted, loadable
-/// tracked configs.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+/// tracked configs. Plugin packages that were already installed before mise
+/// first applied them are never claimed or removed.
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct SystemPrune {
     /// Only prune packages for this manager
-    #[clap(long, short, default_value = "brew", value_parser = ["brew", "brew-cask"])]
+    #[usage(long, short, default = "brew")]
     manager: String,
 
     /// Print what would be removed without deleting anything
-    #[clap(long, short = 'n')]
+    #[usage(long, short = 'n')]
     dry_run: bool,
 
     /// Skip the confirmation prompt
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 }
 
@@ -49,8 +49,66 @@ impl SystemPrune {
         match self.manager.as_str() {
             "brew" => self.run_brew().await,
             "brew-cask" => self.run_brew_cask().await,
-            _ => unreachable!(),
+            _ => self.run_plugin().await,
         }
+    }
+
+    async fn run_plugin(self) -> Result<()> {
+        let discovered = system::packages::all_managers()
+            .into_iter()
+            .find(|manager| manager.name() == self.manager)
+            .ok_or_else(|| eyre::eyre!("unknown bootstrap package manager '{}'", self.manager))?;
+        if !discovered.is_plugin() {
+            bail!(
+                "package manager '{}' does not support pruning",
+                self.manager
+            );
+        }
+        if let Some(reason) = discovered.unavailable_reason_async().await {
+            bail!("{} is not available: {reason}", self.manager);
+        }
+        let manager = PackagePluginManager::new(self.manager.clone())?;
+        let config = Config::get().await?;
+        let configured = system::package_requests_for_manager_from_config_and_tracked_config_files(
+            &config,
+            &self.manager,
+        )
+        .await?;
+        let plan = manager.prune_plan(&configured).await?;
+        if plan.is_empty() {
+            if !self.dry_run {
+                manager.apply_prune_plan(&plan).await?;
+            }
+            info!("{}: nothing to prune", self.manager);
+            return Ok(());
+        }
+        if !manager.supports_uninstall() {
+            bail!(
+                "package plugin '{}' does not support uninstall; add hooks/package_uninstall.lua",
+                self.manager
+            );
+        }
+        let remove = plan
+            .remove
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+        if self.dry_run {
+            for package in &remove {
+                miseprintln!("remove {}:{package}", self.manager);
+            }
+            return Ok(());
+        }
+        if !self.yes && !Settings::get().yes && console::user_attended_stderr() {
+            let msg = format!("{}: prune {}?", self.manager, remove.join(", "));
+            if !prompt::confirm(msg)?.is_yes() {
+                info!("{}: skipped", self.manager);
+                return Ok(());
+            }
+        }
+        let removed = manager.apply_prune_plan(&plan).await?;
+        info!("{}: pruned {removed} packages", self.manager);
+        Ok(())
     }
 
     #[cfg(unix)]
@@ -61,12 +119,18 @@ impl SystemPrune {
             bail!("brew is not available: {}", manager.unavailable_reason());
         }
         let config = Config::get().await?;
-        let configured = system::packages_from_config_and_tracked_config_files(&config)
-            .await?
-            .into_iter()
+        let packages = system::packages_from_config_and_tracked_config_files(&config).await?;
+        let mut configured = packages
+            .iter()
             .find(|mp| mp.manager.name() == "brew")
-            .map(|mp| mp.requests)
+            .map(|mp| mp.requests.clone())
             .unwrap_or_default();
+        let configured_casks = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew-cask")
+            .map(|mp| mp.requests.as_slice())
+            .unwrap_or_default();
+        configured.extend(brew::cask_formula_dependencies(configured_casks).await?);
         let plan = brew::prune_plan(&configured).await?;
         if plan.is_empty() {
             info!("brew: nothing to prune");
@@ -160,5 +224,6 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap packages prune --manager brew --dry-run</bold>
     $ <bold>mise bootstrap packages prune --manager brew --yes</bold>
     $ <bold>mise bootstrap packages prune --manager brew-cask --dry-run</bold>
+    $ <bold>mise bootstrap packages prune --manager vscode --dry-run</bold>
 "#
 );

@@ -1,6 +1,6 @@
 use crate::Result;
-use crate::cli::Cli;
 use crate::cli::args::BackendArg;
+use crate::cli::render_subcommand_help;
 use crate::cmd;
 use crate::config::Config;
 use crate::dirs;
@@ -9,7 +9,6 @@ use crate::request_exit;
 use crate::task::task_source_checker::task_cwd;
 use crate::task::{Deps, Task};
 use crate::toolset::ToolsetBuilder;
-use clap::{CommandFactory, ValueEnum, ValueHint};
 use console::style;
 use itertools::Itertools;
 use std::cmp::PartialEq;
@@ -23,34 +22,39 @@ use std::path::{Path, PathBuf};
 ///
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
-#[derive(Debug, clap::Args)]
-#[clap(visible_alias = "w", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(
+    visible_alias = "w",
+    verbatim_doc_comment,
+    after_long_help = AFTER_LONG_HELP,
+    unknown_flags = "value"
+)]
 pub(crate) struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
     /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
     /// Defaults to `default`
-    #[clap(allow_hyphen_values = true, verbatim_doc_comment)]
+    #[usage(verbatim_doc_comment)]
     task: Option<String>,
 
     /// Tasks to run
-    #[clap(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, verbatim_doc_comment, hide = true)]
     task_flag: Vec<String>,
 
     /// Task and arguments to run
-    #[clap(allow_hyphen_values = true, trailing_var_arg = true)]
+    #[usage(allow_hyphen_values = true, trailing_var_arg = true)]
     args: Vec<String>,
 
     /// Files to watch
     /// Defaults to sources from the task(s)
-    #[clap(short, long, verbatim_doc_comment, hide = true)]
+    #[usage(short, long, verbatim_doc_comment, hide = true)]
     glob: Vec<String>,
 
     /// Run only the specified tasks skipping all dependencies
-    #[clap(long, verbatim_doc_comment)]
+    #[usage(long, verbatim_doc_comment)]
     pub skip_deps: bool,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     watchexec: WatchexecArgs,
 }
 
@@ -58,11 +62,11 @@ impl Watch {
     pub(crate) async fn run(self) -> Result<()> {
         if let Some(task) = &self.task {
             if task == "-h" {
-                self.get_clap_command().print_help()?;
+                print!("{}", render_subcommand_help("watch", false));
                 return Ok(());
             }
             if task == "--help" {
-                self.get_clap_command().print_long_help()?;
+                print!("{}", render_subcommand_help("watch", true));
                 return Ok(());
             }
         }
@@ -341,33 +345,16 @@ impl Watch {
             cmd = cmd.env("MISE_ENV", env::MISE_ENV.join(","));
         }
 
-        // Save terminal state before running watchexec, because --clear=reset
-        // sends a full terminal reset (RIS) which can corrupt terminal settings
-        // (e.g. disabling echo) if watchexec is interrupted with Ctrl+C.
+        // watchexec's --clear=reset resets the controlling terminal, which
+        // also clears termios flags such as ECHO, and it does not put them back
+        // when it is interrupted. Capture them so the guard can restore them
+        // however this scope ends: normal return, `?`, or the future being
+        // dropped by the ctrl-c branch of `run_with_exit_signal` (#8269).
         #[cfg(unix)]
-        let saved_termios = nix::sys::termios::tcgetattr(std::io::stdin()).ok();
+        let _terminal = TerminalState::capture();
 
-        let result = cmd.run();
-
-        #[cfg(unix)]
-        if let Some(termios) = saved_termios {
-            let _ = nix::sys::termios::tcsetattr(
-                std::io::stdin(),
-                nix::sys::termios::SetArg::TCSANOW,
-                &termios,
-            );
-        }
-
-        result?;
+        cmd.run()?;
         Ok(())
-    }
-
-    fn get_clap_command(&self) -> clap::Command {
-        Cli::command()
-            .get_subcommands()
-            .find(|s| s.get_name() == "watch")
-            .unwrap()
-            .clone()
     }
 }
 
@@ -553,13 +540,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 );
 
 //region watchexec
-const OPTSET_FILTERING: &str = "Filtering";
-const OPTSET_COMMAND: &str = "Command";
-const OPTSET_DEBUGGING: &str = "Debugging";
-const OPTSET_OUTPUT: &str = "Output";
-
-#[derive(Debug, clap::Args)]
-pub(super) struct WatchexecArgs {
+#[derive(Debug, usage_rs::Args)]
+pub(crate) struct WatchexecArgs {
     /// Watch a specific file or directory
     ///
     /// By default, Watchexec watches the current directory.
@@ -575,11 +557,11 @@ pub(super) struct WatchexecArgs {
     ///
     /// The special value '/dev/null', provided as the only path watched, will cause Watchexec to
     /// not watch any paths. Other event sources (like signals or key events) may still be used.
-    #[arg(
+    #[usage(
 		short = 'w',
 		long = "watch",
-		help_heading = OPTSET_FILTERING,
-		value_hint = ValueHint::AnyPath,
+		help_heading = "Filtering",
+		value_hint = usage_rs::ValueHint::AnyPath,
 		value_name = "PATH",
     )]
     pub recursive_paths: Vec<PathBuf>,
@@ -589,11 +571,11 @@ pub(super) struct WatchexecArgs {
     /// Unlike '-w', folders watched with this option are not recursed into.
     ///
     /// This option can be specified multiple times to watch multiple directories non-recursively.
-    #[arg(
+    #[usage(
 		short = 'W',
 		long = "watch-non-recursive",
-		help_heading = OPTSET_FILTERING,
-		value_hint = ValueHint::AnyPath,
+		help_heading = "Filtering",
+		value_hint = usage_rs::ValueHint::AnyPath,
 		value_name = "PATH",
     )]
     pub non_recursive_paths: Vec<PathBuf>,
@@ -606,11 +588,11 @@ pub(super) struct WatchexecArgs {
     /// file containing command-line options and pass it to watchexec with `@path/to/argfile`.
     ///
     /// The special value '-' will read from STDIN; this in incompatible with '--stdin-quit'.
-    #[arg(
+    #[usage(
 		short = 'F',
 		long,
-		help_heading = OPTSET_FILTERING,
-		value_hint = ValueHint::AnyPath,
+		help_heading = "Filtering",
+		value_hint = usage_rs::ValueHint::AnyPath,
 		value_name = "PATH",
     )]
     pub watch_file: Option<PathBuf>,
@@ -618,12 +600,13 @@ pub(super) struct WatchexecArgs {
     /// Clear screen before running command
     ///
     /// If this doesn't completely clear the screen, try '--clear=reset'.
-    #[arg(
+    #[usage(
 		short = 'c',
 		long = "clear",
-		help_heading = OPTSET_OUTPUT,
+		help_heading = "Output",
 		num_args = 0..=1,
-		default_missing_value = "clear",
+		default_missing = "clear",
+		value_enum,
 		value_name = "MODE",
     )]
     pub screen_clear: Option<ClearMode>,
@@ -638,11 +621,12 @@ pub(super) struct WatchexecArgs {
     /// programs that can reload their configuration without a full restart.
     ///
     /// The signal can be specified with the '--signal' option.
-    #[arg(
+    #[usage(
         short,
         long,
-        default_value = "do-nothing",
+        default = "do-nothing",
         hide_default_value = true,
+        value_enum,
         value_name = "MODE"
     )]
     pub on_busy_update: OnBusyUpdate,
@@ -650,10 +634,10 @@ pub(super) struct WatchexecArgs {
     /// Restart the process if it's still running
     ///
     /// This is a shorthand for '--on-busy-update=restart'.
-    #[arg(
+    #[usage(
 		short,
 		long,
-		conflicts_with_all = ["on_busy_update"],
+		conflicts = ["on_busy_update"],
     )]
     pub restart: bool,
 
@@ -667,10 +651,10 @@ pub(super) struct WatchexecArgs {
     ///
     /// Signals are not supported on Windows at the moment, and will always be overridden to 'kill'.
     /// See '--stop-signal' for more on Windows "signals".
-    #[arg(
+    #[usage(
 		short,
 		long,
-		conflicts_with_all = ["restart"],
+		conflicts = ["restart"],
 		value_name = "SIGNAL"
     )]
     pub signal: Option<String>,
@@ -691,7 +675,7 @@ pub(super) struct WatchexecArgs {
     /// has termination (here called "KILL" or "STOP") and "CTRL+C", "CTRL+BREAK", and "CTRL+CLOSE"
     /// events. For portability the unix signals "SIGKILL", "SIGINT", "SIGTERM", and "SIGHUP" are
     /// respectively mapped to these.
-    #[arg(long, value_name = "SIGNAL")]
+    #[usage(long, value_name = "SIGNAL")]
     pub stop_signal: Option<String>,
 
     /// Time to wait for the command to exit gracefully
@@ -707,9 +691,9 @@ pub(super) struct WatchexecArgs {
     ///
     /// This has no practical effect on Windows as the command is always forcefully terminated; see
     /// '--stop-signal' for why.
-    #[arg(
+    #[usage(
         long,
-        default_value = "10s",
+        default = "10s",
         hide_default_value = true,
         value_name = "TIMEOUT"
     )]
@@ -732,7 +716,7 @@ pub(super) struct WatchexecArgs {
     /// "SIGKILL", "SIGHUP"). Signal numbers are also supported (like "15", "31"). On Windows, the
     /// forms "STOP", "CTRL+C", and "CTRL+BREAK" are also supported to receive, but Watchexec cannot
     /// yet deliver other "signals" than a STOP.
-    #[arg(long = "map-signal", value_name = "SIGNAL:SIGNAL")]
+    #[usage(long = "map-signal", value_name = "SIGNAL:SIGNAL")]
     pub signal_map: Vec<String>,
 
     /// Time to wait for new events before taking action
@@ -752,10 +736,10 @@ pub(super) struct WatchexecArgs {
     /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
     ///
     /// The default is 50 milliseconds. Setting to 0 is highly discouraged.
-    #[arg(
+    #[usage(
         long,
         short,
-        default_value = "50ms",
+        default = "50ms",
         hide_default_value = true,
         value_name = "TIMEOUT"
     )]
@@ -765,7 +749,7 @@ pub(super) struct WatchexecArgs {
     ///
     /// This watches the stdin file descriptor for EOF, and exits Watchexec gracefully when it is
     /// closed. This is used by some process managers to avoid leaving zombie processes around.
-    #[arg(long)]
+    #[usage(long)]
     pub stdin_quit: bool,
 
     /// Don't load gitignores
@@ -775,10 +759,7 @@ pub(super) struct WatchexecArgs {
     /// files. Both global (like '~/.gitignore') and local (like '.gitignore') files are considered.
     ///
     /// This option is useful if you want to watch files that are ignored by Git.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[usage(long, help_heading = "Filtering")]
     pub no_vcs_ignore: bool,
 
     /// Don't load project-local ignores
@@ -800,11 +781,7 @@ pub(super) struct WatchexecArgs {
     /// VCS ignore files (Git, Mercurial, Bazaar, Darcs, Fossil) are only used if the corresponding
     /// VCS is discovered to be in use for the project/origin. For example, a .bzrignore in a Git
     /// repository will be discarded.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-		verbatim_doc_comment,
-    )]
+    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
     pub no_project_ignore: bool,
 
     /// Don't load global ignores
@@ -822,11 +799,7 @@ pub(super) struct WatchexecArgs {
     ///
     /// Like for project files, Git and Bazaar global files will only be used for the corresponding
     /// VCS as used in the project.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-		verbatim_doc_comment,
-    )]
+    #[usage(long, help_heading = "Filtering", verbatim_doc_comment)]
     pub no_global_ignore: bool,
 
     /// Don't use internal default ignores
@@ -834,10 +807,7 @@ pub(super) struct WatchexecArgs {
     /// Watchexec has a set of default ignore patterns, such as editor swap files, `*.pyc`, `*.pyo`,
     /// `.DS_Store`, `.bzr`, `_darcs`, `.fossil-settings`, `.git`, `.hg`, `.pijul`, `.svn`, and
     /// Watchexec log files.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[usage(long, help_heading = "Filtering")]
     pub no_default_ignore: bool,
 
     /// Don't discover ignore files at all
@@ -846,10 +816,7 @@ pub(super) struct WatchexecArgs {
     /// even more efficient as it will skip all the ignore discovery mechanisms from the get go.
     ///
     /// Note that default ignores are still loaded, see '--no-default-ignore'.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[usage(long, help_heading = "Filtering")]
     pub no_discover_ignore: bool,
 
     /// Don't ignore anything at all
@@ -858,17 +825,14 @@ pub(super) struct WatchexecArgs {
     ///
     /// Note that ignores explicitly loaded via other command line options, such as '--ignore' or
     /// '--ignore-file', will still be used.
-    #[arg(
-		long,
-		help_heading = OPTSET_FILTERING,
-    )]
+    #[usage(long, help_heading = "Filtering")]
     pub ignore_nothing: bool,
 
     /// Wait until first change before running command
     ///
     /// By default, Watchexec will run the command once immediately. With this option, it will
     /// instead wait until an event is detected before running the command as normal.
-    #[arg(long, short)]
+    #[usage(long, short)]
     pub postpone: bool,
 
     /// Sleep before running the command
@@ -879,7 +843,7 @@ pub(super) struct WatchexecArgs {
     ///
     /// Takes a unit-less value in seconds, or a time span value such as "2min 5s".
     /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
-    #[arg(long, value_name = "DURATION")]
+    #[usage(long, value_name = "DURATION")]
     pub delay_run: Option<String>,
 
     /// Poll for filesystem changes
@@ -894,11 +858,11 @@ pub(super) struct WatchexecArgs {
     /// Providing a unit-less value is deprecated and will warn; it will be an error in the future.
     ///
     /// Aliased as '--force-poll'.
-    #[arg(
+    #[usage(
 		long,
 		alias = "force-poll",
 		num_args = 0..=1,
-		default_missing_value = "30s",
+		default_missing = "30s",
 		value_name = "INTERVAL",
     )]
     pub poll: Option<String>,
@@ -947,18 +911,11 @@ pub(super) struct WatchexecArgs {
     /// Use with a unix shell and options:
     ///
     ///   $ watchexec --shell='zsh -x -o shwordsplit' -- scr
-    #[arg(
-		long,
-		help_heading = OPTSET_COMMAND,
-		value_name = "SHELL",
-    )]
+    #[usage(long, help_heading = "Command", value_name = "SHELL")]
     pub shell: Option<String>,
 
     /// Shorthand for '--shell=none'
-    #[arg(
-		short = 'n',
-		help_heading = OPTSET_COMMAND,
-    )]
+    #[usage(short = 'n', help_heading = "Command")]
     pub no_shell: bool,
 
     /// Configure event emission
@@ -1061,14 +1018,15 @@ pub(super) struct WatchexecArgs {
     /// numbers of files will either cause the environment to be truncated, or may error or crash
     /// the process entirely. The $WATCHEXEC_COMMON_PATH is also unintuitive, as demonstrated by the
     /// multiple confused queries that have landed in my inbox over the years.
-    #[arg(
-		long,
-		help_heading = OPTSET_COMMAND,
-		verbatim_doc_comment,
-		default_value = "none",
-		hide_default_value = true,
-		value_name = "MODE",
-		required_if_eq("only_emit_events", "true"),
+    #[usage(
+        long,
+        help_heading = "Command",
+        verbatim_doc_comment,
+        default = "none",
+        hide_default_value = true,
+        value_name = "MODE",
+        required_if_eq("only_emit_events", "true"),
+        value_enum
     )]
     pub emit_events_to: EmitEvents,
 
@@ -1081,10 +1039,10 @@ pub(super) struct WatchexecArgs {
     /// This option requires `--emit-events-to` to be set, and restricts the available modes to
     /// `stdio` and `json-stdio`, modifying their behaviour to write to stdout instead of the stdin
     /// of the command.
-    #[arg(
+    #[usage(
 		long,
-		help_heading = OPTSET_OUTPUT,
-		conflicts_with_all = ["manual"],
+		help_heading = "Output",
+		conflicts = ["manual"],
     )]
     pub only_emit_events: bool,
 
@@ -1094,12 +1052,7 @@ pub(super) struct WatchexecArgs {
     /// setting them for the Watchexec process itself.
     ///
     /// Use key=value syntax. Multiple variables can be set by repeating the option.
-    #[arg(
-		long,
-		short = 'E',
-		help_heading = OPTSET_COMMAND,
-		value_name = "KEY=VALUE",
-    )]
+    #[usage(long, short = 'E', help_heading = "Command", value_name = "KEY=VALUE")]
     pub env: Vec<String>,
 
     /// Configure how the process is wrapped
@@ -1111,33 +1064,26 @@ pub(super) struct WatchexecArgs {
     ///
     /// Use 'group' to use a process group, 'session' to use a process session, and 'none' to run
     /// the command directly. On Windows, either of 'group' or 'session' will use a Job Object.
-    #[arg(
-		long,
-		help_heading = OPTSET_COMMAND,
-		value_name = "MODE",
-    )]
+    #[usage(long, help_heading = "Command", value_name = "MODE", value_enum)]
     pub wrap_process: Option<WrapMode>,
 
     /// Alert when commands start and end
     ///
     /// With this, Watchexec will emit a desktop notification when a command starts and ends, on
     /// supported platforms. On unsupported platforms, it may silently do nothing, or log a warning.
-    #[arg(
-		short = 'N',
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[usage(short = 'N', long, help_heading = "Output")]
     pub notify: bool,
 
     /// When to use terminal colours
     ///
     /// Setting the environment variable `NO_COLOR` to any value is equivalent to `--color=never`.
-    #[arg(
-		long,
-		help_heading = OPTSET_OUTPUT,
-		default_value = "auto",
-		value_name = "MODE",
-		alias = "colour",
+    #[usage(
+        long,
+        help_heading = "Output",
+        default = "auto",
+        value_name = "MODE",
+        alias = "colour",
+        value_enum
     )]
     pub color: ColourMode,
 
@@ -1145,28 +1091,18 @@ pub(super) struct WatchexecArgs {
     ///
     /// This may not be exactly accurate, as it includes some overhead from Watchexec itself. Use
     /// the `time` utility, high-precision timers, or benchmarking tools for more accurate results.
-    #[arg(
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[usage(long, help_heading = "Output")]
     pub timings: bool,
 
     /// Don't print starting and stopping messages
     ///
     /// By default Watchexec will print a message when the command starts and stops. This option
     /// disables this behaviour, so only the command's output, warnings, and errors will be printed.
-    #[arg(
-		short,
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[usage(short, long, help_heading = "Output")]
     pub quiet: bool,
 
     /// Ring the terminal bell on command completion
-    #[arg(
-		long,
-		help_heading = OPTSET_OUTPUT,
-    )]
+    #[usage(long, help_heading = "Output")]
     pub bell: bool,
 
     /// Set the project origin
@@ -1179,9 +1115,9 @@ pub(super) struct WatchexecArgs {
     /// used, the meaning of a leading '/' in filtering patterns, and maybe more in the future.
     ///
     /// When set, Watchexec will also not bother searching, which can be significantly faster.
-    #[arg(
+    #[usage(
 		long,
-		value_hint = ValueHint::DirPath,
+		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
     )]
     pub project_origin: Option<PathBuf>,
@@ -1190,9 +1126,9 @@ pub(super) struct WatchexecArgs {
     ///
     /// By default, the working directory of the command is the working directory of Watchexec. You
     /// can change that with this option. Note that paths may be less intuitive to use with this.
-    #[arg(
+    #[usage(
 		long,
-		value_hint = ValueHint::DirPath,
+		value_hint = usage_rs::ValueHint::DirPath,
 		value_name = "DIRECTORY",
     )]
     pub workdir: Option<PathBuf>,
@@ -1202,12 +1138,12 @@ pub(super) struct WatchexecArgs {
     /// This is a quick filter to only emit events for files with the given extensions. Extensions
     /// can be given with or without the leading dot (e.g. 'js' or '.js'). Multiple extensions can
     /// be given by repeating the option or by separating them with commas.
-    #[arg(
-		long = "exts",
-		short = 'e',
-		help_heading = OPTSET_FILTERING,
-		value_delimiter = ',',
-		value_name = "EXTENSIONS",
+    #[usage(
+        long = "exts",
+        short = 'e',
+        help_heading = "Filtering",
+        delimiter = ',',
+        value_name = "EXTENSIONS"
     )]
     pub filter_extensions: Vec<String>,
 
@@ -1216,11 +1152,11 @@ pub(super) struct WatchexecArgs {
     /// Provide a glob-like filter pattern, and only events for files matching the pattern will be
     /// emitted. Multiple patterns can be given by repeating the option. Events that are not from
     /// files (e.g. signals, keyboard events) will pass through untouched.
-    #[arg(
-		long = "filter",
-		short = 'f',
-		help_heading = OPTSET_FILTERING,
-		value_name = "PATTERN",
+    #[usage(
+        long = "filter",
+        short = 'f',
+        help_heading = "Filtering",
+        value_name = "PATTERN"
     )]
     pub filter_patterns: Vec<String>,
 
@@ -1230,15 +1166,16 @@ pub(super) struct WatchexecArgs {
     /// with '#' are ignored. Uses the same pattern format as the '--filter' option.
     ///
     /// This can also be used via the $WATCHEXEC_FILTER_FILES environment variable.
-    #[arg(
+    #[usage(
 		long = "filter-file",
-		help_heading = OPTSET_FILTERING,
-		value_delimiter = env::PATH_ENV_SEP,
-		value_hint = ValueHint::FilePath,
+		help_heading = "Filtering",
+		value_hint = usage_rs::ValueHint::FilePath,
 		value_name = "PATH",
 		env = "WATCHEXEC_FILTER_FILES",
 		hide_env = true,
     )]
+    #[cfg_attr(windows, usage(delimiter = ';'))]
+    #[cfg_attr(not(windows), usage(delimiter = ':'))]
     pub filter_files: Vec<PathBuf>,
 
     /// [experimental] Filter programs.
@@ -1301,11 +1238,11 @@ pub(super) struct WatchexecArgs {
     /// Ignore files that start with shebangs:
     ///
     ///   'any(.tags[] | select(.kind == "path" && .filetype == "file"); .absolute | read(2) == "#!") | not'
-    #[arg(
-		long = "filter-prog",
-		short = 'J',
-		help_heading = OPTSET_FILTERING,
-		value_name = "EXPRESSION",
+    #[usage(
+        long = "filter-prog",
+        short = 'J',
+        help_heading = "Filtering",
+        value_name = "EXPRESSION"
     )]
     pub filter_programs: Vec<String>,
 
@@ -1314,11 +1251,11 @@ pub(super) struct WatchexecArgs {
     /// Provide a glob-like filter pattern, and events for files matching the pattern will be
     /// excluded. Multiple patterns can be given by repeating the option. Events that are not from
     /// files (e.g. signals, keyboard events) will pass through untouched.
-    #[arg(
-		long = "ignore",
-		short = 'i',
-		help_heading = OPTSET_FILTERING,
-		value_name = "PATTERN",
+    #[usage(
+        long = "ignore",
+        short = 'i',
+        help_heading = "Filtering",
+        value_name = "PATTERN"
     )]
     pub ignore_patterns: Vec<String>,
 
@@ -1328,15 +1265,16 @@ pub(super) struct WatchexecArgs {
     /// with '#' are ignored. Uses the same pattern format as the '--ignore' option.
     ///
     /// This can also be used via the $WATCHEXEC_IGNORE_FILES environment variable.
-    #[arg(
+    #[usage(
 		long = "ignore-file",
-		help_heading = OPTSET_FILTERING,
-		value_delimiter = env::PATH_ENV_SEP,
-		value_hint = ValueHint::FilePath,
+		help_heading = "Filtering",
+		value_hint = usage_rs::ValueHint::FilePath,
 		value_name = "PATH",
 		env = "WATCHEXEC_IGNORE_FILES",
 		hide_env = true,
     )]
+    #[cfg_attr(windows, usage(delimiter = ';'))]
+    #[cfg_attr(not(windows), usage(delimiter = ':'))]
     pub ignore_files: Vec<PathBuf>,
 
     /// Filesystem events to filter to
@@ -1348,13 +1286,14 @@ pub(super) struct WatchexecArgs {
     ///
     /// This may apply filtering at the kernel level when possible, which can be more efficient, but
     /// may be more confusing when reading the logs.
-    #[arg(
-		long = "fs-events",
-		help_heading = OPTSET_FILTERING,
-		default_value = "create,remove,rename,modify,metadata",
-		value_delimiter = ',',
-		hide_default_value = true,
-		value_name = "EVENTS",
+    #[usage(
+        long = "fs-events",
+        help_heading = "Filtering",
+        default = "create,remove,rename,modify,metadata",
+        delimiter = ',',
+        hide_default_value = true,
+        value_enum,
+        value_name = "EVENTS"
     )]
     pub filter_fs_events: Vec<FsEvent>,
 
@@ -1362,10 +1301,10 @@ pub(super) struct WatchexecArgs {
     ///
     /// This is a shorthand for '--fs-events create,remove,rename,modify'. Using it alongside the
     /// '--fs-events' option is non-sensical and not allowed.
-    #[arg(
-		long = "no-meta",
-		help_heading = OPTSET_FILTERING,
-		conflicts_with = "filter_fs_events",
+    #[usage(
+        long = "no-meta",
+        help_heading = "Filtering",
+        conflicts = "filter_fs_events"
     )]
     pub filter_fs_meta: bool,
 
@@ -1375,10 +1314,7 @@ pub(super) struct WatchexecArgs {
     /// human readable form. This is useful for debugging filters.
     ///
     /// Use '-vvv' instead when you need more diagnostic information.
-    #[arg(
-		long,
-		help_heading = OPTSET_DEBUGGING,
-    )]
+    #[usage(long, help_heading = "Debugging")]
     pub print_events: bool,
 
     /// Show the manual page
@@ -1386,54 +1322,51 @@ pub(super) struct WatchexecArgs {
     /// This shows the manual page for Watchexec, if the output is a terminal and the 'man' program
     /// is available. If not, the manual page is printed to stdout in ROFF format (suitable for
     /// writing to a watchexec.1 file).
-    #[arg(
-		long,
-		help_heading = OPTSET_DEBUGGING,
-    )]
+    #[usage(long, help_heading = "Debugging")]
     pub manual: bool,
     // /// Change to this directory before executing the command
-    // #[clap(short = 'C', long, value_hint = ValueHint::DirPath, long)]
+    // #[arg(short = 'C', long, value_hint = ValueHint::DirPath, long)]
     // pub cd: Option<PathBuf>,
     //
     // /// Don't actually run the task(s), just print them in order of execution
-    // #[clap(long, short = 'n', verbatim_doc_comment)]
+    // #[arg(long, short = 'n', verbatim_doc_comment)]
     // pub dry_run: bool,
     //
     // /// Force the tasks to run even if outputs are up to date
-    // #[clap(long, short, verbatim_doc_comment)]
+    // #[arg(long, short, verbatim_doc_comment)]
     // pub force: bool,
     //
     // /// Print stdout/stderr by line, prefixed with the tasks's label
     // /// Defaults to true if --jobs > 1
     // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    // #[clap(long, short, verbatim_doc_comment, overrides_with = "interleave")]
+    // #[arg(long, short, verbatim_doc_comment, overrides_with = "interleave")]
     // pub prefix: bool,
     //
     // /// Print directly to stdout/stderr instead of by line
     // /// Defaults to true if --jobs == 1
     // /// Configure with `task.output` config or `MISE_TASK_OUTPUT` env var
-    // #[clap(long, short, verbatim_doc_comment, overrides_with = "prefix")]
+    // #[arg(long, short, verbatim_doc_comment, overrides_with = "prefix")]
     // pub interleave: bool,
     //
     // /// Tool(s) to also add
     // /// e.g.: node@20 python@3.10
-    // #[clap(short, long, value_name = "TOOL@VERSION")]
+    // #[arg(short, long, value_name = "TOOL@VERSION")]
     // pub tool: Vec<ToolArg>,
     //
     // /// Number of tasks to run in parallel
     // /// [default: 4]
     // /// Configure with `jobs` config or `MISE_JOBS` env var
-    // #[clap(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
+    // #[arg(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     // pub jobs: Option<usize>,
     //
     // /// Read/write directly to stdin/stdout/stderr instead of by line
     // /// Configure with `raw` config or `MISE_RAW` env var
-    // #[clap(long, short, verbatim_doc_comment)]
+    // #[arg(long, short, verbatim_doc_comment)]
     // pub raw: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub(super) enum EmitEvents {
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+pub(crate) enum EmitEvents {
     #[default]
     Environment,
     Stdio,
@@ -1443,9 +1376,9 @@ pub(super) enum EmitEvents {
     None,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub(super) enum OnBusyUpdate {
+pub(crate) enum OnBusyUpdate {
     #[default]
     Queue,
     DoNothing,
@@ -1468,24 +1401,24 @@ fn wrap_process_args(mode: Option<WrapMode>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum, PartialEq, strum::Display)]
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum, PartialEq, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
-pub(super) enum WrapMode {
+pub(crate) enum WrapMode {
     #[default]
     Group,
     Session,
     None,
 }
 
-#[derive(Clone, Copy, Debug, Default, ValueEnum)]
-pub(super) enum ClearMode {
+#[derive(Clone, Copy, Debug, Default, usage_rs::ValueEnum)]
+pub(crate) enum ClearMode {
     #[default]
     Clear,
     Reset,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(super) enum FsEvent {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+pub(crate) enum FsEvent {
     Access,
     Create,
     Remove,
@@ -1494,24 +1427,160 @@ pub(super) enum FsEvent {
     Metadata,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-#[clap(rename_all = "lower")]
-pub(super) enum ShellCompletion {
-    Bash,
-    Elvish,
-    Fish,
-    Nu,
-    PowerShell,
-    Zsh,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub(super) enum ColourMode {
+#[derive(Clone, Copy, Debug, Eq, PartialEq, usage_rs::ValueEnum)]
+pub(crate) enum ColourMode {
     Auto,
     Always,
     Never,
 }
 //endregion
+
+/// Terminal attributes captured before watchexec runs, put back when this is
+/// dropped.
+///
+/// `--clear=reset` leaves the terminal without echo when watchexec is
+/// interrupted, and restoring on the straight-line path after the child exits
+/// is not enough: mise exited the process from the signal path until 2026.7.16,
+/// so the restore never ran, and `run_with_exit_signal` still drops the command
+/// future when ctrl-c wins the race. Restoring from `Drop` covers every one of
+/// those exits.
+#[cfg(unix)]
+struct TerminalState {
+    saved: Vec<(std::os::fd::OwnedFd, nix::sys::termios::Termios)>,
+}
+
+#[cfg(unix)]
+impl TerminalState {
+    /// Capture whichever terminal watchexec is going to reset.
+    ///
+    /// That is the controlling terminal, not stdin: with stdin on `/dev/null`
+    /// and stdout on a second terminal, the flags that change are still the
+    /// controlling terminal's. So prefer `/dev/tty`, and fall back to the
+    /// standard streams only for a session that has no controlling terminal to
+    /// open.
+    fn capture() -> Self {
+        Self::controlling_terminal().unwrap_or_else(|| {
+            use std::os::fd::AsFd;
+            Self::capture_from([
+                std::io::stdin().as_fd(),
+                std::io::stdout().as_fd(),
+                std::io::stderr().as_fd(),
+            ])
+        })
+    }
+
+    fn controlling_terminal() -> Option<Self> {
+        use std::os::fd::AsFd;
+        let tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .ok()?;
+        let state = Self::capture_from([tty.as_fd()]);
+        (!state.saved.is_empty()).then_some(state)
+    }
+
+    /// Capture every descriptor that is a terminal, not just the first.
+    ///
+    /// Restoring one terminal twice is idempotent, so the common case where the
+    /// standard streams share a terminal needs no deduplication, and streams
+    /// pointing at different terminals are all put back.
+    fn capture_from<'a>(fds: impl IntoIterator<Item = std::os::fd::BorrowedFd<'a>>) -> Self {
+        let saved = fds
+            .into_iter()
+            .filter_map(|fd| {
+                let attrs = nix::sys::termios::tcgetattr(fd).ok()?;
+                // Duplicate the descriptor: the borrow ends with this call, but
+                // the restore happens later, whenever the guard is dropped.
+                Some((fd.try_clone_to_owned().ok()?, attrs))
+            })
+            .collect();
+        Self { saved }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for TerminalState {
+    fn drop(&mut self) {
+        for (fd, attrs) in &self.saved {
+            let _ = nix::sys::termios::tcsetattr(fd, nix::sys::termios::SetArg::TCSANOW, attrs);
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod terminal_state_tests {
+    use super::TerminalState;
+    use nix::sys::termios::{LocalFlags, SetArg, tcgetattr, tcsetattr};
+    use std::os::fd::{AsFd, BorrowedFd};
+
+    fn echo_is_on(fd: BorrowedFd<'_>) -> bool {
+        tcgetattr(fd)
+            .unwrap()
+            .local_flags
+            .contains(LocalFlags::ECHO)
+    }
+
+    fn set_echo(fd: BorrowedFd<'_>, on: bool) {
+        let mut attrs = tcgetattr(fd).unwrap();
+        attrs.local_flags.set(LocalFlags::ECHO, on);
+        tcsetattr(fd, SetArg::TCSANOW, &attrs).unwrap();
+    }
+
+    #[test]
+    fn capture_from_saves_nothing_when_no_descriptor_is_a_terminal() {
+        let (r, w) = nix::unistd::pipe().unwrap();
+        assert!(
+            TerminalState::capture_from([r.as_fd(), w.as_fd()])
+                .saved
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn capture_from_looks_past_a_non_terminal_descriptor() {
+        // A redirected stdin must not stop the search: the process still shares
+        // a terminal that watchexec can reset (#8269).
+        let pty = nix::pty::openpty(None, None).unwrap();
+        let (r, _w) = nix::unistd::pipe().unwrap();
+        let state = TerminalState::capture_from([r.as_fd(), pty.master.as_fd()]);
+        assert_eq!(state.saved.len(), 1);
+    }
+
+    #[test]
+    fn dropping_restores_flags_cleared_while_it_was_held() {
+        let pty = nix::pty::openpty(None, None).unwrap();
+        let fd = pty.master.as_fd();
+        set_echo(fd, true);
+
+        let guard = TerminalState::capture_from([fd]);
+
+        // Stand in for watchexec's --clear=reset, which clears ECHO and does
+        // not put it back when it is interrupted.
+        set_echo(fd, false);
+        assert!(!echo_is_on(fd));
+
+        drop(guard);
+        assert!(echo_is_on(fd));
+    }
+
+    #[test]
+    fn dropping_restores_every_captured_terminal() {
+        let first = nix::pty::openpty(None, None).unwrap();
+        let second = nix::pty::openpty(None, None).unwrap();
+        set_echo(first.master.as_fd(), true);
+        set_echo(second.master.as_fd(), true);
+
+        let guard = TerminalState::capture_from([first.master.as_fd(), second.master.as_fd()]);
+
+        set_echo(first.master.as_fd(), false);
+        set_echo(second.master.as_fd(), false);
+
+        drop(guard);
+        assert!(echo_is_on(first.master.as_fd()));
+        assert!(echo_is_on(second.master.as_fd()));
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -1519,6 +1588,7 @@ mod tests {
         WrapMode, common_ancestor, merge_watch_patterns, normalize_path, parse_source,
         relativize_source, source_watch_dir, tasks_disable_vcs_ignores, wrap_process_args,
     };
+    use crate::cli::{Cli, Commands};
     use crate::task::{Task, TaskWatchOptions};
     use std::path::{Path, PathBuf};
 
@@ -1538,6 +1608,21 @@ mod tests {
         assert_eq!(WrapMode::Group.to_string(), "group");
         assert_eq!(WrapMode::Session.to_string(), "session");
         assert_eq!(WrapMode::None.to_string(), "none");
+    }
+
+    #[test]
+    fn watch_flags_after_the_task_still_belong_to_watch() {
+        let argv =
+            ["mise", "watch", "default", "--postpone", "--poll=100ms"].map(std::ffi::OsStr::new);
+        let cli = Cli::parse_from_argv(&argv).unwrap();
+        let Some(Commands::Watch(watch)) = cli.command else {
+            panic!("expected the watch command");
+        };
+
+        assert_eq!(watch.task.as_deref(), Some("default"));
+        assert!(watch.args.is_empty());
+        assert!(watch.watchexec.postpone);
+        assert_eq!(watch.watchexec.poll.as_deref(), Some("100ms"));
     }
 
     #[test]

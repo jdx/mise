@@ -12,21 +12,21 @@ pub(crate) async fn maybe_auto_update(
     Ok(())
 }
 
-#[derive(Debug, Default, clap::Args)]
+#[derive(Debug, Default, usage_rs::Args)]
 pub(crate) struct SelfUpdate {
     /// Update to a specific version
     version: Option<String>,
 
     /// Update even if already up to date
-    #[clap(long, short)]
+    #[usage(long, short)]
     force: bool,
 
     /// Skip confirmation prompt
-    #[clap(long, short)]
+    #[usage(long, short)]
     yes: bool,
 
     /// Disable auto-updating plugins
-    #[clap(long)]
+    #[usage(long)]
     no_plugins: bool,
 }
 
@@ -62,10 +62,10 @@ fn read_instructions_file(path: &PathBuf) -> Option<String> {
 }
 
 pub(crate) fn upgrade_instructions_text() -> Option<String> {
-    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS {
-        if let Some(msg) = read_instructions_file(path) {
-            return Some(msg);
-        }
+    if let Some(path) = &*env::MISE_SELF_UPDATE_INSTRUCTIONS
+        && let Some(msg) = read_instructions_file(path)
+    {
+        return Some(msg);
     }
     None
 }

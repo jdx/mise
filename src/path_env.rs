@@ -368,7 +368,7 @@ mod tests {
         path_env.add("/3".into());
         assert_eq!(
             path_env.to_string(),
-            format!("/1:/2:/3:/before-1:/before-2:/before-3:/after-1:/after-2:/after-3")
+            "/1:/2:/3:/before-1:/before-2:/before-3:/after-1:/after-2:/after-3"
         );
     }
     #[tokio::test]
@@ -376,6 +376,6 @@ mod tests {
         let _config = Config::get().await.unwrap();
         let mut path_env = PathEnv::from_iter(["/item1", "/item2"].map(PathBuf::from));
         path_env.add("/1:/2".into());
-        assert_eq!(path_env.to_string(), format!("/1:/2:/item1:/item2"));
+        assert_eq!(path_env.to_string(), "/1:/2:/item1:/item2");
     }
 }

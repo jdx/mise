@@ -1615,6 +1615,19 @@ impl ConfigFile for MiseToml {
             .transpose()
     }
 
+    fn task_config_excludes(&self) -> eyre::Result<Option<Vec<String>>> {
+        self.task_config
+            .excludes
+            .as_ref()
+            .map(|excludes| {
+                excludes
+                    .iter()
+                    .map(|exclude| self.parse_template(exclude))
+                    .collect()
+            })
+            .transpose()
+    }
+
     fn monorepo_root(&self) -> Option<bool> {
         self.monorepo_root
     }
@@ -4757,6 +4770,39 @@ run = 'echo "template"'
             podman[0].options().get("rename_exe"),
             Some("podman-remote"),
             "user-provided rename_exe should override the registry default"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_npm_table_syntax_preserves_aube_install_options() {
+        let _config = Config::get().await.unwrap();
+        let cf = parse(formatdoc! {r#"
+            [tools]
+            "npm:gws-axi" = {{
+                version = "0.17.0",
+                allow_low_downloads = true,
+                trust_policy_excludes = ["undici"]
+            }}
+        "#});
+        let trs = cf.to_tool_request_set().unwrap();
+        let request = trs
+            .tools
+            .iter()
+            .find(|(ba, _)| ba.short == "npm:gws-axi")
+            .map(|(_, requests)| &requests[0])
+            .expect("npm request should be in tool request set");
+        let options = request.options();
+
+        // Backend scalar options are normalized to strings by ToolOptions.
+        assert_eq!(
+            options.opts.get("allow_low_downloads"),
+            Some(&toml::Value::String("true".to_string()))
+        );
+        assert_eq!(
+            options.opts.get("trust_policy_excludes"),
+            Some(&toml::Value::Array(vec![toml::Value::String(
+                "undici".to_string()
+            )]))
         );
     }
 

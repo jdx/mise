@@ -12,7 +12,7 @@ members = [
 
 [package]
 name = "mise"
-version = "2026.8.10"
+version = "2026.8.14"
 edition = "2024"
 description = "Dev tools, env vars, and tasks in one CLI"
 authors = ["Jeff Dickey (@jdx)"]
@@ -43,7 +43,7 @@ include = [
   "/vendor/aqua-registry/registry.yml",
 ]
 build = "build.rs"
-rust-version = "1.93"
+rust-version = "1.95"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -97,7 +97,12 @@ chrono = { version = "0.4", default-features = false, features = [
   "clock",
 ] }
 ci_info = "0.14"
-clap = { version = "4", features = ["env", "derive", "string"] }
+usage_rs = { package = "usage-rs", version = "6", features = [
+  "completions",
+  "diagnostics",
+  "validation",
+] }
+usage-cli = "6"
 color-eyre = "0.6"
 color-print = "0.3"
 comfy-table = "8"
@@ -152,7 +157,7 @@ pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
 rattler = { version = "0.48", default-features = false }
-rattler_conda_types = { version = "0.49", default-features = false }
+rattler_conda_types = { version = "0.50", default-features = false }
 rattler_repodata_gateway = { version = "0.32", default-features = false, features = [
   "gateway",
 ] }
@@ -186,6 +191,12 @@ rops = { version = "0.1", default-features = false, features = [
   "toml",
   "age",
 ] }
+# Not used directly. age renders its error messages through fluent, and
+# rust-embed only bakes the translations into the binary for release builds
+# unless `debug-embed` is on. Without it a debug mise that formats an age error
+# outside the crate's source tree — e2e inside a container — panics in age's
+# lazy_static instead of reporting the error.
+rust-embed = { version = "8", features = ["debug-embed"] }
 same-file = "1"
 serde = { version = "1", features = ["derive"] }
 serde_ignored = "0.1"
@@ -228,7 +239,7 @@ toml_edit = { version = "0.25", features = ["parse"] }
 ubi = { version = "0.10", default-features = false }
 url = "2"
 urlencoding = "2"
-usage-lib = { version = "5", features = ["clap", "docs"] }
+usage-lib = { version = "6", features = ["docs"] }
 versions = { version = "7", features = ["serde"] }
 vfox = { path = "crates/vfox", default-features = false }
 aqua-registry = { path = "crates/aqua-registry" }
@@ -285,7 +296,6 @@ serde_yaml = "0.9"
 toml = "1"
 
 [dev-dependencies]
-clap-sort = "1"
 ctor = "1"
 insta = { version = "1", features = ["filters", "json"] }
 mockito = "1"
@@ -345,7 +355,14 @@ pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-x64{ ar
 pkg-url = "{ repo }/releases/download/v{ version }/mise-v{version}-linux-armv7{ archive-suffix }"
 
 [package.metadata.cargo-machete]
-ignored = ["aws-lc-rs", "built", "cfg_aliases", "openssl", "phf_codegen"]
+ignored = [
+  "aws-lc-rs",
+  "built",
+  "cfg_aliases",
+  "openssl",
+  "phf_codegen",
+  "rust-embed",
+]
 
 [package.metadata.release]
 pre-release-replacements = [

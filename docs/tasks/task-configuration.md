@@ -1602,6 +1602,29 @@ When `path` points at a directory, mise loads both executable file tasks and any
 
 Included `.toml` files use the [task toml file format](#task_config.includes) (the keys are task names — there is no `[tasks.…]` prefix). The repository will be cloned and cached in `MISE_CACHE_DIR/remote-git-tasks-cache`. Tasks from the include will be loaded as if they were local. You can disable caching with `MISE_TASK_REMOTE_NO_CACHE=true` or the `--no-cache` flag.
 
+### `task_config.excludes` {#task_config.excludes}
+
+Set paths or glob patterns to exclude from file-task discovery. Relative entries resolve from the
+config root and may exclude a file, an entire directory, or files matched by a glob:
+
+```toml
+[task_config]
+excludes = [
+    ".mise/tasks/python/pyproject.toml",
+    ".mise/tasks/generated",
+    ".mise/tasks/**/fixtures/*.toml",
+]
+```
+
+The closest config that defines `task_config.excludes` replaces inherited exclusions. Set it to an
+empty array to clear exclusions inherited through `task_config.cascade = true`. Exclusions apply to
+both the default task directories and paths selected by `task_config.includes`.
+
+Task directories are searched recursively. Executable files are loaded as file tasks, and every
+`.toml` file that is not a mise configuration file is loaded using the
+[included task TOML format](#task_config.includes). Use `task_config.excludes` when other TOML files,
+such as `pyproject.toml` or `Cargo.toml`, must live inside a task directory.
+
 ## Monorepo Support
 
 mise supports monorepo-style task organization with target path syntax. Enable it by setting `monorepo_root = true` in your root `mise.toml`.

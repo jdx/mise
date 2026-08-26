@@ -3,9 +3,8 @@ use crate::config::Config;
 use crate::file;
 use crate::file::display_path;
 use crate::task::Task;
-use clap::ValueHint;
 use eyre::bail;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -15,17 +14,17 @@ use std::path::{Path, PathBuf};
 /// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
 /// so contributors to a project can execute mise tasks without installing mise into their system.
 /// When a parent and nested task both exist, the parent stub is written to `<parent>/_default`.
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct TaskStubs {
     /// Directory to create task stubs inside of
-    #[clap(long, short, verbatim_doc_comment, default_value="bin", value_hint=ValueHint::DirPath)]
+    #[usage(long, short, verbatim_doc_comment, default="bin", value_hint=ValueHint::DirPath)]
     dir: PathBuf,
 
     /// Path to a mise bin to use when running the task stub.
     ///
     /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
-    #[clap(long, short, verbatim_doc_comment, default_value = "mise")]
+    #[usage(long, short, verbatim_doc_comment, default = "mise")]
     mise_bin: PathBuf,
 }
 
@@ -33,8 +32,12 @@ impl TaskStubs {
     pub(super) async fn run(self) -> eyre::Result<()> {
         let config = Config::get().await?;
         let tasks = config.tasks().await?;
+        // Two paths per task, and they differ only for a task that came from a file: `name` keeps
+        // the file's extension, `display_name` does not. The stub is named after the task, and the
+        // file-named path is kept so a stub written under the old spelling can be migrated away.
         let task_paths = tasks.values().map(Task::name_to_path).collect::<Vec<_>>();
-        let paths = resolve_stub_paths(&self.dir, &task_paths)?;
+        let base_paths = stub_base_paths(&tasks, &task_paths);
+        let paths = resolve_stub_paths(&self.dir, &base_paths)?;
         let stubs = tasks
             .values()
             .zip(task_paths)
@@ -70,13 +73,17 @@ impl TaskStubs {
             }
             file::write(&stub.path, &stub.output)?;
             file::make_executable(&stub.path)?;
+            miseprintln!("Wrote to {}", display_path(&stub.path));
             // Windows will not execute the `#!/bin/sh` stub, so it needs something it can launch.
             // Written on every host: stubs are committed, and the contributor who runs one on
             // Windows is not the person who generated it.
+            //
+            // Reported like the stub is: it is a second committed file, and a run that names one
+            // path while leaving two behind is how it goes unnoticed into a commit.
             if let Some(launcher_path) = super::windows_launcher_path(&stub.path) {
                 file::write(&launcher_path, &stub.launcher)?;
+                miseprintln!("Wrote to {}", display_path(&launcher_path));
             }
-            miseprintln!("Wrote to {}", display_path(&stub.path));
         }
         Ok(())
     }
@@ -155,6 +162,40 @@ fn remove_generated_launcher(stub_path: &Path) -> Result<()> {
 enum StubMigration {
     File(PathBuf),
     Directory(PathBuf),
+}
+
+/// The path each stub should take, named for the task, falling back where that is ambiguous.
+///
+/// A file task is *named* after its file — `build.sh` — while everything else about it, including
+/// the command the stub runs, uses the extensionless display name. Naming the stub after the file
+/// produced `bin/build.sh`, and on Windows a `#!/bin/sh` script called `bin/build.bat`, which
+/// cmd.exe runs as a batch file line by line.
+///
+/// Two file tasks that differ only by extension share a display name, and on platforms other than
+/// Windows both survive as separate tasks — `prefer_windows_file_task_siblings` collapses the pair
+/// only there. Those keep their file-named paths, because renaming both onto one path would take a
+/// working project and fail its `task-stubs` run. Windows never reaches that branch, so the case
+/// this exists to fix is always unambiguous.
+fn stub_base_paths(tasks: &BTreeMap<String, Task>, task_paths: &[PathBuf]) -> Vec<PathBuf> {
+    let display_paths = tasks
+        .values()
+        .map(Task::display_name_to_path)
+        .collect::<Vec<_>>();
+    let mut counts: HashMap<&PathBuf, usize> = HashMap::new();
+    for path in &display_paths {
+        *counts.entry(path).or_default() += 1;
+    }
+    display_paths
+        .iter()
+        .zip(task_paths)
+        .map(|(display_path, task_path)| {
+            if counts.get(display_path).copied().unwrap_or_default() > 1 {
+                task_path.clone()
+            } else {
+                display_path.clone()
+            }
+        })
+        .collect()
 }
 
 fn resolve_stub_paths(dir: &Path, task_paths: &[PathBuf]) -> Result<Vec<PathBuf>> {

@@ -14,6 +14,7 @@
 //! embedded npm installs separately pass invocation-scoped mise-owned cache
 //! and store paths and disable aube's global virtual store.
 
+use std::path::PathBuf;
 use std::sync::Once;
 
 use aube::embed::{AUBE, Host};
@@ -67,6 +68,17 @@ static MISE_HOST: Host = Host {
 
 static INIT: Once = Once::new();
 
+/// Hidden aube CLI entry that lifecycle shims invoke on the host executable.
+///
+/// Embedded aube sets `AUBE_NODE_GYP_EXE` to `current_exe()` (mise) and writes
+/// lazy `node-gyp` shims that call `$AUBE_NODE_GYP_EXE __node-gyp-bootstrap
+/// <project-dir>`. Standalone aube handles that itself; as an embedder mise
+/// must intercept it before its own argv parser — otherwise naked-run
+/// preprocessing turns it into `mise run __node-gyp-bootstrap` and native
+/// `allow_builds` installs (e.g. `gemini-cli` → `node-pty`) fail with "no
+/// tasks defined".
+const NODE_GYP_BOOTSTRAP_CMD: &str = "__node-gyp-bootstrap";
+
 /// Register mise as aube's host. Idempotent and cheap; call it before any
 /// aube work rather than relying on a single startup hook, so the library
 /// entry points (`npm:` installs and registry metadata queries) are each
@@ -82,6 +94,47 @@ pub(crate) fn init() {
         // embedder defaults anyway.
         aube::embed::initialize(&MISE_HOST, vec![]);
     });
+}
+
+/// Handle aube's private trampoline argv before mise's own parser, tokio
+/// runtime, or naked-run rewrite touch the args. Returns `Some(exit_code)`.
+///
+/// Uses [`aube::embed::bootstrap_node_gyp`] (aube ≥ 2.2) rather than routing
+/// through [`aube::cli_main`], matching standalone aube's `__node-gyp-bootstrap`
+/// behavior: bootstrap into the cache and print the executable path.
+pub(crate) fn try_run_embedded_cli(args: &[String]) -> Option<i32> {
+    if !is_embedded_cli_command(args) {
+        return None;
+    }
+    let project_dir = args
+        .get(2)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    init();
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(err) => {
+            eprintln!("mise: failed to start runtime for node-gyp bootstrap: {err}");
+            return Some(1);
+        }
+    };
+    match runtime.block_on(aube::embed::bootstrap_node_gyp(&project_dir)) {
+        Ok(path) => {
+            println!("{}", path.display());
+            Some(0)
+        }
+        Err(err) => {
+            eprintln!("{err:?}");
+            Some(1)
+        }
+    }
+}
+
+fn is_embedded_cli_command(args: &[String]) -> bool {
+    args.get(1).map(String::as_str) == Some(NODE_GYP_BOOTSTRAP_CMD)
 }
 
 #[cfg(test)]
@@ -109,5 +162,20 @@ mod tests {
         assert!(!MISE_HOST.runtime_switching);
         assert!(!MISE_HOST.self_engines_check);
         assert!(!MISE_HOST.self_update_enabled);
+    }
+
+    #[test]
+    fn detects_aube_node_gyp_bootstrap_trampoline() {
+        assert!(is_embedded_cli_command(&[
+            "mise".into(),
+            NODE_GYP_BOOTSTRAP_CMD.into(),
+            "/tmp/project".into(),
+        ]));
+        assert!(!is_embedded_cli_command(&[
+            "mise".into(),
+            "install".into(),
+            "node".into(),
+        ]));
+        assert!(!is_embedded_cli_command(&["mise".into()]));
     }
 }

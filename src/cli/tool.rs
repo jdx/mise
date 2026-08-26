@@ -10,48 +10,48 @@ use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
 /// Gets information about a tool
-#[derive(Debug, clap::Args)]
-#[clap(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Tool {
     /// Tool name to get information about
     tool: BackendArg,
     /// Output in JSON format
-    #[clap(long, short = 'J')]
+    #[usage(long, short = 'J')]
     json: bool,
 
-    #[clap(flatten)]
+    #[usage(flatten)]
     filter: ToolInfoFilter,
 }
 
-#[derive(Debug, Clone, clap::Args)]
-#[group(multiple = false)]
+#[derive(Debug, Clone, usage_rs::Args)]
+#[usage(group("tool-info-filter"))]
 pub(super) struct ToolInfoFilter {
     /// Only show active versions
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     active: bool,
 
     /// Only show backend field
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     backend_: bool,
 
     /// Only show config source
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     config_source: bool,
 
     /// Only show description field
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     description: bool,
 
     /// Only show installed versions
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     installed: bool,
 
     /// Only show requested versions
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     requested: bool,
 
     /// Only show tool options
-    #[clap(long)]
+    #[usage(long, group = "tool-info-filter")]
     tool_options: bool,
 }
 
@@ -275,8 +275,7 @@ impl Tool {
                 table.push(("Security:", security_str));
             }
             let mut table = tabled::Table::new(table);
-            table::default_style(&mut table, true);
-            miseprintln!("{table}");
+            table::print(&mut table, true)?;
         }
 
         Ok(())

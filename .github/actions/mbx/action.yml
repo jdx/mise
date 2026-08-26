@@ -1,0 +1,18 @@
+name: Set up mbx
+description: Select the trusted jdx server or fork-safe GitHub cache backend
+
+inputs:
+  backend:
+    description: Explicit backend for structurally trusted or untrusted callers
+    default: auto
+
+runs:
+  using: composite
+  steps:
+    - uses: jdx/mr-boxington-action@2bbb8f141e40e388b509cc68fe0bfbe7bc4b6818 # v1
+      with:
+        version: 0.4.0
+        backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
+        server-url: https://cache.mise.jdx.dev
+        namespace: jdx/mise
+        oidc-audience: https://cache.mise.jdx.dev

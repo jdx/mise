@@ -122,6 +122,11 @@ cat <<'EOF' >mise.toml
 BAR = "$UNDEFINED_VAR"
 EOF
 assert_contains "mise env -s bash 2>&1" "env var 'UNDEFINED_VAR' is not defined"
+# The warning has to say what referenced it. A missing variable is by definition
+# absent from `mise env`, so naming it alone left the reporter in discussion
+# #8232 with nothing to grep for.
+assert_contains "mise env -s bash 2>&1" 'referenced by `BAR`'
+assert_contains "mise env -s bash 2>&1" "mise.toml"
 
 # Test ${VAR:-} suppresses warning for undefined var
 cat <<'EOF' >mise.toml

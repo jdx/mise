@@ -13,34 +13,34 @@ use tabled::{Table, Tabled};
 ///
 /// Note that aliases are also stored in this file
 /// but managed separately with `mise tool-alias`
-#[derive(Debug, clap::Args)]
-#[clap(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
-pub(super) struct SettingsLs {
+#[derive(Debug, usage_rs::Args)]
+#[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
+pub(crate) struct SettingsLs {
     /// Name of setting
     pub setting: Option<String>,
 
     /// List all settings
-    #[clap(long, short)]
+    #[usage(long, short)]
     all: bool,
 
     /// Output in JSON format
-    #[clap(long, short = 'J', group = "output")]
+    #[usage(long, short = 'J', group = "output")]
     json: bool,
 
     /// Use the local config file instead of the global one
-    #[clap(long, short, global = true)]
+    #[usage(long, short, global = true)]
     pub local: bool,
 
     /// Output in TOML format
-    #[clap(long, short = 'T', group = "output")]
+    #[usage(long, short = 'T', group = "output")]
     toml: bool,
 
     /// Print all settings with descriptions for shell completions
-    #[clap(long, hide = true)]
+    #[usage(long, hide = true)]
     complete: bool,
 
     /// Output in JSON format with sources
-    #[clap(long, group = "output")]
+    #[usage(long, group = "output")]
     json_extended: bool,
 }
 
@@ -107,8 +107,7 @@ impl SettingsLs {
             self.print_toml(rows)?;
         } else {
             let mut table = Table::new(rows);
-            table::default_style(&mut table, false);
-            miseprintln!("{}", table.to_string());
+            table::print(&mut table, false)?;
         }
         Ok(())
     }

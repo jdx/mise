@@ -5,4 +5,4 @@ snapshot_kind: text
 ---
 hide,MISE_SHELL,
 hide,__MISE_DIFF,
-hide,__MISE_DIFF,
+hide,__MISE_SESSION,

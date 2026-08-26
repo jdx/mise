@@ -43,7 +43,8 @@ from that checkout.
   existing repo without a configured `ref`; use `mise bootstrap repos update`
   when you want that imperative behavior.
 - **No forced resets** — dirty repos, non-empty non-git target paths, and
-  mismatched origins fail instead of overwriting local work.
+  mismatched origins fail instead of overwriting local work. Pass
+  `--skip-dirty` to skip dirty repos while applying or updating the rest.
 - **Omitted `ref`** — an existing repo with the expected origin is considered
   current; mise does not fetch or update it.
 
@@ -57,11 +58,13 @@ mise bootstrap repos status --missing  # exit 1 if any repo is not current
 mise bootstrap repos apply           # clone or update missing/changed repos
 mise bootstrap repos apply --dry-run # print the commands without running them
 mise bootstrap repos apply --yes     # skip the confirmation prompt
+mise bootstrap repos apply --skip-dirty # skip repos with local changes
 
 mise bootstrap repos update             # clone missing and pull existing repos
 mise bootstrap repos update ~/src/mise  # update only a matching path
 mise bootstrap repos update --dry-run   # print the commands without running them
 mise bootstrap repos update --yes       # skip the confirmation prompt
+mise bootstrap repos update --skip-dirty # skip repos with local changes
 
 mise bootstrap repos exec -- git status        # run argv in every usable repo
 mise bootstrap repos exec ~/src/mise -- git pull
@@ -72,8 +75,10 @@ mise bootstrap repos exec --dry-run -- command
 `update` fetches and fast-forward pulls the current branch of repos without a
 configured `ref`. It warns and skips an unpinned repo with a detached HEAD.
 Dirty repos, conflicting origins, and non-git targets fail before any repo is
-changed. Passing one or more paths limits the update to exact configured paths
-or their expanded forms.
+changed. With `--skip-dirty`, dirty repos are skipped with a warning while
+other repos are updated; conflicts still fail before any repo is changed.
+Passing one or more paths limits the update to exact configured paths or their
+expanded forms.
 
 `exec` runs the command directly, without shell interpolation, with each repo
 as its working directory. Missing and conflicting repos are skipped with a

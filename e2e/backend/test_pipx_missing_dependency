@@ -33,3 +33,24 @@ out="$(quiet_assert_fail "$(install_cmd) pipx:cowsay@6.1")"
 assert_contains_text "$out" "mise use uv@latest"
 assert_contains_text "$out" "mise use pipx@latest"
 assert_not_contains_text "$out" "os error 2"
+
+# The executable can disappear or have an unavailable interpreter after validation. Preserve
+# Unix PATH-based selection, but still translate that spawn failure into the actionable error.
+BROKEN_BIN="$PWD/broken-bin"
+mkdir -p "$BROKEN_BIN"
+cat >"$BROKEN_BIN/pipx" <<'EOF'
+#!/definitely/missing/pipx-interpreter
+EOF
+chmod +x "$BROKEN_BIN/pipx"
+out="$(quiet_assert_fail "env PATH=$BROKEN_BIN MISE_PIPX_UVX=0 MISE_PIPX_VERSION=system $MISE_BIN install pipx:cowsay@6.1")"
+assert_contains_text "$out" "pipx was found during dependency validation but could not be launched"
+assert_contains_text "$out" "mise which pipx"
+assert_not_contains_text "$out" "os error 2"
+
+# A configured `pipx` request must not suppress the executable check. The install graph has
+# already processed configured dependencies before the pipx package starts, so `system` here
+# means no runnable pipx will appear later in this invocation.
+out="$(quiet_assert_fail "$(install_cmd MISE_PIPX_UVX=0 MISE_PIPX_VERSION=system) pipx:cowsay@6.1")"
+assert_contains_text "$out" "pipx is configured but its executable was not found or is not runnable"
+assert_contains_text "$out" "mise use pipx@latest"
+assert_not_contains_text "$out" "os error 2"

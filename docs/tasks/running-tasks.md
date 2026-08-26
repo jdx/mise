@@ -58,7 +58,7 @@ You can define arguments/flags for tasks which will provide validation, parsing,
 - [Arguments in File Tasks](/tasks/file-tasks#arguments)
 - [Arguments in TOML Tasks](/tasks/toml-tasks#arguments)
 
-Autocomplete will work automatically for tasks if the `usage` CLI is installed and mise completions are working.
+Autocomplete will work automatically for tasks when mise's shell completions are installed and enabled.
 
 Markdown documentation can be generated with [`mise generate task-docs`](/cli/generate/task-docs).
 :::

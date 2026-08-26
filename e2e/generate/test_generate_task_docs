@@ -49,7 +49,7 @@ assert_contains "mise generate task-docs" '## `parent`'
 assert_contains "mise generate task-docs" "Parent task"
 assert_contains "mise generate task-docs" '## `child`'
 assert_contains "mise generate task-docs" "Child task"
-assert_contains "mise generate task-docs" '**Aliases**: `c`'
+assert_contains "mise generate task-docs" '**Aliases:** `c`'
 
 # Test 3: File-based tasks
 mkdir -p mise-tasks
@@ -63,7 +63,7 @@ chmod +x mise-tasks/file-task
 
 assert_contains "mise generate task-docs" '## `file-task`'
 assert_contains "mise generate task-docs" "A file-based task"
-assert_contains "mise generate task-docs" '**Aliases**: `ft`'
+assert_contains "mise generate task-docs" '**Aliases:** `ft`'
 
 # Test 4: Tasks with complex usage specs
 cat <<'EOF' >mise-tasks/complex-task
@@ -109,6 +109,11 @@ mise generate task-docs --output test_docs.md
 assert_contains "cat test_docs.md" '## `file-output`'
 assert_contains "cat test_docs.md" "Task for file output test"
 
+# Writing branches say what they wrote. Only the branch that prints the document to stdout stays
+# quiet, because there the document *is* the output.
+assert_contains "mise generate task-docs --output test_docs.md" "Wrote to"
+assert_contains "mise generate task-docs --output test_docs.md" "test_docs.md"
+
 # Test 7: Multi-file output
 mkdir -p docs_output
 mise generate task-docs --multi --output docs_output
@@ -118,7 +123,7 @@ assert "ls docs_output/file-output.md" ""
 # The multi-file output creates separate files for each task
 # Just verify that the file contains task documentation
 assert_contains "cat docs_output/file-output.md" '##'
-assert_contains "cat docs_output/file-output.md" '**Usage**'
+assert_contains "cat docs_output/file-output.md" '**Usage:**'
 
 # Test 7b: Multi-file output with --index
 rm -rf docs_output && mkdir -p docs_output
@@ -128,6 +133,10 @@ mise generate task-docs --multi --index --output docs_output
 assert "ls docs_output/index.md" ""
 assert_contains "cat docs_output/index.md" "# Tasks"
 assert_contains "cat docs_output/index.md" "[file-output](./file-output.md)"
+
+# One line per file in --multi, the same way task-stubs reports each stub.
+assert_contains "mise generate task-docs --multi --output docs_output" "file-output.md"
+assert_contains "mise generate task-docs --multi --index --output docs_output" "index.md"
 
 # Test 8: Performance test - should be fast even with complex environment
 cat <<EOF >mise.toml

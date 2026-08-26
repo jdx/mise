@@ -429,7 +429,7 @@ packages:
   - type: github_release
     repo_owner: Arata1202
     repo_name: ascdir
-    description: Manage App Store Connect metadata and product-page assets as reviewable files
+    description: Manage App Store Connect metadata, TestFlight distribution, and releases with safe CLI workflows
     version_constraint: "false"
     version_overrides:
       - version_constraint: "true"
@@ -30625,14 +30625,20 @@ packages:
           - amd64
   - type: http
     repo_owner: crossplane
-    repo_name: crossplane
-    format: raw
-    url: https://releases.crossplane.io/stable/{{.Version}}/bin/{{.OS}}_{{.Arch}}/crank
-    description: The Crossplane CLI extends kubectl with functionality to build, push, and install Crossplane packages
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
+    repo_name: cli
+    description: The CLI for Crossplane
+    aliases:
+      - name: crossplane/crossplane
+    files:
+      - name: crossplane
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 2.3.0")
+        url: https://releases.crossplane.io/stable/{{.Version}}/bin/{{.OS}}_{{.Arch}}/crank
+        windows_arm_emulation: true
+      - version_constraint: "true"
+        url: https://cli.crossplane.io/stable/{{.Version}}/bin/{{.OS}}_{{.Arch}}/crossplane
+        windows_arm_emulation: true
   - type: github_release
     repo_owner: cswank
     repo_name: kcli
@@ -52360,6 +52366,38 @@ packages:
           - windows
         github_artifact_attestations:
           signer_workflow: jdx/aube/\.github/workflows/release\.yml
+  - type: github_release
+    repo_owner: jdx
+    repo_name: fnox
+    description: encrypted/remote secret manager
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.27.0"
+        no_asset: true
+      - version_constraint: semver("<= 1.23.0")
+        asset: fnox-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: fnox-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: jdx
     repo_name: hk
@@ -78571,6 +78609,40 @@ packages:
           - name: raco
             src: racket/raco
   - type: github_release
+    repo_owner: rafaelespinoza
+    repo_name: godfish
+    description: a db migration management CLI for cassandra, mysql, postgres, sqlite, sqlserver
+    version_filter: semver(">= 0.18.0")
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: godfish_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        supported_envs:
+          - darwin
+          - linux
+          - windows
+        files:
+          - name: godfish
+          - name: godfish-cassandra
+          - name: godfish-mysql
+          - name: godfish-postgres
+          - name: godfish-sqlite3
+          - name: godfish-sqlserver
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "^https://github\\.com/rafaelespinoza/godfish/\\.github/workflows/.+\\.ya?ml@refs/tags/\\Q{{.Version}}\\E$"
+              - --certificate-oidc-issuer
+              - https://token.actions.githubusercontent.com
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
+  - type: github_release
     repo_owner: rajatjindal
     repo_name: krew-release-bot
     description: bot to bump version of plugin in krew-index on new releases
@@ -78996,6 +79068,22 @@ packages:
           linux: unknown-linux-musl
         supported_envs:
           - linux/amd64
+          - darwin
+  - type: github_release
+    repo_owner: re-taro
+    repo_name: tsmcp
+    description: MCP server specialized for the TypeScript 7 native language server (tsc --lsp)
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: "true"
+        asset: tsmcp_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - linux
           - darwin
   - type: github_release
     repo_owner: realm
@@ -85464,6 +85552,61 @@ packages:
             format: zip
             files:
               - name: sk
+  - type: github_release
+    repo_owner: skyhook-io
+    repo_name: radar
+    description: The missing open-source Kubernetes UI with a built-in MCP server for AI agents. See what's broken, why, and what changed. Issues, Topology, event timeline, Helm, GitOps, live service traffic, and cluster audits - all in one Go binary
+    files:
+      - name: kubectl-radar
+      - name: radar
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("<= 0.6.3")
+        asset: explorer_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: kubectl-radar
+            src: kubectl-explorer
+          - name: radar
+            src: kubectl-explorer
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: semver("<= 0.6.9")
+        asset: radar_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: kubectl-radar
+          - name: radar
+            src: kubectl-radar
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: radar_{{.Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: kubectl-radar
+          - name: radar
+            src: kubectl-radar
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: sl1pm4t
     repo_name: k2tf
@@ -93608,6 +93751,12 @@ packages:
       - name: tdbg
     version_constraint: "false"
     version_overrides:
+      - version_constraint: Version in ["v0.10.0", "v1.0.1", "v1.1.2", "v1.2.3", "v1.3.3", "v1.20.5", "v1.21.6", "v1.22.3", "v1.28.3.1", "v1.29.4.1", "v1.29.6.1", "v1.30.4.1"]
+        no_asset: true
+      - version_constraint: semver("> 1.4.2, <= 1.4.4")
+        no_asset: true
+      - version_constraint: semver("> 1.5.1, <= 1.7.3")
+        no_asset: true
       - version_constraint: semver("<= 1.30.1")
         asset: temporal_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
@@ -100182,6 +100331,9 @@ packages:
       - name: rustwasm/wasm-pack
       - name: drager/wasm-pack
     description: your favorite rust -> wasm workflow tool
+    files:
+      - name: wasm-pack
+        src: "{{.AssetWithoutExt}}/wasm-pack"
     version_constraint: "false"
     version_overrides:
       - version_constraint: semver("<= 0.2.0")
@@ -100190,9 +100342,6 @@ packages:
         asset: wasm-pack-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
-        files:
-          - name: wasm-pack
-            src: "{{.AssetWithoutExt}}/wasm-pack"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -100205,9 +100354,6 @@ packages:
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: wasm-pack
-            src: "{{.AssetWithoutExt}}/wasm-pack"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -100217,14 +100363,11 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.13.1")
         asset: wasm-pack-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
         windows_arm_emulation: true
-        files:
-          - name: wasm-pack
-            src: "{{.AssetWithoutExt}}/wasm-pack"
         replacements:
           amd64: x86_64
           darwin: apple-darwin
@@ -100234,6 +100377,16 @@ packages:
           - goos: linux
             replacements:
               arm64: aarch64
+      - version_constraint: "true"
+        asset: wasm-pack-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
   - name: wasmCloud/wasmCloud/wash
     type: github_release
     repo_owner: wasmCloud
@@ -103854,6 +104007,54 @@ packages:
           - darwin
           - windows
           - amd64
+  - type: github_release
+    repo_owner: zwasm
+    repo_name: zwasm
+    description: A fast, spec-compliant WebAssembly runtime written in Zig
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: Version == "v1.11.1"
+        no_asset: true
+      - version_constraint: semver("<= 1.5.0")
+        asset: zwasm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        replacements:
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: linux
+            replacements:
+              amd64: x86_64
+        supported_envs:
+          - linux
+          - darwin/arm64
+      - version_constraint: "true"
+        asset: zwasm-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: macos
+        checksum:
+          type: github_release
+          asset: SHA256SUMS
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            replacements:
+              amd64: amd64
+          - goos: windows
+            format: zip
+            replacements: {}
+        supported_envs:
+          - linux
+          - darwin/arm64
+          - windows/amd64
   - type: github_release
     repo_owner: zyedidia
     repo_name: eget

@@ -11,7 +11,10 @@ EOF
 assert "mise run atask --help 2>&1 || true" "Usage: atask <myarg>
 
 Arguments:
-  <myarg>"
+  <myarg>
+
+Flags:
+  -h, --help  Print help"
 
 cat <<'EOF' >mise.toml
 [tasks.greet]
@@ -27,16 +30,30 @@ cmd "bye" help="say goodbye" {
 run = "echo cmd=$usage_cmd name=$usage_name"
 EOF
 
-assert "mise run greet hello -h 2>&1 || true" "Usage: greet hello [-n --name <name>]
+assert "mise run greet hello -h 2>&1 || true" "say hello
+
+Usage: greet hello [-n --name <name>]
 
 Flags:
-  -n --name <name>  who to greet"
-assert "mise run greet -v hello -h 2>&1 || true" "Usage: greet hello [-n --name <name>]
+  -n, --name <name>  who to greet
+  -h, --help         Print help
+
+Global flags:
+  -v, --verbose      verbose
+                     (default: false)"
+assert "mise run greet -v hello -h 2>&1 || true" "say hello
+
+Usage: greet hello [-n --name <name>]
 
 Flags:
-  -n --name <name>  who to greet"
-assert_contains "mise run greet -h 2>&1 || true" "Usage: greet [-v --verbose…] <SUBCOMMAND>"
-assert_contains "mise run greet -h hello 2>&1 || true" "Usage: greet [-v --verbose…] <SUBCOMMAND>"
+  -n, --name <name>  who to greet
+  -h, --help         Print help
+
+Global flags:
+  -v, --verbose      verbose
+                     (default: false)"
+assert_contains "mise run greet -h 2>&1 || true" "Usage: greet [-v --verbose] <SUBCOMMAND>"
+assert_contains "mise run greet -h hello 2>&1 || true" "Usage: greet [-v --verbose] <SUBCOMMAND>"
 
 cat <<'EOF' >mise.toml
 [tasks.atask]
@@ -46,21 +63,21 @@ run = 'echo $usage_myarg'
 run = 'echo npm'
 EOF
 
-assert_contains "mise --help 2>&1 || true" "Usage: mise [OPTIONS] [TASK] [COMMAND]"
-assert_contains "mise install --help 2>&1 || true" "Usage: mise install [OPTIONS] [TOOL@VERSION]..."
-assert_contains "mise run --help 2>&1 || true" "Usage: run [OPTIONS] [TASK] [ARGS]..."
+assert_contains "mise --help 2>&1 || true" "Usage: mise [FLAGS] [TASK] <SUBCOMMAND>"
+assert_contains "mise install --help 2>&1 || true" "Usage: mise install [FLAGS] [TOOL@VERSION]"
+assert_contains "mise run --help 2>&1 || true" "Usage: mise run [FLAGS] [TASK] [ARGS]"
 # `-- --help` now bypasses the usage parser so --help reaches the script
 # (see https://github.com/jdx/mise/discussions/5460). The task's required
 # arg renders empty in this case because the parser is skipped entirely.
-assert "mise atask -q -- --help 2>&1 || true" "--help"
+assert "mise -q atask -- --help 2>&1 || true" "--help"
 # If task has no usage defined, --help shows task info
 assert_contains "mise run npm --help 2>&1 || true" "Task: npm"
 # With --, --help is passed to the task script
 assert "mise -q npm -- --help 2>&1 || true" "npm --help"
-assert "mise atask -q -- -- --help 2>&1 || true" "-- --help"
-assert "mise run atask -q -- --help 2>&1 || true" "--help"
-assert "mise run atask -q -- foo --help 2>&1 || true" "foo --help"
-assert "mise atask -q -- foo --help 2>&1 || true" "foo --help"
+assert "mise -q atask -- -- --help 2>&1 || true" "-- --help"
+assert "mise run -q atask -- --help 2>&1 || true" "--help"
+assert "mise run -q atask -- foo --help 2>&1 || true" "foo --help"
+assert "mise -q atask -- foo --help 2>&1 || true" "foo --help"
 # Without `--`, --help (with or without extra args) still shows mise's task help
-assert_contains "mise run atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
-assert_contains "mise atask -q foo --help 2>&1 || true" "Usage: atask <myarg>"
+assert_contains "mise run -q atask foo --help 2>&1 || true" "Usage: atask <myarg>"
+assert_contains "mise -q atask foo --help 2>&1 || true" "Usage: atask <myarg>"

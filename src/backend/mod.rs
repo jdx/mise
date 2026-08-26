@@ -675,7 +675,11 @@ pub(crate) fn is_install_time_option_key_for_type(backend_type: &BackendType, ke
 /// Normalize idiomatic file contents by removing comments and empty lines.
 /// Full-line and inline comments are supported by .python-version, .nvmrc, etc.
 pub(crate) fn normalize_idiomatic_contents(contents: &str) -> String {
-    contents
+    // Dropping a byte-order mark is normalisation too, and this is the only place every
+    // plain-text idiomatic reader passes through. `trim` below does not do it: U+FEFF does not
+    // carry the Unicode `White_Space` property, so the mark would ride along into the version and
+    // out into a download URL. See `file::strip_utf8_bom`.
+    file::strip_utf8_bom(contents)
         .lines()
         .filter_map(|line| {
             let trimmed = line.trim();
@@ -720,8 +724,11 @@ fn parse_registry_idiomatic_file(
         return Ok(None);
     }
     let contents = file::read_to_string(path)?;
+    // These parsers see the raw body rather than `normalize_idiomatic_contents`, so the mark has
+    // to come off here: an anchored pattern such as `(?m)^\s*version\s*:` simply stops matching.
+    let contents = file::strip_utf8_bom(&contents);
     version_list::parse_version_list(
-        &contents,
+        contents,
         spec.version_regex,
         spec.version_json_path,
         spec.version_expr,
@@ -929,6 +936,14 @@ mod tests {
         assert_eq!(
             normalize_idiomatic_contents("# full line comment\n3.14.2 # inline comment\n   \n\n"),
             "3.14.2"
+        );
+        // A byte-order mark is what Notepad leaves at the front of a file. `trim` does not remove
+        // it, so without the strip the version below carries the mark into a download URL.
+        assert_eq!(normalize_idiomatic_contents("\u{feff}20.0.0"), "20.0.0");
+        // Only a *leading* mark is a mark; anywhere else it is content and must survive.
+        assert_eq!(
+            normalize_idiomatic_contents("20.0.0\n\u{feff}18.0.0"),
+            "20.0.0\n\u{feff}18.0.0"
         );
     }
 
@@ -3009,7 +3024,14 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 Ok(find_match_in_list(&matches, &query))
             }
             None => {
-                let installed_symlink = self.ba().installs_path.join("latest");
+                // Lazy backend loading keeps the request's primary (user) install
+                // path, even when the only installed versions live in a system or
+                // shared directory. Install state has already applied that fallback
+                // and records the directory that supplied the tool.
+                let installs_path = install_state::get_tool(&self.ba().short)
+                    .and_then(|tool| tool.installs_path)
+                    .unwrap_or_else(|| self.ba().installs_path.clone());
+                let installed_symlink = installs_path.join("latest");
                 if installed_symlink.exists()
                     && let Some(target) = file::resolve_symlink(&installed_symlink)?
                 {
@@ -3020,12 +3042,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
                         .to_string();
                     return Ok(Some(version));
                 }
-                Ok(file::dir_subdirs(&self.ba().installs_path)
+                Ok(file::dir_subdirs(&installs_path)
                     .unwrap_or_default()
                     .into_iter()
                     .filter(|v| !v.starts_with('.'))
-                    .filter(|v| !is_runtime_symlink(&self.ba().installs_path.join(v)))
-                    .filter(|v| !self.ba().installs_path.join(v).join("incomplete").exists())
+                    .filter(|v| !is_runtime_symlink(&installs_path.join(v)))
+                    .filter(|v| !installs_path.join(v).join("incomplete").exists())
                     .filter(|v| v != "latest")
                     .sorted_by_cached_key(|v| (Versioning::new(v), v.to_string()))
                     .last())
@@ -3055,13 +3077,41 @@ pub(crate) trait Backend: Debug + Send + Sync {
             _ => return false, // Not rolling or not found
         };
 
-        // If no checksum available, we can't detect changes - don't assume outdated
-        let Some(latest_checksum) = version_info.checksum else {
-            trace!(
-                "No checksum available for rolling version {}, cannot detect updates",
-                version
-            );
-            return false;
+        // The versions host carries the platform-independent rolling bit, but
+        // not the checksum because release assets vary by OS and architecture.
+        // Fetch direct backend metadata only for rolling entries that need it.
+        let latest_checksum = match version_info.checksum {
+            Some(checksum) => checksum,
+            None if Settings::get().offline() => {
+                trace!(
+                    "No cached checksum available for rolling version {} while offline",
+                    version
+                );
+                return false;
+            }
+            None => match self._list_remote_versions(config).await {
+                Ok(versions) => match versions
+                    .into_iter()
+                    .find(|info| info.version == version && info.rolling)
+                    .and_then(|info| info.checksum)
+                {
+                    Some(checksum) => checksum,
+                    None => {
+                        trace!(
+                            "No checksum available for rolling version {}, cannot detect updates",
+                            version
+                        );
+                        return false;
+                    }
+                },
+                Err(err) => {
+                    debug!(
+                        "Failed to fetch direct metadata for rolling version {}: {err:#}",
+                        version
+                    );
+                    return false;
+                }
+            },
         };
 
         // Compare with stored checksum
@@ -3444,12 +3494,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 Ok(vals) => {
                     for (k, v) in vals {
                         // PATH is owned by path_env; exclude any casing on Windows.
-                        let is_path = if cfg!(windows) {
-                            k.eq_ignore_ascii_case(env::PATH_KEY.as_str())
-                        } else {
-                            k.as_str() == env::PATH_KEY.as_str()
-                        };
-                        if !is_path {
+                        if !env::is_path_key(&k) {
                             env_vars.insert(k, v);
                         }
                     }
@@ -4309,6 +4354,7 @@ mod latest_version_tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
+    use crate::toolset::ToolSource;
     use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -4818,6 +4864,38 @@ mod latest_version_tests {
         Settings::reset(None);
 
         assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_offline_rolling_check_does_not_fetch_missing_checksum() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-offline-rolling-check");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "nightly".to_string(),
+                rolling: true,
+                ..Default::default()
+            }])
+            .unwrap();
+        let request = ToolRequest::Version {
+            backend: backend.ba.clone(),
+            version: "nightly".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "nightly".to_string());
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let outdated = backend.is_rolling_version_outdated(&config, &tv).await;
+        Settings::reset(None);
+
+        assert!(!outdated);
         assert_eq!(backend.list_calls(), 0);
     }
 

@@ -86,7 +86,26 @@ impl AsdfBackend {
             return Ok(None);
         }
 
-        Ok(Some(fs::read_to_string(fp)?.trim().into()))
+        Ok(Self::cached_idiomatic_version(&fs::read_to_string(fp)?))
+    }
+
+    /// A cached idiomatic version, or `None` when the entry has to be parsed again.
+    ///
+    /// The cache holds the output of `normalize_idiomatic_contents`, and an entry written before
+    /// that stripped the byte-order mark still carries it. Nothing retires such an entry on its
+    /// own: it is compared only against the source file's modification time, and upgrading mise
+    /// moves neither. So the mark is treated as a miss — the file is re-read through the current
+    /// normaliser and the entry rewritten clean, once.
+    ///
+    /// A miss rather than a strip, because stripping repairs only the simpler shape. The old
+    /// normaliser also failed to recognise a commented first line with a mark in front of the `#`
+    /// (`starts_with('#')` is false there) and cached the comment itself as a version; only a
+    /// re-parse fixes that.
+    fn cached_idiomatic_version(cached: &str) -> Option<String> {
+        if cached.contains('\u{feff}') {
+            return None;
+        }
+        Some(cached.trim().to_string())
     }
 
     fn idiomatic_cache_file_path(&self, idiomatic_file: &Path) -> PathBuf {
@@ -556,6 +575,32 @@ mod tests {
 
     use super::*;
     use std::ffi::OsString;
+
+    #[test]
+    fn an_idiomatic_cache_entry_written_before_the_bom_was_stripped_is_a_miss() {
+        assert_eq!(
+            AsdfBackend::cached_idiomatic_version("20.0.0\n"),
+            Some("20.0.0".to_string())
+        );
+        // The mark is what `normalize_idiomatic_contents` used to leave in the cache. Modification
+        // time is the entry's only invalidation and upgrading mise moves neither file's, so
+        // without this the stale version outlives the fix indefinitely.
+        assert_eq!(
+            AsdfBackend::cached_idiomatic_version("\u{feff}20.0.0\n"),
+            None
+        );
+        // The shape a strip on read would not repair: with the mark in front, `starts_with('#')`
+        // was false, so the old normaliser cached the comment line as if it were a version.
+        assert_eq!(
+            AsdfBackend::cached_idiomatic_version("\u{feff}# only a comment\n3.12.0"),
+            None
+        );
+        // Nothing else changes: the trim the cache read has always done still happens.
+        assert_eq!(
+            AsdfBackend::cached_idiomatic_version("  3.12.0  \n"),
+            Some("3.12.0".to_string())
+        );
+    }
 
     #[test]
     fn test_verify_install_script_output() {
