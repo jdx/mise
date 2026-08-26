@@ -5151,50 +5151,49 @@ fn platform_unavailable_state(cask: &Cask, artifacts: &CaskArtifacts) -> Option<
         .map(|err| PackageState::unavailable(err.to_string()))
 }
 
+fn declared_target(value: &Value) -> Option<String> {
+    value
+        .as_object()
+        .and_then(|o| o.get("target"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
     values
         .get(1)
         .and_then(|v| v.as_object())
         .and_then(|o| o.get("target"))
-        .or_else(|| value.as_object().and_then(|o| o.get("target")))
         .and_then(Value::as_str)
         .map(str::to_string)
+        .or_else(|| declared_target(value))
+}
+
+/// The `source` and `target` of an artifact declared either as a bare string or
+/// as a `[source, {target: ...}]` pair. A bare string carries no target of its
+/// own; artifacts that accept a sibling `target` key add it themselves.
+fn artifact_source_target(value: &Value, artifact: &Value) -> Option<(String, Option<String>)> {
+    match artifact {
+        Value::String(source) => Some((source.clone(), None)),
+        Value::Array(values) => Some((
+            values.first()?.as_str()?.to_string(),
+            artifact_target(value, values),
+        )),
+        _ => None,
+    }
 }
 
 fn parse_app_artifact(value: &Value) -> Option<AppArtifact> {
-    let app = value.as_object()?.get("app")?;
-    match app {
-        Value::String(source) => Some(AppArtifact {
-            source: source.clone(),
-            target: None,
-        }),
-        Value::Array(values) => {
-            let source = values.first()?.as_str()?.to_string();
-            let target = artifact_target(value, values);
-            Some(AppArtifact { source, target })
-        }
-        _ => None,
-    }
+    let (source, target) = artifact_source_target(value, value.as_object()?.get("app")?)?;
+    Some(AppArtifact { source, target })
 }
 
 fn parse_binary_artifact(value: &Value) -> Option<BinaryArtifact> {
-    let binary = value.as_object()?.get("binary")?;
-    match binary {
-        Value::String(source) => Some(BinaryArtifact {
-            source: source.clone(),
-            target: value
-                .as_object()
-                .and_then(|o| o.get("target"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        }),
-        Value::Array(values) => {
-            let source = values.first()?.as_str()?.to_string();
-            let target = artifact_target(value, values);
-            Some(BinaryArtifact { source, target })
-        }
-        _ => None,
-    }
+    let (source, target) = artifact_source_target(value, value.as_object()?.get("binary")?)?;
+    Some(BinaryArtifact {
+        source,
+        target: target.or_else(|| declared_target(value)),
+    })
 }
 
 fn parse_command_wrapper_artifact(value: &Value) -> Result<Option<CommandWrapperArtifact>> {
@@ -5397,19 +5396,8 @@ fn parse_generic_artifact(value: &Value) -> Result<Option<GenericArtifact>> {
 }
 
 fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
-    let font = value.as_object()?.get("font")?;
-    match font {
-        Value::String(source) => Some(FontArtifact {
-            source: source.clone(),
-            target: None,
-        }),
-        Value::Array(values) => {
-            let source = values.first()?.as_str()?.to_string();
-            let target = artifact_target(value, values);
-            Some(FontArtifact { source, target })
-        }
-        _ => None,
-    }
+    let (source, target) = artifact_source_target(value, value.as_object()?.get("font")?)?;
+    Some(FontArtifact { source, target })
 }
 
 fn parse_completion_artifact(value: &Value) -> Result<Option<CompletionArtifact>> {
@@ -5431,28 +5419,14 @@ fn parse_declared_completion_artifact(
     completion: &Value,
     shell: CompletionShell,
 ) -> Result<Option<CompletionArtifact>> {
-    match completion {
-        Value::String(source) => Ok(Some(CompletionArtifact {
-            shell,
-            source: source.clone(),
-            target: value
-                .as_object()
-                .and_then(|o| o.get("target"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        })),
-        Value::Array(values) => {
-            let Some(source) = values.first().and_then(Value::as_str) else {
-                return Ok(None);
-            };
-            Ok(Some(CompletionArtifact {
-                shell,
-                source: source.to_string(),
-                target: artifact_target(value, values),
-            }))
-        }
-        _ => Ok(None),
-    }
+    let Some((source, target)) = artifact_source_target(value, completion) else {
+        return Ok(None);
+    };
+    Ok(Some(CompletionArtifact {
+        shell,
+        source,
+        target: target.or_else(|| declared_target(value)),
+    }))
 }
 
 fn parse_generated_completion_artifact(
