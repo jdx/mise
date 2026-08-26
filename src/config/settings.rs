@@ -1011,7 +1011,7 @@ impl Settings {
                 }
             })
             .collect::<Vec<_>>();
-        merge_minimum_release_age_excludes(&mut layers);
+        merge_settings_file_layers(&mut layers);
         layers
     }
 
@@ -1666,28 +1666,6 @@ impl Settings {
     }
 }
 
-/// Merge exclusions from config files while preserving the precedence of environment and CLI
-/// layers, which are added separately before these layers. Config paths are ordered from highest
-/// to lowest precedence, so collect in reverse to keep inherited exclusions before local ones.
-fn merge_minimum_release_age_excludes(layers: &mut [SettingsPartial]) {
-    let mut found = false;
-    let excludes = layers
-        .iter_mut()
-        .rev()
-        .filter_map(|layer| {
-            let excludes = layer.minimum_release_age_excludes.take();
-            found |= excludes.is_some();
-            excludes
-        })
-        .flatten()
-        .unique()
-        .collect();
-
-    if found {
-        layers[0].minimum_release_age_excludes = Some(excludes);
-    }
-}
-
 fn redacted_settings_for_debug(settings: &Settings) -> Settings {
     let mut debug_settings = settings.clone();
     if debug_settings.task.cache.remote_token.is_some() {
@@ -1932,7 +1910,7 @@ mod tests {
         let unrelated = SettingsPartial::empty();
         let mut layers = vec![local, unrelated, global];
 
-        merge_minimum_release_age_excludes(&mut layers);
+        merge_settings_file_layers(&mut layers);
 
         assert_eq!(
             layers[0].minimum_release_age_excludes,

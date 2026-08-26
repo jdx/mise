@@ -1682,6 +1682,7 @@ Values from multiple configuration files are merged and deduplicated, so a proje
 repeating exclusions from the global configuration. The environment variable replaces the merged file value.
 """
 env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
+merge = "append_unique"
 parse_env = "list_by_comma"
 type = "ListString"
 

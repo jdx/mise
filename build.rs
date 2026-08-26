@@ -871,6 +871,47 @@ pub(crate) struct {name} {{"#,
 
     lines.push(
         r#"
+/// Apply the merge strategies declared in settings.toml to config-file layers.
+pub(crate) fn merge_settings_file_layers(layers: &mut [SettingsPartial]) {"#
+            .to_string(),
+    );
+    for (key, props) in &settings {
+        let props = props.as_table().unwrap();
+        let Some(strategy) = props.get("merge") else {
+            continue;
+        };
+        let strategy = strategy
+            .as_str()
+            .expect("setting merge strategy must be a string");
+        match (strategy, props.get("type").and_then(toml::Value::as_str)) {
+            ("append_unique", Some("ListString")) => lines.push(format!(
+                r#"    {{
+        let mut found = false;
+        let values = layers
+            .iter_mut()
+            .rev()
+            .filter_map(|layer| {{
+                let values = layer.{key}.take();
+                found |= values.is_some();
+                values
+            }})
+            .flatten()
+            .unique()
+            .collect();
+        if found {{
+            layers[0].{key} = Some(values);
+        }}
+    }}"#
+            )),
+            _ => panic!(
+                "unsupported merge strategy {strategy:?} for setting {key:?}; append_unique requires ListString"
+            ),
+        }
+    }
+    lines.push("}".to_string());
+
+    lines.push(
+        r#"
 pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
     indexmap!{"#
             .to_string(),
