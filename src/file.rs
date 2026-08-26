@@ -635,8 +635,10 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Result<String> {
             );
         }
         let units = bytes
-            .chunks_exact(2)
-            .map(|c| to_u16([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| to_u16(*c))
             .collect_vec();
         String::from_utf16(&units).wrap_err_with(|| format!("invalid {label} text"))
     }
