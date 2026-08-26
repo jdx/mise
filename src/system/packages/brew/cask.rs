@@ -1979,15 +1979,7 @@ fn copy_generic_artifact_unprivileged(from: &Path, to: &Path) -> Result<()> {
         staging_name.as_str(),
         nix::sys::stat::Mode::S_IRWXU,
     )?;
-    let flags = nix::fcntl::OFlag::O_RDONLY
-        | nix::fcntl::OFlag::O_DIRECTORY
-        | nix::fcntl::OFlag::O_NOFOLLOW;
-    let staging_fd = nix::fcntl::openat(
-        &parent.fd,
-        staging_name.as_str(),
-        flags,
-        nix::sys::stat::Mode::empty(),
-    )?;
+    let staging_fd = open_dir_nofollow_at(&parent.fd, staging_name.as_str())?;
     let staging_stat = nix::sys::stat::fstat(&staging_fd)?;
     if staging_stat.st_uid != nix::unistd::geteuid().as_raw() || staging_stat.st_mode & 0o077 != 0 {
         bail!("brew-cask: temporary artifact directory is not private");
@@ -2131,6 +2123,22 @@ fn ensure_target_absent(target: &Path) -> Result<()> {
     }
 }
 
+/// Opens a directory relative to `parent`, never following symlinks.
+#[cfg(unix)]
+fn open_dir_nofollow_at<Fd: std::os::fd::AsFd, P: nix::NixPath + ?Sized>(
+    parent: Fd,
+    name: &P,
+) -> Result<std::os::fd::OwnedFd> {
+    Ok(nix::fcntl::openat(
+        parent,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW,
+        nix::sys::stat::Mode::empty(),
+    )?)
+}
+
 #[cfg(unix)]
 fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
     from: &Path,
@@ -2147,14 +2155,7 @@ fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
         nix::unistd::symlinkat(&std::fs::read_link(from)?, parent, name)?;
     } else if metadata.is_dir() {
         nix::sys::stat::mkdirat(&parent, name, nix::sys::stat::Mode::S_IRWXU)?;
-        let fd = nix::fcntl::openat(
-            &parent,
-            name,
-            nix::fcntl::OFlag::O_RDONLY
-                | nix::fcntl::OFlag::O_DIRECTORY
-                | nix::fcntl::OFlag::O_NOFOLLOW,
-            nix::sys::stat::Mode::empty(),
-        )?;
+        let fd = open_dir_nofollow_at(&parent, name)?;
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;
             copy_cask_artifact_at(&entry.path(), &fd, &entry.file_name())?;
@@ -2220,14 +2221,7 @@ fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> R
         };
     let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
     if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
-        let fd = nix::fcntl::openat(
-            &parent,
-            name,
-            nix::fcntl::OFlag::O_RDONLY
-                | nix::fcntl::OFlag::O_DIRECTORY
-                | nix::fcntl::OFlag::O_NOFOLLOW,
-            nix::sys::stat::Mode::empty(),
-        )?;
+        let fd = open_dir_nofollow_at(&parent, name)?;
         let mut directory = nix::dir::Dir::from_fd(fd)?;
         let entries = directory
             .iter()
@@ -2790,15 +2784,7 @@ fn ditto_into<Fd: std::os::fd::AsFd>(from: &Path, dir: Fd, name: &std::ffi::OsSt
             Path::new(name).display()
         )
     })?;
-    let destination = nix::fcntl::openat(
-        &dir,
-        name,
-        nix::fcntl::OFlag::O_RDONLY
-            | nix::fcntl::OFlag::O_DIRECTORY
-            | nix::fcntl::OFlag::O_NOFOLLOW,
-        nix::sys::stat::Mode::empty(),
-    )
-    .wrap_err_with(|| {
+    let destination = open_dir_nofollow_at(&dir, name).wrap_err_with(|| {
         format!(
             "brew-cask: cannot open staging directory {}",
             Path::new(name).display()
