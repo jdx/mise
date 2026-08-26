@@ -67,6 +67,7 @@ pub(crate) mod services;
 #[cfg(not(target_os = "linux"))]
 #[path = "services_non_linux.rs"]
 pub(crate) mod services;
+pub(crate) mod services_common;
 pub(crate) mod shell_activation;
 pub(crate) mod sudo;
 pub(crate) mod systemd;
