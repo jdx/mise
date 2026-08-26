@@ -124,7 +124,7 @@ jobs:
         shell: pwsh
         run: |
           $timer = [System.Diagnostics.Stopwatch]::StartNew()
-          mbx build --all-features --ignore-rust-version
+          mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --ignore-rust-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $timer.Stop()
           $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
@@ -151,7 +151,7 @@ jobs:
         shell: pwsh
         run: |
           $timer = [System.Diagnostics.Stopwatch]::StartNew()
-          cargo build --all-features --ignore-rust-version
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --ignore-rust-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $timer.Stop()
           $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
