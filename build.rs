@@ -751,6 +751,7 @@ pub(crate) struct Settings {"#
     let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
     let settings: toml::Table =
         toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
+    /// Build a collision-resistant generated Rust type name for a settings path.
     fn settings_struct_name(path: &[&str]) -> String {
         if let [part] = path {
             return format!("Settings{}", part.to_upper_camel_case());
@@ -919,6 +920,7 @@ pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = La
     indexmap!{"#
             .to_string(),
     );
+    /// Emit deprecation metadata shared by each generated settings metadata entry.
     fn push_deprecated_fields(lines: &mut Vec<String>, props: &toml::Table) {
         let deprecated = props
             .get("deprecated")
@@ -955,6 +957,7 @@ pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = La
             props.get("env_only").is_some_and(|v| v.as_bool().unwrap())
         ));
     }
+    /// Emit flattened runtime metadata for settings and nested settings tables.
     fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
         for (key, value) in table {
             let name = if prefix.is_empty() {
