@@ -884,7 +884,7 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
         && let Some(raw_base) = req.tap_url.as_deref().and_then(super::api::github_raw_base)
     {
         let url = format!("{raw_base}/api/cask/{name}.json");
-        match fetch_cask_url(name, &url, Some(raw_base), false).await {
+        match fetch_cask_url(name, &url, Some(normalize_cask_raw_base(raw_base)), false).await {
             Ok(cask) => return Ok(cask),
             Err(err) => debug!(
                 "brew-cask: {name} unavailable in parent tap metadata ({err}); falling back to official metadata"
@@ -910,7 +910,7 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             };
             (
                 format!("{base}/api/cask/{token}.json"),
-                Some(base.trim_end_matches("/HEAD").to_string()),
+                Some(normalize_cask_raw_base(base)),
             )
         }
         None => (
@@ -919,6 +919,13 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
         ),
     };
     fetch_cask_url(requested_token, &url, raw_base, official_api).await
+}
+
+fn normalize_cask_raw_base(mut raw_base: String) -> String {
+    if raw_base.ends_with("/HEAD") {
+        raw_base.truncate(raw_base.len() - "/HEAD".len());
+    }
+    raw_base
 }
 
 async fn fetch_cask_url(
@@ -8042,6 +8049,16 @@ mod tests {
         assert_eq!(
             dependency_tap_url(&standard_tap_request, "child"),
             Some("https://github.com/acme/homebrew-tools.git".to_string())
+        );
+        assert_eq!(
+            normalize_cask_raw_base(
+                "https://raw.githubusercontent.com/acme/homebrew-tools/HEAD".to_string()
+            ),
+            "https://raw.githubusercontent.com/acme/homebrew-tools"
+        );
+        assert_eq!(
+            normalize_cask_raw_base("https://example.com/custom".to_string()),
+            "https://example.com/custom"
         );
     }
 
