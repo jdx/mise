@@ -1922,6 +1922,7 @@ where
 mod tests {
     use super::*;
 
+    /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.
     #[test]
     fn test_merge_minimum_release_age_excludes() {
         let mut local = SettingsPartial::empty();
