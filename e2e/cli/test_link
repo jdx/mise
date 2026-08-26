@@ -104,3 +104,36 @@ mkdir -p tmp/tiny3
 mkdir -p "$MISE_CACHE_DIR/tiny/9.9.7/incomplete"
 assert_fail "mise link tiny@9.9.7 tmp/tiny3"
 assert "test -d \"$MISE_CACHE_DIR/tiny/9.9.7/incomplete\""
+
+# A link whose target went away is still an entry occupying its version's name. It used to be
+# invisible to `mise ls` -- no config names it, and every check resolved the link before answering
+# -- while `mise uninstall` refused it as "not installed", so nothing could free the name again.
+mkdir -p tmp/tiny-vanishing
+mise link tiny@9.9.4 tmp/tiny-vanishing
+# Control: while the target is there it is an ordinary linked version.
+assert_contains "mise ls tiny" "tiny  9.9.4 (symlink)"
+rmdir tmp/tiny-vanishing
+
+# It is reported, and reported as broken rather than as an ordinary symlink.
+assert_contains "mise ls tiny" "tiny  9.9.4 (broken symlink)"
+# ...but not as installed. `mise link` already makes that call by keeping the incomplete marker
+# for a dangling link, and `-i` lists only what is installed.
+assert "mise ls -i tiny | grep -c 9.9.4 || true" "0"
+assert "mise ls --json tiny | jq -r '.[] | select(.version == \"9.9.4\") | \"\\(.broken) \\(.installed)\"'" "true false"
+
+# The point of showing it: `uninstall` can now free the name.
+assert "mise uninstall tiny@9.9.4"
+# `test ! -e` alone proves nothing here -- it follows the link, so it was already true while the
+# entry existed. `-L` is what distinguishes removed from dangling.
+assert "test ! -L \"$MISE_DATA_DIR/installs/tiny/9.9.4\" && test ! -e \"$MISE_DATA_DIR/installs/tiny/9.9.4\""
+assert "mise ls tiny | grep -c 9.9.4 || true" "0"
+
+# The regression control: a live link still uninstalls to the link only, leaving the directory it
+# points at -- which belongs to the user, not to mise.
+mkdir -p tmp/tiny-kept
+touch tmp/tiny-kept/sentinel
+mise link tiny@9.9.3 tmp/tiny-kept
+assert_contains "mise ls tiny" "tiny  9.9.3 (symlink)"
+assert "mise uninstall tiny@9.9.3"
+assert "test ! -L \"$MISE_DATA_DIR/installs/tiny/9.9.3\""
+assert "test -f tmp/tiny-kept/sentinel"
