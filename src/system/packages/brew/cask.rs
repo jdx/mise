@@ -739,11 +739,7 @@ impl BinaryArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
-            None => Path::new(&self.source)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_string)
-                .ok_or_else(|| eyre!("brew-cask: invalid binary source '{}'", self.source)),
+            None => Ok(file_name_str(Path::new(&self.source), "binary source")?.to_string()),
         }
     }
 
@@ -801,11 +797,7 @@ impl CompletionArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
-            None => Path::new(&self.source)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_string)
-                .ok_or_else(|| eyre!("brew-cask: invalid completion source '{}'", self.source)),
+            None => Ok(file_name_str(Path::new(&self.source), "completion source")?.to_string()),
         }
     }
 
@@ -2936,19 +2928,11 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
                         return Ok(relative.to_string_lossy().to_string());
                     }
                 }
-                return expanded_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(str::to_string)
-                    .ok_or_else(|| eyre!("brew-cask: invalid font target '{}'", target));
+                return Ok(file_name_str(expanded_path, "font target")?.to_string());
             }
             Ok(expanded)
         }
-        None => Path::new(&font.source)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(str::to_string)
-            .ok_or_else(|| eyre!("brew-cask: invalid font source '{}'", font.source)),
+        None => Ok(file_name_str(Path::new(&font.source), "font source")?.to_string()),
     }
 }
 
@@ -4579,10 +4563,7 @@ fn default_completion_dir(shell: CompletionShell) -> PathBuf {
 }
 
 fn completion_filename(shell: CompletionShell, target_name: &str) -> Result<String> {
-    let filename = Path::new(target_name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| eyre!("brew-cask: invalid completion target '{target_name}'"))?;
+    let filename = file_name_str(Path::new(target_name), "completion target")?;
     let stem = Path::new(filename)
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -6395,11 +6376,15 @@ fn resolve_appdir(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-fn app_bundle_name(target_name: &str) -> Result<&str> {
-    Path::new(target_name)
-        .file_name()
+/// `kind` names what the path is, so the error reads e.g. "invalid app target".
+fn file_name_str<'a>(path: &'a Path, kind: &str) -> Result<&'a str> {
+    path.file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| eyre!("brew-cask: invalid app target '{target_name}'"))
+        .ok_or_else(|| eyre!("brew-cask: invalid {kind} '{}'", path.display()))
+}
+
+fn app_bundle_name(target_name: &str) -> Result<&str> {
+    file_name_str(Path::new(target_name), "app target")
 }
 
 /// Roots that a cask's `binary` artifact may legitimately symlink into.
