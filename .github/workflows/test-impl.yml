@@ -222,12 +222,10 @@ jobs:
       # compete with the MSRV build for memory. Clippy is stricter than HK's
       # cargo-check, so CI can skip that redundant compilation while retaining it
       # for local lint runs.
-      # test-standalone creates and removes tmp/install.sh, which hk may discover
-      # while collecting shellcheck inputs if both run concurrently.
-      - run: ./scripts/test-standalone.sh
       - parallel:
           - run: rm -rf ~/.cargo/advisory-dbs && cargo deny check
           - run: cargo machete --with-metadata
+          - run: ./scripts/test-standalone.sh
           - run: mise run lint
             env:
               HK_SKIP_STEPS: cargo-check

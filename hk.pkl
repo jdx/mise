@@ -2,7 +2,7 @@ amends "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Config.
 import "package://github.com/jdx/hk/releases/download/v1.55.0/hk@1.55.0#/Builtins.pkl"
 
 local bash_glob = List("*.sh", "xtasks/**", "scripts/**", "e2e/**")
-local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script", "**/*.py", "**/*.xsh")
+local bash_exclude = List("*.ps1", "**/*.fish", "*.ts", "*.js", "*.json", "*.bat", "**/.*", "src/assets/bash_zsh_support/**", "e2e/shell/xonsh_script", "tmp/install.sh", "**/*.py", "**/*.xsh")
 local linters = new Mapping<String, Step> {
     ["schema"] {
         glob = List("schema/**/*.json")
