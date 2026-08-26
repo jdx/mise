@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "crates/vfox/**"
+      - ".github/workflows/test-vfox.yml"
+      - ".github/workflows/test-vfox-impl.yml"
   push:
     branches: [release]
 

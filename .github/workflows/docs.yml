@@ -5,6 +5,7 @@ on:
     paths: &docs-paths
       - ".github/actions/**"
       - ".github/workflows/docs.yml"
+      - ".github/workflows/docs-impl.yml"
       - "bun.lock"
       - "docs/**"
       - "mise.toml"
