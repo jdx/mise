@@ -172,6 +172,21 @@ jobs:
           for binary in $BINARIES; do
             cp "$binary" "$work/stage/"
           done
+          # Apple rejects a binary without the hardened runtime or a secure
+          # timestamp. Naming a missing one here turns an opaque Invalid verdict
+          # into a diagnosis; Apple stays the authority on whether to accept.
+          for binary in $BINARIES; do
+            details="$(codesign --display --verbose=4 "$binary" 2>&1 || true)"
+            case "$details" in
+              *runtime*) ;;
+              *) echo "::warning title=No hardened runtime::$binary is signed without --options runtime, which Apple requires; expect an Invalid verdict below." ;;
+            esac
+            case "$details" in
+              *Timestamp=*) ;;
+              *) echo "::warning title=No secure timestamp::$binary carries no secure timestamp, which Apple requires; expect an Invalid verdict below." ;;
+            esac
+          done
+
           ditto -c -k --norsrc --noextattr "$work/stage" "$work/submission.zip"
 
           # `--wait` is not a gate on its own: it can return zero on an Invalid
