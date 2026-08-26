@@ -65,10 +65,14 @@ function PLUGIN:PreInstall(ctx)
     local checksum_name = asset_name .. ".sha256sum"
     local download_url = nil
     local checksum_url = nil
+    local sha256 = nil
 
     for _, asset in ipairs(release.assets) do
         if asset.name == asset_name then
             download_url = asset.browser_download_url
+            if asset.digest ~= nil then
+                sha256 = asset.digest:gsub("^sha256:", "")
+            end
         elseif asset.name == checksum_name then
             checksum_url = asset.browser_download_url
         end
@@ -79,8 +83,7 @@ function PLUGIN:PreInstall(ctx)
     end
 
     -- Fetch the sha256 checksum if available
-    local sha256 = nil
-    if checksum_url ~= nil then
+    if sha256 == nil and checksum_url ~= nil then
         local checksum_resp, checksum_err = http.get({
             url = checksum_url,
         })

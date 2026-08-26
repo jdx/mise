@@ -619,12 +619,20 @@ impl Backend for AquaBackend {
         let download_url = select_github_download_url(pkg.private, &url, url_api.as_deref()).await;
         self.download(ctx, &tv, &download_url, &filename).await?;
 
+        // Snapshot before any mutation so verify() knows whether the lockfile
+        // originally contained a checksum (vs. one we just wrote from api_digest).
+        let lockfile_has_checksum = tv
+            .lock_platforms
+            .get(&platform_key)
+            .is_some_and(|p| p.checksum.is_some());
+
         if validated_url.is_none() {
-            // Store the asset URL and digest (if available) in the tool version
             let platform_info = tv.lock_platforms.entry(platform_key).or_default();
             platform_info.url = Some(url.clone());
             platform_info.url_api = url_api.clone();
-            if let Some(digest) = api_digest.clone() {
+            if let Some(digest) = api_digest.clone()
+                && !lockfile_has_checksum
+            {
                 debug!("using GitHub API digest for checksum verification");
                 platform_info.checksum = Some(digest);
             }
@@ -634,7 +642,8 @@ impl Backend for AquaBackend {
         if pkg.checksum.as_ref().is_some_and(|c| c.enabled()) || api_digest.is_some() {
             ctx.pr.next_operation();
         }
-        self.verify(ctx, &mut tv, &pkg, &v, &filename).await?;
+        self.verify(ctx, &mut tv, &pkg, &v, &filename, lockfile_has_checksum)
+            .await?;
 
         // Advance to extraction operation if applicable
         if needs_extraction(format, &pkg.package_type()) {
@@ -2416,6 +2425,7 @@ impl AquaBackend {
         pkg: &AquaPackage,
         v: &str,
         filename: &str,
+        lockfile_has_checksum: bool,
     ) -> Result<()> {
         // Skip provenance verification if the lockfile already has both a checksum and
         // provenance entry for this platform — the artifact integrity is already guaranteed
@@ -2434,8 +2444,18 @@ impl AquaBackend {
             .lock_platforms
             .get(&platform_key)
             .is_some_and(PlatformInfo::has_checksum_and_verified_provenance);
+        let locked_provenance = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|p| p.provenance.clone());
         if has_lockfile_integrity && !force_verify {
             self.ensure_provenance_setting_enabled(tv, &platform_key)?;
+        } else if !force_verify && locked_provenance.is_none() && lockfile_has_checksum {
+            debug!(
+                "skipping provenance detection for {} \
+                 (lockfile has checksum but no provenance)",
+                tv.style()
+            );
         } else {
             self.verify_provenance(ctx, tv, pkg, v, filename).await?;
         }

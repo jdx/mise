@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2103
+#
+# tool-stub non-cached exec must:
+# 1. Keep project _.path dirs so sibling stubs remain LookPath-able
+# 2. Prefer the stub-selected tool version over an outer task's tool bins
+
+export MISE_GPG_VERIFY=false
+
+mkdir -p tool_stub_preserves_caller_path/bin
+cd tool_stub_preserves_caller_path
+
+# --- _.path sibling stubs remain visible ------------------------------------
+
+cat >mise.toml <<'EOF'
+[env]
+_.path = ["./bin"]
+
+[tasks.check]
+run = "dummy"
+EOF
+
+cat >bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "1.0.0"
+EOF
+chmod +x bin/dummy
+
+cat >bin/sibling <<'EOF'
+#!/usr/bin/env bash
+echo sibling-found
+EOF
+chmod +x bin/sibling
+
+# Install via stub (also writes tool-stub bin-path cache)
+assert_contains "mise run check" "This is Dummy"
+
+# Replace the installed binary with a PATH probe. Keep the tool installed so the
+# next stub run skips install but still hits execute_with_tool_request after the
+# bin-path cache is cleared (not the inherit-PATH short-circuit).
+DUMMY_BIN="$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy"
+cat >"$DUMMY_BIN" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+command -v sibling
+EOF
+chmod +x "$DUMMY_BIN"
+
+rm -rf "$MISE_CACHE_DIR/tool-stubs"
+
+assert_contains "mise run check" "sibling"
+
+# --- stub-selected version wins over outer toolset --------------------------
+
+mkdir -p ../tool_stub_no_shadow/bin
+cd ../tool_stub_no_shadow
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+
+[env]
+_.path = ["./bin"]
+
+[tasks.check]
+run = "dummy"
+EOF
+
+cat >bin/dummy <<'EOF'
+#!/usr/bin/env -S mise tool-stub
+tool = "dummy"
+version = "2.0.0"
+EOF
+chmod +x bin/dummy
+
+mise install dummy@1.0.0 dummy@2.0.0
+rm -rf "$MISE_CACHE_DIR/tool-stubs"
+
+# Outer task activates dummy@1.0.0; stub selects 2.0.0 — must not resolve 1.0.0
+assert_contains "mise run check" "This is Dummy 2.0.0"
+assert_not_contains "mise run check" "This is Dummy 1.0.0"

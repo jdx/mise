@@ -162,8 +162,13 @@ mise runs it from a `.ps1` copy in the temp directory and removes the copy when 
 
 Only the script's view of its own location changes: `$PSScriptRoot` and `$PSCommandPath` name the
 copy rather than the task file. The working directory, `$args`, and the environment are untouched.
-A task that needs to find files sitting next to it should carry a `.ps1` extension, which is run
-in place.
+
+A task that needs to find files next to itself has two ways out, and the first works everywhere:
+
+- Read [`MISE_TASK_DIR`](/tasks/#environment-variables-passed-to-tasks), which names the directory
+  the task file is in. mise sets it from the task rather than from whatever is executing, so the
+  copy does not move it — and it reads the same on Linux and macOS, where nothing is copied at all.
+- Give the task a `.ps1` extension, which is run in place.
 
 ### Writing one task for both platforms
 

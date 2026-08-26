@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+mkdir -p repo/packages/app other
+cat <<'EOF' >repo/packages/app/package.json
+{
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "22.0.0"
+    }
+  }
+}
+EOF
+cat <<'EOF' >repo/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["node"]
+EOF
+
+# Track package.json while an ancestor config enables the idiomatic parser.
+assert "mise -C repo/packages/app current node" "22.0.0"
+
+# Tracked loading from another directory must honor the owning hierarchy's setting.
+output=$(mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "22.0.0"
+assert_contains "echo '$output'" "repo/packages/app/package.json"
+
+# Environment settings outrank the owning hierarchy.
+output=$(MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS="" MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config"
+assert_not_contains "echo '$output'" "error loading tracked config file"
+
+# --no-config ignores file-based owner/global settings while keeping explicit env defaults.
+output=$(MISE_NO_CONFIG=1 MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config"
+assert_not_contains "echo '$output'" "error loading tracked config file"
+
+output=$(MISE_NO_CONFIG=1 MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "22.0.0"
+assert_contains "echo '$output'" "repo/packages/app/package.json"
+assert_not_contains "echo '$output'" "error loading tracked config file"
+
+# Safe mode remains trust-exempt even when paranoid mode is also enabled. Use the environment
+# setting because safe mode intentionally ignores the owning project's [settings].
+output=$(MISE_SAFE=1 MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" MISE_IDIOMATIC_VERSION_FILE_ENABLE_TOOLS=node MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "22.0.0"
+assert_contains "echo '$output'" "repo/packages/app/package.json"
+assert_not_contains "echo '$output'" "skipping untrusted tracked config: ~/workdir/repo/packages/app/package.json"
+
+# A higher-precedence config in the owning hierarchy can disable the file. The
+# stale entry should then be ignored without a write error from another directory.
+cat <<'EOF' >repo/packages/app/mise.local.toml
+[settings]
+idiomatic_version_file_enable_tools = []
+EOF
+output=$(MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config"
+assert_not_contains "echo '$output'" "error loading tracked config file"
+assert_not_contains "echo '$output'" "cannot update idiomatic version file"
+
+# Successful dynamic discovery must retain disabled matches instead of degrading them to unknown.
+mkdir -p "$MISE_DATA_DIR/plugins/dynamic-disabled" dynamic "$MISE_STATE_DIR/tracked-configs"
+cat <<'EOF' >"$MISE_DATA_DIR/plugins/dynamic-disabled/metadata.lua"
+PLUGIN = {
+    name = "dynamic-disabled",
+    version = "0.1.0",
+    description = "provides a dynamically discovered idiomatic filename",
+    legacyFilenames = { ".dynamic-version" },
+}
+EOF
+echo "1.0.0" >dynamic/.dynamic-version
+cat <<'EOF' >dynamic/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["dynamic-disabled"]
+idiomatic_version_file_disable_files = ["dynamic-disabled:.dynamic-version"]
+EOF
+ln -s "$PWD/dynamic/.dynamic-version" "$MISE_STATE_DIR/tracked-configs/dynamic-disabled"
+output=$(MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config: ~/workdir/dynamic/.dynamic-version"
+assert_not_contains "echo '$output'" "error loading tracked config file ~/workdir/dynamic/.dynamic-version"
+
+# Genuine parse failures in tracked configs must still warn.
+mkdir broken
+cat <<'EOF' >broken/mise.toml
+[tools]
+dummy = "1"
+EOF
+mise -C broken ls >/dev/null
+printf '[tools\n' >broken/mise.toml
+output=$(mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "error loading tracked config file"
+assert_contains "echo '$output'" "broken/mise.toml"
+assert_not_contains "echo '$output'" "Error loading settings file"
+
+# Untrusted owner settings must not activate plugin discovery while scanning tracked files.
+marker="$PWD/untrusted-idiomatic-metadata-loaded"
+mkdir -p "$MISE_DATA_DIR/plugins/untrusted-sideeffect" untrusted
+cat <<EOF >"$MISE_DATA_DIR/plugins/untrusted-sideeffect/metadata.lua"
+PLUGIN = {
+    name = "untrusted-sideeffect",
+    version = "0.1.0",
+    description = "records when untrusted metadata is loaded",
+}
+local f = io.open("$marker", "w")
+if f then
+    f:write("loaded")
+    f:close()
+end
+EOF
+cat <<'EOF' >untrusted/mise.toml
+[settings]
+idiomatic_version_file_enable_tools = ["untrusted-sideeffect"]
+EOF
+printf '{"name":"untrusted"}\n' >untrusted/package.json
+mkdir -p "$MISE_STATE_DIR/tracked-configs"
+ln -s "$PWD/untrusted/package.json" "$MISE_STATE_DIR/tracked-configs/untrusted-package"
+
+# Trust the tracked file itself so tracked loading reaches rooted settings resolution, while
+# leaving its owner mise.toml untrusted. The owner setting must be filtered before metadata loads.
+MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" mise trust "$PWD/untrusted/package.json" >/dev/null
+output=$(MISE_PARANOID=1 MISE_TRUSTED_CONFIG_PATHS="" MISE_LOG_LEVEL=debug mise -C other ls --all-sources 2>&1)
+assert_contains "echo '$output'" "skipping disabled idiomatic tracked config: ~/workdir/untrusted/package.json"
+assert_not_contains "echo '$output'" "skipping untrusted tracked config: ~/workdir/untrusted/package.json"
+assert_fail "test -e '$marker'"

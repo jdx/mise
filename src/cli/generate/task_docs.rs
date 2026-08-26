@@ -59,10 +59,9 @@ impl TaskDocs {
                     };
                     for task in &visible_tasks {
                         let filename = format!("{}.md", task.name.replace([':', '/'], "-"));
-                        file::write(
-                            output.join(&filename),
-                            &task.render_markdown(&config).await?,
-                        )?;
+                        let path = output.join(&filename);
+                        file::write(&path, &task.render_markdown(&config).await?)?;
+                        miseprintln!("Wrote to {}", file::display_path(&path));
                         if let Some(index) = &mut index {
                             let desc = if task.description.is_empty() {
                                 String::new()
@@ -79,7 +78,9 @@ impl TaskDocs {
                         {
                             warn!("task named \"index\" will be overwritten by index.md");
                         }
-                        file::write(output.join("index.md"), &index)?;
+                        let path = output.join("index.md");
+                        file::write(&path, &index)?;
+                        miseprintln!("Wrote to {}", file::display_path(&path));
                     }
                 } else {
                     return Err(eyre::eyre!(
@@ -101,9 +102,11 @@ impl TaskDocs {
                     let contents = file::read_to_string(output)?;
                     let contents = inject_task_docs(&contents, &doc, output)?;
                     file::write(output, &contents)?;
+                    miseprintln!("Wrote to {}", file::display_path(output));
                 } else {
                     doc = format!("{}\n", doc.trim());
                     file::write(output, &doc)?;
+                    miseprintln!("Wrote to {}", file::display_path(output));
                 }
             }
         } else {

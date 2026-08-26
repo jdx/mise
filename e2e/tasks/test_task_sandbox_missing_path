@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Landlock binds each rule to an open descriptor, so an allow-list entry that
+# does not exist yet has its rule dropped. Say that once per path, and point at
+# a directory that can actually be allowed.
+# https://github.com/jdx/mise/discussions/10556
+
+if [[ "$(uname)" != "Linux" ]]; then
+  echo "skipping: Landlock filesystem sandboxing is Linux-only"
+  exit 0
+fi
+
+cat >mise.toml <<'TOML'
+[tasks.create]
+run = "touch test.txt"
+allow_read = ["test.txt"]
+allow_write = ["test.txt"]
+TOML
+
+# This asserts on the message, not on the task being denied. The harness runs
+# every test under a directory created with `mktemp --tmpdir`, and a sandbox
+# that restricts both reads and writes grants /tmp full access
+# (src/sandbox/landlock.rs), so the write here succeeds through that rule even
+# though the rule naming test.txt was dropped. Which is the point of the
+# wording: a dropped rule is not by itself a denial.
+mise run create >out.log 2>&1 || true
+
+assert_contains "cat out.log" "does not exist, so its rule was dropped"
+# The workaround has to name a directory that exists, not just the parent.
+assert_contains "cat out.log" "the closest is"
+
+# The same path sits in both allow-lists. It used to be reported once per list.
+assert "test \"\$(grep -c 'its rule was dropped' out.log)\" = 1"

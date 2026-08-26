@@ -186,6 +186,21 @@ pub(super) fn tap_name(name: &str) -> Option<String> {
     }
 }
 
+pub(super) fn tap_name_from_url(url: &str) -> Option<String> {
+    let url = url.trim_end_matches('/').trim_end_matches(".git");
+    let rest = url.strip_prefix("https://github.com/")?;
+    let mut parts = rest.split('/');
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{owner}/{}",
+        repo.strip_prefix("homebrew-").unwrap_or(repo)
+    ))
+}
+
 fn split_tap(name: &str) -> Option<(&str, &str)> {
     let mut parts = name.split('/');
     let owner = parts.next()?;
@@ -229,7 +244,7 @@ pub(super) fn tap_raw_base(owner: &str, tap: &str, tap_url: Option<&str>) -> Opt
 }
 
 pub(super) fn github_raw_base(url: &str) -> Option<String> {
-    let url = url.trim_end_matches(".git").trim_end_matches('/');
+    let url = url.trim_end_matches('/').trim_end_matches(".git");
     let rest = url.strip_prefix("https://github.com/")?;
     let mut parts = rest.split('/');
     let owner = parts.next()?;
@@ -240,5 +255,20 @@ pub(super) fn github_raw_base(url: &str) -> Option<String> {
         Some(format!(
             "https://raw.githubusercontent.com/{owner}/{repo}/HEAD"
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn github_tap_urls_allow_trailing_slashes() {
+        let url = "https://github.com/acme/homebrew-tools.git/";
+        assert_eq!(tap_name_from_url(url).as_deref(), Some("acme/tools"));
+        assert_eq!(
+            github_raw_base(url).as_deref(),
+            Some("https://raw.githubusercontent.com/acme/homebrew-tools/HEAD")
+        );
     }
 }

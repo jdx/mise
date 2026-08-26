@@ -32,3 +32,19 @@ EOF
 mise i tiny@both
 # tool_alias should take precedence - should install 1.1.0
 assert_contains "mise ls tiny" "1.1.0"
+
+# Test 4: no row ends in the fill tabled adds to bring a cell up to its column's width. The two
+# targets differ in length on purpose -- with one row, or with equal-length targets, the widest
+# cell is the row itself and there is nothing to fill, so the assertion below would pass on the
+# unfixed code and prove nothing.
+cat >mise.toml <<'EOF2'
+[tool_alias.tiny.versions]
+short = "1.0.0"
+longer = "1.0.0-with-a-longer-target"
+EOF2
+
+# The fixture really does produce two rows of different width -- checked before the count below,
+# which is only meaningful if it does.
+assert_contains "mise tool-alias ls" "1.0.0-with-a-longer-target"
+assert_contains "mise tool-alias ls" "short"
+assert "mise tool-alias ls | grep -c '[[:space:]]$' || true" "0"

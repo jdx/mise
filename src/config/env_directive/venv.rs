@@ -258,7 +258,7 @@ impl EnvResults {
             return Ok(());
         }
         trust_check(ctx.source)?;
-        let venv = ctx.parse_template(&path)?;
+        let venv = ctx.parse_template("python.venv", &path)?;
         let venv = ctx.normalize_path(venv.into());
         let venv_lock = LockFile::new(&venv).lock()?;
         // Record whichever python the caller actually has active. The toolset rebuilt below comes

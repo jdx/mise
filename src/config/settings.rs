@@ -25,7 +25,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
-use super::{TOML_CONFIG_FILENAMES, load_config_paths};
+use super::{TOML_CONFIG_FILENAMES, load_config_paths, load_config_paths_from};
 use url::Url;
 
 // settings are generated from settings.toml in the project root
@@ -240,6 +240,68 @@ impl serde::Serialize for PythonUvVenvAuto {
 
 pub(crate) type SettingsPartial = <Settings as Config>::Layer;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SettingsSourcePolicy {
+    EnvironmentOnly,
+    Hierarchy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SettingsTrustPolicy {
+    AsDiscovered,
+    TrustedOnly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct SettingsLoadPolicy {
+    source: SettingsSourcePolicy,
+    trust: SettingsTrustPolicy,
+}
+
+impl SettingsLoadPolicy {
+    const ENVIRONMENT_ONLY: Self = Self {
+        source: SettingsSourcePolicy::EnvironmentOnly,
+        trust: SettingsTrustPolicy::AsDiscovered,
+    };
+    pub(crate) const HIERARCHY: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::AsDiscovered,
+    };
+    pub(crate) const TRUSTED_HIERARCHY: Self = Self {
+        source: SettingsSourcePolicy::Hierarchy,
+        trust: SettingsTrustPolicy::TrustedOnly,
+    };
+}
+
+/// Settings that control idiomatic version-file discovery for one config root.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct IdiomaticVersionFileSettings {
+    pub(crate) enable_tools: BTreeSet<String>,
+    pub(crate) disable_files: BTreeSet<String>,
+}
+
+impl IdiomaticVersionFileSettings {
+    fn from_settings(settings: &Settings) -> Self {
+        Self {
+            enable_tools: settings.idiomatic_version_file_enable_tools.clone(),
+            disable_files: settings.idiomatic_version_file_disable_files.clone(),
+        }
+    }
+
+    pub(crate) fn current() -> Self {
+        Settings::try_get()
+            .map(|settings| Self::from_settings(&settings))
+            .unwrap_or_default()
+    }
+
+    /// Resolve through the canonical settings loader, then retain only the fields needed for
+    /// idiomatic discovery. Parsing a reduced schema here would create a second validation path.
+    pub(crate) fn resolve_from(root: &Path, policy: SettingsLoadPolicy) -> Result<Self> {
+        Settings::load_sources_from(Some(root), policy)
+            .map(|settings| Self::from_settings(&settings))
+    }
+}
+
 static BASE_SETTINGS: RwLock<Option<Arc<Settings>>> = RwLock::new(None);
 /// Caches the resolved `safe` value from the most recent settings load so
 /// `safe_mode()` answers correctly during the config parse pass that runs before
@@ -250,7 +312,18 @@ static LAST_SAFE: AtomicU8 = AtomicU8::new(2);
 static CLI_SETTINGS: Mutex<Option<SettingsPartial>> = Mutex::new(None);
 static PENDING_DEPRECATED_SETTINGS: Lazy<Mutex<BTreeSet<&'static str>>> =
     Lazy::new(Default::default);
-static DEPRECATED_WARNINGS_READY: AtomicBool = AtomicBool::new(false);
+/// Settings files that failed to parse, held until warnings can be printed.
+///
+/// A set rather than a list because settings are built more than once per run — `add_cli_matches`
+/// resets them so CLI flags take effect — and each build re-reports the same file. The messages
+/// name their file, which is what keeps two files failing the same way from collapsing into one.
+static PENDING_SETTINGS_FILE_ERRORS: Lazy<Mutex<BTreeSet<String>>> = Lazy::new(Default::default);
+/// Whether warnings found while loading settings can be printed yet.
+///
+/// `logger::init()` calls `Settings::try_get()` before installing the logger, so the first build
+/// happens with nothing to print to. Anything found there is queued above and flushed once the
+/// logger exists.
+static WARNINGS_READY: AtomicBool = AtomicBool::new(false);
 // TODO(2027.8.0): Remove the per-tool warning accessors once the NixOS
 // and Alpine `all_compile` deprecation process is complete.
 
@@ -395,8 +468,23 @@ fn warn_deprecated_env_settings() {
     }
 }
 
-fn queue_deprecated(key: &'static str) {
-    PENDING_DEPRECATED_SETTINGS.lock().unwrap().insert(key);
+/// Report a settings file that could not be parsed.
+///
+/// Queued rather than printed when the logger is not up yet. `warn_once!` cannot stand in for the
+/// queue: it records the message as seen even when nothing was printed, so the pre-logger build
+/// would silence the one that comes after it.
+///
+/// Readiness is read while the queue is held, and the flush sets it while holding the same lock, so
+/// a warning cannot be queued into a set that has just been drained.
+fn warn_settings_file_error(msg: String) {
+    {
+        let mut pending = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
+        if !WARNINGS_READY.load(Ordering::SeqCst) {
+            pending.insert(msg);
+            return;
+        }
+    }
+    warn_once!("{msg}");
 }
 
 fn queue_deprecated_settings(keys: impl IntoIterator<Item = &'static str>) {
@@ -433,9 +521,14 @@ fn should_warn_deprecated_value(value: &toml::Value) -> bool {
 }
 
 fn warn_deprecated(key: &'static str) {
-    if !DEPRECATED_WARNINGS_READY.load(Ordering::SeqCst) {
-        queue_deprecated(key);
-        return;
+    // Same lock discipline as `warn_settings_file_error`: the readiness read and the insert have to
+    // be one step against the flush, or a key queued just after the drain is never printed.
+    {
+        let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
+        if !WARNINGS_READY.load(Ordering::SeqCst) {
+            pending.insert(key);
+            return;
+        }
     }
     warn_deprecated_now(key);
 }
@@ -462,6 +555,44 @@ fn warn_deprecated_now(key: &'static str) {
                     "deprecated [setting.{key}]: {msg} This will be removed in mise {remove_at}."
                 );
             }
+        }
+    }
+}
+
+/// Settle the verbosity settings against each other, so `log_level` is the single answer.
+///
+/// `debug`, `trace`, `quiet` and `verbose` each say something about `log_level`, and they overlap:
+/// the order below is the precedence. Kept apart from the rest of the load so it can also be
+/// applied to a partial view of the settings — see [`Settings::cli_log_level`].
+fn normalize_verbosity(settings: &mut Settings) {
+    if settings.debug {
+        settings.log_level = "debug".to_string();
+    }
+    if settings.trace {
+        settings.log_level = "trace".to_string();
+    }
+    if settings.quiet {
+        settings.log_level = "error".to_string();
+    }
+    if settings.log_level == "trace" || settings.log_level == "debug" {
+        settings.verbose = true;
+        settings.debug = true;
+        if settings.log_level == "trace" {
+            settings.trace = true;
+        }
+    }
+    // handle the special case of `mise -v` which should show version, not set verbose.
+    // Use the args mise was invoked with (already captured safely in Cli::run and kept
+    // in sync with internal re-dispatch like `mise asdf ...`) rather than re-reading the
+    // process argv. See also Settings::no_config().
+    let is_version_flag = {
+        let args = env::ARGS.read().unwrap();
+        args.len() == 2 && args[1] == "-v"
+    };
+    if settings.verbose && !is_version_flag {
+        settings.quiet = false;
+        if settings.log_level != "trace" {
+            settings.log_level = "debug".to_string();
         }
     }
 }
@@ -616,6 +747,45 @@ fn resolve_aqua_registry_paths(settings: &mut toml::Table, path: &Path) {
     }
 }
 
+/// Resolve task discovery exclusions while the settings file that declared them is still known.
+/// Once settings layers are merged, a relative `PathBuf` no longer carries enough information to
+/// distinguish two config roots.
+fn resolve_task_disable_paths(settings: &mut toml::Table, path: &Path) {
+    let config_root = crate::config::config_file::config_root::config_root(path);
+    let resolve = |paths: &mut Vec<toml::Value>| {
+        for entry in paths {
+            let Some(value) = entry.as_str() else {
+                continue;
+            };
+            let value = Path::new(value);
+            if value.is_absolute() || value == Path::new("~") || value.starts_with("~/") {
+                continue;
+            }
+            let joined = config_root.join(value);
+            let resolved = joined
+                .absolutize()
+                .map(|path| path.into_owned())
+                .unwrap_or(joined);
+            *entry = toml::Value::String(resolved.to_string_lossy().into_owned());
+        }
+    };
+
+    if let Some(paths) = settings
+        .get_mut("task")
+        .and_then(toml::Value::as_table_mut)
+        .and_then(|task| task.get_mut("disable_paths"))
+        .and_then(toml::Value::as_array_mut)
+    {
+        resolve(paths);
+    }
+    if let Some(paths) = settings
+        .get_mut("task_disable_paths")
+        .and_then(toml::Value::as_array_mut)
+    {
+        resolve(paths);
+    }
+}
+
 /// Resolve age identity paths while the settings file that declared them is
 /// still known. Once settings layers are merged, a relative `PathBuf` no
 /// longer carries enough information to distinguish two config roots.
@@ -747,6 +917,104 @@ impl Settings {
         self.compile_setting(purpose, "ruby", self.ruby.compile)
     }
 
+    fn cli_settings_layer() -> SettingsPartial {
+        normalize_hidden_config_aliases(CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default())
+    }
+
+    /// The log level the parsed CLI flags ask for, without a full settings build.
+    ///
+    /// [`Self::try_get`] can keep failing once the CLI flags are part of it — `--cd` naming a
+    /// directory that `validate_cd_path` accepts but the `chdir` refuses is the case `Cli::run`
+    /// propagates — and from then on no build succeeds. A caller that only knows how to give up
+    /// would be left holding the level from before the flags were parsed, and anything printed
+    /// from there on ignores `--quiet`.
+    ///
+    /// `None` when the flags said nothing about verbosity: the level already in force came from a
+    /// build that worked, and that build could see the config files this cannot. Only when the CLI
+    /// does speak is it worth answering, and then it outranks them anyway.
+    pub(crate) fn cli_log_level() -> Option<log::LevelFilter> {
+        let cli = CLI_SETTINGS.lock().unwrap().clone()?;
+        // `add_cli_matches` folds `--trace`/`--debug`/`-vv` into `log_level`, and `--silent` into
+        // `quiet`, so these four cover every flag that moves the level.
+        if cli.quiet.is_none()
+            && cli.silent.is_none()
+            && cli.log_level.is_none()
+            && cli.verbose.is_none()
+        {
+            return None;
+        }
+        // Environment-only: the CLI layer plus `MISE_*`. It skips config discovery, which is both
+        // what makes it survive the failure that sent us here and why its answer is a fallback
+        // rather than the real one.
+        let mut settings =
+            Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY).ok()?;
+        normalize_verbosity(&mut settings);
+        Some(settings.log_level())
+    }
+
+    /// Load settings sources for an explicit root, or the current directory when `root` is `None`.
+    ///
+    /// This shares source ordering and file parsing with the normal settings load. It deliberately
+    /// does not update process-global settings state or apply the post-load process side effects in
+    /// [`Self::try_get`]. Root-specific callers can require trusted project files without
+    /// reproducing config discovery or precedence rules.
+    fn load_sources_from(root: Option<&Path>, policy: SettingsLoadPolicy) -> Result<Self> {
+        if policy.trust == SettingsTrustPolicy::TrustedOnly && !is_loaded() {
+            bail!("trusted settings resolution requires the base settings to be loaded");
+        }
+        let mut builder = Self::builder().preloaded(Self::cli_settings_layer()).env();
+        if policy.source == SettingsSourcePolicy::Hierarchy {
+            for layer in Self::settings_layers_from(root, policy.trust) {
+                builder = builder.preloaded(layer);
+            }
+            builder = builder.preloaded(DEFAULT_SETTINGS.clone());
+        }
+        Ok(builder.load()?)
+    }
+
+    /// Load eligible config-file settings layers in precedence order and combine settings whose
+    /// semantics are additive across files.
+    fn settings_layers_from(
+        root: Option<&Path>,
+        trust_policy: SettingsTrustPolicy,
+    ) -> Vec<SettingsPartial> {
+        // In safe mode, ignore `[settings]` from project (non-global) config so
+        // an untrusted repo cannot change mise's behavior during resolution
+        // (e.g. disable verification, redirect a backend/registry). Global and
+        // system config is operator-owned and still applies.
+        let safe_mode = Settings::safe_mode();
+        let paths = match root {
+            Some(root) => load_config_paths_from(root, &TOML_CONFIG_FILENAMES, false),
+            None => load_config_paths(&TOML_CONFIG_FILENAMES, false),
+        };
+        let mut layers = paths
+            .into_iter()
+            .filter(|path| !safe_mode || crate::config::is_global_config(path))
+            .filter(|path| match trust_policy {
+                SettingsTrustPolicy::AsDiscovered => true,
+                SettingsTrustPolicy::TrustedOnly => {
+                    crate::config::is_global_config(path)
+                        || crate::config::config_file::is_path_trusted(path)
+                }
+            })
+            .filter_map(|path| match Self::parse_settings_file(&path) {
+                Ok(config) => Some(config),
+                Err(err) => {
+                    // Name the file. mise reads several settings files and two of them can fail
+                    // with byte-identical parser text, which leaves the reports
+                    // indistinguishable -- to the reader, and to the queue that collapses repeats.
+                    warn_settings_file_error(format!(
+                        "Error loading settings file {}: {err}",
+                        file::display_path(&path)
+                    ));
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        merge_settings_file_layers(&mut layers);
+        layers
+    }
+
     pub(crate) fn try_get() -> Result<Arc<Self>> {
         if let Some(settings) = BASE_SETTINGS.read().unwrap().as_ref() {
             return Ok(settings.clone());
@@ -754,14 +1022,7 @@ impl Settings {
         time!("try_get");
 
         // Initial pass to obtain cd option
-        let mut sb = Self::builder()
-            .preloaded(normalize_hidden_config_aliases(
-                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
-            ))
-            .env();
-        time!("try_get builder1+env");
-
-        let mut settings = sb.load()?;
+        let mut settings = Self::load_sources_from(None, SettingsLoadPolicy::ENVIRONMENT_ONLY)?;
         time!("try_get load1");
         if let Some(mut cd) = settings.cd {
             static ORIG_PATH: Lazy<std::io::Result<PathBuf>> = Lazy::new(env::current_dir);
@@ -772,20 +1033,7 @@ impl Settings {
         }
 
         // Reload settings after current directory option processed
-        sb = Self::builder()
-            .preloaded(normalize_hidden_config_aliases(
-                CLI_SETTINGS.lock().unwrap().clone().unwrap_or_default(),
-            ))
-            .env();
-        time!("try_get builder2+env");
-        for file in Self::all_settings_files() {
-            sb = sb.preloaded(file);
-        }
-        time!("try_get all_settings_files");
-        sb = sb.preloaded(DEFAULT_SETTINGS.clone());
-        time!("try_get default_settings");
-
-        settings = sb.load()?;
+        settings = Self::load_sources_from(None, SettingsLoadPolicy::HIERARCHY)?;
         time!("try_get load2");
         if !settings.legacy_version_file {
             settings.idiomatic_version_file = Some(false);
@@ -799,36 +1047,7 @@ impl Settings {
         if *env::NO_COLOR {
             settings.color = false;
         }
-        if settings.debug {
-            settings.log_level = "debug".to_string();
-        }
-        if settings.trace {
-            settings.log_level = "trace".to_string();
-        }
-        if settings.quiet {
-            settings.log_level = "error".to_string();
-        }
-        if settings.log_level == "trace" || settings.log_level == "debug" {
-            settings.verbose = true;
-            settings.debug = true;
-            if settings.log_level == "trace" {
-                settings.trace = true;
-            }
-        }
-        // handle the special case of `mise -v` which should show version, not set verbose.
-        // Use the args mise was invoked with (already captured safely in Cli::run and kept
-        // in sync with internal re-dispatch like `mise asdf ...`) rather than re-reading the
-        // process argv. See also Settings::no_config().
-        let is_version_flag = {
-            let args = env::ARGS.read().unwrap();
-            args.len() == 2 && args[1] == "-v"
-        };
-        if settings.verbose && !is_version_flag {
-            settings.quiet = false;
-            if settings.log_level != "trace" {
-                settings.log_level = "debug".to_string();
-            }
-        }
+        normalize_verbosity(&mut settings);
         if !settings.color {
             console::set_colors_enabled(false);
             console::set_colors_enabled_stderr(false);
@@ -860,24 +1079,39 @@ impl Settings {
         Ok(settings)
     }
 
-    pub(crate) fn flush_deprecated_warnings() {
+    pub(crate) fn flush_pending_warnings() {
         if CLI_SETTINGS.lock().unwrap().is_none() {
             return;
         }
-        Self::flush_deprecated_warnings_now();
+        Self::flush_pending_warnings_now();
     }
 
-    pub(crate) fn flush_deprecated_warnings_for_fast_exit() {
-        Self::flush_deprecated_warnings_now();
+    /// Flush without waiting for CLI settings, for a path that is about to leave.
+    ///
+    /// Startup queues warnings before the logger exists and only flushes them once CLI flags are
+    /// known — but several steps in between can fail first, and a diagnostic that was queued and
+    /// never flushed is worse than one printed a moment early.
+    pub(crate) fn flush_pending_warnings_before_exit() {
+        Self::flush_pending_warnings_now();
     }
 
-    fn flush_deprecated_warnings_now() {
-        DEPRECATED_WARNINGS_READY.store(true, Ordering::SeqCst);
-        warn_deprecated_env_settings();
-        let pending = {
-            let mut pending = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
-            std::mem::take(&mut *pending)
+    fn flush_pending_warnings_now() {
+        // Readiness is set under both queue locks so a producer cannot read "not ready" and then
+        // insert into a set this call has already taken.
+        let (pending_files, pending) = {
+            let mut files = PENDING_SETTINGS_FILE_ERRORS.lock().unwrap();
+            let mut deprecated = PENDING_DEPRECATED_SETTINGS.lock().unwrap();
+            WARNINGS_READY.store(true, Ordering::SeqCst);
+            (
+                std::mem::take(&mut *files),
+                std::mem::take(&mut *deprecated),
+            )
         };
+        // Outside the locks: these warn, and warning re-enters the queue helpers.
+        warn_deprecated_env_settings();
+        for msg in pending_files {
+            warn_once!("{msg}");
+        }
         for key in pending {
             warn_deprecated_now(key);
         }
@@ -1034,6 +1268,7 @@ impl Settings {
             // never rewritten.
             resolve_aqua_registry_paths(settings, path);
             resolve_age_paths(settings, path)?;
+            resolve_task_disable_paths(settings, path);
         }
         let deprecated = deprecated_settings_in_toml_config(&raw);
         let settings_file: SettingsFile = raw.try_into()?;
@@ -1043,27 +1278,6 @@ impl Settings {
             settings.tera_v1 = tera_v1_from_env;
         }
         Ok(settings)
-    }
-
-    fn all_settings_files() -> Vec<SettingsPartial> {
-        // In safe mode, ignore `[settings]` from project (non-global) config so
-        // an untrusted repo cannot change mise's behavior during resolution
-        // (e.g. disable verification, redirect a backend/registry). Global and
-        // system config is operator-owned and still applies. A specific setting
-        // could be allowlisted here later if it is safe and necessary.
-        let safe_mode = Settings::safe_mode();
-        load_config_paths(&TOML_CONFIG_FILENAMES, false)
-            .into_iter()
-            .filter(|p| !safe_mode || crate::config::is_global_config(p))
-            .map(|p| Self::parse_settings_file(&p))
-            .filter_map(|cfg| match cfg {
-                Ok(cfg) => Some(cfg),
-                Err(e) => {
-                    eprintln!("Error loading settings file: {e}");
-                    None
-                }
-            })
-            .collect()
     }
 
     pub(crate) fn hidden_configs() -> &'static HashSet<&'static str> {
@@ -1686,6 +1900,62 @@ where
 mod tests {
     use super::*;
 
+    /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.
+    #[test]
+    fn test_merge_minimum_release_age_excludes() {
+        let mut local = SettingsPartial::empty();
+        local.minimum_release_age_excludes = Some(sv(&["local", "shared"]));
+        let mut global = SettingsPartial::empty();
+        global.minimum_release_age_excludes = Some(sv(&["global", "shared"]));
+        let unrelated = SettingsPartial::empty();
+        let mut layers = vec![local, unrelated, global];
+
+        merge_settings_file_layers(&mut layers);
+
+        assert_eq!(
+            layers[0].minimum_release_age_excludes,
+            Some(sv(&["global", "shared", "local"]))
+        );
+        assert!(layers[1].minimum_release_age_excludes.is_none());
+        assert!(layers[2].minimum_release_age_excludes.is_none());
+    }
+
+    /// `normalize_verbosity` is the whole answer to "what level is this run at", and it is now
+    /// reached from two places -- the settings load and `cli_log_level`. Pin the precedence so the
+    /// two cannot drift apart.
+    #[test]
+    fn test_normalize_verbosity_quiet_lowers_the_level() {
+        let mut settings = Settings {
+            quiet: true,
+            ..Default::default()
+        };
+        normalize_verbosity(&mut settings);
+        assert_eq!(settings.log_level, "error");
+    }
+
+    #[test]
+    fn test_normalize_verbosity_verbose_outranks_quiet() {
+        let mut settings = Settings {
+            quiet: true,
+            verbose: true,
+            ..Default::default()
+        };
+        normalize_verbosity(&mut settings);
+        assert_eq!(settings.log_level, "debug");
+        assert!(!settings.quiet);
+    }
+
+    #[test]
+    fn test_normalize_verbosity_keeps_trace_above_verbose() {
+        let mut settings = Settings {
+            trace: true,
+            verbose: true,
+            ..Default::default()
+        };
+        normalize_verbosity(&mut settings);
+        assert_eq!(settings.log_level, "trace");
+    }
+
     #[test]
     fn default_all_compile_is_limited_to_alpine_and_deprecated_nixos_behavior() {
         assert!(default_all_compile(Some("alpine")));
@@ -1952,6 +2222,36 @@ mod tests {
 
         assert_eq!(partial.default_config_filename, None);
         assert_eq!(partial.default_tool_versions_filename, None);
+    }
+
+    #[test]
+    fn test_parse_settings_file_resolves_task_disable_paths_from_config_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_dir = dir.path().join(".mise");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let path = config_dir.join("config.toml");
+        let absolute = dir.path().join("absolute");
+        std::fs::write(
+            &path,
+            format!(
+                r#"
+                [settings.task]
+                disable_paths = ["tasks/generated", '{}']
+                "#,
+                absolute.display()
+            ),
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(
+            partial.task.disable_paths,
+            Some(BTreeSet::from([
+                dir.path().join("tasks/generated"),
+                absolute,
+            ]))
+        );
     }
 
     /// Unlike `global_only`, being in the *global* config does not rescue these — the loader

@@ -58,6 +58,18 @@ cat <<EOF >mise.toml
 EOF
 assert_fail "mise bootstrap repos apply --yes" "local changes"
 assert_directory_not_exists "$HOME/src/preflight-missing"
+assert_succeed "mise bootstrap repos apply --skip-dirty --yes"
+assert_directory_exists "$HOME/src/preflight-missing"
+assert_succeed "mise bootstrap repos update --skip-dirty --yes"
+
+cat <<EOF >mise.toml
+[bootstrap.repos]
+"~/src/dotfiles" = { url = "$SRC_URL", ref = "main" }
+"~/src/preflight-missing" = { url = "$SRC_URL", ref = "main" }
+"~/src/top-level-missing" = { url = "$SRC_URL", ref = "main" }
+EOF
+assert_succeed "mise bootstrap --skip-dirty --yes --only repos"
+assert_directory_exists "$HOME/src/top-level-missing"
 rm -f "$HOME/src/dotfiles/local.txt"
 
 # full branch refs update without detaching or skipping the pull
@@ -140,6 +152,7 @@ cat <<EOF >mise.toml
 EOF
 assert_contains "mise bootstrap repos status" "conflict"
 assert_fail "mise bootstrap repos apply --yes" "not a git repository"
+assert_fail "mise bootstrap repos apply --skip-dirty --yes" "not a git repository"
 
 # repos run as part of full bootstrap before dotfiles, and hooks wrap the phase
 rm -rf "$HOME/src/hook-repo" pre_repo_hook post_repo_hook

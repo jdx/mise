@@ -52,13 +52,23 @@ fn add_path_rule(
             .add_rule(PathBeneath::new(fd, access))
             .map_err(|e| eyre!("landlock add_rule failed for {}: {e}", path.display())),
         Err(_) => {
-            // Path doesn't exist — on Linux, Landlock requires existing paths.
-            // This affects cases like --allow-write=./dist where the dir doesn't exist yet.
-            // We warn rather than silently skipping or granting broader ancestor access.
-            eprintln!(
-                "mise sandbox: path '{}' does not exist, sandbox rule may not apply as expected",
-                path.display()
-            );
+            // Landlock requires existing paths, so a rule naming one that is not
+            // there yet — --allow-write=./dist before dist is created — has to be
+            // dropped. Report it from the parent, not here:
+            // SandboxConfig::warn_missing_allow_paths names every path confirmed
+            // missing once, through the logger, with a directory that can
+            // actually be allowed.
+            //
+            // Deliberately silent even for the cases the parent cannot predict —
+            // a path that was there when it looked but cannot be opened now.
+            // Probing openability in the parent is not the answer either: an
+            // ordinary open blocks on a FIFO until a writer appears, and the
+            // O_PATH open that avoids that only repeats what PathFd does here a
+            // moment later, while still missing the window between the two.
+            // This runs through pre_exec, after fork, where only async-signal-safe
+            // work is sound; `eprintln!` takes the stderr lock, which another
+            // thread may have held at fork time, and would hang the child before
+            // exec. A missed diagnostic is the cheaper failure.
             Ok(ruleset)
         }
     }

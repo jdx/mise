@@ -31,7 +31,7 @@ impl EnvResults {
         expand: bool,
     ) -> Result<IndexMap<PathBuf, EnvMap>> {
         let mut out = IndexMap::new();
-        let s = ctx.parse_template(&input)?;
+        let s = ctx.parse_template("_.file", &input)?;
         let expand = expand && crate::config::Settings::get().env_shell_expand;
         // Accumulate loaded vars so opted-in expansion can reference values from
         // an earlier file in the same directive or an earlier env block.
@@ -39,7 +39,10 @@ impl EnvResults {
         for p in xx::file::glob(ctx.normalize_path(s.into())).unwrap_or_default() {
             let config = ctx.config;
             let exec_env = ctx.exec_env;
-            let parse_template = |s: String| ctx.parse_template(&s);
+            // The loaders expand templates in values read from the file and do
+            // not carry the key from inside it, so label by the file itself.
+            let origin = display_path(&p);
+            let parse_template = |s: String| ctx.parse_template(&origin, &s);
             let ext = p
                 .extension()
                 .map(|e| e.to_string_lossy().to_string())
@@ -57,13 +60,7 @@ impl EnvResults {
                 for (k, v) in loaded.iter_mut() {
                     let mut missing = Vec::new();
                     let expanded = super::shell_expand_env(&*v, &acc, &mut missing);
-                    for var in missing {
-                        warn_once!(
-                            "env var '{var}' is not defined and will be left unexpanded. \
-                             Use ${{{var}:-}} to default to an empty string and suppress \
-                             this warning."
-                        );
-                    }
+                    super::warn_unexpanded_vars(missing, k, &p);
                     *v = expanded;
                     acc.insert(k.clone(), v.clone());
                 }
@@ -88,12 +85,16 @@ impl EnvResults {
     {
         let errfn = || eyre!("failed to parse json file: {}", display_path(p));
         if let Ok(raw) = file::read_to_string(p) {
-            let mut f: Env<serde_json::Value> = serde_json::from_str(&raw).wrap_err_with(errfn)?;
+            // serde_json rejects a leading byte-order mark, so an env file saved by an editor that
+            // writes one fails the whole config. Measured: yaml and toml accept it and are left
+            // alone; json does not.
+            let raw = file::strip_utf8_bom(&raw);
+            let mut f: Env<serde_json::Value> = serde_json::from_str(raw).wrap_err_with(errfn)?;
             if !f.sops.is_empty() {
                 let decrypted = sops::decrypt::<_, JsonFileFormat>(
                     config,
                     exec_env,
-                    &raw,
+                    raw,
                     parse_template,
                     "json",
                 )
@@ -217,24 +218,29 @@ impl EnvResults {
 
     async fn dotenv(p: &Path, acc: &TeraEnvMap, expand: bool) -> Result<EnvMap> {
         let errfn = || eyre!("failed to parse dotenv file: {}", display_path(p));
+        // Read here rather than letting dotenvy open the file, so a byte-order mark can be taken
+        // off before the parser sees it. A mark belongs to the first key's name as far as dotenvy
+        // is concerned, and one bad line fails the whole file — so a `.env` saved by an editor
+        // that writes one is rejected entirely, naming a character nobody can see. An unreadable
+        // file still yields nothing rather than an error, which is what the previous
+        // `if let Ok(..)` did.
+        let Ok(content) = file::read_to_string(p) else {
+            return Ok(EnvMap::new());
+        };
+        let content = file::strip_utf8_bom(&content);
         if !expand {
             // Preserve dotenvy's normal behavior unless cross-file expansion was
             // explicitly requested.
             let mut env = EnvMap::new();
-            if let Ok(dotenv) = dotenvy::from_path_iter(p) {
-                for item in dotenv {
-                    let (k, v) = item.wrap_err_with(errfn)?;
-                    env.insert(k, v);
-                }
+            for item in dotenvy::from_read_iter(content.as_bytes()) {
+                let (k, v) = item.wrap_err_with(errfn)?;
+                env.insert(k, v);
             }
             return Ok(env);
         }
         // dotenvy substitutes `${VAR}` only against the process env + vars defined
         // earlier in the same file and has no API for a custom map. Seed the parse
         // with accumulated values, then retain only keys defined by this file.
-        let Ok(content) = file::read_to_string(p) else {
-            return Ok(EnvMap::new());
-        };
         let mut own_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         for item in dotenvy::from_read_iter(content.as_bytes()) {
             let (k, _v) = item.wrap_err_with(errfn)?;

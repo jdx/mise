@@ -1,0 +1,5 @@
+backends = ["aqua:o2sh/onefetch", "github:o2sh/onefetch"]
+bins = ["onefetch"]
+description = "Command-line Git information tool"
+test = { cmd = "onefetch --version", expected = "onefetch {{version}}" }
+version_order = "semver"

@@ -751,6 +751,7 @@ impl InteractiveConfig {
                         value: EntryValue::InlineTable(vec![("run".to_string(), String::new())]),
                         expanded: true,
                         comments: Vec::new(),
+                        trailing_comment: None,
                     });
                 self.doc.modified = true;
                 // Track undo for added entry
@@ -771,6 +772,7 @@ impl InteractiveConfig {
                         value: EntryValue::InlineTable(Vec::new()),
                         expanded: true,
                         comments: Vec::new(),
+                        trailing_comment: None,
                     });
                 self.doc.modified = true;
                 // Track undo for added entry

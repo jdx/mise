@@ -40,6 +40,7 @@ const DEFAULT_APP_DIR: &str = "/Applications";
 /// `brew install --appdir`; see [`target_app_dir`] and
 /// docs/bootstrap/packages/brew.md
 const APP_DIR_ENV: &str = "MISE_BREW_CASK_OPT_APPDIR";
+const MAX_NESTED_CASK_ARCHIVES: usize = 16;
 
 pub(crate) struct BrewCaskManager {}
 
@@ -306,6 +307,17 @@ struct CaskReceipt {
     prune_blocker: Option<String>,
 }
 
+impl CaskReceipt {
+    /// Targets owned through the standard artifact stanzas.
+    fn standard_targets(&self) -> impl Iterator<Item = &PathBuf> {
+        self.apps
+            .iter()
+            .chain(&self.binaries)
+            .chain(&self.fonts)
+            .chain(&self.completions)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct CaskTargetRecord {
     path: PathBuf,
@@ -354,6 +366,12 @@ pub(crate) struct CaskPruneSkip {
 pub(crate) struct CaskPrunePlan {
     pub remove: Vec<CaskPruneCandidate>,
     pub skipped: Vec<CaskPruneSkip>,
+}
+
+#[derive(Debug, Default)]
+struct CaskDependencyClosure {
+    casks: BTreeMap<(String, Option<String>), String>,
+    formulae: BTreeMap<(String, Option<String>), PackageRequest>,
 }
 
 impl CaskPrunePlan {
@@ -431,15 +449,16 @@ impl BrewCaskManager {
         }
         let mut ancestors = ancestors.clone();
         ancestors.insert(cask.token.clone());
-        let artifacts = cask_artifacts(&cask)?;
-        validate_platform_support(&cask, &artifacts)?;
-        if homebrew_metadata_present(&cask.token) {
-            bail!(
-                "brew-cask:{}: Homebrew owns this cask; remove it with Homebrew before installing it with mise",
+        if let Some(version) = homebrew_installed_version(&cask.token)? {
+            info!(
+                "brew-cask:{}: installed and managed by Homebrew; leaving unchanged",
                 cask.token
             );
+            return Ok(version);
         }
-        let installed_version = installed_cask_version(&cask, &artifacts)?;
+        let artifacts = cask_artifacts(&cask)?;
+        validate_platform_support(&cask, &artifacts)?;
+        let installed_version = mise_installed_cask_version(&cask)?;
         if let Some(version) = installed_version.as_ref()
             && (cask.auto_updates || version == &cask.version)
         {
@@ -528,14 +547,8 @@ impl BrewCaskManager {
         }
         let _caskroom_lock = lock_caskroom()?;
         recover_flight_backups()?;
-        if homebrew_metadata_present(&cask.token) {
-            file::remove_all(&stage)?;
-            bail!(
-                "brew-cask:{}: Homebrew took ownership of this cask while installation was pending",
-                cask.token
-            );
-        }
-        if let Some(version) = installed_cask_version(&cask, &artifacts)?
+        ensure_homebrew_did_not_take_ownership(&cask.token, &stage)?;
+        if let Some(version) = mise_installed_cask_version(&cask)?
             && (cask.auto_updates || version == cask.version)
         {
             file::remove_all(stage)?;
@@ -848,28 +861,9 @@ impl SystemPackageManager for BrewCaskManager {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
             let cask = fetch_cask(req).await?;
-            let artifacts = cask_artifacts(&cask)?;
-            if let Some(state) = platform_unavailable_state(&cask, &artifacts) {
-                statuses.push(PackageStatus {
-                    request: req.clone(),
-                    state,
-                });
-                continue;
-            }
-            let version = installed_cask_version(&cask, &artifacts)?;
-            let state = match version {
-                Some(version) => match &req.version {
-                    Some(requested) if version != *requested => {
-                        PackageState::VersionMismatch { installed: version }
-                    }
-                    _ if cask.auto_updates => PackageState::InstalledAutoUpdates { version },
-                    _ => PackageState::Installed { version },
-                },
-                None => PackageState::Missing,
-            };
             statuses.push(PackageStatus {
                 request: req.clone(),
-                state,
+                state: package_state(req, &cask)?,
             });
         }
         Ok(statuses)
@@ -897,13 +891,25 @@ impl SystemPackageManager for BrewCaskManager {
 
 async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
     let name = &req.name;
-    let (requested_token, official_api) = match split_tap_name(name) {
+    let tap_name = split_tap_name(name);
+    let (requested_token, official_api) = match tap_name {
         Some(("homebrew", "cask", token)) => (token, true),
         Some((_, _, token)) => (token, false),
         None => (name.as_str(), true),
     };
     validate_cask_path_component("requested token", requested_token)?;
-    let (url, raw_base) = match split_tap_name(name) {
+    if tap_name.is_none()
+        && let Some(raw_base) = req.tap_url.as_deref().and_then(super::api::github_raw_base)
+    {
+        let url = format!("{raw_base}/api/cask/{name}.json");
+        match fetch_cask_url(name, &url, Some(normalize_cask_raw_base(raw_base)), false).await {
+            Ok(cask) => return Ok(cask),
+            Err(err) => debug!(
+                "brew-cask: {name} unavailable in parent tap metadata ({err}); falling back to official metadata"
+            ),
+        }
+    }
+    let (url, raw_base) = match tap_name {
         Some(("homebrew", "cask", token)) => (
             format!("{API_BASE}/cask/{token}.json"),
             Some(HOMEBREW_CASK_RAW.to_string()),
@@ -916,7 +922,7 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             };
             (
                 format!("{base}/api/cask/{token}.json"),
-                Some(base.trim_end_matches("/HEAD").to_string()),
+                Some(normalize_cask_raw_base(base)),
             )
         }
         None => (
@@ -924,12 +930,28 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             Some(HOMEBREW_CASK_RAW.to_string()),
         ),
     };
+    fetch_cask_url(requested_token, &url, raw_base, official_api).await
+}
+
+fn normalize_cask_raw_base(mut raw_base: String) -> String {
+    if raw_base.ends_with("/HEAD") {
+        raw_base.truncate(raw_base.len() - "/HEAD".len());
+    }
+    raw_base
+}
+
+async fn fetch_cask_url(
+    requested_token: &str,
+    url: &str,
+    raw_base: Option<String>,
+    official_api: bool,
+) -> Result<Cask> {
     let mut cask = HTTP_FETCH
         .json_cached::<Cask, _>(url)
         .await
         .wrap_err_with(|| {
             format!(
-                "failed to fetch Homebrew cask '{name}' directly. \
+                "failed to fetch Homebrew cask '{requested_token}' directly. \
                  Tapped casks must publish API metadata at api/cask/<token>.json"
             )
         })?;
@@ -960,6 +982,7 @@ fn validate_cask_path_component(kind: &str, value: &str) -> Result<()> {
     let mut components = Path::new(value).components();
     let valid = !value.is_empty()
         && !value.contains('\0')
+        && !value.contains('\\')
         && matches!(components.next(), Some(Component::Normal(_)))
         && components.next().is_none()
         && value != ".metadata"
@@ -1067,12 +1090,16 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
     } else {
         let format = cask_extraction_format(archive, filename)?;
         if format == ExtractionFormat::Raw {
-            // Raw executable binary — copy it using the original URL filename so
-            // find_file_artifact can match against the binary stanza source name (e.g. "claude").
-            let url_filename = archive_filename(&cask.url).unwrap_or_else(|| filename.to_string());
-            let dest = extract_dir.join(&url_filename);
+            // A direct pkg download may have an opaque URL path while the response's
+            // Content-Disposition and the cask artifact supply its real name. Stage
+            // XAR installers under the declared artifact name; other raw downloads
+            // are executable binaries and retain the original URL filename.
+            let (stage_filename, executable) = raw_cask_artifact_name(cask, archive, filename)?;
+            let dest = extract_dir.join(stage_filename);
             file::copy(archive, &dest)?;
-            file::make_executable(&dest)?;
+            if executable {
+                file::make_executable(&dest)?;
+            }
         } else if !format.is_archive() {
             bail!(
                 "brew-cask:{}: unsupported archive type for {}",
@@ -1091,7 +1118,94 @@ fn extract_archive(cask: &Cask, archive: &Path, pr: Option<&dyn SingleReport>) -
             )?;
         }
     }
+    extract_nested_cask_archives(&extract_dir, pr)?;
     Ok(extract_dir)
+}
+
+fn extract_nested_cask_archives(extract_dir: &Path, pr: Option<&dyn SingleReport>) -> Result<()> {
+    for depth in 0..MAX_NESTED_CASK_ARCHIVES {
+        let Some(archive) = single_nested_cask_archive(extract_dir)? else {
+            return Ok(());
+        };
+        let filename = archive
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| eyre!("brew-cask: nested archive name is not valid UTF-8"))?
+            .to_string();
+        let nested = extract_dir.with_file_name(format!(
+            ".{}-nested-{depth}",
+            extract_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("cask")
+        ));
+        file::remove_all(&nested)?;
+        file::rename(&archive, &nested)?;
+        file::remove_all(extract_dir)?;
+        file::create_dir_all(extract_dir)?;
+        let result = extract_nested_cask_archive(&nested, extract_dir, &filename, pr);
+        let cleanup = file::remove_all(&nested);
+        result?;
+        cleanup?;
+    }
+    if single_nested_cask_archive(extract_dir)?.is_some() {
+        bail!("brew-cask: nested archive depth exceeds {MAX_NESTED_CASK_ARCHIVES}");
+    }
+    Ok(())
+}
+
+fn single_nested_cask_archive(root: &Path) -> Result<Option<PathBuf>> {
+    let mut entries = std::fs::read_dir(root)?.filter(|entry| match entry {
+        Ok(entry) => entry.file_name() != "__MACOSX",
+        Err(_) => true,
+    });
+    let Some(entry) = entries.next().transpose()? else {
+        return Ok(None);
+    };
+    if entries.next().is_some() || !entry.file_type()?.is_file() {
+        return Ok(None);
+    }
+    let path = entry.path();
+    let filename = entry.file_name();
+    let filename = filename
+        .to_str()
+        .ok_or_else(|| eyre!("brew-cask: nested archive name is not valid UTF-8"))?;
+    if is_dmg_archive(&path, filename)? {
+        return Ok(Some(path));
+    }
+    let format = cask_extraction_format(&path, filename)?;
+    Ok(matches!(
+        format,
+        ExtractionFormat::TarGz
+            | ExtractionFormat::TarXz
+            | ExtractionFormat::TarBz2
+            | ExtractionFormat::TarZst
+            | ExtractionFormat::Tar
+            | ExtractionFormat::Zip
+            | ExtractionFormat::SevenZip
+    )
+    .then_some(path))
+}
+
+fn extract_nested_cask_archive(
+    archive: &Path,
+    extract_dir: &Path,
+    filename: &str,
+    pr: Option<&dyn SingleReport>,
+) -> Result<()> {
+    if is_dmg_archive(archive, filename)? {
+        file::un_dmg(archive, extract_dir)
+    } else {
+        file::extract_archive(
+            archive,
+            extract_dir,
+            cask_extraction_format(archive, filename)?,
+            &ExtractOptions {
+                pr,
+                ..Default::default()
+            },
+        )
+    }
 }
 
 async fn execute_lifecycle_hook(
@@ -1250,6 +1364,26 @@ fn detect_extraction_format(archive: &Path) -> Result<Option<ExtractionFormat>> 
         return Ok(Some(ExtractionFormat::Zip));
     }
     Ok(None)
+}
+
+fn raw_cask_artifact_name(cask: &Cask, archive: &Path, fallback: &str) -> Result<(String, bool)> {
+    let mut magic = [0; 4];
+    let len = std::fs::File::open(archive)?.read(&mut magic)?;
+    if magic[..len].starts_with(b"xar!") {
+        let pkgs = cask_artifacts(cask)?.pkgs;
+        if let [pkg] = pkgs.as_slice() {
+            let mut components = Path::new(&pkg.source).components();
+            if matches!(components.next(), Some(Component::Normal(_)))
+                && components.next().is_none()
+            {
+                return Ok((pkg.source.clone(), false));
+            }
+        }
+    }
+    Ok((
+        archive_filename(&cask.url).unwrap_or_else(|| fallback.to_string()),
+        true,
+    ))
 }
 
 fn install_app(
@@ -1891,15 +2025,7 @@ fn copy_generic_artifact_unprivileged(from: &Path, to: &Path) -> Result<()> {
         staging_name.as_str(),
         nix::sys::stat::Mode::S_IRWXU,
     )?;
-    let flags = nix::fcntl::OFlag::O_RDONLY
-        | nix::fcntl::OFlag::O_DIRECTORY
-        | nix::fcntl::OFlag::O_NOFOLLOW;
-    let staging_fd = nix::fcntl::openat(
-        &parent.fd,
-        staging_name.as_str(),
-        flags,
-        nix::sys::stat::Mode::empty(),
-    )?;
+    let staging_fd = open_dir_nofollow_at(&parent.fd, staging_name.as_str())?;
     let staging_stat = nix::sys::stat::fstat(&staging_fd)?;
     if staging_stat.st_uid != nix::unistd::geteuid().as_raw() || staging_stat.st_mode & 0o077 != 0 {
         bail!("brew-cask: temporary artifact directory is not private");
@@ -2043,6 +2169,22 @@ fn ensure_target_absent(target: &Path) -> Result<()> {
     }
 }
 
+/// Opens a directory relative to `parent`, never following symlinks.
+#[cfg(unix)]
+fn open_dir_nofollow_at<Fd: std::os::fd::AsFd, P: nix::NixPath + ?Sized>(
+    parent: Fd,
+    name: &P,
+) -> Result<std::os::fd::OwnedFd> {
+    Ok(nix::fcntl::openat(
+        parent,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW,
+        nix::sys::stat::Mode::empty(),
+    )?)
+}
+
 #[cfg(unix)]
 fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
     from: &Path,
@@ -2059,14 +2201,7 @@ fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
         nix::unistd::symlinkat(&std::fs::read_link(from)?, parent, name)?;
     } else if metadata.is_dir() {
         nix::sys::stat::mkdirat(&parent, name, nix::sys::stat::Mode::S_IRWXU)?;
-        let fd = nix::fcntl::openat(
-            &parent,
-            name,
-            nix::fcntl::OFlag::O_RDONLY
-                | nix::fcntl::OFlag::O_DIRECTORY
-                | nix::fcntl::OFlag::O_NOFOLLOW,
-            nix::sys::stat::Mode::empty(),
-        )?;
+        let fd = open_dir_nofollow_at(&parent, name)?;
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;
             copy_cask_artifact_at(&entry.path(), &fd, &entry.file_name())?;
@@ -2132,14 +2267,7 @@ fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> R
         };
     let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
     if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
-        let fd = nix::fcntl::openat(
-            &parent,
-            name,
-            nix::fcntl::OFlag::O_RDONLY
-                | nix::fcntl::OFlag::O_DIRECTORY
-                | nix::fcntl::OFlag::O_NOFOLLOW,
-            nix::sys::stat::Mode::empty(),
-        )?;
+        let fd = open_dir_nofollow_at(&parent, name)?;
         let mut directory = nix::dir::Dir::from_fd(fd)?;
         let entries = directory
             .iter()
@@ -2702,15 +2830,7 @@ fn ditto_into<Fd: std::os::fd::AsFd>(from: &Path, dir: Fd, name: &std::ffi::OsSt
             Path::new(name).display()
         )
     })?;
-    let destination = nix::fcntl::openat(
-        &dir,
-        name,
-        nix::fcntl::OFlag::O_RDONLY
-            | nix::fcntl::OFlag::O_DIRECTORY
-            | nix::fcntl::OFlag::O_NOFOLLOW,
-        nix::sys::stat::Mode::empty(),
-    )
-    .wrap_err_with(|| {
+    let destination = open_dir_nofollow_at(&dir, name).wrap_err_with(|| {
         format!(
             "brew-cask: cannot open staging directory {}",
             Path::new(name).display()
@@ -2835,6 +2955,14 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
             .map(str::to_string)
             .ok_or_else(|| eyre!("brew-cask: invalid font source '{}'", font.source)),
     }
+}
+
+fn app_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .apps
+        .iter()
+        .map(|app| app_target_path(app.target_name()))
+        .collect::<Result<Vec<_>>>()
 }
 
 fn font_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
@@ -3549,13 +3677,7 @@ fn execute_flight_step(
             source_glob,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
@@ -3612,13 +3734,7 @@ fn execute_flight_step(
             sudo,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
@@ -3714,13 +3830,7 @@ fn execute_flight_step(
             sudo,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let command = resolve_flight_path_with_context(cask, command, staged_path, appdir)?;
@@ -3822,6 +3932,21 @@ fn execute_terminate_process(
         return Err(last_error.unwrap_or_else(|| eyre!("failed to terminate process")));
     }
     Ok(())
+}
+
+/// Every guard is evaluated, so a failure in a later guard still surfaces.
+fn flight_guards_pass(
+    cask: &Cask,
+    guards: &[FlightGuard],
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<bool> {
+    Ok(guards
+        .iter()
+        .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .all(|matches| matches))
 }
 
 fn flight_guard_matches(
@@ -6404,17 +6529,103 @@ fn installed_versions(token: &str) -> Vec<String> {
             entry
                 .file_type()
                 .ok()
-                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-tmp-"))
+                .filter(|ft| ft.is_dir() && name != ".metadata" && !name.starts_with(".mise-"))
                 .map(|_| name)
         })
         .collect()
 }
 
-fn homebrew_metadata_present(token: &str) -> bool {
-    caskroom_token_dir(token)
-        .join(".metadata")
-        .symlink_metadata()
-        .is_ok()
+fn homebrew_installed_versions(token: &str) -> Result<Vec<String>> {
+    let dir = caskroom_token_dir(token);
+    let entries = std::fs::read_dir(&dir).wrap_err_with(|| {
+        format!(
+            "brew-cask:{token}: failed to read Homebrew Caskroom directory '{}'",
+            dir.display()
+        )
+    })?;
+    let mut versions = Vec::new();
+    for entry in entries {
+        let entry = entry.wrap_err_with(|| {
+            format!(
+                "brew-cask:{token}: failed to read an entry in Homebrew Caskroom directory '{}'",
+                dir.display()
+            )
+        })?;
+        let path = entry.path();
+        let file_type = entry.file_type().wrap_err_with(|| {
+            format!(
+                "brew-cask:{token}: failed to read type of Homebrew Caskroom entry '{}'",
+                path.display()
+            )
+        })?;
+        let name = entry.file_name().into_string().map_err(|_| {
+            eyre!(
+                "brew-cask:{token}: Homebrew Caskroom entry name is not valid UTF-8: '{}'",
+                path.display()
+            )
+        })?;
+        if file_type.is_dir() && name != ".metadata" && !name.starts_with(".mise-") {
+            versions.push(name);
+        }
+    }
+    Ok(versions)
+}
+
+fn homebrew_installed_version(token: &str) -> Result<Option<String>> {
+    if !homebrew_metadata_present(token)? {
+        return Ok(None);
+    }
+
+    let versions = homebrew_installed_versions(token)?;
+    match versions.as_slice() {
+        [version] => Ok(Some(version.clone())),
+        [] => bail!(
+            "brew-cask:{token}: Homebrew metadata exists, but no installed Caskroom version was found; repair it with `brew reinstall --cask {token}`"
+        ),
+        versions => bail!(
+            "brew-cask:{token}: Homebrew metadata exists with multiple Caskroom versions ({}); repair it with Homebrew",
+            {
+                let mut versions = versions.to_vec();
+                versions.sort();
+                versions.join(", ")
+            }
+        ),
+    }
+}
+
+fn ensure_homebrew_did_not_take_ownership(token: &str, stage: &Path) -> Result<()> {
+    let metadata_present = match homebrew_metadata_present(token) {
+        Ok(present) => present,
+        Err(err) => {
+            file::remove_all(stage).wrap_err_with(|| {
+                format!(
+                    "failed to remove mise stage after Homebrew ownership check failed: {err:#}"
+                )
+            })?;
+            return Err(err);
+        }
+    };
+    if metadata_present {
+        file::remove_all(stage)?;
+        bail!(
+            "brew-cask:{token}: Homebrew took ownership of this cask while installation was pending"
+        );
+    }
+    Ok(())
+}
+
+fn homebrew_metadata_present(token: &str) -> Result<bool> {
+    let path = caskroom_token_dir(token).join(".metadata");
+    match path.symlink_metadata() {
+        Ok(_) => Ok(true),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(err).wrap_err_with(|| {
+            format!(
+                "brew-cask:{token}: failed to inspect Homebrew metadata at '{}'",
+                path.display()
+            )
+        }),
+    }
 }
 
 fn pkg_id_installed(pkg_id: &str) -> Result<bool> {
@@ -6509,13 +6720,7 @@ fn remove_obsolete_flight_directories(
 }
 
 fn receipt_flight_symlink_targets(receipt: &CaskReceipt) -> Result<Vec<PathBuf>> {
-    let standard_targets = receipt
-        .apps
-        .iter()
-        .chain(&receipt.binaries)
-        .chain(&receipt.fonts)
-        .chain(&receipt.completions)
-        .collect::<BTreeSet<_>>();
+    let standard_targets = receipt.standard_targets().collect::<BTreeSet<_>>();
     let mut targets = Vec::new();
     for record in &receipt.targets {
         if record.fingerprint.kind == CaskTargetKind::Symlink
@@ -6564,20 +6769,16 @@ fn remove_obsolete_binary_links(
 }
 
 #[cfg(not(test))]
-fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Option<String>> {
-    installed_cask_version_in(cask, artifacts, &crate::dirs::STATE)
+fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>> {
+    installed_cask_version_in(cask, &crate::dirs::STATE)
 }
 
 #[cfg(test)]
-fn installed_cask_version(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Option<String>> {
-    installed_cask_version_in(cask, artifacts, &prefix::prefix().join(".mise-test-state"))
+fn mise_installed_cask_version(cask: &Cask) -> Result<Option<String>> {
+    installed_cask_version_in(cask, &prefix::prefix().join(".mise-test-state"))
 }
 
-fn installed_cask_version_in(
-    cask: &Cask,
-    _artifacts: &CaskArtifacts,
-    state_dir: &Path,
-) -> Result<Option<String>> {
+fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<String>> {
     if cask_journal_pending_in(state_dir, &cask.token) {
         return Ok(None);
     }
@@ -6602,18 +6803,35 @@ fn installed_cask_version_in(
 
             // Legacy receipts remain usable only from the historical facts they
             // actually contain. Never fill omitted fields from today's API.
-            let targets_exist = receipt
-                .apps
-                .iter()
-                .chain(&receipt.binaries)
-                .chain(&receipt.fonts)
-                .chain(&receipt.completions)
-                .all(|target| target.exists());
+            let targets_exist = receipt.standard_targets().all(|target| target.exists());
             let pkgs_installed = pkg_ids_installed(&receipt.pkg_ids)?;
             Ok((targets_exist && pkgs_installed).then_some(receipt.version))
         }
         None => Ok(None),
     }
+}
+
+fn state_for_version(req: &PackageRequest, cask: &Cask, version: String) -> PackageState {
+    match &req.version {
+        Some(requested) if version != *requested => {
+            PackageState::VersionMismatch { installed: version }
+        }
+        _ if cask.auto_updates => PackageState::InstalledAutoUpdates { version },
+        _ => PackageState::Installed { version },
+    }
+}
+
+fn package_state(req: &PackageRequest, cask: &Cask) -> Result<PackageState> {
+    if let Some(version) = homebrew_installed_version(&cask.token)? {
+        return Ok(state_for_version(req, cask, version));
+    }
+    let artifacts = cask_artifacts(cask)?;
+    if let Some(state) = platform_unavailable_state(cask, &artifacts) {
+        return Ok(state);
+    }
+    Ok(mise_installed_cask_version(cask)?
+        .map(|version| state_for_version(req, cask, version))
+        .unwrap_or(PackageState::Missing))
 }
 
 fn cask_prune_blocker(cask: &Cask, artifacts: &CaskArtifacts) -> Option<String> {
@@ -6660,19 +6878,9 @@ fn write_receipt_with_flight_targets(
     flight_directories: &[PathBuf],
     metadata_only_apps: &[PathBuf],
 ) -> Result<()> {
-    let mut target_paths = artifacts
-        .apps
-        .iter()
-        .map(|app| app_target_path(app.target_name()))
-        .collect::<Result<Vec<_>>>()?;
+    let mut target_paths = app_target_paths(artifacts)?;
     target_paths.extend(binary_targets(artifacts)?);
-    target_paths.extend(
-        artifacts
-            .fonts
-            .iter()
-            .map(font_target_path)
-            .collect::<Result<Vec<_>>>()?,
-    );
+    target_paths.extend(font_target_paths(artifacts)?);
     target_paths.extend(completion_target_paths(cask, artifacts)?);
     target_paths.extend(flight_targets.iter().cloned());
     target_paths.sort();
@@ -6688,11 +6896,7 @@ fn write_receipt_with_flight_targets(
         })
         .collect::<Result<Vec<_>>>()?;
     let metadata_only_apps = if cask.auto_updates {
-        artifacts
-            .apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect::<Result<Vec<_>>>()?
+        app_target_paths(artifacts)?
     } else {
         metadata_only_apps.to_vec()
     };
@@ -6706,17 +6910,9 @@ fn write_receipt_with_flight_targets(
         version: cask.version.clone(),
         auto_updates: cask.auto_updates,
         metadata_only_apps,
-        apps: artifacts
-            .apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect::<Result<Vec<_>>>()?,
+        apps: app_target_paths(artifacts)?,
         binaries: binary_targets(artifacts)?,
-        fonts: artifacts
-            .fonts
-            .iter()
-            .map(font_target_path)
-            .collect::<Result<Vec<_>>>()?,
+        fonts: font_target_paths(artifacts)?,
         completions: completion_target_paths(cask, artifacts)?,
         flight_directories: flight_directories.to_vec(),
         generic: generic_artifact_targets(artifacts)?,
@@ -6921,11 +7117,100 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
 }
 
 pub(crate) async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
-    let mut keep = BTreeSet::new();
-    for request in configured {
-        keep.insert(fetch_cask(request).await?.token);
-    }
+    let closure = resolve_cask_dependency_closure(configured).await?;
+    let keep = closure.casks.into_values().collect();
     cask_prune_plan_from_tokens(&keep, &crate::dirs::STATE)
+}
+
+pub(crate) async fn cask_formula_dependencies(
+    configured: &[PackageRequest],
+) -> Result<Vec<PackageRequest>> {
+    Ok(resolve_cask_dependency_closure(configured)
+        .await?
+        .formulae
+        .into_values()
+        .collect())
+}
+
+async fn resolve_cask_dependency_closure(
+    configured: &[PackageRequest],
+) -> Result<CaskDependencyClosure> {
+    let mut closure = CaskDependencyClosure::default();
+    let mut pending = configured.to_vec();
+    while let Some(request) = pending.pop() {
+        if closure.casks.contains_key(&cask_dependency_key(&request)) {
+            continue;
+        }
+        let cask = fetch_cask(&request).await?;
+        extend_cask_dependency_closure(&mut closure, &mut pending, &request, cask);
+    }
+    Ok(closure)
+}
+
+fn cask_request_token(name: &str) -> &str {
+    split_tap_name(name)
+        .map(|(_, _, token)| token)
+        .unwrap_or(name)
+}
+
+fn cask_dependency_key(request: &PackageRequest) -> (String, Option<String>) {
+    (
+        cask_request_token(&request.name).to_string(),
+        request_tap_url(request),
+    )
+}
+
+fn request_tap_url(request: &PackageRequest) -> Option<String> {
+    request.tap_url.clone().or_else(|| {
+        split_tap_name(&request.name).and_then(|(owner, tap, _)| {
+            (owner != "homebrew" || tap != "cask")
+                .then(|| format!("https://github.com/{owner}/homebrew-{tap}.git"))
+        })
+    })
+}
+
+fn extend_cask_dependency_closure(
+    closure: &mut CaskDependencyClosure,
+    pending: &mut Vec<PackageRequest>,
+    request: &PackageRequest,
+    cask: Cask,
+) {
+    if closure
+        .casks
+        .insert(cask_dependency_key(request), cask.token)
+        .is_some()
+    {
+        return;
+    }
+    for name in cask.depends_on.formula {
+        let request = PackageRequest {
+            tap_url: dependency_tap_url(request, &name),
+            name,
+            version: None,
+        };
+        closure
+            .formulae
+            .entry((request.name.clone(), request_tap_url(&request)))
+            .or_insert(request);
+    }
+    pending.extend(cask.depends_on.cask.into_iter().map(|name| PackageRequest {
+        tap_url: dependency_tap_url(request, &name),
+        name,
+        version: None,
+    }));
+}
+
+fn dependency_tap_url(parent: &PackageRequest, dependency: &str) -> Option<String> {
+    let parent_tap = split_tap_name(&parent.name)
+        .and_then(|(owner, tap, _)| (owner != "homebrew" || tap != "cask").then_some((owner, tap)));
+    if let Some((owner, tap, _)) = split_tap_name(dependency)
+        && parent_tap != Some((owner, tap))
+    {
+        return None;
+    }
+    parent.tap_url.clone().or_else(|| {
+        parent_tap.map(|(owner, tap)| format!("https://github.com/{owner}/homebrew-{tap}.git"))
+    })
 }
 
 fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Result<CaskPrunePlan> {
@@ -7256,7 +7541,7 @@ fn validate_cask_prune_claims(candidate: &CaskPruneCandidate) -> Result<()> {
 }
 
 fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
-    if homebrew_metadata_present(&candidate.token) {
+    if homebrew_metadata_present(&candidate.token)? {
         bail!("Homebrew now owns this cask");
     }
     let receipt = &candidate.receipt;
@@ -7274,14 +7559,7 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
         .iter()
         .map(|record| (record.path.clone(), record))
         .collect::<BTreeMap<_, _>>();
-    let expected = receipt
-        .apps
-        .iter()
-        .chain(&receipt.binaries)
-        .chain(&receipt.fonts)
-        .chain(&receipt.completions)
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let expected = receipt.standard_targets().cloned().collect::<BTreeSet<_>>();
     if expected.is_empty()
         || records.len() != receipt.targets.len()
         || records.len() != expected.len()
@@ -7721,6 +7999,111 @@ mod tests {
         }
     }
 
+    #[test]
+    fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
+        let mut root = test_cask("root", "1.0.0");
+        root.depends_on.formula = vec!["python@3.14".to_string()];
+        root.depends_on.cask = vec!["child".to_string()];
+        let mut child = test_cask("child", "1.0.0");
+        child.depends_on.formula = vec!["openssl@3".to_string(), "python@3.14".to_string()];
+        child.depends_on.cask = vec!["root".to_string()];
+
+        let mut closure = CaskDependencyClosure::default();
+        let mut pending = Vec::new();
+        let root_request = PackageRequest {
+            name: "acme/tools/root".to_string(),
+            version: None,
+            tap_url: Some("https://github.com/acme/custom-tools.git".to_string()),
+        };
+        extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root.clone());
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].tap_url, root_request.tap_url);
+        let child_request = pending.pop().unwrap();
+        extend_cask_dependency_closure(&mut closure, &mut pending, &child_request, child);
+        extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root);
+
+        assert_eq!(
+            closure.casks.values().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from(["child".to_string(), "root".to_string()])
+        );
+        assert!(
+            closure
+                .formulae
+                .values()
+                .all(|request| request.tap_url == root_request.tap_url)
+        );
+        assert_eq!(
+            closure
+                .formulae
+                .values()
+                .map(|request| request.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["openssl@3".to_string(), "python@3.14".to_string()]
+        );
+        let standard_tap_request = PackageRequest {
+            tap_url: None,
+            ..root_request
+        };
+        assert_eq!(
+            dependency_tap_url(&standard_tap_request, "child"),
+            Some("https://github.com/acme/homebrew-tools.git".to_string())
+        );
+        assert_eq!(
+            normalize_cask_raw_base(
+                "https://raw.githubusercontent.com/acme/homebrew-tools/HEAD".to_string()
+            ),
+            "https://raw.githubusercontent.com/acme/homebrew-tools"
+        );
+        assert_eq!(
+            normalize_cask_raw_base("https://example.com/custom".to_string()),
+            "https://example.com/custom"
+        );
+    }
+
+    #[test]
+    fn cask_dependency_closure_keeps_duplicate_names_from_each_tap() {
+        let tap_urls = [
+            "https://github.com/acme/homebrew-tools.git",
+            "https://github.com/other/homebrew-tools.git",
+        ];
+        let mut closure = CaskDependencyClosure::default();
+        let mut pending = Vec::new();
+        for (owner, tap_url) in ["acme", "other"].into_iter().zip(tap_urls) {
+            let mut root = test_cask("shared", "1.0.0");
+            root.depends_on.formula = vec!["shared-formula".to_string()];
+            root.depends_on.cask = vec!["shared-child".to_string()];
+            let request = PackageRequest {
+                name: format!("{owner}/tools/shared"),
+                version: None,
+                tap_url: Some(tap_url.to_string()),
+            };
+            extend_cask_dependency_closure(&mut closure, &mut pending, &request, root);
+        }
+        for request in std::mem::take(&mut pending) {
+            extend_cask_dependency_closure(
+                &mut closure,
+                &mut pending,
+                &request,
+                test_cask("shared-child", "1.0.0"),
+            );
+        }
+
+        assert_eq!(closure.casks.len(), 4);
+        assert_eq!(closure.formulae.len(), 2);
+        assert_eq!(
+            closure.casks.into_values().collect::<BTreeSet<_>>(),
+            BTreeSet::from(["shared".to_string(), "shared-child".to_string()])
+        );
+        assert_eq!(
+            closure
+                .formulae
+                .into_values()
+                .filter_map(|request| request.tap_url)
+                .collect::<BTreeSet<_>>(),
+            tap_urls.into_iter().map(str::to_string).collect()
+        );
+    }
+
     fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {
         let app = AppArtifact {
             source: app_name.to_string(),
@@ -7762,7 +8145,17 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_cask_identity_components() {
-        for value in ["", ".", "..", ".metadata", ".mise-tmp-x", "a/b", "a\0b"] {
+        for value in [
+            "",
+            ".",
+            "..",
+            ".metadata",
+            ".mise-tmp-x",
+            "a/b",
+            "a\\b",
+            "a\\..\\b",
+            "a\0b",
+        ] {
             assert!(validate_cask_path_component("token", value).is_err());
         }
         assert!(validate_cask_path_component("token", "zed@preview").is_ok());
@@ -7775,12 +8168,278 @@ mod tests {
         let tmp = tempfile::tempdir()?;
         let _guard = BrewPrefixGuard::set(tmp.path());
         let metadata = tmp.path().join("Caskroom/example/.metadata");
-        assert!(!homebrew_metadata_present("example"));
+        assert!(!homebrew_metadata_present("example")?);
         file::create_dir_all(&metadata)?;
-        assert!(homebrew_metadata_present("example"));
+        assert!(homebrew_metadata_present("example")?);
         file::remove_all(&metadata)?;
         crate::file::write(&metadata, "foreign")?;
-        assert!(homebrew_metadata_present("example"));
+        assert!(homebrew_metadata_present("example")?);
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_version_ignores_mise_working_directories() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+        file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
+
+        assert_eq!(
+            homebrew_installed_version("example")?,
+            Some("1.0.0".to_string())
+        );
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn rejects_non_utf8_homebrew_version_name() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        file::create_dir_all(token_dir.join(Path::new(std::ffi::OsStr::from_bytes(b"\xff"))))?;
+
+        let error = homebrew_installed_version("example").unwrap_err();
+        assert!(error.to_string().contains("name is not valid UTF-8"));
+        assert!(error.to_string().contains("brew-cask:example"));
+        Ok(())
+    }
+
+    #[test]
+    fn homebrew_version_enumeration_error_includes_directory() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.parent().unwrap())?;
+        file::write(&token_dir, "not a directory")?;
+
+        let error = homebrew_installed_versions("example").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("failed to read Homebrew Caskroom directory"));
+        assert!(message.contains(&token_dir.display().to_string()));
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn homebrew_metadata_probe_error_is_not_absence() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.parent().unwrap())?;
+        file::write(&token_dir, "not a directory")?;
+
+        let error = homebrew_metadata_present("example").unwrap_err();
+        let message = error.to_string();
+        assert!(message.contains("failed to inspect Homebrew metadata"));
+        assert!(message.contains(".metadata"));
+        Ok(())
+    }
+
+    #[test]
+    fn ignores_version_without_homebrew_metadata() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        file::create_dir_all(caskroom_version_dir("example", "1.0.0"))?;
+
+        assert_eq!(homebrew_installed_version("example")?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_homebrew_metadata_without_installed_version() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        file::create_dir_all(caskroom_token_dir("example").join(".metadata"))?;
+
+        let error = homebrew_installed_version("example").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("repair it with `brew reinstall --cask example`")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn rejects_homebrew_metadata_with_multiple_versions() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("2.0.0"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+
+        let error = homebrew_installed_version("example").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("multiple Caskroom versions (1.0.0, 2.0.0)")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.join(".metadata"))?;
+        file::create_dir_all(token_dir.join("1.0.0"))?;
+        let mut cask = test_cask("example", "1.0.0");
+        cask.artifacts = vec![serde_json::json!({
+            "future_artifact": ["unsupported"]
+        })];
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        assert_eq!(
+            package_state(&request, &cask)?,
+            PackageState::Installed {
+                version: "1.0.0".to_string()
+            }
+        );
+        assert!(cask_artifacts(&cask).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let cask = test_cask("example", "1.0.0");
+        write_test_app_receipt(&cask, "Example.app")?;
+        let metadata = caskroom_token_dir(&cask.token).join(".metadata/receipt.json");
+        file::create_dir_all(metadata.parent().unwrap())?;
+        file::write(&metadata, "homebrew")?;
+        let mise_receipt = caskroom_version_dir(&cask.token, &cask.version).join(".mise-cask.toml");
+        let receipt_before = file::read_to_string(&mise_receipt)?;
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        assert_eq!(
+            package_state(&request, &cask)?,
+            PackageState::Installed {
+                version: "1.0.0".to_string()
+            }
+        );
+        assert_eq!(file::read_to_string(&mise_receipt)?, receipt_before);
+        assert_eq!(file::read_to_string(&metadata)?, "homebrew");
+
+        file::create_dir_all(caskroom_version_dir(&cask.token, "2.0.0"))?;
+        let error = package_state(&request, &cask).unwrap_err();
+        assert!(error.to_string().contains("multiple Caskroom versions"));
+        assert_eq!(file::read_to_string(&mise_receipt)?, receipt_before);
+        assert_eq!(file::read_to_string(&metadata)?, "homebrew");
+        Ok(())
+    }
+
+    #[test]
+    fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("example", "1.0.0");
+        write_test_app_receipt(&cask, "Example.app")?;
+        cask.artifacts = vec![serde_json::json!({
+            "future_artifact": ["unsupported"]
+        })];
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        let error = package_state(&request, &cask).unwrap_err();
+        assert!(error.to_string().contains("unsupported artifact type"));
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mise_owned_state_validates_platform_before_receipt() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let mut cask = test_cask("example", "1.0.0");
+        write_test_app_receipt(&cask, "Example.app")?;
+        cask.artifacts = vec![serde_json::json!({
+            "app": ["Example.app"]
+        })];
+        let request = PackageRequest {
+            name: cask.token.clone(),
+            version: None,
+            tap_url: None,
+        };
+
+        assert!(matches!(
+            package_state(&request, &cask)?,
+            PackageState::Unavailable { .. }
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn ownership_race_guard_removes_only_mise_stage() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        file::write(stage.join("download"), "mise")?;
+        let metadata = caskroom_token_dir("example").join(".metadata/receipt.json");
+        file::create_dir_all(metadata.parent().unwrap())?;
+        file::write(&metadata, "homebrew")?;
+
+        let error = ensure_homebrew_did_not_take_ownership("example", &stage).unwrap_err();
+
+        assert!(error.to_string().contains("Homebrew took ownership"));
+        assert!(!stage.exists());
+        assert_eq!(file::read_to_string(metadata)?, "homebrew");
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_race_probe_error_removes_mise_stage() -> Result<()> {
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(&stage)?;
+        file::write(stage.join("download"), "mise")?;
+        let token_dir = caskroom_token_dir("example");
+        file::create_dir_all(token_dir.parent().unwrap())?;
+        file::write(&token_dir, "not a directory")?;
+
+        let error = ensure_homebrew_did_not_take_ownership("example", &stage).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("failed to inspect Homebrew metadata")
+        );
+        assert!(!stage.exists());
         Ok(())
     }
 
@@ -7874,14 +8533,14 @@ mod tests {
             &[],
         )?;
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some(cask.version.clone())
         );
         crate::file::write(app_target.join("Contents/app"), "changed")?;
         // Content drift must not look like "missing" — that would reinstall the
         // app on the next apply and revoke macOS TCC grants.
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some(cask.version.clone())
         );
         assert!(!cask_target_record_matches(
@@ -7923,7 +8582,7 @@ mod tests {
             &[],
         )?;
         file::remove_all(&app_target)?;
-        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -8022,7 +8681,7 @@ mod tests {
         crate::file::write(app_target.join("Contents/app"), "updated by app")?;
         cask.version = "2.0.0".to_string();
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some("1.0.0".to_string())
         );
         let receipt = read_receipt(&caskroom)?.unwrap();
@@ -10636,6 +11295,103 @@ end
     }
 
     #[test]
+    fn stages_bare_pkg_using_declared_artifact_name() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("2026.7.1343.0");
+        std::fs::write(&archive, b"xar!bare pkg")?;
+        let mut cask = test_cask("cloudflare-warp", "2026.7.1343.0");
+        cask.url = "https://example.com/version/2026.7.1343.0".to_string();
+        cask.artifacts = vec![
+            serde_json::json!({"pkg": ["Cloudflare_WARP_2026.7.1343.0.pkg"]}),
+            serde_json::json!({"uninstall": [{"pkgutil": "com.cloudflare.warp"}]}),
+        ];
+
+        assert_eq!(
+            raw_cask_artifact_name(&cask, &archive, "cached-name")?,
+            ("Cloudflare_WARP_2026.7.1343.0.pkg".to_string(), false)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn detects_a_single_nested_dmg() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let dmg = tmp.path().join("Display Pilot 2Setup.dmg");
+        std::fs::write(&dmg, b"nested dmg")?;
+
+        assert_eq!(single_nested_cask_archive(tmp.path())?, Some(dmg));
+        Ok(())
+    }
+
+    #[test]
+    fn raw_executable_keeps_url_filename() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("cached-name");
+        std::fs::write(&archive, b"#!/bin/sh\n")?;
+        let mut cask = test_cask("claude", "1.0.0");
+        cask.url = "https://example.com/claude".to_string();
+
+        assert_eq!(
+            raw_cask_artifact_name(&cask, &archive, "cached-name")?,
+            ("claude".to_string(), true)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn detects_a_single_suffixless_nested_archive() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("download");
+        std::fs::write(&archive, b"PK\x03\x04nested zip")?;
+
+        assert_eq!(single_nested_cask_archive(tmp.path())?, Some(archive));
+        Ok(())
+    }
+
+    #[test]
+    fn detects_a_single_nested_archive_with_macos_metadata() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("nested.zip");
+        std::fs::write(&archive, b"PK\x03\x04nested zip")?;
+        file::create_dir_all(tmp.path().join("__MACOSX"))?;
+        std::fs::write(tmp.path().join("__MACOSX/._nested.zip"), b"metadata")?;
+
+        assert_eq!(single_nested_cask_archive(tmp.path())?, Some(archive));
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_expand_unsupported_nested_formats() -> Result<()> {
+        for filename in [
+            "payload.gz",
+            "archive.rar",
+            "archive.tar.br",
+            "archive.tar.lz4",
+            "archive.tar.sz",
+        ] {
+            let tmp = tempfile::tempdir()?;
+            std::fs::write(tmp.path().join(filename), b"unsupported")?;
+            assert_eq!(single_nested_cask_archive(tmp.path())?, None);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn does_not_expand_multiple_or_raw_nested_files() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let archive = tmp.path().join("nested.zip");
+        std::fs::write(&archive, b"PK\x03\x04nested zip")?;
+        std::fs::write(tmp.path().join("readme.txt"), b"readme")?;
+        assert_eq!(single_nested_cask_archive(tmp.path())?, None);
+
+        file::remove_file(tmp.path().join("readme.txt"))?;
+        file::remove_file(&archive)?;
+        std::fs::write(tmp.path().join("binary"), b"#!/bin/sh\n")?;
+        assert_eq!(single_nested_cask_archive(tmp.path())?, None);
+        Ok(())
+    }
+
+    #[test]
     fn artifact_lookup_ignores_macos_metadata_directories() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         let metadata_app = tmp.path().join("__MACOSX/Pearcleaner.app");
@@ -12530,13 +13286,7 @@ end
         )?;
 
         assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app],
-                    ..Default::default()
-                }
-            )?,
+            mise_installed_cask_version(&cask)?,
             Some("1.0.0".to_string())
         );
         Ok(())
@@ -12571,10 +13321,7 @@ end
             toml::to_string_pretty(&receipt)?,
         )?;
 
-        assert_eq!(
-            installed_cask_version(&cask, &CaskArtifacts::default())?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -12906,31 +13653,13 @@ end
         };
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    binaries: vec![binary.clone()],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         let target = binary.target_path(Path::new("/Applications"))?;
         file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(&target, "binary")?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    binaries: vec![binary],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -12976,24 +13705,16 @@ end
             caskroom.join(".mise-cask.toml"),
             toml::to_string_pretty(&receipt)?,
         )?;
-        let artifacts = CaskArtifacts {
-            apps: vec![app],
-            command_wrappers: vec![wrapper.clone()],
-            ..Default::default()
-        };
 
         assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
+            mise_installed_cask_version(&cask)?,
             Some(cask.version.clone())
         );
 
         let target = wrapper.target_path()?;
         file::create_dir_all(target.parent().unwrap())?;
         file::write(target, "wrapper")?;
-        assert_eq!(
-            installed_cask_version(&cask, &artifacts)?,
-            Some(cask.version)
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, Some(cask.version));
         Ok(())
     }
 
@@ -13980,16 +14701,7 @@ end
         )?;
 
         assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    pkgs: vec![PkgArtifact {
-                        source: "Example.pkg".to_string(),
-                    }],
-                    pkg_ids: vec!["com.example.missing".to_string()],
-                    ..Default::default()
-                }
-            )?,
+            mise_installed_cask_version(&cask)?,
             Some("1.0.0".to_string())
         );
         Ok(())
@@ -14007,28 +14719,10 @@ end
         };
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app.clone()],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         file::create_dir_all(app_target_path(app.target_name())?)?;
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -14044,17 +14738,13 @@ end
             target: None,
         };
         file::create_dir_all(caskroom_version_dir(&cask.token, &cask.version))?;
-        let artifacts = CaskArtifacts {
-            completions: vec![completion.clone()],
-            ..Default::default()
-        };
 
-        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         let target = completion.target_path()?;
         file::create_dir_all(target.parent().unwrap())?;
         crate::file::write(target, "complete")?;
-        assert_eq!(installed_cask_version(&cask, &artifacts)?, None);
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
         Ok(())
     }
 
@@ -14071,16 +14761,7 @@ end
         file::create_dir_all(caskroom_version_dir("configured-name", &cask.version))?;
         file::create_dir_all(app_target_path(app.target_name())?)?;
 
-        assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![app],
-                    ..Default::default()
-                }
-            )?,
-            None
-        );
+        assert_eq!(mise_installed_cask_version(&cask)?, None);
 
         let caskroom = caskroom_version_dir(&cask.token, &cask.version);
         file::create_dir_all(&caskroom)?;
@@ -14107,16 +14788,7 @@ end
             toml::to_string_pretty(&receipt)?,
         )?;
         assert_eq!(
-            installed_cask_version(
-                &cask,
-                &CaskArtifacts {
-                    apps: vec![AppArtifact {
-                        source: "Example.app".to_string(),
-                        target: Some("$HOMEBREW_PREFIX/Applications/Example.app".to_string()),
-                    }],
-                    ..Default::default()
-                }
-            )?,
+            mise_installed_cask_version(&cask)?,
             Some("2.0.0".to_string())
         );
         Ok(())
@@ -14131,6 +14803,7 @@ end
         file::create_dir_all(token_dir.join("2.0.0"))?;
         file::create_dir_all(token_dir.join(".metadata/2.0.0/timestamp/Casks"))?;
         file::create_dir_all(token_dir.join(".mise-tmp-interrupted"))?;
+        file::create_dir_all(token_dir.join(".mise-backup-interrupted"))?;
 
         assert_eq!(installed_version("actual-token"), Some("2.0.0".to_string()));
         Ok(())

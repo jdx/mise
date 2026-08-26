@@ -204,7 +204,7 @@
 - [mise env](https://mise.jdx.dev/cli/env.html): Exports env vars to activate mise a single time
 - [mise exec](https://mise.jdx.dev/cli/exec.html): Execute a command with tool(s) set
 - [mise fmt](https://mise.jdx.dev/cli/fmt.html): Formats mise.toml
-- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services - mise generate config [FLAGS] [PATH] - mise generate devcontainer [FLAGS] - mise generate git-pre-commit [FLAGS] [-- MISEARG]… - mise generate github-action…
+- [mise generate](https://mise.jdx.dev/cli/generate.html): Generate files for various tools/services
 - [mise generate config](https://mise.jdx.dev/cli/generate/config.html): Generate a mise.toml file
 - [mise generate devcontainer](https://mise.jdx.dev/cli/generate/devcontainer.html): Generate a devcontainer to execute mise
 - [mise generate git-pre-commit](https://mise.jdx.dev/cli/generate/git-pre-commit.html): Generate a git pre-commit hook

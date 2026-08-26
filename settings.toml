@@ -1677,8 +1677,12 @@ minimum_release_age_excludes = ["trivy", "npm:*"]
 
 This excludes matching tools from the global setting and built-in default. A per-tool `minimum_release_age` option
 or the `--minimum-release-age` CLI flag still applies to matching tools.
+
+Values from multiple configuration files are merged and deduplicated, so a project can add exclusions without
+repeating exclusions from the global configuration. The environment variable replaces the merged file value.
 """
 env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
+merge = "append_unique"
 parse_env = "list_by_comma"
 type = "ListString"
 
@@ -3005,6 +3009,9 @@ default = []
 description = "Paths that mise will not look for tasks in."
 docs = """
 Paths that mise will not look for tasks in.
+
+Relative paths set in a config file are resolved from that file's config root. Relative paths from
+the environment are resolved from the invocation's working directory.
 
 Paths are separated by the OS path separator when using the environment variable,
 `mise settings set`, or `mise settings add` (`:` on Unix, `;` on Windows).

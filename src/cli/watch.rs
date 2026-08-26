@@ -345,24 +345,15 @@ impl Watch {
             cmd = cmd.env("MISE_ENV", env::MISE_ENV.join(","));
         }
 
-        // Save terminal state before running watchexec, because --clear=reset
-        // sends a full terminal reset (RIS) which can corrupt terminal settings
-        // (e.g. disabling echo) if watchexec is interrupted with Ctrl+C.
+        // watchexec's --clear=reset resets the controlling terminal, which
+        // also clears termios flags such as ECHO, and it does not put them back
+        // when it is interrupted. Capture them so the guard can restore them
+        // however this scope ends: normal return, `?`, or the future being
+        // dropped by the ctrl-c branch of `run_with_exit_signal` (#8269).
         #[cfg(unix)]
-        let saved_termios = nix::sys::termios::tcgetattr(std::io::stdin()).ok();
+        let _terminal = TerminalState::capture();
 
-        let result = cmd.run();
-
-        #[cfg(unix)]
-        if let Some(termios) = saved_termios {
-            let _ = nix::sys::termios::tcsetattr(
-                std::io::stdin(),
-                nix::sys::termios::SetArg::TCSANOW,
-                &termios,
-            );
-        }
-
-        result?;
+        cmd.run()?;
         Ok(())
     }
 }
@@ -1443,6 +1434,153 @@ pub(crate) enum ColourMode {
     Never,
 }
 //endregion
+
+/// Terminal attributes captured before watchexec runs, put back when this is
+/// dropped.
+///
+/// `--clear=reset` leaves the terminal without echo when watchexec is
+/// interrupted, and restoring on the straight-line path after the child exits
+/// is not enough: mise exited the process from the signal path until 2026.7.16,
+/// so the restore never ran, and `run_with_exit_signal` still drops the command
+/// future when ctrl-c wins the race. Restoring from `Drop` covers every one of
+/// those exits.
+#[cfg(unix)]
+struct TerminalState {
+    saved: Vec<(std::os::fd::OwnedFd, nix::sys::termios::Termios)>,
+}
+
+#[cfg(unix)]
+impl TerminalState {
+    /// Capture whichever terminal watchexec is going to reset.
+    ///
+    /// That is the controlling terminal, not stdin: with stdin on `/dev/null`
+    /// and stdout on a second terminal, the flags that change are still the
+    /// controlling terminal's. So prefer `/dev/tty`, and fall back to the
+    /// standard streams only for a session that has no controlling terminal to
+    /// open.
+    fn capture() -> Self {
+        Self::controlling_terminal().unwrap_or_else(|| {
+            use std::os::fd::AsFd;
+            Self::capture_from([
+                std::io::stdin().as_fd(),
+                std::io::stdout().as_fd(),
+                std::io::stderr().as_fd(),
+            ])
+        })
+    }
+
+    fn controlling_terminal() -> Option<Self> {
+        use std::os::fd::AsFd;
+        let tty = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .ok()?;
+        let state = Self::capture_from([tty.as_fd()]);
+        (!state.saved.is_empty()).then_some(state)
+    }
+
+    /// Capture every descriptor that is a terminal, not just the first.
+    ///
+    /// Restoring one terminal twice is idempotent, so the common case where the
+    /// standard streams share a terminal needs no deduplication, and streams
+    /// pointing at different terminals are all put back.
+    fn capture_from<'a>(fds: impl IntoIterator<Item = std::os::fd::BorrowedFd<'a>>) -> Self {
+        let saved = fds
+            .into_iter()
+            .filter_map(|fd| {
+                let attrs = nix::sys::termios::tcgetattr(fd).ok()?;
+                // Duplicate the descriptor: the borrow ends with this call, but
+                // the restore happens later, whenever the guard is dropped.
+                Some((fd.try_clone_to_owned().ok()?, attrs))
+            })
+            .collect();
+        Self { saved }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for TerminalState {
+    fn drop(&mut self) {
+        for (fd, attrs) in &self.saved {
+            let _ = nix::sys::termios::tcsetattr(fd, nix::sys::termios::SetArg::TCSANOW, attrs);
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod terminal_state_tests {
+    use super::TerminalState;
+    use nix::sys::termios::{LocalFlags, SetArg, tcgetattr, tcsetattr};
+    use std::os::fd::{AsFd, BorrowedFd};
+
+    fn echo_is_on(fd: BorrowedFd<'_>) -> bool {
+        tcgetattr(fd)
+            .unwrap()
+            .local_flags
+            .contains(LocalFlags::ECHO)
+    }
+
+    fn set_echo(fd: BorrowedFd<'_>, on: bool) {
+        let mut attrs = tcgetattr(fd).unwrap();
+        attrs.local_flags.set(LocalFlags::ECHO, on);
+        tcsetattr(fd, SetArg::TCSANOW, &attrs).unwrap();
+    }
+
+    #[test]
+    fn capture_from_saves_nothing_when_no_descriptor_is_a_terminal() {
+        let (r, w) = nix::unistd::pipe().unwrap();
+        assert!(
+            TerminalState::capture_from([r.as_fd(), w.as_fd()])
+                .saved
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn capture_from_looks_past_a_non_terminal_descriptor() {
+        // A redirected stdin must not stop the search: the process still shares
+        // a terminal that watchexec can reset (#8269).
+        let pty = nix::pty::openpty(None, None).unwrap();
+        let (r, _w) = nix::unistd::pipe().unwrap();
+        let state = TerminalState::capture_from([r.as_fd(), pty.master.as_fd()]);
+        assert_eq!(state.saved.len(), 1);
+    }
+
+    #[test]
+    fn dropping_restores_flags_cleared_while_it_was_held() {
+        let pty = nix::pty::openpty(None, None).unwrap();
+        let fd = pty.master.as_fd();
+        set_echo(fd, true);
+
+        let guard = TerminalState::capture_from([fd]);
+
+        // Stand in for watchexec's --clear=reset, which clears ECHO and does
+        // not put it back when it is interrupted.
+        set_echo(fd, false);
+        assert!(!echo_is_on(fd));
+
+        drop(guard);
+        assert!(echo_is_on(fd));
+    }
+
+    #[test]
+    fn dropping_restores_every_captured_terminal() {
+        let first = nix::pty::openpty(None, None).unwrap();
+        let second = nix::pty::openpty(None, None).unwrap();
+        set_echo(first.master.as_fd(), true);
+        set_echo(second.master.as_fd(), true);
+
+        let guard = TerminalState::capture_from([first.master.as_fd(), second.master.as_fd()]);
+
+        set_echo(first.master.as_fd(), false);
+        set_echo(second.master.as_fd(), false);
+
+        drop(guard);
+        assert!(echo_is_on(first.master.as_fd()));
+        assert!(echo_is_on(second.master.as_fd()));
+    }
+}
 
 #[cfg(test)]
 mod tests {
