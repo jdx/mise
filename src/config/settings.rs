@@ -972,6 +972,8 @@ impl Settings {
         Ok(builder.load()?)
     }
 
+    /// Load eligible config-file settings layers in precedence order and combine settings whose
+    /// semantics are additive across files.
     fn settings_layers_from(
         root: Option<&Path>,
         trust_policy: SettingsTrustPolicy,
@@ -985,7 +987,7 @@ impl Settings {
             Some(root) => load_config_paths_from(root, &TOML_CONFIG_FILENAMES, false),
             None => load_config_paths(&TOML_CONFIG_FILENAMES, false),
         };
-        paths
+        let mut layers = paths
             .into_iter()
             .filter(|path| !safe_mode || crate::config::is_global_config(path))
             .filter(|path| match trust_policy {
@@ -1008,7 +1010,9 @@ impl Settings {
                     None
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        merge_settings_file_layers(&mut layers);
+        layers
     }
 
     pub(crate) fn try_get() -> Result<Arc<Self>> {
@@ -1895,6 +1899,26 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// File-backed exclusions are inherited in low-to-high precedence order and deduplicated.
+    #[test]
+    fn test_merge_minimum_release_age_excludes() {
+        let mut local = SettingsPartial::empty();
+        local.minimum_release_age_excludes = Some(sv(&["local", "shared"]));
+        let mut global = SettingsPartial::empty();
+        global.minimum_release_age_excludes = Some(sv(&["global", "shared"]));
+        let unrelated = SettingsPartial::empty();
+        let mut layers = vec![local, unrelated, global];
+
+        merge_settings_file_layers(&mut layers);
+
+        assert_eq!(
+            layers[0].minimum_release_age_excludes,
+            Some(sv(&["global", "shared", "local"]))
+        );
+        assert!(layers[1].minimum_release_age_excludes.is_none());
+        assert!(layers[2].minimum_release_age_excludes.is_none());
+    }
 
     /// `normalize_verbosity` is the whole answer to "what level is this run at", and it is now
     /// reached from two places -- the settings load and `cli_log_level`. Pin the precedence so the

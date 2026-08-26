@@ -746,6 +746,21 @@ pub(crate) fn is_ignored_via_setting(path: &Path) -> bool {
     IGNORED_CONFIG_PATH_MATCHER.is_match(path)
 }
 
+/// The config path an ignore-list entry records.
+///
+/// Resolve the entry; do not canonicalize it. mise writes these as symlinks on unix and, since
+/// Windows symlinks need a privilege mise does not require, as plain files holding the path there
+/// (`file::make_symlink_or_file`). `Path::canonicalize` follows a symlink, so unix happened to come
+/// out right — on Windows it returned the entry's own path inside `ignored-configs`, which is never
+/// a config path, so the loaded set matched nothing and `mise trust --ignore` had no effect beyond
+/// the process that ran it.
+///
+/// No second `canonicalize` on the result: [`add_ignored`] canonicalizes before writing, so the
+/// recorded form already matches what the caller below compares against.
+fn ignored_entry_path(entry: &Path) -> Option<PathBuf> {
+    file::resolve_symlink(entry).ok().flatten()
+}
+
 /// Whether `path` is in the persisted ignore list.
 ///
 /// Entries are recorded when the user answers "No" to a trust prompt or runs
@@ -760,8 +775,8 @@ pub(crate) fn is_persisted_ignored(path: &Path) -> bool {
         }
         let mut is_ignored = IS_IGNORED.lock().unwrap();
         for entry in file::ls(&dirs::IGNORED_CONFIGS).unwrap_or_default() {
-            if let Ok(canonicalized_path) = entry.canonicalize() {
-                is_ignored.insert(canonicalized_path);
+            if let Some(path) = ignored_entry_path(&entry) {
+                is_ignored.insert(path);
             }
         }
     });
@@ -1502,5 +1517,49 @@ mod tests {
             result2,
             Path::new("/tmp/trusted/infra-mise.toml-a1b2c3d4e5f67890.monorepo")
         );
+    }
+}
+
+/// Deliberately not `#[cfg(unix)]` like the module above: Windows is the platform these are about.
+/// The entry there is a plain file rather than a symlink, and reading it as one is the whole
+/// defect — gated out, these would have passed by never being compiled. Same reasoning as
+/// [`ignored_config_path_tests`].
+#[cfg(test)]
+mod ignore_entry_tests {
+    use super::*;
+
+    /// The entry goes in through `file::make_symlink_or_file`, the writer [`add_ignored`] uses, so
+    /// each platform is exercised in the form it actually writes: a symlink on unix, a plain file
+    /// holding the path on Windows.
+    #[test]
+    fn an_ignore_entry_resolves_to_the_config_it_records() {
+        let tmp = tempfile::tempdir().unwrap();
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        let store = tmp.path().join("ignored-configs");
+        std::fs::create_dir_all(&store).unwrap();
+        let entry = store.join("project-abc123");
+        file::make_symlink_or_file(&project, &entry).unwrap();
+
+        let resolved = ignored_entry_path(&entry).expect("an entry mise wrote has to resolve");
+
+        assert_eq!(
+            resolved, project,
+            "it has to be the config that was ignored"
+        );
+        // And explicitly not the entry: `entry.canonicalize()` returned this on Windows, where the
+        // entry is a plain file, which is why nothing ever matched the ignore list there.
+        assert_ne!(resolved, entry, "never the entry's own path");
+    }
+
+    #[test]
+    fn an_entry_mise_did_not_write_resolves_to_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = tmp.path().join("ignored-configs");
+        let stray = store.join("a-directory");
+        std::fs::create_dir_all(&stray).unwrap();
+
+        assert_eq!(ignored_entry_path(&stray), None);
+        assert_eq!(ignored_entry_path(&store.join("not-there")), None);
     }
 }

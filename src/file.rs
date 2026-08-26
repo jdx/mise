@@ -143,8 +143,20 @@ fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
 
 pub(crate) fn remove_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let path = path.as_ref();
-    match path.metadata().map(|m| m.file_type()) {
-        Ok(x) if x.is_symlink() || x.is_file() => {
+    // `symlink_metadata`, not `metadata`: the latter resolves the entry before deciding what to do
+    // with it, so a link that no longer points anywhere reports `NotFound` and falls through to
+    // the no-op arm below — the entry stays on disk and the caller is told nothing. `mise link`
+    // creates exactly such an entry whenever its target is moved or deleted. Resolving also made
+    // the `is_symlink` test unreachable, since a followed link never reports as one.
+    match fs::symlink_metadata(path).map(|m| m.file_type()) {
+        // Removing the link, never what it points at. On Windows `make_symlink` writes a junction,
+        // which is a directory carrying a reparse point: `remove_file` refuses it outright
+        // (measured: `PermissionDenied`, live or dangling), so this goes through the helper that
+        // deletes by handle after checking the reparse tag.
+        Ok(x) if x.is_symlink() => {
+            remove_symlink_or_junction(path)?;
+        }
+        Ok(x) if x.is_file() => {
             remove_file(path)?;
         }
         Ok(x) if x.is_dir() => {
@@ -635,8 +647,10 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Result<String> {
             );
         }
         let units = bytes
-            .chunks_exact(2)
-            .map(|c| to_u16([c[0], c[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|c| to_u16(*c))
             .collect_vec();
         String::from_utf16(&units).wrap_err_with(|| format!("invalid {label} text"))
     }
@@ -2667,6 +2681,71 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    /// Whether a directory entry is there at all, without resolving it.
+    ///
+    /// `Path::exists` answers about the *target*, so it is false for a link whose target is gone —
+    /// which is the entry these tests are about. An assertion written with it would hold before
+    /// the removal as well as after, and prove nothing.
+    fn entry_present(path: &Path) -> bool {
+        fs::symlink_metadata(path).is_ok()
+    }
+
+    /// Deliberately not `#[cfg(unix)]`: `make_symlink` writes a real symlink on unix and a
+    /// junction on Windows, and the two are removed by different system calls. The behaviour under
+    /// test is what happens to a link mise itself wrote, so it has to be checked on both.
+    #[test]
+    fn remove_all_removes_a_link_whose_target_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        create_dir_all(&target).unwrap();
+        write(target.join("keep.txt"), "important").unwrap();
+        make_symlink(&target, &link).unwrap();
+
+        remove_all(&target).unwrap();
+        // Control: the entry really is a link that no longer resolves. Without this the assertion
+        // below could be passing because there was nothing there to begin with.
+        assert!(entry_present(&link));
+        assert!(!link.exists());
+
+        remove_all(&link).unwrap();
+        assert!(!entry_present(&link));
+    }
+
+    #[test]
+    fn remove_all_removes_a_live_link_without_touching_its_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let link = dir.path().join("link");
+        create_dir_all(&target).unwrap();
+        write(target.join("keep.txt"), "important").unwrap();
+        make_symlink(&target, &link).unwrap();
+
+        remove_all(&link).unwrap();
+        assert!(!entry_present(&link));
+        // The other half, and the reason the link arm cannot simply recurse: `mise link` points at
+        // a directory the user owns, and removing the link must not take its contents with it.
+        assert!(target.join("keep.txt").exists());
+    }
+
+    #[test]
+    fn remove_all_still_removes_ordinary_files_and_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file.txt");
+        let subdir = dir.path().join("subdir");
+        write(&file, "x").unwrap();
+        create_dir_all(subdir.join("nested")).unwrap();
+        write(subdir.join("nested/x.txt"), "x").unwrap();
+
+        remove_all(&file).unwrap();
+        assert!(!entry_present(&file));
+        remove_all(&subdir).unwrap();
+        assert!(!entry_present(&subdir));
+
+        // A path that was never there is not an error: most callers remove opportunistically.
+        remove_all(dir.path().join("never-existed")).unwrap();
+    }
 
     #[cfg(unix)]
     #[test]

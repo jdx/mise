@@ -19,6 +19,18 @@ pub(crate) fn task_runs_task_references(task: &Task) -> bool {
     task.run().iter().any(|e| !matches!(e, RunEntry::Script(_)))
 }
 
+/// Whether keep-order should reserve an output slot for this task.
+///
+/// Tasks that produce output, plus the ones that inject other tasks: those
+/// produce nothing themselves but anchor their children's blocks at their own
+/// declared position. A task that only aggregates `depends` gets neither and
+/// stays out — it finishes after everything it waits on, and only the front
+/// entry of the buffer map may stream, so its empty slot would hold the live
+/// stream for the whole run.
+pub(crate) fn task_gets_keep_order_slot(task: &Task) -> bool {
+    task_needs_permit(task) || task_runs_task_references(task)
+}
+
 /// Canonicalize a path for use as cache key
 /// Falls back to original path if canonicalization fails
 pub(crate) fn canonicalize_path(path: &Path) -> PathBuf {

@@ -1,5 +1,5 @@
 use crate::config::Settings;
-use crate::task::task_helpers::{task_needs_permit, task_runs_task_references};
+use crate::task::task_helpers::{task_gets_keep_order_slot, task_needs_permit};
 use crate::task::task_output::TaskOutput;
 use crate::task::{Task, TaskCacheOutput};
 use crate::ui::multi_progress_report::MultiProgressReport;
@@ -357,12 +357,10 @@ impl OutputHandler {
     /// Initialize output handling for a task
     pub(crate) fn init_task(&mut self, task: &Task) {
         match self.output(Some(task)) {
-            TaskOutput::KeepOrder if task_needs_permit(task) || task_runs_task_references(task) => {
-                // Tasks that produce output, plus the ones that inject other
-                // tasks: those produce nothing themselves but anchor their
-                // children's blocks at their own declared position. A task that
-                // only aggregates `depends` gets neither and stays out, so it
-                // cannot sit at the front holding the live stream all run.
+            // See `task_gets_keep_order_slot` for which tasks get a slot and why.
+            // The executor applies the same rule to the tasks a run entry
+            // injects, so both paths agree on who is in the buffer map.
+            TaskOutput::KeepOrder if task_gets_keep_order_slot(task) => {
                 self.keep_order_state.lock().unwrap().init_task(task);
             }
             TaskOutput::Replacing => {
@@ -744,6 +742,54 @@ mod tests {
         state.insert_tasks_before(&mixed, &[task_named("one"), task_named("two")]);
 
         assert_eq!(keys(&state), ["mixed", "one", "two"]);
+    }
+
+    #[test]
+    fn only_tasks_that_produce_or_inject_get_a_keep_order_slot() {
+        // The gate both registration paths apply. A task that only aggregates
+        // `depends` prints nothing and finishes after everything it waits on, so
+        // a slot for it would sit at the front of the map -- where only the
+        // front entry may stream -- for the whole run.
+        assert!(
+            !task_gets_keep_order_slot(&task_named("aggregator")),
+            "nothing to print and nothing to anchor"
+        );
+        assert!(
+            task_gets_keep_order_slot(&Task {
+                name: "script".to_string(),
+                run: vec![RunEntry::Script("echo A".to_string())],
+                ..Default::default()
+            }),
+            "produces output of its own"
+        );
+        assert!(
+            task_gets_keep_order_slot(&Task {
+                name: "launch".to_string(),
+                run: vec![RunEntry::TaskGroup {
+                    tasks: vec!["one".to_string()],
+                }],
+                ..Default::default()
+            }),
+            "anchors what it injects"
+        );
+    }
+
+    #[test]
+    fn injected_tasks_keep_their_order_however_many_there_are() {
+        // The executor now hands over a whole sub-graph -- the tasks named in the
+        // run entry *and* their dependencies -- rather than two or three names,
+        // and their relative order is the thing being carried across.
+        let mut state = KeepOrderState::new();
+        let launch = task_named("launch");
+        state.init_task(&launch);
+
+        let children = ["r1", "r2", "r3", "dep3", "dep2", "dep1"].map(task_named);
+        state.insert_tasks_before(&launch, &children);
+
+        assert_eq!(
+            keys(&state),
+            ["r1", "r2", "r3", "dep3", "dep2", "dep1", "launch"]
+        );
     }
 
     #[test]

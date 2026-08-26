@@ -307,6 +307,17 @@ struct CaskReceipt {
     prune_blocker: Option<String>,
 }
 
+impl CaskReceipt {
+    /// Targets owned through the standard artifact stanzas.
+    fn standard_targets(&self) -> impl Iterator<Item = &PathBuf> {
+        self.apps
+            .iter()
+            .chain(&self.binaries)
+            .chain(&self.fonts)
+            .chain(&self.completions)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 struct CaskTargetRecord {
     path: PathBuf,
@@ -355,6 +366,12 @@ pub(crate) struct CaskPruneSkip {
 pub(crate) struct CaskPrunePlan {
     pub remove: Vec<CaskPruneCandidate>,
     pub skipped: Vec<CaskPruneSkip>,
+}
+
+#[derive(Debug, Default)]
+struct CaskDependencyClosure {
+    casks: BTreeMap<(String, Option<String>), String>,
+    formulae: BTreeMap<(String, Option<String>), PackageRequest>,
 }
 
 impl CaskPrunePlan {
@@ -874,13 +891,25 @@ impl SystemPackageManager for BrewCaskManager {
 
 async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
     let name = &req.name;
-    let (requested_token, official_api) = match split_tap_name(name) {
+    let tap_name = split_tap_name(name);
+    let (requested_token, official_api) = match tap_name {
         Some(("homebrew", "cask", token)) => (token, true),
         Some((_, _, token)) => (token, false),
         None => (name.as_str(), true),
     };
     validate_cask_path_component("requested token", requested_token)?;
-    let (url, raw_base) = match split_tap_name(name) {
+    if tap_name.is_none()
+        && let Some(raw_base) = req.tap_url.as_deref().and_then(super::api::github_raw_base)
+    {
+        let url = format!("{raw_base}/api/cask/{name}.json");
+        match fetch_cask_url(name, &url, Some(normalize_cask_raw_base(raw_base)), false).await {
+            Ok(cask) => return Ok(cask),
+            Err(err) => debug!(
+                "brew-cask: {name} unavailable in parent tap metadata ({err}); falling back to official metadata"
+            ),
+        }
+    }
+    let (url, raw_base) = match tap_name {
         Some(("homebrew", "cask", token)) => (
             format!("{API_BASE}/cask/{token}.json"),
             Some(HOMEBREW_CASK_RAW.to_string()),
@@ -893,7 +922,7 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             };
             (
                 format!("{base}/api/cask/{token}.json"),
-                Some(base.trim_end_matches("/HEAD").to_string()),
+                Some(normalize_cask_raw_base(base)),
             )
         }
         None => (
@@ -901,12 +930,28 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             Some(HOMEBREW_CASK_RAW.to_string()),
         ),
     };
+    fetch_cask_url(requested_token, &url, raw_base, official_api).await
+}
+
+fn normalize_cask_raw_base(mut raw_base: String) -> String {
+    if raw_base.ends_with("/HEAD") {
+        raw_base.truncate(raw_base.len() - "/HEAD".len());
+    }
+    raw_base
+}
+
+async fn fetch_cask_url(
+    requested_token: &str,
+    url: &str,
+    raw_base: Option<String>,
+    official_api: bool,
+) -> Result<Cask> {
     let mut cask = HTTP_FETCH
         .json_cached::<Cask, _>(url)
         .await
         .wrap_err_with(|| {
             format!(
-                "failed to fetch Homebrew cask '{name}' directly. \
+                "failed to fetch Homebrew cask '{requested_token}' directly. \
                  Tapped casks must publish API metadata at api/cask/<token>.json"
             )
         })?;
@@ -937,6 +982,7 @@ fn validate_cask_path_component(kind: &str, value: &str) -> Result<()> {
     let mut components = Path::new(value).components();
     let valid = !value.is_empty()
         && !value.contains('\0')
+        && !value.contains('\\')
         && matches!(components.next(), Some(Component::Normal(_)))
         && components.next().is_none()
         && value != ".metadata"
@@ -1757,6 +1803,20 @@ fn copy_cask_artifact(from: &Path, to: &Path) -> Result<()> {
     }
 }
 
+/// Collected eagerly: callers mutate the tree they just walked.
+fn symlinks_under(root: &Path, min_depth: usize) -> Result<Vec<PathBuf>> {
+    Ok(WalkDir::new(root)
+        .follow_links(false)
+        .min_depth(min_depth)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
+            Ok(_) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
 fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path) -> Result<()> {
     let stage = lexically_normalized_path(stage);
     let mut pending = vec![lexically_normalized_path(source)];
@@ -1796,16 +1856,7 @@ fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path)
             copy_cask_artifact(&source, &destination)?;
         }
 
-        let symlinks = WalkDir::new(&destination)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|entry| match entry {
-                Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
-                Ok(_) => None,
-                Err(err) => Some(Err(err)),
-            })
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        for link in symlinks {
+        for link in symlinks_under(&destination, 0)? {
             let link_relative = link.strip_prefix(owned_stage)?;
             let original_link = stage.join(link_relative);
             let link_source = std::fs::read_link(&link)?;
@@ -1877,17 +1928,7 @@ fn retarget_transient_symlinks(
         remove_artifact_target_elevating(target)?;
         create_flight_symlink(&final_caskroom.join(relative), target, FlightSudo::IfNeeded)?;
     }
-    let internal_symlinks = WalkDir::new(installed_caskroom)
-        .follow_links(false)
-        .min_depth(1)
-        .into_iter()
-        .filter_map(|entry| match entry {
-            Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
-            Ok(_) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    for target in internal_symlinks {
+    for target in symlinks_under(installed_caskroom, 1)? {
         let source = std::fs::read_link(&target)?;
         // Relative links retain the same relationship when the whole caskroom is
         // renamed. Only absolute links embed the temporary caskroom path.
@@ -1979,15 +2020,7 @@ fn copy_generic_artifact_unprivileged(from: &Path, to: &Path) -> Result<()> {
         staging_name.as_str(),
         nix::sys::stat::Mode::S_IRWXU,
     )?;
-    let flags = nix::fcntl::OFlag::O_RDONLY
-        | nix::fcntl::OFlag::O_DIRECTORY
-        | nix::fcntl::OFlag::O_NOFOLLOW;
-    let staging_fd = nix::fcntl::openat(
-        &parent.fd,
-        staging_name.as_str(),
-        flags,
-        nix::sys::stat::Mode::empty(),
-    )?;
+    let staging_fd = open_dir_nofollow_at(&parent.fd, staging_name.as_str())?;
     let staging_stat = nix::sys::stat::fstat(&staging_fd)?;
     if staging_stat.st_uid != nix::unistd::geteuid().as_raw() || staging_stat.st_mode & 0o077 != 0 {
         bail!("brew-cask: temporary artifact directory is not private");
@@ -2131,6 +2164,22 @@ fn ensure_target_absent(target: &Path) -> Result<()> {
     }
 }
 
+/// Opens a directory relative to `parent`, never following symlinks.
+#[cfg(unix)]
+fn open_dir_nofollow_at<Fd: std::os::fd::AsFd, P: nix::NixPath + ?Sized>(
+    parent: Fd,
+    name: &P,
+) -> Result<std::os::fd::OwnedFd> {
+    Ok(nix::fcntl::openat(
+        parent,
+        name,
+        nix::fcntl::OFlag::O_RDONLY
+            | nix::fcntl::OFlag::O_DIRECTORY
+            | nix::fcntl::OFlag::O_NOFOLLOW,
+        nix::sys::stat::Mode::empty(),
+    )?)
+}
+
 #[cfg(unix)]
 fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
     from: &Path,
@@ -2147,14 +2196,7 @@ fn copy_cask_artifact_at<Fd: std::os::fd::AsFd>(
         nix::unistd::symlinkat(&std::fs::read_link(from)?, parent, name)?;
     } else if metadata.is_dir() {
         nix::sys::stat::mkdirat(&parent, name, nix::sys::stat::Mode::S_IRWXU)?;
-        let fd = nix::fcntl::openat(
-            &parent,
-            name,
-            nix::fcntl::OFlag::O_RDONLY
-                | nix::fcntl::OFlag::O_DIRECTORY
-                | nix::fcntl::OFlag::O_NOFOLLOW,
-            nix::sys::stat::Mode::empty(),
-        )?;
+        let fd = open_dir_nofollow_at(&parent, name)?;
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;
             copy_cask_artifact_at(&entry.path(), &fd, &entry.file_name())?;
@@ -2220,14 +2262,7 @@ fn remove_all_at<Fd: std::os::fd::AsFd>(parent: Fd, name: &std::ffi::OsStr) -> R
         };
     let kind = nix::sys::stat::SFlag::from_bits_truncate(stat.st_mode);
     if kind.contains(nix::sys::stat::SFlag::S_IFDIR) {
-        let fd = nix::fcntl::openat(
-            &parent,
-            name,
-            nix::fcntl::OFlag::O_RDONLY
-                | nix::fcntl::OFlag::O_DIRECTORY
-                | nix::fcntl::OFlag::O_NOFOLLOW,
-            nix::sys::stat::Mode::empty(),
-        )?;
+        let fd = open_dir_nofollow_at(&parent, name)?;
         let mut directory = nix::dir::Dir::from_fd(fd)?;
         let entries = directory
             .iter()
@@ -2790,15 +2825,7 @@ fn ditto_into<Fd: std::os::fd::AsFd>(from: &Path, dir: Fd, name: &std::ffi::OsSt
             Path::new(name).display()
         )
     })?;
-    let destination = nix::fcntl::openat(
-        &dir,
-        name,
-        nix::fcntl::OFlag::O_RDONLY
-            | nix::fcntl::OFlag::O_DIRECTORY
-            | nix::fcntl::OFlag::O_NOFOLLOW,
-        nix::sys::stat::Mode::empty(),
-    )
-    .wrap_err_with(|| {
+    let destination = open_dir_nofollow_at(&dir, name).wrap_err_with(|| {
         format!(
             "brew-cask: cannot open staging directory {}",
             Path::new(name).display()
@@ -2923,6 +2950,14 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
             .map(str::to_string)
             .ok_or_else(|| eyre!("brew-cask: invalid font source '{}'", font.source)),
     }
+}
+
+fn app_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .apps
+        .iter()
+        .map(|app| app_target_path(app.target_name()))
+        .collect::<Result<Vec<_>>>()
 }
 
 fn font_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
@@ -3637,13 +3672,7 @@ fn execute_flight_step(
             source_glob,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
@@ -3700,13 +3729,7 @@ fn execute_flight_step(
             sudo,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
@@ -3802,13 +3825,7 @@ fn execute_flight_step(
             sudo,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let command = resolve_flight_path_with_context(cask, command, staged_path, appdir)?;
@@ -3910,6 +3927,21 @@ fn execute_terminate_process(
         return Err(last_error.unwrap_or_else(|| eyre!("failed to terminate process")));
     }
     Ok(())
+}
+
+/// Every guard is evaluated, so a failure in a later guard still surfaces.
+fn flight_guards_pass(
+    cask: &Cask,
+    guards: &[FlightGuard],
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<bool> {
+    Ok(guards
+        .iter()
+        .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .all(|matches| matches))
 }
 
 fn flight_guard_matches(
@@ -4789,7 +4821,7 @@ fn find_binary_source(
             return Ok(source);
         }
     }
-    if let Some(source) = absolute_binary_source(&binary.source)
+    if let Some(source) = absolute_prefixed_source(&binary.source)
         && source.is_file()
     {
         return Ok(source);
@@ -4822,13 +4854,6 @@ fn durable_binary_link_target(source: &Path, stage: &Path, caskroom: &Path) -> P
     } else {
         source.to_path_buf()
     }
-}
-
-fn absolute_binary_source(source: &str) -> Option<PathBuf> {
-    let prefix = prefix::prefix();
-    let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
-    let source = PathBuf::from(source);
-    source.is_absolute().then_some(source)
 }
 
 fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option<PathBuf> {
@@ -6683,13 +6708,7 @@ fn remove_obsolete_flight_directories(
 }
 
 fn receipt_flight_symlink_targets(receipt: &CaskReceipt) -> Result<Vec<PathBuf>> {
-    let standard_targets = receipt
-        .apps
-        .iter()
-        .chain(&receipt.binaries)
-        .chain(&receipt.fonts)
-        .chain(&receipt.completions)
-        .collect::<BTreeSet<_>>();
+    let standard_targets = receipt.standard_targets().collect::<BTreeSet<_>>();
     let mut targets = Vec::new();
     for record in &receipt.targets {
         if record.fingerprint.kind == CaskTargetKind::Symlink
@@ -6772,13 +6791,7 @@ fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<Str
 
             // Legacy receipts remain usable only from the historical facts they
             // actually contain. Never fill omitted fields from today's API.
-            let targets_exist = receipt
-                .apps
-                .iter()
-                .chain(&receipt.binaries)
-                .chain(&receipt.fonts)
-                .chain(&receipt.completions)
-                .all(|target| target.exists());
+            let targets_exist = receipt.standard_targets().all(|target| target.exists());
             let pkgs_installed = pkg_ids_installed(&receipt.pkg_ids)?;
             Ok((targets_exist && pkgs_installed).then_some(receipt.version))
         }
@@ -6853,19 +6866,9 @@ fn write_receipt_with_flight_targets(
     flight_directories: &[PathBuf],
     metadata_only_apps: &[PathBuf],
 ) -> Result<()> {
-    let mut target_paths = artifacts
-        .apps
-        .iter()
-        .map(|app| app_target_path(app.target_name()))
-        .collect::<Result<Vec<_>>>()?;
+    let mut target_paths = app_target_paths(artifacts)?;
     target_paths.extend(binary_targets(artifacts)?);
-    target_paths.extend(
-        artifacts
-            .fonts
-            .iter()
-            .map(font_target_path)
-            .collect::<Result<Vec<_>>>()?,
-    );
+    target_paths.extend(font_target_paths(artifacts)?);
     target_paths.extend(completion_target_paths(cask, artifacts)?);
     target_paths.extend(flight_targets.iter().cloned());
     target_paths.sort();
@@ -6881,11 +6884,7 @@ fn write_receipt_with_flight_targets(
         })
         .collect::<Result<Vec<_>>>()?;
     let metadata_only_apps = if cask.auto_updates {
-        artifacts
-            .apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect::<Result<Vec<_>>>()?
+        app_target_paths(artifacts)?
     } else {
         metadata_only_apps.to_vec()
     };
@@ -6899,17 +6898,9 @@ fn write_receipt_with_flight_targets(
         version: cask.version.clone(),
         auto_updates: cask.auto_updates,
         metadata_only_apps,
-        apps: artifacts
-            .apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect::<Result<Vec<_>>>()?,
+        apps: app_target_paths(artifacts)?,
         binaries: binary_targets(artifacts)?,
-        fonts: artifacts
-            .fonts
-            .iter()
-            .map(font_target_path)
-            .collect::<Result<Vec<_>>>()?,
+        fonts: font_target_paths(artifacts)?,
         completions: completion_target_paths(cask, artifacts)?,
         flight_directories: flight_directories.to_vec(),
         generic: generic_artifact_targets(artifacts)?,
@@ -7114,11 +7105,100 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
 }
 
 pub(crate) async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
-    let mut keep = BTreeSet::new();
-    for request in configured {
-        keep.insert(fetch_cask(request).await?.token);
-    }
+    let closure = resolve_cask_dependency_closure(configured).await?;
+    let keep = closure.casks.into_values().collect();
     cask_prune_plan_from_tokens(&keep, &crate::dirs::STATE)
+}
+
+pub(crate) async fn cask_formula_dependencies(
+    configured: &[PackageRequest],
+) -> Result<Vec<PackageRequest>> {
+    Ok(resolve_cask_dependency_closure(configured)
+        .await?
+        .formulae
+        .into_values()
+        .collect())
+}
+
+async fn resolve_cask_dependency_closure(
+    configured: &[PackageRequest],
+) -> Result<CaskDependencyClosure> {
+    let mut closure = CaskDependencyClosure::default();
+    let mut pending = configured.to_vec();
+    while let Some(request) = pending.pop() {
+        if closure.casks.contains_key(&cask_dependency_key(&request)) {
+            continue;
+        }
+        let cask = fetch_cask(&request).await?;
+        extend_cask_dependency_closure(&mut closure, &mut pending, &request, cask);
+    }
+    Ok(closure)
+}
+
+fn cask_request_token(name: &str) -> &str {
+    split_tap_name(name)
+        .map(|(_, _, token)| token)
+        .unwrap_or(name)
+}
+
+fn cask_dependency_key(request: &PackageRequest) -> (String, Option<String>) {
+    (
+        cask_request_token(&request.name).to_string(),
+        request_tap_url(request),
+    )
+}
+
+fn request_tap_url(request: &PackageRequest) -> Option<String> {
+    request.tap_url.clone().or_else(|| {
+        split_tap_name(&request.name).and_then(|(owner, tap, _)| {
+            (owner != "homebrew" || tap != "cask")
+                .then(|| format!("https://github.com/{owner}/homebrew-{tap}.git"))
+        })
+    })
+}
+
+fn extend_cask_dependency_closure(
+    closure: &mut CaskDependencyClosure,
+    pending: &mut Vec<PackageRequest>,
+    request: &PackageRequest,
+    cask: Cask,
+) {
+    if closure
+        .casks
+        .insert(cask_dependency_key(request), cask.token)
+        .is_some()
+    {
+        return;
+    }
+    for name in cask.depends_on.formula {
+        let request = PackageRequest {
+            tap_url: dependency_tap_url(request, &name),
+            name,
+            version: None,
+        };
+        closure
+            .formulae
+            .entry((request.name.clone(), request_tap_url(&request)))
+            .or_insert(request);
+    }
+    pending.extend(cask.depends_on.cask.into_iter().map(|name| PackageRequest {
+        tap_url: dependency_tap_url(request, &name),
+        name,
+        version: None,
+    }));
+}
+
+fn dependency_tap_url(parent: &PackageRequest, dependency: &str) -> Option<String> {
+    let parent_tap = split_tap_name(&parent.name)
+        .and_then(|(owner, tap, _)| (owner != "homebrew" || tap != "cask").then_some((owner, tap)));
+    if let Some((owner, tap, _)) = split_tap_name(dependency)
+        && parent_tap != Some((owner, tap))
+    {
+        return None;
+    }
+    parent.tap_url.clone().or_else(|| {
+        parent_tap.map(|(owner, tap)| format!("https://github.com/{owner}/homebrew-{tap}.git"))
+    })
 }
 
 fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Result<CaskPrunePlan> {
@@ -7467,14 +7547,7 @@ fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> Result<()> {
         .iter()
         .map(|record| (record.path.clone(), record))
         .collect::<BTreeMap<_, _>>();
-    let expected = receipt
-        .apps
-        .iter()
-        .chain(&receipt.binaries)
-        .chain(&receipt.fonts)
-        .chain(&receipt.completions)
-        .cloned()
-        .collect::<BTreeSet<_>>();
+    let expected = receipt.standard_targets().cloned().collect::<BTreeSet<_>>();
     if expected.is_empty()
         || records.len() != receipt.targets.len()
         || records.len() != expected.len()
@@ -7914,6 +7987,111 @@ mod tests {
         }
     }
 
+    #[test]
+    fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
+        let mut root = test_cask("root", "1.0.0");
+        root.depends_on.formula = vec!["python@3.14".to_string()];
+        root.depends_on.cask = vec!["child".to_string()];
+        let mut child = test_cask("child", "1.0.0");
+        child.depends_on.formula = vec!["openssl@3".to_string(), "python@3.14".to_string()];
+        child.depends_on.cask = vec!["root".to_string()];
+
+        let mut closure = CaskDependencyClosure::default();
+        let mut pending = Vec::new();
+        let root_request = PackageRequest {
+            name: "acme/tools/root".to_string(),
+            version: None,
+            tap_url: Some("https://github.com/acme/custom-tools.git".to_string()),
+        };
+        extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root.clone());
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].tap_url, root_request.tap_url);
+        let child_request = pending.pop().unwrap();
+        extend_cask_dependency_closure(&mut closure, &mut pending, &child_request, child);
+        extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root);
+
+        assert_eq!(
+            closure.casks.values().cloned().collect::<BTreeSet<_>>(),
+            BTreeSet::from(["child".to_string(), "root".to_string()])
+        );
+        assert!(
+            closure
+                .formulae
+                .values()
+                .all(|request| request.tap_url == root_request.tap_url)
+        );
+        assert_eq!(
+            closure
+                .formulae
+                .values()
+                .map(|request| request.name.clone())
+                .collect::<Vec<_>>(),
+            vec!["openssl@3".to_string(), "python@3.14".to_string()]
+        );
+        let standard_tap_request = PackageRequest {
+            tap_url: None,
+            ..root_request
+        };
+        assert_eq!(
+            dependency_tap_url(&standard_tap_request, "child"),
+            Some("https://github.com/acme/homebrew-tools.git".to_string())
+        );
+        assert_eq!(
+            normalize_cask_raw_base(
+                "https://raw.githubusercontent.com/acme/homebrew-tools/HEAD".to_string()
+            ),
+            "https://raw.githubusercontent.com/acme/homebrew-tools"
+        );
+        assert_eq!(
+            normalize_cask_raw_base("https://example.com/custom".to_string()),
+            "https://example.com/custom"
+        );
+    }
+
+    #[test]
+    fn cask_dependency_closure_keeps_duplicate_names_from_each_tap() {
+        let tap_urls = [
+            "https://github.com/acme/homebrew-tools.git",
+            "https://github.com/other/homebrew-tools.git",
+        ];
+        let mut closure = CaskDependencyClosure::default();
+        let mut pending = Vec::new();
+        for (owner, tap_url) in ["acme", "other"].into_iter().zip(tap_urls) {
+            let mut root = test_cask("shared", "1.0.0");
+            root.depends_on.formula = vec!["shared-formula".to_string()];
+            root.depends_on.cask = vec!["shared-child".to_string()];
+            let request = PackageRequest {
+                name: format!("{owner}/tools/shared"),
+                version: None,
+                tap_url: Some(tap_url.to_string()),
+            };
+            extend_cask_dependency_closure(&mut closure, &mut pending, &request, root);
+        }
+        for request in std::mem::take(&mut pending) {
+            extend_cask_dependency_closure(
+                &mut closure,
+                &mut pending,
+                &request,
+                test_cask("shared-child", "1.0.0"),
+            );
+        }
+
+        assert_eq!(closure.casks.len(), 4);
+        assert_eq!(closure.formulae.len(), 2);
+        assert_eq!(
+            closure.casks.into_values().collect::<BTreeSet<_>>(),
+            BTreeSet::from(["shared".to_string(), "shared-child".to_string()])
+        );
+        assert_eq!(
+            closure
+                .formulae
+                .into_values()
+                .filter_map(|request| request.tap_url)
+                .collect::<BTreeSet<_>>(),
+            tap_urls.into_iter().map(str::to_string).collect()
+        );
+    }
+
     fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {
         let app = AppArtifact {
             source: app_name.to_string(),
@@ -7955,7 +8133,17 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_cask_identity_components() {
-        for value in ["", ".", "..", ".metadata", ".mise-tmp-x", "a/b", "a\0b"] {
+        for value in [
+            "",
+            ".",
+            "..",
+            ".metadata",
+            ".mise-tmp-x",
+            "a/b",
+            "a\\b",
+            "a\\..\\b",
+            "a\0b",
+        ] {
             assert!(validate_cask_path_component("token", value).is_err());
         }
         assert!(validate_cask_path_component("token", "zed@preview").is_ok());

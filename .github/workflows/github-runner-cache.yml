@@ -3,14 +3,9 @@ name: github runner cache
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: "0 6 * * 0"
-  workflow_dispatch:
 
 concurrency:
   group: github-runner-cache-${{ github.ref }}
-  # Let the active warmer publish a usable cache when several commits land on
-  # main in quick succession. GitHub still keeps only the newest pending run.
   cancel-in-progress: false
 
 permissions:
@@ -22,31 +17,27 @@ env:
 
 jobs:
   warm:
-    if: github.ref == 'refs/heads/main'
     name: warm-${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-14, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - uses: ./.github/actions/mbx
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/mbx
-          key: ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
-      - uses: ./.github/actions/setup-mbx
-      - run: mbx build build --all-features --ignore-rust-version
-      # Bound each immutable GHA cache entry so Linux and macOS can coexist
-      # within the repository cache quota.
-      - run: mbx gc --max-size 3GB
-        if: always()
+          backend: github
+      - name: Warm the Unix cache
+        if: runner.os != 'Windows'
+        run: mbx build --all-features --ignore-rust-version
+      - name: Warm the Windows cache
+        if: runner.os == 'Windows'
+        env:
+          MBX_TARGET_VIEWS: "0"
+        run: |
+          mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
+          mbx build -p mise-shim

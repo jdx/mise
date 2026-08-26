@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx') && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
     # PGO and cross-built release tarballs can exceed 90 minutes on
     # loaded runners, especially once archive generation is included.
     timeout-minutes: 150
@@ -94,7 +94,7 @@ jobs:
   build-tarball-macos:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx') && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
     timeout-minutes: 300
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
@@ -132,6 +132,86 @@ jobs:
           # toolchain. A mismatched runner default makes PGO training fail
           # before it can write any profile data.
           command: rustup run stable scripts/build-tarball.sh ${{matrix.target}}
+      # Signing settles who built the binary; notarization is what Gatekeeper
+      # demands once an archive carries the quarantine bit, which is to say
+      # whenever someone downloads it in a browser rather than with curl.
+      # Without a ticket it is blocked behind a "cannot be verified" dialog that
+      # only a deliberate override gets past.
+      #
+      # The ticket lives on Apple's side and is keyed to the binary's cdhash, so
+      # nothing here rewrites what was already built or uploaded -- stapling
+      # would, but `stapler` only writes into bundles, disk images, and
+      # installer packages, and this is a bare Mach-O in an archive. Gatekeeper
+      # resolves the ticket online instead.
+      - name: Notarize macOS binary
+        if: env.DRY_RUN == '0'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          BINARIES: dist/mise/bin/mise
+        run: |
+          set -euo pipefail
+
+          if [ -z "$APPLE_API_KEY_P8" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER_ID" ]; then
+            echo "::warning title=Not notarized::App Store Connect credentials are unset, so this release ships signed but un-notarized macOS binaries. Gatekeeper will block them for anyone who downloads an archive through a browser."
+            exit 0
+          fi
+
+          # Outside the workspace, so no later step can sweep the key into an
+          # artifact, and removed even when notarization fails.
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$work/key.p8"
+
+          # notarytool takes a container, never a bare executable. Copies are
+          # fine: a Mach-O carries its signature inline, so the cdhash the
+          # ticket is keyed to is the one already shipped.
+          mkdir "$work/stage"
+          for binary in $BINARIES; do
+            cp "$binary" "$work/stage/"
+          done
+          # Apple rejects a binary without the hardened runtime or a secure
+          # timestamp. Naming a missing one here turns an opaque Invalid verdict
+          # into a diagnosis; Apple stays the authority on whether to accept.
+          for binary in $BINARIES; do
+            details="$(codesign --display --verbose=4 "$binary" 2>&1 || true)"
+            case "$details" in
+              *runtime*) ;;
+              *) echo "::warning title=No hardened runtime::$binary is signed without --options runtime, which Apple requires; expect an Invalid verdict below." ;;
+            esac
+            case "$details" in
+              *Timestamp=*) ;;
+              *) echo "::warning title=No secure timestamp::$binary carries no secure timestamp, which Apple requires; expect an Invalid verdict below." ;;
+            esac
+          done
+
+          ditto -c -k --norsrc --noextattr "$work/stage" "$work/submission.zip"
+
+          # `--wait` is not a gate on its own: it can return zero on an Invalid
+          # submission, so the reported status is what decides. plutil reads
+          # JSON and ships with macOS, which keeps this off jq.
+          result="$(xcrun notarytool submit "$work/submission.zip" \
+            --key "$work/key.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --output-format json \
+            --timeout 30m \
+            --wait)"
+          echo "$result"
+
+          status="$(printf '%s' "$result" | plutil -extract status raw -o - -)"
+          id="$(printf '%s' "$result" | plutil -extract id raw -o - -)"
+          if [ "$status" != "Accepted" ]; then
+            echo "::error::notarization returned $status for submission $id"
+            xcrun notarytool log "$id" \
+              --key "$work/key.p8" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" || true
+            exit 1
+          fi
+          echo "notarized: submission $id"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tarball-${{matrix.target}}
@@ -217,7 +297,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
     timeout-minutes: 10
-    container: ghcr.io/jdx/mise:rpm@sha256:a7ada367f719541b78f969a2498123cf60c452fe091d2eda0f0ecb8e5a64a6ff
+    container: ghcr.io/jdx/mise:rpm@sha256:571a372aac0ec3ee573cf84e5ce74cb1c0b87db8d5d3a2ec88c592d3aa73f4e3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: crazy-max/ghaction-import-gpg@2dc316deee8e90f13e1a351ab510b4d5bc0c82cd # v7
@@ -241,7 +321,7 @@ jobs:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:baffc3062c65af6057cd536ad80d7d77b1ccc957878ec7ac239d163d03bf6a11
+    container: ghcr.io/jdx/mise:deb@sha256:cf0109de714157b9a458f312da1cd2b42f1eeb938b3ac23fa97c67e78f10d45a
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

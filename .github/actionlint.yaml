@@ -35,7 +35,7 @@ self-hosted-runner:
 config-variables: null
 
 paths:
-  .github/workflows/test.yml:
+  .github/workflows/test-impl.yml:
     # actionlint 1.7.12 predates GitHub's native parallel step groups.
     # Remove this once actionlint recognizes the `parallel` keyword.
     ignore:

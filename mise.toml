@@ -6,7 +6,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
-"github:jdx/mr-boxington" = "0.2.0"
+"github:jdx/mr-boxington" = "latest"
 # Pinned rather than "latest" because tak is the measuring instrument: an
 # upgrade that changes how it samples would land in the series as a step change
 # in mise's numbers, indistinguishable from a real regression. Bump
@@ -31,7 +31,7 @@ pkl = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
-usage = "6.4.0"
+usage = "6.4.1"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"

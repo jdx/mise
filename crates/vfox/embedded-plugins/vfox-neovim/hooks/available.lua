@@ -33,13 +33,15 @@ local function get_release_checksum(release, http)
         return nil
     end
 
-    local checksum_name = "nvim-" .. platform .. ext .. ".sha256sum"
+    local asset_name = "nvim-" .. platform .. ext
+    local checksum_name = asset_name .. ".sha256sum"
     local checksum_url = nil
 
     for _, asset in ipairs(release.assets or {}) do
-        if asset.name == checksum_name then
+        if asset.name == asset_name and asset.digest ~= nil then
+            return asset.digest:gsub("^sha256:", "")
+        elseif asset.name == checksum_name then
             checksum_url = asset.browser_download_url
-            break
         end
     end
 

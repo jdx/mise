@@ -736,6 +736,7 @@ fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(str::to_string)
 }
 
+/// Generate Rust setting types, metadata, and file-layer merge behavior from settings.toml.
 fn codegen_settings() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("settings.rs");
@@ -750,6 +751,7 @@ pub(crate) struct Settings {"#
     let settings_toml = fs::read_to_string("settings.toml").expect("Failed to read settings.toml");
     let settings: toml::Table =
         toml::de::from_str(&settings_toml).expect("Failed to parse settings.toml");
+    /// Build a collision-resistant generated Rust type name for a settings path.
     fn settings_struct_name(path: &[&str]) -> String {
         if let [part] = path {
             return format!("Settings{}", part.to_upper_camel_case());
@@ -769,6 +771,7 @@ pub(crate) struct Settings {"#
         name
     }
 
+    /// Render one settings.toml entry as a field in a generated settings struct.
     fn props_to_code(key: &str, props: &toml::Value, parent_path: &[&str]) -> String {
         let mut lines = vec![];
         let props = props.as_table().unwrap();
@@ -844,6 +847,7 @@ pub(crate) struct Settings {"#
     }
     lines.push("}".to_string());
 
+    /// Emit generated settings structs for every nested settings.toml table.
     fn emit_nested_settings(lines: &mut Vec<String>, table: &toml::Table, parent_path: &[&str]) {
         for (child, props) in table
             .iter()
@@ -871,10 +875,52 @@ pub(crate) struct {name} {{"#,
 
     lines.push(
         r#"
+/// Apply the merge strategies declared in settings.toml to config-file layers.
+pub(crate) fn merge_settings_file_layers(layers: &mut [SettingsPartial]) {"#
+            .to_string(),
+    );
+    for (key, props) in &settings {
+        let props = props.as_table().unwrap();
+        let Some(strategy) = props.get("merge") else {
+            continue;
+        };
+        let strategy = strategy
+            .as_str()
+            .expect("setting merge strategy must be a string");
+        match (strategy, props.get("type").and_then(toml::Value::as_str)) {
+            ("append_unique", Some("ListString")) => lines.push(format!(
+                r#"    {{
+        let mut found = false;
+        let values = layers
+            .iter_mut()
+            .rev()
+            .filter_map(|layer| {{
+                let values = layer.{key}.take();
+                found |= values.is_some();
+                values
+            }})
+            .flatten()
+            .unique()
+            .collect();
+        if found {{
+            layers[0].{key} = Some(values);
+        }}
+    }}"#
+            )),
+            _ => panic!(
+                "unsupported merge strategy {strategy:?} for setting {key:?}; append_unique requires ListString"
+            ),
+        }
+    }
+    lines.push("}".to_string());
+
+    lines.push(
+        r#"
 pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = Lazy::new(|| {
     indexmap!{"#
             .to_string(),
     );
+    /// Emit deprecation metadata shared by each generated settings metadata entry.
     fn push_deprecated_fields(lines: &mut Vec<String>, props: &toml::Table) {
         let deprecated = props
             .get("deprecated")
@@ -911,6 +957,7 @@ pub(crate) static SETTINGS_META: Lazy<IndexMap<&'static str, SettingsMeta>> = La
             props.get("env_only").is_some_and(|v| v.as_bool().unwrap())
         ));
     }
+    /// Emit flattened runtime metadata for settings and nested settings tables.
     fn emit_settings_meta(lines: &mut Vec<String>, table: &toml::Table, prefix: &str) {
         for (key, value) in table {
             let name = if prefix.is_empty() {

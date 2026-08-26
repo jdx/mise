@@ -483,53 +483,53 @@ url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405851866"
 
 [[tools."github:jdx/mr-boxington"]]
-version = "0.2.0"
+version = "0.4.0"
 backend = "github:jdx/mr-boxington"
 
 [tools."github:jdx/mr-boxington"."platforms.linux-arm64"]
-checksum = "sha256:8ed75a027ae0f8e28a76868ba1ad649bb55ece2ac731c06b25ef5750e9e844ca"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595248"
+checksum = "sha256:ed81dab87775bcc8764c7257d8bea0dd8b7f811d6263b71bc7cd83a879661593"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719396"
 
 [tools."github:jdx/mr-boxington"."platforms.linux-arm64-musl"]
-checksum = "sha256:8ed75a027ae0f8e28a76868ba1ad649bb55ece2ac731c06b25ef5750e9e844ca"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595248"
+checksum = "sha256:ed81dab87775bcc8764c7257d8bea0dd8b7f811d6263b71bc7cd83a879661593"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719396"
 
 [tools."github:jdx/mr-boxington"."platforms.linux-x64"]
-checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+checksum = "sha256:b288265404b8fa4620ea1d082ba9b33a0a1695212d88a385e76aa07a743da250"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719409"
 
 [tools."github:jdx/mr-boxington"."platforms.linux-x64-baseline"]
-checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+checksum = "sha256:b288265404b8fa4620ea1d082ba9b33a0a1695212d88a385e76aa07a743da250"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719409"
 
 [tools."github:jdx/mr-boxington"."platforms.linux-x64-musl"]
-checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+checksum = "sha256:b288265404b8fa4620ea1d082ba9b33a0a1695212d88a385e76aa07a743da250"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719409"
 
 [tools."github:jdx/mr-boxington"."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:5a83aa55e6f83eb6c77ac4e0397b345d3eb4cf5cb6f7430185469d02e4c0f409"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595259"
+checksum = "sha256:b288265404b8fa4620ea1d082ba9b33a0a1695212d88a385e76aa07a743da250"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719409"
 
 [tools."github:jdx/mr-boxington"."platforms.macos-arm64"]
-checksum = "sha256:a8428b18eaf2240c47f36c628219d02a405cca4f65de5b3c649af481d6778b8f"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595246"
+checksum = "sha256:416cab92e23c4652183e4a794af3fdcbc50b56296d8c09f8b6548e7577416307"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719398"
 
 [tools."github:jdx/mr-boxington"."platforms.windows-x64"]
-checksum = "sha256:24e44ab08896284b207fece614fe461db8c9399467cf934b115ef796ebf467e0"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595245"
+checksum = "sha256:f841b1907cf86c54db4d3d2d1e88f87303ccc8f720efff90b6331d7d5592bf4e"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719397"
 
 [tools."github:jdx/mr-boxington"."platforms.windows-x64-baseline"]
-checksum = "sha256:24e44ab08896284b207fece614fe461db8c9399467cf934b115ef796ebf467e0"
-url = "https://github.com/jdx/mr-boxington/releases/download/v0.2.0/mbx-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/526595245"
+checksum = "sha256:f841b1907cf86c54db4d3d2d1e88f87303ccc8f720efff90b6331d7d5592bf4e"
+url = "https://github.com/jdx/mr-boxington/releases/download/v0.4.0/mbx-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/529719397"
 
 [[tools."github:jdx/tak"]]
 version = "0.0.5"
@@ -1113,53 +1113,53 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x
 url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
 
 [[tools.usage]]
-version = "6.4.0"
+version = "6.4.1"
 backend = "aqua:jdx/usage"
 
 [tools.usage."platforms.linux-arm64"]
-checksum = "sha256:96acfe9a312da8af144dd516b9347bd7de62391ca797dba722aed48abe5ec21d"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528035595"
+checksum = "sha256:2f6fdce14ccd53e6888b271f1a04339228cfd60e58967932bfbca3d85104b4ab"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530174922"
 
 [tools.usage."platforms.linux-arm64-musl"]
-checksum = "sha256:60ff89e6d87cabcbc6c20fc851911c78490c605d38553147a62e1dce30e6470a"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528035659"
+checksum = "sha256:0ce535462c31bd14e55a223f4841ea79d4b1d10c42a28976162fb2edc5f3c85c"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530175860"
 
 [tools.usage."platforms.linux-x64"]
-checksum = "sha256:04007997a0524aa5934458530cd025e1745e0b0803aac74559cc03a26b66c53b"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528035518"
+checksum = "sha256:8f4465f3ee9e8dbb4233367a566612de9e61f9f64685a0b2da60032d0be7eb76"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530174589"
 
 [tools.usage."platforms.linux-x64-baseline"]
-checksum = "sha256:04007997a0524aa5934458530cd025e1745e0b0803aac74559cc03a26b66c53b"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528035518"
+checksum = "sha256:8f4465f3ee9e8dbb4233367a566612de9e61f9f64685a0b2da60032d0be7eb76"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530174589"
 
 [tools.usage."platforms.linux-x64-musl"]
-checksum = "sha256:c416e18838f974810f8b67ac1eed6ef170cf9ff48e165469563885f24c548d90"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528035933"
+checksum = "sha256:9d4c186e10b9850084a1a7b111cc2b1331246246dbd2a030eb9319b8e4d47114"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530175839"
 
 [tools.usage."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:c416e18838f974810f8b67ac1eed6ef170cf9ff48e165469563885f24c548d90"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528035933"
+checksum = "sha256:9d4c186e10b9850084a1a7b111cc2b1331246246dbd2a030eb9319b8e4d47114"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530175839"
 
 [tools.usage."platforms.macos-arm64"]
-checksum = "sha256:c02f4235446b06f917747e6bdaa6496ea3f63a66c74081a5c1450da2c734f6f1"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-universal-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528044147"
+checksum = "sha256:22f1df952ab0e6a3f982ea3026d45af6ef0264a5a6f623f0ae33bf2bc76ce409"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-universal-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530181631"
 
 [tools.usage."platforms.windows-x64"]
-checksum = "sha256:6ffa5d4deb26c6728ea9ab5d9c7b76c3c4ca75cb6bf49acdace1045512fa7cd3"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528039229"
+checksum = "sha256:2d1b274f84d98634de77fd43b76892edc8bb1e02e3d0c222c630d6e2db14dd3e"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530179749"
 
 [tools.usage."platforms.windows-x64-baseline"]
-checksum = "sha256:6ffa5d4deb26c6728ea9ab5d9c7b76c3c4ca75cb6bf49acdace1045512fa7cd3"
-url = "https://github.com/jdx/usage/releases/download/v6.4.0/usage-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/528039229"
+checksum = "sha256:2d1b274f84d98634de77fd43b76892edc8bb1e02e3d0c222c630d6e2db14dd3e"
+url = "https://github.com/jdx/usage/releases/download/v6.4.1/usage-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/530179749"
 
 [[tools.wait-for-gh-rate-limit]]
 version = "1.1.2"
