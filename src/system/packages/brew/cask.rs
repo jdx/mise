@@ -3623,13 +3623,7 @@ fn execute_flight_step(
             source_glob,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let sources = flight_symlink_sources(cask, source, *source_glob, staged_path, appdir)?;
@@ -3686,13 +3680,7 @@ fn execute_flight_step(
             sudo,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let target = resolve_flight_path_with_context(cask, target, staged_path, appdir)?;
@@ -3788,13 +3776,7 @@ fn execute_flight_step(
             sudo,
             guards,
         } => {
-            if !guards
-                .iter()
-                .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
-                .collect::<Result<Vec<_>>>()?
-                .into_iter()
-                .all(|matches| matches)
-            {
+            if !flight_guards_pass(cask, guards, staged_path, appdir)? {
                 return Ok(());
             }
             let command = resolve_flight_path_with_context(cask, command, staged_path, appdir)?;
@@ -3896,6 +3878,21 @@ fn execute_terminate_process(
         return Err(last_error.unwrap_or_else(|| eyre!("failed to terminate process")));
     }
     Ok(())
+}
+
+/// Every guard is evaluated, so a failure in a later guard still surfaces.
+fn flight_guards_pass(
+    cask: &Cask,
+    guards: &[FlightGuard],
+    staged_path: &Path,
+    appdir: &Path,
+) -> Result<bool> {
+    Ok(guards
+        .iter()
+        .map(|guard| flight_guard_matches(cask, guard, staged_path, appdir))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .all(|matches| matches))
 }
 
 fn flight_guard_matches(
