@@ -4,45 +4,51 @@ on:
   pull_request:
     paths:
       - "crates/vfox/**"
+      - ".github/workflows/test-vfox.yml"
+      - ".github/workflows/test-vfox-impl.yml"
   push:
     branches: [release]
 
-concurrency:
-  group: test-vfox-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  CARGO_TERM_COLOR: always
-  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
-  MISE_EXPERIMENTAL: 1
-  MISE_LOCKFILE: 1
-  RUST_BACKTRACE: 1
-  GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
+permissions: {}
 
 jobs:
-  "test-vfox":
-    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=mise-pr-rust-linux' }}
+  trusted:
+    if: ${{ github.actor == 'jdx' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'jdx')) }}
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/test-vfox-impl.yml
+    with:
+      trusted: true
+      mbx-backend: server
+    secrets:
+      MISE_GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+
+  untrusted:
+    if: ${{ github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx')) }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test-vfox-impl.yml
+    with:
+      trusted: false
+      mbx-backend: github
+
+  test-vfox:
+    name: test-vfox
+    if: ${{ always() && !cancelled() && needs.trusted.result != 'cancelled' && needs.untrusted.result != 'cancelled' }}
+    permissions: {}
+    needs: [trusted, untrusted]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/.global-cache
-            ~/.cache/mbx
-      - uses: ./.github/actions/setup-mbx
-        with:
-          restore-cache: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-      - run: |
-          mbx build build --all-features --ignore-rust-version
-          echo "$PWD/target/debug" >> "$GITHUB_PATH"
-      - run: mise -v
-      - run: mbx build build
-        working-directory: crates/vfox
-      - run: mise --cd crates/vfox run lint
-      - run: mbx build test
-        working-directory: crates/vfox
-      - run: mbx cache stats
-        if: always()
+      - name: Check selected workflow result
+        env:
+          TRUSTED_RESULT: ${{ needs.trusted.result }}
+          UNTRUSTED_RESULT: ${{ needs.untrusted.result }}
+        run: |
+          if [[ "$TRUSTED_RESULT" == success && "$UNTRUSTED_RESULT" == skipped ]] ||
+             [[ "$TRUSTED_RESULT" == skipped && "$UNTRUSTED_RESULT" == success ]]; then
+            exit 0
+          fi
+          echo "trusted=$TRUSTED_RESULT untrusted=$UNTRUSTED_RESULT"
+          exit 1

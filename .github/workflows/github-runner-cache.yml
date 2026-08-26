@@ -45,7 +45,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-fork-pr-mbx-v0.2.0-
       - uses: ./.github/actions/setup-mbx
-      - run: mbx build build --all-features --ignore-rust-version
+      - run: mbx build --all-features --ignore-rust-version
       # Bound each immutable GHA cache entry so Linux and macOS can coexist
       # within the repository cache quota.
       - run: mbx gc --max-size 3GB
