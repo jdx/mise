@@ -3112,6 +3112,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Fetch direct backend metadata only for rolling entries that need it.
         let latest_checksum = match version_info.checksum {
             Some(checksum) => checksum,
+            None if Settings::get().offline() => {
+                trace!(
+                    "No cached checksum available for rolling version {} while offline",
+                    version
+                );
+                return false;
+            }
             None => match self._list_remote_versions(config).await {
                 Ok(versions) => match versions
                     .into_iter()
@@ -4377,6 +4384,7 @@ mod latest_version_tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
+    use crate::toolset::ToolSource;
     use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -4886,6 +4894,38 @@ mod latest_version_tests {
         Settings::reset(None);
 
         assert_eq!(versions, vec!["1.0.0".to_string(), "2.0.0".to_string()]);
+        assert_eq!(backend.list_calls(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_offline_rolling_check_does_not_fetch_missing_checksum() {
+        let config = Config::get().await.unwrap();
+        let backend = LatestBackend::new("test-offline-rolling-check");
+        backend
+            .get_remote_version_cache()
+            .lock()
+            .await
+            .write(&vec![VersionInfo {
+                version: "nightly".to_string(),
+                rolling: true,
+                ..Default::default()
+            }])
+            .unwrap();
+        let request = ToolRequest::Version {
+            backend: backend.ba.clone(),
+            version: "nightly".to_string(),
+            options: ToolVersionOptions::default(),
+            source: ToolSource::Argument,
+        };
+        let tv = ToolVersion::new(request, "nightly".to_string());
+
+        let mut partial = SettingsPartial::empty();
+        partial.offline = Some(true);
+        Settings::reset(Some(partial));
+        let outdated = backend.is_rolling_version_outdated(&config, &tv).await;
+        Settings::reset(None);
+
+        assert!(!outdated);
         assert_eq!(backend.list_calls(), 0);
     }
 
