@@ -1,0 +1,5 @@
+backends = ["aqua:zwasm/zwasm"]
+bins = ["zwasm"]
+description = "A fast, spec-compliant WebAssembly runtime written in Zig"
+test = { cmd = "zwasm --version", expected = "zwasm v{{version}}" }
+version_order = "semver"
