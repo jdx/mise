@@ -1,0 +1,102 @@
+name: cache benchmark
+
+on:
+  pull_request:
+    paths:
+      - .github/actions/mbx/action.yml
+      - .github/workflows/cache-benchmark.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/mbx/action.yml
+      - .github/workflows/cache-benchmark.yml
+      - Cargo.lock
+      - Cargo.toml
+      - "**/*.rs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mbx:
+    name: mbx (macOS)
+    runs-on: macos-14
+    timeout-minutes: 30
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+        with:
+          backend: github
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          SECONDS=0
+          mbx build --all-features --ignore-rust-version
+          elapsed=$SECONDS
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+          mbx cache stats
+
+  rust-cache:
+    name: Swatinem rust-cache (macOS)
+    runs-on: macos-14
+    timeout-minutes: 30
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
+        with:
+          shared-key: cache-benchmark-macos-v1
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          SECONDS=0
+          cargo build --all-features --ignore-rust-version
+          elapsed=$SECONDS
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+
+  comparison:
+    name: comparison
+    needs: [mbx, rust-cache]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    env:
+      MBX_SECONDS: ${{ needs.mbx.outputs.seconds }}
+      RUST_CACHE_SECONDS: ${{ needs.rust-cache.outputs.seconds }}
+    steps:
+      - name: Summarize results
+        shell: bash
+        run: |
+          delta=$(awk -v mbx="$MBX_SECONDS" -v rust="$RUST_CACHE_SECONDS" \
+            'BEGIN { if (rust == 0) print "n/a"; else printf "%.1f%%", ((rust - mbx) / rust) * 100 }')
+          {
+            echo "## Cache build comparison"
+            echo
+            echo "| Backend | Build time |"
+            echo "| --- | ---: |"
+            echo "| mbx | ${MBX_SECONDS}s |"
+            echo "| Swatinem/rust-cache | ${RUST_CACHE_SECONDS}s |"
+            echo
+            echo "mbx delta: **${delta}** (positive means mbx was faster)."
+            echo
+            echo "> Treat the first main-branch run as cache seeding. Compare workflow_dispatch runs after it. Build time excludes checkout and cache setup; compare those step durations separately."
+          } >> "$GITHUB_STEP_SUMMARY"
