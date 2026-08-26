@@ -972,6 +972,8 @@ impl Settings {
         Ok(builder.load()?)
     }
 
+    /// Load eligible config-file settings layers in precedence order and combine settings whose
+    /// semantics are additive across files.
     fn settings_layers_from(
         root: Option<&Path>,
         trust_policy: SettingsTrustPolicy,
