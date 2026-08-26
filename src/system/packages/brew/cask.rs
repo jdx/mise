@@ -2922,6 +2922,14 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
     }
 }
 
+fn app_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
+    artifacts
+        .apps
+        .iter()
+        .map(|app| app_target_path(app.target_name()))
+        .collect::<Result<Vec<_>>>()
+}
+
 fn font_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
     artifacts
         .fonts
@@ -6835,19 +6843,9 @@ fn write_receipt_with_flight_targets(
     flight_directories: &[PathBuf],
     metadata_only_apps: &[PathBuf],
 ) -> Result<()> {
-    let mut target_paths = artifacts
-        .apps
-        .iter()
-        .map(|app| app_target_path(app.target_name()))
-        .collect::<Result<Vec<_>>>()?;
+    let mut target_paths = app_target_paths(artifacts)?;
     target_paths.extend(binary_targets(artifacts)?);
-    target_paths.extend(
-        artifacts
-            .fonts
-            .iter()
-            .map(font_target_path)
-            .collect::<Result<Vec<_>>>()?,
-    );
+    target_paths.extend(font_target_paths(artifacts)?);
     target_paths.extend(completion_target_paths(cask, artifacts)?);
     target_paths.extend(flight_targets.iter().cloned());
     target_paths.sort();
@@ -6863,11 +6861,7 @@ fn write_receipt_with_flight_targets(
         })
         .collect::<Result<Vec<_>>>()?;
     let metadata_only_apps = if cask.auto_updates {
-        artifacts
-            .apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect::<Result<Vec<_>>>()?
+        app_target_paths(artifacts)?
     } else {
         metadata_only_apps.to_vec()
     };
@@ -6881,17 +6875,9 @@ fn write_receipt_with_flight_targets(
         version: cask.version.clone(),
         auto_updates: cask.auto_updates,
         metadata_only_apps,
-        apps: artifacts
-            .apps
-            .iter()
-            .map(|app| app_target_path(app.target_name()))
-            .collect::<Result<Vec<_>>>()?,
+        apps: app_target_paths(artifacts)?,
         binaries: binary_targets(artifacts)?,
-        fonts: artifacts
-            .fonts
-            .iter()
-            .map(font_target_path)
-            .collect::<Result<Vec<_>>>()?,
+        fonts: font_target_paths(artifacts)?,
         completions: completion_target_paths(cask, artifacts)?,
         flight_directories: flight_directories.to_vec(),
         generic: generic_artifact_targets(artifacts)?,
