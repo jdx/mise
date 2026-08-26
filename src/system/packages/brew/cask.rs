@@ -2638,12 +2638,16 @@ fn generic_artifact_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
         .collect()
 }
 
-fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
+/// The receipt of the currently installed version, if there is one.
+fn previous_receipt(cask: &Cask) -> Result<Option<CaskReceipt>> {
     let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    let Some(receipt) = read_receipt(&version_dir)? else {
+    read_receipt(&caskroom_version_dir(&cask.token, &version))
+}
+
+fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
+    let Some(receipt) = previous_receipt(cask)? else {
         return Ok(Vec::new());
     };
     Ok(receipt
@@ -2969,11 +2973,7 @@ fn font_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
 }
 
 fn previous_font_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    Ok(read_receipt(&version_dir)?
+    Ok(previous_receipt(cask)?
         .map(|receipt| receipt.fonts)
         .unwrap_or_default())
 }
@@ -4650,11 +4650,7 @@ fn completion_target_paths(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Vec
 }
 
 fn previous_completion_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    Ok(read_receipt(&version_dir)?
+    Ok(previous_receipt(cask)?
         .map(|receipt| receipt.completions)
         .unwrap_or_default())
 }
@@ -6664,35 +6660,22 @@ fn binary_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
 }
 
 fn previous_binary_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    Ok(read_receipt(&version_dir)?
+    Ok(previous_receipt(cask)?
         .map(|receipt| receipt.binaries)
         .unwrap_or_default())
 }
 
 fn previous_flight_symlink_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    let Some(receipt) = read_receipt(&version_dir)? else {
+    let Some(receipt) = previous_receipt(cask)? else {
         return Ok(Vec::new());
     };
     receipt_flight_symlink_targets(&receipt)
 }
 
 fn previous_flight_directory_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    let Some(receipt) = read_receipt(&version_dir)? else {
-        return Ok(Vec::new());
-    };
-    Ok(receipt.flight_directories)
+    Ok(previous_receipt(cask)?
+        .map(|receipt| receipt.flight_directories)
+        .unwrap_or_default())
 }
 
 fn remove_obsolete_flight_directories(
@@ -6770,11 +6753,7 @@ fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<Str
     if cask_journal_pending_in(state_dir, &cask.token) {
         return Ok(None);
     }
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(None);
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    match read_receipt(&version_dir)? {
+    match previous_receipt(cask)? {
         Some(receipt) => {
             if receipt.schema_version > 3 {
                 return Ok(None);
