@@ -1803,6 +1803,20 @@ fn copy_cask_artifact(from: &Path, to: &Path) -> Result<()> {
     }
 }
 
+/// Collected eagerly: callers mutate the tree they just walked.
+fn symlinks_under(root: &Path, min_depth: usize) -> Result<Vec<PathBuf>> {
+    Ok(WalkDir::new(root)
+        .follow_links(false)
+        .min_depth(min_depth)
+        .into_iter()
+        .filter_map(|entry| match entry {
+            Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
+            Ok(_) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()?)
+}
+
 fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path) -> Result<()> {
     let stage = lexically_normalized_path(stage);
     let mut pending = vec![lexically_normalized_path(source)];
@@ -1842,16 +1856,7 @@ fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path)
             copy_cask_artifact(&source, &destination)?;
         }
 
-        let symlinks = WalkDir::new(&destination)
-            .follow_links(false)
-            .into_iter()
-            .filter_map(|entry| match entry {
-                Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
-                Ok(_) => None,
-                Err(err) => Some(Err(err)),
-            })
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        for link in symlinks {
+        for link in symlinks_under(&destination, 0)? {
             let link_relative = link.strip_prefix(owned_stage)?;
             let original_link = stage.join(link_relative);
             let link_source = std::fs::read_link(&link)?;
@@ -1923,17 +1928,7 @@ fn retarget_transient_symlinks(
         remove_artifact_target_elevating(target)?;
         create_flight_symlink(&final_caskroom.join(relative), target, FlightSudo::IfNeeded)?;
     }
-    let internal_symlinks = WalkDir::new(installed_caskroom)
-        .follow_links(false)
-        .min_depth(1)
-        .into_iter()
-        .filter_map(|entry| match entry {
-            Ok(entry) if entry.file_type().is_symlink() => Some(Ok(entry.into_path())),
-            Ok(_) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-    for target in internal_symlinks {
+    for target in symlinks_under(installed_caskroom, 1)? {
         let source = std::fs::read_link(&target)?;
         // Relative links retain the same relationship when the whole caskroom is
         // renamed. Only absolute links embed the temporary caskroom path.
@@ -4826,7 +4821,7 @@ fn find_binary_source(
             return Ok(source);
         }
     }
-    if let Some(source) = absolute_binary_source(&binary.source)
+    if let Some(source) = absolute_prefixed_source(&binary.source)
         && source.is_file()
     {
         return Ok(source);
@@ -4859,13 +4854,6 @@ fn durable_binary_link_target(source: &Path, stage: &Path, caskroom: &Path) -> P
     } else {
         source.to_path_buf()
     }
-}
-
-fn absolute_binary_source(source: &str) -> Option<PathBuf> {
-    let prefix = prefix::prefix();
-    let source = source.replace("$HOMEBREW_PREFIX", &prefix.to_string_lossy());
-    let source = PathBuf::from(source);
-    source.is_absolute().then_some(source)
 }
 
 fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option<PathBuf> {
