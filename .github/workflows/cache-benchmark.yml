@@ -24,13 +24,14 @@ concurrency:
 
 env:
   CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_TERM_COLOR: always
 
 jobs:
   mbx:
     name: mbx (macOS)
     runs-on: macos-14
-    timeout-minutes: 30
+    timeout-minutes: 90
     outputs:
       seconds: ${{ steps.build.outputs.seconds }}
     steps:
@@ -44,16 +45,17 @@ jobs:
         id: build
         shell: bash
         run: |
-          SECONDS=0
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
           mbx build --all-features --ignore-rust-version
-          elapsed=$SECONDS
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
           echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
           mbx cache stats
 
   rust-cache:
     name: Swatinem rust-cache (macOS)
     runs-on: macos-14
-    timeout-minutes: 30
+    timeout-minutes: 90
     outputs:
       seconds: ${{ steps.build.outputs.seconds }}
     steps:
@@ -63,15 +65,16 @@ jobs:
       - name: Restore Cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
         with:
-          shared-key: cache-benchmark-macos-v1
+          shared-key: cache-benchmark-macos-v2
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Build
         id: build
         shell: bash
         run: |
-          SECONDS=0
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
           cargo build --all-features --ignore-rust-version
-          elapsed=$SECONDS
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
           echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
 
   comparison_macos:
@@ -104,7 +107,9 @@ jobs:
   mbx_windows:
     name: mbx (Windows)
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
+    env:
+      MBX_TARGET_VIEWS: 0
     outputs:
       seconds: ${{ steps.build.outputs.seconds }}
     steps:
@@ -116,18 +121,20 @@ jobs:
           backend: github
       - name: Build
         id: build
-        shell: bash
+        shell: pwsh
         run: |
-          SECONDS=0
+          $timer = [System.Diagnostics.Stopwatch]::StartNew()
           mbx build --all-features --ignore-rust-version
-          elapsed=$SECONDS
-          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $timer.Stop()
+          $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
+          "seconds=$elapsed" >> $env:GITHUB_OUTPUT
           mbx cache stats
 
   rust_cache_windows:
     name: Swatinem rust-cache (Windows)
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     outputs:
       seconds: ${{ steps.build.outputs.seconds }}
     steps:
@@ -137,16 +144,18 @@ jobs:
       - name: Restore Cargo cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
         with:
-          shared-key: cache-benchmark-windows-v1
+          shared-key: cache-benchmark-windows-v2
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: Build
         id: build
-        shell: bash
+        shell: pwsh
         run: |
-          SECONDS=0
+          $timer = [System.Diagnostics.Stopwatch]::StartNew()
           cargo build --all-features --ignore-rust-version
-          elapsed=$SECONDS
-          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $timer.Stop()
+          $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
+          "seconds=$elapsed" >> $env:GITHUB_OUTPUT
 
   comparison_windows:
     name: comparison (Windows)
