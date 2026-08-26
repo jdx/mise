@@ -7126,10 +7126,19 @@ async fn resolve_cask_dependency_closure(
     let mut closure = CaskDependencyClosure::default();
     let mut pending = configured.to_vec();
     while let Some(request) = pending.pop() {
+        if closure.casks.contains(cask_request_token(&request.name)) {
+            continue;
+        }
         let cask = fetch_cask(&request).await?;
         extend_cask_dependency_closure(&mut closure, &mut pending, cask);
     }
     Ok(closure)
+}
+
+fn cask_request_token(name: &str) -> &str {
+    split_tap_name(name)
+        .map(|(_, _, token)| token)
+        .unwrap_or(name)
 }
 
 fn extend_cask_dependency_closure(
@@ -7973,6 +7982,11 @@ mod tests {
         assert_eq!(
             closure.formulae.into_keys().collect::<Vec<_>>(),
             vec!["openssl@3".to_string(), "python@3.14".to_string()]
+        );
+        assert!(
+            closure
+                .casks
+                .contains(cask_request_token("acme/tools/root"))
         );
     }
 
