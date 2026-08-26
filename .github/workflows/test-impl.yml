@@ -174,7 +174,7 @@ jobs:
         if: always()
 
   lint:
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
     timeout-minutes: 80
     needs: [build-ubuntu]
     env:
