@@ -132,6 +132,71 @@ jobs:
           # toolchain. A mismatched runner default makes PGO training fail
           # before it can write any profile data.
           command: rustup run stable scripts/build-tarball.sh ${{matrix.target}}
+      # Signing settles who built the binary; notarization is what Gatekeeper
+      # demands once an archive carries the quarantine bit, which is to say
+      # whenever someone downloads it in a browser rather than with curl.
+      # Without a ticket it is blocked behind a "cannot be verified" dialog that
+      # only a deliberate override gets past.
+      #
+      # The ticket lives on Apple's side and is keyed to the binary's cdhash, so
+      # nothing here rewrites what was already built or uploaded -- stapling
+      # would, but `stapler` only writes into bundles, disk images, and
+      # installer packages, and this is a bare Mach-O in an archive. Gatekeeper
+      # resolves the ticket online instead.
+      - name: Notarize macOS binary
+        if: env.DRY_RUN == '0'
+        shell: bash
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          BINARIES: dist/mise/bin/mise
+        run: |
+          set -euo pipefail
+
+          if [ -z "$APPLE_API_KEY_P8" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER_ID" ]; then
+            echo "::warning title=Not notarized::App Store Connect credentials are unset, so this release ships signed but un-notarized macOS binaries. Gatekeeper will block them for anyone who downloads an archive through a browser."
+            exit 0
+          fi
+
+          # Outside the workspace, so no later step can sweep the key into an
+          # artifact, and removed even when notarization fails.
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$work/key.p8"
+
+          # notarytool takes a container, never a bare executable. Copies are
+          # fine: a Mach-O carries its signature inline, so the cdhash the
+          # ticket is keyed to is the one already shipped.
+          mkdir "$work/stage"
+          for binary in $BINARIES; do
+            cp "$binary" "$work/stage/"
+          done
+          ditto -c -k --norsrc --noextattr "$work/stage" "$work/submission.zip"
+
+          # `--wait` is not a gate on its own: it can return zero on an Invalid
+          # submission, so the reported status is what decides. plutil reads
+          # JSON and ships with macOS, which keeps this off jq.
+          result="$(xcrun notarytool submit "$work/submission.zip" \
+            --key "$work/key.p8" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --output-format json \
+            --timeout 30m \
+            --wait)"
+          echo "$result"
+
+          status="$(printf '%s' "$result" | plutil -extract status raw -o - -)"
+          id="$(printf '%s' "$result" | plutil -extract id raw -o - -)"
+          if [ "$status" != "Accepted" ]; then
+            echo "::error::notarization returned $status for submission $id"
+            xcrun notarytool log "$id" \
+              --key "$work/key.p8" \
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" || true
+            exit 1
+          fi
+          echo "notarized: submission $id"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tarball-${{matrix.target}}
