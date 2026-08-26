@@ -736,6 +736,7 @@ fn yaml_string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key)?.as_str().map(str::to_string)
 }
 
+/// Generate Rust setting types, metadata, and file-layer merge behavior from settings.toml.
 fn codegen_settings() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("settings.rs");
@@ -769,6 +770,7 @@ pub(crate) struct Settings {"#
         name
     }
 
+    /// Render one settings.toml entry as a field in a generated settings struct.
     fn props_to_code(key: &str, props: &toml::Value, parent_path: &[&str]) -> String {
         let mut lines = vec![];
         let props = props.as_table().unwrap();
@@ -844,6 +846,7 @@ pub(crate) struct Settings {"#
     }
     lines.push("}".to_string());
 
+    /// Emit generated settings structs for every nested settings.toml table.
     fn emit_nested_settings(lines: &mut Vec<String>, table: &toml::Table, parent_path: &[&str]) {
         for (child, props) in table
             .iter()
