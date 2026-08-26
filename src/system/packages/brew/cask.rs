@@ -357,6 +357,12 @@ pub(crate) struct CaskPrunePlan {
     pub skipped: Vec<CaskPruneSkip>,
 }
 
+#[derive(Debug, Default)]
+struct CaskDependencyClosure {
+    casks: BTreeSet<String>,
+    formulae: BTreeMap<String, PackageRequest>,
+}
+
 impl CaskPrunePlan {
     pub(crate) fn is_empty(&self) -> bool {
         self.remove.is_empty()
@@ -7100,11 +7106,55 @@ fn read_receipt(caskroom: &Path) -> Result<Option<CaskReceipt>> {
 }
 
 pub(crate) async fn cask_prune_plan(configured: &[PackageRequest]) -> Result<CaskPrunePlan> {
-    let mut keep = BTreeSet::new();
-    for request in configured {
-        keep.insert(fetch_cask(request).await?.token);
+    let closure = resolve_cask_dependency_closure(configured).await?;
+    cask_prune_plan_from_tokens(&closure.casks, &crate::dirs::STATE)
+}
+
+pub(crate) async fn cask_formula_dependencies(
+    configured: &[PackageRequest],
+) -> Result<Vec<PackageRequest>> {
+    Ok(resolve_cask_dependency_closure(configured)
+        .await?
+        .formulae
+        .into_values()
+        .collect())
+}
+
+async fn resolve_cask_dependency_closure(
+    configured: &[PackageRequest],
+) -> Result<CaskDependencyClosure> {
+    let mut closure = CaskDependencyClosure::default();
+    let mut pending = configured.to_vec();
+    while let Some(request) = pending.pop() {
+        let cask = fetch_cask(&request).await?;
+        extend_cask_dependency_closure(&mut closure, &mut pending, cask);
     }
-    cask_prune_plan_from_tokens(&keep, &crate::dirs::STATE)
+    Ok(closure)
+}
+
+fn extend_cask_dependency_closure(
+    closure: &mut CaskDependencyClosure,
+    pending: &mut Vec<PackageRequest>,
+    cask: Cask,
+) {
+    if !closure.casks.insert(cask.token) {
+        return;
+    }
+    for name in cask.depends_on.formula {
+        closure
+            .formulae
+            .entry(name.clone())
+            .or_insert(PackageRequest {
+                name,
+                version: None,
+                tap_url: None,
+            });
+    }
+    pending.extend(cask.depends_on.cask.into_iter().map(|name| PackageRequest {
+        name,
+        version: None,
+        tap_url: None,
+    }));
 }
 
 fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Result<CaskPrunePlan> {
@@ -7898,6 +7948,32 @@ mod tests {
             tap_git_head: None,
             raw_base: None,
         }
+    }
+
+    #[test]
+    fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
+        let mut root = test_cask("root", "1.0.0");
+        root.depends_on.formula = vec!["python@3.14".to_string()];
+        root.depends_on.cask = vec!["child".to_string()];
+        let mut child = test_cask("child", "1.0.0");
+        child.depends_on.formula = vec!["openssl@3".to_string(), "python@3.14".to_string()];
+        child.depends_on.cask = vec!["root".to_string()];
+
+        let mut closure = CaskDependencyClosure::default();
+        let mut pending = Vec::new();
+        extend_cask_dependency_closure(&mut closure, &mut pending, root.clone());
+        assert_eq!(pending.len(), 1);
+        extend_cask_dependency_closure(&mut closure, &mut pending, child);
+        extend_cask_dependency_closure(&mut closure, &mut pending, root);
+
+        assert_eq!(
+            closure.casks,
+            BTreeSet::from(["child".to_string(), "root".to_string()])
+        );
+        assert_eq!(
+            closure.formulae.into_keys().collect::<Vec<_>>(),
+            vec!["openssl@3".to_string(), "python@3.14".to_string()]
+        );
     }
 
     fn write_test_app_receipt(cask: &Cask, app_name: &str) -> Result<PathBuf> {

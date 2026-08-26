@@ -119,12 +119,18 @@ impl SystemPrune {
             bail!("brew is not available: {}", manager.unavailable_reason());
         }
         let config = Config::get().await?;
-        let configured = system::packages_from_config_and_tracked_config_files(&config)
-            .await?
-            .into_iter()
+        let packages = system::packages_from_config_and_tracked_config_files(&config).await?;
+        let mut configured = packages
+            .iter()
             .find(|mp| mp.manager.name() == "brew")
-            .map(|mp| mp.requests)
+            .map(|mp| mp.requests.clone())
             .unwrap_or_default();
+        let configured_casks = packages
+            .iter()
+            .find(|mp| mp.manager.name() == "brew-cask")
+            .map(|mp| mp.requests.as_slice())
+            .unwrap_or_default();
+        configured.extend(brew::cask_formula_dependencies(configured_casks).await?);
         let plan = brew::prune_plan(&configured).await?;
         if plan.is_empty() {
             info!("brew: nothing to prune");
