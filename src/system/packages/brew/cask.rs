@@ -5247,21 +5247,7 @@ fn parse_command_wrapper_artifact(value: &Value) -> Result<Option<CommandWrapper
         }
         _ => {}
     }
-    let args = options
-        .get("args")
-        .map(|args| {
-            args.as_array()
-                .ok_or_else(|| eyre!("brew-cask: command_wrapper args must be an array"))?
-                .iter()
-                .map(|arg| {
-                    arg.as_str()
-                        .map(str::to_string)
-                        .ok_or_else(|| eyre!("brew-cask: command_wrapper args must be strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let args = string_args(options, "command_wrapper")?;
     let env = options
         .get("env")
         .map(|env| {
@@ -5337,25 +5323,28 @@ fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> 
         .get("executable")
         .and_then(Value::as_str)
         .ok_or_else(|| eyre!("brew-cask: installer script requires an executable"))?;
-    let args = script
-        .get("args")
-        .map(|args| {
-            args.as_array()
-                .ok_or_else(|| eyre!("brew-cask: installer script args must be an array"))?
-                .iter()
-                .map(|arg| {
-                    arg.as_str()
-                        .map(str::to_string)
-                        .ok_or_else(|| eyre!("brew-cask: installer script args must be strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let args = string_args(script, "installer script")?;
     Ok(Some(InstallerArtifact {
         executable: executable.to_string(),
         args,
     }))
+}
+
+/// `kind` names the declaring artifact, so errors read e.g. "installer script
+/// args must be an array".
+fn string_args(object: &serde_json::Map<String, Value>, kind: &str) -> Result<Vec<String>> {
+    let Some(args) = object.get("args") else {
+        return Ok(Vec::new());
+    };
+    args.as_array()
+        .ok_or_else(|| eyre!("brew-cask: {kind} args must be an array"))?
+        .iter()
+        .map(|arg| {
+            arg.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| eyre!("brew-cask: {kind} args must be strings"))
+        })
+        .collect()
 }
 
 fn reject_unsupported_artifact_fields(
