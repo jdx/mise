@@ -1264,9 +1264,7 @@ async fn cask_ruby_bin() -> Result<PathBuf> {
 }
 
 fn ensure_cask_shim(path: &Path) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(path)?;
     if file::read_to_string(path).is_ok_and(|contents| contents == CASK_SHIM_RB) {
         return Ok(());
     }
@@ -1696,6 +1694,21 @@ fn create_dir_all_elevating(dir: &Path) -> Result<()> {
     )
 }
 
+/// No-op for a path without a parent, which is never a target we create.
+fn create_parent_dir(path: &Path) -> Result<()> {
+    match path.parent() {
+        Some(parent) => file::create_dir_all(parent).map(|_| ()),
+        None => Ok(()),
+    }
+}
+
+fn create_parent_dir_elevating(path: &Path) -> Result<()> {
+    match path.parent() {
+        Some(parent) => create_dir_all_elevating(parent),
+        None => Ok(()),
+    }
+}
+
 fn make_symlink_elevating(source: &Path, link: &Path) -> Result<()> {
     with_sudo_fallback(
         file::make_symlink(source, link).map(|_| ()),
@@ -1836,9 +1849,7 @@ fn copy_staged_artifact_closure(stage: &Path, owned_stage: &Path, source: &Path)
         let destination = owned_stage.join(&relative);
         let metadata = source.symlink_metadata()?;
         if destination.symlink_metadata().is_err() {
-            if let Some(parent) = destination.parent() {
-                file::create_dir_all(parent)?;
-            }
+            create_parent_dir(&destination)?;
             if metadata.file_type().is_symlink() {
                 file::make_symlink(&std::fs::read_link(&source)?, &destination)?;
             } else {
@@ -1970,14 +1981,10 @@ fn install_generic_artifact(
         );
     }
     #[cfg(not(unix))]
-    if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(&target)?;
     let elevated_target = targets.protect_generic(&target)?;
     copy_generic_artifact(&source, &target, elevated_target.as_deref())?;
-    if let Some(parent) = caskroom_source.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(&caskroom_source)?;
     file::make_symlink(&target, &caskroom_source)?;
     targets.record_installed(target);
     Ok(())
@@ -2871,9 +2878,7 @@ fn install_pkg(stage: &Path, pkg: &PkgArtifact) -> Result<()> {
 fn stage_font(stage: &Path, caskroom: &Path, font: &FontArtifact) -> Result<()> {
     let caskroom_font = caskroom_font_path(caskroom, font)?;
     file::remove_all(&caskroom_font)?;
-    if let Some(parent) = caskroom_font.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(&caskroom_font)?;
     let source = find_file_artifact(stage, &font.source)
         .ok_or_else(|| eyre!("brew-cask: font artifact '{}' was not found", font.source))?;
     copy_cask_artifact(&source, &caskroom_font)?;
@@ -2886,9 +2891,7 @@ fn link_font(caskroom: &Path, font: &FontArtifact) -> Result<()> {
         bail!("brew-cask: font artifact '{}' was not staged", font.source);
     }
     let target = font_target_path(font)?;
-    if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(&target)?;
     // Atomic swap: rename existing font aside before copying the new one so
     // that a failure during copy leaves the old font intact.
     let old_target = target.with_extension(format!(
@@ -3688,9 +3691,7 @@ fn execute_flight_step(
                     file::remove_all(&target)?;
                 }
             }
-            if let Some(parent) = target.parent() {
-                create_dir_all_elevating(parent)?;
-            }
+            create_parent_dir_elevating(&target)?;
             if external && target_metadata.is_none() {
                 // Bind an absent target to its resolved parent only after
                 // creating that parent so rollback can validate its identity.
@@ -4185,9 +4186,7 @@ fn stage_completion(
         })?;
     if !file::same_file(&source, &caskroom_completion) {
         file::remove_all(&caskroom_completion)?;
-        if let Some(parent) = caskroom_completion.parent() {
-            file::create_dir_all(parent)?;
-        }
+        create_parent_dir(&caskroom_completion)?;
         file::copy(&source, &caskroom_completion)?;
     }
     Ok(())
@@ -4208,9 +4207,7 @@ fn stage_generated_completions(
     for shell in &completion.shells {
         let target = generated_completion_target_path(*shell, &base_name)?;
         let caskroom_completion = caskroom_completion_path(caskroom, &target)?;
-        if let Some(parent) = caskroom_completion.parent() {
-            file::create_dir_all(parent)?;
-        }
+        create_parent_dir(&caskroom_completion)?;
         let output = generate_completion_output(&executable, completion, *shell)?;
         crate::file::write(caskroom_completion, output)?;
     }
@@ -4230,9 +4227,7 @@ fn link_completion(
             target.display()
         );
     }
-    if let Some(parent) = target.parent() {
-        create_dir_all_elevating(parent)?;
-    }
+    create_parent_dir_elevating(target)?;
     ensure_completion_target_replaceable(cask, artifacts, target)?;
     make_symlink_elevating(&caskroom_completion, target)?;
     Ok(())
@@ -4661,9 +4656,7 @@ fn stage_binary(
     let appdir = cask_appdir(apps)?;
     let caskroom_binary = caskroom_binary_path(caskroom, &appdir, binary)?;
     file::remove_all(&caskroom_binary)?;
-    if let Some(parent) = caskroom_binary.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(&caskroom_binary)?;
     if binary.source.contains("$APPDIR") {
         // $APPDIR is the Applications directory where install_app placed the bundle.
         // Symlink into the installed app so the CLI wrapper can trace back to find the app.
@@ -4706,9 +4699,7 @@ fn stage_command_wrapper(
 ) -> Result<()> {
     let target = wrapper.caskroom_path(caskroom);
     file::remove_all(&target)?;
-    if let Some(parent) = target.parent() {
-        file::create_dir_all(parent)?;
-    }
+    create_parent_dir(&target)?;
     let content = match (&wrapper.content, &wrapper.executable) {
         (Some(content), None) => expand_command_wrapper_content(content, appdir),
         (None, Some(executable)) => {
@@ -4976,9 +4967,7 @@ fn link_binary(caskroom: &Path, appdir: &Path, binary: &BinaryArtifact) -> Resul
         );
     }
     let target = binary.target_path(appdir)?;
-    if let Some(parent) = target.parent() {
-        create_dir_all_elevating(parent)?;
-    }
+    create_parent_dir_elevating(&target)?;
     make_symlink_elevating(&caskroom_binary, &target)?;
     Ok(())
 }
@@ -4992,9 +4981,7 @@ fn link_command_wrapper(caskroom: &Path, wrapper: &CommandWrapperArtifact) -> Re
         );
     }
     let target = wrapper.target_path()?;
-    if let Some(parent) = target.parent() {
-        create_dir_all_elevating(parent)?;
-    }
+    create_parent_dir_elevating(&target)?;
     make_symlink_elevating(&source, &target)?;
     Ok(())
 }
@@ -13877,9 +13864,7 @@ end
         let pkg_binary = tmp
             .path()
             .join("Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli");
-        if let Some(parent) = pkg_binary.parent() {
-            file::create_dir_all(parent)?;
-        }
+        create_parent_dir(&pkg_binary)?;
         crate::file::write(&pkg_binary, "pkg binary")?;
         let caskroom = caskroom_version_dir("karabiner-elements", "16.1.0");
         file::create_dir_all(&caskroom)?;
@@ -13911,9 +13896,7 @@ end
         let pkg_binary = tmp
             .path()
             .join("Library/Application Support/org.pqrs/Karabiner-Elements/bin/karabiner_cli");
-        if let Some(parent) = pkg_binary.parent() {
-            file::create_dir_all(parent)?;
-        }
+        create_parent_dir(&pkg_binary)?;
         crate::file::write(&pkg_binary, "pkg binary")?;
         let caskroom = caskroom_version_dir("karabiner-elements", "16.1.0");
         file::create_dir_all(&caskroom)?;
