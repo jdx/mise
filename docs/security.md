@@ -148,7 +148,8 @@ minimum_release_age_excludes = ["trivy", "npm:*"]
 Exclusions can match backend wildcards like `npm:*`, tool shorthands like `trivy`, or full backend
 IDs like `npm:prettier`. Matching tools skip the global setting and built-in default. Per-tool
 `minimum_release_age` options and the CLI flag still apply even when a tool matches the exclusion
-list.
+list. Exclusions from multiple configuration files are merged and deduplicated, allowing project
+configuration to add exclusions without repeating exclusions from the global configuration.
 
 See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for the setting
 reference.

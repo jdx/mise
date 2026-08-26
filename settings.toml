@@ -1677,6 +1677,9 @@ minimum_release_age_excludes = ["trivy", "npm:*"]
 
 This excludes matching tools from the global setting and built-in default. A per-tool `minimum_release_age` option
 or the `--minimum-release-age` CLI flag still applies to matching tools.
+
+Values from multiple configuration files are merged and deduplicated, so a project can add exclusions without
+repeating exclusions from the global configuration. The environment variable replaces the merged file value.
 """
 env = "MISE_MINIMUM_RELEASE_AGE_EXCLUDES"
 parse_env = "list_by_comma"

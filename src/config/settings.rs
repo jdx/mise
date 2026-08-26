@@ -985,7 +985,7 @@ impl Settings {
             Some(root) => load_config_paths_from(root, &TOML_CONFIG_FILENAMES, false),
             None => load_config_paths(&TOML_CONFIG_FILENAMES, false),
         };
-        paths
+        let mut layers = paths
             .into_iter()
             .filter(|path| !safe_mode || crate::config::is_global_config(path))
             .filter(|path| match trust_policy {
@@ -1008,7 +1008,9 @@ impl Settings {
                     None
                 }
             })
-            .collect()
+            .collect::<Vec<_>>();
+        merge_minimum_release_age_excludes(&mut layers);
+        layers
     }
 
     pub(crate) fn try_get() -> Result<Arc<Self>> {
@@ -1662,6 +1664,28 @@ impl Settings {
     }
 }
 
+/// Merge exclusions from config files while preserving the precedence of environment and CLI
+/// layers, which are added separately before these layers. Config paths are ordered from highest
+/// to lowest precedence, so collect in reverse to keep inherited exclusions before local ones.
+fn merge_minimum_release_age_excludes(layers: &mut [SettingsPartial]) {
+    let mut found = false;
+    let excludes = layers
+        .iter_mut()
+        .rev()
+        .filter_map(|layer| {
+            let excludes = layer.minimum_release_age_excludes.take();
+            found |= excludes.is_some();
+            excludes
+        })
+        .flatten()
+        .unique()
+        .collect();
+
+    if found {
+        layers[0].minimum_release_age_excludes = Some(excludes);
+    }
+}
+
 fn redacted_settings_for_debug(settings: &Settings) -> Settings {
     let mut debug_settings = settings.clone();
     if debug_settings.task.cache.remote_token.is_some() {
@@ -1895,6 +1919,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_merge_minimum_release_age_excludes() {
+        let mut local = SettingsPartial::empty();
+        local.minimum_release_age_excludes = Some(sv(&["local", "shared"]));
+        let mut global = SettingsPartial::empty();
+        global.minimum_release_age_excludes = Some(sv(&["global", "shared"]));
+        let unrelated = SettingsPartial::empty();
+        let mut layers = vec![local, unrelated, global];
+
+        merge_minimum_release_age_excludes(&mut layers);
+
+        assert_eq!(
+            layers[0].minimum_release_age_excludes,
+            Some(sv(&["global", "shared", "local"]))
+        );
+        assert!(layers[1].minimum_release_age_excludes.is_none());
+        assert!(layers[2].minimum_release_age_excludes.is_none());
+    }
 
     /// `normalize_verbosity` is the whole answer to "what level is this run at", and it is now
     /// reached from two places -- the settings load and `cli_log_level`. Pin the precedence so the
