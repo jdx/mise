@@ -72,4 +72,4 @@ jobs:
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-          DRY_RUN: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+          DRY_RUN: ${{ !inputs.trusted || github.event_name != 'push' || github.ref != 'refs/heads/main' }}
