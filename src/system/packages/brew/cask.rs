@@ -880,6 +880,17 @@ impl SystemPackageManager for BrewCaskManager {
 
 async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
     let name = &req.name;
+    if split_tap_name(name).is_none()
+        && let Some(raw_base) = req.tap_url.as_deref().and_then(super::api::github_raw_base)
+    {
+        let url = format!("{raw_base}/api/cask/{name}.json");
+        match fetch_cask_url(name, &url, Some(raw_base), false).await {
+            Ok(cask) => return Ok(cask),
+            Err(err) => debug!(
+                "brew-cask: {name} unavailable in parent tap metadata ({err}); falling back to official metadata"
+            ),
+        }
+    }
     let (requested_token, official_api) = match split_tap_name(name) {
         Some(("homebrew", "cask", token)) => (token, true),
         Some((_, _, token)) => (token, false),
@@ -907,12 +918,21 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             Some(HOMEBREW_CASK_RAW.to_string()),
         ),
     };
+    fetch_cask_url(requested_token, &url, raw_base, official_api).await
+}
+
+async fn fetch_cask_url(
+    requested_token: &str,
+    url: &str,
+    raw_base: Option<String>,
+    official_api: bool,
+) -> Result<Cask> {
     let mut cask = HTTP_FETCH
         .json_cached::<Cask, _>(url)
         .await
         .wrap_err_with(|| {
             format!(
-                "failed to fetch Homebrew cask '{name}' directly. \
+                "failed to fetch Homebrew cask '{requested_token}' directly. \
                  Tapped casks must publish API metadata at api/cask/<token>.json"
             )
         })?;
@@ -7130,7 +7150,7 @@ async fn resolve_cask_dependency_closure(
             continue;
         }
         let cask = fetch_cask(&request).await?;
-        extend_cask_dependency_closure(&mut closure, &mut pending, cask);
+        extend_cask_dependency_closure(&mut closure, &mut pending, &request, cask);
     }
     Ok(closure)
 }
@@ -7144,6 +7164,7 @@ fn cask_request_token(name: &str) -> &str {
 fn extend_cask_dependency_closure(
     closure: &mut CaskDependencyClosure,
     pending: &mut Vec<PackageRequest>,
+    request: &PackageRequest,
     cask: Cask,
 ) {
     if !closure.casks.insert(cask.token) {
@@ -7154,16 +7175,29 @@ fn extend_cask_dependency_closure(
             .formulae
             .entry(name.clone())
             .or_insert(PackageRequest {
+                tap_url: dependency_tap_url(request, &name),
                 name,
                 version: None,
-                tap_url: None,
             });
     }
     pending.extend(cask.depends_on.cask.into_iter().map(|name| PackageRequest {
+        tap_url: dependency_tap_url(request, &name),
         name,
         version: None,
-        tap_url: None,
     }));
+}
+
+fn dependency_tap_url(parent: &PackageRequest, dependency: &str) -> Option<String> {
+    let parent_tap = split_tap_name(&parent.name)
+        .and_then(|(owner, tap, _)| (owner != "homebrew" || tap != "cask").then_some((owner, tap)));
+    if let Some((owner, tap, _)) = split_tap_name(dependency)
+        && parent_tap != Some((owner, tap))
+    {
+        return None;
+    }
+    parent.tap_url.clone().or_else(|| {
+        parent_tap.map(|(owner, tap)| format!("https://github.com/{owner}/homebrew-{tap}.git"))
+    })
 }
 
 fn cask_prune_plan_from_tokens(keep: &BTreeSet<String>, state_dir: &Path) -> Result<CaskPrunePlan> {
@@ -7970,14 +8004,27 @@ mod tests {
 
         let mut closure = CaskDependencyClosure::default();
         let mut pending = Vec::new();
-        extend_cask_dependency_closure(&mut closure, &mut pending, root.clone());
+        let root_request = PackageRequest {
+            name: "acme/tools/root".to_string(),
+            version: None,
+            tap_url: Some("https://github.com/acme/custom-tools.git".to_string()),
+        };
+        extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root.clone());
         assert_eq!(pending.len(), 1);
-        extend_cask_dependency_closure(&mut closure, &mut pending, child);
-        extend_cask_dependency_closure(&mut closure, &mut pending, root);
+        assert_eq!(pending[0].tap_url, root_request.tap_url);
+        let child_request = pending.pop().unwrap();
+        extend_cask_dependency_closure(&mut closure, &mut pending, &child_request, child);
+        extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root);
 
         assert_eq!(
             closure.casks,
             BTreeSet::from(["child".to_string(), "root".to_string()])
+        );
+        assert!(
+            closure
+                .formulae
+                .values()
+                .all(|request| request.tap_url == root_request.tap_url)
         );
         assert_eq!(
             closure.formulae.into_keys().collect::<Vec<_>>(),
@@ -7987,6 +8034,14 @@ mod tests {
             closure
                 .casks
                 .contains(cask_request_token("acme/tools/root"))
+        );
+        let standard_tap_request = PackageRequest {
+            tap_url: None,
+            ..root_request
+        };
+        assert_eq!(
+            dependency_tap_url(&standard_tap_request, "child"),
+            Some("https://github.com/acme/homebrew-tools.git".to_string())
         );
     }
 

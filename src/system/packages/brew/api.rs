@@ -186,6 +186,21 @@ pub(super) fn tap_name(name: &str) -> Option<String> {
     }
 }
 
+pub(super) fn tap_name_from_url(url: &str) -> Option<String> {
+    let url = url.trim_end_matches(".git").trim_end_matches('/');
+    let rest = url.strip_prefix("https://github.com/")?;
+    let mut parts = rest.split('/');
+    let owner = parts.next()?;
+    let repo = parts.next()?;
+    if parts.next().is_some() || owner.is_empty() || repo.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{owner}/{}",
+        repo.strip_prefix("homebrew-").unwrap_or(repo)
+    ))
+}
+
 fn split_tap(name: &str) -> Option<(&str, &str)> {
     let mut parts = name.split('/');
     let owner = parts.next()?;
