@@ -880,7 +880,14 @@ impl SystemPackageManager for BrewCaskManager {
 
 async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
     let name = &req.name;
-    if split_tap_name(name).is_none()
+    let tap_name = split_tap_name(name);
+    let (requested_token, official_api) = match tap_name {
+        Some(("homebrew", "cask", token)) => (token, true),
+        Some((_, _, token)) => (token, false),
+        None => (name.as_str(), true),
+    };
+    validate_cask_path_component("requested token", requested_token)?;
+    if tap_name.is_none()
         && let Some(raw_base) = req.tap_url.as_deref().and_then(super::api::github_raw_base)
     {
         let url = format!("{raw_base}/api/cask/{name}.json");
@@ -891,13 +898,7 @@ async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             ),
         }
     }
-    let (requested_token, official_api) = match split_tap_name(name) {
-        Some(("homebrew", "cask", token)) => (token, true),
-        Some((_, _, token)) => (token, false),
-        None => (name.as_str(), true),
-    };
-    validate_cask_path_component("requested token", requested_token)?;
-    let (url, raw_base) = match split_tap_name(name) {
+    let (url, raw_base) = match tap_name {
         Some(("homebrew", "cask", token)) => (
             format!("{API_BASE}/cask/{token}.json"),
             Some(HOMEBREW_CASK_RAW.to_string()),
