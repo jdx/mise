@@ -1720,6 +1720,12 @@ env = "MISE_NETRC_FILE"
 optional = true
 type = "Path"
 
+[nim.compile]
+description = "Compile nim from source. If true, always build from source; if false, require a prebuilt binary (errors where none exists); if unset, use a prebuilt when available, otherwise build from source."
+env = "MISE_NIM_COMPILE"
+optional = true
+type = "Bool"
+
 [no_env]
 description = "Do not load environment variables from config files."
 env = "MISE_NO_ENV"

@@ -20,6 +20,7 @@ mod elixir;
 mod erlang;
 mod go;
 mod java;
+mod nim;
 mod node;
 pub(crate) mod python;
 #[cfg_attr(windows, path = "ruby_windows.rs")]
@@ -39,6 +40,7 @@ pub(crate) static CORE_PLUGINS: Lazy<BackendMap> = Lazy::new(|| {
         Arc::new(go::GoPlugin::new()),
         Arc::new(java::JavaPlugin::new()),
         Arc::new(node::NodePlugin::new()),
+        Arc::new(nim::NimPlugin::new()),
         Arc::new(python::PythonPlugin::new()),
         Arc::new(ruby::RubyPlugin::new()),
         Arc::new(rust::RustPlugin::new()),

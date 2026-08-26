@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Nim installs from a prebuilt binary on Linux. On other platforms it is built
+# from source, which requires a C compiler; skip the test where neither works.
+if [ "$(uname)" != "Linux" ] && ! command -v gcc >/dev/null 2>&1 && ! command -v clang >/dev/null 2>&1; then
+  exit 0
+fi
+require_cmd git
+
+TEST_VERSION="2.2.0"
+
+mise use "nim@${TEST_VERSION}"
+
+assert_contains "mise x -- nim --version" "${TEST_VERSION}"
+assert_contains "mise x -- nimble --version" "nimble"

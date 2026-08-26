@@ -1250,6 +1250,16 @@
           "description": "Path to the netrc file to use for HTTP Basic authentication.",
           "type": "string"
         },
+        "nim": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "compile": {
+              "description": "Compile nim from source. If true, always build from source; if false, require a prebuilt binary (errors where none exists); if unset, use a prebuilt when available, otherwise build from source.",
+              "type": "boolean"
+            }
+          }
+        },
         "no_env": {
           "description": "Do not load environment variables from config files.",
           "type": "boolean"

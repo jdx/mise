@@ -916,6 +916,10 @@ impl Settings {
         self.compile_setting(purpose, "erlang", self.erlang.compile)
     }
 
+    pub(crate) fn nim_compile(&self, purpose: CompilePurpose) -> Option<bool> {
+        self.compile_setting(purpose, "nim", self.nim.compile)
+    }
+
     #[cfg(not(windows))]
     pub(crate) fn ruby_compile(&self, purpose: CompilePurpose) -> Option<bool> {
         self.compile_setting(purpose, "ruby", self.ruby.compile)
