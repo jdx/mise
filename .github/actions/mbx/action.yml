@@ -5,10 +5,19 @@ inputs:
   backend:
     description: Explicit backend for structurally trusted or untrusted callers
     default: auto
+  mirror-github-cache:
+    description: Mirror a trusted main build into the restore-only cache used by fork PRs
+    default: "false"
 
 runs:
   using: composite
   steps:
+    - name: Restore the fork PR cache mirror
+      if: inputs.mirror-github-cache == 'true' && github.actor == 'jdx' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: jdx/mr-boxington-action@2bbb8f141e40e388b509cc68fe0bfbe7bc4b6818 # v1
+      with:
+        version: 0.4.0
+        backend: github
     - uses: jdx/mr-boxington-action@2bbb8f141e40e388b509cc68fe0bfbe7bc4b6818 # v1
       with:
         version: 0.4.0
