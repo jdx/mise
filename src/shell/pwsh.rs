@@ -270,13 +270,21 @@ impl Shell for Pwsh {
         out
     }
 
+    /// `Ignore` rather than `SilentlyContinue`: both keep the error record off the screen, but
+    /// only `Ignore` keeps it out of `$Error`. This block is prepended to every activation, and a
+    /// session that has merely inherited `__MISE_DIFF` has neither `function:mise` nor
+    /// `$global:__mise_pwsh_chpwd_handled` yet -- so those two removals used to leave a shell
+    /// with two entries in `$Error` before the user had run anything. The `Env:/` removals do not
+    /// error today, the Environment provider being quiet about a missing key, but the intent is
+    /// the same "remove if present, never report" and resting it on a per-provider quirk is
+    /// fragile.
     fn deactivate(&self) -> String {
         formatdoc! {r#"
-        Remove-Item -ErrorAction SilentlyContinue function:mise
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/MISE_SHELL
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_DIFF
-        Remove-Item -ErrorAction SilentlyContinue -Path Env:/__MISE_SESSION
-        Remove-Variable -Name __mise_pwsh_chpwd_handled -Scope Global -ErrorAction SilentlyContinue
+        Remove-Item -ErrorAction Ignore function:mise
+        Remove-Item -ErrorAction Ignore -Path Env:/MISE_SHELL
+        Remove-Item -ErrorAction Ignore -Path Env:/__MISE_DIFF
+        Remove-Item -ErrorAction Ignore -Path Env:/__MISE_SESSION
+        Remove-Variable -Name __mise_pwsh_chpwd_handled -Scope Global -ErrorAction Ignore
         "#}
     }
 
@@ -558,9 +566,31 @@ mod tests {
         assert_snapshot!(Pwsh::default().unset_env("FOO"));
     }
 
+    /// Pins the exact text of the block `activate` prepends to every session, `-ErrorAction`
+    /// values included -- see the test below for what rides on that argument.
     #[test]
     fn test_deactivate() {
         let deactivate = Pwsh::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
+    }
+
+    /// `SilentlyContinue` hides an error record but still appends it to `$Error`; only `Ignore`
+    /// keeps it out. This block runs at the top of every activation, and the function and the
+    /// global it removes do not exist in a session that has only inherited `__MISE_DIFF` -- so
+    /// `SilentlyContinue` here left two entries in `$Error` before the user had run anything.
+    #[test]
+    fn test_deactivate_does_not_write_to_the_error_collection() {
+        let out = Pwsh::default().deactivate();
+        assert!(!out.contains("SilentlyContinue"), "{out}");
+        assert!(
+            out.contains("Remove-Item -ErrorAction Ignore function:mise"),
+            "{out}"
+        );
+        assert!(
+            out.contains(
+                "Remove-Variable -Name __mise_pwsh_chpwd_handled -Scope Global -ErrorAction Ignore"
+            ),
+            "{out}"
+        );
     }
 }
