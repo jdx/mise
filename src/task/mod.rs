@@ -2020,7 +2020,9 @@ impl Task {
                 Some(cwd) => Some(cwd),
                 None => self.dir(config).await?,
             };
-            let (scripts, spec) = Self::make_script_parser(parser_dir, extra_vars)
+            let (scripts, spec) = self
+                .make_script_parser(config, parser_dir, extra_vars)
+                .await
                 .parse_run_scripts(config, self, &scripts_only, &env)
                 .await?;
             (spec, scripts)
@@ -2030,11 +2032,39 @@ impl Task {
         Ok((spec, scripts))
     }
 
-    fn make_script_parser(
+    /// Build the script parser for this task.
+    ///
+    /// The source baseline is resolved here rather than inside the parser
+    /// because `task_source_files(only_changed=true)` needs the marker written
+    /// under the task's *real* working directory, and only this layer has the
+    /// config needed to determine it.
+    async fn make_script_parser(
+        &self,
+        config: &Arc<Config>,
         cwd: Option<PathBuf>,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> TaskScriptParser {
         let parser = TaskScriptParser::new(cwd);
+        // Skipped for a task with no sources: `task_source_files()` returns an
+        // empty array there regardless, and resolving the baseline would mean
+        // a `task_cwd` call — and with it a possible `dir` template render —
+        // that the task would not otherwise pay for.
+        let parser = if self.sources.is_empty() {
+            parser
+        } else {
+            match task_source_checker::source_baseline_path(self, config).await {
+                Ok(baseline) => parser.with_baseline(baseline),
+                Err(err) => {
+                    // Without a baseline `only_changed` falls back to reporting
+                    // every source, which is the safe direction.
+                    trace!(
+                        "could not resolve source baseline for task {}: {err:?}",
+                        self.name
+                    );
+                    parser
+                }
+            }
+        };
         match extra_vars {
             Some(vars) => parser.with_extra_vars(vars),
             None => parser,
@@ -2124,7 +2154,9 @@ impl Task {
                 None => self.dir(config).await?,
             };
             let scripts_only = self.run_script_strings();
-            let scripts = Self::make_script_parser(parser_dir, extra_vars)
+            let scripts = self
+                .make_script_parser(config, parser_dir, extra_vars)
+                .await
                 .parse_run_scripts_with_args(config, self, &scripts_only, &env, &args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
