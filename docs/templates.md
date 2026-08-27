@@ -312,6 +312,18 @@ For example, `task_source_files()` returns a different set of filepaths dependin
   files, it will be omitted from the result. Returns an empty array if no sources are configured or if
   no files match the patterns.
 
+  Pass `only_changed=true` to narrow the result to the sources written since mise last considered
+  this task up to date. This is useful for linters and formatters that are much faster when given a
+  small set of files. A task mise has never seen up to date has no baseline to compare against, so
+  every source is returned. A run that _fails_ does not advance the baseline, so the same files stay
+  in the list until the task passes. Like mise's own source freshness checking, this compares
+  modification times, so it inherits the same caveats around `touch` and restored caches.
+
+  Filtering never narrows the result all the way to nothing: if no source changed and yet the task
+  is running — `--force`, a dependency that did work, an output deleted while the sources stood
+  still — every source is returned instead, because a task handed no files does none of the work it
+  was run to do.
+
 #### Examples
 
 ```toml
@@ -331,6 +343,13 @@ run = '''
   echo "Processing: {{ file }}"
 {% endfor %}
 '''
+
+# Only lint what changed since this task last succeeded. Each path goes through
+# `quote`, so a filename containing a space or a shell metacharacter stays one
+# argument (POSIX shells — see the quote filter's note).
+[tasks.lint]
+sources = ["src/**/*.ts"]
+run = "eslint{% for file in task_source_files(only_changed=true) %} {{ file | quote }}{% endfor %}"
 ```
 
 ### Exec Options
