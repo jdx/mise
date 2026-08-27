@@ -217,7 +217,8 @@
           }
         },
         "rust_cache": {
-          "description": "experimental Rust compiler action cache configuration enabled only while this task runs",
+          "deprecated": true,
+          "description": "deprecated no-op; use mbx for Rust action caching instead: https://mr-boxington.jdx.dev/getting-started",
           "oneOf": [
             {
               "type": "boolean"

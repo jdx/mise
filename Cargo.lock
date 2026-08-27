@@ -6137,85 +6137,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mbx-cache-cargo"
-version = "0.1.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
-dependencies = [
- "dirs",
- "mbx-cache-core",
- "serde",
- "serde_json",
- "toml 1.1.4+spec-1.1.0",
-]
-
-[[package]]
-name = "mbx-cache-core"
-version = "0.7.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
-dependencies = [
- "async-compression",
- "base64 0.23.1",
- "blake3",
- "eyre",
- "fslock",
- "futures-util",
- "hex",
- "log",
- "mbx-cache-protocol",
- "rand 0.10.2",
- "reflink-copy",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "strum 0.28.0",
- "tempfile",
- "tokio",
- "tokio-util",
- "url",
-]
-
-[[package]]
-name = "mbx-cache-protocol"
-version = "0.5.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
-dependencies = [
- "blake3",
- "eyre",
- "hex",
- "serde",
- "serde_json",
- "serde_json_canonicalizer",
- "sha2 0.11.0",
-]
-
-[[package]]
-name = "mbx-cache-rustc"
-version = "0.7.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
-dependencies = [
- "mbx-cache-core",
- "serde",
- "shlex 2.0.1",
- "strum 0.28.0",
- "thiserror 2.0.20",
-]
-
-[[package]]
-name = "mbx-cache-store"
-version = "0.1.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
-dependencies = [
- "eyre",
- "fslock",
- "log",
- "mbx-cache-core",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "md-5"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6403,13 +6324,10 @@ dependencies = [
  "junction",
  "landlock",
  "log",
- "mbx-cache-cargo",
- "mbx-cache-core",
- "mbx-cache-rustc",
- "mbx-cache-store",
  "md-5 0.11.0",
  "miette",
  "minisign-verify",
+ "mise-cache-core",
  "mise-interactive-config",
  "mise-sigstore",
  "mockito",
@@ -6488,6 +6406,30 @@ dependencies = [
  "zip 8.6.0",
  "zipsign-api 0.2.1",
  "zstd",
+]
+
+[[package]]
+name = "mise-cache-core"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "blake3",
+ "eyre",
+ "futures-util",
+ "hex",
+ "log",
+ "mockito",
+ "rand 0.10.2",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_json_canonicalizer",
+ "sha2 0.11.0",
+ "strum 0.28.0",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "url",
 ]
 
 [[package]]

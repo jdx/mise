@@ -24,12 +24,12 @@ response=$temp_dir/response
 nonce=$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')
 
 request_headers=(
-	-H 'mbx-cache-protocol: 1'
-	-H "mbx-cache-namespace: $namespace"
+	-H 'mise-cache-protocol: 1'
+	-H "mise-cache-namespace: $namespace"
 )
 isolation_headers=(
-	-H 'mbx-cache-protocol: 1'
-	-H "mbx-cache-namespace: ${namespace}-isolated"
+	-H 'mise-cache-protocol: 1'
+	-H "mise-cache-namespace: ${namespace}-isolated"
 )
 if [[ -n $token ]]; then
 	request_headers+=(-H "Authorization: Bearer $token")
@@ -134,7 +134,7 @@ missing_request=$(jq -cn \
 	--arg hash "$action_hash" --argjson size "$action_size" \
 	'{digests:[{algorithm:"blake3",hash:$hash,size:$size}]}')
 code=$(curl -sS -o "$response" -w '%{http_code}' -X POST "${request_headers[@]}" \
-	-H 'Content-Type: application/vnd.mbx.cache-digests.v1+json' \
+	-H 'Content-Type: application/vnd.mise.cache-digests.v1+json' \
 	--data-binary "$missing_request" "$base_url/v1/blobs:missing")
 expect_code "$code" '^200$' 'missing blob query'
 jq -e '.missing | length == 1' "$response" >/dev/null
@@ -145,24 +145,24 @@ put_blob "$temp_dir/action.json" 'action descriptor' blake3
 put_blob "$temp_dir/metadata.json" 'client metadata' sha256
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X POST "${request_headers[@]}" \
-	-H 'Content-Type: application/vnd.mbx.cache-digests.v1+json' \
+	-H 'Content-Type: application/vnd.mise.cache-digests.v1+json' \
 	--data-binary "$missing_request" "$base_url/v1/blobs:missing")
 expect_code "$code" '^200$' 'present blob query'
 jq -e '.missing | length == 0' "$response" >/dev/null
 
 result_url="$base_url/v1/action-results/blake3/$action_hash/$action_size"
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
-	-H 'If-None-Match: *' -H 'Content-Type: application/vnd.mbx.cache-action-result.v1+json' \
+	-H 'If-None-Match: *' -H 'Content-Type: application/vnd.mise.cache-action-result.v1+json' \
 	--data-binary "@$temp_dir/result.json" "$result_url")
 expect_code "$code" '^201$' 'action result commit'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' -X PUT "${request_headers[@]}" \
-	-H 'If-None-Match: *' -H 'Content-Type: application/vnd.mbx.cache-action-result.v1+json' \
+	-H 'If-None-Match: *' -H 'Content-Type: application/vnd.mise.cache-action-result.v1+json' \
 	--data-binary "@$temp_dir/result.json" "$result_url")
 expect_code "$code" '^204$' 'identical action result commit'
 
 code=$(curl -sS -o "$response" -w '%{http_code}' "${request_headers[@]}" \
-	-H 'Accept: application/vnd.mbx.cache-action-result.v1+json' "$result_url")
+	-H 'Accept: application/vnd.mise.cache-action-result.v1+json' "$result_url")
 expect_code "$code" '^200$' 'action result download'
 jq -e --arg hash "$action_hash" '.action.hash == $hash and .version == 1' "$response" >/dev/null
 

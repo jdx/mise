@@ -17,10 +17,7 @@ assert_directory_not_exists "$MISE_CACHE_DIR/github-test-repo"
 
 # Test cache clear all
 mkdir -p "$MISE_CACHE_DIR/foo"
-mkdir -p "$MBX_CACHE_DIR/actions"
 echo "test" >"$MISE_CACHE_DIR/foo/data"
-echo "shared" >"$MBX_CACHE_DIR/actions/keep"
 assert_directory_exists "$MISE_CACHE_DIR/foo"
 assert "mise cache clear"
 assert_directory_not_exists "$MISE_CACHE_DIR/foo"
-assert_succeed "test -f '$MBX_CACHE_DIR/actions/keep'"

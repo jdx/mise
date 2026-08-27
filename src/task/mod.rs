@@ -576,14 +576,15 @@ pub(crate) struct TaskWatchOptions {
 #[serde(default, deny_unknown_fields)]
 struct TaskRustCacheOptions {
     enabled: bool,
-    verify: bool,
+    #[serde(rename = "verify")]
+    _verify: bool,
 }
 
 impl Default for TaskRustCacheOptions {
     fn default() -> Self {
         Self {
             enabled: true,
-            verify: false,
+            _verify: false,
         }
     }
 }
@@ -591,15 +592,11 @@ impl Default for TaskRustCacheOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskRustCacheConfig {
     pub enabled: bool,
-    pub verify: bool,
 }
 
 impl Default for TaskRustCacheConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            verify: false,
-        }
+        Self { enabled: true }
     }
 }
 
@@ -621,10 +618,7 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
             where
                 E: serde::de::Error,
             {
-                Ok(TaskRustCacheConfig {
-                    enabled,
-                    verify: false,
-                })
+                Ok(TaskRustCacheConfig { enabled })
             }
 
             fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
@@ -636,7 +630,6 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
                 )?;
                 Ok(TaskRustCacheConfig {
                     enabled: options.enabled,
-                    verify: options.verify,
                 })
             }
         }
@@ -727,7 +720,7 @@ pub(crate) struct Task {
     /// Experimental local artifact cache configuration.
     #[serde(default)]
     pub cache: Option<TaskCacheConfig>,
-    /// Rust compiler action caching enabled only for this task run.
+    /// Deprecated compatibility field; enabled values emit an mbx migration warning.
     #[serde(default)]
     pub rust_cache: Option<TaskRustCacheConfig>,
     #[serde(skip)]
@@ -3871,13 +3864,7 @@ rust_cache = { verify = true }
 "#,
         )
         .unwrap();
-        assert_eq!(
-            verify.rust_cache,
-            Some(TaskRustCacheConfig {
-                verify: true,
-                ..TaskRustCacheConfig::default()
-            })
-        );
+        assert_eq!(verify.rust_cache, Some(TaskRustCacheConfig::default()));
     }
 
     #[test]
@@ -3899,17 +3886,11 @@ rust_cache = { enabled = false }
 
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            })
+            Some(TaskRustCacheConfig { enabled: false })
         );
         assert_eq!(
             table.rust_cache,
-            Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            })
+            Some(TaskRustCacheConfig { enabled: false })
         );
     }
 

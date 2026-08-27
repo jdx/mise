@@ -5359,19 +5359,13 @@ mod tests {
         assert_eq!(inherited.rust_cache, rust_default);
 
         let mut disabled = Task {
-            rust_cache: Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            }),
+            rust_cache: Some(TaskRustCacheConfig { enabled: false }),
             ..Default::default()
         };
         apply_task_config_rust_cache_default(&mut disabled, &rust_default);
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            })
+            Some(TaskRustCacheConfig { enabled: false })
         );
     }
 

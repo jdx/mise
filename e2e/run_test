@@ -36,7 +36,6 @@ setup_isolated_env() {
   MISE_SYSTEM_DIR="$TEST_ISOLATED_DIR/etc/mise"
   MISE_DATA_DIR="$TEST_HOME/.local/share/mise"
   MISE_CACHE_DIR="$TEST_HOME/.cache/mise"
-  MBX_CACHE_DIR="$TEST_HOME/.cache/mbx"
   MISE_CONFIG_DIR="$TEST_HOME/.config/mise"
   MISE_STATE_DIR="$TEST_HOME/.local/state/mise"
 
@@ -47,7 +46,7 @@ setup_isolated_env() {
 
 create_isolated_env() {
   # Create the required directories
-  mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MBX_CACHE_DIR" "$MISE_CONFIG_DIR"
+  mkdir -p "$TEST_HOME/bin" "$TEST_WORKDIR" "$TEST_TMPDIR" "$MISE_SYSTEM_DIR" "$MISE_DATA_DIR" "$MISE_STATE_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
 
   # The dummy and needs-dummy plugins are required for some tests
   mkdir -p "$MISE_DATA_DIR/plugins"
@@ -106,7 +105,6 @@ within_isolated_env() {
         LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE:-}" \
         ${proxy_vars[@]+"${proxy_vars[@]}"} \
         MISE_CACHE_DIR="$MISE_CACHE_DIR" \
-        MBX_CACHE_DIR="$MBX_CACHE_DIR" \
         MISE_URL_REPLACEMENTS="${MISE_URL_REPLACEMENTS:-}" \
         MISE_CACHE_PRUNE_AGE="0" \
         MISE_CONFIG_DIR="$MISE_CONFIG_DIR" \

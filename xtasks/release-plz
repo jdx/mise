@@ -176,6 +176,9 @@ set_package_version() {
 
 	# Keep workspace path dependencies compatible before Cargo resolves the bump.
 	case "$crate_name" in
+	mise-cache-core)
+		set_path_dependency_version Cargo.toml mise-cache-core "$new_version"
+		;;
 	mise-interactive-config)
 		set_path_dependency_version Cargo.toml mise-interactive-config "$new_version"
 		;;
@@ -364,6 +367,11 @@ if [[ $cur_version != "$latest_version" ]]; then
 	AQUA_REGISTRY_VERSION=""
 	INTERACTIVE_CONFIG_VERSION=""
 	MISE_SIGSTORE_VERSION=""
+	MISE_CACHE_CORE_VERSION=""
+
+	bump_and_publish_subcrate "mise-cache-core" "crates/mise-cache-core" "MISE_CACHE_CORE_VERSION"
+	cargo add -p mise "mise-cache-core@$MISE_CACHE_CORE_VERSION" --no-default-features
+
 	bump_and_publish_subcrate "mise-sigstore" "crates/mise-sigstore" "MISE_SIGSTORE_VERSION"
 	cargo add -p mise "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features
 	cargo add -p vfox "mise-sigstore@$MISE_SIGSTORE_VERSION" --no-default-features

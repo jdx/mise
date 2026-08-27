@@ -3,9 +3,7 @@ use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings, env_directive::EnvDirective};
 use crate::duration;
 use crate::env_diff::EnvDiff;
-use crate::file::{
-    can_execute_directly, canonicalize_or_self, display_path, replace_path, strip_utf8_bom,
-};
+use crate::file::{can_execute_directly, display_path, replace_path, strip_utf8_bom};
 use crate::sandbox::SandboxConfig;
 use crate::task::TaskArtifactCache;
 use crate::task::task_cache::{
@@ -19,7 +17,7 @@ use crate::task::task_output_handler::OutputHandler;
 use crate::task::task_scheduler::SchedMsg;
 use crate::task::task_script_parser::subcommand_name_from_parse;
 use crate::task::task_source_checker::{
-    remove_auto_output, save_checksum, sources_are_fresh, task_cwd, task_source_match_root,
+    remove_auto_output, save_checksum, sources_are_fresh, task_cwd,
 };
 use crate::task::{
     Deps, FailedTasks, GetMatchingExt, Task, TaskCacheAudit, TaskCacheMode, TaskCacheOutput,
@@ -289,7 +287,6 @@ pub(crate) struct TaskExecutorConfig {
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
-    pub cache_session: Option<crate::cache::session::CacheSessionEnvironment>,
     /// CLI-level sandbox overrides (merged with task-level sandbox config)
     pub sandbox: crate::sandbox::SandboxConfig,
 }
@@ -314,7 +311,6 @@ pub(crate) struct TaskExecutor {
     pub task_cache: TaskCacheMode,
     pub task_cache_explain: bool,
     pub task_cache_explain_json: bool,
-    pub cache_session: Option<crate::cache::session::CacheSessionEnvironment>,
     pub sandbox: crate::sandbox::SandboxConfig,
 }
 
@@ -367,7 +363,6 @@ impl TaskExecutor {
             task_cache: config.task_cache,
             task_cache_explain: config.task_cache_explain,
             task_cache_explain_json: config.task_cache_explain_json,
-            cache_session: config.cache_session,
             sandbox: config.sandbox,
         }
     }
@@ -470,32 +465,6 @@ impl TaskExecutor {
                 .cloned()
                 .collect(),
         };
-        if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
-            && let Some(session) = &self.cache_session
-        {
-            if sandbox.effective_deny_read() {
-                sandbox.allow_read.extend(session.sandbox_paths());
-            }
-            if sandbox.effective_deny_write() {
-                sandbox.allow_write.extend(session.sandbox_paths());
-            }
-            if sandbox.effective_deny_env() {
-                sandbox.pass_through_env.extend([
-                    "MISE_CACHE_SOCKET".into(),
-                    "MISE_CACHE_STAGING_DIR".into(),
-                    "MISE_CACHE_ACTION_STORE".into(),
-                    "MISE_CACHE_REAL_CARGO".into(),
-                    "MISE_CACHE_TASK".into(),
-                    "MISE_CACHE_CARGO_TARGET_DIR".into(),
-                    "MISE_CACHE_TASK_ROOT".into(),
-                    "MISE_CACHE_RUST_VERIFY".into(),
-                    "MISE_CACHE_SHARE_OUT_DIR".into(),
-                    "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
-                    "RUSTC_WRAPPER".into(),
-                    "CARGO_INCREMENTAL".into(),
-                ]);
-            }
-        }
         sandbox.resolve_paths();
         Ok(sandbox)
     }
@@ -720,15 +689,6 @@ impl TaskExecutor {
             .as_ref()
             .filter(|_| self.task_cache.writes())
             .map(|_| Arc::new(StdMutex::new(Vec::new())));
-        let action_cache_run = if task.rust_cache.as_ref().is_some_and(|cache| cache.enabled)
-            && let Some(session) = self.cache_session.as_ref()
-        {
-            let task_cwd = task_cwd(task, config).await?;
-            let task_root = canonicalize_or_self(&task_source_match_root(&task_cwd, config));
-            session.apply(task, &task_root, &mut env).await
-        } else {
-            None
-        };
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
@@ -824,12 +784,6 @@ impl TaskExecutor {
         } else {
             None
         };
-        if let Some(run) = action_cache_run
-            && let Err(err) = run.commit().await
-        {
-            warn!("task {} action manifest write failed: {err}", task.name);
-        }
-
         Ok(TaskRunOutcome {
             did_work: true,
             cache_key,

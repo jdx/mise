@@ -1,26 +1,20 @@
 # Remote Build Cache Protocol
 
 > [!WARNING]
-> Remote build caching is experimental. mise now speaks the mbx version 1 protocol exclusively;
-> servers implementing only the former mise-specific headers and media types are treated as cache
-> misses and the task still runs.
+> Remote build caching is experimental. This document defines protocol version 1 for mise task
+> artifact caching.
 
-The protocol is a secure, content-addressed cache protocol for build actions and their outputs.
-Tasks, compiler invocations, build-system operations, and future adapters share the same transport,
-storage, authentication, and integrity model. It does not expose mise's local cache directories,
-manifests, or archive formats. Local storage is an implementation detail and may use archives or
-packs without changing the remote protocol.
+The protocol is a secure, content-addressed cache protocol for task executions and their outputs. It
+does not expose mise's local cache directories, manifests, or archive formats. Local storage is an
+implementation detail and may use archives or packs without changing the remote protocol.
 
-Version 1 separates immutable build data from mutable discovery state:
+Version 1 stores immutable build data:
 
 - **Content-addressable storage (CAS)** contains blobs and directory objects identified by their
   digest.
 - **Action results** map the digest of a canonical build action to its output directory and logs.
-- **Action manifests** are ETag-guarded, task-scoped indexes used to prefetch prior action results on
-  fresh workers. Clients merge and retry stale writes so concurrent builds do not lose discoveries.
-
-This separation deduplicates content between actions, permits partial and parallel transfers, and
-allows a server to verify all referenced content before publishing a cache hit.
+  This model deduplicates content between actions, permits partial and parallel transfers, and
+  allows a server to verify all referenced content before publishing a cache hit.
 
 ## Terminology
 
@@ -44,10 +38,10 @@ and its internally consistent CAS graph. Implementations may use HTTP/1.1, HTTP/
 
 Every API request sends:
 
-| Header                | Value                                                          |
-| --------------------- | -------------------------------------------------------------- |
-| `mbx-cache-protocol`  | `1`                                                            |
-| `mbx-cache-namespace` | The namespace for the operation, except on discovery endpoints |
+| Header                 | Value                                                          |
+| ---------------------- | -------------------------------------------------------------- |
+| `mise-cache-protocol`  | `1`                                                            |
+| `mise-cache-namespace` | The namespace for the operation, except on discovery endpoints |
 
 The URL prefix `/v1` is the protocol's major version. Compatible additions are advertised as
 capabilities and do not require a new URL prefix. An incompatible wire or integrity change requires
@@ -56,24 +50,10 @@ a new major protocol; version 1 must not be used as an alias for an incompatible
 Servers must ignore unknown JSON response fields. Clients must not send unknown request fields
 unless a negotiated capability permits them.
 
-## mise task sessions
-
-mise activates the Rust action-cache adapter only inside a task whose effective `rust_cache`
-configuration enables it. Shell activation and commands run outside `mise run` do not
-inject compiler wrappers, cache programs, or local proxy endpoints. One top-level `mise run` owns
-the in-process cache session: it serves adapter requests, flushes uploads, and reports exact hits,
-misses, and bytes before a successful run exits. Release builds never read or write action cache
-entries. Compiler adapters define their prefetch inputs when they are introduced; the protocol does
-not require unused prediction fields in task metadata.
-
-Outside CI, mise action-cache sessions may read local and remote entries but do not upload. CI write
-authorization remains a server decision based on verified workload identity; a client-side mode is
-only defense in depth.
-
 GitHub Actions protected-branch `push` jobs and GitLab protected-branch push pipelines may use the
 configured write mode. Pull requests, tags/releases, unprotected branches, unknown CI systems, and
 local runs are restricted to reads; a configured write-only client disables its remote rather than
-silently broadening to read access. Tag and release pipelines do not activate compiler caching.
+silently broadening to read access.
 
 ## Digests
 
@@ -131,7 +111,7 @@ new schema versions without changing the major protocol version.
 
 Clients must honor advertised limits and fall back from optional features. Servers return `426
 Upgrade Required` for unsupported major versions and include their supported major version in
-`mbx-cache-protocol`.
+`mise-cache-protocol`.
 
 `GET /v1/status` is an operational health endpoint. A successful response means the API process is
 live; it is not a substitute for capability negotiation or an authorization check.
@@ -145,8 +125,7 @@ cannot be represented by the declared schema must be rejected.
 ### Action descriptor
 
 An action descriptor contains a stable action kind and everything declared to affect its result.
-Action schema version 1 defines `task`; compatible capabilities may add compiler and build-system
-kinds without changing the CAS or action-result APIs:
+Action schema version 1 defines `task`:
 
 ```json
 {
@@ -183,7 +162,7 @@ identical canonical bytes.
 
 ### Directory object
 
-A directory object has media type `application/vnd.mbx.cache-directory.v1+json`:
+A directory object has media type `application/vnd.mise.cache-directory.v1+json`:
 
 ```json
 {
@@ -220,7 +199,7 @@ rather than being silently changed.
 ### Action result
 
 An action-result response and commit body have media type
-`application/vnd.mbx.cache-action-result.v1+json`:
+`application/vnd.mise.cache-action-result.v1+json`:
 
 ```json
 {
@@ -233,7 +212,7 @@ An action-result response and commit body have media type
 
 Only successful, cacheable action executions may be published. `output_root` is absent when an
 action has no output files. `metadata` references canonical
-`application/vnd.mbx.cache-client-metadata.v1+json` containing typed client metadata. Task metadata
+`application/vnd.mise.cache-client-metadata.v1+json` containing typed client metadata. Task metadata
 contains output roots, captured output, task identity, restored-byte estimate, and execution
 duration. The metadata schema is part of the remote protocol and is independent of mise's local
 cache manifests.
@@ -267,7 +246,7 @@ not part of the immutable action result.
 
 ### Find missing blobs
 
-`POST /v1/blobs:missing` accepts `application/vnd.mbx.cache-digests.v1+json`:
+`POST /v1/blobs:missing` accepts `application/vnd.mise.cache-digests.v1+json`:
 
 ```json
 { "digests": [{ "algorithm": "blake3", "hash": "...", "size": 1234 }] }
@@ -300,12 +279,12 @@ reporting capability is enabled.
 ### Read a blob pack
 
 Servers advertising `features.blob_packs` accept `POST /v1/blobs:pack` with the same
-`application/vnd.mbx.cache-digests.v1+json` body as `blobs:missing`. The aggregate declared size
+`application/vnd.mise.cache-digests.v1+json` body as `blobs:missing`. The aggregate declared size
 must not exceed `limits.max_pack_bytes`, and the number of digests must not exceed
 `limits.max_batch_items`. Servers return `400 Bad Request` when the item limit is exceeded and
 `413 Content Too Large` when the aggregate declared size exceeds the byte limit.
 
-A successful response uses `application/vnd.mbx.cache-blob-pack.v1` and begins with the eight-byte
+A successful response uses `application/vnd.mise.cache-blob-pack.v1` and begins with the eight-byte
 ASCII magic `MISEPK01`. The remainder is a stream of frames in request order:
 
 | Field     | Encoding                                    |
@@ -366,20 +345,6 @@ when a different result already owns the action key, or `412 Precondition Failed
 precondition is absent or fails. Concurrent valid writers may upload identical CAS data, but only one
 action-result commit wins.
 
-## Action-manifest operations
-
-`GET /v1/action-manifests/{algorithm}/{hash}/{size}` returns the latest canonical task action
-manifest and a strong BLAKE3 `ETag`, or `404 Not Found`. The URL key is the digest of the canonical
-selector `{"kind":"task_action_manifest","task":"<task identity>","version":1}`; the server
-rejects a manifest whose task identity does not produce that key.
-
-`PUT /v1/action-manifests/{algorithm}/{hash}/{size}` creates a manifest with `If-None-Match: *` or
-updates the version named by `If-Match: "<etag>"`. The server returns `201 Created` for a new
-manifest, `204 No Content` for an update, `412 Precondition Failed` for a stale writer, and `428
-Precondition Required` when neither conditional header is present. After `412`, clients read the
-current manifest, merge predictions by invocation digest, and retry. This mutable index never
-changes the immutability of action results or CAS objects.
-
 Ordinary cache writers do not receive delete permission. Administrative deletion uses a separately
 authorized endpoint and must remove the action-result mapping before unreachable CAS data is garbage
 collected. A client-side cache clear operation must not imply authority to delete shared remote data.
@@ -426,7 +391,7 @@ store. Clients communicate with the cache service rather than receiving general 
 credentials.
 
 The official reference server is maintained separately at
-[`jdx/mbx-cache`](https://github.com/jdx/mbx-cache). It provides filesystem and S3-compatible blob
+[`jdx/mise-cache`](https://github.com/jdx/mise-cache). It provides filesystem and S3-compatible blob
 storage, PostgreSQL metadata, namespace-scoped authorization, Docker Compose, and a Helm chart. The
 server remains a separate deployment and release lifecycle from the mise client while this document
 is the canonical protocol specification.

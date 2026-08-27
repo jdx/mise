@@ -7,7 +7,7 @@ use crate::task::task_cache::{
 use async_trait::async_trait;
 use eyre::{Result, bail, eyre};
 use jdx_tar::{Archive, Builder, EntryType, Header};
-use mbx_cache_core::{
+use mise_cache_core::{
     BlobSource, BlobUpload, CLIENT_METADATA_MEDIA_TYPE, CacheDigest,
     CacheDirectory as RemoteDirectory, CacheDirectoryNode as RemoteDirectoryNode,
     CacheFileNode as RemoteFileNode, CacheSymlinkNode as RemoteSymlinkNode, DIRECTORY_MEDIA_TYPE,
@@ -937,7 +937,7 @@ fn remove_file(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mbx_cache_core::{ACTION_RESULT_MEDIA_TYPE, BLOB_MEDIA_TYPE};
+    use mise_cache_core::{ACTION_RESULT_MEDIA_TYPE, BLOB_MEDIA_TYPE};
     use std::time::Duration;
 
     struct FailingTaskCacheStore {
@@ -1243,8 +1243,8 @@ mod tests {
         );
         let action_put = server
             .mock("PUT", action_path.as_str())
-            .match_header("mbx-cache-protocol", "1")
-            .match_header("mbx-cache-namespace", "test-namespace")
+            .match_header("mise-cache-protocol", "1")
+            .match_header("mise-cache-namespace", "test-namespace")
             .match_header("if-none-match", "*")
             .match_body(action.to_vec())
             .with_status(201)
@@ -1326,11 +1326,10 @@ mod tests {
         let blob_path = format!("/v1/blobs/blake3/{}/{}", digest.hash, digest.size);
         let blob_get = server
             .mock("GET", blob_path.as_str())
-            .match_header("mbx-cache-protocol", "1")
-            .match_header("mbx-cache-namespace", "test-namespace")
+            .match_header("mise-cache-protocol", "1")
+            .match_header("mise-cache-namespace", "test-namespace")
             .with_status(200)
-            .with_header("content-type", BLOB_MEDIA_TYPE)
-            .with_body("replaced bytes")
+            .with_body("substituted bytes")
             .expect(1)
             .create_async()
             .await;
@@ -1359,52 +1358,6 @@ mod tests {
 
         assert!(err.to_string().contains("failed digest verification"));
         blob_get.assert_async().await;
-    }
-
-    #[tokio::test]
-    async fn legacy_mise_only_server_degrades_to_a_cache_miss() {
-        let mut server = mockito::Server::new_async().await;
-        let action = b"legacy action";
-        let digest = CacheDigest::blake3(action);
-        let result_path = format!("/v1/action-results/blake3/{}/{}", digest.hash, digest.size);
-        let legacy = server
-            .mock("GET", result_path.as_str())
-            .match_header("mise-cache-protocol", "1")
-            .match_header("mise-cache-namespace", "test-namespace")
-            .with_status(200)
-            .with_body("{}")
-            .expect(0)
-            .create_async()
-            .await;
-        let staging = tempfile::tempdir().unwrap();
-        let remote: Arc<dyn TaskCacheStore> = Arc::new(HttpTaskCacheStore {
-            client: RemoteCacheClient::new(RemoteCacheConfig {
-                base_url: server.url().parse().unwrap(),
-                namespace: "test-namespace".into(),
-                token: None,
-                token_file: None,
-                oidc_audience: None,
-                connect_timeout: Duration::from_secs(1),
-                read_timeout: Duration::from_secs(1),
-                download_timeout: Duration::from_secs(1),
-                retries: 0,
-            })
-            .unwrap(),
-            staging_dir: staging.path().to_path_buf(),
-        });
-        let local_root = tempfile::tempdir().unwrap();
-        let local: Arc<dyn TaskCacheStore> =
-            Arc::new(LocalTaskCacheStore::new(local_root.path().to_path_buf()));
-        let store = CompositeTaskCacheStore::new(local, remote, CacheRemoteMode::ReadOnly).unwrap();
-
-        assert!(
-            store
-                .get(&digest.hash, digest.size)
-                .await
-                .unwrap()
-                .is_none()
-        );
-        legacy.assert_async().await;
     }
 
     #[tokio::test]
