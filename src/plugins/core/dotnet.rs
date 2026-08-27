@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn resolve_lockfile_options_include_runtime() {
         let backend = DotnetPlugin::new();
-        let request = ToolRequest::new_opts(
+        let request = ToolRequest::new_with_options(
             backend.ba().clone(),
             "8.0.14",
             opts_with_runtime("aspnetcore"),
@@ -513,7 +513,7 @@ mod tests {
             BTreeMap::from([("runtime".to_string(), "aspnetcore".to_string())])
         );
 
-        let request_no_runtime = ToolRequest::new_opts(
+        let request_no_runtime = ToolRequest::new_with_options(
             backend.ba().clone(),
             "8.0.14",
             ToolVersionOptions::default(),

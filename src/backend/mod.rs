@@ -886,7 +886,7 @@ pub(crate) async fn configured_toolset_or_path_which(
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -913,12 +913,7 @@ mod tests {
     }
 
     fn create_test_tool_request(ba: Arc<BackendArg>, version: &str) -> ToolRequest {
-        ToolRequest::Version {
-            backend: ba,
-            version: version.to_string(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        }
+        ToolRequest::new(ba, version, ToolSource::Argument).unwrap()
     }
 
     #[test]
@@ -1451,12 +1446,7 @@ mod tests {
         fs::create_dir_all(install_path.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
 
         assert_eq!(
@@ -1496,12 +1486,7 @@ mod tests {
         let install_path = backend.installs_path.join("1.0.1");
         fs::create_dir_all(install_path.join("bin"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
 
         assert_eq!(
@@ -1536,12 +1521,7 @@ mod tests {
         fs::create_dir_all(normal_install.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let exact_install = temp_dir.path().join("install-into");
         let mut tv = ToolVersion::new(request, "1.0.1".into());
         tv.install_path = Some(exact_install.clone());
@@ -1579,12 +1559,7 @@ mod tests {
         fs::create_dir_all(normal_install.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let explicit_install = temp_dir
             .path()
             .join("system/installs")
@@ -1626,12 +1601,7 @@ mod tests {
         fs::create_dir_all(normal_install.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.0"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let shared_install = temp_dir
             .path()
             .join("shared/installs")
@@ -2259,7 +2229,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
-        let opts = resolved_opts.options();
+        let opts = resolved_opts.effective();
         let versions = self
             .list_remote_versions_with_info_and_options(
                 config,
@@ -2292,7 +2262,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let versions = self
             .list_remote_versions_with_info_and_options(
                 config,
-                resolved_opts.options(),
+                resolved_opts.effective(),
                 opts,
                 refresh,
                 has_local_version_listing_override,
@@ -4384,7 +4354,7 @@ mod latest_version_tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
-    use crate::toolset::ToolSource;
+    use crate::toolset::{ResolvedToolOptions, ToolSource};
     use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -4914,7 +4884,7 @@ mod latest_version_tests {
         let request = ToolRequest::Version {
             backend: backend.ba.clone(),
             version: "nightly".to_string(),
-            options: ToolVersionOptions::default(),
+            options: ResolvedToolOptions::default(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "nightly".to_string());
