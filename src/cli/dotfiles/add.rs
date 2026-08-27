@@ -343,9 +343,24 @@ impl DotfilesAdd {
                 yes: true,
             };
             let apply_plan = if !self.no_apply && !apply_requests.is_empty() {
-                Some(system::files::plan_apply(
+                let mut active_after_add = managed.clone();
+                for item in &accepted {
+                    if let Some(existing) = &item.already_managed
+                        && let Some(index) = active_after_add.iter().position(|request| {
+                            request.target == existing.target
+                                && request.source == existing.source
+                                && request.mode == existing.mode
+                                && request.origin.config == existing.origin.config
+                        })
+                    {
+                        active_after_add.remove(index);
+                    }
+                    active_after_add.push(item.managed_request(&config_path));
+                }
+                Some(system::files::plan_apply_with_active(
                     &config,
                     &apply_requests,
+                    &active_after_add,
                     &apply_opts,
                 )?)
             } else {
