@@ -1362,45 +1362,10 @@ pub(crate) fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
         }
     }
 
-    // Try just OS suffix (sometimes arch is omitted)
-    for os in BINARY_OS_TOKENS {
-        let patterns = [format!("-{os}"), format!("_{os}")];
-        for pattern in &patterns {
-            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
-                // Only remove if it's at the end or followed by more platform info
-                let after = &cleaned[pos + pattern.len()..];
-                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
-                    // Check if what comes before looks like a valid name
-                    let before = &cleaned[..pos];
-                    if !before.is_empty() {
-                        cleaned = before.to_string();
-                        let result = clean_version_suffix(&cleaned, tool_name);
-                        // Add the extension back if we had one
-                        return with_ext(result);
-                    }
-                }
-            }
-        }
-    }
-
-    // Try just arch suffix (sometimes OS is omitted)
-    for arch in BINARY_ARCH_TOKENS {
-        let patterns = [format!("-{arch}"), format!("_{arch}")];
-        for pattern in &patterns {
-            if let Some(pos) = cleaned.rfind(pattern.as_str()) {
-                // Only remove if it's at the end or followed by more platform info
-                let after = &cleaned[pos + pattern.len()..];
-                if after.is_empty() || after.starts_with('-') || after.starts_with('_') {
-                    // Check if what comes before looks like a valid name
-                    let before = &cleaned[..pos];
-                    if !before.is_empty() {
-                        cleaned = before.to_string();
-                        let result = clean_version_suffix(&cleaned, tool_name);
-                        // Add the extension back if we had one
-                        return with_ext(result);
-                    }
-                }
-            }
+    // Then OS alone (arch omitted), then arch alone (OS omitted)
+    for tokens in [BINARY_OS_TOKENS, BINARY_ARCH_TOKENS] {
+        if let Some(stripped) = strip_trailing_platform_token(&cleaned, tokens) {
+            return with_ext(clean_version_suffix(&stripped, tool_name));
         }
     }
 
@@ -1409,6 +1374,23 @@ pub(crate) fn clean_binary_name(name: &str, tool_name: Option<&str>) -> String {
 
     // Add the extension back if we had one
     with_ext(cleaned)
+}
+
+/// Drops a trailing `-<token>`/`_<token>`, but only when the token ends the name
+/// or is followed by more platform info, and something is left in front of it.
+fn strip_trailing_platform_token(name: &str, tokens: &[&str]) -> Option<String> {
+    for token in tokens {
+        for pattern in [format!("-{token}"), format!("_{token}")] {
+            let Some(pos) = name.rfind(&pattern) else {
+                continue;
+            };
+            let after = &name[pos + pattern.len()..];
+            if pos > 0 && (after.is_empty() || after.starts_with(['-', '_'])) {
+                return Some(name[..pos].to_string());
+            }
+        }
+    }
+    None
 }
 
 fn strip_platform_token_suffix(name: &str) -> Option<String> {
