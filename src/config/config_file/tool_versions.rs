@@ -42,6 +42,10 @@ impl ToolVersions {
     pub(crate) fn init(filename: &Path) -> ToolVersions {
         let mut context = BASE_CONTEXT.clone();
         context.insert("config_root", filename.parent().unwrap().to_str().unwrap());
+        context.insert(
+            "config_source",
+            &crate::config::config_file::config_root::config_source(filename),
+        );
         ToolVersions {
             context,
             tools: Mutex::new(ToolRequestSet::new()),
