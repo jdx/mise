@@ -11,14 +11,14 @@
       "unevaluatedProperties": false,
       "properties": {
         "cache-key": {
-          "description": "cache the script results separately based on these values",
+          "description": "cache the script results separately based on these values; only consumed for list-bin-paths and exec-env, accepted elsewhere",
           "type": "array",
           "items": {
             "type": "string"
           }
         },
         "data": {
-          "description": "static data to use instead of executing the script",
+          "description": "static data to use instead of executing the script; only consumed for list-aliases, list-idiomatic-filenames, and list-legacy-filenames, accepted elsewhere",
           "type": "string"
         }
       }
