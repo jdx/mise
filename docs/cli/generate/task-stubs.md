@@ -19,6 +19,10 @@ When a parent and nested task both exist, the parent stub is written to `<parent
 
   Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
 
+  On Windows a path is run as written, so that script needs its own launcher beside it:
+  generate it with `mise generate install-script --write ./bin/mise --windows`. The default
+  `mise` is a bare name and resolves off PATH, which needs nothing extra.
+
   **Default:** `mise`
 - **`--windows-launcher <WINDOWS_LAUNCHER>`** — What to write beside each stub for Windows to launch
 

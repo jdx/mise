@@ -26,6 +26,10 @@ pub(super) struct TaskStubs {
     /// Path to a mise bin to use when running the task stub.
     ///
     /// Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
+    ///
+    /// On Windows a path is run as written, so that script needs its own launcher beside it:
+    /// generate it with `mise generate install-script --write ./bin/mise --windows`. The default
+    /// `mise` is a bare name and resolves off PATH, which needs nothing extra.
     #[usage(long, short, verbatim_doc_comment, default = "mise")]
     mise_bin: PathBuf,
 
@@ -92,6 +96,13 @@ impl TaskStubs {
                 StubMigration::Directory(path) => file::remove_all(path)?,
             }
         }
+        // Only when this run actually writes one. A task set that is empty, or whose names all
+        // already end in an executable extension, gets no launcher at all — and a warning about
+        // launchers that were not written would describe something that did not happen.
+        if stubs.iter().any(|s| launchers.path(&s.path).is_some()) {
+            warn_if_windows_cannot_run(&self.mise_bin);
+        }
+
         for stub in &stubs {
             if let Some(parent) = stub.path.parent() {
                 file::create_dir_all(parent)?;
@@ -124,9 +135,11 @@ impl TaskStubs {
 
     /// The Windows launcher body for `task`, mirroring what the stub itself runs.
     ///
-    /// `mise_bin` is embedded as given: with the default `mise` it resolves off PATH, and a
-    /// `--mise-bin` pointing at a `mise generate install-script` script will start working here as soon
-    /// as that script gains a Windows form of its own.
+    /// `mise_bin` is embedded as given. With the default `mise` it resolves off PATH, where
+    /// PATHEXT finds a `.cmd`, `.bat` or `.exe` for a bare name. A path is run as written, so a
+    /// `--mise-bin` pointing at a `mise generate install-script` script needs that script's own
+    /// Windows launcher beside it — `--windows`, which is opt-in because it is a second committed
+    /// file. [`warn_if_windows_cannot_run`] says so when it is missing.
     fn generate_launcher(&self, task: &Task) -> String {
         let mise_bin = super::cmd_quote(&self.mise_bin.to_string_lossy());
         // The task name goes through the same quoting: it is interpolated into the same cmd line,
@@ -161,6 +174,72 @@ exec {mise_bin} run {display_name} "$@"
         );
         Ok(script.trim().to_string())
     }
+}
+
+/// Say so when the launchers this run writes cannot run the mise they were told to use.
+///
+/// The launcher runs `--mise-bin` as written, so a path has to name something Windows can execute.
+/// `mise generate install-script --write ./bin/mise` writes a `#!/usr/bin/env bash` script, which
+/// Windows cannot execute at all; its own launcher is opt-in (`--windows`), deliberately, because
+/// it is a second committed file. Pairing the two commands the way the help suggests therefore
+/// produces a `bin/<task>.cmd` that fails with `'"./bin/mise"' is not recognized` — and nothing
+/// said so at the point where it could still be fixed.
+///
+/// Warned on every host, like the `.cmd` itself is written on every host: whoever generated `bin/`
+/// on Linux is exactly the person who will not see the failure.
+fn warn_if_windows_cannot_run(mise_bin: &Path) {
+    if windows_can_run(mise_bin) {
+        return;
+    }
+    warn!(
+        "{} is a path with no Windows launcher beside it, so the generated launchers cannot run it. \
+         Write one with `mise generate install-script --write {} --windows`, or drop --mise-bin to \
+         resolve mise off PATH.",
+        display_path(mise_bin),
+        mise_bin.display()
+    );
+}
+
+/// Whether Windows can execute `mise_bin` as the generated launcher spells it.
+///
+/// Answered by Windows' rules, not the generating host's: the value is interpreted by cmd, and the
+/// launcher is written on every platform for a contributor on another one.
+fn windows_can_run(mise_bin: &Path) -> bool {
+    // `\` as well as `/`, because cmd takes both as separators. `Path::components` on unix reads
+    // `.\bin\mise` as a single component and would call it a bare name — the exact case where the
+    // warning is needed, since cmd will run it as a path.
+    if !mise_bin.to_string_lossy().contains(['/', '\\']) {
+        return true;
+    }
+    if windows_runnable_extension(mise_bin) {
+        return true;
+    }
+    let (Some(parent), Some(name)) = (mise_bin.parent(), mise_bin.file_name()) else {
+        return true;
+    };
+    // Matched case-insensitively, as Windows matches: on a case-sensitive generating host a
+    // `mise.CMD` beside the script is a launcher Windows would find and a lowercase-only probe
+    // would not, which would warn about a gap that is not there.
+    let Ok(entries) = fs::read_dir(parent) else {
+        return false;
+    };
+    entries.filter_map(|e| e.ok()).any(|entry| {
+        let file_name = entry.file_name();
+        let sibling = Path::new(&file_name);
+        sibling
+            .file_stem()
+            .is_some_and(|stem| stem.eq_ignore_ascii_case(name))
+            && windows_runnable_extension(sibling)
+    })
+}
+
+/// Whether the name ends in an extension Windows runs from a path alone.
+fn windows_runnable_extension(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        ["cmd", "bat", "exe"]
+            .iter()
+            .any(|known| ext.eq_ignore_ascii_case(known))
+    })
 }
 
 /// Which launcher form this run writes beside each stub, and what it can recognise as its own.
@@ -763,6 +842,75 @@ mod tests {
         let missing = dir.path().join("missing.cmd");
         remove_owned_launcher(&Some(missing), &launchers).unwrap();
         remove_owned_launcher(&None, &launchers).unwrap();
+    }
+
+    #[test]
+    fn a_bare_mise_bin_needs_nothing_beside_it() {
+        // The default. cmd resolves a bare name through PATH, where PATHEXT finds `mise.exe`, so
+        // warning about it would fire on nearly every run of this command and mean nothing.
+        for bin in ["mise", "mise.exe"] {
+            assert!(windows_can_run(Path::new(bin)), "{bin}");
+        }
+    }
+
+    #[test]
+    fn a_windows_spelled_path_is_a_path_on_every_host() {
+        // `Path::components` on unix reads this as one component, which would classify it as a
+        // bare name. cmd does not: it runs `.\bin\mise` as a path, and that is the case the
+        // warning exists for. Judged by Windows' rules because the launcher is written on every
+        // platform for someone on another one.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!windows_can_run(&dir.path().join(".\\bin\\mise")));
+    }
+
+    #[test]
+    fn a_path_mise_bin_needs_something_windows_can_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+
+        // What `mise generate install-script --write bin/mise` leaves without `--windows`: a
+        // shebang script, which cmd cannot execute at all.
+        let script = bin.join("mise");
+        fs::write(&script, "#!/usr/bin/env bash\n").unwrap();
+        assert!(!windows_can_run(&script));
+
+        // What `--windows` adds. Checked by name, not by content: that is the file cmd would find.
+        fs::write(bin.join("mise.cmd"), "@echo off\r\n").unwrap();
+        assert!(windows_can_run(&script));
+
+        // A path that already names something Windows runs needs no sibling at all.
+        for name in ["other.exe", "other.CMD", "other.bat"] {
+            assert!(windows_can_run(&bin.join(name)), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_sibling_is_matched_the_way_windows_matches_it() {
+        // On a case-sensitive host `mise.CMD` is a different filename from `mise.cmd`; on Windows,
+        // where the launcher runs, it is the same one and cmd would find it. Warning here would be
+        // about a gap that is not there.
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("mise");
+        fs::write(&script, "#!/usr/bin/env bash\n").unwrap();
+        fs::write(dir.path().join("mise.CMD"), "@echo off\r\n").unwrap();
+        assert!(windows_can_run(&script));
+    }
+
+    #[test]
+    fn a_sibling_that_is_not_there_does_not_count() {
+        // The control for the two tests above: the sibling check has to be able to answer "no", or
+        // it would be satisfied by any path at all.
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        // A sibling that is not runnable is not a launcher either -- `mise.txt` beside `mise`
+        // must not count.
+        fs::write(bin.join("mise"), "#!/usr/bin/env bash\n").unwrap();
+        fs::write(bin.join("mise.txt"), "notes\n").unwrap();
+        assert!(!windows_can_run(&bin.join("mise")));
+        // And a directory that does not exist cannot hold one.
+        assert!(!windows_can_run(&dir.path().join("nested").join("mise")));
     }
 
     #[test]
