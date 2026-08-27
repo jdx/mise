@@ -4354,7 +4354,7 @@ mod latest_version_tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
-    use crate::toolset::ToolSource;
+    use crate::toolset::{ResolvedToolOptions, ToolSource};
     use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -4884,7 +4884,7 @@ mod latest_version_tests {
         let request = ToolRequest::Version {
             backend: backend.ba.clone(),
             version: "nightly".to_string(),
-            options: ToolVersionOptions::default(),
+            options: ResolvedToolOptions::default(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "nightly".to_string());
