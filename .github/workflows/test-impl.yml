@@ -170,6 +170,10 @@ jobs:
         run: mbx test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
+      # The e2e suite is Linux-only, and this one turns on `TIOCSCTTY` and
+      # signal-driven termios restore — both places where the two platforms have
+      # differed before. Run it here so the claim covers macOS as well.
+      - run: mise run test:e2e e2e/cli/test_watch_terminal_restore_on_signal
       - run: mbx cache stats
         if: always()
 
