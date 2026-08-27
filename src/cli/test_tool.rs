@@ -490,25 +490,6 @@ fn should_test_registry_tool(tool: &RegistryTool) -> bool {
     tool.is_supported_os()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unresolved_tool_version_is_an_error() {
-        let err = require_resolved_version::<()>(None, "example").unwrap_err();
-
-        assert_eq!(err.to_string(), "no versions found for example");
-    }
-
-    #[test]
-    fn unsupported_os_registry_tool_is_skipped() {
-        let tool = REGISTRY.get("figma-export").unwrap();
-
-        assert_eq!(should_test_registry_tool(tool), cfg!(target_os = "macos"));
-    }
-}
-
 struct TestToolTarget {
     index: usize,
     tool: ToolArg,
@@ -532,3 +513,22 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise test-tool ripgrep</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unresolved_tool_version_is_an_error() {
+        let err = require_resolved_version::<()>(None, "example").unwrap_err();
+
+        assert_eq!(err.to_string(), "no versions found for example");
+    }
+
+    #[test]
+    fn unsupported_os_registry_tool_is_skipped() {
+        let tool = REGISTRY.get("figma-export").unwrap();
+
+        assert_eq!(should_test_registry_tool(tool), cfg!(target_os = "macos"));
+    }
+}
