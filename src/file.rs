@@ -677,6 +677,37 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Result<String> {
     }
 }
 
+/// The UTF-16 encoding `path` announces with a byte-order mark, if it announces one.
+///
+/// The marks are the ones [`decode_text`] matches, kept here rather than spelled out again at the
+/// call site so there is one description of what a mark looks like.
+///
+/// A UTF-8 mark is deliberately not reported. `has_shebang` already looks past that one, so a
+/// file carrying it is executable and never reaches a caller that needs to explain why it is not.
+/// (Named without a link: that function is `#[cfg(windows)]` and this doc is built on unix too.)
+///
+/// Compiled for tests on every platform so the byte matching is checked everywhere, but only used
+/// on Windows: on unix the execute bit decides what is executable, and a UTF-16 script with that
+/// bit set fails at exec rather than being skipped.
+#[cfg(any(windows, test))]
+pub(crate) fn utf16_bom(path: &Path) -> Option<&'static str> {
+    // `read_to_end` on a `take`, not `read_exact`: a one-byte file is a legitimate answer of
+    // "no mark", and `read_exact` would fail on it. Same shape as `has_shebang` below.
+    let bytes = std::fs::File::open(path)
+        .and_then(|f| {
+            use std::io::Read;
+            let mut buf = Vec::with_capacity(2);
+            f.take(2).read_to_end(&mut buf)?;
+            Ok(buf)
+        })
+        .ok()?;
+    match bytes[..] {
+        [0xff, 0xfe] => Some("UTF-16LE"),
+        [0xfe, 0xff] => Some("UTF-16BE"),
+        _ => None,
+    }
+}
+
 /// [`read_to_string`], but tolerant of a byte-order mark. See [`decode_text`].
 ///
 /// Only reads *from disk* need this. Bodies fetched over HTTP already arrive decoded: reqwest's
@@ -1395,6 +1426,18 @@ pub(crate) fn make_executable_hint(path: &Path) -> String {
 
 #[cfg(windows)]
 pub(crate) fn make_executable_hint(path: &Path) -> String {
+    // A shebang the file already carries, in an encoding `has_shebang` reads as bytes and so
+    // cannot see. Windows PowerShell 5.1's `>` and `Out-File` write UTF-16LE by default, which
+    // makes this the shell that ships with the OS producing a file mise then tells the user to
+    // add a shebang to. Naming the encoding is the fix; telling them to add what is already
+    // there is not. Said whether or not a shebang is in there, because either way the encoding
+    // is what has to change first.
+    if let Some(encoding) = utf16_bom(path) {
+        return format!(
+            "{} is {encoding}. mise reads a shebang as bytes, so save it as UTF-8.",
+            display_path(path),
+        );
+    }
     format!(
         "Add a shebang line to {}, or give it one of these extensions: {}",
         display_path(path),
@@ -4577,6 +4620,63 @@ mod tests {
         // and it must offer what that branch actually accepts
         assert!(hint.contains("exe"), "{hint}");
         assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[test]
+    fn utf16_bom_reports_only_the_marks_that_hide_a_shebang() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = tmp.path().join(name);
+            fs::write(&path, bytes).unwrap();
+            path
+        };
+        const SCRIPT: &[u8] = b"#!/usr/bin/env bash\necho hi\n";
+
+        // What Windows PowerShell 5.1's `>` and `Out-File` write by default.
+        let mut le = vec![0xff, 0xfe];
+        le.extend(SCRIPT.iter().flat_map(|b| [*b, 0]));
+        assert_eq!(utf16_bom(&write("le", &le)), Some("UTF-16LE"));
+        let mut be = vec![0xfe, 0xff];
+        be.extend(SCRIPT.iter().flat_map(|b| [0, *b]));
+        assert_eq!(utf16_bom(&write("be", &be)), Some("UTF-16BE"));
+
+        // A UTF-8 mark is not reported: `has_shebang` reads past it, so such a file is executable
+        // and never reaches a caller that has to explain why it is not.
+        let mut utf8_bom = vec![0xef, 0xbb, 0xbf];
+        utf8_bom.extend_from_slice(SCRIPT);
+        assert_eq!(utf16_bom(&write("utf8_bom", &utf8_bom)), None);
+        assert_eq!(utf16_bom(&write("plain", SCRIPT)), None);
+
+        // Shorter than a mark, and absent entirely: answers, not panics.
+        assert_eq!(utf16_bom(&write("empty", b"")), None);
+        assert_eq!(utf16_bom(&write("one", b"#")), None);
+        assert_eq!(utf16_bom(&tmp.path().join("does-not-exist")), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn make_executable_hint_names_the_encoding_when_a_shebang_is_hidden_by_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = b"#!/usr/bin/env bash\necho hi\n";
+
+        let utf16 = tmp.path().join("build");
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(script.iter().flat_map(|b| [*b, 0]));
+        fs::write(&utf16, &bytes).unwrap();
+        let hint = make_executable_hint(&utf16);
+        // The shebang is the first thing in the file. Telling the user to add one sends them
+        // after something that is already there, so the encoding has to be what is named.
+        assert!(hint.contains("UTF-16LE"), "{hint}");
+        assert!(hint.contains("UTF-8"), "{hint}");
+        assert!(!hint.contains("Add a shebang line"), "{hint}");
+
+        // The control: without a mark the advice is unchanged. Without this, an implementation
+        // that always blamed the encoding would pass too.
+        let utf8 = tmp.path().join("plain");
+        fs::write(&utf8, b"echo hi\n").unwrap();
+        let hint = make_executable_hint(&utf8);
+        assert!(hint.contains("Add a shebang line"), "{hint}");
+        assert!(!hint.contains("UTF-16"), "{hint}");
     }
 
     #[test]
