@@ -66,7 +66,7 @@ test "$third" = "$first"
 test "$(cat compile-count)" = 2
 test "$(cat out/libdemo.rlib)" = 'cached artifact second'
 
-cache_blob_root="$(mise cache path)/task-artifacts/v2/actions/cas/v1/blake3"
+cache_blob_root="$MBX_CACHE_DIR/actions/cas/v1/blake3"
 if ! test -d "$cache_blob_root"; then
   echo "cache blob layout was not found: $cache_blob_root" >&2
   exit 1

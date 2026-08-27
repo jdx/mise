@@ -18,7 +18,7 @@ use eyre::{Context, Report, Result, bail, eyre};
 use glob::glob;
 use ignore::overrides::Override;
 use jdx_tar::{Builder, EntryType, Header};
-use mise_cache_core::RemoteCacheConfig;
+use mbx_cache_core::RemoteCacheConfig;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;

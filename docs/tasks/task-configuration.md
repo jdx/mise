@@ -1031,8 +1031,15 @@ result. Verification hits are never served and are reported separately in the se
 mise injects compiler integration only into the task's child environment. Shell activation, bare
 `cargo build`, editor processes, and release builds are not intercepted. A top-level
 `mise run` owns the cache session, flushes pending uploads, and reports hits, misses, and transferred
-bytes before it succeeds. Compiler action-key collection and prefetch land with the compiler adapter
-rather than as unused task-manifest fields.
+bytes before it succeeds. Each Cargo command receives its own mbx-compatible prediction manifest,
+so `mbx` and `mise run` immediately warm one another. Direct rustc invocations retain the task
+identity as a fallback.
+
+Rust action results, CAS objects, manifests, and checkout claims live in the shared mbx action store.
+Its root resolves from `MBX_CACHE_DIR`, the machine mbx configuration, then the platform default.
+`mise cache clear` continues to remove mise task artifacts only; mbx store policy coordinates action
+cache collection. Cache data written by older mise versions is left untouched for safe rollback and
+becomes cold data removable by the normal mise cache cleanup.
 
 Rust action caching disables incremental compilation for that task run because the two cache models
 are incompatible. This can make a tight local edit-and-build loop slower. Use `rust_cache` for CI,

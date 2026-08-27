@@ -113,6 +113,9 @@ fn main() -> ExitCode {
     if cache::session::is_rustc_shim() {
         return cache::session::run_rustc_shim();
     }
+    if cache::session::is_cargo_shim() {
+        return cache::session::run_cargo_shim();
+    }
     // Same reason, different caller: `self-replace` spawns a copy of this binary under a generated
     // name to finish an update, and when its own init hook does not intercept that, mise would run
     // its shim path and report the generated name as a broken shim. There is nothing for `main` to

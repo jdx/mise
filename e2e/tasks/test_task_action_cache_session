@@ -13,6 +13,9 @@ run = '''
 test -n "$MISE_CACHE_SOCKET"
 test -S "$MISE_CACHE_SOCKET"
 test "$(basename "$RUSTC_WRAPPER")" = mise-cache-rustc
+test "$(basename "$(command -v cargo)")" = cargo
+test -n "$MISE_CACHE_REAL_CARGO"
+test "$(command -v cargo)" != "$MISE_CACHE_REAL_CARGO"
 test "$CARGO_INCREMENTAL" = 0
 "$RUSTC_WRAPPER" true
 '''
@@ -37,6 +40,7 @@ test "$CARGO_INCREMENTAL" = 0
 rust_cache = true
 run = '''
 cargo build
+cargo check
 test -f target/debug/libcache_e2e.rlib
 '''
 EOF
@@ -60,7 +64,9 @@ RUSTC_WRAPPER=/usr/bin/env mise run rust
 RUSTC_WRAPPER=/usr/bin/env mise run sandboxed
 assert_contains "mise run compile 2>&1" "stored"
 assert_not_empty \
-  "find \"$(mise cache path)/task-artifacts/v2/actions/action-results\" -type f -name '*.json' -print -quit"
+  "find \"$MBX_CACHE_DIR/actions/action-results\" -type f -name '*.json' -print -quit"
+assert_succeed \
+  "test \"\$(find \"$MBX_CACHE_DIR/actions/task-manifests/v1\" -type f -name '*.json' | wc -l | tr -d ' ')\" -ge 2"
 
 assert_fail_contains \
   "MISE_EXPERIMENTAL=0 mise run rust" \

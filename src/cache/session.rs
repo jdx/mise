@@ -4,15 +4,17 @@ use crate::task::Task;
 use crate::task::TaskRustCacheConfig;
 use bytesize::ByteSize;
 use eyre::{Context, Result, bail};
-use mise_cache_core::{
-    AGENT_PROTOCOL_VERSION, AgentRemoteCache, AgentRequest, AgentResponse, AgentStats, CacheAgent,
-    CacheDigest, RemoteCacheClient, RemoteCacheConfig, canonical_json,
+#[cfg(any(windows, test))]
+use mbx_cache_core::AGENT_PROTOCOL_VERSION;
+#[cfg(unix)]
+use mbx_cache_core::BlockingAgentClient;
+use mbx_cache_core::{
+    AgentRemoteCache, AgentRequest, AgentResponse, AgentStats, CacheAgent, CacheDigest,
+    RemoteCacheClient, RemoteCacheConfig, canonical_json,
 };
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
-#[cfg(unix)]
-use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Mutex;
@@ -21,20 +23,34 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
 const RUSTC_SHIM_STEM: &str = "mise-cache-rustc";
+const CARGO_SHIM_STEM: &str = "cargo";
 pub(super) const CARGO_TARGET_ENV: &str = "MISE_CACHE_CARGO_TARGET_DIR";
 const SOCKET_ENV: &str = "MISE_CACHE_SOCKET";
+const REAL_CARGO_ENV: &str = "MISE_CACHE_REAL_CARGO";
+const ACTION_STORE_ENV: &str = "MISE_CACHE_ACTION_STORE";
 pub(super) const STAGING_ENV: &str = "MISE_CACHE_STAGING_DIR";
 pub(super) const TASK_ENV: &str = "MISE_CACHE_TASK";
 pub(super) const TASK_ROOT_ENV: &str = "MISE_CACHE_TASK_ROOT";
 pub(super) const VERIFY_ENV: &str = "MISE_CACHE_RUST_VERIFY";
+pub(super) const BUILD_ENV: &str = TASK_ENV;
+pub(super) const TARGET_DIR_ENV: &str = CARGO_TARGET_ENV;
+pub(super) const WORKSPACE_ROOT_ENV: &str = TASK_ROOT_ENV;
+const SHARE_OUT_DIR_ENV: &str = "MISE_CACHE_SHARE_OUT_DIR";
 const PREVIOUS_RUSTC_WRAPPER_ENV: &str = "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+// The ceiling of mbx's disk-scaled default. This keeps an embedded client from
+// pruning more aggressively than mbx on the same machine; mbx applies any
+// tighter configured policy on its next coordinated sweep.
+const SHARED_STORE_MAX_BYTES: u64 = 100 * 1024 * 1024 * 1024;
+const SHARED_STORE_GC_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Clone)]
 pub(crate) struct CacheSessionEnvironment {
     socket: String,
     rustc_shim: String,
+    shim_dir: String,
     staging: String,
+    store: String,
     agent: CacheAgent,
 }
 
@@ -65,6 +81,7 @@ impl CacheSessionEnvironment {
         };
         environment.insert(SOCKET_ENV.into(), self.socket.clone());
         environment.insert(STAGING_ENV.into(), self.staging.clone());
+        environment.insert(ACTION_STORE_ENV.into(), self.store.clone());
         environment.insert(TASK_ENV.into(), protocol_task);
         environment.insert(
             TASK_ROOT_ENV.into(),
@@ -78,20 +95,41 @@ impl CacheSessionEnvironment {
         } else {
             environment.remove(VERIFY_ENV);
         }
+        environment.insert(SHARE_OUT_DIR_ENV.into(), "0".into());
         if let Some(previous) = environment.insert("RUSTC_WRAPPER".into(), self.rustc_shim.clone())
             && previous != self.rustc_shim
         {
             environment.insert(PREVIOUS_RUSTC_WRAPPER_ENV.into(), previous);
         }
         environment.insert("CARGO_INCREMENTAL".into(), "0".into());
+        environment.remove(REAL_CARGO_ENV);
+        if let Some(path) = environment.get(crate::env::PATH_KEY.as_str()).cloned()
+            && let Ok(cargo) = which::which_in("cargo", Some(&path), task_root)
+        {
+            environment.insert(REAL_CARGO_ENV.into(), cargo.to_string_lossy().into_owned());
+            let paths = std::iter::once(PathBuf::from(&self.shim_dir))
+                .chain(std::env::split_paths(OsStr::new(&path)));
+            if let Ok(path) = std::env::join_paths(paths) {
+                environment.insert(
+                    crate::env::PATH_KEY.to_string(),
+                    path.to_string_lossy().into_owned(),
+                );
+            }
+        }
         action_run
     }
 
-    pub(crate) fn sandbox_paths(&self) -> [PathBuf; 3] {
+    pub(crate) fn sandbox_paths(&self) -> [PathBuf; 5] {
         [
             PathBuf::from(&self.rustc_shim),
+            PathBuf::from(&self.shim_dir).join(if cfg!(windows) {
+                format!("{CARGO_SHIM_STEM}.exe")
+            } else {
+                CARGO_SHIM_STEM.into()
+            }),
             PathBuf::from(&self.socket),
             PathBuf::from(&self.staging),
+            PathBuf::from(&self.store),
         ]
     }
 }
@@ -153,21 +191,24 @@ pub(crate) struct CacheSession {
 
 impl CacheSession {
     pub(crate) async fn start(session_dir: &Path, cache_dir: PathBuf) -> Result<Self> {
-        let shim = install_session_shim(session_dir)?;
+        let rustc_shim = install_session_shim(session_dir, RUSTC_SHIM_STEM)?;
+        let _cargo_shim = install_session_shim(session_dir, CARGO_SHIM_STEM)?;
         let staging = session_dir.join("staging");
         std::fs::create_dir(&staging)?;
         let agent = if let Some(remote) = action_remote_cache(&cache_dir)? {
-            CacheAgent::new_remote(cache_dir, VERSION, remote)
+            CacheAgent::new_remote(cache_dir.clone(), VERSION, remote)
         } else {
-            CacheAgent::new(cache_dir, VERSION)
+            CacheAgent::new(cache_dir.clone(), VERSION)
         };
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
         let (socket, server) = spawn_server(session_dir, agent.clone(), shutdown_rx).await?;
         Ok(Self {
             environment: CacheSessionEnvironment {
                 socket,
-                rustc_shim: shim.to_string_lossy().into_owned(),
+                rustc_shim: rustc_shim.to_string_lossy().into_owned(),
+                shim_dir: session_dir.to_string_lossy().into_owned(),
                 staging: staging.to_string_lossy().into_owned(),
+                store: cache_dir.to_string_lossy().into_owned(),
                 agent: agent.clone(),
             },
             agent,
@@ -192,6 +233,13 @@ impl CacheSession {
         self.agent.cancel_prefetches().await;
         let mut stats = self.agent.stats();
         stats.session_duration_ns = duration_ns(self.started.elapsed());
+        if let Err(error) = mbx_cache_store::sweep_if_due(
+            Path::new(&self.environment.store),
+            SHARED_STORE_MAX_BYTES,
+            SHARED_STORE_GC_INTERVAL,
+        ) {
+            warn!("shared mbx action-store GC failed: {error:#}");
+        }
         Ok(stats)
     }
 }
@@ -382,13 +430,13 @@ fn cache_misses(stats: &AgentStats) -> u64 {
         .saturating_sub(stats.verifications)
 }
 
-fn install_session_shim(session_dir: &Path) -> Result<PathBuf> {
+fn install_session_shim(session_dir: &Path, stem: &str) -> Result<PathBuf> {
     let executable =
         std::env::current_exe().wrap_err("failed to locate the running mise binary")?;
     let filename = if cfg!(windows) {
-        format!("{RUSTC_SHIM_STEM}.exe")
+        format!("{stem}.exe")
     } else {
-        RUSTC_SHIM_STEM.into()
+        stem.into()
     };
     let shim = session_dir.join(filename);
     if let Err(link_error) = std::fs::hard_link(&executable, &shim) {
@@ -660,6 +708,105 @@ pub(crate) fn is_rustc_shim() -> bool {
         .is_some_and(|stem| stem == OsStr::new(RUSTC_SHIM_STEM))
 }
 
+pub(crate) fn is_cargo_shim() -> bool {
+    std::env::args_os()
+        .next()
+        .as_deref()
+        .map(Path::new)
+        .and_then(Path::file_stem)
+        .is_some_and(|stem| stem == OsStr::new(CARGO_SHIM_STEM))
+}
+
+pub(crate) fn run_cargo_shim() -> ExitCode {
+    let Some(cargo) = std::env::var_os(REAL_CARGO_ENV) else {
+        eprintln!("mise action-cache Cargo shim could not resolve the real Cargo executable");
+        return ExitCode::from(1);
+    };
+    let arguments = std::env::args_os().skip(1).collect::<Vec<_>>();
+    let strings = arguments
+        .iter()
+        .map(|argument| argument.clone().into_string())
+        .collect::<std::result::Result<Vec<_>, _>>();
+    let working_dir = std::env::current_dir();
+    let invocation = strings
+        .ok()
+        .zip(working_dir.ok())
+        .map(|(arguments, working_dir)| {
+            mbx_cache_cargo::resolve(
+                cargo.as_os_str(),
+                &arguments,
+                &working_dir,
+                std::env::var_os("CARGO_TARGET_DIR"),
+            )
+        });
+
+    let mut run = None;
+    if let Some(invocation) = &invocation {
+        if let Some(store) = std::env::var_os(ACTION_STORE_ENV)
+            && let Err(error) = mbx_cache_store::record_checkout(
+                Path::new(&store),
+                &invocation.build_identity,
+                &invocation.workspace_root,
+                &invocation.target_dir,
+            )
+        {
+            eprintln!("mise action-cache warning: checkout was not recorded: {error:#}");
+        }
+        match request_agent(&[AgentRequest::BeginTask {
+            task: invocation.build_identity.clone(),
+        }]) {
+            Ok(responses) => match responses.into_iter().next() {
+                Some(AgentResponse::TaskBegun { run: action_run }) => {
+                    run = Some(action_run);
+                }
+                Some(AgentResponse::Error { message }) => {
+                    eprintln!(
+                        "mise action-cache warning: Cargo manifest was not loaded: {message}"
+                    );
+                }
+                _ => eprintln!(
+                    "mise action-cache warning: agent returned an unexpected begin-task response"
+                ),
+            },
+            Err(error) => {
+                eprintln!("mise action-cache warning: Cargo manifest was not loaded: {error:#}");
+            }
+        }
+    }
+
+    let mut command = Command::new(cargo);
+    command.args(&arguments);
+    if let (Some(invocation), Some(action_run)) = (&invocation, &run) {
+        command.env(TASK_ENV, action_run);
+        command.env(TASK_ROOT_ENV, &invocation.workspace_root);
+        command.env(CARGO_TARGET_ENV, &invocation.target_dir);
+    }
+    let status = match command.status() {
+        Ok(status) => status,
+        Err(error) => {
+            eprintln!("mise action-cache Cargo shim failed to execute Cargo: {error}");
+            return ExitCode::from(1);
+        }
+    };
+
+    if let Some(action_run) = run
+        && let Err(error) =
+            request_agent(&[AgentRequest::CommitTask { run: action_run }]).and_then(|responses| {
+                match responses.into_iter().next() {
+                    Some(AgentResponse::TaskCommitted) => Ok(()),
+                    Some(AgentResponse::Error { message }) => bail!(message),
+                    _ => bail!("agent returned an unexpected commit-task response"),
+                }
+            })
+    {
+        eprintln!("mise action-cache warning: Cargo manifest was not committed: {error:#}");
+    }
+    status
+        .code()
+        .and_then(|code| u8::try_from(code).ok())
+        .map_or_else(|| ExitCode::from(1), ExitCode::from)
+}
+
 /// Ultra-early argv0 path used by Cargo's `RUSTC_WRAPPER` integration.
 ///
 /// This runs before mise creates a Tokio runtime, installs logging, or discovers
@@ -672,17 +819,54 @@ pub(crate) fn run_rustc_shim() -> ExitCode {
         return ExitCode::from(1);
     };
     let arguments = arguments.collect::<Vec<_>>();
+    // Cargo and toolchain discovery can invoke the wrapper without a source
+    // argument. Avoid initializing the cache path for these compiler probes.
+    if arguments.is_empty() {
+        return run_transparent_rustc(rustc, arguments);
+    }
     if std::env::var_os(PREVIOUS_RUSTC_WRAPPER_ENV).is_none() {
         match crate::cache::rustc::compile(&rustc, &arguments) {
             Ok(exit_code) => return exit_code,
-            Err(_error) => {
+            Err(error) => {
+                record_bypass(&error);
                 #[cfg(debug_assertions)]
-                eprintln!("mise rustc cache bypassed: {_error:#}");
+                eprintln!("mise rustc cache bypassed: {error:#}");
             }
         }
     }
 
     run_transparent_rustc(rustc, arguments)
+}
+
+pub(super) fn verify_requested() -> bool {
+    std::env::var_os(VERIFY_ENV).is_some_and(|value| !value.is_empty() && value != "0")
+}
+
+pub(super) fn share_out_dir_requested() -> bool {
+    std::env::var_os(SHARE_OUT_DIR_ENV).is_some_and(|value| !value.is_empty() && value != "0")
+}
+
+fn record_bypass(error: &eyre::Report) {
+    let kind = error
+        .downcast_ref::<mbx_cache_rustc::BypassReason>()
+        .map_or("other", mbx_cache_rustc::BypassReason::kind);
+    let _ = request_agent(&[AgentRequest::RecordBypass { kind: kind.into() }]);
+}
+
+pub(super) fn record_unconsulted() {
+    let _ = request_agent(&[AgentRequest::RecordUnconsulted]);
+}
+
+pub(super) fn record_compiler_invocation(
+    outcome: &str,
+    crate_name: Option<&str>,
+    duration_ns: u64,
+) {
+    let _ = request_agent(&[AgentRequest::RecordCompilerInvocation {
+        outcome: outcome.into(),
+        crate_name: crate_name.map(str::to_string),
+        duration_ns,
+    }]);
 }
 
 fn run_transparent_rustc(rustc: OsString, arguments: Vec<OsString>) -> ExitCode {
@@ -742,12 +926,13 @@ pub(super) fn request_agent(requests: &[AgentRequest]) -> Result<Vec<AgentRespon
 
 #[cfg(unix)]
 fn request_agent_at(socket: &OsString, requests: &[AgentRequest]) -> Result<Vec<AgentResponse>> {
-    let mut stream = std::os::unix::net::UnixStream::connect(Path::new(socket))
+    let stream = std::os::unix::net::UnixStream::connect(Path::new(socket))
         .wrap_err("failed to connect to the action-cache session")?;
-    sync_handshake(&mut stream)?;
+    let mut client = BlockingAgentClient::connect(stream, VERSION)?;
     requests
         .iter()
-        .map(|request| sync_request(&mut stream, request))
+        .cloned()
+        .map(|request| client.request(request))
         .collect()
 }
 
@@ -791,33 +976,7 @@ fn request_agent_at(socket: &OsString, requests: &[AgentRequest]) -> Result<Vec<
         })
 }
 
-#[cfg(unix)]
-fn sync_handshake(stream: &mut (impl std::io::Read + Write)) -> Result<()> {
-    let request = AgentRequest::Hello {
-        protocol: AGENT_PROTOCOL_VERSION,
-        client_version: VERSION.into(),
-    };
-    serde_json::to_writer(&mut *stream, &request)?;
-    stream.write_all(b"\n")?;
-    stream.flush()?;
-    let mut response = String::new();
-    BufReader::new(&mut *stream).read_line(&mut response)?;
-    validate_handshake_response(&response)
-}
-
-#[cfg(unix)]
-fn sync_request(
-    stream: &mut (impl std::io::Read + Write),
-    request: &AgentRequest,
-) -> Result<AgentResponse> {
-    serde_json::to_writer(&mut *stream, request)?;
-    stream.write_all(b"\n")?;
-    stream.flush()?;
-    let mut response = String::new();
-    BufReader::new(&mut *stream).read_line(&mut response)?;
-    Ok(serde_json::from_str(&response)?)
-}
-
+#[cfg(any(windows, test))]
 fn validate_handshake_response(response: &str) -> Result<()> {
     match serde_json::from_str(response)? {
         AgentResponse::Hello {
@@ -839,13 +998,19 @@ mod tests {
         let environment = CacheSessionEnvironment {
             socket: "socket".into(),
             rustc_shim: "shim".into(),
+            shim_dir: "shim-dir".into(),
             staging: "staging".into(),
+            store: cache.path().to_string_lossy().into_owned(),
             agent: CacheAgent::new(cache.path(), VERSION),
         };
         let mut task = Task::default();
         let mut values = BTreeMap::from([
             ("CARGO_TARGET_DIR".into(), "target".into()),
             ("RUSTC_WRAPPER".into(), "existing".into()),
+            (
+                crate::env::PATH_KEY.to_string(),
+                std::env::var(crate::env::PATH_KEY.as_str()).unwrap(),
+            ),
         ]);
         let task_directory = tempfile::tempdir().unwrap();
         let task_root = task_directory.path();
@@ -879,6 +1044,22 @@ mod tests {
         assert_eq!(values.get(PREVIOUS_RUSTC_WRAPPER_ENV).unwrap(), "existing");
         assert_eq!(values.get("CARGO_INCREMENTAL").unwrap(), "0");
         assert_eq!(values.get(VERIFY_ENV).unwrap(), "1");
+        assert_eq!(
+            values.get(ACTION_STORE_ENV).unwrap(),
+            &cache.path().to_string_lossy()
+        );
+        assert_ne!(
+            values.get(REAL_CARGO_ENV),
+            values.get(crate::env::PATH_KEY.as_str())
+        );
+        assert_eq!(
+            std::env::split_paths(OsStr::new(
+                values.get(crate::env::PATH_KEY.as_str()).unwrap()
+            ))
+            .next()
+            .unwrap(),
+            PathBuf::from("shim-dir")
+        );
     }
 
     #[test]
@@ -893,12 +1074,10 @@ mod tests {
 
     #[test]
     fn qualification_results_are_not_reported_as_misses() {
-        let stats = AgentStats {
-            lookups: 5,
-            hits: 2,
-            verifications: 2,
-            ..AgentStats::default()
-        };
+        let mut stats = AgentStats::default();
+        stats.lookups = 5;
+        stats.hits = 2;
+        stats.verifications = 2;
         assert_eq!(cache_misses(&stats), 1);
     }
 
@@ -906,21 +1085,19 @@ mod tests {
     fn writes_versioned_action_cache_stats_report() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("nested").join("stats.json");
-        let stats = AgentStats {
-            session_duration_ns: 42,
-            lookups: 5,
-            hits: 2,
-            verifications: 1,
-            prefetched_actions: 3,
-            downloaded_bytes: 1024,
-            restored_output_files: 7,
-            restored_output_bytes: 2048,
-            remote_blob_requests: 4,
-            remote_blob_pack_requests: 2,
-            remote_blob_pack_blobs: 100,
-            materialization_duration_ns: 9,
-            ..AgentStats::default()
-        };
+        let mut stats = AgentStats::default();
+        stats.session_duration_ns = 42;
+        stats.lookups = 5;
+        stats.hits = 2;
+        stats.verifications = 1;
+        stats.prefetched_actions = 3;
+        stats.downloaded_bytes = 1024;
+        stats.restored_output_files = 7;
+        stats.restored_output_bytes = 2048;
+        stats.remote_blob_requests = 4;
+        stats.remote_blob_pack_requests = 2;
+        stats.remote_blob_pack_blobs = 100;
+        stats.materialization_duration_ns = 9;
 
         write_stats_report(&path, &stats).unwrap();
         let report: serde_json::Value =

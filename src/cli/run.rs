@@ -1315,7 +1315,9 @@ impl Run {
         self.cache_session = Some(
             crate::cache::session::CacheSession::start(
                 &self.tmpdir,
-                crate::task::task_cache::task_cache_dir().join("actions"),
+                mbx_cache_cargo::cache_root()
+                    .ok_or_else(|| eyre::eyre!("could not determine the mbx cache directory"))?
+                    .join("actions"),
             )
             .await?,
         );

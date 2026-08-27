@@ -27,7 +27,7 @@ use crate::{dirs, file};
 pub(crate) mod rustc;
 pub(crate) mod session;
 
-pub(crate) use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
+pub(crate) use mbx_cache_core::RemoteCacheMode as CacheRemoteMode;
 
 pub(crate) fn effective_remote_cache_mode(configured: CacheRemoteMode) -> Option<CacheRemoteMode> {
     effective_remote_cache_mode_with(configured, |name| std::env::var(name).ok())

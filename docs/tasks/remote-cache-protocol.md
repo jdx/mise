@@ -1,8 +1,9 @@
 # Remote Build Cache Protocol
 
 > [!WARNING]
-> Remote build caching is experimental. This document defines protocol version 1, which generalizes
-> the original task-only store contract into a shared action-cache protocol.
+> Remote build caching is experimental. mise now speaks the mbx version 1 protocol exclusively;
+> servers implementing only the former mise-specific headers and media types are treated as cache
+> misses and the task still runs.
 
 The protocol is a secure, content-addressed cache protocol for build actions and their outputs.
 Tasks, compiler invocations, build-system operations, and future adapters share the same transport,
@@ -43,10 +44,10 @@ and its internally consistent CAS graph. Implementations may use HTTP/1.1, HTTP/
 
 Every API request sends:
 
-| Header                 | Value                                                          |
-| ---------------------- | -------------------------------------------------------------- |
-| `mise-cache-protocol`  | `1`                                                            |
-| `mise-cache-namespace` | The namespace for the operation, except on discovery endpoints |
+| Header                | Value                                                          |
+| --------------------- | -------------------------------------------------------------- |
+| `mbx-cache-protocol`  | `1`                                                            |
+| `mbx-cache-namespace` | The namespace for the operation, except on discovery endpoints |
 
 The URL prefix `/v1` is the protocol's major version. Compatible additions are advertised as
 capabilities and do not require a new URL prefix. An incompatible wire or integrity change requires
@@ -130,7 +131,7 @@ new schema versions without changing the major protocol version.
 
 Clients must honor advertised limits and fall back from optional features. Servers return `426
 Upgrade Required` for unsupported major versions and include their supported major version in
-`mise-cache-protocol`.
+`mbx-cache-protocol`.
 
 `GET /v1/status` is an operational health endpoint. A successful response means the API process is
 live; it is not a substitute for capability negotiation or an authorization check.
@@ -182,7 +183,7 @@ identical canonical bytes.
 
 ### Directory object
 
-A directory object has media type `application/vnd.mise.cache-directory.v1+json`:
+A directory object has media type `application/vnd.mbx.cache-directory.v1+json`:
 
 ```json
 {
@@ -219,7 +220,7 @@ rather than being silently changed.
 ### Action result
 
 An action-result response and commit body have media type
-`application/vnd.mise.cache-action-result.v1+json`:
+`application/vnd.mbx.cache-action-result.v1+json`:
 
 ```json
 {
@@ -232,7 +233,7 @@ An action-result response and commit body have media type
 
 Only successful, cacheable action executions may be published. `output_root` is absent when an
 action has no output files. `metadata` references canonical
-`application/vnd.mise.cache-client-metadata.v1+json` containing typed client metadata. Task metadata
+`application/vnd.mbx.cache-client-metadata.v1+json` containing typed client metadata. Task metadata
 contains output roots, captured output, task identity, restored-byte estimate, and execution
 duration. The metadata schema is part of the remote protocol and is independent of mise's local
 cache manifests.
@@ -266,7 +267,7 @@ not part of the immutable action result.
 
 ### Find missing blobs
 
-`POST /v1/blobs:missing` accepts `application/vnd.mise.cache-digests.v1+json`:
+`POST /v1/blobs:missing` accepts `application/vnd.mbx.cache-digests.v1+json`:
 
 ```json
 { "digests": [{ "algorithm": "blake3", "hash": "...", "size": 1234 }] }
@@ -299,12 +300,12 @@ reporting capability is enabled.
 ### Read a blob pack
 
 Servers advertising `features.blob_packs` accept `POST /v1/blobs:pack` with the same
-`application/vnd.mise.cache-digests.v1+json` body as `blobs:missing`. The aggregate declared size
+`application/vnd.mbx.cache-digests.v1+json` body as `blobs:missing`. The aggregate declared size
 must not exceed `limits.max_pack_bytes`, and the number of digests must not exceed
 `limits.max_batch_items`. Servers return `400 Bad Request` when the item limit is exceeded and
 `413 Content Too Large` when the aggregate declared size exceeds the byte limit.
 
-A successful response uses `application/vnd.mise.cache-blob-pack.v1` and begins with the eight-byte
+A successful response uses `application/vnd.mbx.cache-blob-pack.v1` and begins with the eight-byte
 ASCII magic `MISEPK01`. The remainder is a stream of frames in request order:
 
 | Field     | Encoding                                    |
@@ -425,7 +426,7 @@ store. Clients communicate with the cache service rather than receiving general 
 credentials.
 
 The official reference server is maintained separately at
-[`jdx/mise-cache`](https://github.com/jdx/mise-cache). It provides filesystem and S3-compatible blob
+[`jdx/mbx-cache`](https://github.com/jdx/mbx-cache). It provides filesystem and S3-compatible blob
 storage, PostgreSQL metadata, namespace-scoped authorization, Docker Compose, and a Helm chart. The
 server remains a separate deployment and release lifecycle from the mise client while this document
 is the canonical protocol specification.

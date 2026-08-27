@@ -483,10 +483,13 @@ impl TaskExecutor {
                 sandbox.pass_through_env.extend([
                     "MISE_CACHE_SOCKET".into(),
                     "MISE_CACHE_STAGING_DIR".into(),
+                    "MISE_CACHE_ACTION_STORE".into(),
+                    "MISE_CACHE_REAL_CARGO".into(),
                     "MISE_CACHE_TASK".into(),
                     "MISE_CACHE_CARGO_TARGET_DIR".into(),
                     "MISE_CACHE_TASK_ROOT".into(),
                     "MISE_CACHE_RUST_VERIFY".into(),
+                    "MISE_CACHE_SHARE_OUT_DIR".into(),
                     "MISE_CACHE_PREVIOUS_RUSTC_WRAPPER".into(),
                     "RUSTC_WRAPPER".into(),
                     "CARGO_INCREMENTAL".into(),
