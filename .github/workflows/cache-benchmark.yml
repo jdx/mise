@@ -28,6 +28,82 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  mbx_linux:
+    name: mbx (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+        with:
+          backend: github
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          mbx build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+          mbx cache stats
+
+  rust_cache_linux:
+    name: Swatinem rust-cache (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
+        with:
+          shared-key: cache-benchmark-linux-v2
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          cargo build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+
+  comparison_linux:
+    name: comparison (Linux)
+    needs: [mbx_linux, rust_cache_linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    env:
+      MBX_SECONDS: ${{ needs.mbx_linux.outputs.seconds }}
+      RUST_CACHE_SECONDS: ${{ needs.rust_cache_linux.outputs.seconds }}
+    steps:
+      - name: Summarize results
+        shell: bash
+        run: |
+          delta=$(awk -v mbx="$MBX_SECONDS" -v rust="$RUST_CACHE_SECONDS" \
+            'BEGIN { if (rust == 0) print "n/a"; else printf "%.1f%%", ((rust - mbx) / rust) * 100 }')
+          {
+            echo "## Linux cache build comparison"
+            echo
+            echo "| Backend | Build time |"
+            echo "| --- | ---: |"
+            echo "| mbx | ${MBX_SECONDS}s |"
+            echo "| Swatinem/rust-cache | ${RUST_CACHE_SECONDS}s |"
+            echo
+            echo "mbx delta: **${delta}** (positive means mbx was faster)."
+            echo
+            echo "> Treat the first main-branch run as cache seeding. Compare workflow_dispatch runs after it. Build time excludes checkout and cache setup; compare those step durations separately."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   mbx:
     name: mbx (macOS)
     runs-on: macos-14
