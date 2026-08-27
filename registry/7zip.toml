@@ -1,0 +1,6 @@
+aliases = ["7z"]
+backends = ["aqua:ip7z/7zip", "github:ip7z/7zip"]
+bins = ["7zz", "7zzs", "7za"]
+description = "7-Zip is a file archiver with a high compression ratio"
+test = { cmd = "7zz", expected = "7-Zip (z) {{version}}" }
+version_order = "source"
