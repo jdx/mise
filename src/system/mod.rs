@@ -43,6 +43,7 @@ pub(crate) mod accounts;
 #[cfg(not(target_os = "linux"))]
 #[path = "accounts_non_linux.rs"]
 pub(crate) mod accounts;
+pub(crate) mod accounts_common;
 pub(crate) mod compose;
 pub(crate) mod defaults;
 pub(crate) mod deps;
