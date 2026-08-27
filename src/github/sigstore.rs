@@ -133,12 +133,24 @@ pub(crate) async fn verify_attestation(
                         "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
                     );
                 } else {
-                    return mise_sigstore::verify_github_attestation_with_attestations(
+                    // GitHub may append attestations for a digest after mise-versions first
+                    // caches it. Treat only a successful verification as authoritative so an
+                    // incomplete cached set can still be refreshed from GitHub directly.
+                    match mise_sigstore::verify_github_attestation_with_attestations(
                         artifact_path,
                         &attestations,
                         expected_workflow,
                     )
-                    .await;
+                    .await
+                    {
+                        Ok(true) => return Ok(true),
+                        Ok(false) => debug!(
+                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
+                        ),
+                        Err(err) => debug!(
+                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API: {err}"
+                        ),
+                    }
                 }
             }
             Ok(None) => {}
