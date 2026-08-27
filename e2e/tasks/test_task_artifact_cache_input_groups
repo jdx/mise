@@ -202,6 +202,7 @@ assert "mise -C cascade-local task info child --json | jq -r '.sources[] | selec
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/toolchain.txt\"))'" "$PWD/toolchain.txt"
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-group.txt\"))'" "$PWD/cascade-local/child-group.txt"
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-global-toolchain.txt\"))'" "$PWD/cascade-local/child-global-toolchain.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/global-toolchain.txt\"))'" ""
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/workspace.txt\"))'" "$PWD/workspace.txt"
 
 # cascade = false stops both inherited input fields.
