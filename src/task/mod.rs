@@ -711,7 +711,7 @@ pub(crate) struct Task {
     pub raw_args: bool,
     #[serde(default)]
     pub interactive: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_arr")]
     pub sources: Vec<String>,
     #[serde(default)]
     pub watch: Option<TaskWatchOptions>,
