@@ -36,6 +36,22 @@ pub(crate) use mise_sigstore::{AttestationError, SlsaArtifact};
 /// Result alias that matches `mise_sigstore`'s internal convention.
 type AttestationResult<T> = std::result::Result<T, AttestationError>;
 
+#[derive(Debug)]
+enum CachedAttestationVerification {
+    Verified,
+    Retry(Option<AttestationError>),
+}
+
+fn classify_cached_attestation_verification(
+    result: AttestationResult<bool>,
+) -> CachedAttestationVerification {
+    match result {
+        Ok(true) => CachedAttestationVerification::Verified,
+        Ok(false) => CachedAttestationVerification::Retry(None),
+        Err(err) => CachedAttestationVerification::Retry(Some(err)),
+    }
+}
+
 /// Resolve a GitHub token for an optional API base URL, defaulting to [`crate::github::API_URL`].
 fn resolve_token_for_wrapper(api_url: Option<&str>) -> Option<String> {
     let url = api_url.unwrap_or(crate::github::API_URL);
@@ -133,12 +149,25 @@ pub(crate) async fn verify_attestation(
                         "mise-versions returned GitHub attestations without inline bundles; falling back to GitHub API"
                     );
                 } else {
-                    return mise_sigstore::verify_github_attestation_with_attestations(
-                        artifact_path,
-                        &attestations,
-                        expected_workflow,
-                    )
-                    .await;
+                    // GitHub may append attestations for a digest after mise-versions first
+                    // caches it. Treat only a successful verification as authoritative so an
+                    // incomplete cached set can still be refreshed from GitHub directly.
+                    match classify_cached_attestation_verification(
+                        mise_sigstore::verify_github_attestation_with_attestations(
+                            artifact_path,
+                            &attestations,
+                            expected_workflow,
+                        )
+                        .await,
+                    ) {
+                        CachedAttestationVerification::Verified => return Ok(true),
+                        CachedAttestationVerification::Retry(None) => debug!(
+                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API"
+                        ),
+                        CachedAttestationVerification::Retry(Some(err)) => debug!(
+                            "mise-versions GitHub attestations did not verify for {owner}/{repo}; falling back to GitHub API: {err}"
+                        ),
+                    }
                 }
             }
             Ok(None) => {}
@@ -565,6 +594,26 @@ mod tests {
         assert!(!is_api_failure(&AttestationError::Json(
             serde_json::from_str::<serde_json::Value>("{").unwrap_err()
         )));
+    }
+
+    #[test]
+    fn test_cached_attestation_verification_accepts_only_success() {
+        assert!(matches!(
+            classify_cached_attestation_verification(Ok(true)),
+            CachedAttestationVerification::Verified
+        ));
+        assert!(matches!(
+            classify_cached_attestation_verification(Ok(false)),
+            CachedAttestationVerification::Retry(None)
+        ));
+
+        let outcome = classify_cached_attestation_verification(Err(
+            AttestationError::WorkflowMismatch("stale cached signer".to_string()),
+        ));
+        assert!(matches!(
+            outcome,
+            CachedAttestationVerification::Retry(Some(AttestationError::WorkflowMismatch(_)))
+        ));
     }
 
     #[test]
