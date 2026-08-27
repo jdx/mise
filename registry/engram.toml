@@ -1,0 +1,8 @@
+backends = [
+  "aqua:Gentleman-Programming/engram",
+  "github:Gentleman-Programming/engram",
+]
+bins = ["engram"]
+description = "Persistent memory system for AI coding agents"
+test = { cmd = "engram version", expected = "engram {{version}}" }
+version_order = "semver"
