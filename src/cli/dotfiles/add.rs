@@ -96,7 +96,10 @@ impl DotfilesAdd {
                     && req.target.is_file()
                     && !req.target.is_symlink()
                     && !req.source.is_dir()
-                    && system::files::check(&config, req)? != system::files::FileState::Applied
+                    && matches!(
+                        system::files::check(&config, req)?,
+                        system::files::FileState::Differs(_)
+                    )
                 {
                     if !is_global_config(&req.origin.config) && !is_path_trusted(&req.origin.config)
                     {
@@ -109,6 +112,7 @@ impl DotfilesAdd {
                 }
             }
             if self.targets.is_empty() {
+                super::warn_if_dotfiles_ignored();
                 info!("dotfiles: no changed copy-mode files");
                 return Ok(());
             }

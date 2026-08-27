@@ -556,6 +556,17 @@ echo "live edit" >~/.copied-tree/managed
 assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
 assert "cat copied-root/tree/source-only" "source only"
 
+# A missing source may have been a directory. Bulk capture cannot safely infer
+# its old shape from a replacement target file, so explicit add is required.
+rm -r copied-root/tree ~/.copied-tree
+echo "replacement file" >~/.copied-tree
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert_directory_not_exists "$PWD/copied-root/tree"
+
+# An ignored config warning remains visible when no eligible entries were
+# loaded, instead of implying that every configured copy is in sync.
+assert_contains "MISE_IGNORED_CONFIG_PATHS='$PWD/mise.toml' mise dotfiles add --changed --yes 2>&1" "are not trusted"
+
 # Safe mode may inspect untrusted configuration, but it must not let that
 # configuration bulk-copy arbitrary live files into its checkout.
 mkdir -p "$HOME/untrusted-changed/source"
