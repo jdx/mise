@@ -269,6 +269,32 @@ mod windows_launcher_tests {
     }
 
     #[test]
+    fn the_shim_body_carries_the_same_recovery() {
+        // `shims::windows_file_shim_body` writes the same protocol for a "file"-mode shim, with a
+        // recursion guard of its own in front. The two are separate because that guard has to run
+        // first and because `is_generated_launcher` pins this body's line layout -- but a fix
+        // applied to one and not the other would be silent, so compare the part they share.
+        fn recovery(body: &str, label: &str, command: &str) -> Vec<String> {
+            body.lines()
+                .skip_while(|l| !l.contains("CMDCMDLINE"))
+                .map(|l| l.replace(label, "LABEL").replace(command, "COMMAND"))
+                .collect()
+        }
+        assert_eq!(
+            recovery(
+                &crate::shims::windows_file_shim_body("hello"),
+                "mise_shim_fallback",
+                "mise x -- hello",
+            ),
+            recovery(
+                &windows_launcher_body("mise run hello"),
+                "mise_launcher_fallback",
+                "mise run hello",
+            ),
+        );
+    }
+
+    #[test]
     fn the_command_line_index_matches_the_body() {
         // `is_generated_launcher` reads the command back out of the file by this index, so a line
         // added to the body above without moving it would silently stop recognising our own
