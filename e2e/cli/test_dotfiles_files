@@ -6,7 +6,7 @@ assert_contains "mise bootstrap dotfiles --help" "add"
 assert_contains "mise bootstrap dotfiles --help" "edit"
 
 mkdir -p dotfiles/nvim dotfiles/bin
-echo "gitconfig content" >dotfiles/gitconfig
+printf '[user]\n\tname = Test User\n' >dotfiles/gitconfig
 echo "starship config" >dotfiles/starship.toml
 echo "init.lua" >dotfiles/nvim/init.lua
 echo "one" >dotfiles/bin/one
@@ -141,6 +141,74 @@ mkdir ~/.local/mybin/private
 chmod 000 ~/.local/mybin/private
 assert_not_contains "MISE_DEBUG=1 mise dotfiles status 2>&1" "$HOME/.local/mybin/private"
 chmod 700 ~/.local/mybin/private
+
+# A Git manifest manages the index instead of requiring every file in the
+# directory to be listed in mise config. Ignored/untracked files stay alone.
+mkdir -p tracked-home/.config
+git -C tracked-home init -q
+printf '*\n' >tracked-home/.gitignore
+echo "tracked" >tracked-home/.config/tracked.conf
+ln -s tracked.conf tracked-home/.config/tracked-link.conf
+echo "excluded source" >tracked-home/.config/excluded.conf
+echo "untracked" >tracked-home/.config/untracked.conf
+mkdir -p tracked-home/vendor/submodule
+echo "gitlink source" >tracked-home/vendor/submodule/untracked-inside
+git -C tracked-home add -f .gitignore .config/tracked.conf .config/tracked-link.conf .config/excluded.conf
+git -C tracked-home config user.email test@example.com
+git -C tracked-home config user.name "mise test"
+git -C tracked-home commit -qm initial
+gitlink_commit=$(git -C tracked-home rev-parse HEAD)
+git -C tracked-home update-index --add --cacheinfo "160000,$gitlink_commit,vendor/submodule"
+
+# Conflicted index stages must not duplicate a manifest path or its operations.
+mkdir conflicted-home
+git -C conflicted-home init -q
+git -C conflicted-home config user.email test@example.com
+git -C conflicted-home config user.name "mise test"
+echo "base" >conflicted-home/file
+git -C conflicted-home add file
+git -C conflicted-home commit -qm base
+base_branch=$(git -C conflicted-home branch --show-current)
+git -C conflicted-home checkout -qb side
+echo "side" >conflicted-home/file
+git -C conflicted-home commit -am side -q
+git -C conflicted-home checkout -q "$base_branch"
+echo "main" >conflicted-home/file
+git -C conflicted-home commit -am main -q
+git -C conflicted-home merge side >/dev/null 2>&1 || true
+cat >conflicted-manifest.toml <<EOF
+[dotfiles]
+"~/.local/conflicted-home" = { source = "conflicted-home", mode = "symlink-each", manifest = "git" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/conflicted-manifest.toml mise dotfiles apply --yes" "unresolved Git index entry"
+
+cat <<EOF >>mise.toml
+"~/.local/tracked-home" = { source = "tracked-home", mode = "symlink-each", manifest = "git", exclude = [".config/excluded.conf"] }
+"~/.local/tracked-copy" = { source = "tracked-home", mode = "copy", manifest = "git", exclude = [".config/excluded.conf"] }
+"~/.local/tracked-subdir" = { source = "tracked-home/.config", mode = "symlink-each", manifest = "git", exclude = ["excluded.conf"] }
+EOF
+assert_succeed "GIT_DIR=/nonexistent GIT_INDEX_FILE=/nonexistent mise dotfiles apply ~/.local/tracked-home --yes"
+assert "readlink ~/.local/tracked-home/.config/tracked.conf" "$PWD/tracked-home/.config/tracked.conf"
+assert_fail "test -e ~/.local/tracked-home/.config/untracked.conf"
+assert_succeed "mise dotfiles apply ~/.local/tracked-subdir --yes"
+assert "readlink ~/.local/tracked-subdir/tracked.conf" "$PWD/tracked-home/.config/tracked.conf"
+
+# Refreshing an existing Git-manifest copy validates against its repository and
+# captures tracked files without replacing the repository or its index.
+assert_succeed "mise dotfiles apply ~/.local/tracked-copy --yes"
+echo "captured" >~/.local/tracked-copy/.config/tracked.conf
+assert_succeed "mise dotfiles add ~/.local/tracked-copy --yes"
+assert "cat tracked-home/.config/tracked.conf" "captured"
+assert "readlink tracked-home/.config/tracked-link.conf" "tracked.conf"
+assert "cat tracked-home/.config/excluded.conf" "excluded source"
+assert "cat tracked-home/vendor/submodule/untracked-inside" "gitlink source"
+assert_succeed "git -C tracked-home status --short"
+
+# Dropping a still-present ignored file from the index also prunes its old link.
+git -C tracked-home rm -fq --cached .config/tracked.conf
+assert_contains "mise dotfiles status ~/.local/tracked-home" "stale link"
+assert_succeed "mise dotfiles apply ~/.local/tracked-home --yes"
+assert_fail "test -e ~/.local/tracked-home/.config/tracked.conf"
 
 # symlink-each cleans up after itself: deleting a source file removes the
 # link it left behind (and any directory that emptied out), while files and

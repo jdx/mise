@@ -10,7 +10,7 @@ use crate::dirs;
 use crate::file;
 use crate::path::PathExt;
 use crate::system;
-use crate::system::files::{FileMode, FileRequest};
+use crate::system::files::{FileManifest, FileMode, FileRequest};
 use crate::ui::prompt;
 
 /// Add or update dotfiles in `[dotfiles]`
@@ -290,7 +290,15 @@ impl DotfilesAdd {
                                 &backup_dir.path().join("targets").join(index.to_string()),
                             )?,
                         ));
-                        system::files::copy_path(&item.target, &item.source)?;
+                        if let Some(request) = item
+                            .already_managed
+                            .as_ref()
+                            .filter(|request| request.manifest == Some(FileManifest::Git))
+                        {
+                            system::files::capture_git_manifest(request)?;
+                        } else {
+                            system::files::copy_path(&item.target, &item.source)?;
+                        }
                         info!(
                             "dotfiles: copied {} to {}",
                             item.target.display_user(),
@@ -411,7 +419,10 @@ impl PlannedAdd {
     /// as the future source footprint when add is about to copy or move it.
     fn validation_request(&self, config_path: &std::path::Path) -> FileRequest {
         let mut request = self.managed_request(config_path);
-        if self.target.exists() && !same_file(&self.target, &self.source) {
+        if request.manifest.is_none()
+            && self.target.exists()
+            && !same_file(&self.target, &self.source)
+        {
             request.source = self.target.clone();
         } else if !self.source.exists() && self.mode != FileMode::SymlinkEach {
             // Add creates an empty source file in this case. Content mode gives
@@ -439,6 +450,7 @@ impl PlannedAdd {
             content: None,
             mode: self.mode,
             exclude: vec![],
+            manifest: None,
             base: config_path
                 .parent()
                 .unwrap_or(std::path::Path::new("."))

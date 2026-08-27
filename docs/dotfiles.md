@@ -23,6 +23,7 @@ dotfiles.default_mode = "symlink"
 "~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
 "~/.config/nvim" = "dotfiles/nvim"                                   # symlink the directory itself
 "~/.local/bin" = { source = "dotfiles/bin", mode = "symlink-each" }  # symlink each file within
+"~/managed-home" = { source = "home", mode = "symlink-each", manifest = "git" }
 "~/hosts/dev" = { line = "127.0.0.1 dev.local" }                     # edit one line in ~/hosts
 ```
 
@@ -109,14 +110,31 @@ everything under it.
 Excluding a file mise already applied removes what it left behind on the next
 apply, the same as deleting the source would.
 
+## Git-tracked directories
+
+Set `manifest = "git"` on a directory-walking entry to manage only files in
+Git's index. This supports repositories that use `gitignore *` and opt files
+in with `git add -f`, without listing every path again in mise:
+
+```toml
+[dotfiles]
+"~" = { source = ".", mode = "symlink-each", manifest = "git" }
+```
+
+mise runs `git ls-files` from the source directory. Ignored and untracked
+files are left alone, while removing a file from the index removes a
+mise-owned `symlink-each` link on the next apply. `exclude` can be combined
+with the Git manifest for an additional filter. Git manifests require a
+directory source and either `symlink-each` or `copy` mode.
+
 ## Modes
 
-| Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                                                                                                                                                      |
-| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file removes the link it left behind on the next apply; files and links mise didn't create are never touched. Managed links are recorded under `$MISE_STATE_DIR/dotfiles`, so shared targets are not recursively scanned after the first apply. |
-| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.                                                                                                                                       |
-| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                                                                                                                                                    |
+| Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                                                                                                                                                                                                |
+| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file or removing it from the selected manifest removes the link it left behind on the next apply; files and links mise didn't create are never touched. Managed links are recorded under `$MISE_STATE_DIR/dotfiles`, so shared targets are not recursively scanned after the first apply. |
+| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.                                                                                                                                                                                 |
+| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                                                                                                                                                                                              |
 
 Templates get the same context as other mise templates (`env`, `vars`,
 `exec()`, etc.), which is the main reason to use them: one source file,

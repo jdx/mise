@@ -19,9 +19,11 @@
 //! (global -> local, local overrides by target key) and are only ever
 //! applied by an explicit command, never implicitly.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
-use eyre::{Result, bail};
+use eyre::{Result, WrapErr, bail};
 use indexmap::IndexMap;
 use itertools::Itertools;
 use regex::Regex;
@@ -50,6 +52,20 @@ pub(crate) enum FileMode {
     Template,
     /// write literal content declared directly in mise.toml
     Content,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileManifest {
+    Git,
+}
+
+impl FileManifest {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "git" => Some(Self::Git),
+            _ => None,
+        }
+    }
 }
 
 impl FileMode {
@@ -93,6 +109,8 @@ pub(crate) enum FileTomlEntry {
         mode: Option<String>,
         #[serde(default)]
         exclude: Option<Vec<String>>,
+        #[serde(default)]
+        manifest: Option<String>,
     },
 }
 
@@ -112,6 +130,8 @@ pub(crate) struct FileRequest {
     /// glob patterns, matched against source-relative paths, for files a
     /// directory-walking mode should skip (see [`is_excluded`])
     pub exclude: Vec<glob::Pattern>,
+    /// optional source manifest limiting which directory entries are managed
+    pub manifest: Option<FileManifest>,
     /// directory of the declaring config file — base dir for template
     /// functions like `exec` and `read_file`
     pub base: PathBuf,
@@ -187,8 +207,28 @@ pub(crate) fn files_from_config(config: &Config) -> Result<Vec<FileRequest>> {
 pub(crate) fn validate_composed_file_footprints(requests: &[FileRequest]) -> Result<()> {
     let mut leaves: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
     let mut directories: IndexMap<PathBuf, &FileRequest> = IndexMap::new();
+    let mut symlink_each_identities: HashMap<(&Path, &Path), &FileRequest> = HashMap::new();
 
     for request in requests {
+        if request.manifest.is_some() && request.source.exists() && !request.source.is_dir() {
+            bail!(
+                "[dotfiles].\"{}\": manifest requires the source to be a directory: {}",
+                request.target_raw,
+                request.source.display_user()
+            );
+        }
+        if request.mode == FileMode::SymlinkEach
+            && let Some(existing) = symlink_each_identities.insert(
+                (request.source.as_path(), request.target.as_path()),
+                request,
+            )
+        {
+            return Err(composed_file_footprint_conflict(
+                &request.target,
+                existing,
+                request,
+            ));
+        }
         // A missing source has an unknown eventual shape, but it still claims
         // its target. Whole-resource modes reserve a leaf; symlink-each has a
         // known directory-shaped target even before its children are known.
@@ -266,6 +306,7 @@ fn file_requests_match(config: &Config, first: &FileRequest, second: &FileReques
         && first.source == second.source
         && first.content == second.content
         && first.mode == second.mode
+        && first.manifest == second.manifest
         && first
             .exclude
             .iter()
@@ -313,6 +354,7 @@ fn file_entry_from_toml(target_raw: &str, value: toml::Value) -> Option<FileToml
             if table.is_empty()
                 || table.contains_key("mode")
                 || table.contains_key("exclude")
+                || table.contains_key("manifest")
                 || ((table.contains_key("source") || table.contains_key("content"))
                     && !table.contains_key("block")
                     && !table.contains_key("line")
@@ -340,14 +382,15 @@ fn merge_file_entry(
     origin: &ResourceOrigin,
     merged: &mut IndexMap<PathBuf, FileRequest>,
 ) {
-    let (source, content, mode, exclude) = match entry {
-        FileTomlEntry::Source(source) => (Some(source), None, None, None),
+    let (source, content, mode, exclude, manifest) = match entry {
+        FileTomlEntry::Source(source) => (Some(source), None, None, None, None),
         FileTomlEntry::Table {
             source,
             content,
             mode,
             exclude,
-        } => (source, content, mode, exclude),
+            manifest,
+        } => (source, content, mode, exclude, manifest),
     };
     if source.is_some() && content.is_some() {
         warn!(
@@ -355,9 +398,9 @@ fn merge_file_entry(
         );
         return;
     }
-    if content.is_some() && (mode.is_some() || exclude.is_some()) {
+    if content.is_some() && (mode.is_some() || exclude.is_some() || manifest.is_some()) {
         warn!(
-            "[dotfiles].\"{target_raw}\": inline content does not support mode or exclude, ignoring entry"
+            "[dotfiles].\"{target_raw}\": inline content does not support mode, exclude, or manifest, ignoring entry"
         );
         return;
     }
@@ -384,6 +427,22 @@ fn merge_file_entry(
             }
         },
     };
+    let manifest = match manifest.as_deref() {
+        None => None,
+        Some(value) => match FileManifest::parse(value) {
+            Some(manifest) => Some(manifest),
+            None => {
+                warn!("[dotfiles].\"{target_raw}\": unknown manifest '{value}', ignoring entry");
+                return;
+            }
+        },
+    };
+    if manifest.is_some() && !matches!(mode, FileMode::Copy | FileMode::SymlinkEach) {
+        warn!(
+            "[dotfiles].\"{target_raw}\": manifest requires mode copy or symlink-each, ignoring entry"
+        );
+        return;
+    }
     let target = resolve_target_arg(&target_raw);
     if target.is_relative() {
         warn!(
@@ -401,6 +460,7 @@ fn merge_file_entry(
                 content: Some(content),
                 mode: FileMode::Content,
                 exclude: vec![],
+                manifest: None,
                 base: base.to_path_buf(),
                 origin: origin.clone(),
             },
@@ -426,15 +486,17 @@ fn merge_file_entry(
     };
     let mut origin = origin.clone();
     origin.source = Some(source.clone());
-    for req in expand_request(
+    for req in expand_request(FileRequest {
         target_raw,
         target,
         source,
+        content: None,
         mode,
         exclude,
-        base.to_path_buf(),
+        manifest,
+        base: base.to_path_buf(),
         origin,
-    ) {
+    }) {
         merged.insert(req.target.clone(), req);
     }
 }
@@ -526,15 +588,18 @@ pub(crate) fn copy_path(source: &Path, target: &Path) -> Result<()> {
     Ok(())
 }
 
-fn expand_request(
-    target_raw: String,
-    target: PathBuf,
-    source: PathBuf,
-    mode: FileMode,
-    exclude: Vec<glob::Pattern>,
-    base: PathBuf,
-    origin: ResourceOrigin,
-) -> Vec<FileRequest> {
+fn expand_request(req: FileRequest) -> Vec<FileRequest> {
+    let FileRequest {
+        target_raw,
+        target,
+        source,
+        mode,
+        exclude,
+        manifest,
+        base,
+        origin,
+        ..
+    } = req;
     if !is_glob_pattern(&source) {
         return vec![FileRequest {
             target_raw,
@@ -543,6 +608,7 @@ fn expand_request(
             content: None,
             mode,
             exclude,
+            manifest,
             base,
             origin,
         }];
@@ -587,6 +653,7 @@ fn expand_request(
             content: None,
             mode,
             exclude,
+            manifest,
             base,
             origin: ResourceOrigin {
                 source: Some(matches[0].clone()),
@@ -619,6 +686,7 @@ fn expand_request(
                 content: None,
                 mode,
                 exclude: exclude.clone(),
+                manifest,
                 base: base.clone(),
                 origin: ResourceOrigin {
                     source: Some(matched_source.clone()),
@@ -1168,6 +1236,26 @@ fn is_excluded(rel: &Path, patterns: &[glob::Pattern]) -> bool {
 /// every (source file, target path) pair of a directory-walking entry —
 /// `symlink-each`, and `copy` with a directory source
 fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
+    if req.manifest == Some(FileManifest::Git) {
+        return git_tracked_paths(&req.source)?.into_iter().try_fold(
+            vec![],
+            |mut out, entry| -> Result<_> {
+                if entry.is_gitlink || is_excluded(&entry.path, &req.exclude) {
+                    return Ok(out);
+                }
+                let source = req.source.join(&entry.path);
+                match std::fs::symlink_metadata(&source) {
+                    Ok(metadata) if !metadata.file_type().is_dir() => {
+                        out.push((source, req.target.join(entry.path)));
+                    }
+                    Ok(_) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err.into()),
+                }
+                Ok(out)
+            },
+        );
+    }
     let mut out = vec![];
     let mut walk = walkdir::WalkDir::new(&req.source)
         .sort_by_file_name()
@@ -1189,6 +1277,140 @@ fn walk_source_files(req: &FileRequest) -> Result<Vec<(PathBuf, PathBuf)>> {
         out.push((entry.path().to_path_buf(), req.target.join(rel)));
     }
     Ok(out)
+}
+
+struct GitTrackedPath {
+    path: PathBuf,
+    is_gitlink: bool,
+    is_symlink: bool,
+}
+
+fn git_tracked_paths(source: &Path) -> Result<Vec<GitTrackedPath>> {
+    let mut root_command = Command::new("git");
+    root_command
+        .arg("-C")
+        .arg(source)
+        .args(["-c", "safe.directory=*", "rev-parse", "--show-toplevel"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::git::sanitize_git_command(&mut root_command);
+    let root_output = root_command.output().wrap_err_with(|| {
+        format!(
+            "failed to locate Git repository for {}",
+            source.display_user()
+        )
+    })?;
+    if !root_output.status.success() {
+        let stderr = String::from_utf8_lossy(&root_output.stderr)
+            .trim()
+            .to_string();
+        bail!(
+            "failed to locate Git repository for {}: {}",
+            source.display_user(),
+            if stderr.is_empty() {
+                root_output.status.to_string()
+            } else {
+                stderr
+            }
+        );
+    }
+    let root = root_output
+        .stdout
+        .strip_suffix(b"\n")
+        .unwrap_or(&root_output.stdout);
+    let root = root.strip_suffix(b"\r").unwrap_or(root);
+    let safe = format!("safe.directory={}", path_buf_from_git_bytes(root).display());
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(source)
+        .arg("-c")
+        .arg(safe)
+        .arg("-c")
+        .arg("core.autocrlf=false")
+        .args(["ls-files", "-z", "--cached", "--stage", "--", "."])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output().wrap_err_with(|| {
+        format!(
+            "failed to list Git-tracked files in {}",
+            source.display_user()
+        )
+    })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        bail!(
+            "failed to list Git-tracked files in {}: {}",
+            source.display_user(),
+            if stderr.is_empty() {
+                output.status.to_string()
+            } else {
+                stderr
+            }
+        );
+    }
+    output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|record| !record.is_empty())
+        .map(|record| {
+            let tab = record
+                .iter()
+                .position(|byte| *byte == b'\t')
+                .ok_or_else(|| {
+                    eyre::eyre!(
+                        "unexpected git ls-files output for {}",
+                        source.display_user()
+                    )
+                })?;
+            let metadata = &record[..tab];
+            let path = path_buf_from_git_bytes(&record[tab + 1..]);
+            if !metadata.ends_with(b" 0") {
+                bail!(
+                    "unresolved Git index entry {} in {}",
+                    path.display(),
+                    source.display_user()
+                );
+            }
+            Ok(GitTrackedPath {
+                is_gitlink: metadata.starts_with(b"160000 "),
+                is_symlink: metadata.starts_with(b"120000 "),
+                path,
+            })
+        })
+        .collect()
+}
+
+/// Capture only the files selected by a Git manifest, preserving the source
+/// repository and any untracked files around them.
+pub(crate) fn capture_git_manifest(req: &FileRequest) -> Result<()> {
+    for entry in git_tracked_paths(&req.source)? {
+        if entry.is_gitlink || entry.is_symlink || is_excluded(&entry.path, &req.exclude) {
+            continue;
+        }
+        let from = req.target.join(&entry.path);
+        let to = req.source.join(entry.path);
+        if from.exists() || from.is_symlink() {
+            if !file::same_file(&from, &to) {
+                copy_path(&from, &to)?;
+            }
+        } else if to.exists() || to.is_symlink() {
+            remove_existing(&to)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn path_buf_from_git_bytes(path: &[u8]) -> PathBuf {
+    use std::os::unix::ffi::OsStringExt;
+    std::ffi::OsString::from_vec(path.to_vec()).into()
+}
+
+#[cfg(not(unix))]
+fn path_buf_from_git_bytes(path: &[u8]) -> PathBuf {
+    String::from_utf8_lossy(path).into_owned().into()
 }
 
 pub(crate) struct ApplyOpts {
@@ -2286,6 +2508,7 @@ mod tests {
             content: None,
             mode,
             exclude: vec![],
+            manifest: None,
             base: source.parent().expect("source parent").to_path_buf(),
             origin: ResourceOrigin {
                 config: PathBuf::from("/mise.toml"),
@@ -2315,6 +2538,21 @@ mod tests {
             link_req(&source_a, &target, FileMode::SymlinkEach),
             link_req(&source_b, &target, FileMode::SymlinkEach),
         ])?;
+        Ok(())
+    }
+
+    #[test]
+    fn composed_symlink_each_rejects_duplicate_state_identity() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        file::create_dir_all(&source)?;
+        let ordinary = link_req(&source, &target, FileMode::SymlinkEach);
+        let mut git_manifest = ordinary.clone();
+        git_manifest.manifest = Some(FileManifest::Git);
+
+        let err = validate_composed_file_footprints(&[ordinary, git_manifest]).unwrap_err();
+        assert!(err.to_string().contains("conflicting symlink-each"));
         Ok(())
     }
 
