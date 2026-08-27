@@ -58,6 +58,9 @@ impl TestTool {
         let target_tools = self.get_target_tools(&config).await?;
         let mut targets = vec![];
         for (i, (tool, rt)) in target_tools.into_iter().enumerate() {
+            if !should_test_registry_tool(rt) {
+                continue;
+            }
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
                 continue;
@@ -483,6 +486,10 @@ fn require_resolved_version<T>(version: Option<T>, tool: impl Display) -> Result
     version.ok_or_else(|| eyre!("no versions found for {tool}"))
 }
 
+fn should_test_registry_tool(tool: &RegistryTool) -> bool {
+    tool.is_supported_os()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +499,13 @@ mod tests {
         let err = require_resolved_version::<()>(None, "example").unwrap_err();
 
         assert_eq!(err.to_string(), "no versions found for example");
+    }
+
+    #[test]
+    fn unsupported_os_registry_tool_is_skipped() {
+        let tool = REGISTRY.get("figma-export").unwrap();
+
+        assert_eq!(should_test_registry_tool(tool), cfg!(target_os = "macos"));
     }
 }
 
