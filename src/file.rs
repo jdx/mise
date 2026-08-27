@@ -271,12 +271,23 @@ pub(crate) fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     })
 }
 
+/// Whether a directory entry is there at all, without resolving it.
+///
+/// [`Path::exists`] answers about a link's *target*, so it is false for one whose target is gone —
+/// and that entry is exactly the thing a caller asking "is there something here to remove, or to
+/// tell the user about?" needs to find.
+pub(crate) fn entry_exists<P: AsRef<Path>>(path: P) -> bool {
+    fs::symlink_metadata(path.as_ref()).is_ok()
+}
+
 pub(crate) fn remove_all_with_progress<P: AsRef<Path>>(
     path: P,
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let path = path.as_ref();
-    if !path.exists() {
+    // Not `exists()`: a link whose target is gone is still an entry to remove, and reporting
+    // nothing to do would leave it behind exactly where a user went looking for it.
+    if !entry_exists(path) {
         return Ok(());
     }
     pr.set_message(format!("remove {}", display_path(path)));
@@ -885,6 +896,20 @@ pub(crate) fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<P
 }
 
 pub(crate) fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
+    subdirs(dir, false)
+}
+
+/// [`dir_subdirs`], but keeping a link whose target is gone.
+///
+/// Most callers want the plain version: a link that resolves to nothing is not a directory they
+/// can read a plugin, a cached download or another version manager's install out of. Version
+/// listing is the exception — the entry is still there, still occupying the name, and still the
+/// thing a user has to be told about before they can remove it.
+pub(crate) fn dir_subdirs_keeping_broken_links(dir: &Path) -> Result<BTreeSet<String>> {
+    subdirs(dir, true)
+}
+
+fn subdirs(dir: &Path, keep_broken_links: bool) -> Result<BTreeSet<String>> {
     let mut output = Default::default();
 
     if !dir.exists() {
@@ -893,8 +918,14 @@ pub(crate) fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
 
     for entry in dir.read_dir()? {
         let entry = entry?;
+        // `entry.file_type()` describes the entry itself; `entry.path().is_dir()` resolves it.
+        // A link is kept when it leads to a directory, or — for the callers that asked — when it
+        // leads nowhere at all.
         let ft = entry.file_type()?;
-        if ft.is_dir() || (ft.is_symlink() && entry.path().is_dir()) {
+        let keep = ft.is_dir()
+            || (ft.is_symlink()
+                && (entry.path().is_dir() || keep_broken_links && !entry.path().exists()));
+        if keep {
             output.insert(entry.file_name().into_string().unwrap());
         }
     }
@@ -2694,6 +2725,61 @@ mod tests {
     /// Deliberately not `#[cfg(unix)]`: `make_symlink` writes a real symlink on unix and a
     /// junction on Windows, and the two are removed by different system calls. The behaviour under
     /// test is what happens to a link mise itself wrote, so it has to be checked on both.
+    /// Deliberately not `#[cfg(unix)]`, like the removal tests below: `make_symlink` writes a real
+    /// symlink on unix and a junction on Windows, and only `symlink_metadata` describes both
+    /// without resolving them.
+    #[test]
+    fn entry_exists_sees_what_path_exists_hides() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let live = dir.path().join("live");
+        let broken = dir.path().join("broken");
+        let plain = dir.path().join("plain.txt");
+        create_dir_all(&target).unwrap();
+        write(&plain, "x").unwrap();
+        make_symlink(&target, &live).unwrap();
+        make_symlink(&dir.path().join("nowhere"), &broken).unwrap();
+
+        for p in [&target, &plain, &live, &broken] {
+            assert!(entry_exists(p), "{}", p.display());
+        }
+        assert!(!entry_exists(dir.path().join("never-existed")));
+
+        // The control, and the whole reason this function exists: `Path::exists` answers about the
+        // link's target, so it disagrees for exactly the entry that needs finding.
+        assert!(!broken.exists());
+    }
+
+    /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
+    /// what the predicate keys on. `make_symlink` writes a junction here, so if that were not so,
+    /// `broken` would be dropped below — and the *live* junction would never have been listed
+    /// either, which is how `mise ls` has been showing linked versions on Windows all along.
+    #[test]
+    fn only_the_version_scan_keeps_a_link_that_leads_nowhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        create_dir_all(&target).unwrap();
+        make_symlink(&target, &dir.path().join("live")).unwrap();
+        make_symlink(&dir.path().join("nowhere"), &dir.path().join("broken")).unwrap();
+        write(dir.path().join("plain.txt"), "x").unwrap();
+
+        // The control: the plain listing still drops it, because a link that resolves to nothing
+        // is not a directory its callers can read a plugin or a cached download out of.
+        let plain = dir_subdirs(dir.path()).unwrap();
+        assert!(
+            plain.contains("target") && plain.contains("live"),
+            "{plain:?}"
+        );
+        assert!(!plain.contains("broken"), "{plain:?}");
+
+        let kept = dir_subdirs_keeping_broken_links(dir.path()).unwrap();
+        assert!(kept.contains("broken"), "{kept:?}");
+        // Everything else it reports is unchanged -- including that a regular file is still not a
+        // subdirectory.
+        assert!(kept.contains("target") && kept.contains("live"), "{kept:?}");
+        assert!(!kept.contains("plain.txt"), "{kept:?}");
+    }
+
     #[test]
     fn remove_all_removes_a_link_whose_target_is_gone() {
         let dir = tempfile::tempdir().unwrap();

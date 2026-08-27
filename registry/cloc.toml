@@ -9,7 +9,6 @@ full = "github:AlDanial/cloc"
 
 [backends.options]
 bin = "cloc"
-depends = ["perl"]
 
 [backends.options.platforms.linux-x64]
 asset_pattern = "cloc-{{ version }}.pl"

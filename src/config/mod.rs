@@ -41,8 +41,8 @@ use crate::task::{
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
-    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder, ToolSource,
+    ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
@@ -514,7 +514,7 @@ impl Config {
         Ok(self
             .resolve_tool_opts_with_overrides(backend_arg)
             .await?
-            .into_options())
+            .into_effective())
     }
 
     pub(crate) async fn resolve_tool_opts_with_overrides(
@@ -533,26 +533,7 @@ impl Config {
         });
         let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
-        let mut resolved = ResolvedToolOptions::default();
-        resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
-        if let Some(manifest_opts) = backend_arg.install_manifest_opts() {
-            resolved.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
-        }
-        if alias_opts.is_none()
-            && let Some(full_opts) = backend_arg.resolved_full_opts()
-        {
-            resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
-        }
-        if let Some(alias_opts) = alias_opts {
-            resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
-        }
-        if let Some(config_opts) = config_opts {
-            resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
-        }
-        if let Some(inline_opts) = backend_arg.explicit_opts() {
-            resolved.apply_overrides(inline_opts, ToolOptionSource::InlineBackendArg);
-        }
-        Ok(resolved)
+        Ok(backend_arg.resolve_opts_with_layers(alias_opts, config_opts, None))
     }
 
     fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
@@ -3263,7 +3244,7 @@ const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskInputs {
     global_inputs: Option<(Vec<String>, PathBuf)>,
-    input_groups: Option<(IndexMap<String, Vec<String>>, PathBuf)>,
+    input_groups: IndexMap<String, (Vec<String>, PathBuf)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -3283,15 +3264,31 @@ impl ResolvedTaskInputs {
                 let inputs = &cf.task_config().global_inputs;
                 (!inputs.is_empty()).then(|| (inputs.clone(), cf.config_root()))
             }),
-            input_groups: configs.iter().find_map(|cf| {
-                let groups = &cf.task_config().input_groups;
-                (!groups.is_empty()).then(|| (groups.clone(), cf.config_root()))
-            }),
+            input_groups: configs
+                .iter()
+                .find_map(|cf| {
+                    let groups = &cf.task_config().input_groups;
+                    (!groups.is_empty()).then(|| {
+                        let root = cf.config_root();
+                        groups
+                            .iter()
+                            .map(|(name, entries)| (name.clone(), (entries.clone(), root.clone())))
+                            .collect()
+                    })
+                })
+                .unwrap_or_default(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.global_inputs.is_none() && self.input_groups.is_none()
+        self.global_inputs.is_none() && self.input_groups.is_empty()
+    }
+
+    fn overlay(&mut self, overlay: Self) {
+        if overlay.global_inputs.is_some() {
+            self.global_inputs = overlay.global_inputs;
+        }
+        self.input_groups.extend(overlay.input_groups);
     }
 }
 
@@ -3335,10 +3332,7 @@ fn expand_task_inputs(
             });
             continue;
         };
-        let (groups, groups_root) = task_inputs.input_groups.as_ref().ok_or_else(|| {
-            eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
-        })?;
-        let inputs = groups.get(group).ok_or_else(|| {
+        let (inputs, group_root) = task_inputs.input_groups.get(group).ok_or_else(|| {
             eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
         })?;
         if let Some(cycle_start) = stack.iter().position(|name| name == group) {
@@ -3353,7 +3347,7 @@ fn expand_task_inputs(
         expanded.extend(expand_task_inputs(
             inputs,
             task_inputs,
-            groups_root,
+            group_root,
             task_name,
             stack,
             true,
@@ -3405,21 +3399,19 @@ async fn apply_task_config_inputs(
         )),
         None => None,
     };
-    let input_groups = match &task_inputs.input_groups {
-        Some((groups, root)) => Some((
-            groups
-                .iter()
-                .map(|(name, entries)| {
-                    Ok((
-                        name.clone(),
-                        render_task_input_entries(entries, root, &tera_ctx)?,
-                    ))
-                })
-                .collect::<Result<_>>()?,
-            root.clone(),
-        )),
-        None => None,
-    };
+    let input_groups = task_inputs
+        .input_groups
+        .iter()
+        .map(|(name, (entries, root))| {
+            Ok((
+                name.clone(),
+                (
+                    render_task_input_entries(entries, root, &tera_ctx)?,
+                    root.clone(),
+                ),
+            ))
+        })
+        .collect::<Result<_>>()?;
     let task_inputs = ResolvedTaskInputs {
         global_inputs,
         input_groups,
@@ -4867,6 +4859,7 @@ struct TaskSources {
 #[derive(Clone)]
 struct CascadedTaskConfig {
     task_config: TaskConfig,
+    inputs: ResolvedTaskInputs,
     includes_root: PathBuf,
     excludes_root: PathBuf,
 }
@@ -4875,6 +4868,9 @@ fn merge_cascaded_task_config(
     cascaded: &mut CascadedTaskConfig,
     configs: &[&Arc<dyn ConfigFile>],
 ) -> Result<()> {
+    cascaded
+        .inputs
+        .overlay(ResolvedTaskInputs::from_configs(configs));
     if let Some(dir) = configs.iter().find_map(|cf| cf.task_config().dir.clone()) {
         cascaded.task_config.dir = Some(dir);
     }
@@ -4953,6 +4949,7 @@ fn cascaded_task_config_for_dir(
             Some(true) if cascaded.is_none() => {
                 cascaded = Some(CascadedTaskConfig {
                     task_config: TaskConfig::default(),
+                    inputs: ResolvedTaskInputs::default(),
                     includes_root: root.clone(),
                     excludes_root: root,
                 });
@@ -5096,10 +5093,15 @@ async fn load_task_sources_from_configs(
         .unwrap_or_default();
     let excludes = resolve_task_excludes(&excludes_root, &excludes);
 
+    let mut inputs = cascaded_task_config
+        .map(|tc| tc.inputs.clone())
+        .unwrap_or_default();
+    inputs.overlay(ResolvedTaskInputs::from_configs(&configs));
+
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
     let task_config = ResolvedTaskConfig {
-        inputs: ResolvedTaskInputs::from_configs(&configs),
+        inputs,
         environment: ResolvedTaskEnvironment::from_configs(
             &configs,
             cascaded_task_config.map(|tc| &tc.task_config),
@@ -5451,27 +5453,30 @@ mod tests {
     #[test]
     fn test_expand_task_inputs_supports_nested_groups() -> Result<()> {
         let task_inputs = ResolvedTaskInputs {
-            input_groups: Some((
-                IndexMap::from([
+            input_groups: IndexMap::from([
+                (
+                    "shared".to_string(),
                     (
-                        "shared".to_string(),
                         vec![
                             "Cargo.toml".to_string(),
                             "src/**/*.rs".to_string(),
                             "\\!important.txt".to_string(),
                         ],
+                        PathBuf::from("/workspace"),
                     ),
+                ),
+                (
+                    "production".to_string(),
                     (
-                        "production".to_string(),
                         vec![
                             "@group:shared".to_string(),
                             "!src/**/*_test.rs".to_string(),
                             "src/**/*.rs".to_string(),
                         ],
+                        PathBuf::from("/project"),
                     ),
-                ]),
-                PathBuf::from("/workspace"),
-            )),
+                ),
+            ]),
             ..Default::default()
         };
         let root = Path::new("/workspace");
@@ -5490,8 +5495,8 @@ mod tests {
                 "/workspace/Cargo.toml",
                 "/workspace/src/**/*.rs",
                 "/workspace/!important.txt",
-                "!/workspace/src/**/*_test.rs",
-                "/workspace/src/**/*.rs",
+                "!/project/src/**/*_test.rs",
+                "/project/src/**/*.rs",
             ]
         );
         Ok(())
@@ -5500,13 +5505,16 @@ mod tests {
     #[test]
     fn test_expand_task_inputs_rejects_unknown_and_cyclic_groups() {
         let task_inputs = ResolvedTaskInputs {
-            input_groups: Some((
-                IndexMap::from([
-                    ("a".to_string(), vec!["@group:b".to_string()]),
-                    ("b".to_string(), vec!["@group:a".to_string()]),
-                ]),
-                PathBuf::from("/workspace"),
-            )),
+            input_groups: IndexMap::from([
+                (
+                    "a".to_string(),
+                    (vec!["@group:b".to_string()], PathBuf::from("/workspace")),
+                ),
+                (
+                    "b".to_string(),
+                    (vec!["@group:a".to_string()], PathBuf::from("/workspace")),
+                ),
+            ]),
             ..Default::default()
         };
 
@@ -6232,7 +6240,7 @@ mod tests {
             crate::toolset::parse_tool_options("api_url=https://config.example/api/v3,foo=config");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(
+            crate::toolset::ToolRequest::new_with_options(
                 resolved_ba,
                 "1.0.0",
                 config_opts,
@@ -6311,7 +6319,12 @@ mod tests {
             crate::toolset::parse_tool_options("asset_pattern=config-pattern,bar=config");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6355,7 +6368,7 @@ mod tests {
         ));
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
         assert_eq!(opts.get("asset_pattern"), Some("config-pattern"));
@@ -6386,7 +6399,12 @@ mod tests {
             crate::toolset::parse_tool_options("version_json_path=.current,config_only=true");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6436,7 +6454,7 @@ mod tests {
         let config = Arc::new(config);
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("version_json_path"), Some(".current"));
         assert_eq!(
@@ -6468,7 +6486,12 @@ mod tests {
         );
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6522,7 +6545,7 @@ mod tests {
         let config = Arc::new(config);
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("version_prefix"), Some("current/"));
         assert_eq!(
@@ -6584,7 +6607,7 @@ mod tests {
             let ba = Arc::new(BackendArg::from("env-opts-test"));
 
             let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-            let opts = resolved.options();
+            let opts = resolved.effective();
 
             assert_eq!(ba.full(), "github:env/repo[foo=env]");
             assert_eq!(opts.get("foo"), Some("env"));

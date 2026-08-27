@@ -428,8 +428,12 @@ fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
     }
 }
 
-#[cfg(windows)]
-fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
+/// Find the `mise-shim.exe` that ships beside `mise_bin`, if there is one.
+///
+/// Not `#[cfg(windows)]`, unlike the shim code around it: `mise generate task-stubs
+/// --windows-launcher=exe` asks the same question, and on a host where the answer is always `None`
+/// that is the honest answer to report rather than a compile error to route around.
+pub(crate) fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
     // Look next to the mise binary first
     if let Some(parent) = mise_bin.parent() {
         let candidate = parent.join("mise-shim.exe");

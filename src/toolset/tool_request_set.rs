@@ -289,15 +289,15 @@ impl ToolRequestSetBuilder {
 ///
 /// A request can already contain registry, install-manifest, or backend-alias
 /// defaults, so option emptiness cannot indicate whether config should apply.
-/// `opts_with_config` preserves the normal precedence and reapplies explicit
-/// inline backend options last.
+/// The canonical backend resolver preserves the normal precedence and reapplies
+/// explicit inline backend options last.
 fn apply_config_options_to_runtime_arg(trs: &ToolRequestSet, mut tvr: ToolRequest) -> ToolRequest {
     if let Some(config_options) = trs
         .tools
         .get(tvr.ba())
         .and_then(|requests| configured_options_for_runtime_request(requests, &tvr))
     {
-        tvr.set_options(tvr.ba().opts_with_config(Some(config_options)));
+        tvr.apply_config_options(config_options);
     }
     tvr
 }
@@ -490,7 +490,7 @@ mod tests {
         let config_options = parse_tool_options(
             r#"bin="config",postinstall="echo configured",config_only="config""#,
         );
-        let config_request = ToolRequest::new_opts(
+        let config_request = ToolRequest::new_with_options(
             config_ba.clone(),
             "0.8.0",
             config_options,
@@ -518,20 +518,68 @@ mod tests {
         assert_eq!(layered.options().get("bin"), Some("inline"));
         assert_eq!(layered.options().get("config_only"), Some("config"));
         assert_eq!(layered.options().get("inline_only"), Some("inline"));
+
+        let request_ba = Arc::new(BackendArg::from("solidity"));
+        let request = ToolRequest::new_with_options(
+            request_ba,
+            "0.8.1",
+            parse_tool_options(
+                r#"bin="request",request_only="request",depends=["request-dependency"]"#,
+            ),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let mut layered = apply_config_options_to_runtime_arg(&trs, request);
+        assert_eq!(layered.options().get("bin"), Some("request"));
+        assert_eq!(layered.options().get("config_only"), Some("config"));
+        assert_eq!(layered.options().get("request_only"), Some("request"));
+        assert_eq!(
+            layered.options().core.depends,
+            Some(vec!["request-dependency".to_string()])
+        );
+
+        let mut next = ToolRequestSet::new();
+        let next_config = ToolRequest::new_with_options(
+            config_ba,
+            "0.8.0",
+            parse_tool_options(r#"bin="next-config",next_only="next""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        next.add_version(next_config, &ToolSource::Unknown);
+        layered = apply_config_options_to_runtime_arg(&next, layered);
+        assert_eq!(layered.options().get("bin"), Some("request"));
+        assert_eq!(layered.options().get("config_only"), None);
+        assert_eq!(layered.options().get("next_only"), Some("next"));
+        assert_eq!(layered.options().get("request_only"), Some("request"));
+
+        let collision = ToolRequest::new_with_options(
+            Arc::new(BackendArg::from("solidity")),
+            "0.8.1",
+            parse_tool_options(r#"bin="solc""#),
+            ToolSource::Argument,
+        )
+        .unwrap();
+        let collision = apply_config_options_to_runtime_arg(&trs, collision);
+        assert_eq!(collision.options().get("bin"), Some("solc"));
+        assert_eq!(
+            collision.option_source("bin"),
+            Some(crate::toolset::ToolOptionSource::Request)
+        );
     }
 
     #[tokio::test]
     async fn test_runtime_arg_options_match_configured_version() {
         crate::toolset::install_state::init().await.unwrap();
         let ba = Arc::new(BackendArg::from("dummy"));
-        let first = ToolRequest::new_opts(
+        let first = ToolRequest::new_with_options(
             ba.clone(),
             "1.0.0",
             parse_tool_options(r#"postinstall="echo one",selected="one""#),
             ToolSource::Unknown,
         )
         .unwrap();
-        let second = ToolRequest::new_opts(
+        let second = ToolRequest::new_with_options(
             ba.clone(),
             "2.0.0",
             parse_tool_options(r#"postinstall="echo two",selected="two""#),
@@ -572,10 +620,14 @@ mod tests {
         let mut inactive_options =
             parse_tool_options(r#"postinstall="echo inactive",selected="inactive""#);
         inactive_options.core.os = Some(vec![inactive_os()]);
-        let inactive =
-            ToolRequest::new_opts(ba.clone(), "4.0.0", inactive_options, ToolSource::Unknown)
-                .unwrap();
-        let active = ToolRequest::new_opts(
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "4.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
             ba.clone(),
             "4.0.0",
             parse_tool_options(r#"postinstall="echo active",selected="active""#),
@@ -603,7 +655,8 @@ mod tests {
             ..Default::default()
         };
         let request =
-            ToolRequest::new_opts(ba.clone(), "latest", options, ToolSource::Unknown).unwrap();
+            ToolRequest::new_with_options(ba.clone(), "latest", options, ToolSource::Unknown)
+                .unwrap();
         (ba, vec![request])
     }
 
@@ -637,7 +690,8 @@ mod tests {
             ..Default::default()
         };
         requests.push(
-            ToolRequest::new_opts(ba.clone(), "latest", options, ToolSource::Unknown).unwrap(),
+            ToolRequest::new_with_options(ba.clone(), "latest", options, ToolSource::Unknown)
+                .unwrap(),
         );
 
         assert!(builder.should_report_unknown_tool(&ba, &requests));

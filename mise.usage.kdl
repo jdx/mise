@@ -1799,6 +1799,26 @@ Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate inst
 """#
             arg <MISE_BIN>
         }
+        flag --windows-launcher help="What to write beside each stub for Windows to launch" default=cmd {
+            long_help #"""
+What to write beside each stub for Windows to launch
+
+`cmd` writes `<task>.cmd`. cmd.exe re-parses the whole line before `%*` expands, so an
+argument containing `& ^ | " %VAR%` does not reach the task intact when the launcher is
+called from PowerShell.
+
+`exe` writes a native `<task>.exe` instead, which receives its arguments unchanged from
+every shell. It is a copy of the mise-shim.exe that ships with the Windows build, so it
+can only be generated on Windows, and it adds ~220KB per task to a directory that is
+normally committed.
+"""#
+            arg <WINDOWS_LAUNCHER> {
+                choices {
+                    choice cmd
+                    choice exe
+                }
+            }
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         complete dir type=dir
     }

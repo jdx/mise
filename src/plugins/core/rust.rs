@@ -557,7 +557,7 @@ impl Backend for RustPlugin {
             let mut oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
             if bump && requested != latest {
                 oi.bump = Some(latest.clone());
-                oi.tool_request = ToolRequest::new_opts(
+                oi.tool_request = ToolRequest::new_with_options(
                     tv.request.ba().clone(),
                     &latest,
                     tv.request.options(),

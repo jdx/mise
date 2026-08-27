@@ -2576,9 +2576,13 @@ pkg@1.2.0 '1.2.0'
             crate::config::env_directive::EnvValue::from("https://registry.example.com"),
         );
 
-        let request =
-            ToolRequest::new_opts(backend.ba().clone(), "latest", options, ToolSource::Unknown)
-                .unwrap();
+        let request = ToolRequest::new_with_options(
+            backend.ba().clone(),
+            "latest",
+            options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
         let resolved = backend
             .resolve_lockfile_options(&request, &PlatformTarget::from_current())
             .unwrap();

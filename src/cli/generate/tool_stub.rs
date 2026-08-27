@@ -970,11 +970,13 @@ fn extract_toml_from_stub(content: &str) -> String {
 /// beyond tidiness: a name containing `%` would otherwise be expanded by `cmd.exe` as an
 /// environment variable and hand `mise tool-stub` the wrong path.
 ///
-/// `%*` forwards the argument text with quoting intact, and cmd returns the last command's exit
-/// code when the script ends. `mise` comes off PATH, the same assumption the shebang already makes.
+/// `mise` comes off PATH, the same assumption the shebang already makes. Argument handling and the
+/// exit code are [`super::windows_launcher_body`]'s job — `%*` alone does not carry an argument
+/// containing `& ^ | " < >`, because cmd parses its command line before the batch file runs.
 ///
-/// Being one fixed string also makes it safe to clean up: an existing `.cmd` is only removed when
-/// it matches this exactly, so a hand-written launcher is never deleted.
+/// Cleanup does not compare against this string: [`super::is_generated_launcher`] recognises a
+/// launcher by its marker and shape, so one written by an older mise is still removed, and a
+/// hand-written `.cmd` still never is.
 static WINDOWS_LAUNCHER: LazyLock<String> =
     LazyLock::new(|| super::windows_launcher_body("mise tool-stub \"%~dpn0\""));
 
