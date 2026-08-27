@@ -32,8 +32,10 @@ pub(crate) use yarn::YarnDepsProvider;
 
 use std::path::{Path, PathBuf};
 
+use eyre::Result;
 use glob::glob;
 
+use crate::deps::DepsCommand;
 use crate::deps::rule::DepsProviderConfig;
 use crate::task::task_source_checker::expand_glob_braces;
 
@@ -104,6 +106,53 @@ impl ProviderBase {
         let rules = serde_json::to_string(&(&self.config.dir, &self.config.outputs))
             .expect("deps output rules should serialize");
         crate::hash::hash_blake3_to_str(&rules)
+    }
+
+    /// The configured `run` override, or `program` invoked with `args`.
+    /// `description` only applies when the rule doesn't configure one.
+    pub(crate) fn install_command(
+        &self,
+        program: &str,
+        args: &[&str],
+        description: &str,
+    ) -> Result<DepsCommand> {
+        if let Some(run) = &self.config.run {
+            return DepsCommand::from_string(run, &self.project_root, &self.config);
+        }
+        let description = self
+            .config
+            .description
+            .clone()
+            .unwrap_or_else(|| description.to_string());
+        Ok(self.command(program, args, description))
+    }
+
+    /// `program subcommand [dev_flag] packages`, described without the flag
+    /// because it isn't what the user asked for.
+    pub(crate) fn package_command(
+        &self,
+        program: &str,
+        subcommand: &str,
+        dev_flag: Option<&str>,
+        packages: &[&str],
+    ) -> DepsCommand {
+        let args: Vec<&str> = subcommand
+            .split_whitespace()
+            .chain(dev_flag)
+            .chain(packages.iter().copied())
+            .collect();
+        let description = format!("{program} {subcommand} {}", packages.join(" "));
+        self.command(program, &args, description)
+    }
+
+    fn command(&self, program: &str, args: &[&str], description: String) -> DepsCommand {
+        DepsCommand {
+            program: program.to_string(),
+            args: args.iter().map(|arg| arg.to_string()).collect(),
+            env: self.config.env.clone(),
+            cwd: Some(self.config_root()),
+            description,
+        }
     }
 
     fn resolve_path_patterns(&self, patterns: &[String], require_glob_match: bool) -> Vec<PathBuf> {

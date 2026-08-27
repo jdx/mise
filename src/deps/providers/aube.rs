@@ -38,22 +38,8 @@ impl DepsProvider for AubeDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "aube".to_string(),
-            args: vec!["install".to_string()],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "aube install".to_string()),
-        })
+        self.base
+            .install_command("aube", &["install"], "aube install")
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
@@ -61,31 +47,12 @@ impl DepsProvider for AubeDepsProvider {
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
-        let mut args = vec!["add".to_string()];
-        if dev {
-            args.push("-D".to_string());
-        }
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "aube".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("aube add {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command("aube", "add", dev.then_some("-D"), packages))
     }
 
     fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
-        let mut args = vec!["remove".to_string()];
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "aube".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("aube remove {}", packages.join(" ")),
-        })
+        Ok(self.base.package_command("aube", "remove", None, packages))
     }
 }

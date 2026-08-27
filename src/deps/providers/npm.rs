@@ -40,22 +40,8 @@ impl DepsProvider for NpmDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "npm".to_string(),
-            args: vec!["install".to_string()],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "npm install".to_string()),
-        })
+        self.base
+            .install_command("npm", &["install"], "npm install")
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
@@ -63,31 +49,14 @@ impl DepsProvider for NpmDepsProvider {
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
-        let mut args = vec!["install".to_string()];
-        if dev {
-            args.push("--save-dev".to_string());
-        }
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "npm".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("npm install {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command("npm", "install", dev.then_some("--save-dev"), packages))
     }
 
     fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
-        let mut args = vec!["uninstall".to_string()];
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "npm".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("npm uninstall {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command("npm", "uninstall", None, packages))
     }
 }

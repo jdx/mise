@@ -47,22 +47,8 @@ impl DepsProvider for DenoDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "deno".to_string(),
-            args: vec!["install".to_string()],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "deno install".to_string()),
-        })
+        self.base
+            .install_command("deno", &["install"], "deno install")
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
@@ -70,31 +56,12 @@ impl DepsProvider for DenoDepsProvider {
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
-        let mut args = vec!["add".to_string()];
-        if dev {
-            args.push("--dev".to_string());
-        }
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "deno".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("deno add {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command("deno", "add", dev.then_some("--dev"), packages))
     }
 
     fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
-        let mut args = vec!["remove".to_string()];
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "deno".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("deno remove {}", packages.join(" ")),
-        })
+        Ok(self.base.package_command("deno", "remove", None, packages))
     }
 }

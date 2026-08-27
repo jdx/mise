@@ -50,23 +50,9 @@ impl DepsProvider for DartDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        let program = self.program().to_string();
-        Ok(DepsCommand {
-            program: program.clone(),
-            args: vec!["pub".to_string(), "get".to_string()],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| format!("{program} pub get")),
-        })
+        let program = self.program();
+        self.base
+            .install_command(program, &["pub", "get"], &format!("{program} pub get"))
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
@@ -74,34 +60,15 @@ impl DepsProvider for DartDepsProvider {
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
-        let mut args = vec!["pub".to_string(), "add".to_string()];
-        if dev {
-            args.push("--dev".to_string());
-        }
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        let program = self.program().to_string();
-        Ok(DepsCommand {
-            program: program.clone(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("{program} pub add {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command(self.program(), "pub add", dev.then_some("--dev"), packages))
     }
 
     fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
-        let mut args = vec!["pub".to_string(), "remove".to_string()];
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        let program = self.program().to_string();
-        Ok(DepsCommand {
-            program: program.clone(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("{program} pub remove {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command(self.program(), "pub remove", None, packages))
     }
 }
 
