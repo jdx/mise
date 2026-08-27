@@ -257,6 +257,7 @@ mise bootstrap dotfiles unapply --dry-run   # preview removals
 mise bootstrap dotfiles unapply --force     # also remove modified/ambiguous targets
 
 mise bootstrap dotfiles add ~/.zshrc       # capture a live file into dotfiles.root
+mise bootstrap dotfiles add --changed      # capture all changed copy-mode files
 mise bootstrap dotfiles edit ~/.zshrc      # edit the managed source or owning config
 mise bootstrap dotfiles edit --apply ~/.zshrc
 ```
@@ -273,6 +274,13 @@ in your dotfiles, run `mise bootstrap dotfiles add` again:
 $EDITOR ~/.config/starship.toml
 mise bootstrap dotfiles add ~/.config/starship.toml
 ```
+
+Use `mise bootstrap dotfiles add --changed` to update every changed regular file
+managed in `copy` mode at once. Directory copies are excluded because reversing
+an additive copy could delete source files intentionally excluded from the live
+tree. Symlinks already edit their source directly, and templates and inline
+content cannot be reverse-rendered, so they are not included. Bulk capture also
+requires the configuration declaring each selected file to be trusted.
 
 For an unmanaged target, `add` creates a `[dotfiles]` entry and seeds the
 source under `dotfiles.root`. For an already-managed target, it updates the

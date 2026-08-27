@@ -4,8 +4,9 @@ use eyre::{Result, bail};
 use toml_edit::{DocumentMut, InlineTable, Item, Table, Value};
 
 use crate::config::config_file::ConfigFile;
+use crate::config::config_file::is_path_trusted;
 use crate::config::config_file::mise_toml::MiseToml;
-use crate::config::{Config, ConfigPathOptions, resolve_target_config_path};
+use crate::config::{Config, ConfigPathOptions, is_global_config, resolve_target_config_path};
 use crate::dirs;
 use crate::file;
 use crate::path::PathExt;
@@ -22,8 +23,12 @@ use crate::ui::prompt;
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct DotfilesAdd {
     /// Targets to add or update
-    #[usage(value_name = "TARGET", required = true)]
+    #[usage(value_name = "TARGET")]
     pub(super) targets: Vec<String>,
+
+    /// Update the sources of every changed file managed in copy mode
+    #[usage(long)]
+    pub(super) changed: bool,
 
     /// Overwrite existing sources without prompting
     #[usage(long, short)]
@@ -67,7 +72,13 @@ pub(crate) struct DotfilesAdd {
 
 impl DotfilesAdd {
     /// Validate and capture the requested targets as one transactional update.
-    pub(crate) async fn run(self) -> Result<()> {
+    pub(crate) async fn run(mut self) -> Result<()> {
+        if self.changed && !self.targets.is_empty() {
+            bail!("--changed does not accept target arguments");
+        }
+        if !self.changed && self.targets.is_empty() {
+            bail!("at least one target or --changed is required");
+        }
         if self.source.is_some() && self.targets.len() != 1 {
             bail!("--source can only be used with one target");
         }
@@ -79,6 +90,29 @@ impl DotfilesAdd {
         };
         let config = Config::get().await?;
         let managed = system::files::files_from_config(&config)?;
+        if self.changed {
+            for req in &managed {
+                if req.mode == FileMode::Copy
+                    && req.target.is_file()
+                    && !req.target.is_symlink()
+                    && !req.source.is_dir()
+                    && system::files::check(&config, req)? != system::files::FileState::Applied
+                {
+                    if !is_global_config(&req.origin.config) && !is_path_trusted(&req.origin.config)
+                    {
+                        bail!(
+                            "--changed requires trusted configuration: {}",
+                            req.origin.config.display_user()
+                        );
+                    }
+                    self.targets.push(req.target_raw.clone());
+                }
+            }
+            if self.targets.is_empty() {
+                info!("dotfiles: no changed copy-mode files");
+                return Ok(());
+            }
+        }
         let config_path = resolve_target_config_path(ConfigPathOptions {
             global: self.global || !self.local,
             path: self.path.clone(),
@@ -656,6 +690,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap dotfiles add ~/.zshrc</bold>
     $ <bold>mise bootstrap dotfiles add --mode copy ~/.config/starship.toml</bold>
     $ <bold>mise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig</bold>
+    $ <bold>mise bootstrap dotfiles add --changed</bold>
 "#
 );
 

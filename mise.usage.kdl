@@ -562,7 +562,8 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `--source` is provided.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --changed\u{1b}[22m\n"
+            flag --changed help="Update the sources of every changed file managed in copy mode"
             flag "-f --force" help="Overwrite existing sources without prompting"
             flag "-g --global" help="Write to the global config" {
                 conflicts "--local" "--path"
@@ -584,7 +585,7 @@ under `dotfiles.root` unless `--source` is provided.
             }
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg <TARGET>… help="Targets to add or update" var=#true
+            arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
         }
         cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
             long_help #"""
@@ -1381,7 +1382,8 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `--source` is provided.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --changed\u{1b}[22m\n"
+        flag --changed help="Update the sources of every changed file managed in copy mode"
         flag "-f --force" help="Overwrite existing sources without prompting"
         flag "-g --global" help="Write to the global config" {
             conflicts "--local" "--path"
@@ -1403,7 +1405,7 @@ under `dotfiles.root` unless `--source` is provided.
         }
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <TARGET>… help="Targets to add or update" var=#true
+        arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
     }
     cmd apply hide=#true help="Apply dotfiles from `[dotfiles]`" effect=write {
         long_help #"""
