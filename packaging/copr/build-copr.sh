@@ -186,6 +186,11 @@ echo "=== Creating RPM Spec File ==="
 cat >"SPECS/${PACKAGE_NAME}.spec" <<'EOF'
 %global debug_package %{nil}
 %global _missing_build_ids_terminate_build 0
+# Fedora's Rust RPM macros default to one codegen unit and full debuginfo.
+# Keep release optimizations while restoring Cargo's parallel release defaults;
+# debuginfo is unused because this package does not produce a debug package.
+%global rustflags_codegen_units 16
+%global rustflags_debuginfo 0
 
 Name:           __PACKAGE_NAME__
 Version:        __VERSION__
