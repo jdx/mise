@@ -453,7 +453,8 @@ pub(crate) fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
 fn effective_shim_mode(mise_bin: &Path) -> String {
     let mode = Settings::get().windows_shim_mode.clone();
     if mode == "exe" && find_mise_shim_bin(mise_bin).is_none() {
-        warn!(
+        // Once, not once per shim: this runs for every desired shim and for every shim written.
+        warn_once!(
             "mise-shim.exe not found next to {} or on PATH, falling back to \"file\" shim mode",
             display_path(mise_bin)
         );
@@ -506,6 +507,68 @@ fn bash_shim_script(tool: &str) -> String {
         "#}
 }
 
+/// The `.cmd` body for a `"file"`-mode shim: run `mise x -- <tool>` with the caller's arguments.
+///
+/// `%*` alone does not carry them. cmd.exe parses the whole command line before a batch file runs,
+/// so calling one from PowerShell loses `& ^ | " < >` and expands `%VAR%` before `%*` ever expands.
+/// Measured through a shim, every shape that arrives intact in `"exe"` mode arrives different here:
+/// `c&d` runs `d` as a second command, `i^j` becomes `ij`, `a>b` writes a file called `b`, `e%OS%f`
+/// becomes `eWindows_NTf`. The other three modes are native executables and are handed argv
+/// directly, so this is the only mode that needs it.
+///
+/// The recovery is the one [`crate::cli::generate::windows_launcher_body`] documents in full: what
+/// cmd destroys on the way in it also keeps, in its `CMDCMDLINE` pseudo-variable, so the body
+/// copies that out — `!CMDCMDLINE!` rather than `%CMDCMDLINE%`, which is substituted before special
+/// characters are parsed and truncates at the first `&` — and passes it through the environment,
+/// where cmd gets no second chance to parse it. mise re-splits it with the rules a native program's
+/// runtime uses and substitutes the result for everything after [`env::LAUNCHER_ARGS_SENTINEL`].
+///
+/// The guard decides whether cmd was spawned *for* this shim. When it was not — an interactive
+/// prompt, a `call` from another batch file — the shell already split the arguments as it would for
+/// a native program, so `%*` is correct and the script must not `exit`, which would close the
+/// caller's shell. When it was, `exit` (rather than `exit /b`) also stops cmd running whatever it
+/// queued from the same line, which would otherwise be reported as the tool's exit code.
+///
+/// Kept separate from the launcher body rather than shared: this one runs its recursion guard
+/// first, and the launcher's line layout is pinned by `is_generated_launcher`, which has no
+/// business tracking shim changes. The names come from the same constants, and
+/// `the_shim_body_carries_the_same_recovery` fails if the shapes drift.
+///
+/// Compiled for tests on every platform, unlike the shim code around it, so the body itself is
+/// unit-tested everywhere; `pub(crate)` so that comparison can live beside the launcher.
+#[cfg(any(windows, test))]
+pub(crate) fn windows_file_shim_body(shim: &str) -> String {
+    let raw = env::LAUNCHER_RAW_CMDLINE_ENV;
+    let path = env::LAUNCHER_PATH_ENV;
+    let sentinel = env::LAUNCHER_ARGS_SENTINEL;
+    let shim_env = env::MISE_SHIM_PATH_ENV;
+    let run = format!("mise x -- {shim} {sentinel} %*");
+    [
+        "@echo off",
+        // `%~f0` is captured before delayed expansion is on, so a `!` in the path survives.
+        "setlocal DisableDelayedExpansion",
+        "set \"shim_path=%~f0\"",
+        &format!("if /I \"%{shim_env}%\"==\"%shim_path%\" ("),
+        &format!("  echo mise: recursive shim invocation detected for {shim}: %shim_path% 1>&2"),
+        "  exit /b 1",
+        ")",
+        &format!("set \"{shim_env}=%shim_path%\""),
+        "setlocal EnableDelayedExpansion",
+        &format!("set \"{path}=!shim_path!\""),
+        &format!("set \"{raw}=!CMDCMDLINE!\""),
+        &format!("if \"!{raw}!\"==\"!{raw}:%{path}%=!\" goto mise_shim_fallback"),
+        &run,
+        "exit !ERRORLEVEL!",
+        ":mise_shim_fallback",
+        // Cleared, or a value inherited from an outer launcher would be recovered as this one's.
+        &format!("set \"{raw}=\""),
+        &format!("set \"{path}=\""),
+        &run,
+    ]
+    .join("\r\n")
+        + "\r\n"
+}
+
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     match effective_shim_mode(mise_bin).as_ref() {
@@ -541,17 +604,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
             )?;
             file::write(
                 symlink_path.with_extension("cmd"),
-                formatdoc! {r#"
-        @echo off
-        setlocal
-        set "shim_path=%~f0"
-        if /I "%__MISE_SHIM_PATH%"=="%shim_path%" (
-          echo mise: recursive shim invocation detected for {shim}: %shim_path% 1>&2
-          exit /b 1
-        )
-        set "__MISE_SHIM_PATH=%shim_path%"
-        mise x -- {shim} %*
-        "#},
+                windows_file_shim_body(shim),
             )
             .wrap_err_with(|| {
                 eyre!(
@@ -1074,6 +1127,71 @@ mod tests {
         // Matching is by tool name, so a bin like npm (provided by node) is not
         // recognized and the caller keeps its existing message.
         assert!(inactive_installed_tool_message(&ts, &["node".to_string()], "npm").is_none());
+    }
+
+    #[test]
+    fn windows_file_shim_body_recovers_the_arguments_cmd_destroys() {
+        let body = windows_file_shim_body("gh");
+        let lines: Vec<&str> = body.lines().collect();
+        let enable = lines
+            .iter()
+            .position(|l| l.contains("EnableDelayedExpansion"))
+            .unwrap();
+
+        // `%~f0` is captured before delayed expansion is on, or a `!` in the path would be eaten.
+        let capture = lines.iter().position(|l| l.contains("%~f0")).unwrap();
+        assert!(capture < enable, "{body}");
+
+        // `!CMDCMDLINE!`, not `%CMDCMDLINE%`: the percent form is substituted before special
+        // characters are parsed and truncates the line at the first `&`.
+        assert!(
+            body.contains(r#"set "__MISE_RAW_CMDLINE=!CMDCMDLINE!""#),
+            "{body}"
+        );
+        assert!(!body.contains("%CMDCMDLINE%"), "{body}");
+
+        // The recursion guard is unchanged, and still decides before anything else runs.
+        let guard = lines
+            .iter()
+            .position(|l| l.contains("%__MISE_SHIM_PATH%"))
+            .unwrap();
+        assert!(guard < enable, "{body}");
+        assert!(
+            body.contains("recursive shim invocation detected for gh"),
+            "{body}"
+        );
+        assert!(body.contains("exit /b 1"), "{body}");
+
+        // Both arms hand mise the same command; the sentinel marks where `%*` begins, so a run
+        // that cannot recover the raw line still gets what cmd managed to deliver.
+        let run = format!("mise x -- gh {} %*", env::LAUNCHER_ARGS_SENTINEL);
+        assert_eq!(lines.iter().filter(|l| **l == run).count(), 2, "{body}");
+
+        // The recovering arm exits rather than `exit /b`, so cmd does not go on to run whatever it
+        // queued from the same line -- given `gh c&d`, that is `d`.
+        assert!(body.contains("goto mise_shim_fallback"), "{body}");
+        assert!(body.contains("exit !ERRORLEVEL!"), "{body}");
+    }
+
+    #[test]
+    fn windows_file_shim_body_clears_the_launcher_variables_when_it_declines() {
+        let body = windows_file_shim_body("gh");
+        let after: Vec<&str> = body
+            .lines()
+            .skip_while(|l| *l != ":mise_shim_fallback")
+            .collect();
+        assert!(!after.is_empty(), "{body}");
+        // Or a value inherited from an outer launcher would be recovered as this shim's arguments.
+        assert!(after.contains(&r#"set "__MISE_RAW_CMDLINE=""#), "{body}");
+        assert!(after.contains(&r#"set "__MISE_LAUNCHER=""#), "{body}");
+    }
+
+    #[test]
+    fn windows_file_shim_body_is_crlf_terminated() {
+        // A label reached by `goto` is the classic thing a lone `\n` breaks in a batch file.
+        let body = windows_file_shim_body("gh");
+        assert!(body.ends_with("\r\n"));
+        assert_eq!(body.matches('\n').count(), body.matches("\r\n").count());
     }
 
     #[cfg(windows)]
