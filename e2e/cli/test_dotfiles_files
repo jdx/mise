@@ -189,6 +189,7 @@ assert "cat ~/.config/starship.toml" "starship v2"
 chmod 644 ~/.ssh/config
 chmod 600 dotfiles/ssh_config.tmpl
 assert_contains "mise dotfiles status" "permissions differ"
+assert_contains "mise dotfiles diff ~/.ssh/config" "dotfile differs: ~/.ssh/config"
 assert_contains "mise dotfiles diff ~/.ssh/config" "permissions differ: 0644 (current) -> 0600 (desired)"
 assert_succeed "mise dotfiles apply --yes"
 case "$(uname -s)" in
@@ -364,9 +365,11 @@ assert_fail "mise dotfiles apply --yes"
 # all problems are reported in one pass: a broken template doesn't hide a
 # missing source (or vice versa)
 echo "{{ not_a_real_function() }}" >dotfiles/bad.tmpl
+echo "{{ another_missing_function() }}" >dotfiles/bad2.tmpl
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.broken" = { source = "dotfiles/bad.tmpl", mode = "template" }
+"~/.also-broken" = { source = "dotfiles/bad2.tmpl", mode = "template" }
 "~/.missing" = "dotfiles/does-not-exist"
 EOF
 if install_out="$(mise dotfiles apply --yes 2>&1)"; then
@@ -374,6 +377,11 @@ if install_out="$(mise dotfiles apply --yes 2>&1)"; then
 fi
 assert_contains_text "$install_out" "sources do not exist"
 assert_contains_text "$install_out" "failed to render"
+if diff_out="$(mise dotfiles diff 2>&1)"; then
+  fail "[mise dotfiles diff] expected failure"
+fi
+assert_contains_text "$diff_out" '"~/.broken"'
+assert_contains_text "$diff_out" '"~/.also-broken"'
 
 # implied sources mirror home-relative paths under dotfiles.root and use
 # dotfiles.default_mode when mode is omitted

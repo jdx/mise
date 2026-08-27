@@ -2042,6 +2042,7 @@ fn print_content_diff(req: &FileRequest, current: &[u8], desired: &[u8]) -> Resu
 /// content, matching the trust and execution semantics of dotfiles status.
 pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<()> {
     let mut changed = false;
+    let mut problems = vec![];
     for req in requests {
         if req.mode != FileMode::Content && !req.source.exists() {
             miseprintln!("{}: source missing", req.target_raw);
@@ -2049,14 +2050,34 @@ pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<(
             continue;
         }
         let rendered = match req.mode {
-            FileMode::Template => Some(render_template(config, req)?),
+            FileMode::Template => match render_template(config, req) {
+                Ok(rendered) => Some(rendered),
+                Err(err) => {
+                    problems.push(format!("  \"{}\": {err}", req.target_raw));
+                    continue;
+                }
+            },
             _ => None,
         };
-        if check_rendered(req, rendered.as_deref())? == FileState::Applied {
-            continue;
+        match check_rendered(req, rendered.as_deref()) {
+            Ok(FileState::Applied) => continue,
+            Ok(_) => {}
+            Err(err) => {
+                problems.push(format!("  \"{}\": {err}", req.target_raw));
+                continue;
+            }
         }
         changed = true;
-        print_diff(req, rendered.as_deref())?;
+        miseprintln!("dotfile differs: {}", req.target.display_user());
+        if let Err(err) = print_diff(req, rendered.as_deref()) {
+            problems.push(format!("  \"{}\": {err}", req.target_raw));
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "files: cannot diff these entries, fix them manually:\n{}",
+            problems.join("\n")
+        );
     }
     if !changed {
         info!("files: all files are applied");
