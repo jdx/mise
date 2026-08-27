@@ -4349,13 +4349,7 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
         return Ok(None);
     };
     let relative = Path::new(relative);
-    if relative.components().next().is_none()
-        || relative
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        bail!("brew-cask: APPDIR artifact '{source}' must stay below Applications");
-    }
+    reject_appdir_escape(relative, "APPDIR artifact", source)?;
     let Some(Component::Normal(bundle)) = relative.components().next() else {
         return Ok(None);
     };
@@ -4376,12 +4370,17 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
     }
     matches.sort();
     matches.dedup();
-    match matches.as_slice() {
+    single_match(&matches, "APPDIR artifact", source)
+}
+
+/// `kind` and `name` build the ambiguity error, e.g. "brew-cask: APPDIR
+/// artifact 'x' is ambiguous: a, b".
+fn single_match(matches: &[PathBuf], kind: &str, name: &str) -> Result<Option<PathBuf>> {
+    match matches {
         [] => Ok(None),
         [path] => Ok(Some(path.clone())),
         _ => bail!(
-            "brew-cask: APPDIR artifact '{}' is ambiguous: {}",
-            source,
+            "brew-cask: {kind} '{name}' is ambiguous: {}",
             matches
                 .iter()
                 .map(|path| path.display().to_string())
@@ -4398,19 +4397,7 @@ fn find_generated_completion_file(root: &Path, executable: &str) -> Result<Optio
         return Ok(Some(direct));
     }
     let matches = find_file_artifacts(root, executable_path);
-    match matches.as_slice() {
-        [] => Ok(None),
-        [path] => Ok(Some(path.clone())),
-        _ => bail!(
-            "brew-cask: completion executable '{}' is ambiguous: {}",
-            executable,
-            matches
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
+    single_match(&matches, "completion executable", executable)
 }
 
 fn find_file_artifacts(root: &Path, name: &Path) -> Vec<PathBuf> {
@@ -4846,6 +4833,19 @@ fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option
         return None;
     }
     Some(root.join(relative))
+}
+
+/// Rejects an empty relative path and any component that could climb out of
+/// `$APPDIR` (`..`, a root, a prefix).
+fn reject_appdir_escape(relative: &Path, kind: &str, name: &str) -> Result<()> {
+    if relative.components().next().is_none()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        bail!("brew-cask: {kind} '{name}' must stay below Applications");
+    }
+    Ok(())
 }
 
 fn resolve_symlink_target(link: &Path, target: PathBuf) -> PathBuf {
@@ -6402,13 +6402,7 @@ fn binary_target_path(target_name: &str, appdir: &Path) -> Result<PathBuf> {
     }
     if let Some(relative) = target_name.strip_prefix("$APPDIR/") {
         let relative = Path::new(relative);
-        if relative.components().next().is_none()
-            || relative
-                .components()
-                .any(|component| !matches!(component, Component::Normal(_)))
-        {
-            bail!("brew-cask: binary $APPDIR target '{target_name}' must stay below Applications");
-        }
+        reject_appdir_escape(relative, "binary $APPDIR target", target_name)?;
         if !allowed_appdir_roots()?.iter().any(|root| root == appdir) {
             bail!("brew-cask: invalid appdir '{}'", appdir.display());
         }
@@ -6683,14 +6677,7 @@ fn remove_obsolete_binary_links(
         let Ok(link_target) = std::fs::read_link(target) else {
             continue;
         };
-        let resolved = if link_target.is_absolute() {
-            link_target
-        } else {
-            target
-                .parent()
-                .map(|parent| parent.join(&link_target))
-                .unwrap_or(link_target)
-        };
+        let resolved = resolve_symlink_target(target, link_target);
         if file::desymlink_path(&resolved).starts_with(&token_dir) {
             remove_artifact_target_elevating(target)?;
         }
