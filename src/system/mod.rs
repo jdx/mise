@@ -174,7 +174,11 @@ impl PackageTomlConfig {
         let Self::Options(options) = self else {
             return true;
         };
-        options.os.is_empty() || options.os.iter().any(|entry| package_os_matches(entry))
+        options.os.is_empty()
+            || options
+                .os
+                .iter()
+                .any(|entry| crate::cli::version::os_selector_matches(entry))
     }
 }
 
@@ -203,32 +207,6 @@ where
         ));
     }
     Ok(values)
-}
-
-fn package_os_matches(entry: &str) -> bool {
-    let current_os = crate::cli::version::OS.as_str();
-    let current_arch = crate::cli::version::ARCH.as_str();
-    if let Some((os, arch)) = entry.split_once('/') {
-        normalize_package_os(os) == current_os && normalize_package_arch(arch) == current_arch
-    } else {
-        normalize_package_os(entry) == current_os
-    }
-}
-
-fn normalize_package_os(os: &str) -> &str {
-    match os {
-        "darwin" | "macos" => "macos",
-        "windows" | "win" => "windows",
-        other => other,
-    }
-}
-
-fn normalize_package_arch(arch: &str) -> &str {
-    match arch {
-        "x86_64" | "amd64" | "x64" => "x64",
-        "aarch64" | "arm64" => "arm64",
-        other => other,
-    }
 }
 
 pub(crate) fn plugins_from_config(config: &Config) -> IndexMap<String, String> {
