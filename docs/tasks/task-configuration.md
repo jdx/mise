@@ -1374,9 +1374,14 @@ cascade = true
 shell = "bash -c"
 ```
 
-This applies to `dir`, `shell`, `cache`, `rust_cache`, and `includes`. Inherited include paths
-remain relative to the config root where they were defined, allowing a monorepo root to provide one
-shared task set.
+This applies to `dir`, `shell`, `cache`, `rust_cache`, `global_inputs`, `input_groups`, and
+`includes`. Inherited include paths and task inputs remain relative to the config root where they
+were defined.
+
+A descendant's non-empty `global_inputs` replaces the inherited value. Descendant `input_groups`
+merge with inherited groups by name; the nearest definition wins when the same name appears more
+than once. This also applies to group references in inherited `global_inputs`. Each group remains
+relative to the config root where it was defined.
 
 ### `task_config.dir`
 
