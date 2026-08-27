@@ -36,7 +36,11 @@ bin = "jq"
         Test-Path 'plainstub.cmd' | Should -BeTrue
         # %~dpn0, not the stub name: the launcher derives the path from its own filename, which is
         # what keeps a name containing `%` from being mangled by cmd.exe.
-        (Get-Content 'plainstub.cmd' -Raw) | Should -BeLike '*mise tool-stub "%~dpn0" %`**'
+        $body = Get-Content 'plainstub.cmd' -Raw
+        $body | Should -BeLike '*mise tool-stub "%~dpn0" __MISE_LAUNCHER_ARGS__ %`**'
+        # Tool stub launchers go through the same body as task stub launchers, so they get the
+        # same argument recovery: `%*` alone cannot carry `& ^ | " < >` through cmd.exe.
+        $body | Should -BeLike '*!CMDCMDLINE!*'
     }
 
     It 'omits the launcher for a stub that does not ship for Windows' {
