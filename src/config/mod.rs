@@ -3263,7 +3263,7 @@ const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskInputs {
     global_inputs: Option<(Vec<String>, PathBuf)>,
-    input_groups: Option<(IndexMap<String, Vec<String>>, PathBuf)>,
+    input_groups: IndexMap<String, (Vec<String>, PathBuf)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -3283,24 +3283,31 @@ impl ResolvedTaskInputs {
                 let inputs = &cf.task_config().global_inputs;
                 (!inputs.is_empty()).then(|| (inputs.clone(), cf.config_root()))
             }),
-            input_groups: configs.iter().find_map(|cf| {
-                let groups = &cf.task_config().input_groups;
-                (!groups.is_empty()).then(|| (groups.clone(), cf.config_root()))
-            }),
+            input_groups: configs
+                .iter()
+                .find_map(|cf| {
+                    let groups = &cf.task_config().input_groups;
+                    (!groups.is_empty()).then(|| {
+                        let root = cf.config_root();
+                        groups
+                            .iter()
+                            .map(|(name, entries)| (name.clone(), (entries.clone(), root.clone())))
+                            .collect()
+                    })
+                })
+                .unwrap_or_default(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.global_inputs.is_none() && self.input_groups.is_none()
+        self.global_inputs.is_none() && self.input_groups.is_empty()
     }
 
     fn overlay(&mut self, overlay: Self) {
         if overlay.global_inputs.is_some() {
             self.global_inputs = overlay.global_inputs;
         }
-        if overlay.input_groups.is_some() {
-            self.input_groups = overlay.input_groups;
-        }
+        self.input_groups.extend(overlay.input_groups);
     }
 }
 
@@ -3344,10 +3351,7 @@ fn expand_task_inputs(
             });
             continue;
         };
-        let (groups, groups_root) = task_inputs.input_groups.as_ref().ok_or_else(|| {
-            eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
-        })?;
-        let inputs = groups.get(group).ok_or_else(|| {
+        let (inputs, group_root) = task_inputs.input_groups.get(group).ok_or_else(|| {
             eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
         })?;
         if let Some(cycle_start) = stack.iter().position(|name| name == group) {
@@ -3362,7 +3366,7 @@ fn expand_task_inputs(
         expanded.extend(expand_task_inputs(
             inputs,
             task_inputs,
-            groups_root,
+            group_root,
             task_name,
             stack,
             true,
@@ -3414,21 +3418,19 @@ async fn apply_task_config_inputs(
         )),
         None => None,
     };
-    let input_groups = match &task_inputs.input_groups {
-        Some((groups, root)) => Some((
-            groups
-                .iter()
-                .map(|(name, entries)| {
-                    Ok((
-                        name.clone(),
-                        render_task_input_entries(entries, root, &tera_ctx)?,
-                    ))
-                })
-                .collect::<Result<_>>()?,
-            root.clone(),
-        )),
-        None => None,
-    };
+    let input_groups = task_inputs
+        .input_groups
+        .iter()
+        .map(|(name, (entries, root))| {
+            Ok((
+                name.clone(),
+                (
+                    render_task_input_entries(entries, root, &tera_ctx)?,
+                    root.clone(),
+                ),
+            ))
+        })
+        .collect::<Result<_>>()?;
     let task_inputs = ResolvedTaskInputs {
         global_inputs,
         input_groups,
@@ -5470,27 +5472,30 @@ mod tests {
     #[test]
     fn test_expand_task_inputs_supports_nested_groups() -> Result<()> {
         let task_inputs = ResolvedTaskInputs {
-            input_groups: Some((
-                IndexMap::from([
+            input_groups: IndexMap::from([
+                (
+                    "shared".to_string(),
                     (
-                        "shared".to_string(),
                         vec![
                             "Cargo.toml".to_string(),
                             "src/**/*.rs".to_string(),
                             "\\!important.txt".to_string(),
                         ],
+                        PathBuf::from("/workspace"),
                     ),
+                ),
+                (
+                    "production".to_string(),
                     (
-                        "production".to_string(),
                         vec![
                             "@group:shared".to_string(),
                             "!src/**/*_test.rs".to_string(),
                             "src/**/*.rs".to_string(),
                         ],
+                        PathBuf::from("/project"),
                     ),
-                ]),
-                PathBuf::from("/workspace"),
-            )),
+                ),
+            ]),
             ..Default::default()
         };
         let root = Path::new("/workspace");
@@ -5509,8 +5514,8 @@ mod tests {
                 "/workspace/Cargo.toml",
                 "/workspace/src/**/*.rs",
                 "/workspace/!important.txt",
-                "!/workspace/src/**/*_test.rs",
-                "/workspace/src/**/*.rs",
+                "!/project/src/**/*_test.rs",
+                "/project/src/**/*.rs",
             ]
         );
         Ok(())
@@ -5519,13 +5524,16 @@ mod tests {
     #[test]
     fn test_expand_task_inputs_rejects_unknown_and_cyclic_groups() {
         let task_inputs = ResolvedTaskInputs {
-            input_groups: Some((
-                IndexMap::from([
-                    ("a".to_string(), vec!["@group:b".to_string()]),
-                    ("b".to_string(), vec!["@group:a".to_string()]),
-                ]),
-                PathBuf::from("/workspace"),
-            )),
+            input_groups: IndexMap::from([
+                (
+                    "a".to_string(),
+                    (vec!["@group:b".to_string()], PathBuf::from("/workspace")),
+                ),
+                (
+                    "b".to_string(),
+                    (vec!["@group:a".to_string()], PathBuf::from("/workspace")),
+                ),
+            ]),
             ..Default::default()
         };
 

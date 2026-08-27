@@ -181,24 +181,25 @@ printf 'child-global\n' >cascade-global-override/child-global.txt
 assert "mise -C cascade-global-override task info child --json | jq -r '.sources[] | select(endswith(\"/Cargo.lock\"))'" "$PWD/Cargo.lock"
 assert "mise -C cascade-global-override task info child --json | jq -r '.sources[] | select(endswith(\"/child-global.txt\"))'" "$PWD/cascade-global-override/child-global.txt"
 
-# Local values replace both inherited fields and resolve from the child root.
+# Local groups merge by name, override matching groups from the child root,
+# and leave inherited global inputs unchanged.
 mkdir -p cascade-local
 cat <<'EOF' >cascade-local/mise.toml
-[task_config]
-global_inputs = ["child-global.txt"]
-
 [task_config.input_groups]
 workspace-lock = ["Cargo.lock"]
+child-only = ["child-group.txt"]
 
 [tasks.child]
 run = "true"
-sources = ["@group:workspace-lock"]
+sources = ["@group:workspace-lock", "@group:toolchain", "@group:child-only"]
 outputs = []
 EOF
-printf 'child-global\n' >cascade-local/child-global.txt
 printf 'child-lock\n' >cascade-local/Cargo.lock
+printf 'child-group\n' >cascade-local/child-group.txt
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/Cargo.lock\"))'" "$PWD/cascade-local/Cargo.lock"
-assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-global.txt\"))'" "$PWD/cascade-local/child-global.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/toolchain.txt\"))'" "$PWD/toolchain.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-group.txt\"))'" "$PWD/cascade-local/child-group.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/workspace.txt\"))'" "$PWD/workspace.txt"
 
 # cascade = false stops both inherited input fields.
 mkdir -p cascade-stopped

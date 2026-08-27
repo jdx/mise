@@ -1378,8 +1378,9 @@ This applies to `dir`, `shell`, `cache`, `rust_cache`, `global_inputs`, `input_g
 `includes`. Inherited include paths and task inputs remain relative to the config root where they
 were defined.
 
-When a descendant defines non-empty `global_inputs` or `input_groups`, it replaces that inherited
-field. mise replaces the whole input group map instead of merging group names.
+A descendant's non-empty `global_inputs` replaces the inherited value. Descendant `input_groups`
+merge with inherited groups by name; the nearest definition wins when the same name appears more
+than once. Each group remains relative to the config root where it was defined.
 
 ### `task_config.dir`
 
