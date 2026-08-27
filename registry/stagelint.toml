@@ -1,0 +1,12 @@
+backends = ["aqua:abemedia/stagelint", "cargo:stagelint"]
+bins = ["stagelint"]
+description = "Run commands like linters and formatters on staged git files"
+detect = [
+  ".stagelint.yml",
+  ".stagelint.yaml",
+  ".stagelint.json",
+  ".stagelint.jsonc",
+  ".stagelint.json5",
+]
+test = { cmd = "stagelint --version", expected = "stagelint {{version}}" }
+version_order = "semver"
