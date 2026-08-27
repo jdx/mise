@@ -8,6 +8,7 @@ use crate::toolset::{InstallOptions, ToolRequest, ToolRequestSet, ToolsetBuilder
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeSet, sync::Arc};
 use tokio::task::JoinSet;
@@ -57,6 +58,9 @@ impl TestTool {
         let target_tools = self.get_target_tools(&config).await?;
         let mut targets = vec![];
         for (i, (tool, rt)) in target_tools.into_iter().enumerate() {
+            if !should_test_registry_tool(rt) {
+                continue;
+            }
             if *env::TEST_TRANCHE_COUNT > 0 && (i % *env::TEST_TRANCHE_COUNT) != *env::TEST_TRANCHE
             {
                 continue;
@@ -399,16 +403,13 @@ impl TestTool {
         };
         let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
         ts.notify_missing_versions(missing);
-        let tv = if let Some(tv) = ts
-            .versions
-            .get(tool.ba.as_ref())
-            .and_then(|tvl| tvl.versions.first())
-        {
-            tv.clone()
-        } else {
-            warn!("no versions found for {tool}");
-            return Ok(String::new());
-        };
+        let tv = require_resolved_version(
+            ts.versions
+                .get(tool.ba.as_ref())
+                .and_then(|tvl| tvl.versions.first())
+                .cloned(),
+            tool,
+        )?;
         let backend = tv.backend()?;
         let env = ts.env_with_path(&config).await?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
@@ -481,6 +482,14 @@ impl TestTool {
     }
 }
 
+fn require_resolved_version<T>(version: Option<T>, tool: impl Display) -> Result<T> {
+    version.ok_or_else(|| eyre!("no versions found for {tool}"))
+}
+
+fn should_test_registry_tool(tool: &RegistryTool) -> bool {
+    tool.is_supported_os()
+}
+
 struct TestToolTarget {
     index: usize,
     tool: ToolArg,
@@ -504,3 +513,22 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise test-tool ripgrep</bold>
 "#
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unresolved_tool_version_is_an_error() {
+        let err = require_resolved_version::<()>(None, "example").unwrap_err();
+
+        assert_eq!(err.to_string(), "no versions found for example");
+    }
+
+    #[test]
+    fn unsupported_os_registry_tool_is_skipped() {
+        let tool = REGISTRY.get("figma-export").unwrap();
+
+        assert_eq!(should_test_registry_tool(tool), cfg!(target_os = "macos"));
+    }
+}

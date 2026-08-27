@@ -1,0 +1,20 @@
+aliases = ["cursor-cli"]
+description = "Cursor Agent is Cursor's terminal coding agent that can write, review, and modify code from the command line"
+os = ["linux", "macos"]
+test = { cmd = "cursor-agent --version", expected = "{{version}}" }
+version_order = "source"
+
+bins = ["cursor-agent"]
+[[backends]]
+full = "http:cursor-agent"
+platforms = ["linux-x64", "linux-arm64", "macos-x64", "macos-arm64"]
+
+[backends.options]
+bin_path = "dist-package"
+strip_components = 0
+# Upstream does not publish a version index; the install script is rendered
+# with the current version, so extract it from there (same idea as claude's
+# `latest` file and grok's `stable` file).
+url = 'https://downloads.cursor.com/lab/{{ version }}/{{ os(macos="darwin") }}/{{ arch(x64="x64", arm64="arm64") }}/agent-cli-package.tar.gz'
+version_list_url = "https://cursor.com/install"
+version_regex = 'downloads\.cursor\.com/lab/([0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]+)/'

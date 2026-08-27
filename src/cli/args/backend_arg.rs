@@ -6,7 +6,8 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
-    ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options, try_parse_tool_options,
+    ResolvedToolOptions, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
+    try_parse_tool_options,
 };
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
@@ -536,7 +537,8 @@ impl BackendArg {
     }
 
     pub(crate) fn opts(&self) -> ToolVersionOptions {
-        self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), None)
+        self.resolve_opts_with_layers(self.backend_alias_opts_from_loaded_config(), None, None)
+            .into_effective()
     }
 
     pub(crate) fn registry_opts(&self) -> ToolVersionOptions {
@@ -554,35 +556,45 @@ impl BackendArg {
             .and_then(|tool| tool.version_order(&full))
     }
 
-    pub(crate) fn opts_with_config(
+    pub(crate) fn resolve_opts_with_config_and_request(
         &self,
         config_opts: Option<ToolVersionOptions>,
-    ) -> ToolVersionOptions {
-        self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), config_opts)
+        request_opts: Option<ToolVersionOptions>,
+    ) -> ResolvedToolOptions {
+        self.resolve_opts_with_layers(
+            self.backend_alias_opts_from_loaded_config(),
+            config_opts,
+            request_opts,
+        )
     }
 
-    fn opts_with_layers(
+    pub(crate) fn resolve_opts_with_layers(
         &self,
         alias_opts: Option<ToolVersionOptions>,
         config_opts: Option<ToolVersionOptions>,
-    ) -> ToolVersionOptions {
-        let mut opts = self.registry_opts();
+        request_opts: Option<ToolVersionOptions>,
+    ) -> ResolvedToolOptions {
+        let mut opts = ResolvedToolOptions::default();
+        opts.apply_overrides(&self.registry_opts(), ToolOptionSource::Registry);
         if let Some(manifest_opts) = self.install_manifest_opts() {
-            opts.apply_overrides(manifest_opts);
+            opts.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
         }
         if alias_opts.is_none()
             && let Some(full_opts) = self.resolved_full_opts()
         {
-            opts.apply_overrides(&full_opts);
+            opts.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
         }
         if let Some(alias_opts) = alias_opts {
-            opts.apply_overrides(&alias_opts);
+            opts.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
         }
         if let Some(config_opts) = config_opts {
-            opts.apply_overrides(&config_opts);
+            opts.apply_overrides(&config_opts, ToolOptionSource::Config);
+        }
+        if let Some(request_opts) = request_opts {
+            opts.apply_overrides(&request_opts, ToolOptionSource::Request);
         }
         if let Some(user_opts) = self.explicit_opts() {
-            opts.apply_overrides(user_opts);
+            opts.apply_overrides(user_opts, ToolOptionSource::InlineBackendArg);
         }
         opts
     }
@@ -1002,12 +1014,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_opts_with_config_overlays_registry_config_and_inline() {
+    async fn test_resolve_opts_overlays_registry_config_and_inline() {
         let _config = Config::get().await.unwrap();
         let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
         let config_opts = parse_tool_options("bin=config,bar=config");
 
-        let opts = ba.opts_with_config(Some(config_opts));
+        let resolved = ba.resolve_opts_with_config_and_request(Some(config_opts), None);
+        let opts = resolved.effective();
 
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("inline"));
@@ -1016,13 +1029,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_opts_with_layers_preserves_alias_options() {
+    async fn test_resolve_opts_with_layers_preserves_alias_options() {
         let _config = Config::get().await.unwrap();
         let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
         let alias_opts = parse_tool_options("bin=alias,alias_only=alias");
         let config_opts = parse_tool_options("bin=config,config_only=config");
 
-        let opts = ba.opts_with_layers(Some(alias_opts), Some(config_opts));
+        let resolved = ba.resolve_opts_with_layers(Some(alias_opts), Some(config_opts), None);
+        let opts = resolved.effective();
 
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("inline"));

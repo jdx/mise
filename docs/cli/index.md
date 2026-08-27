@@ -147,7 +147,7 @@
 - [`mise generate github-action [FLAGS]`](/cli/generate/github-action.md)
 - [`mise generate install-script [FLAGS]`](/cli/generate/install-script.md)
 - [`mise generate task-docs [FLAGS]`](/cli/generate/task-docs.md)
-- [`mise generate task-stubs [-d --dir <DIR>] [-m --mise-bin <MISE_BIN>]`](/cli/generate/task-stubs.md)
+- [`mise generate task-stubs [FLAGS]`](/cli/generate/task-stubs.md)
 - [`mise generate tool-stub [FLAGS] <OUTPUT>`](/cli/generate/tool-stub.md)
 - [`mise implode [-n --dry-run] [--config]`](/cli/implode.md)
 - [`mise edit [FLAGS] [PATH]`](/cli/edit.md)

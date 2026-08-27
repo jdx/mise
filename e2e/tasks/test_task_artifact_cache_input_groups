@@ -7,6 +7,7 @@ cat <<'EOF' >mise.toml
 experimental = true
 
 [task_config]
+cascade = true
 global_inputs = [
   "workspace.txt",
   "{{ config_root }}/templated.txt",
@@ -44,6 +45,7 @@ cat <<'EOF' >mise.local.toml
 [task_config.input_groups]
 global-toolchain = ["global-toolchain.txt"]
 toolchain = ["toolchain.txt"]
+workspace-lock = ["Cargo.lock"]
 app = [
   "packages/app/src/**/*",
   "packages/app/src/**/*.rs",
@@ -62,6 +64,7 @@ printf 'templated-one\n' >templated.txt
 printf 'escaped-one\n' >'!important.txt'
 printf 'global-toolchain-one\n' >global-toolchain.txt
 printf 'toolchain-one\n' >toolchain.txt
+printf 'parent-lock-one\n' >Cargo.lock
 
 # Named groups and global inputs resolve independently across layered configs,
 # and their paths are rooted at the config rather than each task's working directory.
@@ -139,6 +142,81 @@ rm -rf packages/app/dist
 mise run build ::: check
 assert "wc -l < packages/app/build-runs.txt | tr -d ' '" "8"
 assert "wc -l < packages/app/check-runs.txt | tr -d ' '" "8"
+
+# https://github.com/jdx/mise/discussions/12481
+# Cascaded task inputs keep the root that defined each field.
+mkdir -p cascade-child
+cat <<'EOF' >cascade-child/mise.toml
+[tasks.child]
+run = "printf 'ran\\n' >> child-runs.txt"
+sources = ["@group:workspace-lock"]
+outputs = []
+EOF
+printf 'child-lock-one\n' >cascade-child/Cargo.lock
+assert "mise -C cascade-child task info child --json | jq -r '.sources[] | select(endswith(\"/Cargo.lock\"))'" "$PWD/Cargo.lock"
+assert "mise -C cascade-child task info child --json | jq -r '.sources[] | select(endswith(\"/workspace.txt\"))'" "$PWD/workspace.txt"
+
+mise -C cascade-child run child
+mise -C cascade-child run child
+assert "wc -l < cascade-child/child-runs.txt | tr -d ' '" "1"
+printf 'parent-lock-two\n' >Cargo.lock
+mise -C cascade-child run child
+assert "wc -l < cascade-child/child-runs.txt | tr -d ' '" "2"
+printf 'child-lock-two\n' >cascade-child/Cargo.lock
+mise -C cascade-child run child
+assert "wc -l < cascade-child/child-runs.txt | tr -d ' '" "2"
+
+# A local global_inputs value overrides that field without losing the inherited groups.
+mkdir -p cascade-global-override
+cat <<'EOF' >cascade-global-override/mise.toml
+[task_config]
+global_inputs = ["child-global.txt"]
+
+[tasks.child]
+run = "true"
+sources = ["@group:workspace-lock"]
+outputs = []
+EOF
+printf 'child-global\n' >cascade-global-override/child-global.txt
+assert "mise -C cascade-global-override task info child --json | jq -r '.sources[] | select(endswith(\"/Cargo.lock\"))'" "$PWD/Cargo.lock"
+assert "mise -C cascade-global-override task info child --json | jq -r '.sources[] | select(endswith(\"/child-global.txt\"))'" "$PWD/cascade-global-override/child-global.txt"
+
+# Local groups merge by name, override matching groups from the child root,
+# and leave inherited global inputs unchanged.
+mkdir -p cascade-local
+cat <<'EOF' >cascade-local/mise.toml
+[task_config.input_groups]
+workspace-lock = ["Cargo.lock"]
+child-only = ["child-group.txt"]
+global-toolchain = ["child-global-toolchain.txt"]
+
+[tasks.child]
+run = "true"
+sources = ["@group:workspace-lock", "@group:toolchain", "@group:child-only"]
+outputs = []
+EOF
+printf 'child-lock\n' >cascade-local/Cargo.lock
+printf 'child-group\n' >cascade-local/child-group.txt
+printf 'child-global-toolchain\n' >cascade-local/child-global-toolchain.txt
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/Cargo.lock\"))'" "$PWD/cascade-local/Cargo.lock"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/toolchain.txt\"))'" "$PWD/toolchain.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-group.txt\"))'" "$PWD/cascade-local/child-group.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-global-toolchain.txt\"))'" "$PWD/cascade-local/child-global-toolchain.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/global-toolchain.txt\"))'" ""
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/workspace.txt\"))'" "$PWD/workspace.txt"
+
+# cascade = false stops both inherited input fields.
+mkdir -p cascade-stopped
+cat <<'EOF' >cascade-stopped/mise.toml
+[task_config]
+cascade = false
+
+[tasks.child]
+run = "true"
+sources = ["@group:workspace-lock"]
+outputs = []
+EOF
+assert_fail_contains "mise -C cascade-stopped task info child" 'undefined input group "workspace-lock"'
 
 # Group references are validated even when no input groups or global inputs
 # are configured, rather than being retained as literal source paths.

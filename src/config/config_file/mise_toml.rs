@@ -1533,7 +1533,7 @@ impl ConfigFile for MiseToml {
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
                     ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())
+                    ToolRequest::new_with_options(ba.into(), &version, ba_opts, source.clone())
                         .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
                 } else {
                     ToolRequest::new(ba.clone().into(), &version, source.clone())
@@ -4124,7 +4124,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "2.0.0",
                     options,
@@ -4171,7 +4171,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "2.0.0",
                     options,
@@ -4213,7 +4213,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "2.0.0",
                     options,
@@ -4251,7 +4251,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "prefix:2",
                     options,
@@ -4912,7 +4912,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &needs_dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new("needs-dummy".into()),
                     "1.0.1",
                     options,
@@ -5563,7 +5563,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new("dummy".into()),
                     "1.0.1",
                     options,

@@ -14,6 +14,7 @@ use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
 use crate::env;
+use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
@@ -336,9 +337,14 @@ impl Ls {
                 )
             })
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
-            // if it isn't installed and it's not specified, don't show it
+            // if it isn't installed and it's not specified, don't show it -- unless there is
+            // something at its install path that simply does not resolve. A `mise link` whose
+            // target went away is that case, and hiding it is how it became impossible to find:
+            // no config names it, and `is_version_installed` resolves the link before answering.
             .filter(|(_ls, p, tv, source)| {
-                !source.is_unknown() || p.is_version_installed(config, tv, true)
+                !source.is_unknown()
+                    || p.is_version_installed(config, tv, true)
+                    || file::entry_exists(tv.install_path())
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => matches_requested_tool(backend, p.ba()),
@@ -384,9 +390,14 @@ impl Ls {
             })
             .unique_by(|(_, tv)| tv.tv_pathname())
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
-            // if it isn't installed and it's not specified, don't show it
+            // if it isn't installed and it's not specified, don't show it -- unless there is
+            // something at its install path that simply does not resolve. A `mise link` whose
+            // target went away is that case, and hiding it is how it became impossible to find:
+            // no config names it, and `is_version_installed` resolves the link before answering.
             .filter(|(_ls, p, tv, source)| {
-                !source.is_unknown() || p.is_version_installed(config, tv, true)
+                !source.is_unknown()
+                    || p.is_version_installed(config, tv, true)
+                    || file::entry_exists(tv.install_path())
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => matches_requested_tool(backend, p.ba()),
@@ -441,8 +452,19 @@ struct JSONToolVersion {
     sources: Option<Vec<JSONToolSource>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinked_to: Option<PathBuf>,
+    /// The link at `install_path` no longer resolves.
+    ///
+    /// Omitted when false, so output for everything else is unchanged. `installed` is false for
+    /// these too — this says *why*, and distinguishes an entry that is still on disk and needs
+    /// removing from a version that was simply never installed.
+    #[serde(skip_serializing_if = "is_false")]
+    broken: bool,
     installed: bool,
     active: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, ToolSource);
@@ -480,6 +502,11 @@ impl Row {
                     cell = cell.add_attribute(Attribute::Dim);
                 }
                 cell
+            }
+            // Red like `Missing`, but not crossed out: the entry is still there, and the point of
+            // showing it is that the user has something to act on.
+            VersionStatus::BrokenSymlink(version) => {
+                Cell::new(format!("{version} (broken symlink)")).fg(Color::Red)
             }
             VersionStatus::Shared(version, active, label) => {
                 let mut cell = Cell::new(format!("{version} ({label})"));
@@ -579,7 +606,13 @@ async fn json_tool_version_from(
             Some(source.as_json())
         },
         sources: if all_sources { sources } else { None },
-        installed: !matches!(vs, VersionStatus::Missing(_)),
+        broken: matches!(vs, VersionStatus::BrokenSymlink(_)),
+        // A link that leads nowhere is not an install, the same call `mise link` already makes by
+        // keeping the `incomplete` marker for one.
+        installed: !matches!(
+            vs,
+            VersionStatus::Missing(_) | VersionStatus::BrokenSymlink(_)
+        ),
         active: match &vs {
             VersionStatus::Active(_, _) => true,
             VersionStatus::Symlink(_, active) => *active,
@@ -595,6 +628,10 @@ enum VersionStatus {
     Inactive(String),
     Missing(String),
     Symlink(String, bool),
+    /// A link that is still on disk but no longer resolves — a `mise link` whose target moved or
+    /// was deleted. Distinct from `Missing`, which is a version that was never there: this one
+    /// occupies its name and has to be removed before that name is free again.
+    BrokenSymlink(String),
     /// Version from a shared or system install directory
     Shared(String, bool, &'static str),
 }
@@ -622,7 +659,12 @@ async fn resolve_version_status(
 ) -> VersionStatus {
     let install_path = tv.install_path();
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        VersionStatus::Symlink(tv.version.clone(), active)
+        // `exists()` resolves the link, so this is asking whether it still leads anywhere.
+        if install_path.exists() {
+            VersionStatus::Symlink(tv.version.clone(), active)
+        } else {
+            VersionStatus::BrokenSymlink(tv.version.clone())
+        }
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
     } else {

@@ -230,7 +230,7 @@ impl ToolStubFile {
             self.version.clone()
         };
 
-        ToolRequest::new_opts(backend_arg.into(), &version, options, source)
+        ToolRequest::new_with_options(backend_arg.into(), &version, options, source)
     }
 }
 
