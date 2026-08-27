@@ -6139,7 +6139,7 @@ dependencies = [
 [[package]]
 name = "mbx-cache-cargo"
 version = "0.1.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=eba7fb0#eba7fb099e47a7f9e18335e691aa6b65713d4559"
+source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
 dependencies = [
  "dirs",
  "mbx-cache-core",
@@ -6150,8 +6150,8 @@ dependencies = [
 
 [[package]]
 name = "mbx-cache-core"
-version = "0.6.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=eba7fb0#eba7fb099e47a7f9e18335e691aa6b65713d4559"
+version = "0.7.0"
+source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
 dependencies = [
  "async-compression",
  "base64 0.23.1",
@@ -6178,7 +6178,7 @@ dependencies = [
 [[package]]
 name = "mbx-cache-protocol"
 version = "0.5.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=eba7fb0#eba7fb099e47a7f9e18335e691aa6b65713d4559"
+source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
 dependencies = [
  "blake3",
  "eyre",
@@ -6191,8 +6191,8 @@ dependencies = [
 
 [[package]]
 name = "mbx-cache-rustc"
-version = "0.6.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=eba7fb0#eba7fb099e47a7f9e18335e691aa6b65713d4559"
+version = "0.7.0"
+source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
 dependencies = [
  "mbx-cache-core",
  "serde",
@@ -6204,7 +6204,7 @@ dependencies = [
 [[package]]
 name = "mbx-cache-store"
 version = "0.1.0"
-source = "git+https://github.com/jdx/mr-boxington?rev=eba7fb0#eba7fb099e47a7f9e18335e691aa6b65713d4559"
+source = "git+https://github.com/jdx/mr-boxington?rev=f92f8ab#f92f8abdfe11bf04832a7b4e967b105865ec769d"
 dependencies = [
  "eyre",
  "fslock",
