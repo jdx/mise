@@ -65,6 +65,7 @@
 - [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
 - [`mise bootstrap dotfiles add [FLAGS] <TARGET>…`](/cli/bootstrap/dotfiles/add.md)
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.md)
+- [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.md)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.md)
 - [`mise bootstrap dotfiles status [-J --json] [--missing] [TARGET]…`](/cli/bootstrap/dotfiles/status.md)
 - [`mise bootstrap dotfiles unapply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/unapply.md)

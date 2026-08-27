@@ -190,6 +190,9 @@ Add or update dotfiles in `[dotfiles]`
 \fBbootstrap dotfiles apply\fR
 Apply dotfiles from `[dotfiles]`
 .TP
+\fBbootstrap dotfiles diff\fR
+Show the changes needed to apply dotfiles from `[dotfiles]`
+.TP
 \fBbootstrap dotfiles edit\fR
 Edit a managed dotfile source
 .TP
@@ -1245,6 +1248,21 @@ Print help
 .TP
 \fB<TARGET>\fR
 Only apply these targets
+.SH "MISE BOOTSTRAP DOTFILES DIFF"
+Show the changes needed to apply dotfiles from `[dotfiles]`
+.PP
+\fBUsage:\fR mise bootstrap dotfiles diff [OPTIONS] [<TARGET>] ...
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<TARGET>\fR
+Only show these targets
 .SH "MISE BOOTSTRAP DOTFILES EDIT"
 Edit a managed dotfile source
 .PP

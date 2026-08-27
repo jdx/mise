@@ -1947,17 +1947,23 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
                 FileMode::Template => rendered.unwrap_or_default().as_bytes().to_vec(),
                 _ => file::read(&req.source)?,
             };
-            let current = if req.target.exists() && req.target.is_file() {
-                file::read(&req.target)?
-            } else {
-                vec![]
-            };
-            if current != desired {
-                miseprintln!(
-                    "  content differs: {} -> {}",
-                    req.source.display_user(),
-                    req.target.display_user()
-                );
+            if let Some(current) = current_regular_file_for_diff(req)?
+                && current != desired
+            {
+                print_content_diff(req, &current, &desired)?;
+            }
+            #[cfg(unix)]
+            if req.mode == FileMode::Template && !req.target.is_symlink() && req.target.is_file() {
+                use std::os::unix::fs::PermissionsExt;
+                let current_mode = req.target.metadata()?.permissions().mode() & 0o7777;
+                let desired_mode = req.source.metadata()?.permissions().mode() & 0o7777;
+                if current_mode != desired_mode {
+                    miseprintln!(
+                        "  permissions differ: {:04o} (current) -> {:04o} (desired)",
+                        current_mode,
+                        desired_mode
+                    );
+                }
             }
         }
         FileMode::Copy | FileMode::Template => {
@@ -1969,15 +1975,91 @@ fn print_diff(req: &FileRequest, rendered: Option<&str>) -> Result<()> {
         }
         FileMode::Content => {
             let desired = req.content.as_deref().expect("inline content").as_bytes();
-            let current = if req.target.is_file() {
-                file::read(&req.target)?
-            } else {
-                vec![]
-            };
-            if current != desired {
-                miseprintln!("  inline content differs: {}", req.target.display_user());
+            if let Some(current) = current_regular_file_for_diff(req)?
+                && current != desired
+            {
+                print_content_diff(req, &current, desired)?;
             }
         }
+    }
+    Ok(())
+}
+
+/// Read a regular target without following a symlink. Non-file targets are
+/// described structurally and return no bytes to compare.
+fn current_regular_file_for_diff(req: &FileRequest) -> Result<Option<Vec<u8>>> {
+    if req.target.is_symlink() {
+        let dest = std::fs::read_link(&req.target)?;
+        miseprintln!(
+            "  file type differs: current symlink {} -> {}; desired regular file",
+            req.target.display_user(),
+            dest.display_user()
+        );
+        return Ok(None);
+    }
+    if req.target.is_file() {
+        return Ok(Some(file::read(&req.target)?));
+    }
+    if req.target.exists() {
+        miseprintln!(
+            "  file type differs: current directory {}; desired regular file",
+            req.target.display_user()
+        );
+        return Ok(None);
+    }
+    miseprintln!("  current: {} missing", req.target.display_user());
+    Ok(Some(vec![]))
+}
+
+fn print_content_diff(req: &FileRequest, current: &[u8], desired: &[u8]) -> Result<()> {
+    let source = match req.mode {
+        FileMode::Content => "inline".to_string(),
+        _ => req.source.display_user(),
+    };
+    miseprintln!(
+        "  content differs: {} -> {}",
+        source,
+        req.target.display_user()
+    );
+    let mut opts = diffy::DiffOptions::new();
+    opts.set_original_filename(format!("{} (current)", req.target.display_user()))
+        .set_modified_filename(match req.mode {
+            FileMode::Content => format!("{} (desired)", req.target.display_user()),
+            _ => format!("{} (desired)", req.source.display_user()),
+        });
+    match (str::from_utf8(current), str::from_utf8(desired)) {
+        (Ok(current), Ok(desired)) => {
+            let patch = opts.create_patch(current, desired);
+            miseprint!("{}", diffy::PatchFormatter::new().fmt_patch(&patch))?;
+        }
+        _ => miseprintln!("  binary content differs"),
+    }
+    Ok(())
+}
+
+/// Print the changes required to converge whole-file dotfile entries.
+/// Templates are rendered because a meaningful diff requires their desired
+/// content, matching the trust and execution semantics of dotfiles status.
+pub(crate) fn print_diffs(config: &Config, requests: &[FileRequest]) -> Result<()> {
+    let mut changed = false;
+    for req in requests {
+        if req.mode != FileMode::Content && !req.source.exists() {
+            miseprintln!("{}: source missing", req.target_raw);
+            changed = true;
+            continue;
+        }
+        let rendered = match req.mode {
+            FileMode::Template => Some(render_template(config, req)?),
+            _ => None,
+        };
+        if check_rendered(req, rendered.as_deref())? == FileState::Applied {
+            continue;
+        }
+        changed = true;
+        print_diff(req, rendered.as_deref())?;
+    }
+    if !changed {
+        info!("files: all files are applied");
     }
     Ok(())
 }

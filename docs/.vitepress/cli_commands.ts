@@ -77,6 +77,9 @@ export const commands: { [key: string]: Command } = {
           apply: {
             hide: false,
           },
+          diff: {
+            hide: false,
+          },
           edit: {
             hide: false,
           },
@@ -383,6 +386,9 @@ export const commands: { [key: string]: Command } = {
         hide: true,
       },
       apply: {
+        hide: true,
+      },
+      diff: {
         hide: true,
       },
       edit: {

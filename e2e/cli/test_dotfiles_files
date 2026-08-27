@@ -3,6 +3,7 @@
 # The canonical command is visible while the deprecated top-level alias is hidden.
 assert_not_contains "mise --help" "  dotfiles "
 assert_contains "mise bootstrap dotfiles --help" "add"
+assert_contains "mise bootstrap dotfiles --help" "diff"
 assert_contains "mise bootstrap dotfiles --help" "edit"
 
 mkdir -p dotfiles/nvim dotfiles/bin
@@ -52,6 +53,15 @@ assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
 assert "readlink ~/.local/mybin/two" "$PWD/dotfiles/bin/two"
 assert "cat ~/.config/inline.conf" "inline content"
 
+# diff is read-only, accepts target filters, and prints unified content changes.
+echo "locally changed" >~/.config/starship.toml
+assert_contains "mise bootstrap dotfiles diff ~/.config/starship.toml" "--- ~/.config/starship.toml (current)"
+assert_contains "mise bootstrap dotfiles diff ~/.config/starship.toml" "+starship config"
+assert_not_contains "mise bootstrap dotfiles diff ~/.config/starship.toml" ".gitconfig"
+assert "cat ~/.config/starship.toml" "locally changed"
+assert_fail "mise bootstrap dotfiles diff ~/.not-managed" "no dotfiles matched target filter"
+assert_succeed "mise bootstrap dotfiles apply ~/.config/starship.toml --yes"
+
 # Inline content is a whole-file entry and overwrites content drift.
 assert_contains "mise dotfiles status ~/.config/inline.conf --json" '"source": null'
 echo "drifted" >~/.config/inline.conf
@@ -66,6 +76,7 @@ ln -s "$PWD/linked-inline-source" ~/.config/linked-inline.conf
 cat <<EOF >>mise.toml
 "~/.config/linked-inline.conf" = { content = "linked inline\n" }
 EOF
+assert_contains "mise bootstrap dotfiles diff ~/.config/linked-inline.conf" "file type differs: current symlink"
 assert_fail "mise dotfiles unapply ~/.config/linked-inline.conf --yes" "target differs from the managed content"
 assert "readlink ~/.config/linked-inline.conf" "$PWD/linked-inline-source"
 
@@ -178,6 +189,7 @@ assert "cat ~/.config/starship.toml" "starship v2"
 chmod 644 ~/.ssh/config
 chmod 600 dotfiles/ssh_config.tmpl
 assert_contains "mise dotfiles status" "permissions differ"
+assert_contains "mise dotfiles diff ~/.ssh/config" "permissions differ: 0644 (current) -> 0600 (desired)"
 assert_succeed "mise dotfiles apply --yes"
 case "$(uname -s)" in
   Darwin) assert "stat -f %Lp ~/.ssh/config" "600" ;;
