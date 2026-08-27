@@ -188,6 +188,7 @@ cat <<'EOF' >cascade-local/mise.toml
 [task_config.input_groups]
 workspace-lock = ["Cargo.lock"]
 child-only = ["child-group.txt"]
+global-toolchain = ["child-global-toolchain.txt"]
 
 [tasks.child]
 run = "true"
@@ -196,9 +197,11 @@ outputs = []
 EOF
 printf 'child-lock\n' >cascade-local/Cargo.lock
 printf 'child-group\n' >cascade-local/child-group.txt
+printf 'child-global-toolchain\n' >cascade-local/child-global-toolchain.txt
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/Cargo.lock\"))'" "$PWD/cascade-local/Cargo.lock"
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/toolchain.txt\"))'" "$PWD/toolchain.txt"
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-group.txt\"))'" "$PWD/cascade-local/child-group.txt"
+assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/child-global-toolchain.txt\"))'" "$PWD/cascade-local/child-global-toolchain.txt"
 assert "mise -C cascade-local task info child --json | jq -r '.sources[] | select(endswith(\"/workspace.txt\"))'" "$PWD/workspace.txt"
 
 # cascade = false stops both inherited input fields.
