@@ -121,10 +121,10 @@ flate2 = "1"
 futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 # Stacked on jdx/mr-boxington#130. Replace these exact git pins with its released 0.x minors before merge.
-mbx-cache-cargo = { git = "https://github.com/jdx/mr-boxington", rev = "1f7914d", default-features = false }
-mbx-cache-core = { git = "https://github.com/jdx/mr-boxington", rev = "1f7914d", default-features = false }
-mbx-cache-rustc = { git = "https://github.com/jdx/mr-boxington", rev = "1f7914d", default-features = false }
-mbx-cache-store = { git = "https://github.com/jdx/mr-boxington", rev = "1f7914d", default-features = false }
+mbx-cache-cargo = { git = "https://github.com/jdx/mr-boxington", rev = "e599a0a", default-features = false }
+mbx-cache-core = { git = "https://github.com/jdx/mr-boxington", rev = "e599a0a", default-features = false }
+mbx-cache-rustc = { git = "https://github.com/jdx/mr-boxington", rev = "e599a0a", default-features = false }
+mbx-cache-store = { git = "https://github.com/jdx/mr-boxington", rev = "e599a0a", default-features = false }
 fslock = "0.2"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"
