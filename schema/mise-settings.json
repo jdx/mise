@@ -176,6 +176,16 @@
         }
       },
       "required": ["description", "type"],
+      "if": {
+        "required": ["merge"]
+      },
+      "then": {
+        "properties": {
+          "type": {
+            "const": "ListString"
+          }
+        }
+      },
       "unevaluatedProperties": false
     }
   }
