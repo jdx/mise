@@ -258,3 +258,37 @@ assert "mise generate task-stubs --dir default-bin --windows-launcher cmd"
 assert_succeed "test -f default-bin/deploy"
 assert_succeed "test -f default-bin/deploy.cmd"
 assert_fail "test -e default-bin/deploy.exe"
+
+# `--mise-bin` pointing at a path only works on Windows if something Windows can execute is beside
+# it. `mise generate install-script --write bin/mise` writes a `#!/usr/bin/env bash` script, and its
+# own `.cmd` is opt-in (`--windows`, deliberately: it is a second committed file). Pairing the two
+# as documented therefore leaves a `bin/<task>.cmd` that fails with `'"./bin/mise"' is not
+# recognized` — so say so here, where it can still be fixed.
+#
+# Asserted on this host, not only on Windows, for the same reason the launcher is written on every
+# host: whoever generates `bin/` on Linux is exactly the person who will not see the failure.
+mkdir -p warn-bin
+printf '#!/usr/bin/env bash\necho fake mise\n' >warn-bin/mise
+chmod +x warn-bin/mise
+assert_contains \
+  "mise generate task-stubs --dir warn-stubs --mise-bin ./warn-bin/mise 2>&1" \
+  "no Windows launcher beside it"
+# The advice has to name the command that fixes it, not just the symptom.
+assert_contains \
+  "mise generate task-stubs --dir warn-stubs --mise-bin ./warn-bin/mise 2>&1" \
+  "--windows"
+# It is a warning, not a failure: the stubs are still what the user asked for, and on a POSIX host
+# they work as they always did.
+assert "mise generate task-stubs --dir warn-stubs --mise-bin ./warn-bin/mise"
+# `deploy`, not `xxx`: `mise.toml` was overwritten above, so the task added at the top of this file
+# no longer exists here and an assertion naming it would hold whatever the command did.
+assert_succeed "test -f warn-stubs/deploy"
+
+# With the launcher beside it there is nothing to say. This is the control: without it the
+# assertions above would hold for a warning that fires unconditionally.
+printf '@echo off\r\n' >warn-bin/mise.cmd
+assert_fail "mise generate task-stubs --dir warn-stubs2 --mise-bin ./warn-bin/mise 2>&1 | grep -q 'no Windows launcher beside it'"
+
+# The default resolves off PATH, where PATHEXT finds an executable for a bare name, so it must stay
+# silent too -- otherwise the warning would fire on nearly every run of this command.
+assert_fail "mise generate task-stubs --dir warn-stubs3 2>&1 | grep -q 'no Windows launcher beside it'"
