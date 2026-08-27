@@ -352,7 +352,7 @@ impl ToolOptions {
 
     /// Get a scalar value for a key as an owned string.
     pub(crate) fn get_string(&self, key: &str) -> Option<String> {
-        self.opts.get(key).and_then(Self::value_to_string)
+        self.opts.get(key).and_then(scalar_value_to_string)
     }
 
     /// Convert opts to string values, extracting inner strings from
@@ -530,7 +530,7 @@ impl ToolOptions {
 
     fn get_string_at_path(value: &toml::Value, path: &[&str]) -> Option<String> {
         if path.is_empty() {
-            return Self::value_to_string(value);
+            return scalar_value_to_string(value);
         }
 
         match value {
@@ -541,17 +541,6 @@ impl ToolOptions {
                     None
                 }
             }
-            _ => None,
-        }
-    }
-
-    fn value_to_string(value: &toml::Value) -> Option<String> {
-        match value {
-            toml::Value::String(s) => Some(s.clone()),
-            toml::Value::Integer(i) => Some(i.to_string()),
-            toml::Value::Boolean(b) => Some(b.to_string()),
-            toml::Value::Float(f) => Some(f.to_string()),
-            toml::Value::Datetime(d) => Some(d.to_string()),
             _ => None,
         }
     }
