@@ -8,6 +8,7 @@ use crate::toolset::{InstallOptions, ToolRequest, ToolRequestSet, ToolsetBuilder
 use crate::ui::time;
 use crate::{dirs, env, file};
 use eyre::{Result, bail, eyre};
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::{collections::BTreeSet, sync::Arc};
 use tokio::task::JoinSet;
@@ -399,16 +400,13 @@ impl TestTool {
         };
         let (_, missing) = ts.install_missing_versions(&mut config, &opts).await?;
         ts.notify_missing_versions(missing);
-        let tv = if let Some(tv) = ts
-            .versions
-            .get(tool.ba.as_ref())
-            .and_then(|tvl| tvl.versions.first())
-        {
-            tv.clone()
-        } else {
-            warn!("no versions found for {tool}");
-            return Ok(String::new());
-        };
+        let tv = require_resolved_version(
+            ts.versions
+                .get(tool.ba.as_ref())
+                .and_then(|tvl| tvl.versions.first())
+                .cloned(),
+            tool,
+        )?;
         let backend = tv.backend()?;
         let env = ts.env_with_path(&config).await?;
         let mut which_parts = cmd.split_whitespace().collect::<Vec<_>>();
@@ -478,6 +476,22 @@ impl TestTool {
             ));
         }
         Ok(stdout.trim_end().to_string())
+    }
+}
+
+fn require_resolved_version<T>(version: Option<T>, tool: impl Display) -> Result<T> {
+    version.ok_or_else(|| eyre!("no versions found for {tool}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unresolved_tool_version_is_an_error() {
+        let err = require_resolved_version::<()>(None, "example").unwrap_err();
+
+        assert_eq!(err.to_string(), "no versions found for example");
     }
 }
 
