@@ -3293,6 +3293,15 @@ impl ResolvedTaskInputs {
     fn is_empty(&self) -> bool {
         self.global_inputs.is_none() && self.input_groups.is_none()
     }
+
+    fn overlay(&mut self, overlay: Self) {
+        if overlay.global_inputs.is_some() {
+            self.global_inputs = overlay.global_inputs;
+        }
+        if overlay.input_groups.is_some() {
+            self.input_groups = overlay.input_groups;
+        }
+    }
 }
 
 fn anchor_task_input(root: &Path, input: &str) -> String {
@@ -4867,6 +4876,7 @@ struct TaskSources {
 #[derive(Clone)]
 struct CascadedTaskConfig {
     task_config: TaskConfig,
+    inputs: ResolvedTaskInputs,
     includes_root: PathBuf,
     excludes_root: PathBuf,
 }
@@ -4875,6 +4885,9 @@ fn merge_cascaded_task_config(
     cascaded: &mut CascadedTaskConfig,
     configs: &[&Arc<dyn ConfigFile>],
 ) -> Result<()> {
+    cascaded
+        .inputs
+        .overlay(ResolvedTaskInputs::from_configs(configs));
     if let Some(dir) = configs.iter().find_map(|cf| cf.task_config().dir.clone()) {
         cascaded.task_config.dir = Some(dir);
     }
@@ -4953,6 +4966,7 @@ fn cascaded_task_config_for_dir(
             Some(true) if cascaded.is_none() => {
                 cascaded = Some(CascadedTaskConfig {
                     task_config: TaskConfig::default(),
+                    inputs: ResolvedTaskInputs::default(),
                     includes_root: root.clone(),
                     excludes_root: root,
                 });
@@ -5096,10 +5110,15 @@ async fn load_task_sources_from_configs(
         .unwrap_or_default();
     let excludes = resolve_task_excludes(&excludes_root, &excludes);
 
+    let mut inputs = cascaded_task_config
+        .map(|tc| tc.inputs.clone())
+        .unwrap_or_default();
+    inputs.overlay(ResolvedTaskInputs::from_configs(&configs));
+
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
     let task_config = ResolvedTaskConfig {
-        inputs: ResolvedTaskInputs::from_configs(&configs),
+        inputs,
         environment: ResolvedTaskEnvironment::from_configs(
             &configs,
             cascaded_task_config.map(|tc| &tc.task_config),
