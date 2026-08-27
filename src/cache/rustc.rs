@@ -115,7 +115,7 @@ pub(crate) fn compile(rustc: &OsStr, arguments: &[OsString]) -> Result<ExitCode>
                 if verify {
                     verification = Some(cached);
                 } else {
-                    record_action_hit(&action, cached.restore);
+                    record_action_hit(&action, cached.restore, invocation.crate_name());
                     let _ = replay_bytes(&cached.stdout, &cached.stderr);
                     return Ok(ExitCode::SUCCESS);
                 }
@@ -271,7 +271,7 @@ fn restore_predicted_result(
         Some((action, mut cached)) => {
             cached.restore.avoided_compiler_duration_ns = input_prediction.compiler_duration_ns;
             if restore_outputs {
-                record_action_hit(&action, cached.restore);
+                record_action_hit(&action, cached.restore, invocation.crate_name());
             }
             record_prediction_value(invocation_digest, action, prediction.payload);
             Ok(Some(cached))
@@ -752,10 +752,11 @@ fn persist_outputs(staged: StagedOutputs) -> Result<()> {
     Ok(())
 }
 
-fn record_action_hit(action: &CacheDigest, restore: RestoreStats) {
+fn record_action_hit(action: &CacheDigest, restore: RestoreStats, crate_name: &str) {
     let responses = session::request_agent(&[AgentRequest::RecordActionHit {
         action: action.clone(),
         restore,
+        crate_name: Some(crate_name.to_string()),
     }]);
     match responses.map(|responses| responses.into_iter().next()) {
         Ok(Some(AgentResponse::ActionHitRecorded)) => {}
