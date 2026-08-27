@@ -4769,6 +4769,21 @@ pub(crate) fn task_includes_for_dir(dir: &Path, config_files: &ConfigMap) -> Res
         .collect::<Vec<_>>())
 }
 
+/// The `task_config.excludes` of the highest-precedence config that declares
+/// one, with the config root it resolves against.
+fn first_task_config_excludes(
+    configs: &[&Arc<dyn ConfigFile>],
+) -> Result<Option<(Vec<String>, PathBuf)>> {
+    configs
+        .iter()
+        .find_map(|cf| match cf.task_config_excludes() {
+            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
+            Ok(None) => None,
+            Err(err) => Some(Err(err)),
+        })
+        .transpose()
+}
+
 pub(crate) fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Result<Vec<PathBuf>> {
     let configs = configs_at_root(dir, config_files);
     let cascaded_task_config =
@@ -4777,14 +4792,7 @@ pub(crate) fn task_excludes_for_dir(dir: &Path, config_files: &ConfigMap) -> Res
         } else {
             cascaded_task_config_for_dir(dir, config_files)?
         };
-    let (excludes, resolve_dir) = configs
-        .iter()
-        .find_map(|cf| match cf.task_config_excludes() {
-            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .transpose()?
+    let (excludes, resolve_dir) = first_task_config_excludes(&configs)?
         .or_else(|| {
             cascaded_task_config.and_then(|tc| {
                 tc.task_config
@@ -4920,15 +4928,7 @@ fn merge_cascaded_task_config(
         cascaded.task_config.includes = Some(includes);
         cascaded.includes_root = root;
     }
-    if let Some((excludes, root)) = configs
-        .iter()
-        .find_map(|cf| match cf.task_config_excludes() {
-            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .transpose()?
-    {
+    if let Some((excludes, root)) = first_task_config_excludes(configs)? {
         cascaded.task_config.excludes = Some(excludes);
         cascaded.excludes_root = root;
     }
@@ -5084,14 +5084,7 @@ async fn load_task_sources_from_configs(
             })
         })
         .unwrap_or_else(|| (default_task_includes(), dir.to_path_buf(), configs.len()));
-    let (excludes, excludes_root) = configs
-        .iter()
-        .find_map(|cf| match cf.task_config_excludes() {
-            Ok(Some(excludes)) => Some(Ok((excludes, cf.config_root()))),
-            Ok(None) => None,
-            Err(err) => Some(Err(err)),
-        })
-        .transpose()?
+    let (excludes, excludes_root) = first_task_config_excludes(&configs)?
         .or_else(|| {
             cascaded_task_config.and_then(|tc| {
                 tc.task_config
