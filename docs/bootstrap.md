@@ -11,6 +11,22 @@ can also add hooks that run at named points in the bootstrap sequence.
 The same configuration can be applied to named inventory hosts or ad-hoc SSH
 destinations with [`mise bootstrap remote`](/bootstrap/remote.html).
 
+On a new machine, mise can clone the repository containing that configuration
+before it starts:
+
+```sh
+mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
+```
+
+The checkout defaults to `$MISE_DATA_DIR/bootstrap-repo`; use `--from-dir` to choose
+another location. The explicitly supplied checkout is trusted for this
+invocation, and the active `-E` environments are forwarded to it, so files such
+as `mise.home.toml` and `mise.work.toml` can select different profiles. Existing
+checkouts must have the requested URL as their `origin`. They are reused as-is
+unless `--update` is passed, in which case mise runs a fast-forward-only pull
+before applying the bootstrap configuration. A missing checkout is only
+reported, not cloned, during `--dry-run`.
+
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
 formulae, dotfile repositories, shell rc files, editor config, macOS
