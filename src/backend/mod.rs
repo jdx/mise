@@ -19,7 +19,8 @@ use crate::config::config_file::config_root;
 use crate::config::{Config, Settings};
 use crate::duration::parse_into_timestamp;
 use crate::file::{
-    canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
+    canonicalize_cached, display_path, entry_exists, remove_all_with_progress,
+    remove_all_with_warning,
 };
 use crate::install_before::resolve_before_date_for_tool;
 use crate::install_context::InstallContext;
@@ -3601,7 +3602,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
         }
         let rmdir = |dir: &Path| {
             if dryrun {
-                if dir.exists() {
+                // Not `exists()`, which resolves a link: a dry run has to name the entry the real
+                // run would remove, and a link whose target is gone is one of them.
+                if entry_exists(dir) {
                     pr.set_message(format!("remove {}", display_path(dir)));
                 }
                 return Ok(());
