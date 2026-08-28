@@ -825,7 +825,16 @@ impl HttpBackend {
 
             let cached_file = cache_path.join(filename);
             let install_file = dest_dir.join(filename);
-            file::make_symlink(&cached_file, &install_file)?;
+            // Not `make_symlink`: the target here is a *file*, and on Windows
+            // that goes through `junction::create`, which builds a directory
+            // reparse point. It succeeds and leaves a link that cannot be
+            // resolved — the install looks fine and the binary will not run.
+            // `make_symlink_or_copy` is what the rest of the codebase uses for a
+            // file that has to be executable at the link path (swift, github,
+            // conda and aqua all do). The cost is that Windows keeps a copy
+            // rather than sharing the cached one, which is the right way round:
+            // a duplicate that works beats a link that does not.
+            file::make_symlink_or_copy(&cached_file, &install_file)?;
             return Ok(());
         }
 
