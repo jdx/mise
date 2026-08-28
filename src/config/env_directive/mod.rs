@@ -522,6 +522,10 @@ impl EnvResults {
             let config_root = crate::config::config_file::config_root::config_root(&source);
             ctx.insert("cwd", &*dirs::CWD);
             ctx.insert("config_root", &config_root);
+            ctx.insert(
+                "config_source",
+                &crate::config::config_file::config_root::config_source(&source),
+            );
             let env_vars = env
                 .iter()
                 .map(|(k, (v, _))| (k.clone(), v.clone()))

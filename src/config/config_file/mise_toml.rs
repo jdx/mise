@@ -530,6 +530,7 @@ impl MiseToml {
             "config_root",
             config_root::config_root(path).to_str().unwrap(),
         );
+        context.insert("config_source", &config_root::config_source(path));
         let mut rf = Self {
             path: path.to_path_buf(),
             context,
@@ -575,6 +576,8 @@ impl MiseToml {
             "config_root",
             config_root::config_root(path).to_str().unwrap(),
         );
+        rf.context
+            .insert("config_source", &config_root::config_source(path));
         rf.update_context_env(env::PRISTINE_ENV.clone());
         rf.path = path.to_path_buf();
         let project_root = rf.project_root().map(|p| p.to_path_buf());

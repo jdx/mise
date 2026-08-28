@@ -798,6 +798,10 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     let mut context = tera::Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", &config_root);
+    context.insert(
+        "config_source",
+        &crate::config::config_file::config_root::config_source(path),
+    );
     if let Ok(cwd) = std::env::current_dir() {
         context.insert("cwd", &cwd);
     }

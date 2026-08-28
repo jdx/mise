@@ -185,6 +185,19 @@ These variables offer key information about the current environment:
 - `vars: HashMap<String, String>` – Accesses user-defined [configuration variables](/configuration/vars).
 - `cwd: PathBuf` – Points to the current working directory.
 - `config_root: PathBuf` – Locates the directory containing your `mise.toml` file, or in the case of something like `~/src/myproj/.config/mise.toml`, it will point to `~/src/myproj`.
+- `config_source: String` – The config file the template itself is written in, as an absolute path. Unlike `config_root` this is the file, not the project it belongs to, and it is **not** resolved through symlinks — pipe it through `canonicalize` when you want where the real file lives. Available in `mise.toml`, `.tool-versions`, `[env]` directives and `[settings.age]`; task file templates and `.miserc.toml` only carry `config_root`.
+
+  A shared config symlinked into `conf.d` can add its own `bin` directory to the
+  path with it:
+
+  ```toml
+  [env]
+  _.path = "{{ config_source | canonicalize | dirname }}/bin"
+  ```
+
+  Leave `canonicalize` out to get the directory the file was reached through
+  rather than the one it lives in.
+
 - `mise_bin: String` - Points to the path to the current mise executable
 - `mise_pid: String` - Points to the pid of the current mise process
 - `mise_env: Vec<String>` - The configuration environment as specified by `MISE_ENV`, `-E`, or `--env`. Will be undefined if the configuration environment is not set.
