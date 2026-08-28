@@ -18,6 +18,7 @@ env:
 jobs:
   mbx:
     name: mbx (${{ matrix.label }})
+    if: github.actor == 'jdx' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write # Authenticate the main-branch dispatch to the cache server.
