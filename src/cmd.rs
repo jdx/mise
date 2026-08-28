@@ -597,6 +597,8 @@ impl<'a> CmdLineRunner<'a> {
                 .arg("/T")
                 .arg("/PID")
                 .arg(pid.to_string())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn()
             {
                 warn!("Failed to kill cmd {pid}: {e}");
