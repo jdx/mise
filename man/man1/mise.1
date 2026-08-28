@@ -1180,10 +1180,13 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `\-\-source` is provided.
 .PP
-\fBUsage:\fR mise bootstrap dotfiles add [OPTIONS] <TARGET> ...
+\fBUsage:\fR mise bootstrap dotfiles add [OPTIONS] [<TARGET>] ...
 .PP
 \fBOptions:\fR
 .PP
+.TP
+\fB\-\-changed\fR
+Update the sources of every changed file managed in copy mode
 .TP
 \fB\-f, \-\-force\fR
 Overwrite existing sources without prompting

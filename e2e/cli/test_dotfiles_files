@@ -535,15 +535,69 @@ dotfiles.root = "$PWD/copied-root"
 
 [dotfiles]
 "~/.copied" = { mode = "copy" }
+"~/.copied-two" = { mode = "copy" }
 EOF
 mkdir -p copied-root
 echo "source copy" >copied-root/.copied
+echo "source copy two" >copied-root/.copied-two
 assert_succeed "mise dotfiles apply --yes"
 echo "live copy edit" >~/.copied
 assert_succeed "mise dotfiles add ~/.copied --yes"
 assert "cat copied-root/.copied" "live copy edit"
 mode_warn="$(mise dotfiles add --mode symlink ~/.copied --yes 2>&1)"
 assert_contains "echo \"$mode_warn\"" "--mode symlink was ignored"
+
+# --changed captures every drifted copy-mode file, but remains read-only in dry-run.
+echo "bulk copy edit" >~/.copied
+echo "bulk copy edit two" >~/.copied-two
+assert_contains "mise dotfiles add --changed --dry-run --yes" "cp ~/.copied"
+assert "cat copied-root/.copied" "live copy edit"
+assert_succeed "mise dotfiles add --changed --yes"
+assert "cat copied-root/.copied" "bulk copy edit"
+assert "cat copied-root/.copied-two" "bulk copy edit two"
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert_fail "mise dotfiles add" "at least one target or --changed is required"
+assert_fail "mise dotfiles add --changed ~/.copied" "--changed does not accept target arguments"
+
+# Bulk reverse capture skips additive directory copies, where excluded source
+# files intentionally have no corresponding live target and must be preserved.
+mkdir -p copied-root/tree
+echo "managed" >copied-root/tree/managed
+echo "source only" >copied-root/tree/source-only
+cat <<EOF >mise.toml
+[settings]
+dotfiles.root = "$PWD/copied-root"
+
+[dotfiles]
+"~/.copied-tree" = { source = "copied-root/tree", mode = "copy", exclude = ["source-only"] }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+echo "live edit" >~/.copied-tree/managed
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert "cat copied-root/tree/source-only" "source only"
+
+# A missing source may have been a directory. Bulk capture cannot safely infer
+# its old shape from a replacement target file, so explicit add is required.
+rm -r copied-root/tree ~/.copied-tree
+echo "replacement file" >~/.copied-tree
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert_directory_not_exists "$PWD/copied-root/tree"
+
+# An ignored config warning remains visible when no eligible entries were
+# loaded, instead of implying that every configured copy is in sync.
+assert_contains "MISE_IGNORED_CONFIG_PATHS='$PWD/mise.toml' mise dotfiles add --changed --yes 2>&1" "are not trusted"
+
+# Safe mode may inspect untrusted configuration, but it must not let that
+# configuration bulk-copy arbitrary live files into its checkout.
+mkdir -p "$HOME/untrusted-changed/source"
+echo "configured" >"$HOME/untrusted-changed/source/file"
+echo "live secret" >"$HOME/untrusted-changed-target"
+cat <<EOF >"$HOME/untrusted-changed/mise.toml"
+[dotfiles]
+"$HOME/untrusted-changed-target" = { source = "source/file", mode = "copy" }
+EOF
+assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS='' mise --cd '$HOME/untrusted-changed' dotfiles add --changed --yes" "--changed requires trusted configuration"
+assert "cat '$HOME/untrusted-changed/source/file'" "configured"
 
 # edit opens the managed source, including symlink sources
 cat <<'EOF' >editor-write

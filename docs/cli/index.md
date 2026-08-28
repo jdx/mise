@@ -63,7 +63,7 @@
 - [`mise bootstrap compose apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/compose/apply.md)
 - [`mise bootstrap compose status [-J --json] [--missing]`](/cli/bootstrap/compose/status.md)
 - [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
-- [`mise bootstrap dotfiles add [FLAGS] <TARGET>…`](/cli/bootstrap/dotfiles/add.md)
+- [`mise bootstrap dotfiles add [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/add.md)
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.md)
 - [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.md)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.md)

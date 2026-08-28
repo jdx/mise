@@ -12,7 +12,7 @@ Manage dotfiles from `[dotfiles]`
 
 ## Subcommands
 
-- [`mise bootstrap dotfiles add [FLAGS] <TARGET>…`](/cli/bootstrap/dotfiles/add.md)
+- [`mise bootstrap dotfiles add [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/add.md)
 - [`mise bootstrap dotfiles apply [FLAGS] [TARGET]…`](/cli/bootstrap/dotfiles/apply.md)
 - [`mise bootstrap dotfiles diff [TARGET]…`](/cli/bootstrap/dotfiles/diff.md)
 - [`mise bootstrap dotfiles edit [FLAGS] <TARGET>`](/cli/bootstrap/dotfiles/edit.md)
