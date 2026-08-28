@@ -2,7 +2,6 @@
 resolver = "3"
 members = [
   "crates/mise-cache-core",
-  "crates/mise-cache-rustc",
   "crates/vfox",
   "crates/aqua-registry",
   "crates/mise-interactive-config",
@@ -124,7 +123,6 @@ flate2 = "1"
 futures-util = "0.3"
 mise-sigstore = { path = "crates/mise-sigstore", default-features = false }
 mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-features = false }
-mise-cache-rustc = { path = "crates/mise-cache-rustc", version = "0.1" }
 fslock = "0.2"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"
@@ -167,7 +165,6 @@ rattler_solve = { version = "9", default-features = false, features = [
 ] }
 rattler_package_streaming = { version = "0.27", default-features = false }
 rattler_virtual_packages = { version = "5", default-features = false }
-reflink-copy = "0.1"
 regex = "1"
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = [

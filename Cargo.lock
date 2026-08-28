@@ -6329,7 +6329,6 @@ dependencies = [
  "miette",
  "minisign-verify",
  "mise-cache-core",
- "mise-cache-rustc",
  "mise-interactive-config",
  "mise-sigstore",
  "mockito",
@@ -6354,7 +6353,6 @@ dependencies = [
  "rattler_repodata_gateway",
  "rattler_solve",
  "rattler_virtual_packages",
- "reflink-copy",
  "regex",
  "reqwest",
  "rmcp",
@@ -6417,13 +6415,11 @@ dependencies = [
  "base64 0.23.1",
  "blake3",
  "eyre",
- "fslock",
  "futures-util",
  "hex",
  "log",
  "mockito",
  "rand 0.10.2",
- "reflink-copy",
  "reqwest",
  "serde",
  "serde_json",
@@ -6434,16 +6430,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
-]
-
-[[package]]
-name = "mise-cache-rustc"
-version = "0.1.0"
-dependencies = [
- "mise-cache-core",
- "serde",
- "tempfile",
- "thiserror 2.0.20",
 ]
 
 [[package]]

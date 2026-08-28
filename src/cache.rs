@@ -24,9 +24,6 @@ use crate::rand::random_string;
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, file};
 
-pub(crate) mod rustc;
-pub(crate) mod session;
-
 pub(crate) use mise_cache_core::RemoteCacheMode as CacheRemoteMode;
 
 pub(crate) fn effective_remote_cache_mode(configured: CacheRemoteMode) -> Option<CacheRemoteMode> {
@@ -46,10 +43,6 @@ fn effective_remote_cache_mode_with(
     }
 }
 
-pub(crate) fn release_cache_context() -> bool {
-    release_cache_context_with(|name| std::env::var(name).ok())
-}
-
 fn trusted_cache_writer(get_env: &impl Fn(&str) -> Option<String>) -> bool {
     if env_truthy(get_env("GITHUB_ACTIONS")) {
         return get_env("GITHUB_EVENT_NAME").as_deref() == Some("push")
@@ -63,13 +56,6 @@ fn trusted_cache_writer(get_env: &impl Fn(&str) -> Option<String>) -> bool {
             && env_truthy(get_env("CI_COMMIT_REF_PROTECTED"));
     }
     false
-}
-
-fn release_cache_context_with(get_env: impl Fn(&str) -> Option<String>) -> bool {
-    (env_truthy(get_env("GITHUB_ACTIONS"))
-        && (get_env("GITHUB_REF_TYPE").as_deref() == Some("tag")
-            || get_env("GITHUB_EVENT_NAME").as_deref() == Some("release")))
-        || (env_truthy(get_env("GITLAB_CI")) && get_env("CI_COMMIT_TAG").is_some())
 }
 
 fn env_truthy(value: Option<String>) -> bool {
@@ -542,20 +528,6 @@ mod tests {
             ),
             Some(CacheRemoteMode::ReadWrite)
         );
-    }
-
-    #[test]
-    fn release_ci_contexts_are_cache_ineligible() {
-        assert!(release_cache_context_with(environment(&[
-            ("GITHUB_ACTIONS", "true"),
-            ("GITHUB_EVENT_NAME", "push"),
-            ("GITHUB_REF_TYPE", "tag"),
-        ])));
-        assert!(!release_cache_context_with(environment(&[
-            ("GITHUB_ACTIONS", "true"),
-            ("GITHUB_EVENT_NAME", "push"),
-            ("GITHUB_REF_TYPE", "branch"),
-        ])));
     }
 
     #[tokio::test]

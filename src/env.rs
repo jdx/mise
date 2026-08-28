@@ -630,7 +630,7 @@ fn is_self_replace_random_segment(s: &str) -> bool {
 ///
 /// Deliberately does not go through `ARGS`/`MISE_BIN_NAME`: this answers a question `main` asks
 /// before the runtime, logging or config exist, in the same shape as
-/// [`crate::cache::session::is_rustc_shim`].
+/// early executable-dispatch paths.
 ///
 /// The stem is not checked, unlike [`is_self_replace_helper`], and it cannot be: the original stem
 /// is *inside* the generated name, so a process running under one has nothing left to compare it
