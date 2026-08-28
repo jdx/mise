@@ -974,6 +974,43 @@ pub(crate) fn inactive_installed_tool_message(
     Some(msg.trim().to_string())
 }
 
+/// Name the registry tool that provides `bin_name` on other platforms but not this one.
+///
+/// `registry/<tool>.toml` carries an `os` list, and a tool whose list omits the running OS is
+/// dropped by `ToolRequestSetBuilder::is_disabled` before any version is resolved. That drop is
+/// silent by design — the tool is not unknown, and the user has not disabled it — so nothing is
+/// installed and the bin is simply absent. `mise install` and `mise use` reach the backend and
+/// report the reason; `mise exec` only ever saw the missing bin. mise has the answer in its own
+/// registry, so say it rather than leaving the user with `cannot find binary path`.
+///
+/// Matched on `bins` and on the tool's own name, so `mise x aws-cli -- aws` is recognised through
+/// either. Returns `None` when the OS list is empty or includes this one, which is the normal case.
+pub(crate) fn os_unsupported_tool_message(bin_name: &str) -> Option<String> {
+    let shorts = crate::registry::REGISTRY
+        .values()
+        .unique_by(|rt| rt.short)
+        .filter(|rt| !rt.is_supported_os())
+        .filter(|rt| rt.short == bin_name || rt.bins.contains(&bin_name))
+        .map(|rt| (rt.short, rt.os.join(", ")))
+        .collect_vec();
+    if shorts.is_empty() {
+        return None;
+    }
+    let mut msg = String::new();
+    for (short, oses) in &shorts {
+        let provides = if *short == bin_name {
+            String::new()
+        } else {
+            format!(", which provides {bin_name},")
+        };
+        msg.push_str(&format!(
+            "{short}{provides} is not available on {}: mise's registry lists it for {oses} only.\n",
+            std::env::consts::OS,
+        ));
+    }
+    Some(msg.trim().to_string())
+}
+
 /// Gather what [`inactive_installed_tool_message`] needs. Only called once a
 /// binary has definitively failed to resolve, so the config/toolset load lands
 /// on a path that is about to abort anyway.
@@ -999,6 +1036,9 @@ pub(crate) async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
         .filter(|short| crate::registry::tool_enabled(enable_tools.as_ref(), &disable_tools, short))
         .collect_vec();
     inactive_installed_tool_message(&ts, &installed_shorts, bin_stem)
+        // Checked second because the two cannot both apply: a tool this OS is excluded from is
+        // never installed here, so there is nothing to be "installed but not activated".
+        .or_else(|| os_unsupported_tool_message(bin_stem))
 }
 
 #[cfg(test)]
@@ -1127,6 +1167,34 @@ mod tests {
         // Matching is by tool name, so a bin like npm (provided by node) is not
         // recognized and the caller keeps its existing message.
         assert!(inactive_installed_tool_message(&ts, &["node".to_string()], "npm").is_none());
+    }
+
+    #[test]
+    fn os_unsupported_tool_message_names_the_tool_and_this_platform() {
+        // Taken from the registry rather than hardcoded: which tools are excluded depends on the
+        // platform the test runs on, and a hardcoded name would pass for the wrong reason
+        // wherever it happens to be supported. Every platform has some — the registry carries
+        // `["macos"]`, `["linux"]` and `["windows"]` entries.
+        let rt = crate::registry::REGISTRY
+            .values()
+            .unique_by(|rt| rt.short)
+            .find(|rt| !rt.is_supported_os() && !rt.bins.is_empty())
+            .expect("the registry lists no tool this platform is excluded from");
+
+        let msg = os_unsupported_tool_message(rt.bins[0])
+            .expect("a bin only an excluded tool provides should be explained");
+        assert!(msg.contains(rt.short), "{msg}");
+        assert!(msg.contains(std::env::consts::OS), "{msg}");
+        // and it must say where the tool *is* available, or the user learns nothing actionable
+        assert!(msg.contains(rt.os[0]), "{msg}");
+    }
+
+    #[test]
+    fn os_unsupported_tool_message_is_silent_when_nothing_is_excluded() {
+        // The control. Without it a message that fired for every name would satisfy the test
+        // above. `node` carries no `os` list, so it is supported everywhere.
+        assert_eq!(os_unsupported_tool_message("node"), None);
+        assert_eq!(os_unsupported_tool_message("not-a-registry-bin-9f3a"), None);
     }
 
     #[test]
