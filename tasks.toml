@@ -14,8 +14,8 @@ depends = ['lint:*']
 
 [build]
 alias = "b"
-run = "mbx build --all-features {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
-run_windows = "mbx build {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
+run = "{{ get_env(name='MISE_CARGO_BUILD_COMMAND', default='mbx build') }} --all-features {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
+run_windows = "{{ get_env(name='MISE_CARGO_BUILD_COMMAND', default='mbx build') }} {{ get_env(name='MISE_CARGO_BUILD_EXTRA_ARGS', default='') }}"
 description = "Build the project"
 #sources = ["Cargo.*", "src/**/*.rs"]
 #outputs = ["target/debug/mise"]
