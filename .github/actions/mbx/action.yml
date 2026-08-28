@@ -9,7 +9,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563 # v1.0.1
+    - uses: jdx/mr-boxington-action@ccdc5852f8bd93375379830a75f24794407443df # main
       with:
         version: 0.5.4
         backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
