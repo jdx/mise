@@ -1,0 +1,116 @@
+name: warm cache benchmark
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-cache-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mbx:
+    name: mbx (${{ matrix.label }})
+    if: github.actor == 'jdx' && github.triggering_actor == 'jdx' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      id-token: write # Authenticate the main-branch dispatch to the cache server.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            target-views: "1"
+          - os: macos-14
+            label: macOS
+            target-views: "1"
+          - os: windows-latest
+            label: Windows
+            target-views: "0"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      MBX_TARGET_VIEWS: ${{ matrix.target-views }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+        with:
+          backend: server
+      - name: Build
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          mbx build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "## mbx ${{ matrix.label }}: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+          mbx cache stats
+      - name: Build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $timer = [System.Diagnostics.Stopwatch]::StartNew()
+          mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --ignore-rust-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $timer.Stop()
+          $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
+          "## mbx ${{ matrix.label }}: ${elapsed}s" >> $env:GITHUB_STEP_SUMMARY
+          mbx cache stats
+
+  rust_cache:
+    name: Swatinem rust-cache (${{ matrix.label }})
+    if: github.actor == 'jdx' && github.triggering_actor == 'jdx' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            shared-key: cache-benchmark-linux-v2
+          - os: macos-14
+            label: macOS
+            shared-key: cache-benchmark-macos-v2
+          - os: windows-latest
+            label: Windows
+            shared-key: cache-benchmark-windows-v2
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          shared-key: ${{ matrix.shared-key }}
+          save-if: false
+      - name: Build
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          cargo build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "## Swatinem/rust-cache ${{ matrix.label }}: ${elapsed}s" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $timer = [System.Diagnostics.Stopwatch]::StartNew()
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --ignore-rust-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $timer.Stop()
+          $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
+          "## Swatinem/rust-cache ${{ matrix.label }}: ${elapsed}s" >> $env:GITHUB_STEP_SUMMARY
