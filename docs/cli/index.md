@@ -23,6 +23,11 @@
   **Environment Variable:** `MISE_QUIET`
 - **`-v --verbose`** — Show extra output (use -vv for even more)
 - **`-y --yes`** — Answer yes to all confirmation prompts
+- **`--ignore-cache`** — Read nothing from the cache this run, refreshing it rather than clearing it
+
+  Covers the tool, backend and registry caches. The environment cache and task artifacts keep their own controls (`--fresh-env`, `mise run --no-cache`).
+
+  Can also use `MISE_NO_CACHE=1`
 - **`--raw`** — Read/write directly to stdin/stdout/stderr instead of by line
 - **`--locked`** — Require lockfile URLs to be present during installation
 

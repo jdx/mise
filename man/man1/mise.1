@@ -56,6 +56,13 @@ Sets log level to debug
 .TP
 \fB\-\-log\-level\fR \fI<LEVEL>\fR
 .TP
+\fB\-\-ignore\-cache\fR
+Read nothing from the cache this run, refreshing it rather than clearing it
+
+Covers the tool, backend and registry caches. The environment cache and task artifacts keep their own controls (`\-\-fresh\-env`, `mise run \-\-no\-cache`).
+
+Can also use `MISE_NO_CACHE=1`
+.TP
 \fB\-\-no\-config\fR
 Do not load any config files
 

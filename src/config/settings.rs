@@ -1633,6 +1633,22 @@ impl Settings {
                     .any(|a| a == "--no-hooks")
     }
 
+    /// Whether this invocation should read nothing from the on-disk caches.
+    ///
+    /// Deliberately reads only statics, never `Settings::get()`: this is
+    /// consulted from `CacheManager::is_fresh`, and a cache read can happen
+    /// while settings are still being assembled.
+    pub(crate) fn no_cache() -> bool {
+        *env::MISE_NO_CACHE
+            || !*crate::env::IS_RUNNING_AS_SHIM
+                && env::ARGS
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .take_while(|a| *a != "--")
+                    .any(|a| a == "--ignore-cache")
+    }
+
     /// Whether safe mode (`MISE_SAFE=1` or the `safe` setting) is active.
     ///
     /// Safe to call during the config parse pass: it reads the loaded setting

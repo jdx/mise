@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+# `mise cache clear` is destructive: it removes the files, so every later run
+# pays to rebuild them too. This is the non-destructive version -- skip the read
+# for one invocation, refetch, and write the result back, leaving the cache warm
+# for next time.
+# See: https://github.com/jdx/mise/discussions/9601
+
+# `CacheManagerBuilder::build` always appends a short hash to the file name, so
+# the entry is `remote_versions-<hash>.msgpack.z` rather than a fixed name.
+# Found by glob for that reason: hardcoding the plain name matched nothing.
+CACHE_DIR="$MISE_CACHE_DIR/dummy"
+cache_file() {
+  find "$CACHE_DIR" -name 'remote_versions-*.msgpack.z' -type f 2>/dev/null | head -1
+}
+
+mtime() {
+  python3 -c 'import os,sys; print(repr(os.path.getmtime(sys.argv[1])))' "$1"
+}
+
+# A first listing populates the cache.
+mise ls-remote dummy >/dev/null
+CACHE_FILE=$(cache_file)
+assert "test -n '$CACHE_FILE' && echo present" "present"
+first=$(mtime "$CACHE_FILE")
+
+# An ordinary second run reads it and leaves it alone. Without this line the
+# assertions below would pass even if nothing were ever cached.
+sleep 1
+mise ls-remote dummy >/dev/null
+assert "test '$(mtime "$CACHE_FILE")' = '$first' && echo unchanged" "unchanged"
+
+# The env var skips the read, so the entry is fetched again and written back.
+sleep 1
+MISE_NO_CACHE=1 mise ls-remote dummy >/dev/null
+refreshed=$(mtime "$CACHE_FILE")
+assert "test -f '$CACHE_FILE' && echo present" "present"
+assert "test '$refreshed' != '$first' && echo refreshed" "refreshed"
+
+# ...and so does the flag.
+sleep 1
+mise --ignore-cache ls-remote dummy >/dev/null
+assert "test -f '$CACHE_FILE' && echo present" "present"
+assert "test '$(mtime "$CACHE_FILE")' != '$refreshed' && echo refreshed" "refreshed"
+
+# The output itself is unaffected -- this bypasses the cache, it does not change
+# what is being listed.
+assert_contains "mise --ignore-cache ls-remote dummy" "1.0.0"
+
+# The flag is global, so it is accepted after the subcommand too. Without that a
+# flag declared this way is rejected outright ("unexpected argument"), and only
+# the pre-subcommand position would work.
+#
+# The baseline is taken here rather than reused from above: runs in between have
+# already rewritten the file, so comparing against the older one would pass even
+# if this invocation only read the cache.
+sleep 1
+before_global=$(mtime "$CACHE_FILE")
+sleep 1
+mise ls-remote dummy --ignore-cache >/dev/null
+assert "test '$(mtime "$CACHE_FILE")' != '$before_global' && echo refreshed" "refreshed"

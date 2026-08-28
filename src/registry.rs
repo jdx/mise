@@ -196,7 +196,9 @@ pub(crate) async fn refresh() {
     }
 
     let cache_path = registry_cache_path();
-    if cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
+    // The one cache on this path that does not go through `CacheManager`, so it
+    // needs the same gate spelled out rather than inherited.
+    if !Settings::no_cache() && cache_is_fresh(&cache_path, settings.registry_cache_ttl()) {
         match parse_registry_archive(&cache_path) {
             Ok(registry) if !registry.missing_version_order => return,
             Ok(_) => warn!(

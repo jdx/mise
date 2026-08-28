@@ -321,6 +321,14 @@ where
     }
 
     fn is_fresh(&self) -> bool {
+        // Reporting "not fresh" is the whole mechanism: every caller that asks
+        // then fetches and writes the result back, so the file stays and comes
+        // out refreshed rather than deleted. That is what separates this from
+        // `mise cache clear`, which throws the work away for every later run
+        // too.
+        if crate::config::Settings::no_cache() {
+            return false;
+        }
         if !self.cache_file_path.exists() {
             return false;
         }

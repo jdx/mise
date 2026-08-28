@@ -89,6 +89,15 @@ flag --log-level hide=#true global=#true {
         }
     }
 }
+flag --ignore-cache help="Read nothing from the cache this run, refreshing it rather than clearing it" global=#true {
+    long_help #"""
+Read nothing from the cache this run, refreshing it rather than clearing it
+
+Covers the tool, backend and registry caches. The environment cache and task artifacts keep their own controls (`--fresh-env`, `mise run --no-cache`).
+
+Can also use `MISE_NO_CACHE=1`
+"""#
+}
 flag --no-config help="Do not load any config files" {
     long_help #"""
 Do not load any config files

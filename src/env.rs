@@ -158,6 +158,7 @@ pub(crate) static MISE_TOOL_STUB: Lazy<bool> =
 pub(crate) static MISE_NO_CONFIG: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CONFIG"));
 pub(crate) static MISE_NO_ENV: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_ENV"));
 pub(crate) static MISE_NO_HOOKS: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_HOOKS"));
+pub(crate) static MISE_NO_CACHE: Lazy<bool> = Lazy::new(|| var_is_true("MISE_NO_CACHE"));
 pub(crate) static MISE_PROGRESS_TRACE: Lazy<bool> =
     Lazy::new(|| var_is_true("MISE_PROGRESS_TRACE"));
 pub(crate) static MISE_CACHE_DIR: Lazy<PathBuf> =

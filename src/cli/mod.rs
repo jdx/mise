@@ -158,6 +158,14 @@ Shorthand for `mise tasks run <TASK>`."#
     pub debug: bool,
     #[usage(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides = &["quiet", "trace", "verbose", "silent", "debug"])]
     pub log_level: Option<LevelFilter>,
+    /// Read nothing from the cache this run, refreshing it rather than clearing it
+    ///
+    /// Covers the tool, backend and registry caches. The environment cache and task
+    /// artifacts keep their own controls (`--fresh-env`, `mise run --no-cache`).
+    ///
+    /// Can also use `MISE_NO_CACHE=1`
+    #[usage(long, global = true)]
+    pub ignore_cache: bool,
     /// Do not load any config files
     ///
     /// Can also use `MISE_NO_CONFIG=1`

@@ -7,6 +7,31 @@ things are hardcoded, but I'm happy to add more settings to cover whatever confi
 Below I explain the behavior it uses around caching. If you're seeing behavior where things don't appear
 to be updating, this is a good place to start.
 
+## Bypassing the cache for one run
+
+`mise --ignore-cache <command>` (or `MISE_NO_CACHE=1`) reads nothing from the on-disk caches for that
+invocation. The data is fetched again and **written back**, so the files stay in place and the next run
+is fast again.
+
+This is the non-destructive counterpart to [`mise cache clear`](/cli/cache/clear.html), which removes
+the files outright — making not just this run but every later one rebuild from scratch.
+
+It covers the tool and backend caches described below, and the floating registry archive. Two caches
+have their own controls instead: the environment cache
+(`mise run --fresh-env`, or `settings.env_cache`) and task artifacts (`mise run --no-cache`, or
+`mise cache clear --task`).
+
+Like `--no-config` and `--no-env`, this flag is recognised anywhere on the command line, so a task
+argument of the same name is picked up too. Pass task arguments after `--` to keep them separate:
+
+```sh
+mise run mytask -- --ignore-cache   # the task's flag, not mise's
+```
+
+In offline mode the cache is still read. `--ignore-cache` asks for the data to be fetched again, and
+offline is the state where there is nothing to fetch from — returning an empty result would be worse
+than what is already on disk.
+
 ## Tool Cache
 
 Each tool/backend has a cache that's stored in `~/$MISE_CACHE_DIR/<TOOL>`. It stores

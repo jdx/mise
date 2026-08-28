@@ -2411,6 +2411,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 "Skipping remote version listing for {} due to offline mode",
                 ba.to_string()
             );
+            // Offline wins over `--ignore-cache`. That flag asks for the data to
+            // be fetched again rather than read, and offline is precisely the
+            // state where there is nothing to fetch from — declining to read
+            // here would return an empty list instead of refreshed data, which
+            // is not what was asked for and is worse than what is on disk.
             match remote_versions.get_cached() {
                 Ok(versions) => return Ok(filter_cached_prereleases(versions, want_prereleases)),
                 Err(err) => {
