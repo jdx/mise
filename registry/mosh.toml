@@ -1,0 +1,6 @@
+backends = ["conda:mosh"]
+bins = ["mosh", "mosh-client", "mosh-server"]
+description = "Mobile Shell"
+os = ["linux", "macos"]
+test = { cmd = "mosh --version", expected = "mosh {{version}}" }
+version_order = "semver"
