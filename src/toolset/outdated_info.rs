@@ -27,6 +27,15 @@ pub(crate) struct OutdatedInfo {
     #[tabled(display("Self::display_bump"))]
     pub bump: Option<String>,
     pub latest: String,
+    /// Where to read about `latest`, when the backend knows.
+    ///
+    /// JSON only: a release URL is long enough to wreck the table, and the
+    /// table is the thing people read at a glance. Omitted rather than null
+    /// when the backend does not publish one, so a consumer can ask whether the
+    /// key is there instead of whether its value happens to be null.
+    #[tabled(skip)]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub release_url: Option<String>,
     pub source: ToolSource,
 }
 
@@ -43,6 +52,10 @@ impl OutdatedInfo {
             tool_version: tv,
             bump: None,
             latest,
+            // Filled in by `resolve`, which is the only path that knows the
+            // version was actually reported as outdated. Every other caller
+            // builds an `OutdatedInfo` for a version it already has in hand.
+            release_url: None,
         };
         Ok(oi)
     }
@@ -152,6 +165,31 @@ impl OutdatedInfo {
                 oi.tool_version.request.version()
             );
         }
+        // Asked for after the up-to-date checks above, so a tool that is not
+        // going to be reported does not pay for the lookup. It reads the remote
+        // listing, which is cached and which resolution has usually just read,
+        // so this normally costs no extra request.
+        //
+        // `oi.latest` rather than the requested version: what is wanted is where
+        // to read about the version being offered, not the one already pinned.
+        oi.release_url = match t.get_version_info(config, &oi.latest).await {
+            Some(info) => info.release_url,
+            // A plain `latest` without prereleases does not come from that
+            // listing at all — `latest_version` takes the backend's
+            // stable-latest shortcut, which can name a release the cached
+            // listing has not caught up with. Looking that version up here then
+            // finds nothing, and the URL would go missing precisely for the
+            // freshest release. The shortcut carries the URL itself, so ask it
+            // rather than report nothing.
+            None => t
+                .latest_stable_version_info(config)
+                .await
+                .ok()
+                .flatten()
+                // Only if it is describing the version actually being reported.
+                .filter(|info| info.version == oi.latest)
+                .and_then(|info| info.release_url),
+        };
         if bump {
             let old = oi.tool_version.request.version();
             let old = old.strip_prefix(&prefix).unwrap_or(old.as_str());
@@ -666,5 +704,71 @@ mod tests {
         let info = OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap();
 
         assert_eq!(info.current.as_deref(), Some("1.25.10"));
+    }
+
+    /// Build an `OutdatedInfo` the way the tests above do, for the cases that
+    /// only care about how it is rendered.
+    async fn outdated_info_for(short: &str) -> OutdatedInfo {
+        let config = Config::get().await.unwrap();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mut backend = BackendArg::new_raw(
+            short.into(),
+            Some(format!("asdf:{short}")),
+            short.into(),
+            Some(ToolVersionOptions::default()),
+            BackendResolution::new(true),
+        );
+        backend.installs_path = temp_dir.path().join("installs").join(short);
+        let request = ToolRequest::new(Arc::new(backend), "1.25", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.25.10".into());
+        OutdatedInfo::new(&config, tv, "1.25.10".into()).unwrap()
+    }
+
+    /// Most backends publish no release URL, and those entries must not gain a
+    /// `"release_url": null`. A consumer should be able to ask whether the key
+    /// is there rather than whether its value happens to be null.
+    #[tokio::test]
+    async fn a_missing_release_url_leaves_the_key_out_of_the_json() {
+        let info = outdated_info_for("release-url-absent-test").await;
+
+        let json = serde_json::to_string(&info).unwrap();
+
+        assert!(
+            !json.contains("release_url"),
+            "a tool with no release URL still carried the key: {json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_release_url_is_reported_in_the_json() {
+        let mut info = outdated_info_for("release-url-present-test").await;
+        info.release_url = Some("https://example.invalid/releases/tag/v1.25.10".to_string());
+
+        let json = serde_json::to_string(&info).unwrap();
+
+        assert!(
+            json.contains(r#""release_url":"https://example.invalid/releases/tag/v1.25.10""#),
+            "the release URL did not reach the json: {json}"
+        );
+    }
+
+    /// The table is the thing people read at a glance, and a release URL is long
+    /// enough to wreck it. `#[tabled(skip)]` keeps it out; this is what notices
+    /// if that attribute is dropped.
+    #[tokio::test]
+    async fn a_release_url_stays_out_of_the_table() {
+        let mut info = outdated_info_for("release-url-table-test").await;
+        info.release_url = Some("https://example.invalid/releases/tag/v1.25.10".to_string());
+
+        let rendered = tabled::Table::new(vec![info]).to_string();
+
+        assert!(
+            !rendered.contains("example.invalid"),
+            "the release URL leaked into the table: {rendered}"
+        );
+        assert!(
+            !rendered.contains("release_url"),
+            "the table grew a release_url column: {rendered}"
+        );
     }
 }
