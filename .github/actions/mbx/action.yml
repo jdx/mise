@@ -5,13 +5,17 @@ inputs:
   backend:
     description: Explicit backend for structurally trusted or untrusted callers
     default: auto
+  cache-links:
+    description: Cache native links; "auto" enables this on Linux
+    default: auto
 
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563 # v1.0.1
+    - uses: jdx/mr-boxington-action@0bb0a01e0b2b3f34db827eddc8307bd4b1fb48ec
       with:
         version: 0.5.4
+        cache-links: ${{ inputs.cache-links }}
         backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
         server-url: https://cache.mise.jdx.dev
         namespace: jdx/mise
