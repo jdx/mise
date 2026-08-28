@@ -3,9 +3,34 @@
 
 _mise() {
     local -a values=() descriptions=() inserts=() extensions=()
-    local __usage_files= __usage_line __usage_menu=0
+    local -a __usage_words=()
+    local __usage_files= __usage_line __usage_menu=0 __usage_input __usage_prefix
+    local __usage_unprefixed __usage_command __usage_word
+    local __usage_assignment='^[A-Za-z_][A-Za-z0-9_]*\+?='
+    local -A __usage_aliases_seen=()
     # `$BUFFER[1,CURSOR]` is the text before the cursor, cut with zsh's own offset — see the
     # bash script on why the cutting happens here rather than through a `--cursor` argument.
+    __usage_input="${BUFFER[1,CURSOR]}"
+    while (( 1 )); do
+        __usage_prefix="${__usage_input%%[^[:blank:]]*}"
+        __usage_unprefixed="${__usage_input#"$__usage_prefix"}"
+        __usage_words=("${(z)__usage_unprefixed}")
+        __usage_command=
+        for __usage_word in "${__usage_words[@]}"; do
+            if [[ "$__usage_word" =~ $__usage_assignment ]]; then
+                __usage_unprefixed="${__usage_unprefixed#"$__usage_word"}"
+                __usage_prefix+="$__usage_word${__usage_unprefixed%%[^[:blank:]]*}"
+                __usage_unprefixed="${__usage_unprefixed#"${__usage_unprefixed%%[^[:blank:]]*}"}"
+            else
+                __usage_command="$__usage_word"
+                break
+            fi
+        done
+        [[ "${+aliases[$__usage_command]}" == 1 &&
+           -z "${__usage_aliases_seen[$__usage_command]-}" ]] || break
+        __usage_aliases_seen[$__usage_command]=1
+        __usage_input="${__usage_prefix}${aliases[$__usage_command]}${__usage_unprefixed#"$__usage_command"}"
+    done
     while IFS= read -r __usage_line; do
         case "$__usage_line" in
             $'\001files') __usage_files=any; continue ;;
@@ -27,7 +52,7 @@ _mise() {
         # than silently inserting one of several possibilities.
         [[ "${parts[3]}" == "'"* ]] && __usage_menu=1
     done < <(command 'mise' __complete_word__ --shell zsh \
-        --line "${BUFFER[1,CURSOR]}" 2>/dev/null)
+        --line "$__usage_input" 2>/dev/null)
 
     local __usage_ret=1
     (( __usage_menu )) && compstate[insert]=menu
