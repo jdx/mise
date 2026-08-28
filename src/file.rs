@@ -4352,8 +4352,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let archive_path = dir.path().join("pax-xattr.tar");
         let dest_dir = dir.path().join("out");
-        let mut archive = Vec::new();
-        let mut builder = jdx_tar::Builder::new(&mut archive);
+        let mut builder = jdx_tar::Builder::new(Vec::new());
 
         let key = "LIBARCHIVE.xattr.com.apple.cs.CodeSignature";
         let value = b"signature\nmetadata";
@@ -4383,8 +4382,7 @@ mod tests {
         builder
             .append_data(&mut header, "tool", contents.as_slice())
             .unwrap();
-        builder.finish().unwrap();
-        drop(builder);
+        let mut archive = builder.into_inner().unwrap();
 
         archive[156] = b'x';
         archive[257..265].copy_from_slice(b"ustar\x0000");
