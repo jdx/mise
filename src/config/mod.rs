@@ -4452,6 +4452,16 @@ fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>>
                 debug!("skipping missing task entry: {err}");
                 None
             }
+            // Losing nothing by skipping: walkdir reports this only when a link resolves to a
+            // directory already on the walk stack, so everything under it has been visited
+            // through the real path. A permission or I/O error is not like that -- a whole
+            // subtree goes unseen -- so those stay fatal. One `mise-tasks/current -> mise-tasks`
+            // used to fail every task command, including tasks defined in `mise.toml` that
+            // involve no file at all.
+            Err(err) if err.loop_ancestor().is_some() => {
+                debug!("skipping task path that links back into itself: {err}");
+                None
+            }
             Err(err) => Some(Err(err)),
         })
         .try_collect::<_, Vec<PathBuf>, _>()
@@ -5417,7 +5427,33 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_task_files_preserves_symlink_loop_errors() -> Result<()> {
+    fn test_collect_task_files_skips_links_back_into_the_walk() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let root = tmp.path().join("tasks");
+        fs::create_dir(&root)?;
+        let task = root.join("healthy");
+        fs::write(&task, "echo ok")?;
+
+        // The control: the same tree one link earlier. Without it, "the loop changed nothing"
+        // is not something this test can claim.
+        let before = collect_task_files(&root, &[])?;
+        assert_eq!(before, vec![task]);
+
+        // A `current`-style link pointing at the directory being walked. Nothing under it is
+        // lost -- it is the same directory, already visited -- so it must not fail the walk.
+        std::os::unix::fs::symlink(&root, root.join("current"))?;
+
+        assert_eq!(collect_task_files(&root, &[])?, before);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collect_task_files_preserves_unresolvable_symlink_errors() -> Result<()> {
+        // Renamed from `..._preserves_symlink_loop_errors`: what it pins is a link that cannot be
+        // resolved at all. `fs::metadata` fails with ELOOP before walkdir gets as far as its own
+        // ancestor check, so this arrives as an io error rather than a `loop_ancestor` one and is
+        // deliberately still fatal -- unlike the case above, nothing was reached through it.
         let tmp = TempDir::new()?;
         std::os::unix::fs::symlink("loop", tmp.path().join("loop"))?;
 
