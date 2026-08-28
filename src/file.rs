@@ -4352,8 +4352,8 @@ mod tests {
         let dir = tempdir().unwrap();
         let archive_path = dir.path().join("pax-xattr.tar");
         let dest_dir = dir.path().join("out");
-        let archive = File::create(&archive_path).unwrap();
-        let mut builder = jdx_tar::Builder::new(archive);
+        let mut archive = Vec::new();
+        let mut builder = jdx_tar::Builder::new(&mut archive);
 
         let key = "LIBARCHIVE.xattr.com.apple.cs.CodeSignature";
         let value = b"signature\nmetadata";
@@ -4366,7 +4366,11 @@ mod tests {
         let mut pax = format!("{record_len} {key}=").into_bytes();
         pax.extend_from_slice(value);
         pax.push(b'\n');
-        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'x'));
+        // Build the raw PAX record under a neutral extension flag, then rewrite
+        // the type byte and checksum. jdx-tar's logical writer deliberately
+        // rejects raw extension headers, while this test specifically needs a
+        // malformed raw PAX fixture to exercise the reader.
+        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'X'));
         pax_header.set_size(pax.len() as u64);
         builder
             .append_data(&mut pax_header, "pax-xattr", pax.as_slice())
@@ -4380,6 +4384,17 @@ mod tests {
             .append_data(&mut header, "tool", contents.as_slice())
             .unwrap();
         builder.finish().unwrap();
+        drop(builder);
+
+        archive[156] = b'x';
+        archive[257..265].copy_from_slice(b"ustar\x0000");
+        archive[148..156].fill(b' ');
+        let checksum = archive[..512]
+            .iter()
+            .map(|byte| u64::from(*byte))
+            .sum::<u64>();
+        archive[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+        std::fs::write(&archive_path, archive).unwrap();
 
         extract_archive(
             &archive_path,
