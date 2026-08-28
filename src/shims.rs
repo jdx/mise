@@ -1197,6 +1197,31 @@ mod tests {
         assert_eq!(os_unsupported_tool_message("not-a-registry-bin-9f3a"), None);
     }
 
+    // `e2e-win/exec_os_unsupported_tool.Tests.ps1` observes this message by running
+    // `mise x docker-slim -- mint` on a Windows runner, and it can only observe it while
+    // `docker-slim` is still restricted away from Windows and still provides a bin under another
+    // name. A registry edit that takes either away leaves that file green with nothing to assert,
+    // and a full Windows e2e run to notice. The same strings are pinned here so `windows-unit`
+    // fails first, saying which one went.
+    //
+    // Windows-only because everywhere else `docker-slim` is supported and `None` is the right
+    // answer, so the assertions could not run at all.
+    #[cfg(windows)]
+    #[test]
+    fn os_unsupported_tool_message_still_backs_the_windows_e2e_fixture() {
+        let msg = os_unsupported_tool_message("mint")
+            .expect("docker-slim provides mint and its os list omits windows");
+        for expected in [
+            "docker-slim",
+            "not available on windows",
+            "mint",
+            "linux",
+            "macos",
+        ] {
+            assert!(msg.contains(expected), "{expected:?} missing from {msg:?}");
+        }
+    }
+
     #[test]
     fn windows_file_shim_body_recovers_the_arguments_cmd_destroys() {
         let body = windows_file_shim_body("gh");

@@ -1058,6 +1058,60 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         }
     }
 
+    // A tool's `os` list drops it from the tool request set before any backend is consulted, so a
+    // list that no longer matches what the backend can do makes mise refuse a tool that works.
+    //
+    // All 52 entries whose `os` line left out `windows` were put through `mise install` on Windows
+    // and then had whatever landed on disk executed. These five are the ones that produced a
+    // working Windows executable -- `entire.exe version` reports `OS/Arch: windows/amd64`,
+    // `gitsign.exe --version` reports `gitsign version v0.17.1` -- while their `os` line still said
+    // linux and macos only.
+    //
+    // Installing is not evidence on its own: eight more installed successfully and unpacked no
+    // Windows executable at all (`libsql-server` extracts a source tarball), so they keep their
+    // restriction. So do the few the sweep could not settle for reasons that have nothing to do
+    // with Windows -- `cocoapods` needs a ruby that is not there, `swift` overflowed the capture.
+    // Unsettled is not the same as wrong, and only measured entries were changed.
+    //
+    // Read from `BAKED_REGISTRY` rather than `REGISTRY`: the claim under test is about the
+    // `registry/*.toml` files in this commit, and `REGISTRY` hands back a cached floating registry
+    // instead whenever `registry_floating` is on and the cache exists. That would let the test pass
+    // against data this commit does not contain.
+    //
+    // Windows-only on purpose: off Windows every name here is allowed either way, so the assertion
+    // would hold without the change and prove nothing.
+    #[cfg(windows)]
+    #[test]
+    fn tools_that_run_on_windows_are_not_restricted_away_from_it() {
+        use super::*;
+
+        for short in [
+            "entireio-cli",
+            "gitsign",
+            "go-swagger",
+            "grpc-health-probe",
+            "httpie-go",
+        ] {
+            let rt = BAKED_REGISTRY.get(short).unwrap();
+            assert!(rt.is_supported_os(), "{short}: os = {:?}", rt.os);
+        }
+
+        // The controls, and they are the point: this is not "remove every os list". Each was
+        // checked the same way and each stays. `kpt` ships no Windows asset at all. `acli` looked
+        // like a candidate until `mise install` answered `unsupported env: windows/amd64
+        // (supported: ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"])` -- the aqua
+        // registry mise carries still restricts it, whatever the upstream one now says.
+        //
+        // `docker-slim` is a control twice over: it is also the fixture in
+        // `e2e-win/exec_os_unsupported_tool.Tests.ps1`, which asserts the exact message mise prints
+        // for a tool this platform is not listed for. Dropping its `os` line would leave that test
+        // with nothing to observe, so it fails here first, by name.
+        for short in ["acli", "docker-slim", "kpt"] {
+            let rt = BAKED_REGISTRY.get(short).unwrap();
+            assert!(!rt.is_supported_os(), "{short}: os = {:?}", rt.os);
+        }
+    }
+
     #[test]
     fn test_backend_platform_matching_preserves_os_only_and_order() {
         use super::*;

@@ -1,7 +1,7 @@
 Describe 'a tool the registry does not list for this platform' {
-    # `registry/grpc-health-probe.toml` carries `os = ["linux", "macos"]`, so on Windows the tool is
+    # `registry/docker-slim.toml` carries `os = ["linux", "macos"]`, so on Windows the tool is
     # dropped from the request set before any version resolves -- silently, because it is neither
-    # unknown nor user-disabled. Nothing is installed, `grpc_health_probe` is simply absent, and
+    # unknown nor user-disabled. Nothing is installed, `mint` is simply absent, and
     # `mise x` reported only `cannot find binary path` while `mise install` and `mise use` said
     # exactly what was wrong.
     #
@@ -21,11 +21,11 @@ Describe 'a tool the registry does not list for this platform' {
         # Whether the bin is absent from the runner decides whether this file tests anything at
         # all: if it resolves, `mise x` succeeds and never reaches the message. Recorded rather
         # than assumed -- an earlier revision used `aws-cli`, and the Windows image ships `aws`.
-        $script:SubjectOnPath = [bool](Get-Command grpc_health_probe -ErrorAction SilentlyContinue)
+        $script:SubjectOnPath = [bool](Get-Command mint -ErrorAction SilentlyContinue)
         $script:ControlOnPath = [bool](Get-Command not-a-tool-9f3a -ErrorAction SilentlyContinue)
 
         # No install is attempted for an excluded tool, so nothing here reaches the network.
-        $script:Out = mise x grpc-health-probe -- grpc_health_probe --version 2>&1 | Out-String
+        $script:Out = mise x docker-slim -- mint --version 2>&1 | Out-String
         $script:Exit = $LASTEXITCODE
         $script:Control = mise x -- not-a-tool-9f3a 2>&1 | Out-String
         # Captured before anything else can overwrite it. A control that only checks for absent
@@ -49,11 +49,11 @@ Describe 'a tool the registry does not list for this platform' {
     }
 
     It 'names the tool and this platform instead of only the missing binary' {
-        $script:Out | Should -Match 'grpc-health-probe'
+        $script:Out | Should -Match 'docker-slim'
         $script:Out | Should -Match 'not available on windows'
         # The bin is named differently from the tool, so the message has to carry both or the
         # user cannot connect the two.
-        $script:Out | Should -Match 'grpc_health_probe'
+        $script:Out | Should -Match 'mint'
     }
 
     It 'says where the tool does run' {
