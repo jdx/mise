@@ -30,9 +30,6 @@ env:
 jobs:
   mbx_linux:
     name: mbx (Linux)
-    permissions:
-      contents: read
-      id-token: write # Authenticate trusted manual dispatches to the cache server.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:
@@ -43,7 +40,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/mbx
         with:
-          backend: ${{ github.event_name == 'workflow_dispatch' && github.actor == 'jdx' && github.ref == 'refs/heads/main' && 'server' || 'github' }}
+          backend: github
       - name: Build
         id: build
         shell: bash
@@ -109,9 +106,6 @@ jobs:
 
   mbx:
     name: mbx (macOS)
-    permissions:
-      contents: read
-      id-token: write # Authenticate trusted manual dispatches to the cache server.
     runs-on: macos-14
     timeout-minutes: 90
     outputs:
@@ -122,7 +116,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/mbx
         with:
-          backend: ${{ github.event_name == 'workflow_dispatch' && github.actor == 'jdx' && github.ref == 'refs/heads/main' && 'server' || 'github' }}
+          backend: github
       - name: Build
         id: build
         shell: bash
@@ -188,9 +182,6 @@ jobs:
 
   mbx_windows:
     name: mbx (Windows)
-    permissions:
-      contents: read
-      id-token: write # Authenticate trusted manual dispatches to the cache server.
     runs-on: windows-latest
     timeout-minutes: 90
     env:
@@ -203,7 +194,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/mbx
         with:
-          backend: ${{ github.event_name == 'workflow_dispatch' && github.actor == 'jdx' && github.ref == 'refs/heads/main' && 'server' || 'github' }}
+          backend: github
       - name: Build
         id: build
         shell: pwsh
