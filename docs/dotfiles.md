@@ -127,6 +127,13 @@ mise-owned `symlink-each` link on the next apply. `exclude` can be combined
 with the Git manifest for an additional filter. Git manifests require a
 directory source and either `symlink-each` or `copy` mode.
 
+When environment-specific configs select different `symlink-each` sources for
+the same target, applying the new environment reconciles links recorded for
+the previous source. This makes `mise bootstrap -E home` and
+`mise bootstrap -E work` usable as profile switches: links unique to the old
+profile are removed, shared paths are repointed, and unmanaged neighbors are
+preserved.
+
 ## Modes
 
 | Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |

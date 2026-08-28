@@ -221,6 +221,39 @@ assert_contains "mise dotfiles status ~/.local/tracked-home" "stale link"
 assert_succeed "mise dotfiles apply ~/.local/tracked-home --yes"
 assert_fail "test -e ~/.local/tracked-home/.config/tracked.conf"
 
+# Switching environments reconciles state from the previous source for the
+# same target, like selecting a home or work dotfile profile.
+mkdir profile-home profile-work
+echo "home shared" >profile-home/shared
+echo "home only" >profile-home/home-only
+echo "work shared" >profile-work/shared
+echo "work only" >profile-work/work-only
+cat <<EOF >mise.home.toml
+[dotfiles]
+"~/.local/profile-home" = { source = "profile-home", mode = "symlink-each" }
+EOF
+cat <<EOF >mise.work.toml
+[dotfiles]
+"~/.local/profile-home" = { source = "profile-work", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_ENV=home mise dotfiles apply ~/.local/profile-home --yes"
+echo "unmanaged" >~/.local/profile-home/unmanaged
+assert "readlink ~/.local/profile-home/shared" "$PWD/profile-home/shared"
+assert_contains "MISE_ENV=work mise dotfiles apply ~/.local/profile-home --dry-run" "profile-home/home-only"
+assert_succeed "MISE_ENV=work mise dotfiles apply ~/.local/profile-home --yes"
+assert "readlink ~/.local/profile-home/shared" "$PWD/profile-work/shared"
+assert "readlink ~/.local/profile-home/work-only" "$PWD/profile-work/work-only"
+assert_fail "test -e ~/.local/profile-home/home-only"
+assert "cat ~/.local/profile-home/unmanaged" "unmanaged"
+# Keep prior profile state so switching back uses the recorded footprint, and
+# normalize equivalent source spellings when identifying that state.
+sed -i.bak 's/source = "profile-home"/source = ".\/profile-home"/' mise.home.toml
+assert_succeed "MISE_ENV=home mise dotfiles apply ~/.local/profile-home --yes"
+assert "readlink ~/.local/profile-home/shared" "$PWD/./profile-home/shared"
+assert "readlink ~/.local/profile-home/home-only" "$PWD/./profile-home/home-only"
+assert_fail "test -e ~/.local/profile-home/work-only"
+assert "cat ~/.local/profile-home/unmanaged" "unmanaged"
+
 # symlink-each cleans up after itself: deleting a source file removes the
 # link it left behind (and any directory that emptied out), while files and
 # links mise didn't create stay put
@@ -507,6 +540,10 @@ MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.captured-each --mod
 assert "cat captured-root/.captured-each/file" "captured each"
 assert "readlink ~/.captured-each/file" "$PWD/captured-root/.captured-each/file"
 assert_contains "cat ~/.config/mise/config.toml" '"~/.captured-each" = { mode = "symlink-each" }'
+# Refreshing an already-applied symlink-each entry must plan ownership from the
+# configured source, not the live target used to validate the captured shape.
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.captured-each --yes
+assert "readlink ~/.captured-each/file" "$PWD/captured-root/.captured-each/file"
 rm ~/.config/mise/config.toml
 
 # standalone apply never replaces an existing real directory without --force,
