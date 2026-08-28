@@ -6352,7 +6352,6 @@ dependencies = [
  "rattler_repodata_gateway",
  "rattler_solve",
  "rattler_virtual_packages",
- "reflink-copy",
  "regex",
  "reqwest",
  "rmcp",
