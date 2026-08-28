@@ -17,7 +17,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write # Authenticate trusted manual dispatches to the cache server.
 
 concurrency:
   group: cache-benchmark-${{ github.ref }}
@@ -31,6 +30,9 @@ env:
 jobs:
   mbx_linux:
     name: mbx (Linux)
+    permissions:
+      contents: read
+      id-token: write # Authenticate trusted manual dispatches to the cache server.
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:
@@ -107,6 +109,9 @@ jobs:
 
   mbx:
     name: mbx (macOS)
+    permissions:
+      contents: read
+      id-token: write # Authenticate trusted manual dispatches to the cache server.
     runs-on: macos-14
     timeout-minutes: 90
     outputs:
@@ -183,6 +188,9 @@ jobs:
 
   mbx_windows:
     name: mbx (Windows)
+    permissions:
+      contents: read
+      id-token: write # Authenticate trusted manual dispatches to the cache server.
     runs-on: windows-latest
     timeout-minutes: 90
     env:
