@@ -5,7 +5,9 @@ use eyre::{Result, bail};
 use heck::ToKebabCase;
 use serde_json::{Value, json};
 
-use super::dotfiles::{DotfilesAdd, DotfilesApply, DotfilesEdit, DotfilesStatus, DotfilesUnapply};
+use super::dotfiles::{
+    DotfilesAdd, DotfilesApply, DotfilesDiff, DotfilesEdit, DotfilesStatus, DotfilesUnapply,
+};
 use super::install::Install;
 use super::plugins::install::install_plugin;
 use super::run;
@@ -671,6 +673,7 @@ struct BootstrapDotfiles {
 enum BootstrapDotfilesCommands {
     Add(DotfilesAdd),
     Apply(BootstrapDotfilesApply),
+    Diff(DotfilesDiff),
     Edit(DotfilesEdit),
     Status(BootstrapDotfilesStatus),
     Unapply(DotfilesUnapply),
@@ -3326,6 +3329,7 @@ impl BootstrapDotfiles {
         match self.command {
             BootstrapDotfilesCommands::Add(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Apply(cmd) => cmd.run().await,
+            BootstrapDotfilesCommands::Diff(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Edit(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Status(cmd) => cmd.run().await,
             BootstrapDotfilesCommands::Unapply(cmd) => cmd.run().await,

@@ -123,10 +123,11 @@ Templates get the same context as other mise templates (`env`, `vars`,
 per-machine output.
 
 Detecting whether a template's output has drifted requires rendering it, so
-`mise bootstrap dotfiles status` and a real apply evaluate templates — including any
-`exec()` calls — from your trusted config, just like `[env]` templates.
-`--dry-run` is the exception: it promises to execute nothing, so it skips
-template rendering and lists those entries as `(if changed)`.
+`mise bootstrap dotfiles status`, `mise bootstrap dotfiles diff`, and a real
+apply evaluate templates — including any `exec()` calls — from your trusted
+config, just like `[env]` templates. `--dry-run` is the exception: it promises
+to execute nothing, so it skips template rendering and lists those entries as
+`(if changed)`.
 
 ## Edit entries
 
@@ -245,6 +246,8 @@ dry-runs do not render or execute template functions.
 ```sh
 mise bootstrap dotfiles status            # shows applied/missing/differs/source missing
 mise bootstrap dotfiles status --missing  # exit 1 if anything is out of sync
+mise bootstrap dotfiles diff              # show changes needed to apply
+mise bootstrap dotfiles diff ~/.zshrc     # show changes for one target
 
 mise bootstrap dotfiles apply                     # apply files and edits
 mise bootstrap dotfiles apply --dry-run           # print what would be done

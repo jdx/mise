@@ -602,6 +602,11 @@ mise doesn't otherwise own.
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
         }
+        cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles diff\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles diff ~/.zshrc\u{1b}[22m\n"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[TARGET]…" help="Only show these targets" required=#false var=#true
+        }
         cmd edit help="Edit a managed dotfile source" effect=write {
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles edit ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml\u{1b}[22m\n"
             flag --apply help="Apply this target after the editor exits"
@@ -1420,6 +1425,11 @@ mise doesn't otherwise own.
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+    }
+    cmd diff hide=#true help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles diff\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles diff ~/.zshrc\u{1b}[22m\n"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TARGET]…" help="Only show these targets" required=#false var=#true
     }
     cmd edit hide=#true help="Edit a managed dotfile source" effect=write {
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles edit ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml\u{1b}[22m\n"
