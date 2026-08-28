@@ -1,4 +1,7 @@
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Arc;
 
 use eyre::{Result, bail};
@@ -85,6 +88,14 @@ use crate::ui::table::MiseTable;
 pub(crate) struct Bootstrap {
     #[usage(subcommand)]
     command: Option<Commands>,
+
+    /// Clone a git repository and bootstrap from its configuration
+    #[usage(long, value_name = "GIT_URL")]
+    from: Option<String>,
+
+    /// Directory used for the repository cloned by --from
+    #[usage(long, value_name = "DIR", requires = "from")]
+    from_dir: Option<PathBuf>,
 
     /// Print what would happen without installing anything
     #[usage(long, short = 'n')]
@@ -174,6 +185,41 @@ impl BootstrapPart {
 }
 
 type BootstrapPredictionGraph = HashMap<ResourceId, (ResourceAction, Vec<ResourceId>)>;
+
+fn run_bootstrap_git<const N: usize>(checkout: &Path, args: [&str; N]) -> Result<()> {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(checkout).args(args);
+    crate::git::sanitize_git_command(&mut command);
+    let status = command.status()?;
+    if !status.success() {
+        bail!("git command failed with {status}");
+    }
+    Ok(())
+}
+
+fn validate_bootstrap_checkout(checkout: &Path, url: &str) -> Result<()> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(checkout)
+        .args(["config", "--get", "remote.origin.url"]);
+    crate::git::sanitize_git_command(&mut command);
+    let output = command.output()?;
+    if !output.status.success() {
+        bail!(
+            "{} exists but is not a git checkout with an origin remote",
+            checkout.display_user()
+        );
+    }
+    let origin = String::from_utf8(output.stdout)?.trim().to_string();
+    if origin != url {
+        bail!(
+            "{} has origin {origin:?}, expected {url:?}",
+            checkout.display_user()
+        );
+    }
+    Ok(())
+}
 
 fn bootstrap_resource_is_skipped(resource: &ResourceId, skip: &HashSet<BootstrapPart>) -> bool {
     let part = match resource.kind.as_str() {
@@ -1075,6 +1121,12 @@ impl Bootstrap {
     }
 
     pub(crate) async fn run(self) -> Result<()> {
+        if self.from.is_some() {
+            if self.command.is_some() {
+                bail!("--from cannot be used with a bootstrap subcommand");
+            }
+            return self.run_from();
+        }
         if let Some(command) = self.command {
             return command.run().await;
         }
@@ -1561,12 +1613,71 @@ impl Bootstrap {
         Ok(())
     }
 
+    fn run_from(&self) -> Result<()> {
+        let url = self.from.as_deref().expect("--from was provided");
+        let checkout = self
+            .from_dir
+            .clone()
+            .unwrap_or_else(|| dirs::DATA.join("bootstrap-repo"));
+
+        let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
+        if checkout.exists() && !checkout_is_empty {
+            validate_bootstrap_checkout(&checkout, url)?;
+            if self.update {
+                if self.dry_run {
+                    miseprintln!(
+                        "Would run: git -C {} pull --ff-only",
+                        checkout.display_user()
+                    );
+                } else {
+                    run_bootstrap_git(&checkout, ["pull", "--ff-only"])?;
+                }
+            }
+        } else if self.dry_run {
+            miseprintln!("Would run: git clone {} {}", url, checkout.display_user());
+            return Ok(());
+        } else {
+            if let Some(parent) = checkout
+                .parent()
+                .filter(|parent| !parent.as_os_str().is_empty())
+            {
+                std::fs::create_dir_all(parent)?;
+            }
+            let mut command = Command::new("git");
+            command.arg("clone").arg(url).arg(&checkout);
+            crate::git::sanitize_git_command(&mut command);
+            let status = command.status()?;
+            if !status.success() {
+                bail!("git clone failed with {status}");
+            }
+        }
+
+        let checkout = dunce::canonicalize(&checkout)?;
+        let mut command = Command::new(std::env::current_exe()?);
+        command.args(bootstrap_from_child_args(
+            &checkout,
+            &crate::env::ARGS.read().unwrap(),
+        ));
+
+        let mut trusted = std::env::split_paths(
+            &std::env::var_os("MISE_TRUSTED_CONFIG_PATHS").unwrap_or_default(),
+        )
+        .collect::<Vec<_>>();
+        trusted.push(checkout);
+        command.env("MISE_TRUSTED_CONFIG_PATHS", std::env::join_paths(trusted)?);
+        let status = command.status()?;
+        if !status.success() {
+            bail!("bootstrap from repository failed with {status}");
+        }
+        Ok(())
+    }
+
     async fn run_hooks(
         &self,
         hooks: &[hooks::BootstrapHook],
         phase: BootstrapHookPhase,
     ) -> Result<()> {
-        hooks::run_phase(hooks, phase, self.dry_run).await
+        run_bootstrap_hooks(hooks, phase, self.dry_run).await
     }
 
     fn skip_parts(&self) -> HashSet<BootstrapPart> {
@@ -1636,6 +1747,52 @@ impl Bootstrap {
         .run()
         .await
     }
+}
+
+/// Re-run the original bootstrap invocation from the checkout, preserving
+/// global controls such as `--no-hooks`. Remove only arguments that describe
+/// the parent checkout operation and replace any original working directory.
+fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> {
+    let mut forwarded = vec![OsString::from("--cd"), checkout.as_os_str().to_owned()];
+    let mut args = args.iter().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--from" | "--from-dir" | "--cd" | "-C" => {
+                args.next();
+            }
+            _ if arg.starts_with("--from=")
+                || arg.starts_with("--from-dir=")
+                || arg.starts_with("--cd=")
+                || arg.starts_with("-C") && arg.len() > 2 => {}
+            _ => {
+                forwarded.push(arg.into());
+                if global_option_takes_value(arg)
+                    && let Some(value) = args.next()
+                {
+                    forwarded.push(value.into());
+                }
+            }
+        }
+    }
+    forwarded
+}
+
+fn global_option_takes_value(arg: &str) -> bool {
+    matches!(
+        arg,
+        "--env"
+            | "-E"
+            | "--jobs"
+            | "-j"
+            | "--profile"
+            | "-P"
+            | "--shell"
+            | "-s"
+            | "--tool"
+            | "-t"
+            | "--log-level"
+            | "--output"
+    )
 }
 
 struct BootstrapFollowUp {
@@ -3342,7 +3499,7 @@ impl BootstrapDotfilesApply {
         let (files, edits) = self.cmd.requests(&config)?;
         let dry_run = self.cmd.dry_run();
         let hooks = system::hooks_from_config(&config);
-        hooks::run_phase(&hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
+        run_bootstrap_hooks(&hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
         if !self.cmd.run().await? {
             return Ok(());
         }
@@ -3353,8 +3510,23 @@ impl BootstrapDotfilesApply {
             let config = Config::reset().await?;
             system::hooks_from_config(&config)
         };
-        hooks::run_phase(&hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
+        run_bootstrap_hooks(&hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
     }
+}
+
+async fn run_bootstrap_hooks(
+    hooks: &[hooks::BootstrapHook],
+    phase: BootstrapHookPhase,
+    dry_run: bool,
+) -> Result<()> {
+    if config::Settings::no_hooks()
+        || config::Settings::get().no_hooks.unwrap_or(false)
+        || config::Settings::get().safe
+    {
+        debug!("bootstrap: {phase} hooks disabled");
+        return Ok(());
+    }
+    hooks::run_phase(hooks, phase, dry_run).await
 }
 
 impl BootstrapDotfilesStatus {
@@ -4074,6 +4246,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise bootstrap</bold>                    # packages + repos + dotfiles + tools + bootstrap task
+    $ <bold>mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes</bold>
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
@@ -4111,9 +4284,10 @@ fn file_state_json(state: &FileState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use indexmap::{IndexMap, IndexSet};
-    use std::ffi::OsStr;
+    use std::ffi::{OsStr, OsString};
+    use std::path::Path;
 
-    use super::select_remote_inventory;
+    use super::{bootstrap_from_child_args, select_remote_inventory};
     use crate::cli::{Cli, Commands};
     use crate::system::remote;
 
@@ -4129,6 +4303,60 @@ mod tests {
         };
         assert!(parsed.dry_run);
         assert!(parsed.yes);
+    }
+
+    #[test]
+    fn bootstrap_from_reexec_preserves_global_flags() {
+        let args = [
+            "mise",
+            "--no-hooks",
+            "-E",
+            "work",
+            "-C",
+            "/old",
+            "bootstrap",
+            "--from=git@example.com:dotfiles.git",
+            "--from-dir",
+            "/old-checkout",
+            "--yes",
+            "--only",
+            "dotfiles",
+        ]
+        .map(String::from);
+
+        assert_eq!(
+            bootstrap_from_child_args(Path::new("/new-checkout"), &args),
+            [
+                "--cd",
+                "/new-checkout",
+                "--no-hooks",
+                "-E",
+                "work",
+                "bootstrap",
+                "--yes",
+                "--only",
+                "dotfiles",
+            ]
+            .map(OsString::from)
+        );
+    }
+
+    #[test]
+    fn bootstrap_from_reexec_preserves_flag_like_global_values() {
+        let args = [
+            "mise",
+            "-E",
+            "--cd",
+            "bootstrap",
+            "--from=git@example.com:dotfiles.git",
+            "--yes",
+        ]
+        .map(String::from);
+
+        assert_eq!(
+            bootstrap_from_child_args(Path::new("/new-checkout"), &args),
+            ["--cd", "/new-checkout", "-E", "--cd", "bootstrap", "--yes",].map(OsString::from)
+        );
     }
 
     #[test]
