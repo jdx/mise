@@ -11,7 +11,7 @@ runs:
   steps:
     - uses: jdx/mr-boxington-action@d311086f3b4337b7ad305330ff77ea716d372fc1 # v1
       with:
-        version: 0.5.3
+        version: 0.5.4
         backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
         server-url: https://cache.mise.jdx.dev
         namespace: jdx/mise
