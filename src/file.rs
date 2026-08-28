@@ -134,7 +134,12 @@ fn windows_io_hint(_path: &Path, _err: &std::io::Error) -> Option<String> {
 }
 
 /// Attach [`windows_io_hint`] to `err`, if it has anything to say about this path.
-fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
+/// `msg`, plus whatever [`windows_io_hint`] can say about `err` at `path`.
+///
+/// `pub(crate)` because the operations that need it are not all in this module: `tempfile`'s
+/// persist is used directly by the downloader too, and that is the call that fails first as a
+/// path approaches `MAX_PATH`.
+pub(crate) fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
     match windows_io_hint(path, err) {
         Some(hint) => format!("{msg}\n{hint}"),
         None => msg,
@@ -4633,6 +4638,59 @@ mod tests {
         // and it must offer what that branch actually accepts
         assert!(hint.contains("exe"), "{hint}");
         assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_io_hint_explains_a_path_at_the_limit() {
+        use std::io::{Error, ErrorKind};
+
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(MAX_PATH)));
+        let hint = windows_io_hint(&long, &Error::from_raw_os_error(3))
+            .expect("a path past MAX_PATH failing with ERROR_PATH_NOT_FOUND should be explained");
+        assert!(hint.contains(&MAX_PATH.to_string()), "{hint}");
+        assert!(hint.contains(&(MAX_PATH + 3).to_string()), "{hint}");
+
+        // The control, and the reason the length test is there at all: the same error on a path
+        // nowhere near the limit is a genuinely missing directory, and answering it with advice
+        // about path length would send the user after the wrong thing.
+        assert_eq!(
+            windows_io_hint(Path::new(r"C:\short"), &Error::from_raw_os_error(3)),
+            None
+        );
+
+        // The other two codes Windows uses for the same cause.
+        for code in [123, 206] {
+            assert!(
+                windows_io_hint(&long, &Error::from_raw_os_error(code)).is_some(),
+                "os error {code}"
+            );
+        }
+
+        // A different branch entirely, so a hint that only ever talked about length would fail.
+        let in_use = windows_io_hint(Path::new(r"C:\short"), &Error::from_raw_os_error(32))
+            .expect("a sharing violation should be explained");
+        assert!(in_use.contains("in use"), "{in_use}");
+        assert_eq!(
+            windows_io_hint(Path::new(r"C:\short"), &Error::from(ErrorKind::NotFound)),
+            None
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_io_hint_measures_the_units_windows_counts() {
+        use std::io::Error;
+
+        // `OsStr::len()` is WTF-8 bytes on Windows and the limit counts UTF-16 code units, so a
+        // path of non-ASCII characters measures ~3x too long by bytes. Each of these is one unit
+        // and three bytes: by bytes this is well past the limit, by units it is nowhere near.
+        let short_but_fat = PathBuf::from(format!(r"C:\{}", "あ".repeat(100)));
+        assert!(short_but_fat.as_os_str().len() > MAX_PATH, "fixture");
+        assert_eq!(
+            windows_io_hint(&short_but_fat, &Error::from_raw_os_error(3)),
+            None
+        );
     }
 
     #[test]
