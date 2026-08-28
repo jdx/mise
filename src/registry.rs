@@ -696,6 +696,13 @@ impl RegistryTool {
 /// Unlike `backends.options.platforms.*` lookup, this is deliberately not
 /// alias-tolerant: registry selectors use canonical names such as `macos-x64`,
 /// while option lookup accepts release asset aliases such as `darwin-amd64`.
+///
+/// Windows on arm64 additionally matches the x64 selectors. That is not alias
+/// tolerance creeping in — `windows-x64` still names a different platform than
+/// `windows-arm64` — it is the same capability rule the aqua backend already
+/// applies in `is_platform_supported`: Windows arm64 runs amd64 binaries under
+/// emulation. Without it the registry drops a backend here, before aqua is ever
+/// asked whether it supports the platform, and aqua would have said yes.
 fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
     let os = settings.os();
     let arch = settings.arch();
@@ -705,6 +712,9 @@ fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
         || platforms.contains(&os)
         || platforms.contains(&arch)
         || platforms.contains(&platform.as_str())
+        || (os == "windows"
+            && arch == "arm64"
+            && (platforms.contains(&"x64") || platforms.contains(&"windows-x64")))
 }
 
 pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
@@ -1109,6 +1119,81 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         for short in ["acli", "docker-slim", "kpt"] {
             let rt = BAKED_REGISTRY.get(short).unwrap();
             assert!(!rt.is_supported_os(), "{short}: os = {:?}", rt.os);
+        }
+    }
+
+    // `mod tests` imports nothing at this level -- each test brings its own `use super::*` -- so
+    // this one names the path.
+    fn settings_for(os: &str, arch: &str) -> crate::config::Settings {
+        crate::config::Settings {
+            os: Some(os.to_string()),
+            arch: Some(arch.to_string()),
+            ..Default::default()
+        }
+    }
+
+    // Windows arm64 runs amd64 binaries under emulation. The aqua backend already assumes this in
+    // `is_platform_supported`, so a registry selector of `windows-x64` was dropping backends that
+    // aqua itself would have accepted -- measured with `MISE_OS`/`MISE_ARCH`, where
+    // `mise registry imagemagick` returned only `conda:imagemagick` on windows/arm64 while
+    // windows/x64 got `aqua:ImageMagick/ImageMagick` first.
+    #[test]
+    fn windows_arm64_matches_x64_selectors_the_way_aqua_does() {
+        use super::*;
+
+        let settings = settings_for("windows", "arm64");
+        for selector in ["windows-x64", "x64"] {
+            assert!(
+                backend_matches_platform(&[selector], &settings),
+                "windows-arm64 should reach the {selector} backend under emulation"
+            );
+        }
+    }
+
+    // The controls. Each one fails if the rule above was written more broadly than intended, and
+    // together they are what distinguishes "Windows emulates amd64" from "any arm64 takes x64".
+    #[test]
+    fn the_x64_fallback_is_confined_to_windows_arm64() {
+        use super::*;
+
+        for (os, arch, selector) in [
+            // Linux on arm64 cannot execute an x86_64 build, so no backend is the right answer.
+            ("linux", "arm64", "linux-x64"),
+            // macOS has Rosetta, but aqua declares no rule for it and this change invents none.
+            ("macos", "arm64", "macos-x64"),
+            // Right platform, wrong OS in the selector.
+            ("windows", "arm64", "linux-x64"),
+            // Still not alias-tolerant, which the doc comment on the function promises: these name
+            // the same machine as `windows-x64` but are not the canonical spelling.
+            ("windows", "arm64", "windows-amd64"),
+            ("windows", "arm64", "amd64"),
+            // And the emulation direction is one-way -- x64 does not get to run arm64 builds.
+            ("windows", "x64", "windows-arm64"),
+        ] {
+            let settings = settings_for(os, arch);
+            assert!(
+                !backend_matches_platform(&[selector], &settings),
+                "{os}-{arch} should not match {selector}"
+            );
+        }
+    }
+
+    // Passing the backend filter is only half of it: the http backend then looks up
+    // `platforms.<key>.url`, and `platform_aliases()` has no emulation rule of its own, so
+    // windows/arm64 would resolve a backend and fail to find a URL. `android-cli` declares the
+    // block explicitly rather than relying on a lookup fallback, and it has to stay pointed at the
+    // x64 download -- Google publishes no arm64 build at all.
+    #[test]
+    fn android_cli_serves_windows_arm64_the_x64_download() {
+        use super::*;
+
+        let rt = BAKED_REGISTRY.get("android-cli").unwrap();
+        let opts = rt.backend_options("http:android-cli");
+        for key in ["url", "checksum_url", "bin"] {
+            let arm64 = opts.get_nested_string(&format!("platforms.windows-arm64.{key}"));
+            let x64 = opts.get_nested_string(&format!("platforms.windows-x64.{key}"));
+            assert!(arm64.is_some(), "platforms.windows-arm64.{key} is missing");
+            assert_eq!(arm64, x64, "windows-arm64 {key} should be the x64 one");
         }
     }
 
