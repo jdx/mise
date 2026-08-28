@@ -17,7 +17,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  id-token: write # Authenticate trusted manual dispatches to the cache server.
 
 concurrency:
   group: cache-benchmark-${{ github.ref }}
