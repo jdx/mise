@@ -28,12 +28,17 @@ jobs:
         include:
           - os: ubuntu-latest
             label: Linux
+            target-views: "1"
           - os: macos-14
             label: macOS
+            target-views: "1"
           - os: windows-latest
             label: Windows
+            target-views: "0"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    env:
+      MBX_TARGET_VIEWS: ${{ matrix.target-views }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -65,6 +70,7 @@ jobs:
 
   rust_cache:
     name: Swatinem rust-cache (${{ matrix.label }})
+    if: github.actor == 'jdx' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
