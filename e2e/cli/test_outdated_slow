@@ -4,3 +4,22 @@
 mise uninstall java --all
 mise install java@temurin-21.0.0
 assert_contains "mise outdated java --inactive --json | jq -r '.java.latest'" "temurin-21.0"
+
+# The github backend builds the release URL itself rather than reading it from a
+# remote listing, so this is where the whole path can be checked end to end: a
+# real version listing, the resolved latest, and the URL that comes back with it.
+# Worth pinning because the lookup matches on the version string -- if `latest`
+# and the listing ever disagreed on its form, `release_url` would quietly be
+# absent everywhere and nothing else would notice.
+cat <<EOF >mise.toml
+[tools]
+"github:cli/cli" = "2"
+EOF
+mise install "github:cli/cli@2.75.0"
+# Tied to `.latest`, not just to the prefix: a URL pointing at some other
+# release is the failure worth catching, and "is a cli/cli release page" would
+# pass straight through it. The tag is compared whole rather than by suffix --
+# suffix matching accepts `v12.75.0` for a reported `2.75.0` -- while still
+# allowing the leading `v` the backend strips from the version but keeps in the
+# URL. A missing `release_url` renders as `false` rather than a jq error.
+assert_contains "mise outdated --json | jq -r '.\"github:cli/cli\" | (.release_url // \"\") as \$u | .latest as \$l | (\$u | ltrimstr(\"https://github.com/cli/cli/releases/tag/\")) as \$tag | (\$u | startswith(\"https://github.com/cli/cli/releases/tag/\")) and (\$tag == \$l or \$tag == \"v\" + \$l)'" "true"

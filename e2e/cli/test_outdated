@@ -54,3 +54,8 @@ mise install dummy@1.0.0
 
 assert "mise outdated dummy --json | jq -r '.dummy.latest'" "1.1.0"
 assert "mise outdated dummy -b --json | jq -r '.dummy.latest'" "2.0.0"
+
+# Most backends publish no release page, and those entries must not grow a
+# `"release_url": null`. `has` rather than a `//` default, which cannot tell an
+# absent key from a null one -- absent is the thing being asserted.
+assert "mise outdated dummy --json | jq -r '.dummy | has(\"release_url\")'" "false"
