@@ -183,7 +183,7 @@ async fn which_shim(
                 continue;
             }
             let bin = path.join(bin_name);
-            if bin.exists() {
+            if bin.is_file() && file::is_executable(&bin) {
                 if file::is_active_mise_shim(&bin) {
                     continue;
                 }
