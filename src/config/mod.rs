@@ -2447,6 +2447,15 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
 /// including MISE_ENV-specific configs and idiomatic version files.
 /// Returns (paths, idiomatic_filenames) so callers can pass the map to
 /// load_config_files_from_paths without a redundant second computation.
+///
+/// `start_dir` is typically a monorepo config root (or a directory under one)
+/// that differs from the process's invocation directory. Idiomatic version
+/// file discovery is therefore resolved from `start_dir`'s own config
+/// hierarchy via `idiomatic_filenames_for_root`, the same helper
+/// `monorepo_union_with_root_toolset` uses for lockfile maintenance, rather
+/// than from the invocation-rooted `Settings::get()` snapshot: a config root
+/// can enable `idiomatic_version_file_enable_tools` for a tool that the
+/// invocation directory's settings never mention.
 pub(crate) async fn load_config_hierarchy_from_dir(
     start_dir: &Path,
 ) -> Result<(Vec<PathBuf>, BTreeMap<String, Vec<String>>)> {
@@ -2454,7 +2463,8 @@ pub(crate) async fn load_config_hierarchy_from_dir(
         return Ok((vec![], BTreeMap::new()));
     }
 
-    let idiomatic_files = load_idiomatic_filenames().await;
+    let default_idiomatic_files = load_idiomatic_filenames().await;
+    let idiomatic_files = idiomatic_filenames_for_root(start_dir, &default_idiomatic_files).await?;
     let config_filenames: Vec<String> = idiomatic_files
         .keys()
         .cloned()
