@@ -19,7 +19,7 @@ runs:
       with:
         version: 1.0.0
         cache-generation: v2
-        save-on-workflow-dispatch: ${{ github.actor == 'jdx' && github.triggering_actor == 'jdx' && github.ref == 'refs/heads/main' }}
+        save-on-workflow-dispatch: ${{ github.actor == 'jdx' && github.triggering_actor == 'jdx' }}
         cache-links: ${{ inputs.cache-links }}
         toolchain: ${{ inputs.toolchain }}
         backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
