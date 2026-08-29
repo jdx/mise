@@ -259,6 +259,29 @@ impl<'a> NpmOptions<'a> {
     }
 }
 
+/// Legacy embedded-aube installs linked each virtual-store entry into a shared
+/// cache. The install prefix can outlive that cache, leaving the directory in
+/// place while every package link is dangling. Check only the immediate
+/// virtual-store entries: each represents a whole package tree, so this stays
+/// cheap enough for mise's installed-version fast path.
+fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
+    [".mise", ".aube"].iter().all(|name| {
+        let virtual_store = install_path.join("node_modules").join(name);
+        match virtual_store.symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+            Err(_) => return false,
+            Ok(_) => {}
+        }
+        let entries = match std::fs::read_dir(&virtual_store) {
+            Ok(entries) => entries,
+            Err(_) => return false,
+        };
+        entries
+            .map(|entry| entry.map(|entry| entry.path()))
+            .all(|path| path.is_ok_and(|path| path.try_exists().unwrap_or(false)))
+    })
+}
+
 #[async_trait]
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -267,6 +290,10 @@ impl Backend for NPMBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn is_install_path_healthy(&self, install_path: &Path) -> bool {
+        aube_install_tree_is_healthy(install_path)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
@@ -1755,7 +1782,7 @@ mod tests {
             self.0.lock().unwrap().push(message);
         }
     }
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
     use pretty_assertions::assert_eq;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
@@ -2685,6 +2712,57 @@ pkg@1.2.0 '1.2.0'
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
         );
+    }
+
+    #[test]
+    fn aube_install_tree_without_virtual_store_is_healthy() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(aube_install_tree_is_healthy(tmp.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn aube_install_tree_rejects_dangling_legacy_entries() {
+        for name in [".mise", ".aube"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let virtual_store = tmp.path().join("node_modules").join(name);
+            let target = tmp.path().join("shared-store/pkg@1.0.0");
+            std::fs::create_dir_all(&virtual_store).unwrap();
+            std::fs::create_dir_all(&target).unwrap();
+            std::os::unix::fs::symlink(&target, virtual_store.join("pkg@1.0.0")).unwrap();
+
+            assert!(aube_install_tree_is_healthy(tmp.path()));
+            std::fs::remove_dir_all(target).unwrap();
+            assert!(!aube_install_tree_is_healthy(tmp.path()));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dangling_aube_tree_is_not_an_installed_npm_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "npm".to_string(),
+            Some("pkg".to_string()),
+            "pkg".to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+        ba.installs_path = tmp.path().join("installs/npm-pkg");
+        let backend = NPMBackend::from_arg(ba);
+        let request =
+            ToolRequest::new(backend.ba().clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let virtual_store = tv.install_path().join("node_modules/.mise");
+        std::fs::create_dir_all(&virtual_store).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("missing-shared-store/pkg@1.0.0"),
+            virtual_store.join("pkg@1.0.0"),
+        )
+        .unwrap();
+
+        let config = crate::config::Config::get().await.unwrap();
+        assert!(!backend.is_version_installed(&config, &tv, true));
     }
 
     #[test]
