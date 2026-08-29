@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+
+# mise judges an install by whether the archive was fetched and unpacked; nothing looked at what
+# came out. `mise install libsql-server` on Windows unpacked a source tarball -- Dockerfile,
+# Makefile, LICENSE -- and reported success, and the user found out at `mise x`.
+#
+# The check reads the registry's `bins`, so a tool written as `http:whatever` in mise.toml has
+# nothing declared and is skipped. `MISE_BACKENDS_<SHORT>` is returned by `RegistryTool::backends()`
+# ahead of every other filter, so the short stays a registry short -- `jq` still declares `bins =
+# ["jq"]` -- while the backend behind it becomes one this test controls.
+
+SERVE_DIR="$TMPDIR/archives"
+mkdir -p "$SERVE_DIR/nobin" "$SERVE_DIR/withbin"
+
+# The two archives differ in exactly one way: whether anything in them can be run. That is what
+# makes the pair a control rather than two separate tests.
+printf 'FROM scratch\n' >"$SERVE_DIR/nobin/Dockerfile"
+printf 'all:\n\techo build me first\n' >"$SERVE_DIR/nobin/Makefile"
+tar -czf "$SERVE_DIR/nobin.tar.gz" -C "$SERVE_DIR/nobin" .
+
+printf 'FROM scratch\n' >"$SERVE_DIR/withbin/Dockerfile"
+printf '#!/usr/bin/env bash\necho jq-1.0.0\n' >"$SERVE_DIR/withbin/jq"
+chmod +x "$SERVE_DIR/withbin/jq"
+tar -czf "$SERVE_DIR/withbin.tar.gz" -C "$SERVE_DIR/withbin" .
+
+HTTP_PORT_FILE="$TMPDIR/missing_bins_port"
+python3 -c "
+import http.server, socketserver
+s = socketserver.TCPServer(('', 0), lambda *a: http.server.SimpleHTTPRequestHandler(*a, directory='$SERVE_DIR'))
+with open('$HTTP_PORT_FILE', 'w') as f:
+    f.write(str(s.server_address[1]))
+s.serve_forever()
+" &
+HTTP_SERVER_PID=$!
+
+cleanup() {
+  kill $HTTP_SERVER_PID 2>/dev/null || true
+}
+trap cleanup EXIT
+
+for _i in {1..20}; do
+  if [[ -f $HTTP_PORT_FILE ]]; then break; fi
+  sleep 0.1
+done
+HTTP_PORT=$(cat "$HTTP_PORT_FILE")
+
+if ! curl -sfI "http://localhost:$HTTP_PORT/nobin.tar.gz" >/dev/null; then
+  fail "HTTP server failed to start"
+fi
+
+export MISE_BACKENDS_JQ="http:jq"
+
+cat <<EOF >mise.toml
+[tools.jq]
+version = "1.0.0"
+url = "http://localhost:$HTTP_PORT/nobin.tar.gz"
+EOF
+
+# It still installs -- the archive downloaded and unpacked, which is all mise ever checked, and
+# turning that into a failure would break every tool whose declared bins are inaccurate.
+assert_succeed "mise install"
+assert_contains "mise install --force 2>&1" "none of the binaries it declares"
+assert_contains "mise install --force 2>&1" "jq"
+
+# The control: same short, same backend, same code path, an archive that does contain a program.
+cat <<EOF >mise.toml
+[tools.jq]
+version = "1.0.0"
+url = "http://localhost:$HTTP_PORT/withbin.tar.gz"
+EOF
+
+assert_succeed "mise install --force"
+assert_not_contains "mise install --force 2>&1" "none of the binaries it declares"

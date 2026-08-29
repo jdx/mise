@@ -825,6 +825,36 @@ where
     })
 }
 
+/// Whether none of `bins` is present in `dirs` as a runnable file.
+///
+/// Uses [`file::is_spawnable`], whose `false` means "the OS will not launch this", rather than the
+/// permissive predicate that answers with shebang scripts. Any one of `bins` is enough — a tool
+/// that ships some of what it declares has installed something usable, and saying otherwise would
+/// be noise.
+///
+/// Deliberately not [`which_in_dirs`], though it walks the same candidates. Two differences, both
+/// needed here and neither wanted there:
+///
+/// * **A directory does not count.** On unix `file::is_executable` answers true for a mode-0755
+///   directory and [`file::is_spawnable`] matches it byte for byte — a pinned decision, see
+///   `is_spawnable_matches_is_executable_on_unix`. `execv` on a directory is `EACCES`, so an
+///   archive that unpacks `sqld/` has not produced `sqld`, and treating it as one would suppress
+///   exactly the warning this exists for.
+/// * **It does not stop at the first directory that matches.** `which_in_dirs` returns the first
+///   hit and stops; a `sqld/` directory in an earlier bin path would then hide a real `sqld` in a
+///   later one, which would be a warning about a tool that installed fine.
+fn no_declared_bin_present(bins: &[&str], dirs: &[PathBuf]) -> bool {
+    !bins.iter().any(|bin| {
+        let names = file::executable_names(bin);
+        dirs.iter().any(|dir| {
+            names
+                .iter()
+                .map(|name| dir.join(name))
+                .any(|candidate| candidate.is_file() && file::is_spawnable(&candidate))
+        })
+    })
+}
+
 /// PATH-side counterpart of [`which_non_pristine_executable`], narrowed to what the OS can
 /// actually spawn.
 ///
@@ -946,6 +976,76 @@ mod tests {
             normalize_idiomatic_contents("20.0.0\n\u{feff}18.0.0"),
             "20.0.0\n\u{feff}18.0.0"
         );
+    }
+
+    /// A spawnable file under `name`, whatever that means on this platform.
+    fn write_spawnable(dir: &Path, name: &str) -> PathBuf {
+        let path = dir.join(if cfg!(windows) {
+            format!("{name}.exe")
+        } else {
+            name.to_string()
+        });
+        fs::write(&path, "MZ").unwrap();
+        file::make_executable(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn no_declared_bin_present_is_true_when_the_archive_held_no_program() {
+        // The shape that started this: `mise install libsql-server` succeeded on Windows and
+        // unpacked a source tarball. The install directory is real and non-empty; none of it can
+        // be run.
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["Dockerfile", "Makefile", "LICENSE"] {
+            fs::write(dir.path().join(name), "not a program\n").unwrap();
+        }
+        let dirs = vec![dir.path().to_path_buf()];
+
+        assert!(no_declared_bin_present(&["sqld"], &dirs));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_directory_named_like_the_bin_does_not_count_as_the_bin() {
+        // `is_executable` answers true for a mode-0755 directory and `is_spawnable` matches it, by
+        // a decision this must not disturb (`is_spawnable_matches_is_executable_on_unix`). Measured
+        // on Linux: a directory's mode & 0o111 is non-zero, and `execv` on it fails EACCES. So an
+        // archive that unpacks `sqld/` has produced no `sqld`, and the warning has to still fire.
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("sqld")).unwrap();
+        assert!(no_declared_bin_present(
+            &["sqld"],
+            &[dir.path().to_path_buf()]
+        ));
+
+        // And the directory must not hide a real one further along the bin paths. `which_in_dirs`
+        // would stop at the first match and answer with the directory; this walks past it.
+        let real = tempfile::tempdir().unwrap();
+        write_spawnable(real.path(), "sqld");
+        assert!(!no_declared_bin_present(
+            &["sqld"],
+            &[dir.path().to_path_buf(), real.path().to_path_buf()]
+        ));
+    }
+
+    #[test]
+    fn no_declared_bin_present_is_false_once_any_declared_bin_is_there() {
+        // The control, and it is what stops "warn on every install" from passing the test above.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("Makefile"), "not a program\n").unwrap();
+        let dirs = vec![dir.path().to_path_buf()];
+
+        write_spawnable(dir.path(), "sqld");
+        assert!(!no_declared_bin_present(&["sqld"], &dirs));
+
+        // And any one of them is enough. A tool that ships some of what it declares has installed
+        // something usable, so warning about the rest would be noise.
+        assert!(!no_declared_bin_present(
+            &["missing-one", "sqld", "missing-two"],
+            &dirs
+        ));
+        // ...while a name it does not ship at all is still absent.
+        assert!(no_declared_bin_present(&["missing-one"], &dirs));
     }
 
     #[test]
@@ -3429,8 +3529,67 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 .finish_with_message("running custom postinstall hook".to_string());
             self.run_postinstall_hook(&ctx, &tv, script).await?;
         }
+        // After the postinstall hook, which is allowed to be what puts the binary there.
+        self.warn_if_no_declared_bin_landed(&ctx, &tv).await;
         ctx.pr.finish_with_message("installed".to_string());
         Ok(tv)
+    }
+
+    /// Say so when an install finished and produced none of the binaries its registry entry
+    /// declares.
+    ///
+    /// mise judges an install by whether the archive was fetched and unpacked; nothing looks at
+    /// what came out. `registry/<tool>.toml`'s `bins` is only ever read to resolve shims
+    /// (`RegistryTool::provides_bin`), and its `test` field belongs to `mise test-tool`, which is
+    /// a separate command. So a download that contains no build for this platform — a source
+    /// tarball, say — installs and reports success, and the user finds out at `mise x`.
+    ///
+    /// Warns rather than fails. Every installed tool on the machine this was written on resolved
+    /// at least one declared bin, but that is 31 tools against the 937 registry entries that
+    /// declare `bins`, and a single inaccurate entry would turn a working install into a failure.
+    /// A warning cannot do that, and can be promoted later.
+    async fn warn_if_no_declared_bin_landed(&self, ctx: &InstallContext, tv: &ToolVersion) {
+        // Nothing was installed, and `list_bin_paths` returns nothing for it, so every bin would
+        // look missing.
+        if matches!(tv.request, ToolRequest::System { .. }) {
+            return;
+        }
+        // A full backend spec (`aqua:owner/repo`) has no registry entry, so nothing was declared
+        // and there is nothing to check against.
+        let Some(rt) = REGISTRY.get(tv.short()) else {
+            return;
+        };
+        if rt.bins.is_empty() {
+            return;
+        }
+        // Ask about the version just installed, not the request's runtime symlink. For a fuzzy
+        // request (`version = "3"`) `installs/python/3` still points at the previous version until
+        // symlinks are rebuilt, and `list_bin_paths` follows it -- the same trap `run_postinstall_hook`
+        // documents (#10347). Reading the old install would hide a warning that belongs, or invent
+        // one when there is no old install to read.
+        let tv = tv.clone().with_locked();
+        // An error here means the backend could not say where its binaries are -- vfox runs a
+        // plugin hook and asdf runs `bin/list-bin-paths` to answer -- which is not evidence that
+        // there are none. Staying quiet is the only honest option.
+        let Ok(dirs) = self.list_bin_paths(&ctx.config, &tv).await else {
+            return;
+        };
+        let dirs: Vec<PathBuf> = dirs.into_iter().filter(|p| p.parent().is_some()).collect();
+        if !no_declared_bin_present(rt.bins, &dirs) {
+            return;
+        }
+        // Deliberately no guess at why. mise knows the binaries are absent and nothing more; the
+        // cause could be a source-only release, a platform the archive does not cover, or a layout
+        // mise did not expect, and naming the wrong one sends the reader somewhere useless.
+        warn!(
+            "{} installed, but none of the binaries it declares ({}) are there.\nLooked in: {}\n`mise x {} -- {}` will not find one.",
+            tv.style(),
+            rt.bins.join(", "),
+            dirs.iter().map(display_path).join(", "),
+            tv.short(),
+            // Non-empty: the early return above is what guarantees it.
+            rt.bins[0],
+        );
     }
 
     async fn run_postinstall_hook(
