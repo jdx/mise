@@ -10,4 +10,4 @@ shfmt = "v3.12.0"
 TOML
 
 assert_not_contains "mise upgrade shfmt --bump --dry-run 2>&1" "no latest version found"
-assert_contains "mise upgrade shfmt --bump --dry-run 2>&1" "Would bump shfmt@v3.13.1 in ~/workdir/mise.toml"
+assert_matches "mise upgrade shfmt --bump --dry-run 2>&1" 'Would bump shfmt@v3\.[0-9]+\.[0-9]+ in ~/workdir/mise\.toml'
