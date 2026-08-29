@@ -2600,6 +2600,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
     fn unresolved_latest_version(&self) -> Option<String> {
         None
     }
+    /// Backend-specific validation for an install prefix that exists and is
+    /// otherwise complete. Keep this check cheap: it runs anywhere mise asks
+    /// whether a version is installed, including activation and doctor.
+    fn is_install_path_healthy(&self, _install_path: &Path) -> bool {
+        true
+    }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
     }
@@ -2613,8 +2619,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
             let is_installed = install_path.exists();
             let is_not_incomplete = !self.incomplete_file_path(tv).exists();
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
+            let is_healthy = is_installed && self.is_install_path_healthy(install_path);
 
-            let installed = is_installed && is_not_incomplete && is_valid_symlink;
+            let installed = is_healthy && is_not_incomplete && is_valid_symlink;
             if log::log_enabled!(log::Level::Trace) && !installed {
                 let mut msg = format!(
                     "{} is not installed, path: {}",
@@ -2629,6 +2636,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
                 if !is_valid_symlink {
                     msg += " (runtime symlink)";
+                }
+                if is_installed && !is_healthy {
+                    msg += " (unhealthy)";
                 }
                 trace!("{}", msg);
             }
