@@ -21,6 +21,13 @@ version_regex = '(?m)^Version: (\S+)$'
 # Google ships only these four targets -- there is no linux-arm64 or
 # windows-arm64 build -- so each URL is declared per platform rather than
 # templated, to keep `mise lock` from recording targets that 404.
+#
+# windows-arm64 is served the windows-x64 binary on purpose: Windows arm64 runs
+# amd64 executables under emulation, which is the same assumption the aqua
+# backend makes in `is_platform_supported`. Without this block the platform
+# resolves a backend and then fails looking for a URL. linux-arm64 gets no such
+# block: Linux on arm64 cannot run the x86_64 build, so having no backend there
+# is the correct answer.
 [backends.options.platforms.linux-x64]
 checksum_url = "https://dl.google.com/android/cli/{{ version }}/linux_x86_64/android.sha256"
 url = "https://dl.google.com/android/cli/{{ version }}/linux_x86_64/android"
@@ -32,6 +39,11 @@ url = "https://dl.google.com/android/cli/{{ version }}/darwin_arm64/android"
 [backends.options.platforms.macos-x64]
 checksum_url = "https://dl.google.com/android/cli/{{ version }}/darwin_x86_64/android.sha256"
 url = "https://dl.google.com/android/cli/{{ version }}/darwin_x86_64/android"
+
+[backends.options.platforms.windows-arm64]
+bin = "android.exe"
+checksum_url = "https://dl.google.com/android/cli/{{ version }}/windows_x86_64/android.exe.sha256"
+url = "https://dl.google.com/android/cli/{{ version }}/windows_x86_64/android.exe"
 
 [backends.options.platforms.windows-x64]
 bin = "android.exe"
