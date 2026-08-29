@@ -341,7 +341,7 @@ impl BackendArg {
             }
         } else {
             // Check if the tool is in the registry but has no available backends
-            if let Some(rt) = REGISTRY.get(self.short.as_str())
+            if let Some(rt) = REGISTRY.get(self.registry_short().as_str())
                 && rt.backends().is_empty()
                 && !rt.backends.is_empty()
             {
@@ -423,6 +423,47 @@ impl BackendArg {
         BackendType::Unknown
     }
 
+    /// The registry short a bare `[tool_alias]` value points at, if there is one.
+    ///
+    /// A value with no backend prefix names a *tool*, not a backend:
+    /// `llama = "llama.cpp"` means "whatever the registry installs for
+    /// llama.cpp". Left unresolved it reaches the plugin path, which builds an
+    /// asdf repo URL out of the name — so the alias either resolves to a
+    /// different tool through a backend this repo no longer accepts new plugins
+    /// for, or fails outright when no such plugin exists.
+    ///
+    /// Everything the registry knows about that tool has to be read from the
+    /// same entry, not from the alias key: options, version order and OS
+    /// support all key on a registry short, and `llama` is not one. Resolving
+    /// the backend while losing `llama.cpp`'s `version_prefix` would install
+    /// the right tool and then misread every version of it.
+    ///
+    /// Options are stripped for the lookup only — they are read from the alias
+    /// entry separately by `get_backend_alias_opts`, so they survive either way.
+    /// Legacy spellings are normalised, so `mytool = "nodejs"` finds `node`.
+    fn aliased_registry_short(&self) -> Option<String> {
+        if self.resolution.explicit || self.has_env_backend_override() || !config::is_loaded() {
+            return None;
+        }
+        let full = Config::get_()
+            .all_aliases
+            .get(unalias_backend(&self.short))
+            .and_then(|a| a.backend.clone())?;
+        let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
+        if name.contains(':') {
+            return None;
+        }
+        let name = unalias_backend(name);
+        REGISTRY.contains_key(name).then(|| name.to_string())
+    }
+
+    /// The registry key this arg's metadata should be read from: the tool a
+    /// bare alias points at, or the short itself.
+    fn registry_short(&self) -> String {
+        self.aliased_registry_short()
+            .unwrap_or_else(|| self.short.to_string())
+    }
+
     pub(crate) fn full(&self) -> String {
         let short = unalias_backend(&self.short);
 
@@ -447,6 +488,13 @@ impl BackendArg {
                 .get(short)
                 .and_then(|a| a.backend.clone())
             {
+                if let Some(registry_full) = self
+                    .aliased_registry_short()
+                    .and_then(|name| REGISTRY.get(name.as_str()))
+                    .and_then(|rt| rt.backends().first().cloned())
+                {
+                    return registry_full.to_string();
+                }
                 return full;
             }
             if let Some(url) = Config::get_().repo_urls.get(short) {
@@ -544,7 +592,7 @@ impl BackendArg {
     pub(crate) fn registry_opts(&self) -> ToolVersionOptions {
         let full = self.full_without_opts();
         REGISTRY
-            .get(self.short.as_str())
+            .get(self.registry_short().as_str())
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default()
     }
@@ -552,7 +600,7 @@ impl BackendArg {
     pub(crate) fn registry_version_order(&self) -> Option<VersionOrder> {
         let full = self.full_without_opts();
         REGISTRY
-            .get(self.short.as_str())
+            .get(self.registry_short().as_str())
             .and_then(|tool| tool.version_order(&full))
     }
 
@@ -724,7 +772,7 @@ impl BackendArg {
         if self.uses_plugin() {
             return true;
         }
-        if let Some(rt) = REGISTRY.get(self.short.as_str()) {
+        if let Some(rt) = REGISTRY.get(self.registry_short().as_str()) {
             return rt.is_supported_os();
         }
         true
