@@ -27,7 +27,6 @@ jobs:
     uses: ./.github/workflows/test-impl.yml
     with:
       trusted: true
-      mbx-backend: server
     secrets:
       FORGEJO_TOKEN: ${{ secrets.FORGEJO_TOKEN }}
       MISE_GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
@@ -40,7 +39,6 @@ jobs:
     uses: ./.github/workflows/test-impl.yml
     with:
       trusted: false
-      mbx-backend: github
 
   test-ci:
     name: test-ci

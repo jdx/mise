@@ -33,7 +33,6 @@ jobs:
     uses: ./.github/workflows/docs-impl.yml
     with:
       trusted: true
-      mbx-backend: server
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
       CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
@@ -46,7 +45,6 @@ jobs:
     uses: ./.github/workflows/docs-impl.yml
     with:
       trusted: false
-      mbx-backend: github
 
   docs:
     name: docs

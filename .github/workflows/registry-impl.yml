@@ -5,9 +5,6 @@ on:
       trusted:
         required: true
         type: boolean
-      mbx-backend:
-        required: true
-        type: string
     secrets:
       MISE_GH_TOKEN:
         required: false
@@ -80,8 +77,6 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
       - uses: ./.github/actions/mbx
-        with:
-          backend: ${{ inputs.mbx-backend }}
       - run: mbx build --all-features --ignore-rust-version
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

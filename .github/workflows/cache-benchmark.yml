@@ -39,8 +39,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/mbx
-        with:
-          backend: github
       - name: Build
         id: build
         shell: bash
@@ -115,8 +113,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/mbx
-        with:
-          backend: github
       - name: Build
         id: build
         shell: bash
@@ -193,8 +189,6 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/mbx
-        with:
-          backend: github
       - name: Build
         id: build
         shell: pwsh
