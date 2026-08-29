@@ -114,7 +114,7 @@ impl Prune {
     }
 }
 
-pub(super) async fn prunable_tools(
+pub(crate) async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
@@ -195,6 +195,7 @@ async fn delete(
         p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
             .await?;
         if !dry_run {
+            crate::tool_purgatory::forget_path(&tv.install_path())?;
             runtime_symlinks::remove_missing_symlinks(p)?;
         }
         pr.finish();

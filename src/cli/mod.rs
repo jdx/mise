@@ -52,7 +52,7 @@ mod oci;
 mod outdated;
 mod patrons;
 mod plugins;
-mod prune;
+pub(crate) mod prune;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
@@ -859,6 +859,9 @@ impl Cli {
         measure!("migrate", { migrate::run().await });
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
+        }
+        if let Err(err) = crate::tool_purgatory::auto_prune().await {
+            warn!("tool purgatory cleanup failed: {err:#}");
         }
 
         debug!("ARGS: {}", &args.join(" "));

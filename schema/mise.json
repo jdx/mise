@@ -2083,8 +2083,13 @@
           "properties": {
             "auto_prune": {
               "default": true,
-              "description": "Uninstall the version `mise upgrade` replaced once the new one has installed.",
+              "description": "Schedule the version `mise upgrade` replaced for pruning once the new one has installed.",
               "type": "boolean"
+            },
+            "prune_after": {
+              "default": "24h",
+              "description": "Grace period before versions replaced by `mise upgrade` are automatically pruned.",
+              "type": "string"
             }
           }
         },
