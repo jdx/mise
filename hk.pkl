@@ -8,7 +8,7 @@ local linters = new Mapping<String, Step> {
         glob = List("schema/**/*.json")
         stdin = "{{ files_list | join(sep='\u{0}') }}"
         check = new CommandSpec {
-          command = "xargs -0 -I {} ajv compile -c ./schema/ajv-toml-formats.cjs -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
+          command = "xargs -0 -I {} ajv compile -s {} --spec=draft2020 --strict-types=true --strict-tuples=true"
           effect = "read"
         }
         check_first = false

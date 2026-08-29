@@ -167,13 +167,11 @@ cat >"$HOME/workdir/mise-os.toml" <<'TOML'
 [tools]
 node = { version = "latest", os = ["linux", "macos/arm64", "darwin/aarch64", "win/amd64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, backend_options = { nested = true } }
 go = { version = "latest", os = "linux/x64" }
-python = { version = "latest", minimum_release_age = 2024-06-01, version_order = "source" }
-ruby = { version = "latest", minimum_release_age = 2024-06-01T12:00:00, version_order = "semver" }
-rust = { version = "latest", minimum_release_age = 2024-06-01T12:00:00Z }
-zig = { version = "latest", minimum_release_age = 12:00:00 }
+python = { version = "latest", minimum_release_age = "2024-06-01", version_order = "source" }
+ruby = { version = "latest", minimum_release_age = "7d", version_order = "semver" }
 
 [tasks.build.tools]
-rust = { version = "latest", minimum_release_age = 2024-06-01T12:00:00Z, os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"], backend_options = { nested = { enabled = true, retries = 2 } } }
+rust = { version = "latest", minimum_release_age = "2024-06-01T12:00:00Z", os = ["linux/x64", "macos/arm64"], install_env = { KEEP = "value", REMOVE = false, RETRIES = 2 }, profile = "release", targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"], backend_options = { nested = { enabled = true, retries = 2 } } }
 TOML
 
 cat >"$HOME/workdir/mise-task-os.toml" <<'TOML'
@@ -282,8 +280,8 @@ TOML
 
 assert_fail "$TOMBI_LINT mise-bad-install-env-float.toml"
 
-# TOML datetime values are accepted by the runtime scalar conversion, but
-# arrays and tables are not.
+# minimum_release_age and its deprecated alias are string options; arrays and
+# tables are not accepted.
 cat >"$HOME/workdir/mise-bad-minimum-release-age-array.toml" <<'TOML'
 [tools]
 node = { version = "latest", minimum_release_age = ["7d"] }

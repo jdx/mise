@@ -1088,70 +1088,12 @@
         },
         "minimum_release_age": {
           "description": "minimum time since a version's release before mise selects it, as a duration such as \"7d\" or an absolute date",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string",
-              "format": "date"
-            },
-            {
-              "type": "string",
-              "format": "date-time-local"
-            },
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "string",
-              "format": "time-local"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            }
-          ]
+          "type": "string"
         },
         "install_before": {
           "description": "deprecated alias for minimum_release_age",
           "deprecated": true,
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "string",
-              "format": "date"
-            },
-            {
-              "type": "string",
-              "format": "date-time-local"
-            },
-            {
-              "type": "string",
-              "format": "date-time"
-            },
-            {
-              "type": "string",
-              "format": "time-local"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            }
-          ]
+          "type": "string"
         },
         "version_order": {
           "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
