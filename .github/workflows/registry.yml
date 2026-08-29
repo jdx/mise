@@ -18,7 +18,6 @@ jobs:
     uses: ./.github/workflows/registry-impl.yml
     with:
       trusted: true
-      mbx-backend: server
     secrets:
       MISE_GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
       MISE_VERSIONS_API_SECRET: ${{ secrets.MISE_VERSIONS_API_SECRET }}
@@ -30,7 +29,6 @@ jobs:
     uses: ./.github/workflows/registry-impl.yml
     with:
       trusted: false
-      mbx-backend: github
 
   registry-ci:
     name: registry-ci

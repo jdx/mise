@@ -5,9 +5,6 @@ on:
       trusted:
         required: true
         type: boolean
-      mbx-backend:
-        required: true
-        type: string
     secrets:
       FORGEJO_TOKEN:
         required: false
@@ -84,8 +81,6 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
       - uses: ./.github/actions/mbx
-        with:
-          backend: ${{ inputs.mbx-backend }}
       - run: |
           mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
@@ -117,8 +112,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
-        with:
-          backend: ${{ inputs.mbx-backend }}
       - shell: pwsh
         run: |
           mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
@@ -154,8 +147,6 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
       - uses: ./.github/actions/mbx
-        with:
-          backend: ${{ inputs.mbx-backend }}
       - name: Install test tools
         run: brew install fd tmux
       - run: |
@@ -187,8 +178,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
-        with:
-          backend: ${{ inputs.mbx-backend }}
       - parallel:
           - name: Install mold
             run: sudo apt-get update && sudo apt-get install -y mold
@@ -403,8 +392,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
-        with:
-          backend: ${{ inputs.mbx-backend }}
       - name: check unused code
         run: mbx check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
         env:
