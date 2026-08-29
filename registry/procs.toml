@@ -1,0 +1,8 @@
+backends = [
+  "aqua:dalance/procs",
+  "cargo:procs",
+]
+bins = ["procs"]
+description = "A modern replacement for ps written in Rust"
+test = { cmd = "procs --version", expected = 'procs "{{version}}' }
+version_order = "semver"
