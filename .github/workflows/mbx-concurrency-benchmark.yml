@@ -18,7 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         order: [sequential-first, parallel-first]
-    runs-on: namespace-profile-endev-linux-amd64-xlarge
+    # Confirm the demo-sized xlarge result on mise's existing production lint
+    # runner before proposing a long-term change.
+    runs-on: namespace-profile-endev-linux-amd64-large
     timeout-minutes: 90
     env:
       CARGO_INCREMENTAL: "0"
