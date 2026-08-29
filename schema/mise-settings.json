@@ -176,16 +176,51 @@
         }
       },
       "required": ["description", "type"],
-      "if": {
-        "required": ["merge"]
-      },
-      "then": {
-        "properties": {
-          "type": {
-            "const": "ListString"
+      "allOf": [
+        {
+          "if": {
+            "required": ["merge"]
+          },
+          "then": {
+            "properties": {
+              "type": {
+                "const": "ListString"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "BoolOrString"
+              }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["rust_type"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
+                  "ListString",
+                  "ListPath",
+                  "SetString",
+                  "IndexMap<String, String>"
+                ]
+              }
+            },
+            "required": ["env", "type"]
+          },
+          "then": {
+            "required": ["parse_env"]
           }
         }
-      },
+      ],
       "unevaluatedProperties": false
     }
   }
