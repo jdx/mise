@@ -1,4 +1,27 @@
-backends = ["cargo:magika-cli"]
 description = "Fast and accurate AI powered file content types detection"
 test = { cmd = "magika --version", expected = "magika {{version | trim_start(pat='v')}}" }
 version_order = "semver"
+
+# Google publishes prebuilt CLI binaries under `cli/v*` tags, so the tool
+# installs without a toolchain. `cargo:magika-cli` cannot: on a machine with no
+# cargo it fails outright with "you need to install Rust first".
+#
+# The platforms are listed arch-qualified rather than as a bare `linux`, which
+# would match every Linux architecture including the riscv64 and loongarch64
+# ones Google publishes nothing for. What is left out -- Intel macOS, whose
+# `x86_64-apple-darwin` asset was dropped at 1.0.2, and windows-arm64, which
+# never had a build -- falls through to cargo on its own, since registry
+# backends are filtered by platform before the first one is picked.
+#
+# Cost of listing github first: 0.0.0 through 0.1.2 are unreachable on the
+# platforms it covers, since a backend list is a preference filter and not a
+# per-version fallback. Those predate the CLI's first GitHub release.
+[[backends]]
+full = "github:google/magika"
+platforms = ["macos-arm64", "linux-x64", "linux-arm64", "windows-x64"]
+
+[backends.options]
+version_prefix = "cli/v"
+
+[[backends]]
+full = "cargo:magika-cli"
