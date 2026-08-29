@@ -152,6 +152,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
         .collect::<Vec<_>>();
     let mpr = MultiProgressReport::get();
     let mut install_state_changed = false;
+    let mut entries_awaiting_reconciliation = vec![];
     for (key, install_path, display) in due {
         if !install_path.starts_with(*crate::dirs::INSTALLS) {
             warn!(
@@ -174,14 +175,14 @@ pub(crate) async fn auto_prune() -> Result<()> {
                     {
                         warn!("failed to remove missing runtime symlinks for {display}: {err:#}");
                     }
-                    state.entries.remove(&key);
+                    entries_awaiting_reconciliation.push(key);
                     install_state_changed = true;
                 }
                 Err(err) => warn!("failed to prune deferred {display}: {err:#}"),
             }
         } else if !install_path.exists() {
             // A missing version is already gone.
-            state.entries.remove(&key);
+            entries_awaiting_reconciliation.push(key);
             install_state_changed = true;
         } else if installed_paths.contains(&install_path) {
             // Keep the receipt while a tracked config or tool stub needs this
@@ -209,8 +210,20 @@ pub(crate) async fn auto_prune() -> Result<()> {
             .await
         }
         .await;
-        if let Err(err) = reconcile {
-            warn!("failed to reconcile runtime symlinks and shims after deferred pruning: {err:#}");
+        match reconcile {
+            Ok(()) => {
+                for key in entries_awaiting_reconciliation {
+                    state.entries.remove(&key);
+                }
+            }
+            Err(err) => {
+                // Keep the due receipts so a later invocation retries
+                // reconciliation. The versions are already missing, so the
+                // retry will not attempt to uninstall them again.
+                warn!(
+                    "failed to reconcile runtime symlinks and shims after deferred pruning: {err:#}"
+                );
+            }
         }
     }
     save_state(&state)
