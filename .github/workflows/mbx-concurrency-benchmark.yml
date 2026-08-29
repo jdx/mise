@@ -1,0 +1,162 @@
+name: mbx concurrency benchmark
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/mbx-concurrency-benchmark.yml
+      - .github/actionlint.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clippy:
+    name: clippy (${{ matrix.order }})
+    if: ${{ github.actor == 'jdx' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        order: [sequential-first, parallel-first]
+    runs-on: namespace-profile-endev-linux-amd64-xlarge
+    timeout-minutes: 90
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      MBX_TARGET_VIEWS: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+      - run: rustup component add clippy
+      - name: Record runner shape
+        run: |
+          mkdir -p "$RUNNER_TEMP/mbx-concurrency-results"
+          {
+            echo "### Runner"
+            echo
+            echo "- order: \`${{ matrix.order }}\`"
+            echo "- logical CPUs: \`$(nproc)\`"
+            echo "- memory: \`$(free -h | awk '/^Mem:/ { print $2 }')\`"
+            echo "- mbx: \`$(mbx --version)\`"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Each strategy starts with an empty mbx store and empty targets. The
+      # sequential run retains today's shared target; concurrent Cargo
+      # processes need separate targets so Cargo's target lock cannot turn the
+      # supposedly parallel case back into a sequential one.
+      - name: Start sequential timing
+        if: matrix.order == 'sequential-first'
+        run: date +%s%N > "$RUNNER_TEMP/mbx-concurrency-results/sequential-started"
+      - name: Sequential Clippy passes
+        if: matrix.order == 'sequential-first'
+        env:
+          MBX_CACHE_DIR: ${{ runner.temp }}/mbx-sequential
+          CARGO_TARGET_DIR: ${{ runner.temp }}/target-sequential
+        run: |
+          MBX_STATS_REPORT="$RUNNER_TEMP/mbx-concurrency-results/sequential-default.json" mbx clippy --ignore-rust-version -- -D warnings
+          MBX_STATS_REPORT="$RUNNER_TEMP/mbx-concurrency-results/sequential-all.json" mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      - name: Finish sequential timing
+        if: matrix.order == 'sequential-first'
+        run: |
+          started=$(<"$RUNNER_TEMP/mbx-concurrency-results/sequential-started")
+          echo $(( $(date +%s%N) - started )) > "$RUNNER_TEMP/mbx-concurrency-results/sequential-duration"
+
+      - name: Start parallel timing
+        if: matrix.order == 'sequential-first'
+        run: date +%s%N > "$RUNNER_TEMP/mbx-concurrency-results/parallel-started"
+      - parallel:
+          - name: Clippy default features
+            if: matrix.order == 'sequential-first'
+            env:
+              MBX_CACHE_DIR: ${{ runner.temp }}/mbx-parallel
+              CARGO_TARGET_DIR: ${{ runner.temp }}/target-parallel-default
+              MBX_STATS_REPORT: ${{ runner.temp }}/mbx-concurrency-results/parallel-default.json
+            run: mbx clippy --ignore-rust-version -- -D warnings
+          - name: Clippy all features and targets
+            if: matrix.order == 'sequential-first'
+            env:
+              MBX_CACHE_DIR: ${{ runner.temp }}/mbx-parallel
+              CARGO_TARGET_DIR: ${{ runner.temp }}/target-parallel-all
+              MBX_STATS_REPORT: ${{ runner.temp }}/mbx-concurrency-results/parallel-all.json
+            run: mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      - name: Finish parallel timing
+        if: matrix.order == 'sequential-first'
+        run: |
+          started=$(<"$RUNNER_TEMP/mbx-concurrency-results/parallel-started")
+          echo $(( $(date +%s%N) - started )) > "$RUNNER_TEMP/mbx-concurrency-results/parallel-duration"
+
+      - name: Start parallel timing
+        if: matrix.order == 'parallel-first'
+        run: date +%s%N > "$RUNNER_TEMP/mbx-concurrency-results/parallel-started"
+      - parallel:
+          - name: Clippy default features
+            if: matrix.order == 'parallel-first'
+            env:
+              MBX_CACHE_DIR: ${{ runner.temp }}/mbx-parallel
+              CARGO_TARGET_DIR: ${{ runner.temp }}/target-parallel-default
+              MBX_STATS_REPORT: ${{ runner.temp }}/mbx-concurrency-results/parallel-default.json
+            run: mbx clippy --ignore-rust-version -- -D warnings
+          - name: Clippy all features and targets
+            if: matrix.order == 'parallel-first'
+            env:
+              MBX_CACHE_DIR: ${{ runner.temp }}/mbx-parallel
+              CARGO_TARGET_DIR: ${{ runner.temp }}/target-parallel-all
+              MBX_STATS_REPORT: ${{ runner.temp }}/mbx-concurrency-results/parallel-all.json
+            run: mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      - name: Finish parallel timing
+        if: matrix.order == 'parallel-first'
+        run: |
+          started=$(<"$RUNNER_TEMP/mbx-concurrency-results/parallel-started")
+          echo $(( $(date +%s%N) - started )) > "$RUNNER_TEMP/mbx-concurrency-results/parallel-duration"
+
+      - name: Start sequential timing
+        if: matrix.order == 'parallel-first'
+        run: date +%s%N > "$RUNNER_TEMP/mbx-concurrency-results/sequential-started"
+      - name: Sequential Clippy passes
+        if: matrix.order == 'parallel-first'
+        env:
+          MBX_CACHE_DIR: ${{ runner.temp }}/mbx-sequential
+          CARGO_TARGET_DIR: ${{ runner.temp }}/target-sequential
+        run: |
+          MBX_STATS_REPORT="$RUNNER_TEMP/mbx-concurrency-results/sequential-default.json" mbx clippy --ignore-rust-version -- -D warnings
+          MBX_STATS_REPORT="$RUNNER_TEMP/mbx-concurrency-results/sequential-all.json" mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      - name: Finish sequential timing
+        if: matrix.order == 'parallel-first'
+        run: |
+          started=$(<"$RUNNER_TEMP/mbx-concurrency-results/sequential-started")
+          echo $(( $(date +%s%N) - started )) > "$RUNNER_TEMP/mbx-concurrency-results/sequential-duration"
+
+      - name: Publish comparison
+        if: always()
+        run: |
+          result_dir="$RUNNER_TEMP/mbx-concurrency-results"
+          if [[ ! -s "$result_dir/sequential-duration" || ! -s "$result_dir/parallel-duration" ]]; then
+            echo "The comparison did not complete." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          sequential_ns=$(<"$result_dir/sequential-duration")
+          parallel_ns=$(<"$result_dir/parallel-duration")
+          seconds() { awk -v ns="$1" 'BEGIN { printf "%.2f", ns / 1000000000 }'; }
+          hits() { jq -s 'map(.hits // 0) | add' "$result_dir/$1-default.json" "$result_dir/$1-all.json"; }
+          speedup=$(awk -v sequential="$sequential_ns" -v parallel="$parallel_ns" 'BEGIN { printf "%.2fx", sequential / parallel }')
+          {
+            echo "### Cold Clippy comparison"
+            echo
+            echo "| strategy | wall time | mbx hits |"
+            echo "| --- | ---: | ---: |"
+            echo "| sequential | $(seconds "$sequential_ns")s | $(hits sequential) |"
+            echo "| GitHub parallel + mbx scheduler | $(seconds "$parallel_ns")s | $(hits parallel) |"
+            echo
+            echo "Parallel speedup: **${speedup}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload raw measurements
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mbx-concurrency-${{ matrix.order }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mbx-concurrency-results
+          if-no-files-found: error
+          retention-days: 30

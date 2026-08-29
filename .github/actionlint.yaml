@@ -40,3 +40,7 @@ paths:
     # Remove this once actionlint recognizes the `parallel` keyword.
     ignore:
       - 'step must run script with "run" section or run action with "uses" section'
+  .github/workflows/mbx-concurrency-benchmark.yml:
+    # actionlint 1.7.12 predates GitHub's native parallel step groups.
+    ignore:
+      - 'step must run script with "run" section or run action with "uses" section'
