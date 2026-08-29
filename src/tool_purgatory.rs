@@ -169,7 +169,11 @@ pub(crate) async fn auto_prune() -> Result<()> {
             {
                 Ok(()) => {
                     pr.finish();
-                    crate::runtime_symlinks::remove_missing_symlinks(backend.clone())?;
+                    if let Err(err) =
+                        crate::runtime_symlinks::remove_missing_symlinks(backend.clone())
+                    {
+                        warn!("failed to remove missing runtime symlinks for {display}: {err:#}");
+                    }
                     state.entries.remove(&key);
                     install_state_changed = true;
                 }
@@ -193,15 +197,21 @@ pub(crate) async fn auto_prune() -> Result<()> {
     }
     mpr.finish_progress();
     if install_state_changed {
-        let config = Config::reset().await?;
-        let ts = config.get_toolset().await?;
-        crate::config::rebuild_shims_and_runtime_symlinks(
-            &config,
-            ts,
-            &[],
-            crate::lockfile::LockfileUpdateMode::Normal,
-        )
-        .await?;
+        let reconcile = async {
+            let config = Config::reset().await?;
+            let ts = config.get_toolset().await?;
+            crate::config::rebuild_shims_and_runtime_symlinks(
+                &config,
+                ts,
+                &[],
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await
+        }
+        .await;
+        if let Err(err) = reconcile {
+            warn!("failed to reconcile runtime symlinks and shims after deferred pruning: {err:#}");
+        }
     }
     save_state(&state)
 }
