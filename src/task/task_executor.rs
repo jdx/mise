@@ -1067,7 +1067,7 @@ impl TaskExecutor {
                     .keep_order_state
                     .lock()
                     .unwrap()
-                    .insert_tasks_before(parent, &children);
+                    .insert_injected_tasks(parent, &children);
             }
         }
         let sub_deps = Arc::new(Mutex::new(sub_deps));
