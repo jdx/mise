@@ -1093,6 +1093,22 @@
               "type": "string"
             },
             {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "format": "date-time-local"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "time-local"
+            },
+            {
               "type": "integer"
             },
             {
@@ -1109,6 +1125,22 @@
           "anyOf": [
             {
               "type": "string"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "format": "date-time-local"
+            },
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "time-local"
             },
             {
               "type": "integer"
