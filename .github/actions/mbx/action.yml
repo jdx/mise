@@ -15,7 +15,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@cff2f8f0606288b60e7ff0570a06faf5c3ebd3ac
+    - uses: jdx/mr-boxington-action@9a406893b83a977c45324a34aed553e3c43f414d
       with:
         version: 1.0.0
         cache-generation: v2
