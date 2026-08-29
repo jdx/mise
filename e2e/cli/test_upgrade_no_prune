@@ -98,8 +98,13 @@ assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
 # Once the reference goes away, the next invocation can remove it.
 sed -i 's/dummy = "1.0.0"/dummy = "1.1.0"/' mise.toml
+ln -s ./1.0.0 "$MISE_DATA_DIR/installs/dummy/retired"
+touch "$MISE_DATA_DIR/shims/deferred-prune-orphan"
+chmod +x "$MISE_DATA_DIR/shims/deferred-prune-orphan"
 mise current >/dev/null
 assert_fail "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_fail "test -L '$MISE_DATA_DIR/installs/dummy/retired'"
+assert_fail "test -e '$MISE_DATA_DIR/shims/deferred-prune-orphan'"
 assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
 rm -f mise.toml

@@ -151,6 +151,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
         })
         .collect::<Vec<_>>();
     let mpr = MultiProgressReport::get();
+    let mut install_state_changed = false;
     for (key, install_path, display) in due {
         if !install_path.starts_with(*crate::dirs::INSTALLS) {
             warn!(
@@ -168,13 +169,16 @@ pub(crate) async fn auto_prune() -> Result<()> {
             {
                 Ok(()) => {
                     pr.finish();
+                    crate::runtime_symlinks::remove_missing_symlinks(backend.clone())?;
                     state.entries.remove(&key);
+                    install_state_changed = true;
                 }
                 Err(err) => warn!("failed to prune deferred {display}: {err:#}"),
             }
         } else if !install_path.exists() {
             // A missing version is already gone.
             state.entries.remove(&key);
+            install_state_changed = true;
         } else if installed_paths.contains(&install_path) {
             // Keep the receipt while a tracked config or tool stub needs this
             // version. It may become prunable again after that reference goes
@@ -188,6 +192,17 @@ pub(crate) async fn auto_prune() -> Result<()> {
         }
     }
     mpr.finish_progress();
+    if install_state_changed {
+        let config = Config::reset().await?;
+        let ts = config.get_toolset().await?;
+        crate::config::rebuild_shims_and_runtime_symlinks(
+            &config,
+            ts,
+            &[],
+            crate::lockfile::LockfileUpdateMode::Normal,
+        )
+        .await?;
+    }
     save_state(&state)
 }
 

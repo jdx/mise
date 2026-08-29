@@ -195,7 +195,9 @@ async fn delete(
         p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
             .await?;
         if !dry_run {
-            crate::tool_purgatory::forget_path(&tv.install_path())?;
+            if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
+                warn!("failed to clear tool purgatory entry: {err:#}");
+            }
             runtime_symlinks::remove_missing_symlinks(p)?;
         }
         pr.finish();

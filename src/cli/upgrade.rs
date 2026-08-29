@@ -111,9 +111,8 @@ pub(crate) struct Upgrade {
 
     /// Do not uninstall the versions that were upgraded away from
     ///
-    /// By default the old version is scheduled for removal after `upgrade.prune_after`, unless
-    /// another tracked config or tool stub still needs it. Use this to leave it in place without
-    /// scheduling removal, e.g. when something outside of mise points at the install directory.
+    /// The old version is left in place and is not scheduled for removal. Use this when something
+    /// outside mise points at the install directory.
     ///
     /// Set `upgrade.auto_prune = false` to make this the default.
     #[usage(long, verbatim_doc_comment, overrides = "prune")]

@@ -54,9 +54,8 @@ This will update mise.lock if it is enabled, see <https://mise.jdx.dev/configura
 - **`--monorepo`** — Placeholder for future monorepo upgrades; `mise upgrade --monorepo` is not implemented yet.
 - **`--no-prune`** — Do not uninstall the versions that were upgraded away from
 
-  By default the old version is scheduled for removal after `upgrade.prune_after`, unless
-  another tracked config or tool stub still needs it. Use this to leave it in place without
-  scheduling removal, e.g. when something outside of mise points at the install directory.
+  The old version is left in place and is not scheduled for removal. Use this when something
+  outside mise points at the install directory.
 
   Set `upgrade.auto_prune = false` to make this the default.
 - **`--prune`** — Immediately uninstall the versions that were upgraded away from
