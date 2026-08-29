@@ -1782,7 +1782,9 @@ mod tests {
             self.0.lock().unwrap().push(message);
         }
     }
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolVersionOptions};
+    #[cfg(unix)]
+    use crate::toolset::ToolVersion;
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_eq;
 
     fn create_npm_backend(tool: &str) -> NPMBackend {
