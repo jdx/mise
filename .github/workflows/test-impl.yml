@@ -172,9 +172,6 @@ jobs:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large' }}
     timeout-minutes: 80
     needs: [build-ubuntu]
-    env:
-      # Clippy's all-features build can otherwise exhaust the runner's memory.
-      CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
@@ -230,10 +227,18 @@ jobs:
             run: mbx msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
-      - name: Run Clippy
-        run: |
-          mbx clippy --ignore-rust-version -- -D warnings
-          mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      # Separate targets keep Cargo's directory lock from serializing these
+      # overlapping configurations. mbx shares the machine-wide compiler pool
+      # and deduplicates identical work in flight between them.
+      - parallel:
+          - name: Run Clippy with default features
+            env:
+              CARGO_TARGET_DIR: ${{ runner.temp }}/clippy-default
+            run: mbx clippy --ignore-rust-version -- -D warnings
+          - name: Run Clippy with all features and targets
+            env:
+              CARGO_TARGET_DIR: ${{ runner.temp }}/clippy-all
+            run: mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
 
   e2e:
     name: e2e
