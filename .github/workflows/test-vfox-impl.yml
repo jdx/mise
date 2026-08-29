@@ -6,6 +6,9 @@ on:
       trusted:
         required: true
         type: boolean
+      mbx-backend:
+        required: true
+        type: string
     secrets:
       MISE_GH_TOKEN:
         required: false
@@ -40,6 +43,8 @@ jobs:
             ~/.cargo/git
             ~/.cargo/.global-cache
       - uses: ./.github/actions/mbx
+        with:
+          backend: ${{ inputs.mbx-backend }}
       - run: |
           mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"

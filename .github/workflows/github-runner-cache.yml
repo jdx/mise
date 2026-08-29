@@ -29,6 +29,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/mbx
+        with:
+          backend: github
       - name: Warm the Unix cache
         if: runner.os != 'Windows'
         run: mbx build --all-features --ignore-rust-version
