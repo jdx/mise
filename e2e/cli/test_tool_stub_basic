@@ -100,15 +100,18 @@ mise uninstall --all
 assert_contains "bin/flyctl version" "flyctl v0.3.206"
 
 # Test 13: Tool using non-built-in backend (e.g. npm/pipx)
-cat >bin/stylelint <<'EOF'
+# TypeScript has no transitive dependencies, keeping this tool-stub test isolated
+# from unrelated npm dependency metadata changes.
+cat >bin/tsc <<'EOF'
 #!/usr/bin/env -S mise tool-stub
-tool = "npm:stylelint"
-version = "17.0.0"
+tool = "npm:typescript"
+version = "5.9.3"
+bin = "tsc"
 EOF
 
-chmod +x bin/stylelint
+chmod +x bin/tsc
 mise use node@20
-assert_contains "bin/stylelint --version" "17.0.0"
-mise uninstall --all
+assert_contains "bin/tsc --version" "Version 5.9.3"
+mise uninstall npm:typescript@5.9.3
+assert_contains "bin/tsc --version" "Version 5.9.3"
 mise unuse node@20
-assert_contains "bin/stylelint --version" "17.0.0"
