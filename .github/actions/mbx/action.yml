@@ -17,7 +17,7 @@ runs:
   steps:
     - uses: jdx/mr-boxington-action@9a406893b83a977c45324a34aed553e3c43f414d
       with:
-        version: 1.0.0
+        version: 1.0.1
         cache-generation: v2
         save-on-workflow-dispatch: ${{ github.actor == 'jdx' && github.triggering_actor == 'jdx' }}
         cache-links: ${{ inputs.cache-links }}
