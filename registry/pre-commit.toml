@@ -1,5 +1,11 @@
 backends = [
-  "aqua:pre-commit/pre-commit",
+  # Upstream ships a `.pyz` zipapp, not a native binary, so aqua marks the package
+  # `supported_envs: [darwin, linux]` -- Windows has no shebang to run one with. Same reason
+  # aws-sam sends Windows to pipx.
+  { full = "aqua:pre-commit/pre-commit", platforms = [
+    "linux",
+    "macos",
+  ] },
   "asdf:jonathanmorley/asdf-pre-commit",
   "pipx:pre-commit",
 ]
