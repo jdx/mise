@@ -65,6 +65,11 @@ mkdir write-options
   mise use --path inline.toml --postinstall "touch inline-hook" 'dummy[foo=bar]@1.0.0'
   assert_contains "cat inline.toml" 'foo = "bar"'
   assert_contains "cat inline.toml" "postinstall"
+
+  printf '[tools.dummy]\nversion = "1.0.0"\nfoo = "bar"\n' >standard.toml
+  mise use --path standard.toml --postinstall "touch standard-hook" dummy@1.0.0
+  assert_contains "cat standard.toml" 'foo = "bar"'
+  assert_contains "cat standard.toml" 'postinstall = "touch standard-hook"'
 )
 
 # A hook needs a TOML tool entry. An existing .tool-versions file makes normal use keep that

@@ -1341,7 +1341,8 @@ impl ConfigFile for MiseToml {
                 *table.decor_mut() = decor;
                 table.set_position(position);
             }
-            update_standard_tool_table(&mut table, &versions[0], ba.explicit_opts());
+            let explicit_options = versions[0].explicit_options();
+            update_standard_tool_table(&mut table, &versions[0], Some(&explicit_options));
             replace_tool_entries_preserving_position(tools, &keys, key, Item::Table(table));
             if is_tools_sorted {
                 tools.sort_values();

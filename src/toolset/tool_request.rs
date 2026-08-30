@@ -256,6 +256,13 @@ impl ToolRequest {
         self.resolved_options().effective().clone()
     }
 
+    pub(crate) fn explicit_options(&self) -> ToolVersionOptions {
+        self.resolved_options().options_from_sources(&[
+            ToolOptionSource::Request,
+            ToolOptionSource::InlineBackendArg,
+        ])
+    }
+
     fn resolved_options(&self) -> &ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
