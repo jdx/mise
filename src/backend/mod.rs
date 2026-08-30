@@ -3333,6 +3333,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 ctx.pr
                     .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
             } else {
+                // Only when an install would actually happen. Asking whether an already-installed
+                // tool *could* be installed is a different question, and answering it here would
+                // start failing `--dry-run` on machines whose tools predate a registry
+                // restriction -- for an install that is not going to be attempted.
+                self.verify_install_feasible(&ctx, &tv).await?;
                 ctx.pr
                     .finish_with_icon("would install".into(), ProgressIcon::Skipped);
             }
@@ -3576,6 +3581,24 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Default is 3: download, checksum, extract
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         3
+    }
+
+    /// Whether this version could install here at all, judged without downloading anything.
+    ///
+    /// `--dry-run` answers before `install_version_` runs, so a backend that would have refused
+    /// the platform, the version or the package type never got asked, and the answer came back
+    /// "would install" for something that cannot. Backends that can tell cheaply -- from data
+    /// already on disk or already fetched -- override this.
+    ///
+    /// **The default is silence, not a claim of feasibility.** A backend that has not implemented
+    /// this says nothing about whether the install would work, and `--dry-run` stays as optimistic
+    /// for it as it was before.
+    async fn verify_install_feasible(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> Result<()> {
+        Ok(())
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
