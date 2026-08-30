@@ -50,6 +50,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 pub(crate) mod config_file;
 pub(crate) mod env_directive;
 pub(crate) mod miserc;
+pub(crate) mod provenance;
 pub(crate) mod settings;
 pub(crate) mod tracking;
 
