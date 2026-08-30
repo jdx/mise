@@ -13,6 +13,7 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::config_file::min_version::MinVersionSpec;
 use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig};
 use crate::config::env_directive::EnvDirective;
+use crate::config::provenance::ConfigProvenance;
 use crate::config::settings::IdiomaticVersionFileSettings;
 use crate::config::{AliasMap, Settings, settings};
 use crate::deps::DepsConfig;
@@ -86,6 +87,9 @@ fn detection_error(path: &Path, detection: ConfigFileDetection) -> eyre::Report 
 
 pub(crate) trait ConfigFile: Debug + Send + Sync {
     fn get_path(&self) -> &Path;
+    fn provenance(&self) -> ConfigProvenance {
+        ConfigProvenance::from_path(self.get_path())
+    }
     fn min_version(&self) -> Option<&MinVersionSpec> {
         None
     }
@@ -94,10 +98,11 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
     /// files like ~/src/foo/.mise/config.toml will return ~/src/foo
     /// and ~/src/foo/.mise.config.toml will return None
     fn project_root(&self) -> Option<PathBuf> {
-        let p = self.get_path();
-        if config::is_global_config(p) {
+        let provenance = self.provenance();
+        if !provenance.scope().is_project() {
             return None;
         }
+        let p = provenance.path();
         match p.parent() {
             Some(dir) => match dir {
                 dir if dir.starts_with(*dirs::CONFIG) => None,
