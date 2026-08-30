@@ -1291,7 +1291,7 @@ If not provided, the nearest mise.toml file will be used
         flag "-h --help" help="Print help" action=help builtin=#true
     }
     cmd set help="Set the value of a setting in a mise.toml file" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise config set tools.python 3.12\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.always_keep_download true\u{1b}[22m\n    $ \u{1b}[1mmise config set env.TEST_ENV_VAR ABC\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.disable_tools node,rust\u{1b}[22m\n\n    # Type for `settings` is inferred\n    $ \u{1b}[1mmise config set settings.jobs 4\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise config set tools.python 3.12\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.always_keep_download true\u{1b}[22m\n    $ \u{1b}[1mmise config set env.TEST_ENV_VAR ABC\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.disable_tools node,rust\u{1b}[22m\n    $ \u{1b}[1mmise config set --append env._.path ~/.local/bin\u{1b}[22m\n    $ \u{1b}[1mmise config set --remove env._.path ~/.local/bin\u{1b}[22m\n\n    # Type for `settings` is inferred\n    $ \u{1b}[1mmise config set settings.jobs 4\u{1b}[22m\n"
         flag "-f --file --path" help="The path to the mise.toml file to edit" {
             long_help #"""
 The path to the mise.toml file to edit
@@ -1302,6 +1302,9 @@ If not provided, the nearest mise.toml file will be used
 """#
             arg <FILE>
         }
+        flag "-g --global" help="Edit the global config file." conflicts=--file
+        flag --append help="Append the value without duplicating an existing entry." conflicts=--remove
+        flag --remove help="Remove the value from an existing collection." conflicts=--append
         flag "-t --type" default=infer {
             arg <TYPE> {
                 choices {

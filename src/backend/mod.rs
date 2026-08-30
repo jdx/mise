@@ -3563,6 +3563,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             let root = config_root::config_root(source_path);
             let root = root.to_string_lossy().to_string();
             runner = runner
+                .env("MISE_CONFIG_FILE", source_path)
                 .env("MISE_CONFIG_ROOT", &root)
                 .env("MISE_PROJECT_ROOT", &root);
         }

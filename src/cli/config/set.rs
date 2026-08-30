@@ -24,6 +24,18 @@ pub(super) struct ConfigSet {
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
 
+    /// Edit the global config file.
+    #[usage(long, short = 'g', conflicts = "file")]
+    pub global: bool,
+
+    /// Append the value without duplicating an existing entry.
+    #[usage(long, conflicts = "remove")]
+    pub append: bool,
+
+    /// Remove the value from an existing collection.
+    #[usage(long, conflicts = "append")]
+    pub remove: bool,
+
     #[usage(value_enum, short, long, default = "infer")]
     pub type_: TomlValueTypes,
 }
@@ -67,15 +79,27 @@ impl ConfigSet {
                 prefer_toml: true,
                 ..Default::default()
             })?),
+            None if self.global => Some(resolve_target_config_path(ConfigPathOptions {
+                global: true,
+                prefer_toml: true,
+                ..Default::default()
+            })?),
             None => top_toml_config(),
         };
         let Some(file) = file else {
             bail!("No mise.toml file found");
         };
-        if !file.exists() {
+        if !file.exists() && !self.global {
             bail!("config file not found: {}", display_path(&file));
         }
-        let mut config: toml_edit::DocumentMut = std::fs::read_to_string(&file)?.parse()?;
+        let raw = match std::fs::read_to_string(&file) {
+            Ok(raw) => raw,
+            Err(error) if self.global && error.kind() == std::io::ErrorKind::NotFound => {
+                String::new()
+            }
+            Err(error) => return Err(error.into()),
+        };
+        let mut config: toml_edit::DocumentMut = raw.parse()?;
         let mut container = config.as_item_mut();
         let parts = full_key.split('.').collect::<Vec<&str>>();
         let last_key = parts.last().unwrap();
@@ -159,21 +183,112 @@ impl ConfigSet {
             TomlValueTypes::Infer => bail!("Type not found"),
         };
 
-        container
-            .as_table_like_mut()
-            .ok_or_else(|| {
-                eyre::eyre!(
-                    "cannot set '{full_key}': '{}' is already set to a non-table value",
-                    parts[..parts.len() - 1].join(".")
-                )
-            })?
-            .insert(last_key, value);
+        let table = container.as_table_like_mut().ok_or_else(|| {
+            eyre::eyre!(
+                "cannot set '{full_key}': '{}' is already set to a non-table value",
+                parts[..parts.len() - 1].join(".")
+            )
+        })?;
+        if self.append {
+            append_value(table, last_key, value)?;
+        } else if self.remove {
+            remove_value(table, last_key, &value)?;
+        } else {
+            table.insert(last_key, value);
+        }
 
         let raw = config.to_string();
         MiseToml::from_str(&raw, &file)?;
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         std::fs::write(&file, raw)?;
         Ok(())
     }
+}
+
+fn values(item: toml_edit::Item) -> eyre::Result<Vec<toml_edit::Value>> {
+    match item {
+        toml_edit::Item::Value(toml_edit::Value::Array(array)) => Ok(array.into_iter().collect()),
+        toml_edit::Item::Value(value) => Ok(vec![value]),
+        _ => bail!("collection updates require scalar or array values"),
+    }
+}
+
+fn values_equal(left: &toml_edit::Value, right: &toml_edit::Value) -> bool {
+    if let (Some(left), Some(right)) = (left.as_str(), right.as_str()) {
+        return left == right;
+    }
+    if let (Some(left), Some(right)) = (left.as_integer(), right.as_integer()) {
+        return left == right;
+    }
+    if let (Some(left), Some(right)) = (left.as_float(), right.as_float()) {
+        return left == right;
+    }
+    if let (Some(left), Some(right)) = (left.as_bool(), right.as_bool()) {
+        return left == right;
+    }
+    if let (Some(left), Some(right)) = (left.as_datetime(), right.as_datetime()) {
+        return left == right;
+    }
+    left.to_string().trim() == right.to_string().trim()
+}
+
+fn append_value(
+    table: &mut dyn toml_edit::TableLike,
+    key: &str,
+    value: toml_edit::Item,
+) -> eyre::Result<()> {
+    let additions = values(value)?;
+    let Some(existing) = table.get_mut(key) else {
+        let mut array = toml_edit::Array::new();
+        for value in additions {
+            array.push(value);
+        }
+        table.insert(key, toml_edit::value(array));
+        return Ok(());
+    };
+    if !existing.is_array() {
+        let original = existing
+            .as_value()
+            .cloned()
+            .ok_or_else(|| eyre::eyre!("cannot append to '{key}': value is not scalar or array"))?;
+        let mut array = toml_edit::Array::new();
+        array.push(original);
+        *existing = toml_edit::value(array);
+    }
+    let array = existing
+        .as_array_mut()
+        .expect("scalar values were converted to arrays");
+    for value in additions {
+        if !array.iter().any(|existing| values_equal(existing, &value)) {
+            array.push(value);
+        }
+    }
+    Ok(())
+}
+
+fn remove_value(
+    table: &mut dyn toml_edit::TableLike,
+    key: &str,
+    value: &toml_edit::Item,
+) -> eyre::Result<()> {
+    let removals = values(value.clone())?;
+    let Some(existing) = table.get_mut(key) else {
+        return Ok(());
+    };
+    if let Some(array) = existing.as_array_mut() {
+        array.retain(|existing| !removals.iter().any(|value| values_equal(value, existing)));
+        if array.is_empty() {
+            table.remove(key);
+        }
+    } else if existing
+        .as_value()
+        .is_some_and(|existing| removals.iter().any(|value| values_equal(value, existing)))
+    {
+        table.remove(key);
+    }
+    Ok(())
 }
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
@@ -183,6 +298,8 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise config set settings.always_keep_download true</bold>
     $ <bold>mise config set env.TEST_ENV_VAR ABC</bold>
     $ <bold>mise config set settings.disable_tools node,rust</bold>
+    $ <bold>mise config set --append env._.path ~/.local/bin</bold>
+    $ <bold>mise config set --remove env._.path ~/.local/bin</bold>
 
     # Type for `settings` is inferred
     $ <bold>mise config set settings.jobs 4</bold>

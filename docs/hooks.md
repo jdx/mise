@@ -96,6 +96,9 @@ Tool-level postinstall scripts receive the following environment variables:
 - `MISE_TOOL_VERSION`: The version that was installed (e.g., "20.10.0", "3.12.0")
 - `MISE_TOOL_INSTALL_PATH`: The path where the tool was installed
 - Variables from that tool's `install_env` option
+- `MISE_CONFIG_FILE`: The exact config file that declared the tool
+- `MISE_CONFIG_ROOT`: The root directory of that config
+- `MISE_PROJECT_ROOT`: The project root associated with that config
 
 ## Task hooks
 
