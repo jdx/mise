@@ -170,7 +170,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
                 Ok(()) => {
                     pr.finish();
                     install_state_changed = true;
-                    match crate::runtime_symlinks::remove_missing_symlinks_for_tool(installs_dir) {
+                    match crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_dir) {
                         Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
                         Err(err) => {
                             warn!(
@@ -186,7 +186,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
             // longer find its install directory. Retry that cleanup directly
             // from the receipt before allowing reconciliation to clear it.
             install_state_changed = true;
-            match crate::runtime_symlinks::remove_missing_symlinks_for_tool(installs_dir) {
+            match crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_dir) {
                 Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
                 Err(err) => {
                     warn!("failed to remove missing runtime symlinks for {display}: {err:#}");

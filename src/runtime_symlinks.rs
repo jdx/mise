@@ -71,18 +71,10 @@ pub(crate) async fn migrate_real_dirs(config: &Config) -> Result<()> {
 /// dirs we have no write access to (read-only system installs) only error
 /// out when we actually need to change something there.
 fn install_dirs_for(backend: &Arc<dyn Backend>) -> Vec<PathBuf> {
-    install_dirs_for_tool(&backend.ba().installs_path, env::shared_install_dirs())
-}
-
-fn install_dirs_for_tool(
-    installs_path: &Path,
-    shared_dirs: impl IntoIterator<Item = PathBuf>,
-) -> Vec<PathBuf> {
-    let mut dirs = vec![installs_path.to_path_buf()];
-    let Some(tool_dir_name) = installs_path.file_name() else {
-        return dirs;
-    };
-    for shared_dir in shared_dirs {
+    let ba = backend.ba();
+    let mut dirs = vec![ba.installs_path.clone()];
+    let tool_dir_name = ba.tool_dir_name();
+    for shared_dir in env::shared_install_dirs() {
         let dir = shared_dir.join(&tool_dir_name);
         if dir.is_dir() && !dirs.contains(&dir) {
             dirs.push(dir);
@@ -265,16 +257,6 @@ pub(crate) fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
     remove_missing_symlinks_in_dir(&backend.ba().installs_path)
 }
 
-/// Remove dangling runtime symlinks from every install directory belonging to
-/// the same tool. This does not require the backend to remain discoverable, so
-/// deferred pruning can retry cleanup after removing its final local version.
-pub(crate) fn remove_missing_symlinks_for_tool(installs_path: &Path) -> Result<()> {
-    run_all_rebuilds(
-        install_dirs_for_tool(installs_path, env::shared_install_dirs()),
-        |installs_dir| remove_missing_symlinks_in_dir(&installs_dir),
-    )
-}
-
 pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
     if !installs_dir.exists() {
         return Ok(());
@@ -334,22 +316,6 @@ mod tests {
         let message = format!("{err:#}");
         assert!(message.contains("repair 1 failed"));
         assert!(message.contains("repair 3 failed"));
-    }
-
-    #[test]
-    fn install_dirs_for_tool_includes_existing_shared_tool_dirs() -> Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let primary = temp_dir.path().join("primary").join("dummy");
-        let shared = temp_dir.path().join("shared");
-        let other = temp_dir.path().join("other");
-        fs::create_dir_all(shared.join("dummy"))?;
-        fs::create_dir_all(&other)?;
-
-        assert_eq!(
-            install_dirs_for_tool(&primary, [shared.clone(), other]),
-            [primary, shared.join("dummy")]
-        );
-        Ok(())
     }
 
     // https://github.com/jdx/mise/discussions/5260 — on Windows runtime
