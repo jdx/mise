@@ -60,7 +60,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/os_filter_item"
-          }
+          },
+          "minItems": 1
         }
       ]
     },
@@ -2692,6 +2693,19 @@
         },
         "os": {
           "$ref": "#/$defs/os_filter"
+        },
+        "minimum_release_age": {
+          "description": "minimum time since a version's release before mise selects it, as a duration such as \"7d\" or an absolute date",
+          "type": "string"
+        },
+        "install_before": {
+          "description": "deprecated alias for minimum_release_age",
+          "deprecated": true,
+          "type": "string"
+        },
+        "version_order": {
+          "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
+          "enum": ["source", "semver"]
         }
       },
       "oneOf": [
@@ -2825,7 +2839,8 @@
           "$ref": "#/$defs/hook_script_value"
         },
         "shell": {
-          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
+          "deprecated": true,
+          "description": "ignored for preinstall/postinstall hooks that use script; use a run hook to select an inline shell",
           "type": "string"
         }
       },
@@ -2842,7 +2857,8 @@
           "$ref": "#/$defs/hook_scripts_value"
         },
         "shell": {
-          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
+          "deprecated": true,
+          "description": "ignored for preinstall/postinstall hooks that use scripts; use a run hook to select an inline shell",
           "type": "string"
         }
       },
