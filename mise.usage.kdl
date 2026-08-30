@@ -1,4 +1,4 @@
-min_usage_version "4.0"
+min_usage_version "6.6"
 name mise
 bin mise
 author "Jeff Dickey <@jdx>"
@@ -4308,7 +4308,7 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 
 Use the `--global` flag to use the global config file instead.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # run with no arguments to use the interactive selector\n    $ \u{1b}[1mmise use\u{1b}[22m\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ \u{1b}[1mmise use node@20\u{1b}[22m\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ \u{1b}[1mmise use -g --pin node@20\u{1b}[22m\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ \u{1b}[1mmise use --env local node@20\u{1b}[22m\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ \u{1b}[1mmise use --env staging node@20\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # run with no arguments to use the interactive selector\n    $ \u{1b}[1mmise use\u{1b}[22m\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ \u{1b}[1mmise use node@20\u{1b}[22m\n\n    # run a command after installing a tool\n    $ \u{1b}[1mmise use --postinstall \"mbx setup --defaults\" mr-boxington\u{1b}[22m\n\n    # associate a different postinstall command with each tool\n    $ \u{1b}[1mmise use --postinstall \"setup-a\" tool-a --postinstall \"setup-b\" tool-b\u{1b}[22m\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ \u{1b}[1mmise use -g --pin node@20\u{1b}[22m\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ \u{1b}[1mmise use --env local node@20\u{1b}[22m\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ \u{1b}[1mmise use --env staging node@20\u{1b}[22m\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         overrides "--global" "--path"
         arg <ENV>
@@ -4377,8 +4377,12 @@ https://mise.jdx.dev/configuration/settings.html#lockfile
         arg <TOOL>
     }
     flag "-h --help" help="Print help" action=help builtin=#true
-    arg "[TOOL@VERSION]…" help="Tool(s) to add to config file" help_long=#"""
-Tool(s) to add to config file
+    clause tools {
+        flag --postinstall help="Command to run after installing this tool" {
+            arg <COMMAND>
+        }
+        arg <TOOL@VERSION> help="Tool to add to config file" help_long=#"""
+Tool to add to config file
 
 e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
 If no version is specified, it will default to @latest
@@ -4386,7 +4390,8 @@ If no version is specified, it will default to @latest
 Tool options can be set with this syntax:
 
     mise use ubi:BurntSushi/ripgrep[exe=rg]
-"""# required=#false var=#true
+"""#
+    }
     complete path type=path
 }
 cmd version help="Display the version of mise" effect=read {

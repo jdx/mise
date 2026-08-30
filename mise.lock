@@ -1124,53 +1124,53 @@ url = "https://github.com/tamasfe/taplo/releases/download/0.10.0/taplo-windows-x
 url_api = "https://api.github.com/repos/tamasfe/taplo/releases/assets/257323062"
 
 [[tools.usage]]
-version = "6.5.0"
+version = "6.6.0"
 backend = "aqua:jdx/usage"
 
 [tools.usage."platforms.linux-arm64"]
-checksum = "sha256:2c02d457cf6f6e03177a8cb5b246f466485a0a4b40a778ed6399a0620d2830f3"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533941168"
+checksum = "sha256:f32330ab3b9c6ca9723022fb3ff9b361826c201f13b37087280ae1c898bb9640"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537089266"
 
 [tools.usage."platforms.linux-arm64-musl"]
-checksum = "sha256:8c78dfa87c0426214642448e6caca0892992d42d92dc722d116dab7d9129d295"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533940980"
+checksum = "sha256:5fd83f0be2c2f3a62f666b3a5716a2e792be73b5d5d4df7a2cf1b1cbd6281854"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537089533"
 
 [tools.usage."platforms.linux-x64"]
-checksum = "sha256:0dc1cc55e4f3766f9a61d50c7854541983094faf2bacf769d1f4f9f45b0c1a8a"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533940901"
+checksum = "sha256:e3bbdea52e3f44d3692c0c89b2ebadf3a6fd72f4a943fb46aa29dacf4b729a13"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537089712"
 
 [tools.usage."platforms.linux-x64-baseline"]
-checksum = "sha256:0dc1cc55e4f3766f9a61d50c7854541983094faf2bacf769d1f4f9f45b0c1a8a"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533940901"
+checksum = "sha256:e3bbdea52e3f44d3692c0c89b2ebadf3a6fd72f4a943fb46aa29dacf4b729a13"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537089712"
 
 [tools.usage."platforms.linux-x64-musl"]
-checksum = "sha256:bc5bfe1078c4ce9339ba126670d5ced3eb25d63acbd4b1bbe7b51b04f243cd0c"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533940976"
+checksum = "sha256:db42dbbc4fd90f34dbcdb4f464e9080c9e02f910f7027548c32777ce74b5335e"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537089328"
 
 [tools.usage."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:bc5bfe1078c4ce9339ba126670d5ced3eb25d63acbd4b1bbe7b51b04f243cd0c"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533940976"
+checksum = "sha256:db42dbbc4fd90f34dbcdb4f464e9080c9e02f910f7027548c32777ce74b5335e"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537089328"
 
 [tools.usage."platforms.macos-arm64"]
-checksum = "sha256:54e692f240d11a2e8a34fb3e0273821e35272f5b502226bd958736c16f7e7e3d"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-universal-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533960041"
+checksum = "sha256:ef6f93e61697ed6dc287dc9b28611553a5099b1fabf259a21825f2978e14f3d9"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-universal-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537090611"
 
 [tools.usage."platforms.windows-x64"]
-checksum = "sha256:041603b3f09e66870f5cb2475e4cb8a7cb10e222281bda13fe301c7a3b26a39b"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533944295"
+checksum = "sha256:cc698df9355314108502d84dac11539302ba35cfb41732aac18d9408decc9dd9"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537092864"
 
 [tools.usage."platforms.windows-x64-baseline"]
-checksum = "sha256:041603b3f09e66870f5cb2475e4cb8a7cb10e222281bda13fe301c7a3b26a39b"
-url = "https://github.com/jdx/usage/releases/download/v6.5.0/usage-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/usage/releases/assets/533944295"
+checksum = "sha256:cc698df9355314108502d84dac11539302ba35cfb41732aac18d9408decc9dd9"
+url = "https://github.com/jdx/usage/releases/download/v6.6.0/usage-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/usage/releases/assets/537092864"
 
 [[tools.wait-for-gh-rate-limit]]
 version = "1.1.2"

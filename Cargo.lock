@@ -10963,15 +10963,15 @@ checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "usage-argv"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8cf8735c2d0154550e8241d30579e28b2840394c7a3efaf33b28ce706babe6f4"
+checksum = "9b1513fbc2abab03409b450137f80b634d872191d3cf04c53a0e3c0cc543c958"
 
 [[package]]
 name = "usage-cli"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adf3476bda8c4b45350640fea43b2f3534e5e979d1c6a4308f04c420588da86e"
+checksum = "96e711ec97c54dc9fe030892e5c289d993659f0f1d42fc2600c21d9a93e95af8"
 dependencies = [
  "env_logger",
  "exec",
@@ -10994,9 +10994,9 @@ dependencies = [
 
 [[package]]
 name = "usage-derive"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfa7bc7653408788950770f2aa53f0600e025d50c8b049cdab054284436d2413"
+checksum = "9eaaf60507972cd80ba712e63794ee11b6765d954280122a06622326413c0f45"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11005,9 +11005,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "481034836180d71c726704fe40a505e66be45891d73542b5bb976096a2f9d2c5"
+checksum = "34f3bb5ed62f3818c8247f41491cd254d05a597df665e4f5aadd2738e91b3be0"
 dependencies = [
  "indexmap 2.14.0",
  "itertools 0.15.0",
@@ -11026,9 +11026,9 @@ dependencies = [
 
 [[package]]
 name = "usage-rs"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c12de82d13507fdafd64170f5f735bd5fa7778f94b1f4a55e3b66e8ea3bde301"
+checksum = "be6b4189e49ee1419cc3b39e0a4d18edc556f9006f2765c83bda8d035ad8cf87"
 dependencies = [
  "usage-argv",
  "usage-derive",
@@ -11038,18 +11038,18 @@ dependencies = [
 
 [[package]]
 name = "usage-test"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d3b624c2128c68c730930654cb718ef03c3792bfd7b2e8d4447ee58c2e4dfe7"
+checksum = "22f77070bdef05cce5783192e41fa4d8b816af0b9bfb06b81a23e45ff0af102b"
 dependencies = [
  "usage-argv",
 ]
 
 [[package]]
 name = "usage-validation"
-version = "6.5.0"
+version = "6.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3207ec295611467927d38b3076cbd74d362dd8c65dd92f702491edefc5bd448"
+checksum = "890da4780f658da4caddf45172b2468cb6ce9dadd98ec3d07491bcf6f22cff4e"
 dependencies = [
  "expr-lang",
 ]

@@ -5820,7 +5820,7 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 
 Use the `\-\-global` flag to use the global config file instead.
 .PP
-\fBUsage:\fR mise use [OPTIONS] [<TOOL@VERSION>] ...
+\fBUsage:\fR mise use [OPTIONS] [TOOL@VERSION]…
 .PP
 \fBOptions:\fR
 .PP
@@ -5885,11 +5885,14 @@ Remove the tool(s) from config file
 .TP
 \fB\-h, \-\-help\fR
 Print help
+.TP
+\fB\-\-postinstall\fR \fI<COMMAND>\fR
+Command to run after installing this tool
 \fBArguments:\fR
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool(s) to add to config file
+Tool to add to config file
 
 e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
 If no version is specified, it will default to @latest
