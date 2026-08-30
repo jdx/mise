@@ -95,6 +95,8 @@ mise upgrade dummy -nq >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 mise prune --dry-run >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+mise cache prune --dry-run >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 mise --version >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
