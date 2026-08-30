@@ -19,8 +19,11 @@
 
 use async_trait::async_trait;
 use eyre::bail;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
+use crate::config::Settings;
 use crate::result::Result;
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::{ProgressIcon, SingleReport};
@@ -169,27 +172,75 @@ impl BrewManager {
         // overall [cur/total] header above the per-formula clx jobs, same as
         // tool installs (no-op when only one formula is being installed)
         mpr.init_footer(false, "install", to_pour.len());
-        for rf in &to_pour {
-            let name = &rf.formula.name;
-            let pkg_version = rf.formula.pkg_version()?;
-            let pr: Box<dyn SingleReport> = mpr.add(&format!("brew:{name}"));
-            // branch on the same predicate the upfront classification used
-            let bottle = if source::has_bottle(&rf.formula) {
-                rf.formula.bottle_files().and_then(tag::select)
-            } else {
-                None
-            };
+        let pkg_versions = to_pour
+            .iter()
+            .map(|rf| rf.formula.pkg_version())
+            .collect::<Result<Vec<_>>>()?;
+        // Keep one report for both phases so every concurrent transfer has
+        // independent progress, then the same row advances through pouring.
+        let reports = to_pour
+            .iter()
+            .map(|rf| Arc::<dyn SingleReport>::from(mpr.add(&format!("brew:{}", rf.formula.name))))
+            .collect::<Vec<_>>();
+        let bottles = to_pour
+            .iter()
+            .map(|rf| {
+                source::has_bottle(&rf.formula)
+                    .then(|| rf.formula.bottle_files().and_then(tag::select))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        let downloads = bottles
+            .iter()
+            .enumerate()
+            .filter_map(|(index, bottle)| {
+                let (_, bottle) = bottle.as_ref()?;
+                let name = &to_pour[index].formula.name;
+                let pkg_version = &pkg_versions[index];
+                let pr = &reports[index];
+                Some(async move {
+                    fetch::fetch_bottle(name, pkg_version, bottle, Some(&**pr))
+                        .await
+                        .map(|path| (index, path))
+                        .map_err(|err| (index, err))
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut tarballs: HashMap<usize, _> = match fetch::concurrently(
+            downloads,
+            crate::jobs::normalize(Settings::get().jobs),
+        )
+        .await
+        {
+            Ok(downloads) => downloads.into_iter().collect(),
+            Err((failed, err)) => {
+                for (index, pr) in reports.iter().enumerate() {
+                    if index == failed {
+                        pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                    } else {
+                        pr.abandon();
+                    }
+                }
+                mpr.footer_finish();
+                return Err(err);
+            }
+        };
+        // Pour and build in dependency order. Only network transfers above
+        // are concurrent; extraction and prefix linking mutate shared state.
+        for (index, rf) in to_pour.iter().enumerate() {
+            let pkg_version = &pkg_versions[index];
+            let pr = &reports[index];
+            let bottle = &bottles[index];
             let installed = match bottle {
                 Some((tag, bottle)) => {
-                    async {
-                        let tarball =
-                            fetch::fetch_bottle(name, &pkg_version, bottle, Some(&*pr)).await?;
-                        pour::pour(rf, &tag, bottle, &tarball, &closure, &*pr).await?;
-                        Ok(pkg_version.clone())
-                    }
-                    .await
+                    let tarball = tarballs
+                        .remove(&index)
+                        .expect("every selected bottle was prefetched");
+                    pour::pour(rf, tag, bottle, &tarball, &closure, &**pr)
+                        .await
+                        .map(|()| pkg_version.clone())
                 }
-                None => source::build(rf, &closure, &*pr)
+                None => source::build(rf, &closure, &**pr)
                     .await
                     .map(|()| pkg_version.clone()),
             };
@@ -197,6 +248,9 @@ impl BrewManager {
                 Ok(version) => version,
                 Err(err) => {
                     pr.finish_with_icon("failed".to_string(), ProgressIcon::Error);
+                    for pending in reports.iter().skip(index + 1) {
+                        pending.abandon();
+                    }
                     // render the final progress state so the error that
                     // propagates from here isn't masked by live jobs
                     mpr.footer_finish();
