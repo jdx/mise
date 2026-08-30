@@ -155,8 +155,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "$APPLE_API_KEY_P8" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER_ID" ]; then
-            echo "::warning title=Not notarized::App Store Connect credentials are unset, so this release ships signed but un-notarized macOS binaries. Gatekeeper will block them for anyone who downloads an archive through a browser."
-            exit 0
+            echo "::error title=Notarization credentials missing::App Store Connect credentials are required for macOS releases."
+            exit 1
           fi
 
           # Outside the workspace, so no later step can sweep the key into an
