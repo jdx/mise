@@ -78,6 +78,7 @@ impl BrewManager {
         Ok(repaired)
     }
 
+    /// Prefetch bottles concurrently, then install the closure in dependency order.
     async fn install_via_pour(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         // bottles only exist for a formula's current version — versioning is
         // expressed in the formula name itself (postgresql@17); the CLI

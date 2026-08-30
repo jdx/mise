@@ -58,36 +58,42 @@ pub(super) async fn fetch_bottle(
 
 #[cfg(test)]
 mod tests {
+    use std::future::pending;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
-    use tokio::sync::Barrier;
+    use tokio::time::timeout;
 
     use super::*;
 
     #[tokio::test]
     async fn concurrent_downloads_respect_the_limit() {
-        let active = Arc::new(AtomicUsize::new(0));
-        let max_active = Arc::new(AtomicUsize::new(0));
-        let barrier = Arc::new(Barrier::new(2));
+        let started = Arc::new(AtomicUsize::new(0));
         let futures = (0..4)
-            .map(|i| {
-                let active = active.clone();
-                let max_active = max_active.clone();
-                let barrier = barrier.clone();
+            .map(|_| {
+                let started = started.clone();
                 async move {
-                    let current = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    max_active.fetch_max(current, Ordering::SeqCst);
-                    barrier.wait().await;
-                    active.fetch_sub(1, Ordering::SeqCst);
-                    Ok::<_, ()>(i)
+                    started.fetch_add(1, Ordering::SeqCst);
+                    pending::<std::result::Result<(), ()>>().await
                 }
             })
             .collect();
 
+        assert!(
+            timeout(Duration::from_millis(10), concurrently(futures, 2))
+                .await
+                .is_err()
+        );
+        assert_eq!(started.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn concurrent_downloads_collect_results() {
+        let futures = (0..4).map(|i| async move { Ok::<_, ()>(i) }).collect();
+
         let mut completed = concurrently(futures, 2).await.unwrap();
         completed.sort_unstable();
         assert_eq!(completed, vec![0, 1, 2, 3]);
-        assert_eq!(max_active.load(Ordering::SeqCst), 2);
     }
 }
