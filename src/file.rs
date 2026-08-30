@@ -748,6 +748,14 @@ pub(crate) fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
     let _lock = LOCK.lock().unwrap();
 
     let path = path.as_ref();
+    // `Path::new("plainstub").parent()` is `Some("")`, so every caller that ensures a parent
+    // directory for a bare filename lands here with nothing. std answers Ok and creates nothing —
+    // correctly, since the directory in question is the one already in use — and the check below
+    // would otherwise read that as the failure it is looking for. Measured: `exists()` false,
+    // `create_dir_all` Ok, `is_dir()` false.
+    if path.as_os_str().is_empty() {
+        return Ok(());
+    }
     if !path.exists() {
         trace!("mkdir -p {}", display_path(path));
         if let Err(err) = fs::create_dir_all(path) {
@@ -757,8 +765,65 @@ pub(crate) fn create_dir_all<P: AsRef<Path>>(path: P) -> Result<()> {
                     .wrap_err_with(|| format!("failed create_dir_all: {}", display_path(path)));
             }
         }
+        // `std::fs::create_dir_all` can answer Ok and leave nothing behind. Measured on Windows
+        // for a path ending in `nul`: Ok, and `is_dir()` false afterwards. Everything downstream
+        // then works from a directory that is not there, and the first operation to touch it
+        // fails somewhere else entirely — `mise install jq@nul` surfaced as a bare
+        // `(os error 3)` from a marker file three calls later.
+        //
+        // Only after an attempt: a path that already existed as a file keeps returning Ok, as it
+        // always has. This narrows the change to the case that was measured.
+        if !path.is_dir() {
+            // Two different states, and saying the wrong one sends the reader somewhere useless.
+            // `symlink_metadata` rather than `exists`: the guard above already answered false for
+            // a link whose target is gone, and such a link is very much in the way even though
+            // nothing resolves through it.
+            if path.symlink_metadata().is_ok() {
+                bail!(
+                    "failed create_dir_all: {} exists and is not a directory",
+                    display_path(path)
+                );
+            }
+            bail!(
+                "failed create_dir_all: {} reported success but created nothing{}",
+                display_path(path),
+                device_name_note(path)
+            );
+        }
     }
     Ok(())
+}
+
+/// Name the cause when the final component is one Windows reserves for a device.
+///
+/// A check, not a guess: the component either is one of those names or it is not. It is also not a
+/// prediction — `aux` was measured creating a directory perfectly well on the machine this was
+/// written on, so the note is only ever added to a failure that already happened, never used to
+/// refuse a name in advance.
+#[cfg(windows)]
+fn device_name_note(path: &Path) -> String {
+    const RESERVED: &[&str] = &[
+        "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+        "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+    ];
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return String::new();
+    };
+    // `nul.txt` addresses the same device as `nul`, so the extension is not part of the name.
+    let stem = name.split_once('.').map_or(name, |(stem, _)| stem);
+    if RESERVED.contains(&stem.to_ascii_lowercase().as_str()) {
+        format!(
+            ".\n`{stem}` is a name Windows reserves for a device, so a directory cannot take it. \
+             Renaming that path component is the only fix."
+        )
+    } else {
+        String::new()
+    }
+}
+
+#[cfg(not(windows))]
+fn device_name_note(_path: &Path) -> String {
+    String::new()
 }
 
 /// A path formatted for a person to read: `$HOME` becomes `~`, a Windows extended-length prefix
@@ -2760,6 +2825,77 @@ mod tests {
     use crate::config::Config;
 
     use super::*;
+
+    // `std::fs::create_dir_all` answers Ok for a path ending in `nul` and creates nothing --
+    // measured with a standalone rustc probe before any of this was written:
+    //
+    //     installs/jq/zzz   create_dir_all=Ok   after: is_dir()=true
+    //     installs/jq/aux   create_dir_all=Ok   after: is_dir()=true
+    //     installs/jq/nul   create_dir_all=Ok   after: is_dir()=false
+    //
+    // Everything downstream then works from a directory that is not there. `mise install jq@nul`
+    // failed three calls later, in an unrelated place, with a bare `(os error 3)`.
+    #[test]
+    #[cfg(windows)]
+    fn create_dir_all_refuses_to_report_success_for_a_directory_it_did_not_make() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nul");
+
+        let err = create_dir_all(&path).unwrap_err().to_string();
+
+        assert!(err.contains("created nothing"), "{err}");
+        // The name Windows objects to, so the reader knows which component to change.
+        assert!(err.contains("nul"), "{err}");
+        assert!(!path.is_dir(), "nothing should have appeared");
+    }
+
+    // The property being fixed, stated as an invariant rather than a verdict per name: whatever
+    // this function answers has to match what is on disk afterwards.
+    //
+    // Deliberately not "reserved names fail". `aux` was measured creating a directory perfectly
+    // well on the machine this was written on, and asserting otherwise would pin a claim about
+    // Windows that this repository has not established.
+    #[test]
+    #[cfg(windows)]
+    fn create_dir_all_answers_agree_with_the_filesystem_for_device_names() {
+        for name in ["zzz", "aux", "con", "prn", "lpt1"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let path = tmp.path().join(name);
+
+            let created = create_dir_all(&path).is_ok();
+
+            assert_eq!(
+                created,
+                path.is_dir(),
+                "{name}: create_dir_all said {created} and is_dir() says {}",
+                path.is_dir()
+            );
+        }
+    }
+
+    // An empty path is what `parent()` gives for a bare filename, and `file::create` passes it
+    // straight through. std answers Ok for it and creates nothing, which is the exact shape the
+    // check above looks for -- so without the guard every tool stub written to the working
+    // directory failed. It did: six Windows and eight Linux e2e cases, all reporting
+    // `failed create_dir_all: ` with no path at all.
+    #[test]
+    fn create_dir_all_treats_an_empty_path_as_the_no_op_it_has_always_been() {
+        create_dir_all("").unwrap();
+        create_dir_all(Path::new("").join("")).unwrap();
+    }
+
+    // The unix side of the same invariant. The new check runs on every platform, so this is what
+    // says it has not started refusing ordinary directories.
+    #[test]
+    #[cfg(unix)]
+    fn create_dir_all_still_makes_ordinary_directories() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("nul").join("deep");
+
+        create_dir_all(&path).unwrap();
+
+        assert!(path.is_dir());
+    }
 
     /// Whether a directory entry is there at all, without resolving it.
     ///
