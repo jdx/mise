@@ -200,7 +200,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
         } else {
             warn!(
                 "keeping unrecognized tool purgatory entry {}",
-                display_path(&install_path)
+                display_path(install_path)
             );
         }
     }
