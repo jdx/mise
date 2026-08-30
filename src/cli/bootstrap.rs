@@ -1631,7 +1631,7 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Migrations) {
             debug!("bootstrap: migrations skipped");
         } else {
-            system::migrations::apply(&config, self.dry_run)?;
+            system::migrations::apply(&config, self.dry_run, skip.contains(&BootstrapPart::Tools))?;
         }
 
         if skip.contains(&BootstrapPart::Task) {
@@ -3612,7 +3612,7 @@ impl BootstrapMigrations {
 impl BootstrapMigrationsApply {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
-        system::migrations::apply(&config, self.dry_run)
+        system::migrations::apply(&config, self.dry_run, false)
     }
 }
 

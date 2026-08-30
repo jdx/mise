@@ -256,6 +256,13 @@ Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 .TP
 \fBbootstrap macos launchd\-agents status\fR
 .TP
+\fBbootstrap migrations\fR
+Manage ordered, once\-per\-machine scripts from `mise\-migrations/`
+.TP
+\fBbootstrap migrations apply\fR
+.TP
+\fBbootstrap migrations status\fR
+.TP
 \fBbootstrap mise\-shell\-activate\fR
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 .RS
@@ -1031,8 +1038,9 @@ Runs the bootstrap steps for the current config in order:
     surrounded by `pre\-tools`/`post\-tools` hooks; package\-plugin entries
     from `[bootstrap.packages]` install afterward, followed by
     `[bootstrap.hooks.post\-packages]`
-15. `mise run bootstrap` — if a task named `bootstrap` is defined
-16. `[bootstrap.hooks.final]` — optional final hook
+15. Run pending files from `mise\-migrations/` once per machine
+16. `mise run bootstrap` — if a task named `bootstrap` is defined
+17. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re\-running is safe. The `bootstrap` task runs on every
@@ -1570,6 +1578,41 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 if any configured LaunchAgent is not in its desired state
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MIGRATIONS"
+Manage ordered, once\-per\-machine scripts from `mise\-migrations/`
+.PP
+\fBUsage:\fR mise bootstrap migrations [OPTIONS] <COMMAND>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MIGRATIONS APPLY"
+\fBUsage:\fR mise bootstrap migrations apply [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-n, \-\-dry\-run\fR
+Print pending migrations without running them
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP MIGRATIONS STATUS"
+\fBUsage:\fR mise bootstrap migrations status [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-\-missing\fR
+Exit with code 1 if a migration is pending or was modified after apply
 .TP
 \fB\-h, \-\-help\fR
 Print help

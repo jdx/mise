@@ -21,9 +21,10 @@ end state directly.
 
 Migrations run in filename order after tools and bootstrap package plugins are
 installed, and before the recurring `bootstrap` task. Each file runs from the
-project root through `mise exec`, so configured tools and environment variables
-are available. Migration files must be executable and should start with an
-appropriate shebang:
+project root through `mise exec`, so configured tools, environment variables,
+and profiles selected with `-E`/`--env` are available. Migration entries must
+be executable regular files or symlinks to executable regular files, and should
+start with an appropriate shebang:
 
 ```sh
 #!/usr/bin/env bash
@@ -59,4 +60,6 @@ mise bootstrap migrations apply --dry-run
 
 The full bootstrap command also supports `--only migrations` and
 `--skip migrations`. A full `mise bootstrap --dry-run` reports pending
-migrations without running them or writing completion state.
+migrations without running them or writing completion state. If the tools part
+is skipped, including with `--only migrations`, migration execution does not
+automatically install missing tools.

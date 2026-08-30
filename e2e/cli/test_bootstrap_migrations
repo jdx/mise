@@ -4,13 +4,17 @@ cat >mise.toml <<'EOF'
 [tools]
 tiny = "1.0.0"
 EOF
+cat >mise.work.toml <<'EOF'
+[env]
+MIGRATION_PROFILE = "work"
+EOF
 
 mkdir mise-migrations
 cat >mise-migrations/20260830-first <<'EOF'
 #!/usr/bin/env bash
 set -eu
 command -v rtx-tiny >/dev/null
-printf '%s:%s\n' "$MISE_BOOTSTRAP_MIGRATION" "$(rtx-tiny --version)" >>migration-log
+printf '%s:%s:%s\n' "$MISE_BOOTSTRAP_MIGRATION" "$(rtx-tiny --version)" "$MIGRATION_PROFILE" >>migration-log
 EOF
 cat >mise-migrations/20260831-second <<'EOF'
 #!/usr/bin/env bash
@@ -28,8 +32,8 @@ assert_contains "mise bootstrap migrations apply --dry-run" "Would run bootstrap
 assert_fail "test -e migration-log"
 assert_directory_not_exists "$MISE_STATE_DIR/bootstrap/migrations"
 
-assert_succeed "mise bootstrap --yes"
-assert "cat migration-log" $'20260830-first:rtx-tiny: v1.0.0 args: --version\n20260831-second'
+assert_succeed "mise -E work bootstrap --yes"
+assert "cat migration-log" $'20260830-first:rtx-tiny: v1.0.0 args: --version:work\n20260831-second'
 assert_contains "mise bootstrap migrations status" "applied"
 assert_contains "mise bootstrap status" "migration"
 assert_contains "mise bootstrap status --json" '"migrations"'
@@ -38,6 +42,27 @@ assert_succeed "mise bootstrap migrations status --missing"
 # Applied migrations never rerun.
 assert_succeed "mise bootstrap --yes --only migrations"
 assert "wc -l <migration-log | tr -d ' '" "2"
+
+# Selecting only migrations must not implicitly install skipped tools.
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "2.0.0"
+EOF
+cat >mise-migrations/20260901-skipped-tools <<'EOF'
+#!/usr/bin/env bash
+set -e
+version="$(rtx-tiny --version)"
+printf '%s\n' "$version" >skipped-tools-migration-ran
+EOF
+chmod +x mise-migrations/20260901-skipped-tools
+assert_fail "mise bootstrap --yes --only migrations"
+assert_fail "mise where tiny@2.0.0"
+assert_fail "test -e $MISE_STATE_DIR/bootstrap/migrations/20260901-skipped-tools"
+rm mise-migrations/20260901-skipped-tools
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
 
 # Applied files are immutable.
 printf '\n# changed\n' >>mise-migrations/20260830-first
@@ -72,10 +97,20 @@ chmod +x mise-migrations/20260901-skipped
 assert_succeed "mise bootstrap --yes --skip migrations"
 assert_fail "test -e skipped-migration-ran"
 
+# Symlinks to executable migration files participate in the ordered set.
+cat >symlinked-migration <<'EOF'
+#!/usr/bin/env bash
+touch symlinked-migration-ran
+EOF
+chmod +x symlinked-migration
+ln -s ../symlinked-migration mise-migrations/20260902-symlinked
+assert_succeed "mise bootstrap migrations apply"
+assert_succeed "test -e symlinked-migration-ran"
+
 # Non-executable files cannot be silently omitted from an ordered migration set.
-cat >mise-migrations/20260902-not-executable <<'EOF'
+cat >mise-migrations/20260903-not-executable <<'EOF'
 #!/usr/bin/env bash
 exit 0
 EOF
-chmod -x mise-migrations/20260902-not-executable
+chmod -x mise-migrations/20260903-not-executable
 assert_fail "mise bootstrap migrations status" "not executable"

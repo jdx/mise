@@ -98,10 +98,6 @@ pub(crate) fn discover(config: &Config) -> Result<Vec<Migration>> {
     for entry in fs::read_dir(&directory)? {
         let entry = entry?;
         let path = entry.path();
-        let file_type = entry.file_type()?;
-        if !file_type.is_file() {
-            continue;
-        }
         let id = entry.file_name().into_string().map_err(|_| {
             eyre!(
                 "migration names must be valid UTF-8: {}",
@@ -110,6 +106,16 @@ pub(crate) fn discover(config: &Config) -> Result<Vec<Migration>> {
         })?;
         if id.starts_with('.') {
             continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            continue;
+        }
+        if !path.is_file() {
+            bail!(
+                "bootstrap migration {} must be a regular file or a symlink to one",
+                path.display_user()
+            );
         }
         if !file::is_executable(&path) {
             bail!(
@@ -145,7 +151,7 @@ pub(crate) fn statuses(config: &Config) -> Result<Vec<MigrationStatus>> {
         .collect()
 }
 
-pub(crate) fn apply(config: &Config, dry_run: bool) -> Result<()> {
+pub(crate) fn apply(config: &Config, dry_run: bool, skip_tools: bool) -> Result<()> {
     let migrations = discover(config)?;
     if migrations.is_empty() {
         debug!("bootstrap: no {MIGRATIONS_DIR} directory or migrations configured");
@@ -177,13 +183,20 @@ pub(crate) fn apply(config: &Config, dry_run: bool) -> Result<()> {
         }
 
         info!("bootstrap: migration {}", migration.id);
-        let status = Command::new(std::env::current_exe()?)
+        let mut command = Command::new(std::env::current_exe()?);
+        command
             .arg("--cd")
             .arg(&migration.root)
             .args(["exec", "--"])
             .arg(&migration.path)
-            .env("MISE_BOOTSTRAP_MIGRATION", &migration.id)
-            .status()?;
+            .env("MISE_BOOTSTRAP_MIGRATION", &migration.id);
+        if !crate::env::MISE_ENV.is_empty() {
+            command.env("MISE_ENV", crate::env::MISE_ENV.join(","));
+        }
+        if skip_tools {
+            command.env("MISE_AUTO_INSTALL", "0");
+        }
+        let status = command.status()?;
         if !status.success() {
             bail!(
                 "bootstrap migration '{}' failed with {status}",
