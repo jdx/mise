@@ -24,6 +24,10 @@ pub(crate) struct Implode {
 }
 
 impl Implode {
+    pub(super) fn is_dry_run(&self) -> bool {
+        self.dry_run
+    }
+
     pub(crate) fn run(self) -> Result<()> {
         let mut files: BTreeSet<&Path> = [*dirs::STATE, *dirs::DATA, *dirs::CACHE, &*env::MISE_BIN]
             .into_iter()

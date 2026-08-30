@@ -292,6 +292,22 @@ pub(crate) enum Commands {
 }
 
 impl Commands {
+    fn is_dry_run(&self) -> bool {
+        match self {
+            Self::Bootstrap(cmd) => cmd.is_dry_run(),
+            Self::Edit(cmd) => cmd.is_dry_run(),
+            Self::Implode(cmd) => cmd.is_dry_run(),
+            Self::Install(cmd) => cmd.is_dry_run(),
+            Self::Lock(cmd) => cmd.dry_run,
+            Self::Prune(cmd) => cmd.is_dry_run(),
+            Self::Run(cmd) => cmd.dry_run,
+            Self::Uninstall(cmd) => cmd.is_dry_run(),
+            Self::Upgrade(cmd) => cmd.is_dry_run(),
+            Self::Use(cmd) => cmd.is_dry_run(),
+            _ => false,
+        }
+    }
+
     /// Whether this parsed command may trigger a pre-command automatic update.
     ///
     /// This operates on clap's canonical command variant so aliases such as
@@ -860,9 +876,8 @@ impl Cli {
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
-        let dry_run_requested = processed_args
-            .iter()
-            .any(|arg| matches!(arg.as_str(), "-n" | "--dry-run" | "--dry-run-code"));
+        let dry_run_requested =
+            cli.dry_run || cli.command.as_ref().is_some_and(Commands::is_dry_run);
         if !print_version
             && !dry_run_requested
             && let Err(err) = crate::tool_purgatory::auto_prune().await

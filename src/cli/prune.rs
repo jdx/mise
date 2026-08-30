@@ -61,7 +61,7 @@ pub(crate) struct Prune {
 }
 
 impl Prune {
-    fn is_dry_run(&self) -> bool {
+    pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
 

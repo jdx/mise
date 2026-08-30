@@ -91,7 +91,7 @@ mise upgrade dummy
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
 # Commands that promise not to mutate state must not run opportunistic cleanup.
-mise upgrade dummy --dry-run >/dev/null
+mise upgrade dummy -nq >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 mise prune --dry-run >/dev/null
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
