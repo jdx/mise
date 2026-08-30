@@ -104,7 +104,7 @@ impl ToolVersion {
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
-            && !has_linked_version(request.ba())
+            && !linked_version_overrides_lockfile(config, &request)
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
@@ -369,7 +369,7 @@ impl ToolVersion {
             None => (v.as_str(), false),
         };
         if opts.use_locked_version
-            && !has_linked_version(request.ba())
+            && !linked_version_overrides_lockfile(config, &request)
             && let Some(lt) =
                 request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
         {
@@ -380,7 +380,7 @@ impl ToolVersion {
         if (settings.locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
-            && !has_linked_version(request.ba())
+            && !linked_version_overrides_lockfile(config, &request)
             && request.source().path().is_some()
         {
             let hint = if tool_config_locked && !settings.locked {
@@ -890,6 +890,15 @@ impl ResolveOptions {
         }
         Ok(())
     }
+}
+
+/// Linked versions normally take precedence over lockfile entries, but strict locked mode must
+/// keep the lockfile authoritative. In particular, an alias can share an install directory with a
+/// different backend whose external symlinks must not suppress the aliased backend's lock data.
+fn linked_version_overrides_lockfile(config: &Config, request: &ToolRequest) -> bool {
+    !Settings::get().locked
+        && !config.tool_config_locked(request.source())
+        && has_linked_version(request.ba())
 }
 
 /// Check if a tool has any user-linked versions (created by `mise link`).
