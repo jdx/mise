@@ -15,7 +15,7 @@ use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolSource, tool_request};
+use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
@@ -896,6 +896,11 @@ impl ResolveOptions {
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
 fn has_linked_version(ba: &BackendArg) -> bool {
+    if install_state::get_tool_full(&ba.short)
+        .is_some_and(|installed| installed != ba.full_without_opts())
+    {
+        return false;
+    }
     let installs_dir = &ba.installs_path;
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
         return false;
