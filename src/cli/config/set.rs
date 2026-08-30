@@ -1,6 +1,8 @@
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::settings::{SETTINGS_META, SettingsType};
-use crate::config::{ConfigPathOptions, resolve_target_config_path, top_toml_config};
+use crate::config::{
+    ConfigPathOptions, resolve_target_config_path, system_config_path, top_toml_config,
+};
 use crate::file::display_path;
 use crate::toml::dedup_toml_array;
 use eyre::bail;
@@ -25,8 +27,12 @@ pub(super) struct ConfigSet {
     pub file: Option<PathBuf>,
 
     /// Edit the global config file.
-    #[usage(long, short = 'g', conflicts = "file")]
+    #[usage(long, short = 'g', conflicts = ["file", "system"])]
     pub global: bool,
+
+    /// Edit the system config file.
+    #[usage(long, conflicts = ["file", "global"])]
+    pub system: bool,
 
     /// Append the value without duplicating an existing entry.
     #[usage(long, conflicts = "remove")]
@@ -84,17 +90,20 @@ impl ConfigSet {
                 prefer_toml: true,
                 ..Default::default()
             })?),
+            None if self.system => Some(system_config_path()),
             None => top_toml_config(),
         };
         let Some(file) = file else {
             bail!("No mise.toml file found");
         };
-        if !file.exists() && !self.global {
+        if !file.exists() && !self.global && !self.system {
             bail!("config file not found: {}", display_path(&file));
         }
         let raw = match std::fs::read_to_string(&file) {
             Ok(raw) => raw,
-            Err(error) if self.global && error.kind() == std::io::ErrorKind::NotFound => {
+            Err(error)
+                if (self.global || self.system) && error.kind() == std::io::ErrorKind::NotFound =>
+            {
                 String::new()
             }
             Err(error) => return Err(error.into()),

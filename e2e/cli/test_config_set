@@ -53,6 +53,14 @@ mise config set --file scoped/mise.toml --append env._.path file-tools
 assert "mise config get --file scoped/mise.toml env._.path" '["file-bin", "file-tools"]'
 assert_fail "mise config set --global --file mise.toml env.TEST nope"
 
+# System targeting follows MISE_SYSTEM_CONFIG_FILE and is exclusive with the
+# other explicit targets.
+system_config="$PWD/system.toml"
+MISE_SYSTEM_CONFIG_FILE="$system_config" mise config set --system --append env._.path system-bin
+assert "mise config get --file \"$system_config\" env._.path" '["system-bin"]'
+assert_fail "mise config set --system --global env.TEST nope"
+assert_fail "mise config set --system --file mise.toml env.TEST nope"
+
 # test "config set key=value" format
 mise config set env._.python.venv.path=.venv2
 assert "mise config get env._.python.venv.path" ".venv2"

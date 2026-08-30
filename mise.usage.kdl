@@ -1302,7 +1302,12 @@ If not provided, the nearest mise.toml file will be used
 """#
             arg <FILE>
         }
-        flag "-g --global" help="Edit the global config file." conflicts=--file
+        flag "-g --global" help="Edit the global config file." {
+            conflicts "--file" "--system"
+        }
+        flag --system help="Edit the system config file." {
+            conflicts "--file" "--global"
+        }
         flag --append help="Append the value without duplicating an existing entry." conflicts=--remove
         flag --remove help="Remove the value from an existing collection." conflicts=--append
         flag "-t --type" default=infer {

@@ -20,6 +20,7 @@ Set the value of a setting in a mise.toml file
 
   **Aliases:** `--path`
 - **`-g --global`** — Edit the global config file.
+- **`--system`** — Edit the system config file.
 - **`--append`** — Append the value without duplicating an existing entry.
 - **`--remove`** — Remove the value from an existing collection.
 - **`-t --type <TYPE>`**
