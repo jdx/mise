@@ -1085,6 +1085,19 @@
         },
         "os": {
           "$ref": "#/$defs/os_filter"
+        },
+        "minimum_release_age": {
+          "description": "minimum time since a version's release before mise selects it, as a duration such as \"7d\" or an absolute date",
+          "type": "string"
+        },
+        "install_before": {
+          "description": "deprecated alias for minimum_release_age",
+          "deprecated": true,
+          "type": "string"
+        },
+        "version_order": {
+          "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
+          "enum": ["source", "semver"]
         }
       },
       "oneOf": [
@@ -1184,7 +1197,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/os_filter_item"
-          }
+          },
+          "minItems": 1
         }
       ]
     },
