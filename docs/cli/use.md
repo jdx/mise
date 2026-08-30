@@ -39,7 +39,6 @@ Use the `--global` flag to use the global config file instead.
   ```
 
 ## Flags
-- **`--postinstall <COMMAND>`** — Command to run after installing this tool
 - **`-e --env <ENV>`** — Create/modify an environment-specific config file like .mise.&lt;env>.toml
 - **`-f --force`** — Force reinstall even if already installed
 - **`-g --global`** — Use the global config file (`~/.config/mise/config.toml`) instead of the local one
@@ -74,6 +73,7 @@ Use the `--global` flag to use the global config file instead.
 - **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`
 - **`--remove <TOOL>`** — Remove the tool(s) from config file
 - **`-h --help`** — Print help
+- **`--postinstall <COMMAND>`** — Command to run after installing this tool
 
 Examples:
 
