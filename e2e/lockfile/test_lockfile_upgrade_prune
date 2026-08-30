@@ -41,10 +41,10 @@ dummy = "1"
 locked = true
 EOF
 
-# Now upgrade - this should:
+# Now upgrade with immediate pruning - this should:
 # 1. Install 1.1.0 (the latest matching version)
 # 2. Uninstall 1.0.0 (no longer needed)
-mise upgrade dummy
+mise upgrade dummy --prune
 
 # Verify NEW version is installed
 assert_contains "mise ls --installed dummy" "1.1.0"
