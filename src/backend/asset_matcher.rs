@@ -348,6 +348,7 @@ impl AssetPicker {
                 *score > 0
                     && !self.has_arch_mismatch(asset)
                     && !is_package_or_installer_asset(asset)
+                    && !is_source_archive_asset(asset)
             })
             .min_by(|(score_a, name_a), (score_b, name_b)| {
                 score_b
@@ -748,6 +749,25 @@ fn asset_matches_preferred_name(asset: &str, preferred_name: &str) -> bool {
     rest[1..]
         .split(['-', '_', '.'])
         .all(is_platform_or_version_token)
+}
+
+/// A release's own source archive is not a distribution of the tool.
+///
+/// It scores like any other archive that happens to mention no OS — nothing subtracts for it and
+/// being an archive adds — so on a platform the release does not build for, it can be the only
+/// asset left above zero and win by elimination. `libsql-server` did exactly that on Windows:
+/// every real asset names `linux` or `darwin` and scores -100, `sqld.rb` and the installer script
+/// are not archives and score 0, and `source.tar.gz` came out at 10 and installed a source tree
+/// that mise then reported as a successful install.
+///
+/// `is_package_or_installer_asset` cannot catch this: it excludes by extension, and a source
+/// tarball shares `.tar.gz` with the real ones. The name is the only thing that distinguishes it.
+///
+/// Matched on the whole stem rather than as a substring. `sourcery-2.2.7-macos-arm64.zip` is a
+/// genuine binary asset that an existing test picks, and `contains("source")` would drop it.
+fn is_source_archive_asset(asset: &str) -> bool {
+    let stem = asset_name_stem(asset);
+    stem == "source" || stem.ends_with("-source") || stem.ends_with("_source")
 }
 
 fn asset_name_stem(asset: &str) -> String {
@@ -2839,6 +2859,75 @@ abc123def456abc123def456abc123def456abc123def456abc123def456abcd  tool-darwin.ta
             .pick_best_asset(&[tar_zst.to_string(), tar_xz.to_string(), zip.to_string()])
             .unwrap();
         assert_eq!(picked, zip);
+    }
+
+    /// The assets of `libsql-server-v0.24.32`, verbatim. Held here rather than fetched: a test
+    /// that reads a third party's release list fails when that party changes it, which is what
+    /// moved `test_tool_stub_basic` off `stylelint` the same week this was written.
+    fn libsql_server_assets() -> Vec<String> {
+        [
+            "dist-manifest.json",
+            "libsql-server-aarch64-apple-darwin.tar.xz",
+            "libsql-server-aarch64-unknown-linux-gnu.tar.xz",
+            "libsql-server-installer.sh",
+            "libsql-server-x86_64-apple-darwin.tar.xz",
+            "libsql-server-x86_64-unknown-linux-gnu.tar.xz",
+            "source.tar.gz",
+            "sqld.rb",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    #[test]
+    fn source_archive_is_not_an_asset_for_a_platform_the_release_skipped() {
+        // The release builds for linux and darwin only. On Windows every real asset names another
+        // OS and scores -100, `sqld.rb` and the installer are not archives and score 0, and
+        // `source.tar.gz` scores 10 for being an archive that mentions no OS -- so it won by
+        // elimination and `mise install libsql-server` unpacked a source tree, exit 0, "installed".
+        let picker = AssetPicker::with_libc("windows".to_string(), "x86_64".to_string(), None);
+
+        assert_eq!(picker.pick_best_asset(&libsql_server_assets()), None);
+    }
+
+    #[test]
+    fn excluding_source_archives_leaves_platforms_that_have_an_asset_alone() {
+        // The control that matters: this must change nothing where a real asset exists, which is
+        // every platform the release actually builds for.
+        let linux = AssetPicker::with_libc("linux".to_string(), "x86_64".to_string(), None);
+        assert_eq!(
+            linux.pick_best_asset(&libsql_server_assets()).unwrap(),
+            "libsql-server-x86_64-unknown-linux-gnu.tar.xz"
+        );
+
+        let macos = AssetPicker::with_libc("macos".to_string(), "aarch64".to_string(), None);
+        assert_eq!(
+            macos.pick_best_asset(&libsql_server_assets()).unwrap(),
+            "libsql-server-aarch64-apple-darwin.tar.xz"
+        );
+    }
+
+    #[test]
+    fn source_archives_are_matched_by_name_not_by_substring() {
+        // `sourcery` starts with "source". Writing the rule as `contains("source")` passes the
+        // test above and silently drops a real tool's only asset, so the boundary is pinned here
+        // as well as by `test_artifactbundle_penalty`, which picks that exact file.
+        for name in [
+            "source.tar.gz",
+            "source.zip",
+            "v1.2.3-source.tar.gz",
+            "SOURCE.TAR.GZ",
+        ] {
+            assert!(is_source_archive_asset(name), "{name} should be excluded");
+        }
+        for name in [
+            "sourcery-2.2.7-macos-arm64.zip",
+            "opensource-tool-linux-x64.tar.gz",
+            "tool-source-map-linux.tar.gz",
+        ] {
+            assert!(!is_source_archive_asset(name), "{name} should be kept");
+        }
     }
 
     #[test]
