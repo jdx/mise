@@ -15,7 +15,7 @@ use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolSource, tool_request};
+use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
@@ -104,7 +104,7 @@ impl ToolVersion {
 
         trace!("resolving {} {}", &request, opts);
         if opts.use_locked_version
-            && !linked_version_overrides_lockfile(config, &request)
+            && !has_linked_version(request.ba())
             && let Some(lt) = request.lockfile_resolve(config)?
         {
             return Ok(Self::from_lockfile(request.clone(), lt).with_before_date(opts.before_date));
@@ -369,7 +369,7 @@ impl ToolVersion {
             None => (v.as_str(), false),
         };
         if opts.use_locked_version
-            && !linked_version_overrides_lockfile(config, &request)
+            && !has_linked_version(request.ba())
             && let Some(lt) =
                 request.lockfile_resolve_with_prefix(config, lock_query, lock_prefix_boundary)?
         {
@@ -380,7 +380,7 @@ impl ToolVersion {
         if (settings.locked || tool_config_locked)
             && opts.use_locked_version
             && settings.lockfile_enabled()
-            && !linked_version_overrides_lockfile(config, &request)
+            && !has_linked_version(request.ba())
             && request.source().path().is_some()
         {
             let hint = if tool_config_locked && !settings.locked {
@@ -892,19 +892,15 @@ impl ResolveOptions {
     }
 }
 
-/// Linked versions normally take precedence over lockfile entries, but strict locked mode must
-/// keep the lockfile authoritative. In particular, an alias can share an install directory with a
-/// different backend whose external symlinks must not suppress the aliased backend's lock data.
-fn linked_version_overrides_lockfile(config: &Config, request: &ToolRequest) -> bool {
-    !Settings::get().locked
-        && !config.tool_config_locked(request.source())
-        && has_linked_version(request.ba())
-}
-
 /// Check if a tool has any user-linked versions (created by `mise link`).
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
 fn has_linked_version(ba: &BackendArg) -> bool {
+    if install_state::get_tool_full(&ba.short)
+        .is_some_and(|installed| installed != ba.full_without_opts())
+    {
+        return false;
+    }
     let installs_dir = &ba.installs_path;
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
         return false;
