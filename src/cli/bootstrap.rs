@@ -68,8 +68,9 @@ use crate::ui::table::MiseTable;
 ///     surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 ///     from `[bootstrap.packages]` install afterward, followed by
 ///     `[bootstrap.hooks.post-packages]`
-/// 15. `mise run bootstrap` — if a task named `bootstrap` is defined
-/// 16. `[bootstrap.hooks.final]` — optional final hook
+/// 15. Run pending files from `mise-migrations/` once per machine
+/// 16. `mise run bootstrap` — if a task named `bootstrap` is defined
+/// 17. `[bootstrap.hooks.final]` — optional final hook
 ///
 /// The declarative steps converge — anything already in its desired state
 /// is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -156,6 +157,7 @@ enum BootstrapPart {
     Systemd,
     User,
     Tools,
+    Migrations,
     Task,
     FinalHook,
 }
@@ -163,7 +165,7 @@ enum BootstrapPart {
 impl BootstrapPart {
     // Keep this in sync with every enum variant. `--only` computes a
     // complement from ALL, so an omitted variant would always run.
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 18] = [
         Self::Plugins,
         Self::Packages,
         Self::Accounts,
@@ -179,6 +181,7 @@ impl BootstrapPart {
         Self::Systemd,
         Self::User,
         Self::Tools,
+        Self::Migrations,
         Self::Task,
         Self::FinalHook,
     ];
@@ -282,6 +285,7 @@ enum Commands {
     Macos(BootstrapMacos),
     #[usage(hide = true)]
     MacosDefaults(BootstrapMacosDefaults),
+    Migrations(BootstrapMigrations),
     #[usage(name = "mise-shell-activate", alias = "shell")]
     MiseShellActivate(BootstrapShell),
     Packages(BootstrapPackages),
@@ -312,6 +316,38 @@ struct BootstrapStatus {
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
     prompt_secrets: bool,
+}
+
+/// Manage ordered, once-per-machine scripts from `mise-migrations/`
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapMigrations {
+    #[usage(subcommand)]
+    command: BootstrapMigrationsCommands,
+}
+
+#[derive(Debug, usage_rs::Subcommands)]
+enum BootstrapMigrationsCommands {
+    Apply(BootstrapMigrationsApply),
+    Status(BootstrapMigrationsStatus),
+}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapMigrationsApply {
+    /// Print pending migrations without running them
+    #[usage(long, short = 'n')]
+    dry_run: bool,
+}
+
+#[derive(Debug, usage_rs::Args)]
+struct BootstrapMigrationsStatus {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+
+    /// Exit with code 1 if a migration is pending or was modified after apply
+    #[usage(long)]
+    missing: bool,
 }
 
 /// Show the changes declarative bootstrap resources would make
@@ -1592,6 +1628,12 @@ impl Bootstrap {
             }
         }
 
+        if skip.contains(&BootstrapPart::Migrations) {
+            debug!("bootstrap: migrations skipped");
+        } else {
+            system::migrations::apply(&config, self.dry_run)?;
+        }
+
         if skip.contains(&BootstrapPart::Task) {
             debug!("bootstrap: `bootstrap` task skipped");
         } else {
@@ -2033,6 +2075,7 @@ impl Commands {
             Self::Linux(cmd) => cmd.run().await,
             Self::Macos(cmd) => cmd.run().await,
             Self::MacosDefaults(cmd) => cmd.run().await,
+            Self::Migrations(cmd) => cmd.run().await,
             Self::MiseShellActivate(cmd) => cmd.run().await,
             Self::Packages(cmd) => cmd.run().await,
             Self::Plan(cmd) => cmd.run().await,
@@ -2696,7 +2739,29 @@ impl BootstrapStatus {
         self.collect_user(config, &mut report)?;
         self.collect_tools(config, &mut report).await?;
         self.collect_plugin_deps(config, &mut report).await?;
+        self.collect_migrations(config, &mut report)?;
         Ok(report)
+    }
+
+    fn collect_migrations(
+        &self,
+        config: &Arc<Config>,
+        report: &mut BootstrapStatusReport,
+    ) -> Result<()> {
+        let statuses = system::migrations::statuses(config)?;
+        for status in &statuses {
+            report.row(
+                "migration",
+                &status.id,
+                status.path.display_user(),
+                status.state.to_string(),
+                status.missing(),
+            );
+        }
+        report
+            .json
+            .insert("migrations".to_string(), json!(statuses));
+        Ok(())
     }
 
     fn collect_secrets(
@@ -3535,6 +3600,47 @@ impl BootstrapDotfilesStatus {
     }
 }
 
+impl BootstrapMigrations {
+    async fn run(self) -> Result<()> {
+        match self.command {
+            BootstrapMigrationsCommands::Apply(cmd) => cmd.run().await,
+            BootstrapMigrationsCommands::Status(cmd) => cmd.run().await,
+        }
+    }
+}
+
+impl BootstrapMigrationsApply {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        system::migrations::apply(&config, self.dry_run)
+    }
+}
+
+impl BootstrapMigrationsStatus {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let statuses = system::migrations::statuses(&config)?;
+        let missing = statuses
+            .iter()
+            .any(system::migrations::MigrationStatus::missing);
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&statuses)?);
+        } else if statuses.is_empty() {
+            info!("no bootstrap migrations found");
+        } else {
+            let mut table = MiseTable::new(false, &["Migration", "State"]);
+            for status in statuses {
+                table.add_row(vec![status.id, status.state.to_string()]);
+            }
+            table.print()?;
+        }
+        if self.missing && missing {
+            return Err(crate::request_exit(1));
+        }
+        Ok(())
+    }
+}
+
 impl BootstrapPackages {
     async fn run(self) -> Result<()> {
         match self.command {
@@ -4254,6 +4360,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise bootstrap packages apply --yes</bold>
     $ <bold>mise bootstrap repos status</bold>
     $ <bold>mise bootstrap repos apply --dry-run</bold>
+    $ <bold>mise bootstrap migrations status --missing</bold>
     $ <bold>mise bootstrap dotfiles status</bold>
     $ <bold>mise bootstrap mise-shell-activate apply --dry-run</bold>
     $ <bold>mise bootstrap macos defaults status</bold>

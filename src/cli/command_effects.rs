@@ -73,6 +73,8 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap macos-defaults", Read),
     ("bootstrap macos-defaults apply", Write),
     ("bootstrap macos-defaults status", Read),
+    ("bootstrap migrations", Read),
+    ("bootstrap migrations status", Read),
     ("bootstrap systemd", Read),
     ("bootstrap systemd apply", Write),
     ("bootstrap systemd status", Read),
@@ -294,6 +296,10 @@ pub(super) const PLATFORM_EFFECTS: &[(&str, SpecCommandEffect)] = &[
 #[cfg(test)]
 pub(crate) const UNCLASSIFIED: &[(&str, &str)] = &[
     ("asdf", "proxies whatever asdf command a plugin invoked"),
+    (
+        "bootstrap migrations apply",
+        "runs arbitrary project-provided migration scripts",
+    ),
     (
         "bootstrap repos exec",
         "runs an arbitrary command in each repo",

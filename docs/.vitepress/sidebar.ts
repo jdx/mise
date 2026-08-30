@@ -108,6 +108,10 @@ export const sidebar: SidebarItem[] = [
         link: "/bootstrap/remote",
       },
       {
+        text: "Migrations",
+        link: "/bootstrap/migrations",
+      },
+      {
         text: "Bootstrap Packages",
         link: "/bootstrap/packages/",
         collapsed: true,

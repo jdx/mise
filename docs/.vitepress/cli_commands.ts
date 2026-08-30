@@ -178,6 +178,17 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      migrations: {
+        hide: false,
+        subcommands: {
+          apply: {
+            hide: false,
+          },
+          status: {
+            hide: false,
+          },
+        },
+      },
       "mise-shell-activate": {
         hide: false,
         subcommands: {

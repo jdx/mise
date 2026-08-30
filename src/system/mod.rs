@@ -57,6 +57,7 @@ pub(crate) mod hooks;
 pub(crate) mod launchd;
 pub(crate) mod login_shell;
 pub(crate) mod managed_files;
+pub(crate) mod migrations;
 pub(crate) mod packages;
 pub(crate) mod remote;
 pub(crate) mod repos;

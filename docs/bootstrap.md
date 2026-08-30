@@ -4,9 +4,10 @@
 users and groups, OS packages, privileged files and directories, system services,
 Linux host firewall policy, Docker Compose projects, git repos, dotfiles, mise shell
 activation, macOS defaults, macOS LaunchAgents, Linux systemd user services,
-the user's login shell, tools, and any final project-specific task. It can
-consume declared secret inputs without storing their values in mise config. You
-can also add hooks that run at named points in the bootstrap sequence.
+the user's login shell, tools, one-time migrations, and any final
+project-specific task. It can consume declared secret inputs without storing
+their values in mise config. You can also add hooks that run at named points in
+the bootstrap sequence.
 
 The same configuration can be applied to named inventory hosts or ad-hoc SSH
 destinations with [`mise bootstrap remote`](/bootstrap/remote.html).
@@ -103,13 +104,15 @@ preflight prevents a missing input from leaving a partially provisioned host.
 14. `mise bootstrap user apply` applies [`[bootstrap.user]`](/bootstrap/user.html).
 15. `mise install` installs missing `[tools]`.
 16. Plugin package managers apply after their host tools are available.
-17. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
-18. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
+17. Pending executable files from [`mise-migrations/`](/bootstrap/migrations.html)
+    run once per machine in filename order.
+18. `mise run bootstrap` runs a task named `bootstrap`, if one exists.
+19. `[bootstrap.hooks.final]` runs after the bootstrap task, if configured.
 
 Use `mise bootstrap --skip <part>` to skip specific parts. Supported parts are
 `accounts`, `plugins`, `packages`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`,
 `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`,
-`task`, and `final-hook`. The old shorter names `shell`, `defaults`, `launchd`,
+`migrations`, `task`, and `final-hook`. The old shorter names `shell`, `defaults`, `launchd`,
 and `systemd` are still accepted as aliases. The flag can be repeated or
 comma-separated, for example `mise bootstrap --skip tools,task`.
 
@@ -128,7 +131,8 @@ Hook phases can also run before and after the built-in steps:
 
 The declarative steps converge: if a package is already installed, a repo is
 already at the requested ref, a dotfile already matches, or a default is already
-set, mise skips it. The `bootstrap` task runs every time, so keep it idempotent.
+set, mise skips it. Migrations run once and must not be changed after they are
+applied. The `bootstrap` task runs every time, so keep it idempotent.
 
 ## Example
 
@@ -303,10 +307,11 @@ mise bootstrap firewall status
 mise bootstrap user status
 ```
 
-`mise bootstrap status --missing` checks the whole declarative bootstrap
-surface in one command. The narrower `mise bootstrap packages status
---missing` and `mise bootstrap dotfiles status --missing` commands are useful when you
-only want to check one part without installing anything.
+`mise bootstrap status --missing` checks the whole inspectable bootstrap
+surface, including pending migrations, in one command. The narrower
+`mise bootstrap packages status --missing` and
+`mise bootstrap dotfiles status --missing` commands are useful when you only
+want to check one part without installing anything.
 
 ## What goes where
 
@@ -324,12 +329,13 @@ only want to check one part without installing anything.
 | [`[bootstrap.user]`](/bootstrap/user.html)                     | Current-user settings such as `login_shell`                   |
 | `[bootstrap.hooks]`                                            | Commands that run at named bootstrap phases                   |
 | `[tools]`                                                      | Versioned dev tools managed by mise                           |
+| [`mise-migrations/`](/bootstrap/migrations.html)               | Ordered transitions that should run once per machine          |
 | `[tasks.bootstrap]`                                            | Anything custom that should run after tools are installed     |
 
 Use declarative sections when mise can inspect and converge the state. Use
-`[tasks.bootstrap]` for imperative setup that does not fit those sections,
-such as running an auth flow, seeding local data, or other one-off project
-setup.
+`mise-migrations/` for an immutable transition that runs once, and
+`[tasks.bootstrap]` for recurring imperative setup that does not fit those
+sections, such as an auth check or seeding idempotent local data.
 
 ## Hooks
 

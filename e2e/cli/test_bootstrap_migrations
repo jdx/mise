@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+EOF
+
+mkdir mise-migrations
+cat >mise-migrations/20260830-first <<'EOF'
+#!/usr/bin/env bash
+set -eu
+command -v rtx-tiny >/dev/null
+printf '%s:%s\n' "$MISE_BOOTSTRAP_MIGRATION" "$(rtx-tiny --version)" >>migration-log
+EOF
+cat >mise-migrations/20260831-second <<'EOF'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$MISE_BOOTSTRAP_MIGRATION" >>migration-log
+EOF
+chmod +x mise-migrations/20260830-first mise-migrations/20260831-second
+
+assert_contains "mise bootstrap migrations status" "20260830-first"
+assert_contains "mise bootstrap migrations status" "pending"
+assert_fail "mise bootstrap migrations status --missing"
+assert_contains "mise bootstrap migrations status --json" '"state": "pending"'
+
+assert_contains "mise bootstrap migrations apply --dry-run" "Would run bootstrap migration"
+assert_fail "test -e migration-log"
+assert_directory_not_exists "$MISE_STATE_DIR/bootstrap/migrations"
+
+assert_succeed "mise bootstrap --yes"
+assert "cat migration-log" $'20260830-first:rtx-tiny: v1.0.0 args: --version\n20260831-second'
+assert_contains "mise bootstrap migrations status" "applied"
+assert_contains "mise bootstrap status" "migration"
+assert_contains "mise bootstrap status --json" '"migrations"'
+assert_succeed "mise bootstrap migrations status --missing"
+
+# Applied migrations never rerun.
+assert_succeed "mise bootstrap --yes --only migrations"
+assert "wc -l <migration-log | tr -d ' '" "2"
+
+# Applied files are immutable.
+printf '\n# changed\n' >>mise-migrations/20260830-first
+assert_contains "mise bootstrap migrations status" "modified after apply"
+assert_fail "mise bootstrap migrations status --missing"
+assert_fail "mise bootstrap migrations apply" "changed after it was applied"
+
+# Failed migrations are not recorded and may be repaired in place before retrying.
+rm -rf "$MISE_STATE_DIR/bootstrap/migrations"
+rm -f migration-log
+cat >mise-migrations/20260830-first <<'EOF'
+#!/usr/bin/env bash
+exit 23
+EOF
+chmod +x mise-migrations/20260830-first
+assert_fail "mise bootstrap migrations apply" "failed"
+assert_fail "test -e $MISE_STATE_DIR/bootstrap/migrations/20260830-first"
+cat >mise-migrations/20260830-first <<'EOF'
+#!/usr/bin/env bash
+printf 'repaired\n' >>migration-log
+EOF
+chmod +x mise-migrations/20260830-first
+assert_succeed "mise bootstrap migrations apply"
+assert_contains "cat migration-log" "repaired"
+
+# Skipping migrations leaves a pending file untouched.
+cat >mise-migrations/20260901-skipped <<'EOF'
+#!/usr/bin/env bash
+touch skipped-migration-ran
+EOF
+chmod +x mise-migrations/20260901-skipped
+assert_succeed "mise bootstrap --yes --skip migrations"
+assert_fail "test -e skipped-migration-ran"
+
+# Non-executable files cannot be silently omitted from an ordered migration set.
+cat >mise-migrations/20260902-not-executable <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod -x mise-migrations/20260902-not-executable
+assert_fail "mise bootstrap migrations status" "not executable"

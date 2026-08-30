@@ -32,14 +32,14 @@ Bootstrap one or more machines over OpenSSH
 - **`--no-install-mise`** — Do not install mise on the host, even when the selected hosts configure it
 - **`--only <ONLY>`** — Run only one or more remote bootstrap parts
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `migrations`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--port <PORT>`** — SSH port override
 - **`--prompt-secrets`** — Prompt securely for missing secret inputs on the remote host
 - **`--remote-env <ENV>`** — Config environments to load on the remote host; repeat or delimit with commas (for example, ci,dotfiles)
 - **`--remote-mise <COMMAND>`** — Existing mise executable name or path; relative paths use the staged project
 - **`--skip <SKIP>`** — Skip one or more remote bootstrap parts
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `migrations`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--source <SOURCE>`** — Local directory archived and sent to each target
 - **`--ssh-option <OPTION>`** — OpenSSH `-o` option; repeat for multiple options
 - **`--tag <TAG>`** — Select configured hosts with this tag; repeat to match any tag

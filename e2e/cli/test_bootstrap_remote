@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-mkdir -p fakebin source bin "bin with space" shared-target/nested "$HOME/.config/mise" "$HOME/.local/bin"
+mkdir -p fakebin source bin "bin with space" shared-target/nested mise-migrations "$HOME/.config/mise" "$HOME/.local/bin"
 ssh_log="$PWD/ssh.log"
 remote_stage="/tmp/mise-bootstrap.e2e-$$"
 bad_remote_stage="$remote_stage invalid"
@@ -12,6 +12,12 @@ export REMOTE_STAGE="$remote_stage"
 export BAD_REMOTE_STAGE="$bad_remote_stage"
 export BOOTSTRAP_MARKER="$bootstrap_marker"
 export MISE_SOURCE="$mise_bin"
+
+cat >mise-migrations/20260830-remote <<'EOF'
+#!/bin/sh
+printf '%s\n' "$MISE_BOOTSTRAP_MIGRATION" >>"$HOME/remote-migrations.log"
+EOF
+chmod +x mise-migrations/20260830-remote
 
 cat >bin/mise <<'EOF'
 #!/bin/sh
@@ -228,6 +234,10 @@ printf 'export PATH="%sPATH:%s"\n' "$literal_dollar" "$PWD/stale-bin" >>"$HOME/.
 assert_succeed "mise bootstrap remote installer --yes"
 mv "$HOME/.local/bin/mise.saved" "$HOME/.local/bin/mise"
 assert_succeed "test -e $bootstrap_marker"
+assert "cat $HOME/remote-migrations.log" "20260830-remote"
+# A fresh staging directory must reuse the remote machine's completion record.
+assert_succeed "mise bootstrap remote relative --yes --only migrations"
+assert "wc -l <$HOME/remote-migrations.log | tr -d ' '" "1"
 assert_contains "cat $ssh_log" "sh -lc"
 assert_contains "cat $ssh_log" "'$remote_stage/bin with space/mise' version"
 assert_not_contains "cat $ssh_log" "'$PWD/stale-bin/mise' --cd"

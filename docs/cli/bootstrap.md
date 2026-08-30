@@ -53,8 +53,9 @@ surrounded by `pre-tools`/`post-tools` hooks; package-plugin entries
 from `[bootstrap.packages]` install afterward, followed by
 `[bootstrap.hooks.post-packages]`
 ```
-15. `mise run bootstrap` — if a task named `bootstrap` is defined
-16. `[bootstrap.hooks.final]` — optional final hook
+15. Run pending files from `mise-migrations/` once per machine
+16. `mise run bootstrap` — if a task named `bootstrap` is defined
+17. `[bootstrap.hooks.final]` — optional final hook
 
 The declarative steps converge — anything already in its desired state
 is skipped, so re-running is safe. The `bootstrap` task runs on every
@@ -77,13 +78,13 @@ cannot be used together.
 
   Can be passed multiple times or as a comma-separated list. Cannot be used with `--skip`.
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `migrations`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--prompt-secrets`** — Prompt securely for missing bootstrap secret inputs
 - **`--skip <SKIP>`** — Skip one or more bootstrap parts
 
   Can be passed multiple times or as a comma-separated list.
 
-  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
+  **Choices:** `plugins`, `packages`, `accounts`, `files`, `services`, `firewall`, `compose`, `repos`, `dotfiles`, `mise-shell-activate`, `macos-defaults`, `macos-launchd-agents`, `linux-systemd-units`, `user`, `tools`, `migrations`, `task`, `final-hook`, `shell`, `defaults`, `launchd`, `systemd`
 - **`--update`** — Refresh package manager metadata and update configured repos
 - **`-h --help`** — Print help
 - [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.md)
@@ -93,6 +94,7 @@ cannot be used together.
 - [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)
 - [`mise bootstrap linux <SUBCOMMAND>`](/cli/bootstrap/linux.md)
 - [`mise bootstrap macos <SUBCOMMAND>`](/cli/bootstrap/macos.md)
+- [`mise bootstrap migrations <SUBCOMMAND>`](/cli/bootstrap/migrations.md)
 - [`mise bootstrap mise-shell-activate <SUBCOMMAND>`](/cli/bootstrap/mise-shell-activate.md)
 - [`mise bootstrap packages <SUBCOMMAND>`](/cli/bootstrap/packages.md)
 - [`mise bootstrap plan [FLAGS]`](/cli/bootstrap/plan.md)
@@ -116,6 +118,7 @@ mise bootstrap status --missing
 mise bootstrap packages apply --yes
 mise bootstrap repos status
 mise bootstrap repos apply --dry-run
+mise bootstrap migrations status --missing
 mise bootstrap dotfiles status
 mise bootstrap mise-shell-activate apply --dry-run
 mise bootstrap macos defaults status

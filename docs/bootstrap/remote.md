@@ -272,6 +272,11 @@ mise bootstrap remote cache --prompt-secrets
 mise bootstrap remote cache --remote-env linux,server
 ```
 
+The source archive includes [`mise-migrations/`](/bootstrap/migrations.html).
+Migration IDs and completion records are machine-global, so an applied
+migration remains applied even though each remote run uses a new temporary
+project directory.
+
 Local environment variables are deliberately not copied to SSH hosts. An
 explicitly configured `mise_env` is remote orchestration metadata rather than
 an inherited local environment. Use `--prompt-secrets` for an attended run.
