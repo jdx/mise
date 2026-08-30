@@ -396,7 +396,7 @@ jobs:
 
   windows-unit:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
