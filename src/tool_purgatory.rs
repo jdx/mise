@@ -83,6 +83,18 @@ fn save_state(state: &PurgatoryState) -> Result<()> {
     crate::file::write_atomic(path, contents)
 }
 
+pub(crate) fn scheduled_removals() -> Result<BTreeMap<PathBuf, u64>> {
+    if !state_path().exists() {
+        return Ok(BTreeMap::new());
+    }
+    let _lock = crate::lock_file::get(state_path(), false)?;
+    Ok(load_state()?
+        .entries
+        .into_values()
+        .map(|entry| (entry.install_path, entry.remove_after))
+        .collect())
+}
+
 pub(crate) fn schedule(tv: &ToolVersion, after: Duration) -> Result<()> {
     let _lock = crate::lock_file::get(state_path(), false)?;
     let mut state = load_state()?;

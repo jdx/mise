@@ -32,7 +32,10 @@ mise uninstall dummy --all
 mise install dummy@1.0.0
 mise upgrade dummy
 assert_contains "mise ls --installed dummy" "1.1.0"
-assert_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed dummy" "1.0.0 (pruned in"
+assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.0.0\") | .scheduled_for_pruning'" "true"
+assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.0.0\") | .prune_after | test(\"^[0-9]{4}-\")'" "true"
+assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.1.0\") | has(\"scheduled_for_pruning\")'" "false"
 assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
 # Explicit prune ignores the grace period and clears the receipt.
