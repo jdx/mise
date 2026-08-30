@@ -29,6 +29,45 @@ assert "mise config get settings.disable_tools" '["node", "rust"]'
 mise config set settings.task.skip build,test,build
 assert "mise config get settings.task.skip" '["build", "test"]'
 
+# Collection updates preserve existing values, avoid duplicates, and remove
+# only the requested member.
+printf '# keep me\n[env]\n_.path = "bin"\n' >mise.toml
+mise config set --append env._.path tools
+mise config set --append env._.path tools
+assert "mise config get env._.path" '["bin", "tools"]'
+assert_contains "cat mise.toml" "# keep me"
+mise config set --remove env._.path bin
+assert "mise config get env._.path" '["tools"]'
+mise config set --remove env._.path tools
+assert_fail "mise config get env._.path" "Key not found"
+
+# Global targeting is explicit and cannot be combined with a file target.
+mkdir -p "$MISE_CONFIG_DIR"
+rm -f "$MISE_CONFIG_DIR/config.toml"
+mise config set --global --append env._.path global-bin
+mise config set --global --append env._.path global-tools
+assert "mise config get --file \"$MISE_CONFIG_DIR/config.toml\" env._.path" '["global-bin", "global-tools"]'
+assert "mise config get --global env._.path" '["global-bin", "global-tools"]'
+mkdir scoped
+printf '[env]\n_.path = ["file-bin"]\n' >scoped/mise.toml
+mise config set --file scoped/mise.toml --append env._.path file-tools
+assert "mise config get --file scoped/mise.toml env._.path" '["file-bin", "file-tools"]'
+assert_fail "mise config set --global --file mise.toml env.TEST nope"
+
+# System targeting follows MISE_SYSTEM_CONFIG_FILE and is exclusive with the
+# other explicit targets.
+system_config="$PWD/system.toml"
+MISE_SYSTEM_CONFIG_FILE="$system_config" mise config set --system --append env._.path system-bin
+assert "mise config get --file \"$system_config\" env._.path" '["system-bin"]'
+assert "MISE_SYSTEM_CONFIG_FILE=\"$system_config\" mise config get --system env._.path" '["system-bin"]'
+assert_fail "mise config set --system --global env.TEST nope"
+assert_fail "mise config set --system --file mise.toml env.TEST nope"
+
+# TOML mutations reject legacy global formats with a useful error.
+printf 'node 20\n' >.tool-versions
+assert_fail "MISE_GLOBAL_CONFIG_FILE=$PWD/.tool-versions mise config set --global env.TEST nope" \
+  "config set requires a TOML config file"
+
 # test "config set key=value" format
 mise config set env._.python.venv.path=.venv2
 assert "mise config get env._.python.venv.path" ".venv2"

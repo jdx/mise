@@ -16,7 +16,7 @@ use jiff::Timestamp;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, global_config_path};
 use crate::duration::parse_into_timestamp;
 use crate::file::{
     canonicalize_cached, display_path, entry_exists, remove_all_with_progress,
@@ -3563,13 +3563,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
             runner = runner.env_remove(key);
         }
 
-        // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
+        // Keep the declaring config and active project distinct. MISE_CONFIG_FILE is also a
+        // legacy alias for the global config, so pin the actual global path for nested mise calls.
         if let Some(source_path) = tv.request.source().path() {
-            let root = config_root::config_root(source_path);
-            let root = root.to_string_lossy().to_string();
+            let config_root = config_root::config_root(source_path);
+            let project_root = ctx.config.project_root.as_ref().unwrap_or(&config_root);
             runner = runner
-                .env("MISE_CONFIG_ROOT", &root)
-                .env("MISE_PROJECT_ROOT", &root);
+                .env("MISE_CONFIG_FILE", source_path)
+                .env("MISE_GLOBAL_CONFIG_FILE", global_config_path())
+                .env("MISE_CONFIG_ROOT", &config_root)
+                .env("MISE_PROJECT_ROOT", project_root);
         }
 
         runner.execute()?;
