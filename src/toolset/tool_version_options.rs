@@ -576,7 +576,10 @@ fn preserves_backend_option_type(key: &str) -> bool {
     matches!(key, "allow_builds")
 }
 
-fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
+/// `pub(crate)` so callers that only want to know whether a value would resolve can ask the same
+/// question the lookup answers, instead of keeping a second copy of the rule that can drift from
+/// this one.
+pub(crate) fn scalar_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
         toml::Value::Integer(i) => Some(i.to_string()),
