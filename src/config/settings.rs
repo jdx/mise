@@ -1408,6 +1408,10 @@ impl Settings {
         if age.as_secs() == 0 { None } else { Some(age) }
     }
 
+    pub(crate) fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.upgrade.prune_after)
+    }
+
     #[cfg(feature = "self_update")]
     pub(crate) fn auto_update_check_duration(&self) -> eyre::Result<Duration> {
         duration::parse_duration(&self.auto_update_check_duration)

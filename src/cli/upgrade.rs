@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::backend::pipx::PIPXBackend;
 use crate::cli::args::{BackendArg, ToolArg};
@@ -110,18 +111,17 @@ pub(crate) struct Upgrade {
 
     /// Do not uninstall the versions that were upgraded away from
     ///
-    /// By default the old version is removed once the new one installs, unless another
-    /// tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
-    /// something outside of mise points at the old install directory.
+    /// The old version is left in place and is not scheduled for removal. Use this when something
+    /// outside mise points at the install directory.
     ///
     /// Set `upgrade.auto_prune = false` to make this the default.
     #[usage(long, verbatim_doc_comment, overrides = "prune")]
     no_prune: bool,
 
-    /// Uninstall the versions that were upgraded away from
+    /// Immediately uninstall the versions that were upgraded away from
     ///
-    /// This is already the default. Use it to override `upgrade.auto_prune = false`
-    /// for a single run.
+    /// Use this to bypass `upgrade.prune_after`, or to override
+    /// `upgrade.auto_prune = false` for a single run.
     #[usage(long, verbatim_doc_comment, overrides = "no_prune")]
     prune: bool,
 
@@ -131,15 +131,30 @@ pub(crate) struct Upgrade {
     raw: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PruneMode {
+    None,
+    Immediate,
+    Deferred(Duration),
+}
+
 impl Upgrade {
-    fn is_dry_run(&self) -> bool {
+    pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
 
-    /// Whether the version being upgraded away from should be uninstalled. Either flag wins
-    /// over the setting, and `overrides_with` makes the later of the two win over the other.
-    fn should_prune(&self) -> bool {
-        self.prune || !self.no_prune && Settings::get().upgrade.auto_prune
+    /// How versions upgraded away from should be handled. Either flag wins over
+    /// the settings, and `overrides_with` makes the later flag win.
+    fn prune_mode(&self) -> Result<PruneMode> {
+        if self.prune {
+            return Ok(PruneMode::Immediate);
+        }
+        if self.no_prune || !Settings::get().upgrade.auto_prune {
+            return Ok(PruneMode::None);
+        }
+        Ok(PruneMode::Deferred(
+            Settings::get().upgrade_prune_after_duration()?,
+        ))
     }
 
     fn scope(&self) -> ConfigScope {
@@ -243,6 +258,7 @@ impl Upgrade {
         before_date: Option<Timestamp>,
     ) -> Result<()> {
         let mpr = MultiProgressReport::get();
+        let prune_mode = self.prune_mode()?;
         let mut ts = ToolsetBuilder::new()
             .with_args(&self.tool)
             .with_scope(self.scope())
@@ -293,7 +309,7 @@ impl Upgrade {
 
         // Determine which old versions should be uninstalled after upgrade
         // Skip uninstall when current == latest (channel-based versions that update in-place)
-        let to_remove: Vec<_> = if !self.should_prune() {
+        let to_remove: Vec<_> = if prune_mode == PruneMode::None {
             vec![]
         } else {
             outdated
@@ -313,7 +329,18 @@ impl Upgrade {
 
         if self.is_dry_run() {
             for (o, current) in &to_remove {
-                miseprintln!("Would uninstall {}@{}", o.name, current);
+                match prune_mode {
+                    PruneMode::Immediate => {
+                        miseprintln!("Would uninstall {}@{}", o.name, current);
+                    }
+                    PruneMode::Deferred(_) => miseprintln!(
+                        "Would schedule {}@{} for pruning after {}",
+                        o.name,
+                        current,
+                        Settings::get().upgrade.prune_after
+                    ),
+                    PruneMode::None => unreachable!(),
+                }
             }
             for o in &outdated {
                 miseprintln!("Would install {}@{}", o.name, o.latest);
@@ -550,12 +577,36 @@ impl Upgrade {
                     continue;
                 }
 
-                let pr = mpr.add(&format!("uninstall {}@{}", o.name, old_version));
-                if let Err(e) = self
-                    .uninstall_old_version(config, &old_tv, pr.as_ref())
-                    .await
-                {
-                    warn!("Failed to uninstall old version of {}: {}", o.name, e);
+                match prune_mode {
+                    PruneMode::Immediate => {
+                        let pr = mpr.add(&format!("uninstall {}@{}", o.name, old_version));
+                        if let Err(e) = self
+                            .uninstall_old_version(config, &old_tv, pr.as_ref())
+                            .await
+                        {
+                            warn!("Failed to uninstall old version of {}: {}", o.name, e);
+                        } else if let Err(err) =
+                            crate::tool_purgatory::forget_path(&old_tv.install_path())
+                        {
+                            warn!("failed to clear tool purgatory entry: {err:#}");
+                        }
+                    }
+                    PruneMode::Deferred(after) => {
+                        if let Err(err) = crate::tool_purgatory::schedule(&old_tv, after) {
+                            warn!(
+                                "failed to schedule {}@{} for pruning: {err:#}",
+                                o.name, old_version
+                            );
+                        } else {
+                            info!(
+                                "{}@{} will be pruned after {}",
+                                o.name,
+                                old_version,
+                                Settings::get().upgrade.prune_after
+                            );
+                        }
+                    }
+                    PruneMode::None => unreachable!(),
                 }
             }
         }

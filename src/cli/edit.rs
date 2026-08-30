@@ -151,6 +151,10 @@ struct DetectedTool {
 }
 
 impl Edit {
+    pub(super) fn is_dry_run(&self) -> bool {
+        self.dry_run
+    }
+
     pub(crate) fn new(
         global: bool,
         dry_run: bool,

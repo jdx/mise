@@ -1110,6 +1110,10 @@ struct BootstrapUserStatus {
 }
 
 impl Bootstrap {
+    pub(super) fn is_dry_run(&self) -> bool {
+        self.dry_run
+    }
+
     pub(super) fn inherit_root_flags(&mut self, dry_run: bool, yes: bool) {
         self.dry_run |= dry_run;
         self.yes |= yes;
