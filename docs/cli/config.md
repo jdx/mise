@@ -16,6 +16,6 @@ Manage config files
 
 ## Subcommands
 
-- [`mise config get [-f --file <FILE>] [KEY]`](/cli/config/get.md)
+- [`mise config get [FLAGS] [KEY]`](/cli/config/get.md)
 - [`mise config ls [FLAGS]`](/cli/config/ls.md)
 - [`mise config set [FLAGS] <KEY> [VALUE]`](/cli/config/set.md)

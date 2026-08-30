@@ -1276,6 +1276,12 @@ If not provided, the nearest mise.toml file will be used
 """#
             arg <FILE>
         }
+        flag "-g --global" help="Read the global config file." {
+            conflicts "--file" "--system"
+        }
+        flag --system help="Read the system config file." {
+            conflicts "--file" "--global"
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[KEY]" help="The path of the config to display" required=#false
         complete file type=path

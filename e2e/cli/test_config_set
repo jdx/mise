@@ -47,6 +47,7 @@ rm -f "$MISE_CONFIG_DIR/config.toml"
 mise config set --global --append env._.path global-bin
 mise config set --global --append env._.path global-tools
 assert "mise config get --file \"$MISE_CONFIG_DIR/config.toml\" env._.path" '["global-bin", "global-tools"]'
+assert "mise config get --global env._.path" '["global-bin", "global-tools"]'
 mkdir scoped
 printf '[env]\n_.path = ["file-bin"]\n' >scoped/mise.toml
 mise config set --file scoped/mise.toml --append env._.path file-tools
@@ -58,8 +59,14 @@ assert_fail "mise config set --global --file mise.toml env.TEST nope"
 system_config="$PWD/system.toml"
 MISE_SYSTEM_CONFIG_FILE="$system_config" mise config set --system --append env._.path system-bin
 assert "mise config get --file \"$system_config\" env._.path" '["system-bin"]'
+assert "MISE_SYSTEM_CONFIG_FILE=\"$system_config\" mise config get --system env._.path" '["system-bin"]'
 assert_fail "mise config set --system --global env.TEST nope"
 assert_fail "mise config set --system --file mise.toml env.TEST nope"
+
+# TOML mutations reject legacy global formats with a useful error.
+printf 'node 20\n' >.tool-versions
+assert_fail "MISE_GLOBAL_CONFIG_FILE=$PWD/.tool-versions mise config set --global env.TEST nope" \
+  "config set requires a TOML config file"
 
 # test "config set key=value" format
 mise config set env._.python.venv.path=.venv2

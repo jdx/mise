@@ -96,6 +96,12 @@ impl ConfigSet {
         let Some(file) = file else {
             bail!("No mise.toml file found");
         };
+        if !file.to_string_lossy().ends_with(".toml") {
+            bail!(
+                "config set requires a TOML config file, but {} is not TOML",
+                display_path(&file)
+            );
+        }
         if !file.exists() && !self.global && !self.system {
             bail!("config file not found: {}", display_path(&file));
         }

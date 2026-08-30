@@ -98,7 +98,7 @@ Tool-level postinstall scripts receive the following environment variables:
 - Variables from that tool's `install_env` option
 - `MISE_CONFIG_FILE`: The exact config file that declared the tool
 - `MISE_CONFIG_ROOT`: The root directory of that config
-- `MISE_PROJECT_ROOT`: The project root associated with that config
+- `MISE_PROJECT_ROOT`: The active project root (or the config root when no project is active)
 
 ## Task hooks
 
