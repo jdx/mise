@@ -860,7 +860,13 @@ impl Cli {
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
-        if let Err(err) = crate::tool_purgatory::auto_prune().await {
+        let dry_run_requested = processed_args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-n" | "--dry-run" | "--dry-run-code"));
+        if !print_version
+            && !dry_run_requested
+            && let Err(err) = crate::tool_purgatory::auto_prune().await
+        {
             warn!("tool purgatory cleanup failed: {err:#}");
         }
 

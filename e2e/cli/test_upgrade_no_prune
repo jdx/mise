@@ -90,6 +90,14 @@ mise install dummy@1.0.0
 mise upgrade dummy
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
+# Commands that promise not to mutate state must not run opportunistic cleanup.
+mise upgrade dummy --dry-run >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+mise prune --dry-run >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+mise --version >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+
 # A due receipt remains pending while a config reselects the old version.
 sed -i 's/dummy = "1"/dummy = "1.0.0"/' mise.toml
 mise current >/dev/null

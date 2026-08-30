@@ -19,7 +19,7 @@ struct PurgatoryState {
     entries: BTreeMap<String, PurgatoryEntry>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct PurgatoryEntry {
     install_path: PathBuf,
     display: String,
@@ -112,14 +112,18 @@ pub(crate) async fn auto_prune() -> Result<()> {
     if !state_path().exists() {
         return Ok(());
     }
-    let _lock = crate::lock_file::get(state_path(), false)?;
-    let mut state = load_state()?;
     let now = now_epoch_seconds()?;
-    if !state
-        .entries
-        .values()
-        .any(|entry| entry.remove_after <= now)
-    {
+    let due = {
+        let _lock = crate::lock_file::get(state_path(), false)?;
+        let state = load_state()?;
+        state
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.remove_after <= now)
+            .map(|(key, entry)| (key.clone(), entry.clone()))
+            .collect::<Vec<_>>()
+    };
+    if due.is_empty() {
         return Ok(());
     }
 
@@ -138,31 +142,22 @@ pub(crate) async fn auto_prune() -> Result<()> {
         .map(|(_, tv)| tv.install_path())
         .collect::<HashSet<_>>();
 
-    let due = state
-        .entries
-        .iter()
-        .filter(|(_, entry)| entry.remove_after <= now)
-        .map(|(key, entry)| {
-            (
-                key.clone(),
-                entry.install_path.clone(),
-                entry.display.clone(),
-            )
-        })
-        .collect::<Vec<_>>();
     let mpr = MultiProgressReport::get();
     let mut install_state_changed = false;
     let mut entries_awaiting_reconciliation = vec![];
-    for (key, install_path, display) in due {
+    let mut entries_to_remove = vec![];
+    for (key, entry) in due {
+        let install_path = &entry.install_path;
+        let display = &entry.display;
         if !install_path.starts_with(*crate::dirs::INSTALLS) {
             warn!(
                 "ignoring tool purgatory entry outside the user installs directory: {}",
-                display_path(&install_path)
+                display_path(install_path)
             );
-            state.entries.remove(&key);
+            entries_to_remove.push((key, entry));
             continue;
         }
-        if let Some((backend, tv)) = prunable_by_path.get(&install_path) {
+        if let Some((backend, tv)) = prunable_by_path.get(install_path) {
             let pr = mpr.add(&format!("uninstall {display}"));
             match backend
                 .uninstall_version(&config, tv, pr.as_ref(), false)
@@ -175,16 +170,16 @@ pub(crate) async fn auto_prune() -> Result<()> {
                     {
                         warn!("failed to remove missing runtime symlinks for {display}: {err:#}");
                     }
-                    entries_awaiting_reconciliation.push(key);
+                    entries_awaiting_reconciliation.push((key, entry));
                     install_state_changed = true;
                 }
                 Err(err) => warn!("failed to prune deferred {display}: {err:#}"),
             }
         } else if !install_path.exists() {
             // A missing version is already gone.
-            entries_awaiting_reconciliation.push(key);
+            entries_awaiting_reconciliation.push((key, entry));
             install_state_changed = true;
-        } else if installed_paths.contains(&install_path) {
+        } else if installed_paths.contains(install_path) {
             // Keep the receipt while a tracked config or tool stub needs this
             // version. It may become prunable again after that reference goes
             // away, without another upgrade to create a fresh receipt.
@@ -212,9 +207,7 @@ pub(crate) async fn auto_prune() -> Result<()> {
         .await;
         match reconcile {
             Ok(()) => {
-                for key in entries_awaiting_reconciliation {
-                    state.entries.remove(&key);
-                }
+                entries_to_remove.extend(entries_awaiting_reconciliation);
             }
             Err(err) => {
                 // Keep the due receipts so a later invocation retries
@@ -226,7 +219,17 @@ pub(crate) async fn auto_prune() -> Result<()> {
             }
         }
     }
-    save_state(&state)
+    if !entries_to_remove.is_empty() {
+        let _lock = crate::lock_file::get(state_path(), false)?;
+        let mut state = load_state()?;
+        for (key, entry) in entries_to_remove {
+            if state.entries.get(&key) == Some(&entry) {
+                state.entries.remove(&key);
+            }
+        }
+        save_state(&state)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
