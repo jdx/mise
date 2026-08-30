@@ -149,14 +149,18 @@ pub(crate) async fn auto_prune() -> Result<()> {
     for (key, entry) in due {
         let install_path = &entry.install_path;
         let display = &entry.display;
-        if !install_path.starts_with(*crate::dirs::INSTALLS) {
+        let Some(installs_dir) = install_path
+            .parent()
+            .filter(|parent| parent.starts_with(*crate::dirs::INSTALLS))
+            .filter(|parent| *parent != *crate::dirs::INSTALLS)
+        else {
             warn!(
                 "ignoring tool purgatory entry outside the user installs directory: {}",
                 display_path(install_path)
             );
             entries_to_remove.push((key, entry));
             continue;
-        }
+        };
         if let Some((backend, tv)) = prunable_by_path.get(install_path) {
             let pr = mpr.add(&format!("uninstall {display}"));
             match backend
@@ -165,20 +169,29 @@ pub(crate) async fn auto_prune() -> Result<()> {
             {
                 Ok(()) => {
                     pr.finish();
-                    if let Err(err) =
-                        crate::runtime_symlinks::remove_missing_symlinks(backend.clone())
-                    {
-                        warn!("failed to remove missing runtime symlinks for {display}: {err:#}");
-                    }
-                    entries_awaiting_reconciliation.push((key, entry));
                     install_state_changed = true;
+                    match crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_dir) {
+                        Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
+                        Err(err) => {
+                            warn!(
+                                "failed to remove missing runtime symlinks for {display}: {err:#}"
+                            );
+                        }
+                    }
                 }
                 Err(err) => warn!("failed to prune deferred {display}: {err:#}"),
             }
         } else if !install_path.exists() {
-            // A missing version is already gone.
-            entries_awaiting_reconciliation.push((key, entry));
+            // A missing version is already gone, but backend discovery may no
+            // longer find its install directory. Retry that cleanup directly
+            // from the receipt before allowing reconciliation to clear it.
             install_state_changed = true;
+            match crate::runtime_symlinks::remove_missing_symlinks_in_dir(installs_dir) {
+                Ok(()) => entries_awaiting_reconciliation.push((key, entry)),
+                Err(err) => {
+                    warn!("failed to remove missing runtime symlinks for {display}: {err:#}");
+                }
+            }
         } else if installed_paths.contains(install_path) {
             // Keep the receipt while a tracked config or tool stub needs this
             // version. It may become prunable again after that reference goes
