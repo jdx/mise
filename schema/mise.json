@@ -3612,14 +3612,18 @@
         "oneOf": [
           {
             "description": "command to run",
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*"
           },
           {
             "type": "object",
             "properties": {
               "command": {
                 "description": "command to run",
-                "type": "string"
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*"
               },
               "args": {
                 "description": "arguments inserted before the intercepted command's arguments",

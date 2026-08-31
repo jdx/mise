@@ -12,7 +12,7 @@ cat >"$fake_bin/cargo" <<'EOF'
 echo system-cargo
 EOF
 chmod +x "$fake_bin/mbx" "$fake_bin/cargo"
-export PATH="$MISE_DATA_DIR/command-wrappers/bin:$MISE_DATA_DIR/shims:$fake_bin:$PATH"
+export PATH="$fake_bin:$PATH"
 
 cat >mise.toml <<'EOF'
 [wrappers.cargo]
@@ -23,6 +23,10 @@ EOF
 mise reshim
 assert_contains "mise hook-env -s bash --force" "$MISE_DATA_DIR/command-wrappers/bin"
 assert_contains "mise activate bash --shims" "$MISE_DATA_DIR/command-wrappers/bin"
+eval "$(mise activate bash --shims)"
+eval "$(mise activate bash --shims)"
+assert "printf '%s\n' \"\$PATH\" | tr ':' '\n' | grep -cx '$MISE_DATA_DIR/command-wrappers/bin'" "1"
+assert "printf '%s\n' \"\$PATH\" | tr ':' '\n' | grep -cx '$MISE_DATA_DIR/shims'" "1"
 assert "mise x -- cargo check" "mbx:1
 system-cargo"
 assert "cargo check" "mbx:1
@@ -74,3 +78,16 @@ other = "mbx"
 EOF
 mise reshim
 assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin/cargo'"
+
+cat >mise.toml <<'EOF'
+[wrappers]
+cargo = " "
+EOF
+assert_fail "mise reshim" "must have a non-blank command"
+
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+mise reshim
+assert_fail "test -e '$MISE_DATA_DIR/command-wrappers/bin'"

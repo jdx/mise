@@ -140,7 +140,16 @@ async fn which_shim(
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
-    if let Some(wrapper) = load_command_wrappers(&config.config_files)?.get(bin_stem) {
+    let wrappers = load_command_wrappers(&config.config_files)?;
+    let wrapper = if cfg!(macos) {
+        wrappers
+            .iter()
+            .find(|(name, _)| name.to_lowercase() == bin_stem)
+            .map(|(_, wrapper)| wrapper)
+    } else {
+        wrappers.get(bin_stem)
+    };
+    if let Some(wrapper) = wrapper {
         if wrapper.command() == bin_stem {
             bail!("command wrapper for {bin_stem} cannot delegate to itself");
         }
@@ -366,6 +375,14 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
 }
 
 fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
+    let wrappers = load_command_wrappers(&config.config_files)?;
+    if wrappers.is_empty() {
+        if cfg!(windows) {
+            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
+        }
+        file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
+        return Ok(());
+    }
     if force {
         if cfg!(windows) {
             remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
@@ -375,7 +392,6 @@ fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> 
     }
     file::create_dir_all(&*dirs::COMMAND_WRAPPERS)?;
 
-    let wrappers = load_command_wrappers(&config.config_files)?;
     let mut desired = HashSet::new();
     for name in wrappers.keys() {
         validate_wrapper_name(name)?;

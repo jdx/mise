@@ -2990,7 +2990,12 @@ pub(crate) fn load_command_wrappers(
         if safe_mode && !is_global_config(config_file.get_path()) {
             continue;
         }
-        wrappers.extend(config_file.command_wrappers()?);
+        for (name, wrapper) in config_file.command_wrappers()? {
+            if wrapper.command().trim().is_empty() {
+                bail!("command wrapper for {name:?} must have a non-blank command");
+            }
+            wrappers.insert(name, wrapper);
+        }
     }
     Ok(wrappers)
 }
