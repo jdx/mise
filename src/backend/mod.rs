@@ -38,7 +38,7 @@ use crate::tera::{contains_template_syntax, get_tera, render_str};
 use crate::toolset::outdated_info::OutdatedInfo;
 use crate::toolset::{
     ResolveOptions, ToolOptionSource, ToolRequest, ToolVersion, ToolVersionOptions, Toolset,
-    install_state, is_outdated_version, tool_env_var_name,
+    install_state, is_outdated_version,
 };
 use crate::ui::progress_report::SingleReport;
 use crate::{
@@ -3558,12 +3558,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             .env(env::MISE_TOOL_VERSION_ENV_VAR, tv.version.clone())
             .with_pr(ctx.pr.as_ref())
             .cmd_body_args(shell_args, &rendered_script)
-            .envs(env_vars)
-            // Keep the concrete version being installed active for nested mise
-            // invocations. The declaring config may have a nonstandard filename
-            // (for example, `mise use --path custom.toml`), so config discovery
-            // alone cannot reliably reconstruct this tool request during its hook.
-            .env(tool_env_var_name(&tv.ba().short), tv.version.clone());
+            .envs(env_vars);
         for key in install_env_removals {
             runner = runner.env_remove(key);
         }

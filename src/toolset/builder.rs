@@ -111,6 +111,7 @@ impl ToolsetBuilder {
             // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }
+        let postinstall = postinstall_tool_request(&env)?;
         for (k, v) in env {
             if let Some(tool_name) = tool_from_env_var_name(&k) {
                 let ba: Arc<BackendArg> = Arc::new(tool_name.as_str().into());
@@ -122,6 +123,11 @@ impl ToolsetBuilder {
                 }
                 ts.merge(env_ts);
             }
+        }
+        if let Some((request, source)) = postinstall {
+            let mut postinstall_ts = Toolset::new(source);
+            postinstall_ts.add_version(request);
+            ts.merge(postinstall_ts);
         }
         Ok(())
     }
@@ -181,10 +187,44 @@ impl ToolsetBuilder {
     }
 }
 
+/// Keep the exact tool currently running its postinstall hook active for
+/// nested mise invocations. Unlike `MISE_<TOOL>_VERSION`, this pair keeps
+/// backend-qualified names containing `:` or `/` intact.
+fn postinstall_tool_request(env: &EnvMap) -> eyre::Result<Option<(ToolRequest, ToolSource)>> {
+    if !env.contains_key("MISE_TOOL_INSTALL_PATH") {
+        return Ok(None);
+    }
+    let (Some(name), Some(version)) = (
+        env.get("MISE_TOOL_NAME"),
+        env.get(env::MISE_TOOL_VERSION_ENV_VAR),
+    ) else {
+        return Ok(None);
+    };
+    let backend = Arc::new(BackendArg::from(name));
+    let source =
+        ToolSource::Environment(env::MISE_TOOL_VERSION_ENV_VAR.into(), version.to_string());
+    let request = ToolRequest::new(backend, version, source.clone())?;
+    Ok(Some((request, source)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::toolset::parse_tool_options;
+
+    #[test]
+    fn test_postinstall_tool_request_preserves_backend_identity() {
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/aws-cli".into()),
+            ("MISE_TOOL_NAME".into(), "aqua:aws/aws-cli".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.31.0".into()),
+        ]);
+
+        let (request, _) = postinstall_tool_request(&env).unwrap().unwrap();
+
+        assert_eq!(request.ba().short, "aqua:aws/aws-cli");
+        assert_eq!(request.version(), "2.31.0");
+    }
 
     #[tokio::test]
     async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
