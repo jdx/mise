@@ -860,6 +860,10 @@
             "compile": {
               "description": "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
               "type": "boolean"
+            },
+            "precompiled_os": {
+              "description": "Ubuntu release target to use for precompiled Erlang builds from builds.hex.pm.",
+              "type": "string"
             }
           }
         },

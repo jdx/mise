@@ -758,6 +758,12 @@ env = "MISE_ERLANG_COMPILE"
 optional = true
 type = "Bool"
 
+[erlang.precompiled_os]
+description = "Ubuntu release target to use for precompiled Erlang builds from builds.hex.pm."
+env = "MISE_ERLANG_PRECOMPILED_OS"
+optional = true
+type = "String"
+
 [exec_auto_install]
 default = true
 description = "Automatically install missing tools when running `mise x`."
