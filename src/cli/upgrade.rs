@@ -227,22 +227,35 @@ impl Upgrade {
             outdated = self.get_interactive_tool_set(&outdated)?;
         }
         if outdated.is_empty() {
-            info!("All tools are up to date");
-            if !self.bump {
-                let bump_outdated = ts
-                    .list_outdated_versions_filtered(
-                        &config,
-                        true,
-                        &opts,
-                        filter_tools,
-                        exclude_tools,
-                    )
-                    .await;
-                if bump_outdated.iter().any(|o| o.bump.is_some()) {
-                    info!(
-                        "Newer versions are available outside the configured version ranges. Use `mise upgrade --bump` to upgrade them."
-                    );
-                }
+            let bump_outdated = if self.bump {
+                Vec::new()
+            } else {
+                ts.list_outdated_versions_filtered(
+                    &config,
+                    true,
+                    &opts,
+                    filter_tools,
+                    exclude_tools,
+                )
+                .await
+                .into_iter()
+                .filter(|o| o.bump.is_some())
+                .collect::<Vec<_>>()
+            };
+            if bump_outdated.is_empty() {
+                info!("All tools are up to date");
+            } else {
+                let updates = bump_outdated
+                    .iter()
+                    .map(|o| {
+                        let current = o.current.as_deref().unwrap_or("MISSING");
+                        format!("  {} {} → {} ({})", o.name, current, o.latest, o.source)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                info!(
+                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise upgrade --bump` to update the configuration and upgrade."
+                );
             }
         } else {
             self.upgrade(&mut config, outdated, before_date).await?;
