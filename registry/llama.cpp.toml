@@ -30,4 +30,5 @@ bins = [
 full = "github:ggml-org/llama.cpp"
 
 [backends.options]
+prerelease = true
 version_prefix = "b"
