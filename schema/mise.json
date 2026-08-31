@@ -1690,6 +1690,10 @@
             "type": "string"
           }
         },
+        "shims_dir": {
+          "description": "Directory containing user shims.",
+          "type": "string"
+        },
         "shorthands_file": {
           "description": "[deprecated] Path to a file containing custom tool shorthands.",
           "type": "string",
@@ -1788,6 +1792,14 @@
         },
         "system_config_file": {
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
+          "type": "string"
+        },
+        "system_installs_dir": {
+          "description": "Directory containing system tool installs.",
+          "type": "string"
+        },
+        "system_shims_dir": {
+          "description": "Directory containing system shims.",
           "type": "string"
         },
         "system_deps": {
@@ -2645,6 +2657,20 @@
                       }
                     }
                   ]
+                },
+                "lazy": {
+                  "description": "defer installation until one of the tool's bootstrap shims is invoked",
+                  "type": "boolean",
+                  "default": false
+                },
+                "lazy_bins": {
+                  "description": "bootstrap shim names for lazy tools without registry bin metadata",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true
                 },
                 "postinstall": {
                   "description": "command to run after tool installation",

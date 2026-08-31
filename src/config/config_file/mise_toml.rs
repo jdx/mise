@@ -88,7 +88,8 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(key, "os" | "depends" | "install_env") && !key.starts_with("install_env.")
+    !matches!(key, "os" | "depends" | "install_env" | "lazy" | "lazy_bins")
+        && !key.starts_with("install_env.")
 }
 
 fn insert_tool_option<E>(
@@ -197,6 +198,16 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("install_env", env.into());
     }
+    if let Some(lazy) = core.lazy {
+        table.insert("lazy", Value::from(lazy));
+    }
+    if !core.lazy_bins.is_empty() {
+        let mut bins = Array::new();
+        for bin in core.lazy_bins {
+            bins.push(Value::from(bin));
+        }
+        table.insert("lazy_bins", Value::Array(bins));
+    }
 }
 
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
@@ -290,6 +301,16 @@ fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVers
             arr.push(dependency.as_str());
         }
         insert_table_item_preserving_decor(table, "depends", Item::Value(Value::Array(arr)));
+    }
+    if let Some(lazy) = options.lazy {
+        insert_table_item_preserving_decor(table, "lazy", value(lazy));
+    }
+    if !options.lazy_bins.is_empty() {
+        let mut bins = Array::new();
+        for bin in &options.lazy_bins {
+            bins.push(bin.as_str());
+        }
+        insert_table_item_preserving_decor(table, "lazy_bins", Item::Value(Value::Array(bins)));
     }
     update_install_env_table(table, options);
 }
@@ -1273,6 +1294,8 @@ impl ConfigFile for MiseToml {
             if opts.os.as_ref().is_some_and(|o| !o.is_empty())
                 || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
                 || !opts.install_env.is_empty()
+                || opts.lazy.is_some()
+                || !opts.lazy_bins.is_empty()
             {
                 return false;
             }

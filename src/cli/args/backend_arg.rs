@@ -464,6 +464,16 @@ impl BackendArg {
             .unwrap_or_else(|| self.short.to_string())
     }
 
+    /// Registry metadata associated with a shorthand selected by the user.
+    /// Explicit backend identifiers must not accidentally inherit metadata from
+    /// an unrelated registry entry with the same trailing tool name.
+    pub(crate) fn registry_tool(&self) -> Option<&'static crate::registry::RegistryTool> {
+        if self.resolution.explicit {
+            return None;
+        }
+        REGISTRY.get(&self.registry_short())
+    }
+
     pub(crate) fn full(&self) -> String {
         let short = unalias_backend(&self.short);
 

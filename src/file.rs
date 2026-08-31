@@ -1760,8 +1760,7 @@ pub(crate) fn canonicalize_or_self(path: &Path) -> PathBuf {
 
 /// Returns true if `path` is one of mise's shim directories.
 ///
-/// The configured user shims dir (`dirs::SHIMS`) and system shims dir
-/// (`$MISE_SYSTEM_DATA_DIR/shims`) qualify. An active shim outside these
+/// The configured user and system shim directories qualify. An active shim outside these
 /// configured directories is rejected per candidate instead of treating its
 /// entire parent directory as shims, since that directory may also contain
 /// legitimate executables.
@@ -1772,12 +1771,13 @@ pub(crate) fn canonicalize_or_self(path: &Path) -> PathBuf {
 /// macOS) still match — the cached helper keeps this off the filesystem hot path.
 pub(crate) fn is_mise_shims_dir(path: &Path) -> bool {
     let resolved = replace_path(path);
-    let sys_shims = env::MISE_SYSTEM_DATA_DIR.join("shims");
-    if paths_eq(&resolved, &dirs::SHIMS) || paths_eq(&resolved, &sys_shims) {
+    let user_shims = dirs::shims();
+    let sys_shims = dirs::system_shims();
+    if paths_eq(&resolved, &user_shims) || paths_eq(&resolved, &sys_shims) {
         return true;
     }
     let canon_input = canonicalize_or_self(&resolved);
-    let canon_user = canonicalize_or_self(&dirs::SHIMS);
+    let canon_user = canonicalize_or_self(&user_shims);
     let canon_sys = canonicalize_or_self(&sys_shims);
     paths_eq(&canon_input, &canon_user) || paths_eq(&canon_input, &canon_sys)
 }

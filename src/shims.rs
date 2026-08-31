@@ -190,6 +190,25 @@ async fn which_shim(
         );
         return Ok((bin, ts, None));
     }
+    // Lazy tools are explicit fallback providers. They install on first shim use even when
+    // general not-found auto-install is disabled, but only after configured/project providers
+    // and already-installed tools have had a chance to win.
+    if !completion_offline && ts.has_missing_lazy_bin_provider(config, bin_name).await? {
+        for tv in ts
+            .install_missing_lazy_bin(config, bin_name)
+            .await?
+            .unwrap_or_default()
+        {
+            let backend = tv.backend()?;
+            if let Some(bin) = backend.which(config, &tv, bin_name).await? {
+                trace!(
+                    "shim[{bin_name}] LAZY ToolVersion: {tv} bin: {bin}",
+                    bin = display_path(&bin)
+                );
+                return Ok((bin, ts, None));
+            }
+        }
+    }
     // Auto-installing here would download a tool over the network; skip it for
     // offline completion so `usage complete-word` fails locally instead.
     if !completion_offline && Settings::get().not_found_auto_install {
@@ -261,8 +280,32 @@ pub(crate) async fn err_shim_not_found(bin_name: &str) -> color_eyre::Report {
     }
 }
 
-pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> Result<()> {
-    let _lock = LockFile::new(&dirs::SHIMS)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ShimScope {
+    User,
+    System,
+    Both,
+}
+
+pub(crate) async fn reshim_for(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    force: bool,
+    requested_scope: ShimScope,
+) -> Result<()> {
+    let user_shims = dirs::shims();
+    let system_shims = dirs::system_shims();
+    let collocated = file::paths_eq(&user_shims, &system_shims);
+    let scope = if collocated {
+        ShimScope::Both
+    } else {
+        requested_scope
+    };
+    let shims_dir = match requested_scope {
+        ShimScope::User | ShimScope::Both => user_shims,
+        ShimScope::System => system_shims,
+    };
+    let _lock = LockFile::new(&shims_dir)
         .with_callback(|l| {
             trace!("reshim callback {}", l.display());
         })
@@ -276,7 +319,7 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
     #[cfg(not(windows))]
     let shim_mode = String::new();
     let shim_mode_changed = cfg!(windows) && {
-        let mode_file = dirs::SHIMS.join(".mode");
+        let mode_file = shims_dir.join(".mode");
         mode_file
             .exists()
             .then(|| fs::read_to_string(&mode_file).unwrap_or_default())
@@ -291,7 +334,7 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
     // the new version. See discussion #10022.
     let shim_version = env!("CARGO_PKG_VERSION");
     let shim_version_changed = cfg!(windows) && {
-        let version_file = dirs::SHIMS.join(".version");
+        let version_file = shims_dir.join(".version");
         let prev = fs::read_to_string(&version_file).ok();
         shim_version_stale(prev.as_deref(), shim_version, &shim_mode)
     };
@@ -301,37 +344,37 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
         // with "Access is denied"), remove individual files with a rename-first
         // fallback so locked executables are moved out of the way.
         if cfg!(windows) {
-            remove_shims_individually(&dirs::SHIMS)?;
+            remove_shims_individually(&shims_dir)?;
         } else {
-            file::remove_all(*dirs::SHIMS)?;
+            file::remove_all(&shims_dir)?;
         }
     }
-    file::create_dir_all(*dirs::SHIMS)?;
+    file::create_dir_all(&shims_dir)?;
     if cfg!(windows) {
-        let mode_file = dirs::SHIMS.join(".mode");
+        let mode_file = shims_dir.join(".mode");
         file::write(&mode_file, &shim_mode)?;
         // Written for every shim mode (like `.mode`) even though it is only
         // consulted for "exe"/"hardlink" modes; for "file"/"symlink" it is
         // harmless and keeps the marker current if the mode later changes
         // (mode transitions themselves are handled by `shim_mode_changed`).
-        let version_file = dirs::SHIMS.join(".version");
+        let version_file = shims_dir.join(".version");
         file::write(&version_file, shim_version)?;
     }
 
     let (shims_to_add, shims_to_remove) = if force || shim_mode_changed || shim_version_changed {
         // After a full wipe, all desired shims need to be re-created.
-        let desired = get_desired_shims(config, &mise_bin, ts).await?;
+        let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
         (
             desired.into_iter().collect::<BTreeSet<_>>(),
             BTreeSet::new(),
         )
     } else {
-        let diffs = get_shim_diffs(config, &mise_bin, ts).await?;
+        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
         (diffs.missing, diffs.extra)
     };
 
     for shim in shims_to_add {
-        let symlink_path = dirs::SHIMS.join(&shim);
+        let symlink_path = shims_dir.join(&shim);
         // On Windows, remove the old shim first (with rename fallback for
         // locked .exe files) so the new one can be written.
         if cfg!(windows) && symlink_path.exists() {
@@ -340,37 +383,42 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
         add_shim(&mise_bin, &symlink_path, &shim)?;
     }
     for shim in shims_to_remove {
-        let symlink_path = dirs::SHIMS.join(shim);
+        let symlink_path = shims_dir.join(shim);
         if cfg!(windows) {
             remove_shim_with_rename_fallback(&symlink_path)?;
         } else {
             file::remove_all(&symlink_path)?;
         }
     }
-    let mut jset = JoinSet::new();
-    for plugin in backend::list() {
-        jset.spawn(async move {
-            if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
-                for bin in files {
-                    let bin = bin?;
-                    let bin_name = bin.file_name().into_string().unwrap();
-                    let symlink_path = dirs::SHIMS.join(bin_name);
-                    make_shim(&bin.path(), &symlink_path).await?;
+    if matches!(scope, ShimScope::User | ShimScope::Both) {
+        let mut jset = JoinSet::new();
+        for plugin in backend::list() {
+            let shims_dir = shims_dir.clone();
+            jset.spawn(async move {
+                if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
+                    for bin in files {
+                        let bin = bin?;
+                        let bin_name = bin.file_name().into_string().unwrap();
+                        let symlink_path = shims_dir.join(bin_name);
+                        make_shim(&bin.path(), &symlink_path).await?;
+                    }
                 }
-            }
-            Ok(())
-        });
+                Ok(())
+            });
+        }
+        jset.join_all()
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()?;
     }
-    jset.join_all()
-        .await
-        .into_iter()
-        .collect::<Result<Vec<_>>>()?;
 
-    sync_command_wrapper_shims(
-        config,
-        &mise_bin,
-        force || shim_mode_changed || shim_version_changed,
-    )?;
+    if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
+        sync_command_wrapper_shims(
+            config,
+            &mise_bin,
+            force || shim_mode_changed || shim_version_changed,
+        )?;
+    }
 
     Ok(())
 }
@@ -775,11 +823,13 @@ pub(crate) async fn get_shim_diffs(
     config: &Arc<Config>,
     mise_bin: impl AsRef<Path>,
     toolset: &Toolset,
+    shims_dir: &Path,
+    scope: ShimScope,
 ) -> Result<ShimDiffs> {
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) = tokio::join!(
-        get_actual_shims(mise_bin),
-        get_desired_shims(config, mise_bin, toolset)
+        get_actual_shims(mise_bin, shims_dir),
+        get_desired_shims(config, mise_bin, toolset, scope)
     );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
     let missing: BTreeSet<_> = desired_shims.difference(&actual_shims).cloned().collect();
@@ -792,13 +842,13 @@ pub(crate) async fn get_shim_diffs(
     })
 }
 
-async fn get_actual_shims(mise_bin: impl AsRef<Path>) -> Result<HashSet<String>> {
+async fn get_actual_shims(mise_bin: impl AsRef<Path>, shims_dir: &Path) -> Result<HashSet<String>> {
     let mise_bin = mise_bin.as_ref();
 
-    Ok(list_shims()?
+    Ok(list_shims_in(shims_dir)?
         .into_iter()
         .filter(|bin| {
-            let path = dirs::SHIMS.join(bin);
+            let path = shims_dir.join(bin);
 
             !path.is_symlink() || path.read_link().is_ok_and(|p| p == mise_bin)
         })
@@ -827,10 +877,6 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
         .into_iter()
         .flatten()
         .collect())
-}
-
-fn list_shims() -> Result<HashSet<String>> {
-    list_shims_in(&dirs::SHIMS)
 }
 
 fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
@@ -879,14 +925,41 @@ fn shim_version_stale(prev: Option<&str>, current: &str, shim_mode: &str) -> boo
     prev.map(|p| p.trim() != current).unwrap_or(true)
 }
 
+fn shim_scope_contains_install(scope: ShimScope, install_path: &Path) -> bool {
+    if scope == ShimScope::Both {
+        return true;
+    }
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    if system_installs == *dirs::INSTALLS {
+        return true;
+    }
+    let is_system = install_path.starts_with(system_installs);
+    matches!(scope, ShimScope::System) == is_system
+}
+
+fn shim_scope_contains_request(scope: ShimScope, request: &crate::toolset::ToolRequest) -> bool {
+    if scope == ShimScope::Both {
+        return true;
+    }
+    let is_system = request.source().path().is_some_and(|path| {
+        crate::config::provenance::ConfigProvenance::from_path(path).scope()
+            == crate::config::provenance::ConfigFileScope::System
+    });
+    matches!(scope, ShimScope::System) == is_system
+}
+
 async fn get_desired_shims(
     config: &Arc<Config>,
     mise_bin: &Path,
     toolset: &Toolset,
+    scope: ShimScope,
 ) -> Result<HashSet<String>> {
     let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
     for (t, tv) in toolset.list_installed_versions(config).await? {
+        if !shim_scope_contains_install(scope, &tv.install_path()) {
+            continue;
+        }
         let bins = list_tool_bins(config, t.clone(), &tv)
             .await
             .unwrap_or_else(|e| {
@@ -897,6 +970,17 @@ async fn get_desired_shims(
             bins.into_iter()
                 .flat_map(|b| platform_shim_names(_mise_bin, &b)),
         );
+    }
+    for request in toolset.list_current_requests() {
+        if !shim_scope_contains_request(scope, request) {
+            continue;
+        }
+        if let Some(bins) = request.lazy_bins()? {
+            shims.extend(
+                bins.into_iter()
+                    .flat_map(|bin| platform_shim_names(_mise_bin, &bin)),
+            );
+        }
     }
     Ok(shims)
 }

@@ -414,7 +414,7 @@ impl Install {
 
     fn install_opts(&self) -> Result<InstallOptions> {
         let install_dir = if self.system {
-            Some(env::MISE_SYSTEM_INSTALLS_DIR.clone())
+            Some(Settings::get().system_installs_dir().to_path_buf())
         } else {
             self.shared.clone()
         }
@@ -425,6 +425,7 @@ impl Install {
             jobs: self.jobs,
             raw: self.raw,
             missing_args_only: false,
+            include_lazy: self.tool.is_some(),
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
@@ -545,7 +546,10 @@ impl Install {
                     .cloned()
                     .collect_vec()
             }
-        });
+        })
+        .into_iter()
+        .filter(|request| request.options().lazy != Some(true))
+        .collect_vec();
         let has_work = !requests.is_empty();
         let (versions, install_error) = if requests.is_empty() {
             measure!("run_postinstall_hook", {

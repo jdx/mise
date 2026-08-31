@@ -22,7 +22,7 @@ use crate::toolset::{
 };
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::progress_report::SingleReport;
-use crate::{config, exit, runtime_symlinks, ui};
+use crate::{config, env, exit, runtime_symlinks, ui};
 use console::Term;
 use demand::DemandOption;
 use eyre::{Context, Result, eyre};
@@ -429,12 +429,59 @@ impl Upgrade {
             ..Default::default()
         };
 
-        // Collect all tool requests for parallel installation
-        let tool_requests: Vec<_> = outdated.iter().map(|o| o.tool_request.clone()).collect();
+        // Preserve the storage scope of an existing system install while upgrading it.
+        // Equal user/system roots classify as local, so they intentionally take the
+        // ordinary path and are never scanned or installed twice.
+        let (system_outdated, user_outdated): (Vec<_>, Vec<_>) =
+            outdated.iter().partition(|outdated| {
+                env::install_path_category(&outdated.tool_version.install_path())
+                    == env::InstallPathCategory::System
+            });
+        let user_requests = user_outdated
+            .into_iter()
+            .map(|outdated| outdated.tool_request.clone())
+            .collect::<Vec<_>>();
+        let system_requests = system_outdated
+            .into_iter()
+            .map(|outdated| outdated.tool_request.clone())
+            .collect::<Vec<_>>();
 
-        // Install all tools in parallel
-        let (mut successful_versions, install_error) =
-            split_install_result(ts.install_all_versions(config, tool_requests, &opts).await);
+        let mut successful_versions = vec![];
+        let mut install_errors = vec![];
+        if !user_requests.is_empty() {
+            let (installed, result) =
+                split_install_result(ts.install_all_versions(config, user_requests, &opts).await);
+            successful_versions.extend(installed);
+            if let Err(err) = result {
+                install_errors.push(err);
+            }
+        }
+        if !system_requests.is_empty() {
+            let system_opts = InstallOptions {
+                install_dir: Some(Settings::get().system_installs_dir().to_path_buf()),
+                ..opts.clone()
+            };
+            let (installed, result) = split_install_result(
+                ts.install_all_versions(config, system_requests, &system_opts)
+                    .await,
+            );
+            successful_versions.extend(installed);
+            if let Err(err) = result {
+                install_errors.push(err);
+            }
+        }
+        let install_error = if install_errors.is_empty() {
+            Ok(())
+        } else {
+            Err(eyre!(
+                "{}",
+                install_errors
+                    .into_iter()
+                    .map(|err| format!("{err:#}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ))
+        };
 
         // Only update config files for tools that were successfully installed
         let mut config_file_updates_by_path = IndexMap::new();

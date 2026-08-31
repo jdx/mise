@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use eyre::Result;
+use eyre::WrapErr;
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tokio::sync::OnceCell;
@@ -26,6 +27,100 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{backend, config, hooks, runtime_symlinks};
 
 impl Toolset {
+    async fn missing_lazy_bin_provider(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<ToolVersion>> {
+        let mut providers = self
+            .list_missing_versions(config)
+            .await
+            .into_iter()
+            .filter_map(|tv| {
+                let options = tv.request.options();
+                if options.lazy == Some(true) {
+                    match tv.request.lazy_bins() {
+                        Ok(Some(bins)) if bins.iter().any(|bin| bin == bin_name) => Some(Ok(tv)),
+                        Ok(_) => None,
+                        Err(err) => Some(Err(err)),
+                    }
+                } else if tv.ba().matches_bin_name(bin_name)
+                    || tv
+                        .ba()
+                        .registry_tool()
+                        .is_some_and(|tool| tool.provides_bin(bin_name))
+                {
+                    Some(Ok(tv))
+                } else {
+                    None
+                }
+            })
+            .map(|tv| tv.and_then(|tv| Ok((tv.backend()?, tv))))
+            .collect::<Result<Vec<_>>>()?;
+        Self::sort_by_overrides(&mut providers)?;
+        Ok(providers
+            .into_iter()
+            .next()
+            .and_then(|(_, tv)| (tv.request.options().lazy == Some(true)).then_some(tv)))
+    }
+
+    pub(crate) async fn has_missing_lazy_bin_provider(
+        &self,
+        config: &Arc<Config>,
+        bin_name: &str,
+    ) -> Result<bool> {
+        Ok(self
+            .missing_lazy_bin_provider(config, bin_name)
+            .await?
+            .is_some())
+    }
+
+    pub(crate) async fn install_missing_lazy_bin(
+        &mut self,
+        config: &mut Arc<Config>,
+        bin_name: &str,
+    ) -> Result<Option<Vec<ToolVersion>>> {
+        let Some(tv) = self.missing_lazy_bin_provider(config, bin_name).await? else {
+            return Ok(None);
+        };
+        let install_dir = tv.request.source().path().and_then(|path| {
+            (crate::config::provenance::ConfigProvenance::from_path(path).scope()
+                == crate::config::provenance::ConfigFileScope::System)
+                .then(|| Settings::get().system_installs_dir().to_path_buf())
+        });
+        let install_options = InstallOptions {
+            reason: "lazy shim".into(),
+            install_dir: install_dir.filter(|dir| dir != &*crate::dirs::INSTALLS),
+            ..Default::default()
+        };
+        let installed = self
+            .install_all_versions(config, vec![tv.request.clone()], &install_options)
+            .await
+            .wrap_err_with(|| {
+                install_options.install_dir.as_ref().map_or_else(
+                    || format!("failed to install lazy tool {}", tv.style()),
+                    |dir| {
+                        format!(
+                            "failed to install lazy tool {} into {}. Preinstall it with appropriate privileges or set system_installs_dir to a writable directory",
+                            tv.style(),
+                            crate::file::display_path(dir)
+                        )
+                    },
+                )
+            })?;
+        if !installed.is_empty() {
+            let ts = config.get_toolset().await?;
+            config::rebuild_shims_and_runtime_symlinks(
+                config,
+                ts,
+                &installed,
+                crate::lockfile::LockfileUpdateMode::Normal,
+            )
+            .await?;
+        }
+        Ok(Some(installed))
+    }
+
     pub(crate) async fn should_install_missing_registry_bin_provider(
         &self,
         config: &Arc<Config>,
@@ -80,6 +175,7 @@ impl Toolset {
 
         let mut versions = missing
             .iter()
+            .filter(|tv| tv.request.options().lazy != Some(true) || opts.include_lazy)
             .filter(|tv| {
                 !opts.missing_args_only
                     || matches!(self.versions[tv.ba()].source, ToolSource::Argument)

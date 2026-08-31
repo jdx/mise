@@ -277,10 +277,6 @@ impl Doctor {
         }
         // Warn about shims+activate conflict, but not when not_found_auto_install is enabled
         // since that intentionally preserves shims for auto-install functionality
-        if env::is_activated() && shims_on_path() && !Settings::get().not_found_auto_install {
-            self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
-        }
-
         let build_info = build_info()
             .into_iter()
             .map(|(k, v)| format!("{k}: {v}"))
@@ -472,7 +468,7 @@ impl Doctor {
         }
 
         if !env::is_activated() && !shims_on_path() {
-            let shims = style::ncyan(display_path(*dirs::SHIMS));
+            let shims = style::ncyan(display_path(dirs::shims()));
             if cfg!(windows) {
                 self.errors.push(formatdoc!(
                     r#"mise shims are not on PATH
@@ -825,7 +821,14 @@ impl Doctor {
     async fn analyze_shims(&mut self, config: &Arc<Config>, toolset: &Toolset) -> HashSet<String> {
         let mise_bin = shims::mise_bin_for_shims();
 
-        if let Ok(diffs) = shims::get_shim_diffs(config, mise_bin, toolset).await {
+        let shims_dir = dirs::shims();
+        let scope = if file::paths_eq(&shims_dir, &dirs::system_shims()) {
+            shims::ShimScope::Both
+        } else {
+            shims::ShimScope::User
+        };
+        if let Ok(diffs) = shims::get_shim_diffs(config, mise_bin, toolset, &shims_dir, scope).await
+        {
             let cmd = style::nyellow("mise reshim");
 
             if !diffs.missing.is_empty() {
@@ -1018,7 +1021,8 @@ impl Doctor {
         let mut checked_commands = HashSet::new();
 
         for shim in desired_shims {
-            if !dirs::SHIMS.join(shim).exists() {
+            let shims_dir = dirs::shims();
+            if !shims_dir.join(shim).exists() {
                 continue;
             }
             let command = shim_command_name(shim);
@@ -1030,7 +1034,7 @@ impl Doctor {
             };
             let is_mise_shim = resolved
                 .parent()
-                .is_some_and(|parent| file::paths_eq(&file::replace_path(parent), &dirs::SHIMS));
+                .is_some_and(|parent| file::paths_eq(&file::replace_path(parent), &shims_dir));
             if !is_mise_shim {
                 shadowed.insert(command, resolved);
             }
@@ -1048,7 +1052,7 @@ impl Doctor {
             r#"mise shims are shadowed by executables earlier in PATH:
               {shadowed}
             Move {} earlier in PATH to use the mise-managed versions."#,
-            display_path(*dirs::SHIMS),
+            display_path(dirs::shims()),
         ));
     }
 }
@@ -1067,10 +1071,9 @@ fn shim_command_name(shim: &str) -> String {
 }
 
 fn shims_on_path() -> bool {
-    let shims = &*dirs::SHIMS;
     env::PATH
         .iter()
-        .any(|p| crate::file::paths_eq(&crate::file::replace_path(p), shims))
+        .any(|path| crate::file::is_mise_shims_dir(path))
 }
 
 fn yn(b: bool) -> String {
@@ -1081,17 +1084,15 @@ fn yn(b: bool) -> String {
     }
 }
 
-fn mise_dirs() -> Vec<(String, &'static Path)> {
-    [
-        ("cache", &*dirs::CACHE),
-        ("config", &*dirs::CONFIG),
-        ("data", &*dirs::DATA),
-        ("shims", &*dirs::SHIMS),
-        ("state", &*dirs::STATE),
+fn mise_dirs() -> Vec<(String, PathBuf)> {
+    vec![
+        ("cache".into(), dirs::CACHE.to_path_buf()),
+        ("config".into(), dirs::CONFIG.to_path_buf()),
+        ("data".into(), dirs::DATA.to_path_buf()),
+        ("shims".into(), dirs::shims()),
+        ("system_shims".into(), dirs::system_shims()),
+        ("state".into(), dirs::STATE.to_path_buf()),
     ]
-    .iter()
-    .map(|(k, v)| (k.to_string(), **v))
-    .collect()
 }
 
 fn mise_env_vars() -> Vec<(String, String)> {

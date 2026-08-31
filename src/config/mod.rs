@@ -3529,9 +3529,27 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
     measure!("rebuilding shims", {
-        shims::reshim(config, ts, false)
-            .await
-            .wrap_err("failed to rebuild shims")?;
+        let system_installs = Settings::get().system_installs_dir().to_path_buf();
+        let installs_collocated = file::paths_eq(&system_installs, &dirs::INSTALLS);
+        let system_changed = installs_collocated
+            || new_versions
+                .iter()
+                .any(|tv| tv.install_path().starts_with(&system_installs));
+        let user_changed = installs_collocated
+            || new_versions.is_empty()
+            || new_versions
+                .iter()
+                .any(|tv| !tv.install_path().starts_with(&system_installs));
+        if user_changed {
+            shims::reshim_for(config, ts, false, shims::ShimScope::User)
+                .await
+                .wrap_err("failed to rebuild user shims")?;
+        }
+        if system_changed {
+            shims::reshim_for(config, ts, false, shims::ShimScope::System)
+                .await
+                .wrap_err("failed to rebuild system shims")?;
+        }
     });
     lockfile::migrate_monorepo_lockfiles(config, false)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes

@@ -184,8 +184,9 @@ impl PackagePluginManager {
         let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
             .map(|path| split_paths(&path).collect())
             .unwrap_or_default();
-        if !paths.iter().any(|path| path == *crate::dirs::SHIMS) {
-            paths.push(crate::dirs::SHIMS.to_path_buf());
+        let shims = crate::dirs::shims();
+        if !paths.iter().any(|path| path == &shims) {
+            paths.push(shims);
         }
         paths
     }

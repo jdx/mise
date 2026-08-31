@@ -11,6 +11,8 @@ pub(crate) struct InstallOptions {
     pub raw: bool,
     /// only install missing tools if passed as arguments
     pub missing_args_only: bool,
+    /// install lazy declarations because the user explicitly named a tool
+    pub include_lazy: bool,
     /// completely disable auto-installation when auto_install setting is false
     pub skip_auto_install: bool,
     pub auto_install_disable_tools: Option<Vec<String>>,
@@ -35,6 +37,7 @@ impl Default for InstallOptions {
             reason: "install".to_string(),
             force: false,
             missing_args_only: true,
+            include_lazy: false,
             skip_auto_install: false,
             auto_install_disable_tools: Settings::get().auto_install_disable_tools.clone(),
             resolve_options: Default::default(),

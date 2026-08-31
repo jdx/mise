@@ -179,7 +179,7 @@
 - [`mise deps remove <PACKAGES>…`](/cli/deps/remove.md)
 - [`mise prune [FLAGS] [INSTALLED_TOOL]…`](/cli/prune.md)
 - [`mise registry [FLAGS] [NAME]`](/cli/registry.md)
-- [`mise reshim [-f --force]`](/cli/reshim.md)
+- [`mise reshim [-f --force] [--system]`](/cli/reshim.md)
 - [`mise run [FLAGS]`](/cli/run.md)
 - [`mise search [FLAGS] [NAME]`](/cli/search.md)
 - [`mise self-update [FLAGS] [VERSION]`](/cli/self-update.md)

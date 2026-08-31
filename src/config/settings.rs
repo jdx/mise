@@ -643,6 +643,24 @@ fn normalize_hidden_config_aliases(mut partial: SettingsPartial) -> SettingsPart
     partial
 }
 
+fn normalize_storage_dirs(settings: &mut Settings) -> Result<()> {
+    for (name, path) in [
+        ("shims_dir", &mut settings.shims_dir),
+        ("system_installs_dir", &mut settings.system_installs_dir),
+        ("system_shims_dir", &mut settings.system_shims_dir),
+    ] {
+        let Some(configured) = path.take() else {
+            continue;
+        };
+        let configured = file::replace_path(&configured);
+        if !configured.is_absolute() {
+            bail!("settings.{name} must resolve to an absolute path");
+        }
+        *path = Some(configured);
+    }
+    Ok(())
+}
+
 fn strip_local_only_settings(settings: &mut toml::Table, path: &Path, is_global: bool) {
     if is_global {
         return;
@@ -973,7 +991,9 @@ impl Settings {
             }
             builder = builder.preloaded(DEFAULT_SETTINGS.clone());
         }
-        Ok(builder.load()?)
+        let mut settings = builder.load()?;
+        normalize_storage_dirs(&mut settings)?;
+        Ok(settings)
     }
 
     /// Load eligible config-file settings layers in precedence order and combine settings whose
@@ -1077,8 +1097,13 @@ impl Settings {
         }
         trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
         let settings = Arc::new(settings);
+        let system_installs_changed =
+            settings.system_installs_dir() != &*env::MISE_SYSTEM_INSTALLS_DIR;
         LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
+        if system_installs_changed {
+            crate::toolset::install_state::reset_tools();
+        }
         time!("try_get done");
         Ok(settings)
     }
@@ -1380,6 +1405,22 @@ impl Settings {
                     dirs::CONFIG.join("config.toml")
                 }
             })
+    }
+
+    pub(crate) fn shims_dir(&self) -> &Path {
+        self.shims_dir.as_deref().unwrap_or(&env::MISE_SHIMS_DIR)
+    }
+
+    pub(crate) fn system_installs_dir(&self) -> &Path {
+        self.system_installs_dir
+            .as_deref()
+            .unwrap_or(&env::MISE_SYSTEM_INSTALLS_DIR)
+    }
+
+    pub(crate) fn system_shims_dir(&self) -> PathBuf {
+        self.system_shims_dir
+            .clone()
+            .unwrap_or_else(|| env::MISE_SYSTEM_DATA_DIR.join("shims"))
     }
 
     pub(crate) fn env_files(&self) -> Vec<PathBuf> {

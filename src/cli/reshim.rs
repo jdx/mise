@@ -33,6 +33,10 @@ pub(crate) struct Reshim {
     /// Removes all shims before reshimming
     #[usage(long, short)]
     pub force: bool,
+
+    /// Rebuild the system shim farm
+    #[usage(long)]
+    pub system: bool,
 }
 
 impl Reshim {
@@ -40,7 +44,12 @@ impl Reshim {
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
 
-        shims::reshim(&config, &ts, self.force).await
+        let scope = if self.system {
+            shims::ShimScope::System
+        } else {
+            shims::ShimScope::User
+        };
+        shims::reshim_for(&config, &ts, self.force, scope).await
     }
 }
 
