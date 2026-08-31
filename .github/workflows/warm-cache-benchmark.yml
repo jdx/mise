@@ -43,11 +43,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563
+      - uses: jdx/mr-boxington-action@9783f75f9e232bb24f23694c208d9261d8a3311e
         with:
           version: 1.2.0
           backend: github
-          cache-generation: benchmark-github-v1
+          cache-generation: benchmark-github-v2
           save-on-workflow-dispatch: true
       - name: Build
         if: runner.os != 'Windows'
