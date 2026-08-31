@@ -13,7 +13,11 @@ mise upgrade dummy --prune
 
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
-assert_contains "mise upgrade dummy 2>&1" "Newer versions are available outside the configured version ranges"
+assert_contains "mise upgrade dummy 2>&1" 'Newer versions are available but do not match the configured version ranges'
+assert_contains "mise upgrade dummy 2>&1" 'dummy 1.1.0 → 2.0.0'
+assert_contains "mise upgrade dummy 2>&1" 'mise outdated --bump'
+assert_contains "mise upgrade dummy 2>&1" "to update the configuration and upgrade"
+assert_not_contains "mise upgrade dummy 2>&1" "All tools are up to date"
 assert_contains "mise upgrade dummy -l --dry-run 2>&1" "deprecated [cli.upgrade.bump-l]"
 assert_contains "mise upgrade dummy -l --dry-run 2>&1" "Would install dummy@2.0.0"
 
@@ -111,9 +115,9 @@ assert_fail_contains "mise up --dry-run-code 2>&1" "Would install"
 # Verify nothing was actually upgraded
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
-# Test: --dry-run-code should exit 0 when everything is up to date
+# Test: --dry-run-code should exit 0 when the configured range is up to date
 mise up
-assert_contains "mise up --dry-run-code 2>&1" "All tools are up to date"
+assert_contains "mise up --dry-run-code 2>&1" "do not match the configured version ranges"
 
 # Test: upgrade should not re-download a version that is already installed
 # This verifies the fix for https://github.com/jdx/mise/discussions/8260
@@ -127,8 +131,8 @@ mise install dummy@1.0.0
 mise install dummy@1.1.0
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_contains "mise ls --installed dummy" "1.1.0"
-# upgrade should report "All tools are up to date" since 1.1.0 is already installed
-assert_contains "mise up 2>&1" "All tools are up to date"
+# upgrade should report the newer release outside the configured range
+assert_contains "mise up 2>&1" "dummy 1.1.0 → 2.0.0"
 
 # Test: upgrade with lockfile should update the lockfile to the new version
 cat <<EOF >mise.toml
