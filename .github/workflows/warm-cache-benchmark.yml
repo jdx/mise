@@ -18,7 +18,7 @@ env:
 jobs:
   mbx:
     name: mbx (${{ matrix.label }})
-    if: github.actor == 'jdx' && github.triggering_actor == 'jdx' && github.ref == 'refs/heads/main'
+    if: github.actor == 'jdx' && github.triggering_actor == 'jdx' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/bench/mbx-github-backend')
     permissions:
       contents: read
       id-token: write # Authenticate the main-branch dispatch to the cache server.
@@ -43,9 +43,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: ./.github/actions/mbx
+      - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563
         with:
-          backend: server
+          version: 1.2.0
+          backend: github
+          cache-generation: benchmark-github-v1
+          save-on-workflow-dispatch: true
       - name: Build
         if: runner.os != 'Windows'
         shell: bash
@@ -70,7 +73,7 @@ jobs:
 
   rust_cache:
     name: Swatinem rust-cache (${{ matrix.label }})
-    if: github.actor == 'jdx' && github.triggering_actor == 'jdx' && github.ref == 'refs/heads/main'
+    if: github.actor == 'jdx' && github.triggering_actor == 'jdx' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/bench/mbx-github-backend')
     strategy:
       fail-fast: false
       matrix:
