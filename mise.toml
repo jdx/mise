@@ -53,7 +53,8 @@ dir = "{{config_root}}"
 # log HTTP warnings and their instruction counts move with whatever the registry
 # happened to answer. Ignoring the repository config keeps its development tools
 # out of the fixture so editing this file does not change a benchmark's input.
-env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
+# Bypass mbx so restored compiler artifacts cannot perturb the measured binary.
+env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml", MBX_DISABLE = "1" }
 run = ["cargo build --release", "tak run"]
 
 # Same measurement, appended to refs/notes/tak for this commit. Run by the
@@ -61,7 +62,7 @@ run = ["cargo build --release", "tak run"]
 # locally — nothing leaves the machine until `tak push`.
 [tasks."perf:record"]
 dir = "{{config_root}}"
-env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
+env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml", MBX_DISABLE = "1" }
 run = ["cargo build --release", "tak run --record"]
 
 # End-to-end task artifact cache phases. The harness generates an isolated
