@@ -80,7 +80,7 @@ jobs:
     # the report would say "nothing was compared" instead of anything useful.
     runs-on: [self-hosted, jdx-perf-v1]
     container:
-      image: ghcr.io/jdx/perf-runner@sha256:1b44fc9f1c93fc1b7a2db56a1ef743bbf8a8df60035121d455c9834fe8001922
+      image: ghcr.io/jdx/perf-runner@sha256:8935770e7f656f7b0bcd0204328aa3d6998b32d8bb04084851731b30df56941b
       options: --cpuset-cpus 0-7
     timeout-minutes: 40
     permissions:
@@ -117,8 +117,8 @@ jobs:
           {
             echo '### Runner metadata'
             echo '```text'
-            echo 'environment-revision: perf-runner@78e4231'
-            echo 'image: ghcr.io/jdx/perf-runner@sha256:1b44fc9f1c93fc1b7a2db56a1ef743bbf8a8df60035121d455c9834fe8001922'
+            echo 'environment-revision: perf-runner@6ab972a'
+            echo 'image: ghcr.io/jdx/perf-runner@sha256:8935770e7f656f7b0bcd0204328aa3d6998b32d8bb04084851731b30df56941b'
             uname -a
             lscpu
             mise --version
