@@ -798,6 +798,10 @@ fn resolve_age_paths(settings: &mut toml::Table, path: &Path) -> Result<()> {
     let mut context = tera::Context::new();
     context.insert("env", &*env::PRISTINE_ENV);
     context.insert("config_root", &config_root);
+    context.insert(
+        "config_source",
+        &crate::config::config_file::config_root::config_source(path),
+    );
     if let Ok(cwd) = std::env::current_dir() {
         context.insert("cwd", &cwd);
     }
@@ -1224,6 +1228,9 @@ impl Settings {
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }
+        if let Some(jobs) = cli.jobs {
+            s.jobs = Some(jobs);
+        }
         if cli.profile.is_some() {
             s.env = cli.profile.clone();
         }
@@ -1402,6 +1409,10 @@ impl Settings {
     pub(crate) fn cache_prune_age_duration(&self) -> Option<Duration> {
         let age = duration::parse_duration(&self.cache_prune_age).unwrap();
         if age.as_secs() == 0 { None } else { Some(age) }
+    }
+
+    pub(crate) fn upgrade_prune_after_duration(&self) -> eyre::Result<Duration> {
+        duration::parse_duration(&self.upgrade.prune_after)
     }
 
     #[cfg(feature = "self_update")]

@@ -134,7 +134,12 @@ fn windows_io_hint(_path: &Path, _err: &std::io::Error) -> Option<String> {
 }
 
 /// Attach [`windows_io_hint`] to `err`, if it has anything to say about this path.
-fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
+/// `msg`, plus whatever [`windows_io_hint`] can say about `err` at `path`.
+///
+/// `pub(crate)` because the operations that need it are not all in this module: `tempfile`'s
+/// persist is used directly by the downloader too, and that is the call that fails first as a
+/// path approaches `MAX_PATH`.
+pub(crate) fn with_io_hint(msg: String, path: &Path, err: &std::io::Error) -> String {
     match windows_io_hint(path, err) {
         Some(hint) => format!("{msg}\n{hint}"),
         None => msg,
@@ -271,12 +276,23 @@ pub(crate) fn remove_all_with_warning<P: AsRef<Path>>(path: P) -> Result<()> {
     })
 }
 
+/// Whether a directory entry is there at all, without resolving it.
+///
+/// [`Path::exists`] answers about a link's *target*, so it is false for one whose target is gone —
+/// and that entry is exactly the thing a caller asking "is there something here to remove, or to
+/// tell the user about?" needs to find.
+pub(crate) fn entry_exists<P: AsRef<Path>>(path: P) -> bool {
+    fs::symlink_metadata(path.as_ref()).is_ok()
+}
+
 pub(crate) fn remove_all_with_progress<P: AsRef<Path>>(
     path: P,
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let path = path.as_ref();
-    if !path.exists() {
+    // Not `exists()`: a link whose target is gone is still an entry to remove, and reporting
+    // nothing to do would leave it behind exactly where a user went looking for it.
+    if !entry_exists(path) {
         return Ok(());
     }
     pr.set_message(format!("remove {}", display_path(path)));
@@ -666,6 +682,37 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Result<String> {
     }
 }
 
+/// The UTF-16 encoding `path` announces with a byte-order mark, if it announces one.
+///
+/// The marks are the ones [`decode_text`] matches, kept here rather than spelled out again at the
+/// call site so there is one description of what a mark looks like.
+///
+/// A UTF-8 mark is deliberately not reported. `has_shebang` already looks past that one, so a
+/// file carrying it is executable and never reaches a caller that needs to explain why it is not.
+/// (Named without a link: that function is `#[cfg(windows)]` and this doc is built on unix too.)
+///
+/// Compiled for tests on every platform so the byte matching is checked everywhere, but only used
+/// on Windows: on unix the execute bit decides what is executable, and a UTF-16 script with that
+/// bit set fails at exec rather than being skipped.
+#[cfg(any(windows, test))]
+pub(crate) fn utf16_bom(path: &Path) -> Option<&'static str> {
+    // `read_to_end` on a `take`, not `read_exact`: a one-byte file is a legitimate answer of
+    // "no mark", and `read_exact` would fail on it. Same shape as `has_shebang` below.
+    let bytes = std::fs::File::open(path)
+        .and_then(|f| {
+            use std::io::Read;
+            let mut buf = Vec::with_capacity(2);
+            f.take(2).read_to_end(&mut buf)?;
+            Ok(buf)
+        })
+        .ok()?;
+    match bytes[..] {
+        [0xff, 0xfe] => Some("UTF-16LE"),
+        [0xfe, 0xff] => Some("UTF-16BE"),
+        _ => None,
+    }
+}
+
 /// [`read_to_string`], but tolerant of a byte-order mark. See [`decode_text`].
 ///
 /// Only reads *from disk* need this. Bodies fetched over HTTP already arrive decoded: reqwest's
@@ -885,6 +932,20 @@ pub(crate) fn find_up<FN: AsRef<str>>(from: &Path, filenames: &[FN]) -> Option<P
 }
 
 pub(crate) fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
+    subdirs(dir, false)
+}
+
+/// [`dir_subdirs`], but keeping a link whose target is gone.
+///
+/// Most callers want the plain version: a link that resolves to nothing is not a directory they
+/// can read a plugin, a cached download or another version manager's install out of. Version
+/// listing is the exception — the entry is still there, still occupying the name, and still the
+/// thing a user has to be told about before they can remove it.
+pub(crate) fn dir_subdirs_keeping_broken_links(dir: &Path) -> Result<BTreeSet<String>> {
+    subdirs(dir, true)
+}
+
+fn subdirs(dir: &Path, keep_broken_links: bool) -> Result<BTreeSet<String>> {
     let mut output = Default::default();
 
     if !dir.exists() {
@@ -893,8 +954,14 @@ pub(crate) fn dir_subdirs(dir: &Path) -> Result<BTreeSet<String>> {
 
     for entry in dir.read_dir()? {
         let entry = entry?;
+        // `entry.file_type()` describes the entry itself; `entry.path().is_dir()` resolves it.
+        // A link is kept when it leads to a directory, or — for the callers that asked — when it
+        // leads nowhere at all.
         let ft = entry.file_type()?;
-        if ft.is_dir() || (ft.is_symlink() && entry.path().is_dir()) {
+        let keep = ft.is_dir()
+            || (ft.is_symlink()
+                && (entry.path().is_dir() || keep_broken_links && !entry.path().exists()));
+        if keep {
             output.insert(entry.file_name().into_string().unwrap());
         }
     }
@@ -1364,6 +1431,18 @@ pub(crate) fn make_executable_hint(path: &Path) -> String {
 
 #[cfg(windows)]
 pub(crate) fn make_executable_hint(path: &Path) -> String {
+    // A shebang the file already carries, in an encoding `has_shebang` reads as bytes and so
+    // cannot see. Windows PowerShell 5.1's `>` and `Out-File` write UTF-16LE by default, which
+    // makes this the shell that ships with the OS producing a file mise then tells the user to
+    // add a shebang to. Naming the encoding is the fix; telling them to add what is already
+    // there is not. Said whether or not a shebang is in there, because either way the encoding
+    // is what has to change first.
+    if let Some(encoding) = utf16_bom(path) {
+        return format!(
+            "{} is {encoding}. mise reads a shebang as bytes, so save it as UTF-8.",
+            display_path(path),
+        );
+    }
     format!(
         "Add a shebang line to {}, or give it one of these extensions: {}",
         display_path(path),
@@ -1725,7 +1804,7 @@ pub(crate) fn is_active_mise_shim(path: &Path) -> bool {
 pub(crate) fn path_env_without_shims() -> std::ffi::OsString {
     let filtered: Vec<_> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !is_mise_shims_dir(p))
+        .filter(|p| !is_mise_dispatch_dir(p))
         .cloned()
         .collect();
     std::env::join_paths(filtered)
@@ -1736,11 +1815,35 @@ pub(crate) fn path_env_without_shims() -> std::ffi::OsString {
 /// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
 /// than inheriting the current process's PATH.
 pub(crate) fn strip_shims_from_path(path_val: &str) -> String {
-    let filtered = env::split_paths(path_val).filter(|p| !is_mise_shims_dir(p));
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
         .into_owned()
+}
+
+/// Strip every mise dispatch directory from PATH before a command wrapper
+/// delegates. This lets the wrapped command resolve a tool managed by mise or
+/// fall through to rustup/the system without invoking the wrapper again.
+pub(crate) fn strip_dispatch_dirs_from_path(path_val: &str) -> String {
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub(crate) fn is_command_wrapper_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    paths_eq(&resolved, &dirs::COMMAND_WRAPPERS)
+        || paths_eq(
+            &canonicalize_or_self(&resolved),
+            &canonicalize_or_self(&dirs::COMMAND_WRAPPERS),
+        )
+}
+
+pub(crate) fn is_mise_dispatch_dir(path: &Path) -> bool {
+    is_mise_shims_dir(path) || is_command_wrapper_dir(path)
 }
 
 /// returns the first executable in PATH, excluding the mise shim directories
@@ -1749,7 +1852,7 @@ pub(crate) fn strip_shims_from_path(path_val: &str) -> String {
 pub(crate) fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !is_mise_shims_dir(p))
+        .filter(|p| !is_mise_dispatch_dir(p))
         .cloned()
         .collect();
     _which(name, &paths)
@@ -2694,6 +2797,61 @@ mod tests {
     /// Deliberately not `#[cfg(unix)]`: `make_symlink` writes a real symlink on unix and a
     /// junction on Windows, and the two are removed by different system calls. The behaviour under
     /// test is what happens to a link mise itself wrote, so it has to be checked on both.
+    /// Deliberately not `#[cfg(unix)]`, like the removal tests below: `make_symlink` writes a real
+    /// symlink on unix and a junction on Windows, and only `symlink_metadata` describes both
+    /// without resolving them.
+    #[test]
+    fn entry_exists_sees_what_path_exists_hides() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        let live = dir.path().join("live");
+        let broken = dir.path().join("broken");
+        let plain = dir.path().join("plain.txt");
+        create_dir_all(&target).unwrap();
+        write(&plain, "x").unwrap();
+        make_symlink(&target, &live).unwrap();
+        make_symlink(&dir.path().join("nowhere"), &broken).unwrap();
+
+        for p in [&target, &plain, &live, &broken] {
+            assert!(entry_exists(p), "{}", p.display());
+        }
+        assert!(!entry_exists(dir.path().join("never-existed")));
+
+        // The control, and the whole reason this function exists: `Path::exists` answers about the
+        // link's target, so it disagrees for exactly the entry that needs finding.
+        assert!(!broken.exists());
+    }
+
+    /// Also pins that `DirEntry::file_type()` reports a Windows junction as a symlink, which is
+    /// what the predicate keys on. `make_symlink` writes a junction here, so if that were not so,
+    /// `broken` would be dropped below — and the *live* junction would never have been listed
+    /// either, which is how `mise ls` has been showing linked versions on Windows all along.
+    #[test]
+    fn only_the_version_scan_keeps_a_link_that_leads_nowhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target");
+        create_dir_all(&target).unwrap();
+        make_symlink(&target, &dir.path().join("live")).unwrap();
+        make_symlink(&dir.path().join("nowhere"), &dir.path().join("broken")).unwrap();
+        write(dir.path().join("plain.txt"), "x").unwrap();
+
+        // The control: the plain listing still drops it, because a link that resolves to nothing
+        // is not a directory its callers can read a plugin or a cached download out of.
+        let plain = dir_subdirs(dir.path()).unwrap();
+        assert!(
+            plain.contains("target") && plain.contains("live"),
+            "{plain:?}"
+        );
+        assert!(!plain.contains("broken"), "{plain:?}");
+
+        let kept = dir_subdirs_keeping_broken_links(dir.path()).unwrap();
+        assert!(kept.contains("broken"), "{kept:?}");
+        // Everything else it reports is unchanged -- including that a regular file is still not a
+        // subdirectory.
+        assert!(kept.contains("target") && kept.contains("live"), "{kept:?}");
+        assert!(!kept.contains("plain.txt"), "{kept:?}");
+    }
+
     #[test]
     fn remove_all_removes_a_link_whose_target_is_gone() {
         let dir = tempfile::tempdir().unwrap();
@@ -4223,8 +4381,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let archive_path = dir.path().join("pax-xattr.tar");
         let dest_dir = dir.path().join("out");
-        let archive = File::create(&archive_path).unwrap();
-        let mut builder = jdx_tar::Builder::new(archive);
+        let mut builder = jdx_tar::Builder::new(Vec::new());
 
         let key = "LIBARCHIVE.xattr.com.apple.cs.CodeSignature";
         let value = b"signature\nmetadata";
@@ -4237,7 +4394,11 @@ mod tests {
         let mut pax = format!("{record_len} {key}=").into_bytes();
         pax.extend_from_slice(value);
         pax.push(b'\n');
-        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'x'));
+        // Build the raw PAX record under a neutral extension flag, then rewrite
+        // the type byte and checksum. jdx-tar's logical writer deliberately
+        // rejects raw extension headers, while this test specifically needs a
+        // malformed raw PAX fixture to exercise the reader.
+        let mut pax_header = jdx_tar::Header::new_gnu(EntryType::Other(b'X'));
         pax_header.set_size(pax.len() as u64);
         builder
             .append_data(&mut pax_header, "pax-xattr", pax.as_slice())
@@ -4250,7 +4411,17 @@ mod tests {
         builder
             .append_data(&mut header, "tool", contents.as_slice())
             .unwrap();
-        builder.finish().unwrap();
+        let mut archive = builder.into_inner().unwrap();
+
+        archive[156] = b'x';
+        archive[257..265].copy_from_slice(b"ustar\x0000");
+        archive[148..156].fill(b' ');
+        let checksum = archive[..512]
+            .iter()
+            .map(|byte| u64::from(*byte))
+            .sum::<u64>();
+        archive[148..156].copy_from_slice(format!("{checksum:06o}\0 ").as_bytes());
+        std::fs::write(&archive_path, archive).unwrap();
 
         extract_archive(
             &archive_path,
@@ -4491,6 +4662,116 @@ mod tests {
         // and it must offer what that branch actually accepts
         assert!(hint.contains("exe"), "{hint}");
         assert!(hint.contains("build"), "{hint}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_io_hint_explains_a_path_at_the_limit() {
+        use std::io::{Error, ErrorKind};
+
+        let long = PathBuf::from(format!(r"C:\{}", "d".repeat(MAX_PATH)));
+        let hint = windows_io_hint(&long, &Error::from_raw_os_error(3))
+            .expect("a path past MAX_PATH failing with ERROR_PATH_NOT_FOUND should be explained");
+        assert!(hint.contains(&MAX_PATH.to_string()), "{hint}");
+        assert!(hint.contains(&(MAX_PATH + 3).to_string()), "{hint}");
+
+        // The control, and the reason the length test is there at all: the same error on a path
+        // nowhere near the limit is a genuinely missing directory, and answering it with advice
+        // about path length would send the user after the wrong thing.
+        assert_eq!(
+            windows_io_hint(Path::new(r"C:\short"), &Error::from_raw_os_error(3)),
+            None
+        );
+
+        // The other two codes Windows uses for the same cause.
+        for code in [123, 206] {
+            assert!(
+                windows_io_hint(&long, &Error::from_raw_os_error(code)).is_some(),
+                "os error {code}"
+            );
+        }
+
+        // A different branch entirely, so a hint that only ever talked about length would fail.
+        let in_use = windows_io_hint(Path::new(r"C:\short"), &Error::from_raw_os_error(32))
+            .expect("a sharing violation should be explained");
+        assert!(in_use.contains("in use"), "{in_use}");
+        assert_eq!(
+            windows_io_hint(Path::new(r"C:\short"), &Error::from(ErrorKind::NotFound)),
+            None
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_io_hint_measures_the_units_windows_counts() {
+        use std::io::Error;
+
+        // `OsStr::len()` is WTF-8 bytes on Windows and the limit counts UTF-16 code units, so a
+        // path of non-ASCII characters measures ~3x too long by bytes. Each of these is one unit
+        // and three bytes: by bytes this is well past the limit, by units it is nowhere near.
+        let short_but_fat = PathBuf::from(format!(r"C:\{}", "あ".repeat(100)));
+        assert!(short_but_fat.as_os_str().len() > MAX_PATH, "fixture");
+        assert_eq!(
+            windows_io_hint(&short_but_fat, &Error::from_raw_os_error(3)),
+            None
+        );
+    }
+
+    #[test]
+    fn utf16_bom_reports_only_the_marks_that_hide_a_shebang() {
+        let tmp = tempfile::tempdir().unwrap();
+        let write = |name: &str, bytes: &[u8]| {
+            let path = tmp.path().join(name);
+            fs::write(&path, bytes).unwrap();
+            path
+        };
+        const SCRIPT: &[u8] = b"#!/usr/bin/env bash\necho hi\n";
+
+        // What Windows PowerShell 5.1's `>` and `Out-File` write by default.
+        let mut le = vec![0xff, 0xfe];
+        le.extend(SCRIPT.iter().flat_map(|b| [*b, 0]));
+        assert_eq!(utf16_bom(&write("le", &le)), Some("UTF-16LE"));
+        let mut be = vec![0xfe, 0xff];
+        be.extend(SCRIPT.iter().flat_map(|b| [0, *b]));
+        assert_eq!(utf16_bom(&write("be", &be)), Some("UTF-16BE"));
+
+        // A UTF-8 mark is not reported: `has_shebang` reads past it, so such a file is executable
+        // and never reaches a caller that has to explain why it is not.
+        let mut utf8_bom = vec![0xef, 0xbb, 0xbf];
+        utf8_bom.extend_from_slice(SCRIPT);
+        assert_eq!(utf16_bom(&write("utf8_bom", &utf8_bom)), None);
+        assert_eq!(utf16_bom(&write("plain", SCRIPT)), None);
+
+        // Shorter than a mark, and absent entirely: answers, not panics.
+        assert_eq!(utf16_bom(&write("empty", b"")), None);
+        assert_eq!(utf16_bom(&write("one", b"#")), None);
+        assert_eq!(utf16_bom(&tmp.path().join("does-not-exist")), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn make_executable_hint_names_the_encoding_when_a_shebang_is_hidden_by_one() {
+        let tmp = tempfile::tempdir().unwrap();
+        let script = b"#!/usr/bin/env bash\necho hi\n";
+
+        let utf16 = tmp.path().join("build");
+        let mut bytes = vec![0xff, 0xfe];
+        bytes.extend(script.iter().flat_map(|b| [*b, 0]));
+        fs::write(&utf16, &bytes).unwrap();
+        let hint = make_executable_hint(&utf16);
+        // The shebang is the first thing in the file. Telling the user to add one sends them
+        // after something that is already there, so the encoding has to be what is named.
+        assert!(hint.contains("UTF-16LE"), "{hint}");
+        assert!(hint.contains("UTF-8"), "{hint}");
+        assert!(!hint.contains("Add a shebang line"), "{hint}");
+
+        // The control: without a mark the advice is unchanged. Without this, an implementation
+        // that always blamed the encoding would pass too.
+        let utf8 = tmp.path().join("plain");
+        fs::write(&utf8, b"echo hi\n").unwrap();
+        let hint = make_executable_hint(&utf8);
+        assert!(hint.contains("Add a shebang line"), "{hint}");
+        assert!(!hint.contains("UTF-16"), "{hint}");
     }
 
     #[test]

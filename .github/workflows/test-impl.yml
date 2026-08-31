@@ -140,6 +140,10 @@ jobs:
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
+      # The bootstrap build below uses explicit mbx before mise installs the
+      # project tools. Keep nested task builds on the same entrypoint so AWS-LC
+      # does not reconfigure an existing CMake tree with a different compiler.
+      MISE_CARGO_BUILD_COMMAND: mbx build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -170,6 +174,10 @@ jobs:
         run: mbx test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
+      # The e2e suite is Linux-only, and this one turns on `TIOCSCTTY` and
+      # signal-driven termios restore — both places where the two platforms have
+      # differed before. Run it here so the claim covers macOS as well.
+      - run: mise run test:e2e e2e/cli/test_watch_terminal_restore_on_signal
       - run: mbx cache stats
         if: always()
 
@@ -177,9 +185,6 @@ jobs:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large' }}
     timeout-minutes: 80
     needs: [build-ubuntu]
-    env:
-      # Clippy's all-features build can otherwise exhaust the runner's memory.
-      CARGO_BUILD_JOBS: "2"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
@@ -237,10 +242,18 @@ jobs:
             run: mbx msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
-      - name: Run Clippy
-        run: |
-          mbx clippy --ignore-rust-version -- -D warnings
-          mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+      # Separate targets keep Cargo's directory lock from serializing these
+      # overlapping configurations. mbx shares the machine-wide compiler pool
+      # and deduplicates identical work in flight between them.
+      - parallel:
+          - name: Run Clippy with default features
+            env:
+              CARGO_TARGET_DIR: ${{ runner.temp }}/clippy-default
+            run: mbx clippy --ignore-rust-version -- -D warnings
+          - name: Run Clippy with all features and targets
+            env:
+              CARGO_TARGET_DIR: ${{ runner.temp }}/clippy-all
+            run: mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
 
   e2e:
     name: e2e
@@ -387,7 +400,7 @@ jobs:
 
   windows-unit:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:

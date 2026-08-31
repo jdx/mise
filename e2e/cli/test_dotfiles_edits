@@ -64,6 +64,8 @@ assert_fail "EDITOR=true mise dotfiles edit ~/.zshrc" "multiple [dotfiles] edit 
 # idempotent: re-running changes nothing
 assert_succeed "mise dotfiles status --missing"
 assert_contains "mise dotfiles apply --yes 2>&1" "all edits are applied"
+assert_contains "mise bootstrap dotfiles diff ~/rendered.conf/sum 2>&1" "all edits are applied"
+assert_not_contains "mise bootstrap dotfiles diff ~/rendered.conf/sum 2>&1" "(if changed)"
 assert "grep -c 'dev.local' ~/hosts" "1"
 assert "grep -c 'mise:activate >>>' ~/.zshrc" "1"
 
@@ -76,6 +78,10 @@ cat <<'EOF' >mise.toml
 "~/.zshrc/aliases" = { block = "alias ll='ls -l'" }
 EOF
 assert_contains "mise dotfiles status" "differs (block content differs)"
+diff_out="$(mise bootstrap dotfiles diff ~/.zshrc/activate 2>&1)"
+assert_contains_text "$diff_out" "edit differs: ~/.zshrc (block:activate)"
+assert_contains_text "$diff_out" '+eval "$(mise activate zsh --shims)"'
+assert_not_contains "cat ~/.zshrc" "--shims"
 assert_succeed "mise dotfiles apply --yes"
 assert_contains "cat ~/.zshrc" "--shims"
 assert_not_contains "cat ~/.zshrc" 'eval "$(mise activate zsh)"'
@@ -99,7 +105,15 @@ assert_succeed "mise dotfiles apply --yes"
 
 # corrupted markers are an error, not a guess
 sed -i.bak '/<<< mise:activate <<</d' ~/.zshrc
+cat <<'EOF' >>mise.toml
+"~/other.conf/new" = { line = "new line" }
+EOF
 assert_contains "mise dotfiles status" "differs (begin marker without end marker)"
+if diff_out="$(mise bootstrap dotfiles diff 2>&1)"; then
+  fail "[mise bootstrap dotfiles diff] expected failure"
+fi
+assert_contains_text "$diff_out" "edit differs: ~/other.conf (line:new)"
+assert_contains_text "$diff_out" "begin marker without end marker"
 assert_fail "mise dotfiles apply --yes"
 rm ~/.zshrc ~/.zshrc.bak
 

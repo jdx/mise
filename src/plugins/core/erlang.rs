@@ -210,7 +210,19 @@ impl ErlangPlugin {
     }
 
     fn linux_precompiled_os_version() -> Result<String> {
-        let os_ver = if Platform::current().is_linux() {
+        let os_ver = if let Some(os) = Settings::get().erlang.precompiled_os.clone() {
+            if ![
+                "ubuntu-20.04",
+                "ubuntu-22.04",
+                "ubuntu-24.04",
+                "ubuntu-26.04",
+            ]
+            .contains(&os.as_str())
+            {
+                bail!("unsupported OS version: {os}");
+            }
+            return Ok(os);
+        } else if Platform::current().is_linux() {
             if let Ok(os) = std::env::var("ImageOS") {
                 match os.as_str() {
                     "ubuntu24" => "ubuntu-24.04".to_string(),
@@ -229,8 +241,8 @@ impl ErlangPlugin {
             "ubuntu-24.04".to_string()
         };
 
-        // Currently, Bob only builds for Ubuntu, so we have to check that we're on Ubuntu,
-        // and on a supported version.
+        // Keep automatic targets stable so existing optionless source locks continue to match.
+        // Other targets and glibc distributions can opt in with erlang.precompiled_os.
         if !["ubuntu-20.04", "ubuntu-22.04", "ubuntu-24.04"].contains(&os_ver.as_str()) {
             bail!("unsupported OS version: {os_ver}");
         }

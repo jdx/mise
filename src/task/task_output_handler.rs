@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::config::Settings;
 use crate::task::task_helpers::{task_gets_keep_order_slot, task_needs_permit};
 use crate::task::task_output::TaskOutput;
@@ -31,6 +33,34 @@ pub(crate) struct KeepOrderState {
     buffers: IndexMap<Task, Vec<KeepOrderLine>>,
     /// Tasks that finished while not active (in order of completion)
     finished: Vec<Task>,
+    /// Which task injected each task that a run entry placed in the group.
+    ///
+    /// Usually that is a task given its slot at runtime, but a run entry can
+    /// also name a task that already holds one — one being run at top level as
+    /// well. It keeps that slot, and the slot joins the group all the same, so
+    /// the parent's next entry lands past it rather than in front of it.
+    ///
+    /// A printing parent's children go *after* it, so a second run entry has to
+    /// land after the first group rather than at the parent's heels — otherwise
+    /// the later group ends up in front and the order reverses. Finding that
+    /// boundary means walking forward past everything belonging to the parent,
+    /// and neither a count of its direct children nor "was this injected at
+    /// all?" describes that: a printing child injects slots that belong inside
+    /// its parent's group, while a printing *sibling* injects slots that do not.
+    /// Telling those apart needs the ancestry, so it is recorded.
+    ///
+    /// The anchored path does not need the boundary — its children go *before*
+    /// the parent, which pushes the parent along, so re-reading its index
+    /// already lands past the previous group — but it records ancestry too, so
+    /// that a printing child of an anchored parent can find its own.
+    ///
+    /// A task can have **more than one** parent here. Nothing stops two run
+    /// entries from naming the same task, and a slot that already exists is
+    /// adopted rather than moved, so it genuinely belongs to both groups. Keeping
+    /// only the first parent left the second one unable to see it, and that
+    /// parent's later entry landed in front of a task its earlier entry had
+    /// named.
+    injected_by: HashMap<Task, Vec<Task>>,
     /// Set after flush_all — further output prints directly
     done: bool,
 }
@@ -41,6 +71,7 @@ impl KeepOrderState {
             active: None,
             buffers: IndexMap::new(),
             finished: Vec::new(),
+            injected_by: HashMap::new(),
             done: false,
         }
     }
@@ -49,42 +80,149 @@ impl KeepOrderState {
         self.buffers.entry(task.clone()).or_default();
     }
 
-    /// Give `tasks` slots immediately before `parent`'s, keeping their relative
-    /// order, so tasks a parent injects at runtime occupy the position the
-    /// parent itself was declared in rather than landing wherever their first
-    /// line happened to arrive.
+    /// Give `tasks` slots at `parent`'s position, keeping their relative order,
+    /// so tasks a parent injects at runtime occupy the place the parent itself
+    /// was declared in rather than landing wherever their first line happened to
+    /// arrive.
     ///
-    /// `parent` keeps its own (empty) slot afterwards: a later run entry, or a
-    /// nested injection by one of these tasks, has to find the same anchor.
-    /// `on_task_finished` reaps it.
+    /// `parent` keeps its own slot afterwards: a later run entry, or a nested
+    /// injection by one of these tasks, has to find the same anchor.
+    /// `on_task_finished` reaps it when it stayed empty.
     ///
-    /// A parent that produces output of its own is left alone. keep-order is one
-    /// contiguous block per task and cannot express "parent output, children
-    /// blocks, more parent output", and moving such a parent behind its children
-    /// would reorder lines it had already buffered. Those tasks keep what this
-    /// did before -- appended -- only now in the order they were written rather
-    /// than the order they happened to print.
-    pub(crate) fn insert_tasks_before(&mut self, parent: &Task, tasks: &[Task]) {
-        let anchor = if task_needs_permit(parent) {
-            None
-        } else {
-            self.buffers.get_index_of(parent)
-        };
-        let Some(mut idx) = anchor else {
+    /// Which side of the parent depends on whether the parent prints. One that
+    /// prints nothing is only an anchor, so its children take its position. One
+    /// that prints keeps its own block ahead of them: moving it behind its
+    /// children would reorder lines it had already buffered, which is why an
+    /// earlier version of this gave such a parent no anchor at all and appended
+    /// instead. Appending was not enough — the position then came from whichever
+    /// parent injected first, so with two printing parents the blocks came out in
+    /// a different order from one run to the next. Inserting after the parent
+    /// keeps its buffered lines where they were *and* takes the scheduler back
+    /// out of the answer.
+    ///
+    /// What is still not expressible is "parent output, children, more parent
+    /// output": keep-order is one contiguous block per task, so a printing
+    /// parent's later lines land in its own block, ahead of the children.
+    pub(crate) fn insert_injected_tasks(&mut self, parent: &Task, tasks: &[Task]) {
+        let Some(parent_idx) = self.buffers.get_index_of(parent) else {
             for task in tasks {
                 self.init_task(task);
             }
             return;
         };
+        let after = task_needs_permit(parent);
+        let mut idx = if after {
+            self.group_end(parent, parent_idx)
+        } else {
+            parent_idx
+        };
         for task in tasks {
             // `shift_insert` *moves* a key it already holds, which would drag a
-            // task out of the position it was given earlier.
-            if self.buffers.contains_key(task) {
+            // task out of the position it was given earlier — from a previous
+            // injection, or from the up-front registration of a task that is
+            // also being run at top level. It keeps that slot; two things have
+            // to happen around it instead.
+            //
+            // `idx` moves past it, so the entries written *after* it stay after
+            // it — leaving `idx` alone put them in front, which reversed the
+            // order the run entry was written in. Only on the side that inserts
+            // *after* the parent: the anchored path's insertion point is the
+            // parent's own slot, and a task holding a slot behind the parent
+            // would push `idx` past it, sending the rest of the group out of the
+            // anchor and behind the parent it was supposed to precede.
+            //
+            // And the slot joins the parent's subtree, because `group_end` stops
+            // at the first slot that is not the parent's. Without that, a task
+            // that already had a slot ended the walk where it stood, and the
+            // parent's *next* run entry landed in front of the group this one
+            // left: `[p, d, c1, c2]` for entries written `[c1, c2]` then `[d]`.
+            if let Some(existing) = self.buffers.get_index_of(task) {
+                if after && existing >= idx {
+                    idx = existing + 1;
+                }
+                // Recorded on both sides, unlike the `idx` move above. Which
+                // side the parent inserts on says nothing about whose subtree
+                // the slot belongs to, and an anchored parent's child can go on
+                // to inject a subtree of its own — one that an *outer* printing
+                // parent then has to walk past. Gating this on `after` left that
+                // edge missing, and the outer `group_end` stopped at the child.
+                //
+                // Skipped when `parent` already descends from `task`: that edge
+                // would close the chain `descends_from` walks into a loop. This
+                // is the bound that gating on `after` was standing in for.
+                if !self.descends_from(parent, task) {
+                    let parents = self.injected_by.entry(task.clone()).or_default();
+                    if !parents.contains(parent) {
+                        parents.push(parent.clone());
+                    }
+                }
                 continue;
             }
             self.buffers.shift_insert(idx, task.clone(), Vec::new());
+            self.injected_by.insert(task.clone(), vec![parent.clone()]);
             idx += 1;
         }
+    }
+
+    /// The slot just past `parent`'s own subtree.
+    ///
+    /// What a parent inserts sits contiguously after it, so the group is
+    /// normally an unbroken run. It is not always: a task that already held a
+    /// slot keeps it, and that slot can sit beyond an unrelated one — a
+    /// top-level task registered between them, say. Adopting it into the subtree
+    /// without reaching it would put the parent's next entry in front of a task
+    /// its run entry named *first*.
+    ///
+    /// So this looks for the **last** slot descended from `parent` rather than
+    /// stopping at the first that is not. An unrelated slot caught inside that
+    /// span was already there before the parent injected anything, and leaving
+    /// it where it is costs nothing; ending the group short of a task the parent
+    /// owns reverses the order the run entries were written in.
+    fn group_end(&self, parent: &Task, parent_idx: usize) -> usize {
+        let mut end = parent_idx + 1;
+        for idx in parent_idx + 1..self.buffers.len() {
+            if self
+                .buffers
+                .get_index(idx)
+                .is_some_and(|(task, _)| self.descends_from(task, parent))
+            {
+                end = idx + 1;
+            }
+        }
+        end
+    }
+
+    /// Whether `task` was injected by `ancestor`, directly or through a chain of
+    /// injections.
+    ///
+    /// The walk is bounded by the number of recorded edges: a chain longer than
+    /// that has returned to a slot it already passed. Injection alone cannot
+    /// build one — a task is recorded under the parent that placed it, which was
+    /// already there — but a task that also holds a slot of its own can be
+    /// recorded on either side of a pair whose run entries name each other, and
+    /// a hung run is a far worse answer than one misordered group.
+    fn descends_from(&self, task: &Task, ancestor: &Task) -> bool {
+        // A walk over a graph rather than a chain, since a task can be named by
+        // several run entries. `seen` is what keeps it terminating: two entries
+        // naming each other can be recorded from both ends, and the ordering may
+        // then be imperfect, but the run must not hang.
+        let mut seen: HashSet<&Task> = HashSet::new();
+        let mut stack = vec![task];
+        while let Some(current) = stack.pop() {
+            if !seen.insert(current) {
+                continue;
+            }
+            let Some(parents) = self.injected_by.get(current) else {
+                continue;
+            };
+            for parent in parents {
+                if parent == ancestor {
+                    return true;
+                }
+                stack.push(parent);
+            }
+        }
+        false
     }
 
     /// Whether this task should stream live (is active, or is first in
@@ -671,7 +809,7 @@ mod tests {
         state.init_task(&launch);
         state.init_task(&other);
 
-        state.insert_tasks_before(&launch, &[task_named("one"), task_named("two")]);
+        state.insert_injected_tasks(&launch, &[task_named("one"), task_named("two")]);
 
         assert_eq!(keys(&state), ["one", "two", "launch", "other"]);
     }
@@ -683,7 +821,7 @@ mod tests {
         let other = task_named("other");
         state.init_task(&launch);
         state.init_task(&other);
-        state.insert_tasks_before(&launch, &[task_named("one"), task_named("two")]);
+        state.insert_injected_tasks(&launch, &[task_named("one"), task_named("two")]);
 
         state.on_stdout(&other, "other".into(), "first".into());
         state.on_stdout(&other, "other".into(), "second".into());
@@ -705,8 +843,8 @@ mod tests {
         let launch = task_named("launch");
         state.init_task(&launch);
 
-        state.insert_tasks_before(&launch, &[task_named("a")]);
-        state.insert_tasks_before(&launch, &[task_named("b")]);
+        state.insert_injected_tasks(&launch, &[task_named("a")]);
+        state.insert_injected_tasks(&launch, &[task_named("b")]);
 
         assert_eq!(keys(&state), ["a", "b", "launch"]);
     }
@@ -715,33 +853,270 @@ mod tests {
     fn a_task_that_already_has_a_slot_is_not_moved() {
         // `shift_insert` moves a key it already holds, which would drag a task
         // out of the position it was given earlier.
+        //
+        // The anchored path does not step past that slot the way the printing
+        // one does: its insertion point *is* the parent's slot, so stepping past
+        // a task sitting behind the parent would send `b` out of the anchor and
+        // behind the parent it is meant to precede.
         let mut state = KeepOrderState::new();
         let launch = task_named("launch");
         let a = task_named("a");
         state.init_task(&launch);
         state.init_task(&a);
 
-        state.insert_tasks_before(&launch, &[a.clone(), task_named("b")]);
+        state.insert_injected_tasks(&launch, &[a.clone(), task_named("b")]);
 
         assert_eq!(keys(&state), ["b", "launch", "a"]);
     }
 
     #[test]
-    fn a_parent_with_output_of_its_own_is_not_used_as_an_anchor() {
+    fn a_parent_that_prints_keeps_its_block_ahead_of_its_children() {
         // The mixed case: keep-order cannot express "parent output, children,
-        // more parent output", and anchoring here would move lines the parent
-        // had already buffered behind its children's blocks.
+        // more parent output", so the parent's own block stays in front. Putting
+        // the children *before* it would move lines it had already buffered.
         let mut state = KeepOrderState::new();
-        let mixed = Task {
-            name: "mixed".to_string(),
-            run: vec![RunEntry::Script("echo A".to_string())],
-            ..Default::default()
-        };
+        // `head` goes first so the parent is not the one streaming live —
+        // otherwise `is_active` is true for it and its line prints straight out
+        // instead of landing in the block this is about.
+        let head = task_named("head");
+        let mixed = printing_task("mixed");
+        state.init_task(&head);
+        state.init_task(&mixed);
+        state.on_stdout(&mixed, "mixed".into(), "start".into());
+
+        state.insert_injected_tasks(&mixed, &[task_named("one"), task_named("two")]);
+
+        assert_eq!(keys(&state), ["head", "mixed", "one", "two"]);
+        assert_eq!(
+            buffered(&state, &mixed),
+            1,
+            "the parent's line must still be in the parent's block"
+        );
+    }
+
+    /// A printing parent's children go *after* it, so a second run entry must
+    /// land after the first group. Anchoring each call at the parent's heels
+    /// would put the later group in front and reverse what was written.
+    ///
+    /// The anchored path gets this for free — its children go before the parent,
+    /// which pushes the parent along — which is why only this side needs
+    /// `group_end`.
+    #[test]
+    fn a_second_injection_by_a_printing_parent_follows_the_first() {
+        let mut state = KeepOrderState::new();
+        let mixed = printing_task("mixed");
         state.init_task(&mixed);
 
-        state.insert_tasks_before(&mixed, &[task_named("one"), task_named("two")]);
+        state.insert_injected_tasks(&mixed, &[task_named("first")]);
+        state.insert_injected_tasks(&mixed, &[task_named("second")]);
 
-        assert_eq!(keys(&state), ["mixed", "one", "two"]);
+        assert_eq!(keys(&state), ["mixed", "first", "second"]);
+    }
+
+    /// A printing child can inject in turn, and those slots belong inside its
+    /// parent's group. Counting the parent's direct children misses them, so a
+    /// later run entry from the parent lands in front of them: `p, c, d, x`
+    /// instead of `p, c, x, d`.
+    #[test]
+    fn a_nested_injection_stays_inside_the_group_it_belongs_to() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let c = printing_task("c");
+        state.init_task(&p);
+
+        state.insert_injected_tasks(&p, std::slice::from_ref(&c));
+        state.insert_injected_tasks(&c, &[task_named("x")]);
+        state.insert_injected_tasks(&p, &[task_named("d")]);
+
+        assert_eq!(keys(&state), ["p", "c", "x", "d"]);
+    }
+
+    /// A parent's group ends where a *sibling's* subtree begins. Walking past
+    /// everything merely "injected" cannot see that boundary: it steps over the
+    /// sibling too and drops the nested task on the far side of it, giving
+    /// `[p, p1, p2, q]` where `q` belongs between `p1` and `p2`.
+    #[test]
+    fn a_sibling_subtree_is_not_swallowed_by_the_one_before_it() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let p1 = printing_task("p1");
+        let p2 = printing_task("p2");
+        state.init_task(&p);
+
+        state.insert_injected_tasks(&p, &[p1.clone(), p2.clone()]);
+        state.insert_injected_tasks(&p1, &[task_named("q")]);
+
+        assert_eq!(keys(&state), ["p", "p1", "q", "p2"]);
+
+        // ...and the parent's own next entry still goes after both subtrees.
+        state.insert_injected_tasks(&p, &[task_named("d")]);
+        assert_eq!(keys(&state), ["p", "p1", "q", "p2", "d"]);
+    }
+
+    /// A run entry can name a task that already holds a slot — one that is being
+    /// run at top level as well. That task keeps the slot it was given, but the
+    /// entries written after it still have to land behind it. Skipping it
+    /// without moving the insertion point put them in front instead, so the
+    /// group came out in the reverse of what the entry said: `[p, c2, c1]`.
+    #[test]
+    fn a_child_that_already_has_a_slot_does_not_send_its_siblings_in_front() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let c1 = task_named("c1");
+        let c2 = task_named("c2");
+        state.init_task(&p);
+        state.init_task(&c1);
+
+        state.insert_injected_tasks(&p, &[c1.clone(), c2.clone()]);
+
+        assert_eq!(keys(&state), ["p", "c1", "c2"]);
+    }
+
+    /// ...and the parent's *next* run entry has to clear it too. `group_end`
+    /// stops at the first slot that is not the parent's, so a task that kept a
+    /// slot of its own ended the walk where it stood and the later group landed
+    /// in front of the earlier one: `[p, d, c1, c2]` for `[c1, c2]` then `[d]`.
+    #[test]
+    fn a_pre_slotted_child_still_belongs_to_the_group_it_joined() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let c1 = task_named("c1");
+        state.init_task(&p);
+        state.init_task(&c1);
+
+        state.insert_injected_tasks(&p, &[c1.clone(), task_named("c2")]);
+        state.insert_injected_tasks(&p, &[task_named("d")]);
+
+        assert_eq!(keys(&state), ["p", "c1", "c2", "d"]);
+    }
+
+    /// The same slot, joined from the *anchored* side. A printing task injects a
+    /// parent that prints nothing, that parent adopts a pre-slotted printing
+    /// child, and the child then injects a subtree of its own. Which side the
+    /// adopting parent inserts on says nothing about whose subtree the slot
+    /// belongs to — but recording ancestry only on the `after` side left this
+    /// edge missing, so the *outer* `group_end` stopped at the child and the
+    /// outer parent's next entry landed in front of the child's subtree:
+    /// `[p, q, d, c, x]` for entries written `[q]`, `[c]`, `[x]`, then `[d]`.
+    #[test]
+    fn a_slot_adopted_by_an_anchored_parent_still_joins_the_outer_group() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let q = task_named("q");
+        let c = printing_task("c");
+        state.init_task(&p);
+        state.init_task(&c);
+
+        state.insert_injected_tasks(&p, std::slice::from_ref(&q));
+        state.insert_injected_tasks(&q, std::slice::from_ref(&c));
+        state.insert_injected_tasks(&c, &[task_named("x")]);
+        state.insert_injected_tasks(&p, &[task_named("d")]);
+
+        assert_eq!(keys(&state), ["p", "q", "c", "x", "d"]);
+    }
+
+    /// A pre-slotted task's slot is wherever it already was, which need not be
+    /// next to the parent adopting it. With an unrelated top-level task sitting
+    /// between them, ending the group at the first slot that is not the
+    /// parent's stopped short of a task the parent's *first* run entry named,
+    /// and the second entry landed in front of it: `[p, d, s, c]` for entries
+    /// written `[c]` then `[d]`.
+    #[test]
+    fn a_pre_slotted_child_beyond_an_unrelated_slot_still_precedes_the_next_entry() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let s = task_named("s");
+        let c = task_named("c");
+        state.init_task(&p);
+        state.init_task(&s);
+        state.init_task(&c);
+
+        state.insert_injected_tasks(&p, std::slice::from_ref(&c));
+        state.insert_injected_tasks(&p, &[task_named("d")]);
+
+        // `s` keeps the slot it was registered in; what matters is that `c`,
+        // which `p` named first, still comes before `d`.
+        assert_eq!(keys(&state), ["p", "s", "c", "d"]);
+    }
+
+    /// Two run entries can name the same task, and the slot is adopted rather
+    /// than moved — so it belongs to both groups at once. Keeping only the first
+    /// parent left the second one blind to it: `group_end` stopped short and the
+    /// second parent's later entry landed in front of a task its own earlier
+    /// entry had named, giving `[p, q, d, c]` for `q`'s entries `[c]` then `[d]`.
+    #[test]
+    fn a_slot_named_by_two_parents_belongs_to_both_groups() {
+        let mut state = KeepOrderState::new();
+        let p = printing_task("p");
+        let q = printing_task("q");
+        let c = task_named("c");
+        state.init_task(&p);
+        state.init_task(&q);
+        state.init_task(&c);
+
+        state.insert_injected_tasks(&p, std::slice::from_ref(&c));
+        state.insert_injected_tasks(&q, std::slice::from_ref(&c));
+        state.insert_injected_tasks(&q, &[task_named("d")]);
+
+        assert_eq!(keys(&state), ["p", "q", "c", "d"]);
+    }
+
+    /// Recording ancestry for a task that already had a slot is what makes a
+    /// cycle reachable at all: two run entries naming each other can be recorded
+    /// from both ends. `descends_from` walks that chain, so it is bounded — the
+    /// group may come out misordered, but the run must not hang.
+    #[test]
+    fn run_entries_that_name_each_other_do_not_hang_the_walk() {
+        let mut state = KeepOrderState::new();
+        let a = printing_task("a");
+        let b = printing_task("b");
+        // What a pair of run entries naming each other records between them.
+        state.injected_by.insert(a.clone(), vec![b.clone()]);
+        state.injected_by.insert(b.clone(), vec![a.clone()]);
+
+        assert!(state.descends_from(&a, &b));
+        assert!(!state.descends_from(&a, &task_named("elsewhere")));
+    }
+
+    /// The defect this fixes: the position used to come from whichever parent
+    /// injected first, so two printing parents produced a different order from
+    /// one run to the next. Injecting in reverse settles it without needing any
+    /// concurrency — before the fix this returned `[p1, p2, c2, c1]`.
+    #[test]
+    fn two_printing_parents_group_their_children_whatever_order_they_inject_in() {
+        let forward = injected_order(false);
+        let reversed = injected_order(true);
+        assert_eq!(forward, ["p1", "c1", "p2", "c2"]);
+        assert_eq!(
+            forward, reversed,
+            "the order must come from the parents' slots, not from who injected first"
+        );
+    }
+
+    fn injected_order(reverse: bool) -> Vec<String> {
+        let mut state = KeepOrderState::new();
+        let p1 = printing_task("p1");
+        let p2 = printing_task("p2");
+        state.init_task(&p1);
+        state.init_task(&p2);
+        let injections = [(&p1, "c1"), (&p2, "c2")];
+        let injections: Vec<_> = if reverse {
+            injections.into_iter().rev().collect()
+        } else {
+            injections.into_iter().collect()
+        };
+        for (parent, child) in injections {
+            state.insert_injected_tasks(parent, &[task_named(child)]);
+        }
+        keys(&state)
+    }
+
+    fn printing_task(name: &str) -> Task {
+        Task {
+            name: name.to_string(),
+            run: vec![RunEntry::Script(format!("echo {name}"))],
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -784,7 +1159,7 @@ mod tests {
         state.init_task(&launch);
 
         let children = ["r1", "r2", "r3", "dep3", "dep2", "dep1"].map(task_named);
-        state.insert_tasks_before(&launch, &children);
+        state.insert_injected_tasks(&launch, &children);
 
         assert_eq!(
             keys(&state),
@@ -876,7 +1251,7 @@ mod tests {
         let other = task_named("other");
         state.init_task(&other);
 
-        state.insert_tasks_before(&task_named("unregistered"), &[task_named("one")]);
+        state.insert_injected_tasks(&task_named("unregistered"), &[task_named("one")]);
 
         assert_eq!(keys(&state), ["other", "one"]);
     }
@@ -901,7 +1276,7 @@ mod tests {
         );
 
         let b = task_named("b");
-        state.insert_tasks_before(&launch, std::slice::from_ref(&b));
+        state.insert_injected_tasks(&launch, std::slice::from_ref(&b));
         assert!(state.is_active(&b), "the next child must stream live");
     }
 }

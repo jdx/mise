@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 type TeraSpecParsingResult = (
     TeraEngine,
@@ -24,10 +25,36 @@ type TeraSpecParsingResult = (
 
 type TaskTemplateResult = std::result::Result<JsonValue, String>;
 
+/// mtime of the marker recording that the task's work is done, if there is one.
+///
+/// Absent means mise has never seen this task up to date here, so there is no
+/// baseline to compare against and every source is outstanding work.
+fn last_success_time(marker: &Path) -> Option<SystemTime> {
+    std::fs::metadata(marker).and_then(|m| m.modified()).ok()
+}
+
+/// Whether `path` was written at or after the baseline.
+///
+/// A file we cannot stat counts as changed. This is the deliberate direction to
+/// err in: re-checking a file that did not change costs a little time, while
+/// skipping one that did means the task silently does less than it should. The
+/// reinstatement in `task_source_files` errs the same way when the baseline
+/// accounts for nothing at all.
+fn is_changed_since(path: &Path, baseline: SystemTime) -> bool {
+    match std::fs::metadata(path).and_then(|m| m.modified()) {
+        Ok(modified) => modified >= baseline,
+        Err(_) => true,
+    }
+}
+
 pub(super) struct TaskScriptParser {
     dir: Option<PathBuf>,
     /// Extra vars to inject into the tera context (for monorepo task vars resolution)
     extra_vars: Option<IndexMap<String, String>>,
+    /// Marker left by the task's last successful run, used by
+    /// `task_source_files(only_changed=true)`. Stored as a path rather than a
+    /// timestamp so a template that never asks for filtering costs no syscall.
+    baseline: Option<PathBuf>,
 }
 
 impl TaskScriptParser {
@@ -35,11 +62,17 @@ impl TaskScriptParser {
         TaskScriptParser {
             dir,
             extra_vars: None,
+            baseline: None,
         }
     }
 
     pub(super) fn with_extra_vars(mut self, vars: IndexMap<String, String>) -> Self {
         self.extra_vars = Some(vars);
+        self
+    }
+
+    pub(super) fn with_baseline(mut self, baseline: PathBuf) -> Self {
+        self.baseline = Some(baseline);
         self
     }
 
@@ -175,8 +208,21 @@ impl TaskScriptParser {
                 &root,
                 &task.sources,
             ));
+            let baseline = self.baseline.clone();
 
-            move |_| -> TaskTemplateResult {
+            move |args: &HashMap<String, JsonValue>| -> TaskTemplateResult {
+                let only_changed = args
+                    .get("only_changed")
+                    .and_then(JsonValue::as_bool)
+                    .unwrap_or(false);
+                // Resolved once per call, and only when asked for. `None` means
+                // every source counts as changed: either no filtering was
+                // requested, or the task has never succeeded, in which case all
+                // of its sources really are outstanding work.
+                let changed_since = only_changed
+                    .then(|| baseline.as_deref().and_then(last_success_time))
+                    .flatten();
+
                 if glob_patterns.is_empty() {
                     trace!(
                         "tera::render::resolve_task_sources `task_source_files` called in task with empty sources array"
@@ -185,10 +231,22 @@ impl TaskScriptParser {
                 };
 
                 let mut resolved = Vec::with_capacity(glob_patterns.len());
+                // A source held back by the baseline keeps its slot in
+                // `resolved` while the loop runs, so declaration order survives
+                // whichever way this ends; the slots are dropped afterwards only
+                // if something else got through. See below the loop.
+                let mut held_back: Vec<usize> = Vec::new();
+                let mut any_changed = false;
                 let escaped_root = glob::Pattern::escape(root.to_string_lossy().as_ref());
 
                 for pattern in glob_patterns.iter() {
                     if contains_template_syntax(pattern) {
+                        // Passed through verbatim rather than resolved, so the
+                        // baseline never sees it. It is deliberately not counted
+                        // as changed: it is no evidence that anything is
+                        // outstanding, and counting it would suppress the
+                        // reinstatement below and drop every real source from a
+                        // run that could not account for a single one of them.
                         trace!(
                             "tera::render::resolve_task_sources including tera template string in resolved task sources: {pattern}"
                         );
@@ -258,11 +316,22 @@ impl TaskScriptParser {
                                             } else {
                                                 &path
                                             };
-                                            let source = source.display();
+                                            let source = source.display().to_string();
+                                            if let Some(since) = changed_since
+                                                && !is_changed_since(&path, since)
+                                            {
+                                                trace!(
+                                                    "tera::render::resolve_task_sources holding back '{source}': unchanged since the last successful run"
+                                                );
+                                                held_back.push(resolved.len());
+                                                resolved.push(source);
+                                                continue;
+                                            }
                                             trace!(
                                                 "tera::render::resolve_task_sources resolved source from pattern '{pattern}': {source}"
                                             );
-                                            resolved.push(source.to_string());
+                                            any_changed = true;
+                                            resolved.push(source);
                                         }
                                         Err(error) => {
                                             let source = error.path().display();
@@ -282,6 +351,27 @@ impl TaskScriptParser {
                             }
                         }
                     }
+                }
+
+                // The held-back slots go only if something got through the
+                // filter. If nothing did, the task is being rendered for a
+                // reason the baseline cannot account for — forced, a dependency
+                // did work, an output went missing while the sources stood still
+                // — and a baseline that explains none of this run is not one to
+                // filter by. Handing the task an empty list would have it
+                // silently do nothing, so the held-back sources stay, in the
+                // slots they were declared in.
+                if any_changed {
+                    // Back to front, so each removal leaves the earlier indices
+                    // alone.
+                    for idx in held_back.iter().rev() {
+                        resolved.remove(*idx);
+                    }
+                } else if !held_back.is_empty() {
+                    trace!(
+                        "tera::render::resolve_task_sources nothing changed since the last successful run, reporting all {} source(s)",
+                        held_back.len()
+                    );
                 }
 
                 Ok(json!(resolved))
@@ -1455,6 +1545,167 @@ mod tests {
             .unwrap();
 
         assert_eq!(parsed, vec!["echo input.txt"]);
+    }
+
+    /// `only_changed=true` compares each source against the marker mise writes
+    /// when a task's work is done. These tests place that marker by hand and
+    /// drive the parser directly, so the comparison is exercised without
+    /// running a task.
+    struct ChangedSinceFixture {
+        _temp: tempfile::TempDir,
+        root: PathBuf,
+        marker: PathBuf,
+        task: Task,
+    }
+
+    /// Two sources, one written before the last successful run and one after.
+    fn changed_since_fixture() -> ChangedSinceFixture {
+        // Fixed timestamps rather than `now`, so the test does not depend on
+        // filesystem timestamp granularity or on how long it takes to run.
+        const BASELINE: i64 = 1_700_000_000;
+
+        fn set_mtime(path: &Path, secs: i64) {
+            filetime::set_file_mtime(path, filetime::FileTime::from_unix_time(secs, 0)).unwrap();
+        }
+
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().to_path_buf();
+        let marker = root.join("last-success");
+
+        for (name, mtime) in [("stale.txt", BASELINE - 60), ("fresh.txt", BASELINE + 60)] {
+            let path = root.join(name);
+            std::fs::write(&path, "x").unwrap();
+            set_mtime(&path, mtime);
+        }
+        std::fs::write(&marker, "source-hash").unwrap();
+        set_mtime(&marker, BASELINE);
+
+        ChangedSinceFixture {
+            _temp: temp,
+            root,
+            marker,
+            // Listed as literal patterns so the resolved order follows the
+            // declaration order and does not depend on directory iteration.
+            task: Task {
+                sources: vec!["stale.txt".to_string(), "fresh.txt".to_string()],
+                ..Default::default()
+            },
+        }
+    }
+
+    async fn render_sources(parser: TaskScriptParser, task: &Task, template: &str) -> String {
+        let config = Config::get().await.unwrap();
+        let scripts = vec![template.to_string()];
+        let (parsed, _) = parser
+            .parse_run_scripts(&config, task, &scripts, &Default::default())
+            .await
+            .unwrap();
+        parsed.into_iter().next().unwrap()
+    }
+
+    const ONLY_CHANGED: &str = "echo {{ task_source_files(only_changed=true) | join(sep=' ') }}";
+    const ALL_SOURCES: &str = "echo {{ task_source_files() | join(sep=' ') }}";
+
+    #[tokio::test]
+    async fn only_changed_returns_the_sources_touched_since_the_last_success() {
+        let f = changed_since_fixture();
+        let parser = TaskScriptParser::new(Some(f.root.clone())).with_baseline(f.marker.clone());
+
+        let rendered = render_sources(parser, &f.task, ONLY_CHANGED).await;
+
+        assert_eq!(rendered, "echo fresh.txt");
+    }
+
+    #[tokio::test]
+    async fn only_changed_reports_every_source_when_the_task_has_never_succeeded() {
+        let f = changed_since_fixture();
+        // A task that has not completed successfully has no marker, and every
+        // one of its sources is still outstanding work.
+        let parser = TaskScriptParser::new(Some(f.root.clone()))
+            .with_baseline(f.root.join("no-such-marker"));
+
+        let rendered = render_sources(parser, &f.task, ONLY_CHANGED).await;
+
+        assert_eq!(rendered, "echo stale.txt fresh.txt");
+    }
+
+    /// A task can run for a reason the baseline knows nothing about — `--force`,
+    /// a dependency that did work, an output deleted while the sources stood
+    /// still. Filtering then leaves nothing, and a task handed no files does
+    /// none of the work it was run to do, so the whole set goes back in.
+    #[tokio::test]
+    async fn only_changed_reports_every_source_when_the_baseline_explains_none_of_them() {
+        let f = changed_since_fixture();
+        // Written after both sources, so neither counts as outstanding.
+        let after_both = filetime::FileTime::from_unix_time(1_700_000_000 + 120, 0);
+        filetime::set_file_mtime(&f.marker, after_both).unwrap();
+        let parser = TaskScriptParser::new(Some(f.root.clone())).with_baseline(f.marker.clone());
+
+        let rendered = render_sources(parser, &f.task, ONLY_CHANGED).await;
+
+        assert_eq!(rendered, "echo stale.txt fresh.txt");
+    }
+
+    /// A source still holding template syntax is passed through verbatim rather
+    /// than resolved, so the baseline never measures it. It is not a changed
+    /// source — counting it as one would suppress the reinstatement and hand a
+    /// `--force` run a single unrendered string in place of every file it asked
+    /// for.
+    ///
+    /// It is also the only thing that can sit between two held-back sources, so
+    /// this is where declaration order is at stake: reinstating by appending put
+    /// the pass-through in front of files declared before it.
+    #[tokio::test]
+    async fn a_pass_through_source_does_not_stand_in_for_a_changed_one() {
+        let f = changed_since_fixture();
+        let after_both = filetime::FileTime::from_unix_time(1_700_000_000 + 120, 0);
+        filetime::set_file_mtime(&f.marker, after_both).unwrap();
+        let task = Task {
+            sources: vec![
+                "stale.txt".to_string(),
+                "{{ config_root }}/generated.txt".to_string(),
+                "fresh.txt".to_string(),
+            ],
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(Some(f.root.clone())).with_baseline(f.marker.clone());
+
+        let rendered = render_sources(parser, &task, ONLY_CHANGED).await;
+
+        assert_eq!(
+            rendered,
+            "echo stale.txt {{ config_root }}/generated.txt fresh.txt"
+        );
+    }
+
+    /// And the other way round: when something does get through, the held-back
+    /// slots come out without disturbing what is left.
+    #[tokio::test]
+    async fn dropping_held_back_sources_leaves_the_rest_in_order() {
+        let f = changed_since_fixture();
+        let task = Task {
+            sources: vec![
+                "stale.txt".to_string(),
+                "{{ config_root }}/generated.txt".to_string(),
+                "fresh.txt".to_string(),
+            ],
+            ..Default::default()
+        };
+        let parser = TaskScriptParser::new(Some(f.root.clone())).with_baseline(f.marker.clone());
+
+        let rendered = render_sources(parser, &task, ONLY_CHANGED).await;
+
+        assert_eq!(rendered, "echo {{ config_root }}/generated.txt fresh.txt");
+    }
+
+    #[tokio::test]
+    async fn a_call_without_only_changed_is_unaffected_by_the_baseline() {
+        let f = changed_since_fixture();
+        let parser = TaskScriptParser::new(Some(f.root.clone())).with_baseline(f.marker.clone());
+
+        let rendered = render_sources(parser, &f.task, ALL_SOURCES).await;
+
+        assert_eq!(rendered, "echo stale.txt fresh.txt");
     }
 
     #[tokio::test]

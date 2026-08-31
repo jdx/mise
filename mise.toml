@@ -6,12 +6,12 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
-"github:jdx/mr-boxington" = "latest"
+mr-boxington = { version = "1.1.0", postinstall = "mbx setup --global" }
 # Pinned rather than "latest" because tak is the measuring instrument: an
 # upgrade that changes how it samples would land in the series as a step change
 # in mise's numbers, indistinguishable from a real regression. Bump
 # deliberately, on a commit that does nothing else.
-"github:jdx/tak" = "0.0.5"
+"github:jdx/tak" = "0.0.9"
 age = "latest"
 aube = "latest"
 bun = "latest"
@@ -31,7 +31,7 @@ pkl = "latest"
 shellcheck = "latest"
 shfmt = "latest"
 taplo = "latest"
-usage = "6.4.1"
+usage = "6.6.0"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"
@@ -69,13 +69,3 @@ run = ["cargo build --release", "tak run --record"]
 [tasks."perf:task-cache"]
 dir = "{{config_root}}"
 run = ["cargo build --release", "bash benchmarks/task-cache/benchmark.sh"]
-
-# Measures the argv0-dispatched rustc wrapper path without config discovery or
-# runtime startup. Keep the warm median below the 2ms compiler-wrapper budget.
-[tasks."perf:cache-shim"]
-dir = "{{config_root}}"
-env = { MISE_BIN = "target/serious/mise" }
-run = [
-  "cargo build --profile serious --no-default-features --features rustls-native-roots,self_update,vfox/vendored-lua,openssl/vendored",
-  "bash benchmarks/cache-shim/benchmark.sh",
-]

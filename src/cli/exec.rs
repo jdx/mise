@@ -138,8 +138,15 @@ impl Exec {
                 .await?
         });
 
-        self.run_with_context(config, ts, resolve_options, has_explicit_latest)
-            .await
+        self.run_with_context(
+            config,
+            ts,
+            resolve_options,
+            has_explicit_latest,
+            BTreeMap::new(),
+            false,
+        )
+        .await
     }
 
     /// Execute with a toolset that the shim path has already resolved while
@@ -149,8 +156,32 @@ impl Exec {
         config: Arc<Config>,
         ts: Toolset,
     ) -> eyre::Result<()> {
-        self.run_with_context(config, ts, ResolveOptions::default(), false)
-            .await
+        self.run_with_context(
+            config,
+            ts,
+            ResolveOptions::default(),
+            false,
+            BTreeMap::new(),
+            false,
+        )
+        .await
+    }
+
+    pub(crate) async fn run_with_command_wrapper(
+        self,
+        config: Arc<Config>,
+        ts: Toolset,
+        wrapper_env: BTreeMap<String, String>,
+    ) -> eyre::Result<()> {
+        self.run_with_context(
+            config,
+            ts,
+            ResolveOptions::default(),
+            false,
+            wrapper_env,
+            true,
+        )
+        .await
     }
 
     async fn run_with_context(
@@ -159,6 +190,8 @@ impl Exec {
         mut ts: Toolset,
         resolve_options: ResolveOptions,
         has_explicit_latest: bool,
+        wrapper_env: BTreeMap<String, String>,
+        strip_dispatch_dirs: bool,
     ) -> eyre::Result<()> {
         let opts = InstallOptions {
             force: false,
@@ -190,6 +223,10 @@ impl Exec {
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
 
         let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+        env.extend(wrapper_env);
+        if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
+            *path = crate::file::strip_dispatch_dirs_from_path(path);
+        }
 
         // Run auto-enabled deps steps (unless --no-deps)
         if !self.no_deps {
@@ -347,19 +384,38 @@ where
             // The child process still inherits the full unmodified PATH.
             let pristine: std::collections::HashSet<_> = crate::env::PATH.iter().collect();
             let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+            let wrappers: Vec<_> = all_paths
+                .iter()
+                .filter(|p| crate::file::is_command_wrapper_dir(p))
+                .cloned()
+                .collect();
             // Mise-added paths first (preserving relative order)
             let mise_added: Vec<_> = all_paths
                 .iter()
-                .filter(|p| !pristine.contains(p) && !crate::file::is_mise_shims_dir(p))
+                .filter(|p| {
+                    !pristine.contains(p)
+                        && !crate::file::is_mise_shims_dir(p)
+                        && !crate::file::is_command_wrapper_dir(p)
+                })
                 .cloned()
                 .collect();
             // Then original system paths (minus shims)
             let original: Vec<_> = all_paths
                 .iter()
-                .filter(|p| pristine.contains(p) && !crate::file::is_mise_shims_dir(p))
+                .filter(|p| {
+                    pristine.contains(p)
+                        && !crate::file::is_mise_shims_dir(p)
+                        && !crate::file::is_command_wrapper_dir(p)
+                })
                 .cloned()
                 .collect();
-            std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
+            std::env::join_paths(
+                wrappers
+                    .iter()
+                    .chain(mise_added.iter())
+                    .chain(original.iter()),
+            )
+            .unwrap()
         });
         let is_shim_dispatch = env::MISE_SHIM_PATH.read().unwrap().is_some();
         match which::which_in_all(&program, lookup_path, cwd) {
@@ -470,6 +526,11 @@ where
             })
             .collect();
         let all_paths: Vec<_> = std::env::split_paths(&OsString::from(path_val)).collect();
+        let wrappers: Vec<_> = all_paths
+            .iter()
+            .filter(|p| crate::file::is_command_wrapper_dir(p))
+            .cloned()
+            .collect();
         let mise_added: Vec<_> = all_paths
             .iter()
             .filter(|p| {
@@ -477,7 +538,9 @@ where
                     .to_string_lossy()
                     .to_lowercase()
                     .replace('/', "\\");
-                !pristine.contains(&normalized) && !crate::file::is_mise_shims_dir(p)
+                !pristine.contains(&normalized)
+                    && !crate::file::is_mise_shims_dir(p)
+                    && !crate::file::is_command_wrapper_dir(p)
             })
             .cloned()
             .collect();
@@ -488,11 +551,19 @@ where
                     .to_string_lossy()
                     .to_lowercase()
                     .replace('/', "\\");
-                pristine.contains(&normalized) && !crate::file::is_mise_shims_dir(p)
+                pristine.contains(&normalized)
+                    && !crate::file::is_mise_shims_dir(p)
+                    && !crate::file::is_command_wrapper_dir(p)
             })
             .cloned()
             .collect();
-        std::env::join_paths(mise_added.iter().chain(original.iter())).unwrap()
+        std::env::join_paths(
+            wrappers
+                .iter()
+                .chain(mise_added.iter())
+                .chain(original.iter()),
+        )
+        .unwrap()
     });
     // Capture the requested program name before `which_in_all` consumes it, so
     // a resolution failure while dispatching a shim can name the tool.

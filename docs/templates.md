@@ -185,6 +185,19 @@ These variables offer key information about the current environment:
 - `vars: HashMap<String, String>` – Accesses user-defined [configuration variables](/configuration/vars).
 - `cwd: PathBuf` – Points to the current working directory.
 - `config_root: PathBuf` – Locates the directory containing your `mise.toml` file, or in the case of something like `~/src/myproj/.config/mise.toml`, it will point to `~/src/myproj`.
+- `config_source: String` – The config file the template itself is written in, as an absolute path. Unlike `config_root` this is the file, not the project it belongs to, and it is **not** resolved through symlinks — pipe it through `canonicalize` when you want where the real file lives. Available in `mise.toml`, `.tool-versions`, `[env]` directives and `[settings.age]`; task file templates and `.miserc.toml` only carry `config_root`.
+
+  A shared config symlinked into `conf.d` can add its own `bin` directory to the
+  path with it:
+
+  ```toml
+  [env]
+  _.path = "{{ config_source | canonicalize | dirname }}/bin"
+  ```
+
+  Leave `canonicalize` out to get the directory the file was reached through
+  rather than the one it lives in.
+
 - `mise_bin: String` - Points to the path to the current mise executable
 - `mise_pid: String` - Points to the pid of the current mise process
 - `mise_env: Vec<String>` - The configuration environment as specified by `MISE_ENV`, `-E`, or `--env`. Will be undefined if the configuration environment is not set.
@@ -312,6 +325,18 @@ For example, `task_source_files()` returns a different set of filepaths dependin
   files, it will be omitted from the result. Returns an empty array if no sources are configured or if
   no files match the patterns.
 
+  Pass `only_changed=true` to narrow the result to the sources written since mise last considered
+  this task up to date. This is useful for linters and formatters that are much faster when given a
+  small set of files. A task mise has never seen up to date has no baseline to compare against, so
+  every source is returned. A run that _fails_ does not advance the baseline, so the same files stay
+  in the list until the task passes. Like mise's own source freshness checking, this compares
+  modification times, so it inherits the same caveats around `touch` and restored caches.
+
+  Filtering never narrows the result all the way to nothing: if no source changed and yet the task
+  is running — `--force`, a dependency that did work, an output deleted while the sources stood
+  still — every source is returned instead, because a task handed no files does none of the work it
+  was run to do.
+
 #### Examples
 
 ```toml
@@ -331,6 +356,13 @@ run = '''
   echo "Processing: {{ file }}"
 {% endfor %}
 '''
+
+# Only lint what changed since this task last succeeded. Each path goes through
+# `quote`, so a filename containing a space or a shell metacharacter stays one
+# argument (POSIX shells — see the quote filter's note).
+[tasks.lint]
+sources = ["src/**/*.ts"]
+run = "eslint{% for file in task_source_files(only_changed=true) %} {{ file | quote }}{% endfor %}"
 ```
 
 ### Exec Options

@@ -10,15 +10,20 @@ mkdir -p "$fake_bin"
 printf '#!/bin/sh\necho fake-system-dummy\n' >"$fake_bin/dummy"
 chmod +x "$fake_bin/dummy"
 
+non_executable_bin="$PWD/non-executable-bin"
+mkdir -p "$non_executable_bin"
+printf '#!/bin/sh\necho non-executable-dummy\n' >"$non_executable_bin/dummy"
+chmod 644 "$non_executable_bin/dummy"
+
 cat >mise.toml <<'EOF'
 [tools]
 dummy = "2.0.0"
 EOF
 
 export MISE_NOT_FOUND_AUTO_INSTALL=0
-export PATH="$shim_dir:$fake_bin:$PATH"
+export PATH="$shim_dir:$non_executable_bin:$fake_bin:$PATH"
 
-# default behavior is preserved: system fallback still wins
+# default behavior skips a non-executable PATH entry and uses the executable fallback
 assert_contains "dummy" "fake-system-dummy"
 
 # with the fallback disabled via env var the shim must fail loudly instead of substituting

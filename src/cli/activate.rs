@@ -119,8 +119,18 @@ impl Activate {
         } else {
             false
         };
-        if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS, prepended_exe_dir) {
-            prelude.push(p);
+        let has_command_wrappers = dirs::COMMAND_WRAPPERS.is_dir();
+        let dispatch_dirs_already_first = has_command_wrappers
+            && are_dirs_first_in_paths(&env::PATH, &[&dirs::COMMAND_WRAPPERS, &dirs::SHIMS]);
+        if shell.supports_move_path() || prepended_exe_dir || !dispatch_dirs_already_first {
+            if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS, prepended_exe_dir) {
+                prelude.push(p);
+            }
+            if has_command_wrappers
+                && let Some(p) = self.shims_prepend_path(shell, &dirs::COMMAND_WRAPPERS, true)
+            {
+                prelude.push(p);
+            }
         }
         miseprint!("{}", shell.format_activate_prelude(&prelude))?;
         Ok(())
@@ -281,6 +291,14 @@ fn is_dir_first_in_paths(paths: &[PathBuf], dir: &Path) -> bool {
         .is_some_and(|p| canonicalize_or_self(p) == dir)
 }
 
+fn are_dirs_first_in_paths(paths: &[PathBuf], dirs: &[&Path]) -> bool {
+    paths.len() >= dirs.len()
+        && paths
+            .iter()
+            .zip(dirs)
+            .all(|(path, dir)| canonicalize_or_self(path) == canonicalize_or_self(dir))
+}
+
 fn is_dir_not_in_nix(dir: &Path) -> bool {
     !canonicalize_or_self(dir).starts_with("/nix/")
 }
@@ -298,7 +316,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{forwarded_logging_flags, is_dir_first_in_paths, should_prepend_shims};
+    use super::{
+        are_dirs_first_in_paths, forwarded_logging_flags, is_dir_first_in_paths,
+        should_prepend_shims,
+    };
     use std::path::PathBuf;
 
     fn args(values: &[&str]) -> Vec<String> {
@@ -389,6 +410,27 @@ mod tests {
             std::slice::from_ref(&target),
             &target,
             true
+        ));
+    }
+
+    #[test]
+    fn detects_an_existing_dispatch_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let wrappers = root.path().join("wrappers");
+        let shims = root.path().join("shims");
+        let other = root.path().join("other");
+
+        assert!(are_dirs_first_in_paths(
+            &[wrappers.clone(), shims.clone(), other.clone()],
+            &[&wrappers, &shims]
+        ));
+        assert!(!are_dirs_first_in_paths(
+            &[shims.clone(), wrappers.clone(), other],
+            &[&wrappers, &shims]
+        ));
+        assert!(!are_dirs_first_in_paths(
+            std::slice::from_ref(&wrappers),
+            &[&wrappers, &shims]
         ));
     }
 }

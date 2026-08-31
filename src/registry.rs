@@ -696,6 +696,13 @@ impl RegistryTool {
 /// Unlike `backends.options.platforms.*` lookup, this is deliberately not
 /// alias-tolerant: registry selectors use canonical names such as `macos-x64`,
 /// while option lookup accepts release asset aliases such as `darwin-amd64`.
+///
+/// Windows on arm64 additionally matches the x64 selectors. That is not alias
+/// tolerance creeping in — `windows-x64` still names a different platform than
+/// `windows-arm64` — it is the same capability rule the aqua backend already
+/// applies in `is_platform_supported`: Windows arm64 runs amd64 binaries under
+/// emulation. Without it the registry drops a backend here, before aqua is ever
+/// asked whether it supports the platform, and aqua would have said yes.
 fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
     let os = settings.os();
     let arch = settings.arch();
@@ -705,6 +712,9 @@ fn backend_matches_platform(platforms: &[&str], settings: &Settings) -> bool {
         || platforms.contains(&os)
         || platforms.contains(&arch)
         || platforms.contains(&platform.as_str())
+        || (os == "windows"
+            && arch == "arm64"
+            && (platforms.contains(&"x64") || platforms.contains(&"windows-x64")))
 }
 
 pub(crate) fn shorts_for_full(full: &str) -> &'static Vec<&'static str> {
@@ -1056,6 +1066,182 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
                 "{raw_os}-{raw_arch} should match normalized selector {selector}"
             );
         }
+    }
+
+    // A tool's `os` list drops it from the tool request set before any backend is consulted, so a
+    // list that no longer matches what the backend can do makes mise refuse a tool that works.
+    //
+    // All 52 entries whose `os` line left out `windows` were put through `mise install` on Windows
+    // and then had whatever landed on disk executed. Five of them produced a working Windows
+    // executable -- `entire.exe version` reports `OS/Arch: windows/amd64`, `gitsign.exe --version`
+    // reports `gitsign version v0.17.1` -- while their `os` line still said linux and macos only.
+    // `acli`, `mimirtool` and `specstory` joined them later, measured the same way, once the
+    // vendored aqua snapshot stopped restricting them.
+    //
+    // Installing is not evidence on its own: eight more installed successfully and unpacked no
+    // Windows executable at all (`libsql-server` extracts a source tarball), so they keep their
+    // restriction. So do the few the sweep could not settle for reasons that have nothing to do
+    // with Windows -- `cocoapods` needs a ruby that is not there, `swift` overflowed the capture.
+    // Unsettled is not the same as wrong, and only measured entries were changed.
+    //
+    // Read from `BAKED_REGISTRY` rather than `REGISTRY`: the claim under test is about the
+    // `registry/*.toml` files in this commit, and `REGISTRY` hands back a cached floating registry
+    // instead whenever `registry_floating` is on and the cache exists. That would let the test pass
+    // against data this commit does not contain.
+    //
+    // Windows-only on purpose: off Windows every name here is allowed either way, so the assertion
+    // would hold without the change and prove nothing.
+    #[cfg(windows)]
+    #[test]
+    fn tools_that_run_on_windows_are_not_restricted_away_from_it() {
+        use super::*;
+
+        for short in [
+            "entireio-cli",
+            "gitsign",
+            "go-swagger",
+            "grpc-health-probe",
+            "httpie-go",
+            "acli",
+            "mimirtool",
+            "specstory",
+        ] {
+            let rt = BAKED_REGISTRY.get(short).unwrap();
+            assert!(rt.is_supported_os(), "{short}: os = {:?}", rt.os);
+        }
+
+        // The controls, and they are the point: this is not "remove every os list". Each was
+        // checked the same way and each stays. `kpt` ships no Windows asset at all.
+        //
+        // `docker-slim` is a control twice over: it is also the fixture in
+        // `e2e-win/exec_os_unsupported_tool.Tests.ps1`, which asserts the exact message mise prints
+        // for a tool this platform is not listed for. Dropping its `os` line would leave that test
+        // with nothing to observe, so it fails here first, by name.
+        for short in ["docker-slim", "kpt"] {
+            let rt = BAKED_REGISTRY.get(short).unwrap();
+            assert!(!rt.is_supported_os(), "{short}: os = {:?}", rt.os);
+        }
+    }
+
+    // `mod tests` imports nothing at this level -- each test brings its own `use super::*` -- so
+    // this one names the path.
+    fn settings_for(os: &str, arch: &str) -> crate::config::Settings {
+        crate::config::Settings {
+            os: Some(os.to_string()),
+            arch: Some(arch.to_string()),
+            ..Default::default()
+        }
+    }
+
+    // Windows arm64 runs amd64 binaries under emulation. The aqua backend already assumes this in
+    // `is_platform_supported`, so a registry selector of `windows-x64` was dropping backends that
+    // aqua itself would have accepted -- measured with `MISE_OS`/`MISE_ARCH`, where
+    // `mise registry imagemagick` returned only `conda:imagemagick` on windows/arm64 while
+    // windows/x64 got `aqua:ImageMagick/ImageMagick` first.
+    #[test]
+    fn windows_arm64_matches_x64_selectors_the_way_aqua_does() {
+        use super::*;
+
+        let settings = settings_for("windows", "arm64");
+        for selector in ["windows-x64", "x64"] {
+            assert!(
+                backend_matches_platform(&[selector], &settings),
+                "windows-arm64 should reach the {selector} backend under emulation"
+            );
+        }
+    }
+
+    // The controls. Each one fails if the rule above was written more broadly than intended, and
+    // together they are what distinguishes "Windows emulates amd64" from "any arm64 takes x64".
+    #[test]
+    fn the_x64_fallback_is_confined_to_windows_arm64() {
+        use super::*;
+
+        for (os, arch, selector) in [
+            // Linux on arm64 cannot execute an x86_64 build, so no backend is the right answer.
+            ("linux", "arm64", "linux-x64"),
+            // macOS has Rosetta, but aqua declares no rule for it and this change invents none.
+            ("macos", "arm64", "macos-x64"),
+            // Right platform, wrong OS in the selector.
+            ("windows", "arm64", "linux-x64"),
+            // Still not alias-tolerant, which the doc comment on the function promises: these name
+            // the same machine as `windows-x64` but are not the canonical spelling.
+            ("windows", "arm64", "windows-amd64"),
+            ("windows", "arm64", "amd64"),
+            // And the emulation direction is one-way -- x64 does not get to run arm64 builds.
+            ("windows", "x64", "windows-arm64"),
+        ] {
+            let settings = settings_for(os, arch);
+            assert!(
+                !backend_matches_platform(&[selector], &settings),
+                "{os}-{arch} should not match {selector}"
+            );
+        }
+    }
+
+    // Passing the backend filter is only half of it: the http backend then looks up
+    // `platforms.<key>.url`, and `platform_aliases()` has no emulation rule of its own, so
+    // windows/arm64 would resolve a backend and fail to find a URL. `android-cli` declares the
+    // block explicitly rather than relying on a lookup fallback, and it has to stay pointed at the
+    // x64 download -- Google publishes no arm64 build at all.
+    #[test]
+    fn android_cli_serves_windows_arm64_the_x64_download() {
+        use super::*;
+
+        let rt = BAKED_REGISTRY.get("android-cli").unwrap();
+        let opts = rt.backend_options("http:android-cli");
+        for key in ["url", "checksum_url", "bin"] {
+            let arm64 = opts.get_nested_string(&format!("platforms.windows-arm64.{key}"));
+            let x64 = opts.get_nested_string(&format!("platforms.windows-x64.{key}"));
+            assert!(arm64.is_some(), "platforms.windows-arm64.{key} is missing");
+            assert_eq!(arm64, x64, "windows-arm64 {key} should be the x64 one");
+        }
+    }
+
+    // `pre-commit` ships a `.pyz` zipapp rather than a native binary, so aqua marks the package
+    // `supported_envs: [darwin, linux]` and always will -- Windows has nothing to run a shebang
+    // with. A short name resolves to `backends().first()` and there is no install-time fallback,
+    // so without the `platforms` annotation Windows lands on that backend and stops, with the
+    // registered `pipx:` one never reached. Split by platform rather than written as one test
+    // because the pair is its own control: the same expression has to answer differently by
+    // platform, which is the whole claim.
+    //
+    // Both first assert that `MISE_BACKENDS_PRE_COMMIT` is unset: `backends()` returns that
+    // override ahead of every filter, so a process carrying one would make these pass or fail
+    // without touching the registry at all. Asserted rather than cleared, because removing it
+    // would mutate process-wide state other tests share.
+    //
+    // Read from `BAKED_REGISTRY` for the same reason the `os` test above does: the claim is about
+    // `registry/pre-commit.toml` in this commit, and `REGISTRY` substitutes a cached floating
+    // registry whenever `registry_floating` is on and the cache exists.
+    #[cfg(windows)]
+    #[test]
+    fn pre_commit_falls_through_to_pipx_on_windows() {
+        use super::*;
+
+        assert!(env::var("MISE_BACKENDS_PRE_COMMIT").is_err());
+        let backends = BAKED_REGISTRY.get("pre-commit").unwrap().backends();
+        assert_eq!(
+            backends.first().copied(),
+            Some("pipx:pre-commit"),
+            "{backends:?}"
+        );
+    }
+
+    // Not `not(windows)`: mise runs on Android too, where `backend_matches_platform` sees `android`
+    // and drops the aqua backend along with Windows, so this expectation would be wrong there.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn pre_commit_keeps_the_aqua_backend_off_windows() {
+        use super::*;
+
+        assert!(env::var("MISE_BACKENDS_PRE_COMMIT").is_err());
+        let backends = BAKED_REGISTRY.get("pre-commit").unwrap().backends();
+        assert_eq!(
+            backends.first().copied(),
+            Some("aqua:pre-commit/pre-commit"),
+            "{backends:?}"
+        );
     }
 
     #[test]

@@ -1,0 +1,5 @@
+backends = ["aqua:sharkdp/pastel", "github:sharkdp/pastel"]
+bins = ["pastel"]
+description = "A command-line tool to generate, analyze, convert and manipulate colors"
+test = { cmd = "pastel --version", expected = "pastel {{version}}" }
+version_order = "semver"

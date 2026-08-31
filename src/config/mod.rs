@@ -41,15 +41,17 @@ use crate::task::{
 use crate::tera::{contains_template_syntax, get_empty_tera, render_str, take_tera_accessed_files};
 use crate::toolset::env_cache::{CachedNonToolEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::{
-    ResolvedToolOptions, ToolOptionSource, ToolOptions, ToolRequestSet, ToolRequestSetBuilder,
-    ToolSource, ToolVersion, ToolVersionOptions, Toolset, install_state,
+    ResolvedToolOptions, ToolOptions, ToolRequestSet, ToolRequestSetBuilder, ToolSource,
+    ToolVersion, ToolVersionOptions, Toolset, install_state,
 };
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
+pub(crate) mod command_wrapper;
 pub(crate) mod config_file;
 pub(crate) mod env_directive;
 pub(crate) mod miserc;
+pub(crate) mod provenance;
 pub(crate) mod settings;
 pub(crate) mod tracking;
 
@@ -61,6 +63,7 @@ use crate::redactions::Redactor;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
+pub(crate) use command_wrapper::CommandWrapper;
 
 type AliasMap = IndexMap<String, Alias>;
 pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
@@ -514,7 +517,7 @@ impl Config {
         Ok(self
             .resolve_tool_opts_with_overrides(backend_arg)
             .await?
-            .into_options())
+            .into_effective())
     }
 
     pub(crate) async fn resolve_tool_opts_with_overrides(
@@ -533,26 +536,7 @@ impl Config {
         });
         let config_opts = tool_request.and_then(|tr| tr.1.first().map(|req| req.options()));
         let alias_opts = self.get_backend_alias_opts(backend_arg);
-        let mut resolved = ResolvedToolOptions::default();
-        resolved.apply_overrides(&backend_arg.registry_opts(), ToolOptionSource::Registry);
-        if let Some(manifest_opts) = backend_arg.install_manifest_opts() {
-            resolved.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
-        }
-        if alias_opts.is_none()
-            && let Some(full_opts) = backend_arg.resolved_full_opts()
-        {
-            resolved.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
-        }
-        if let Some(alias_opts) = alias_opts {
-            resolved.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
-        }
-        if let Some(config_opts) = config_opts {
-            resolved.apply_overrides(&config_opts, ToolOptionSource::Config);
-        }
-        if let Some(inline_opts) = backend_arg.explicit_opts() {
-            resolved.apply_overrides(inline_opts, ToolOptionSource::InlineBackendArg);
-        }
-        Ok(resolved)
+        Ok(backend_arg.resolve_opts_with_layers(alias_opts, config_opts, None))
     }
 
     fn get_backend_alias_opts(&self, backend_arg: &BackendArg) -> Option<ToolVersionOptions> {
@@ -1281,7 +1265,7 @@ impl Config {
         if let Some(cache_key) = cache_key.as_ref()
             && let Some(cached) = CachedNonToolEnv::load(cache_key)?
         {
-            let env_results = EnvResults {
+            let mut env_results = EnvResults {
                 env: cached.env.clone(),
                 vars: Default::default(),
                 env_remove: cached.env_remove.clone(),
@@ -1295,6 +1279,13 @@ impl Config {
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
             };
+            if !load_command_wrappers(&self.config_files)?.is_empty()
+                && !env_results.env_paths.contains(&*dirs::COMMAND_WRAPPERS)
+            {
+                env_results
+                    .env_paths
+                    .insert(0, dirs::COMMAND_WRAPPERS.clone());
+            }
             let redact_keys = self
                 .redaction_keys()
                 .into_iter()
@@ -1338,6 +1329,11 @@ impl Config {
             },
         )
         .await?;
+        if !load_command_wrappers(&self.config_files)?.is_empty() {
+            env_results
+                .env_paths
+                .insert(0, dirs::COMMAND_WRAPPERS.clone());
+        }
         for env_file in Settings::get().env_files() {
             if env_results.env_files.contains(&env_file) {
                 continue;
@@ -2466,6 +2462,15 @@ fn detect_auto_env_candidate_files() -> Vec<PathBuf> {
 /// including MISE_ENV-specific configs and idiomatic version files.
 /// Returns (paths, idiomatic_filenames) so callers can pass the map to
 /// load_config_files_from_paths without a redundant second computation.
+///
+/// `start_dir` is typically a monorepo config root (or a directory under one)
+/// that differs from the process's invocation directory. Idiomatic version
+/// file discovery is therefore resolved from `start_dir`'s own config
+/// hierarchy via `idiomatic_filenames_for_root`, the same helper
+/// `monorepo_union_with_root_toolset` uses for lockfile maintenance, rather
+/// than from the invocation-rooted `Settings::get()` snapshot: a config root
+/// can enable `idiomatic_version_file_enable_tools` for a tool that the
+/// invocation directory's settings never mention.
 pub(crate) async fn load_config_hierarchy_from_dir(
     start_dir: &Path,
 ) -> Result<(Vec<PathBuf>, BTreeMap<String, Vec<String>>)> {
@@ -2473,7 +2478,8 @@ pub(crate) async fn load_config_hierarchy_from_dir(
         return Ok((vec![], BTreeMap::new()));
     }
 
-    let idiomatic_files = load_idiomatic_filenames().await;
+    let default_idiomatic_files = load_idiomatic_filenames().await;
+    let idiomatic_files = idiomatic_filenames_for_root(start_dir, &default_idiomatic_files).await?;
     let config_filenames: Vec<String> = idiomatic_files
         .keys()
         .cloned()
@@ -2722,6 +2728,15 @@ pub(crate) fn global_config_path() -> PathBuf {
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
 }
 
+/// The preferred system config file to write to, or the path where it should be created.
+pub(crate) fn system_config_path() -> PathBuf {
+    let files = system_config_files();
+    first_config_file(&files)
+        .cloned()
+        .or_else(|| env::MISE_SYSTEM_CONFIG_FILE.clone())
+        .unwrap_or_else(|| dirs::SYSTEM_CONFIG.join("config.toml"))
+}
+
 /// the top-most mise.toml (local or global)
 pub(crate) fn top_toml_config() -> Option<PathBuf> {
     load_config_paths(&TOML_CONFIG_FILENAMES, false)
@@ -2963,6 +2978,26 @@ fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
     trace!("load_shell_aliases: {}", shell_aliases.len());
 
     Ok(shell_aliases)
+}
+
+/// Load command wrappers from global through project scope.
+pub(crate) fn load_command_wrappers(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<String, CommandWrapper>> {
+    let mut wrappers = IndexMap::new();
+    let safe_mode = Settings::safe_mode();
+    for config_file in config_files.values().rev() {
+        if safe_mode && !is_global_config(config_file.get_path()) {
+            continue;
+        }
+        for (name, wrapper) in config_file.command_wrappers()? {
+            if wrapper.command().trim().is_empty() {
+                bail!("command wrapper for {name:?} must have a non-blank command");
+            }
+            wrappers.insert(name, wrapper);
+        }
+    }
+    Ok(wrappers)
 }
 
 fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {
@@ -3263,7 +3298,7 @@ const TASK_INPUT_GROUP_PREFIX: &str = "@group:";
 #[derive(Clone, Debug, Default)]
 struct ResolvedTaskInputs {
     global_inputs: Option<(Vec<String>, PathBuf)>,
-    input_groups: Option<(IndexMap<String, Vec<String>>, PathBuf)>,
+    input_groups: IndexMap<String, (Vec<String>, PathBuf)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -3283,15 +3318,31 @@ impl ResolvedTaskInputs {
                 let inputs = &cf.task_config().global_inputs;
                 (!inputs.is_empty()).then(|| (inputs.clone(), cf.config_root()))
             }),
-            input_groups: configs.iter().find_map(|cf| {
-                let groups = &cf.task_config().input_groups;
-                (!groups.is_empty()).then(|| (groups.clone(), cf.config_root()))
-            }),
+            input_groups: configs
+                .iter()
+                .find_map(|cf| {
+                    let groups = &cf.task_config().input_groups;
+                    (!groups.is_empty()).then(|| {
+                        let root = cf.config_root();
+                        groups
+                            .iter()
+                            .map(|(name, entries)| (name.clone(), (entries.clone(), root.clone())))
+                            .collect()
+                    })
+                })
+                .unwrap_or_default(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.global_inputs.is_none() && self.input_groups.is_none()
+        self.global_inputs.is_none() && self.input_groups.is_empty()
+    }
+
+    fn overlay(&mut self, overlay: Self) {
+        if overlay.global_inputs.is_some() {
+            self.global_inputs = overlay.global_inputs;
+        }
+        self.input_groups.extend(overlay.input_groups);
     }
 }
 
@@ -3335,10 +3386,7 @@ fn expand_task_inputs(
             });
             continue;
         };
-        let (groups, groups_root) = task_inputs.input_groups.as_ref().ok_or_else(|| {
-            eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
-        })?;
-        let inputs = groups.get(group).ok_or_else(|| {
+        let (inputs, group_root) = task_inputs.input_groups.get(group).ok_or_else(|| {
             eyre!("task {task_name} references undefined input group {group:?} with {entry:?}")
         })?;
         if let Some(cycle_start) = stack.iter().position(|name| name == group) {
@@ -3353,7 +3401,7 @@ fn expand_task_inputs(
         expanded.extend(expand_task_inputs(
             inputs,
             task_inputs,
-            groups_root,
+            group_root,
             task_name,
             stack,
             true,
@@ -3405,21 +3453,19 @@ async fn apply_task_config_inputs(
         )),
         None => None,
     };
-    let input_groups = match &task_inputs.input_groups {
-        Some((groups, root)) => Some((
-            groups
-                .iter()
-                .map(|(name, entries)| {
-                    Ok((
-                        name.clone(),
-                        render_task_input_entries(entries, root, &tera_ctx)?,
-                    ))
-                })
-                .collect::<Result<_>>()?,
-            root.clone(),
-        )),
-        None => None,
-    };
+    let input_groups = task_inputs
+        .input_groups
+        .iter()
+        .map(|(name, (entries, root))| {
+            Ok((
+                name.clone(),
+                (
+                    render_task_input_entries(entries, root, &tera_ctx)?,
+                    root.clone(),
+                ),
+            ))
+        })
+        .collect::<Result<_>>()?;
     let task_inputs = ResolvedTaskInputs {
         global_inputs,
         input_groups,
@@ -4460,6 +4506,16 @@ fn collect_task_files(root: &Path, excludes: &[PathBuf]) -> Result<Vec<PathBuf>>
                 debug!("skipping missing task entry: {err}");
                 None
             }
+            // Losing nothing by skipping: walkdir reports this only when a link resolves to a
+            // directory already on the walk stack, so everything under it has been visited
+            // through the real path. A permission or I/O error is not like that -- a whole
+            // subtree goes unseen -- so those stay fatal. One `mise-tasks/current -> mise-tasks`
+            // used to fail every task command, including tasks defined in `mise.toml` that
+            // involve no file at all.
+            Err(err) if err.loop_ancestor().is_some() => {
+                debug!("skipping task path that links back into itself: {err}");
+                None
+            }
             Err(err) => Some(Err(err)),
         })
         .try_collect::<_, Vec<PathBuf>, _>()
@@ -4867,6 +4923,7 @@ struct TaskSources {
 #[derive(Clone)]
 struct CascadedTaskConfig {
     task_config: TaskConfig,
+    inputs: ResolvedTaskInputs,
     includes_root: PathBuf,
     excludes_root: PathBuf,
 }
@@ -4875,6 +4932,9 @@ fn merge_cascaded_task_config(
     cascaded: &mut CascadedTaskConfig,
     configs: &[&Arc<dyn ConfigFile>],
 ) -> Result<()> {
+    cascaded
+        .inputs
+        .overlay(ResolvedTaskInputs::from_configs(configs));
     if let Some(dir) = configs.iter().find_map(|cf| cf.task_config().dir.clone()) {
         cascaded.task_config.dir = Some(dir);
     }
@@ -4953,6 +5013,7 @@ fn cascaded_task_config_for_dir(
             Some(true) if cascaded.is_none() => {
                 cascaded = Some(CascadedTaskConfig {
                     task_config: TaskConfig::default(),
+                    inputs: ResolvedTaskInputs::default(),
                     includes_root: root.clone(),
                     excludes_root: root,
                 });
@@ -5096,10 +5157,15 @@ async fn load_task_sources_from_configs(
         .unwrap_or_default();
     let excludes = resolve_task_excludes(&excludes_root, &excludes);
 
+    let mut inputs = cascaded_task_config
+        .map(|tc| tc.inputs.clone())
+        .unwrap_or_default();
+    inputs.overlay(ResolvedTaskInputs::from_configs(&configs));
+
     // Resolve task defaults once for the config root so inline tasks from
     // lower-precedence overlay files use the same defaults as file tasks.
     let task_config = ResolvedTaskConfig {
-        inputs: ResolvedTaskInputs::from_configs(&configs),
+        inputs,
         environment: ResolvedTaskEnvironment::from_configs(
             &configs,
             cascaded_task_config.map(|tc| &tc.task_config),
@@ -5357,19 +5423,13 @@ mod tests {
         assert_eq!(inherited.rust_cache, rust_default);
 
         let mut disabled = Task {
-            rust_cache: Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            }),
+            rust_cache: Some(TaskRustCacheConfig { enabled: false }),
             ..Default::default()
         };
         apply_task_config_rust_cache_default(&mut disabled, &rust_default);
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            })
+            Some(TaskRustCacheConfig { enabled: false })
         );
     }
 
@@ -5421,7 +5481,33 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_task_files_preserves_symlink_loop_errors() -> Result<()> {
+    fn test_collect_task_files_skips_links_back_into_the_walk() -> Result<()> {
+        let tmp = TempDir::new()?;
+        let root = tmp.path().join("tasks");
+        fs::create_dir(&root)?;
+        let task = root.join("healthy");
+        fs::write(&task, "echo ok")?;
+
+        // The control: the same tree one link earlier. Without it, "the loop changed nothing"
+        // is not something this test can claim.
+        let before = collect_task_files(&root, &[])?;
+        assert_eq!(before, vec![task]);
+
+        // A `current`-style link pointing at the directory being walked. Nothing under it is
+        // lost -- it is the same directory, already visited -- so it must not fail the walk.
+        std::os::unix::fs::symlink(&root, root.join("current"))?;
+
+        assert_eq!(collect_task_files(&root, &[])?, before);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_collect_task_files_preserves_unresolvable_symlink_errors() -> Result<()> {
+        // Renamed from `..._preserves_symlink_loop_errors`: what it pins is a link that cannot be
+        // resolved at all. `fs::metadata` fails with ELOOP before walkdir gets as far as its own
+        // ancestor check, so this arrives as an io error rather than a `loop_ancestor` one and is
+        // deliberately still fatal -- unlike the case above, nothing was reached through it.
         let tmp = TempDir::new()?;
         std::os::unix::fs::symlink("loop", tmp.path().join("loop"))?;
 
@@ -5451,27 +5537,30 @@ mod tests {
     #[test]
     fn test_expand_task_inputs_supports_nested_groups() -> Result<()> {
         let task_inputs = ResolvedTaskInputs {
-            input_groups: Some((
-                IndexMap::from([
+            input_groups: IndexMap::from([
+                (
+                    "shared".to_string(),
                     (
-                        "shared".to_string(),
                         vec![
                             "Cargo.toml".to_string(),
                             "src/**/*.rs".to_string(),
                             "\\!important.txt".to_string(),
                         ],
+                        PathBuf::from("/workspace"),
                     ),
+                ),
+                (
+                    "production".to_string(),
                     (
-                        "production".to_string(),
                         vec![
                             "@group:shared".to_string(),
                             "!src/**/*_test.rs".to_string(),
                             "src/**/*.rs".to_string(),
                         ],
+                        PathBuf::from("/project"),
                     ),
-                ]),
-                PathBuf::from("/workspace"),
-            )),
+                ),
+            ]),
             ..Default::default()
         };
         let root = Path::new("/workspace");
@@ -5490,8 +5579,8 @@ mod tests {
                 "/workspace/Cargo.toml",
                 "/workspace/src/**/*.rs",
                 "/workspace/!important.txt",
-                "!/workspace/src/**/*_test.rs",
-                "/workspace/src/**/*.rs",
+                "!/project/src/**/*_test.rs",
+                "/project/src/**/*.rs",
             ]
         );
         Ok(())
@@ -5500,13 +5589,16 @@ mod tests {
     #[test]
     fn test_expand_task_inputs_rejects_unknown_and_cyclic_groups() {
         let task_inputs = ResolvedTaskInputs {
-            input_groups: Some((
-                IndexMap::from([
-                    ("a".to_string(), vec!["@group:b".to_string()]),
-                    ("b".to_string(), vec!["@group:a".to_string()]),
-                ]),
-                PathBuf::from("/workspace"),
-            )),
+            input_groups: IndexMap::from([
+                (
+                    "a".to_string(),
+                    (vec!["@group:b".to_string()], PathBuf::from("/workspace")),
+                ),
+                (
+                    "b".to_string(),
+                    (vec!["@group:a".to_string()], PathBuf::from("/workspace")),
+                ),
+            ]),
             ..Default::default()
         };
 
@@ -6232,7 +6324,7 @@ mod tests {
             crate::toolset::parse_tool_options("api_url=https://config.example/api/v3,foo=config");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(
+            crate::toolset::ToolRequest::new_with_options(
                 resolved_ba,
                 "1.0.0",
                 config_opts,
@@ -6311,7 +6403,12 @@ mod tests {
             crate::toolset::parse_tool_options("asset_pattern=config-pattern,bar=config");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6355,7 +6452,7 @@ mod tests {
         ));
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("api_url"), Some("https://inline.example/api/v3"));
         assert_eq!(opts.get("asset_pattern"), Some("config-pattern"));
@@ -6386,7 +6483,12 @@ mod tests {
             crate::toolset::parse_tool_options("version_json_path=.current,config_only=true");
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6436,7 +6538,7 @@ mod tests {
         let config = Arc::new(config);
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("version_json_path"), Some(".current"));
         assert_eq!(
@@ -6468,7 +6570,12 @@ mod tests {
         );
         let mut trs = ToolRequestSet::new();
         trs.add_version(
-            crate::toolset::ToolRequest::new_opts(config_ba, "1.0.0", config_opts, source.clone())?,
+            crate::toolset::ToolRequest::new_with_options(
+                config_ba,
+                "1.0.0",
+                config_opts,
+                source.clone(),
+            )?,
             &source,
         );
 
@@ -6522,7 +6629,7 @@ mod tests {
         let config = Arc::new(config);
 
         let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-        let opts = resolved.options();
+        let opts = resolved.effective();
 
         assert_eq!(opts.get("version_prefix"), Some("current/"));
         assert_eq!(
@@ -6584,7 +6691,7 @@ mod tests {
             let ba = Arc::new(BackendArg::from("env-opts-test"));
 
             let resolved = config.resolve_tool_opts_with_overrides(&ba).await?;
-            let opts = resolved.options();
+            let opts = resolved.effective();
 
             assert_eq!(ba.full(), "github:env/repo[foo=env]");
             assert_eq!(opts.get("foo"), Some("env"));

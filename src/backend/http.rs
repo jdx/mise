@@ -254,6 +254,23 @@ impl HttpBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    /// Built in one place so the dry-run check and the install itself cannot drift apart.
+    /// Names the platform it looked for and the ones the tool does declare, because the fix is
+    /// usually to add that key rather than to pick a different tool.
+    fn missing_url_error(&self, opts: &HttpOptions<'_>) -> eyre::Report {
+        let platform_key = self.get_platform_key();
+        let available = opts.url_platforms();
+        if available.is_empty() {
+            eyre::eyre!("Http backend requires 'url' option")
+        } else {
+            eyre::eyre!(
+                "No URL for platform {platform_key}. Available: {}. \
+                 Provide 'url' or add 'platforms.{platform_key}.url'",
+                available.join(", ")
+            )
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Cache path helpers
     // -------------------------------------------------------------------------
@@ -825,7 +842,16 @@ impl HttpBackend {
 
             let cached_file = cache_path.join(filename);
             let install_file = dest_dir.join(filename);
-            file::make_symlink(&cached_file, &install_file)?;
+            // Not `make_symlink`: the target here is a *file*, and on Windows
+            // that goes through `junction::create`, which builds a directory
+            // reparse point. It succeeds and leaves a link that cannot be
+            // resolved — the install looks fine and the binary will not run.
+            // `make_symlink_or_copy` is what the rest of the codebase uses for a
+            // file that has to be executable at the link path (swift, github,
+            // conda and aqua all do). The cost is that Windows keeps a copy
+            // rather than sharing the cached one, which is the right way round:
+            // a duplicate that works beats a link that does not.
+            file::make_symlink_or_copy(&cached_file, &install_file)?;
             return Ok(());
         }
 
@@ -1167,6 +1193,18 @@ impl Backend for HttpBackend {
             .collect())
     }
 
+    /// An http tool with no URL for this platform cannot be installed, and the options say so
+    /// without a single request. `--dry-run` used to answer "would install" for exactly the case
+    /// the real install rejects on its first line.
+    async fn verify_install_feasible(&self, _ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        let raw_opts = tv.request.options();
+        let opts = HttpOptions::new(&raw_opts);
+        match opts.url() {
+            Some(_) => Ok(()),
+            None => Err(self.missing_url_error(&opts)),
+        }
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
@@ -1176,19 +1214,7 @@ impl Backend for HttpBackend {
         let opts = HttpOptions::new(&raw_opts);
 
         // Get URL template
-        let url_template = opts.url().ok_or_else(|| {
-            let platform_key = self.get_platform_key();
-            let available = opts.url_platforms();
-            if !available.is_empty() {
-                eyre::eyre!(
-                    "No URL for platform {platform_key}. Available: {}. \
-                     Provide 'url' or add 'platforms.{platform_key}.url'",
-                    available.join(", ")
-                )
-            } else {
-                eyre::eyre!("Http backend requires 'url' option")
-            }
-        })?;
+        let url_template = opts.url().ok_or_else(|| self.missing_url_error(&opts))?;
 
         let url = template_string(&url_template, &tv);
 
@@ -1392,12 +1418,7 @@ mod tests {
             backend.installs_path = installs_path;
         }
         let backend = Arc::new(backend);
-        let request = ToolRequest::Version {
-            backend,
-            version: version.to_string(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new_version_for_test(backend, version, ToolSource::Argument);
         ToolVersion::new(request, version.to_string())
     }
 
@@ -1585,6 +1606,38 @@ mod tests {
         assert_eq!(
             HttpBackend::install_path_for(&tv, "abcdef123456"),
             destination
+        );
+    }
+
+    // The message `--dry-run` now produces before claiming it would install. Built by
+    // `missing_url_error` so the dry-run check and the install itself cannot drift apart; this
+    // asserts both of its branches, which are two different mistakes with two different fixes.
+    #[test]
+    fn missing_url_error_names_this_platform_and_the_ones_declared() {
+        let backend = HttpBackend {
+            ba: Arc::new(BackendArg::new_raw(
+                "http-mytool".to_string(),
+                Some("http:mytool".to_string()),
+                "mytool".to_string(),
+                None,
+                BackendResolution::new(true),
+            )),
+        };
+
+        let declared =
+            crate::toolset::parse_tool_options("platforms_linux_x64_url=https://example.invalid/t");
+        let declared = HttpOptions::new(&declared);
+        let err = backend.missing_url_error(&declared).to_string();
+        assert!(err.contains(&backend.get_platform_key()), "{err}");
+        assert!(err.contains("linux-x64"), "{err}");
+
+        // A tool that declares no URL anywhere is a different mistake: there is no list to print
+        // and nothing platform-specific to say.
+        let none = ToolVersionOptions::default();
+        let none = HttpOptions::new(&none);
+        assert_eq!(
+            backend.missing_url_error(&none).to_string(),
+            "Http backend requires 'url' option"
         );
     }
 

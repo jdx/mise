@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# `mise upgrade --no-prune` keeps the version it upgraded away from.
-#
-# By default that version is uninstalled outright — its install directory is
-# deleted — which breaks anything outside of mise that points at that path, such
-# as a virtualenv built from a mise-managed interpreter. The existing protection
-# only covers versions another tracked config or tool stub still asks for.
+# `mise upgrade` keeps the version it upgraded away from in place for a grace
+# period. This protects long-running processes that may keep loading files from
+# the old install tree after the new version is selected.
 #
 # See: https://github.com/jdx/mise/discussions/5840
 
@@ -16,25 +13,35 @@ EOF
 mise uninstall dummy --all
 mise install dummy@1.0.0
 
-# --dry-run announces the removal, and --no-prune withdraws it while still
-# reporting the install
-assert_contains "mise up dummy -n" "Would uninstall dummy@1.0.0"
-assert_not_contains "mise up dummy -n --no-prune" "Would uninstall"
+# --dry-run announces deferred pruning, and --no-prune withdraws it while still
+# reporting the install.
+assert_contains "mise up dummy -n" "Would schedule dummy@1.0.0 for pruning after 24h"
+assert_not_contains "mise up dummy -n --no-prune" "Would schedule"
 assert_contains "mise up dummy -n --no-prune" "Would install dummy@1.1.0"
 
 mise upgrade dummy --no-prune
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_contains "mise ls --installed dummy" "1.0.0"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 # the install directory itself has to survive — that is what an outside
 # reference resolves through
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
-# the default is unchanged
+# The default schedules the old version but leaves its path intact.
 mise uninstall dummy --all
 mise install dummy@1.0.0
 mise upgrade dummy
 assert_contains "mise ls --installed dummy" "1.1.0"
-assert_not_contains "mise ls --installed dummy" "1.0.0"
+assert_contains "mise ls --installed dummy" "1.0.0 (pruned in"
+assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.0.0\") | .scheduled_for_pruning'" "true"
+assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.0.0\") | .prune_after | test(\"^[0-9]{4}-\")'" "true"
+assert "mise ls --installed dummy -J | jq -r '.[] | select(.version == \"1.1.0\") | has(\"scheduled_for_pruning\")'" "false"
+assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
+
+# Explicit prune ignores the grace period and clears the receipt.
+MISE_YES=1 mise prune
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
 # --bump rewrites the config and still honors the flag
 mise uninstall dummy --all
@@ -60,10 +67,10 @@ mise upgrade dummy
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_contains "mise ls --installed dummy" "1.0.0"
 
-# the dry-run listing follows the setting, not only the flags
+# The dry-run listing follows the setting, not only the flags.
 mise uninstall dummy --all
 mise install dummy@1.0.0
-assert_not_contains "mise up dummy -n" "Would uninstall"
+assert_not_contains "mise up dummy -n" "Would schedule"
 assert_contains "mise up dummy -n" "Would install dummy@1.1.0"
 
 # --prune overrides the setting for a single run
@@ -71,15 +78,46 @@ mise upgrade dummy --prune
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
 
-# and with the setting gone the default is back
+# A zero grace period still leaves the install intact until the next mise
+# invocation, then opportunistic cleanup removes it.
 cat <<'EOF' >mise.toml
 [tools]
 dummy = "1"
+
+[settings]
+upgrade.prune_after = "0s"
 EOF
 
 mise uninstall dummy --all
 mise install dummy@1.0.0
 mise upgrade dummy
-assert_not_contains "mise ls --installed dummy" "1.0.0"
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Commands that promise not to mutate state must not run opportunistic cleanup.
+mise upgrade dummy -nq >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+mise prune --dry-run >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+mise cache prune --dry-run >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+mise --version >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# A due receipt remains pending while a config reselects the old version.
+sed -i 's/dummy = "1"/dummy = "1.0.0"/' mise.toml
+mise current >/dev/null
+assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
+
+# Once the reference goes away, the next invocation can remove it.
+sed -i 's/dummy = "1.0.0"/dummy = "1.1.0"/' mise.toml
+ln -s ./1.0.0 "$MISE_DATA_DIR/installs/dummy/retired"
+touch "$MISE_DATA_DIR/shims/deferred-prune-orphan"
+chmod +x "$MISE_DATA_DIR/shims/deferred-prune-orphan"
+mise current >/dev/null
+assert_fail "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_fail "test -L '$MISE_DATA_DIR/installs/dummy/retired'"
+assert_fail "test -e '$MISE_DATA_DIR/shims/deferred-prune-orphan'"
+assert_fail "test -f '$MISE_STATE_DIR/tool-purgatory.json'"
 
 rm -f mise.toml

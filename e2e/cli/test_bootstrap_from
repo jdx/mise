@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+
+source_repo="$PWD/bootstrap-source"
+checkout="$PWD/bootstrap-checkout"
+dry_checkout="$PWD/bootstrap-dry-checkout"
+
+mkdir -p "$source_repo"
+git -C "$source_repo" init -q -b main
+git -C "$source_repo" config user.email test@example.com
+git -C "$source_repo" config user.name "mise test"
+
+cat <<'EOF' >"$source_repo/mise.work.toml"
+[dotfiles]
+"~/.bootstrap-from-profile" = "profile"
+
+[tasks.bootstrap]
+run = 'printf work-v1 > "$HOME/bootstrap-from-task"'
+
+[bootstrap.hooks.final]
+run = 'touch "$HOME/bootstrap-from-hook"'
+EOF
+echo work-v1 >"$source_repo/profile"
+git -C "$source_repo" add .
+git -C "$source_repo" commit -qm initial
+
+# The default checkout does not collide with the installer's bootstrap staging
+# directory, which may already contain versioned mise binaries.
+mkdir -p "$MISE_DATA_DIR/bootstrap"
+echo occupied >"$MISE_DATA_DIR/bootstrap/mise-test"
+assert_succeed "GIT_DIR=/nonexistent GIT_WORK_TREE=/nonexistent mise -E work bootstrap --from '$source_repo' --yes --only dotfiles"
+assert "git -C '$MISE_DATA_DIR/bootstrap-repo' remote get-url origin" "$source_repo"
+
+# Global controls are preserved when mise re-executes from the checkout.
+assert_succeed "mise --no-hooks -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes --only final-hook"
+assert_fail "test -e ~/bootstrap-from-hook"
+
+# A missing checkout is cloned, selected profile config is loaded, and its
+# regular declarative resources and bootstrap task run from the checkout.
+assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes --only dotfiles,task"
+assert "cat ~/.bootstrap-from-profile" "work-v1"
+assert "cat ~/bootstrap-from-task" "work-v1"
+assert "git -C '$checkout' remote get-url origin" "$source_repo"
+
+# An existing empty destination and a single-component relative destination
+# are both valid clone targets.
+empty_checkout="$PWD/bootstrap-empty-checkout"
+mkdir "$empty_checkout"
+assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$empty_checkout' --yes --only dotfiles"
+assert "git -C '$empty_checkout' remote get-url origin" "$source_repo"
+relative_checkout="bootstrap-relative-checkout"
+assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$relative_checkout' --yes --only dotfiles"
+assert "git -C '$relative_checkout' remote get-url origin" "$source_repo"
+
+# Existing checkouts are reused, while --update fast-forwards before bootstrap.
+echo work-v2 >"$source_repo/profile"
+perl -pi -e 's/work-v1/work-v2/' "$source_repo/mise.work.toml"
+git -C "$source_repo" add .
+git -C "$source_repo" commit -qm update
+assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --update --yes --only dotfiles,task"
+assert "cat ~/.bootstrap-from-profile" "work-v2"
+assert "cat ~/bootstrap-from-task" "work-v2"
+
+# --dry-run also leaves an existing checkout untouched when --update is set.
+echo work-v3 >"$source_repo/profile"
+git -C "$source_repo" add .
+git -C "$source_repo" commit -qm dry-update
+assert_contains "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --update --dry-run --only dotfiles" "Would run: git -C"
+assert "cat '$checkout/profile'" "work-v2"
+
+# Origin validation compares the raw configured URL, not an insteadOf-rewritten
+# transport URL.
+git config --global url.file:///rewritten/.insteadOf "$source_repo"
+assert_succeed "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes --only dotfiles"
+git config --global --unset-all url.file:///rewritten/.insteadOf
+
+# Dry-run reports a clone without creating its destination.
+assert_contains "mise -E work bootstrap --from '$source_repo' --from-dir '$dry_checkout' --dry-run" "Would run: git clone"
+assert_directory_not_exists "$dry_checkout"
+
+# Reusing a directory from a different remote fails rather than bootstrapping
+# an unexpected repository.
+git -C "$checkout" remote set-url origin unexpected
+assert_fail "mise -E work bootstrap --from '$source_repo' --from-dir '$checkout' --yes"

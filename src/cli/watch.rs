@@ -352,6 +352,11 @@ impl Watch {
         // dropped by the ctrl-c branch of `run_with_exit_signal` (#8269).
         #[cfg(unix)]
         let _terminal = TerminalState::capture();
+        // ...and however the *process* ends, including the exits that never
+        // reach a `Drop`: a `mise watch` nested under a `mise run` is killed by
+        // that run's `exit::kill_all()`, which sends SIGTERM.
+        #[cfg(unix)]
+        let _signal_restore = _terminal.arm();
 
         cmd.run()?;
         Ok(())
@@ -1436,14 +1441,22 @@ pub(crate) enum ColourMode {
 //endregion
 
 /// Terminal attributes captured before watchexec runs, put back when this is
-/// dropped.
+/// dropped — or when a signal kills the process before anything can be dropped.
 ///
 /// `--clear=reset` leaves the terminal without echo when watchexec is
 /// interrupted, and restoring on the straight-line path after the child exits
 /// is not enough: mise exited the process from the signal path until 2026.7.16,
 /// so the restore never ran, and `run_with_exit_signal` still drops the command
-/// future when ctrl-c wins the race. Restoring from `Drop` covers every one of
-/// those exits.
+/// future when ctrl-c wins the race.
+///
+/// `Drop` covers the exits that unwind, which is every one of those. It does
+/// not cover being killed. An earlier version of this comment claimed it
+/// covered "every one of those exits" and that was wrong: a `mise watch` nested
+/// under a `mise run` is killed by that run's `exit::kill_all()`, which sends
+/// SIGTERM, and mise handles only SIGINT — so the process dies where it stands
+/// and the terminal keeps whatever watchexec left in it. [`Self::arm`] closes
+/// that by restoring from a signal thread before letting the signal finish the
+/// job.
 #[cfg(unix)]
 struct TerminalState {
     saved: Vec<(std::os::fd::OwnedFd, nix::sys::termios::Termios)>,
@@ -1500,6 +1513,75 @@ impl TerminalState {
 }
 
 #[cfg(unix)]
+impl TerminalState {
+    /// Also restore if a signal kills the process, where `Drop` never runs.
+    ///
+    /// Only the signals whose default action is to terminate are taken. SIGINT
+    /// is deliberately left alone: `tokio::signal::ctrl_c` already owns it and
+    /// that path unwinds, so `Drop` restores and a second registration would
+    /// only make the ordering harder to reason about.
+    ///
+    /// This uses `signal_hook`'s thread rather than a raw handler, matching
+    /// `CmdLineRunner`. Registering replaces the default action, so the process
+    /// no longer dies where it stands and the thread has time to put the
+    /// terminal back. It then hands the signal its original meaning with
+    /// `emulate_default_handler`, so the exit status still says the process was
+    /// killed by that signal rather than reporting some invented code.
+    #[must_use = "the guard disarms the signal thread when dropped"]
+    fn arm(&self) -> SignalRestore {
+        use signal_hook::consts::{SIGHUP, SIGQUIT, SIGTERM};
+
+        let saved = self
+            .saved
+            .iter()
+            .filter_map(|(fd, attrs)| Some((fd.try_clone().ok()?, attrs.clone())))
+            .collect::<Vec<_>>();
+        if saved.is_empty() {
+            return SignalRestore { handle: None };
+        }
+        let mut signals = match signal_hook::iterator::Signals::new([SIGTERM, SIGHUP, SIGQUIT]) {
+            Ok(signals) => signals,
+            Err(err) => {
+                // Worth saying out loud: the terminal is now only as safe as the
+                // unwinding paths, which is the state this exists to improve on.
+                debug!("could not watch for signals to restore the terminal: {err}");
+                return SignalRestore { handle: None };
+            }
+        };
+        let handle = signals.handle();
+        std::thread::spawn(move || {
+            let Some(signal) = signals.forever().next() else {
+                // `handle.close()` ended the iterator: the command finished and
+                // `Drop` is doing the restore instead.
+                return;
+            };
+            for (fd, attrs) in &saved {
+                let _ = nix::sys::termios::tcsetattr(fd, nix::sys::termios::SetArg::TCSANOW, attrs);
+            }
+            let _ = signal_hook::low_level::emulate_default_handler(signal);
+        });
+        SignalRestore {
+            handle: Some(handle),
+        }
+    }
+}
+
+/// Stops the signal thread armed by [`TerminalState::arm`].
+#[cfg(unix)]
+struct SignalRestore {
+    handle: Option<signal_hook::iterator::Handle>,
+}
+
+#[cfg(unix)]
+impl Drop for SignalRestore {
+    fn drop(&mut self) {
+        if let Some(handle) = &self.handle {
+            handle.close();
+        }
+    }
+}
+
+#[cfg(unix)]
 impl Drop for TerminalState {
     fn drop(&mut self) {
         for (fd, attrs) in &self.saved {
@@ -1535,6 +1617,32 @@ mod terminal_state_tests {
                 .saved
                 .is_empty()
         );
+    }
+
+    /// With nothing captured there is nothing to put back, so the signals are
+    /// left with their default meaning rather than being taken over for a
+    /// restore that would do nothing.
+    #[test]
+    fn arming_an_empty_capture_registers_nothing() {
+        let (r, w) = nix::unistd::pipe().unwrap();
+        let state = TerminalState::capture_from([r.as_fd(), w.as_fd()]);
+        assert!(state.arm().handle.is_none());
+    }
+
+    /// Arming duplicates the descriptors rather than borrowing them, so the
+    /// guard is still able to restore after the signal thread has its own copy.
+    #[test]
+    fn arming_leaves_the_guard_able_to_restore() {
+        let pty = nix::pty::openpty(None, None).unwrap();
+        let state = TerminalState::capture_from([pty.master.as_fd()]);
+        assert_eq!(state.saved.len(), 1);
+        let armed = state.arm();
+        assert!(armed.handle.is_some());
+        set_echo(pty.master.as_fd(), false);
+        assert!(!echo_is_on(pty.master.as_fd()));
+        drop(armed);
+        drop(state);
+        assert!(echo_is_on(pty.master.as_fd()));
     }
 
     #[test]

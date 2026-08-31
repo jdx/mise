@@ -5,7 +5,7 @@ use jiff::Timestamp;
 use serde::Serialize;
 
 use crate::backend::{Backend, VersionInfo};
-use crate::cli::args::ToolArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::Settings;
 use crate::install_before::{resolve_before_date_for_backend, resolve_cli_minimum_release_age};
 use crate::toolset::{ToolRequest, resolve_sub_base};
@@ -128,6 +128,7 @@ impl LsRemote {
             .into_iter()
             .filter(|v| matches_prefix(&v.version))
             .collect::<Vec<_>>();
+        ensure_version_listing_succeeded(plugin.ba(), plugin.id())?;
         let hidden_versions = before_date
             .map(|before| VersionInfo::count_hidden_by_date(&versions_matching_prefix, before))
             .unwrap_or_default();
@@ -193,6 +194,13 @@ impl LsRemote {
     }
 }
 
+fn ensure_version_listing_succeeded(ba: &BackendArg, id: &str) -> Result<()> {
+    if let Some(cause) = backend::version_listing_failure(ba) {
+        return Err(eyre::eyre!("unable to fetch versions for {id}: {cause}"));
+    }
+    Ok(())
+}
+
 fn warn_if_versions_hidden_by_minimum_release_age(tool: &str, hidden_versions: usize) {
     // usage sets __USAGE when running complete scripts; skip so Tab does not spam stderr
     if hidden_versions == 0 || crate::env::__USAGE.is_some() {
@@ -238,6 +246,19 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn test_single_tool_listing_surfaces_recorded_backend_failure() {
+        let _config = Config::get().await.unwrap();
+        let ba: BackendArg = "test-ls-remote-recorded-failure".into();
+        backend::record_version_listing_failure(&ba, &eyre::eyre!("second page request failed"));
+
+        let err = ensure_version_listing_succeeded(&ba, &ba.short).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "unable to fetch versions for test-ls-remote-recorded-failure: second page request failed"
+        );
+    }
 
     #[test]
     fn test_all_json_output_always_carries_prerelease() {

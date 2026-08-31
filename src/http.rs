@@ -216,6 +216,24 @@ struct PartialDownload {
     request_hash: String,
 }
 
+/// The prefix `tempfile` builds the download-state name from. Named so the length the hint
+/// measures and the length that is actually created cannot drift apart.
+const DOWNLOAD_STATE_PREFIX: &str = ".mise-download-state.";
+
+/// Name the operation and the path, and add the platform hint the bare error does not carry.
+///
+/// Every downloaded file lands through `tempfile`, whose persist does **not** get the
+/// extended-length path handling `std::fs` applies — `file::PreparedAtomicWrite::commit` records
+/// the measurement: it breaks at a 253-character target while `fs::rename` on the same tree
+/// succeeds at 415. So on Windows this is the first thing to fail as a directory approaches
+/// `MAX_PATH`, and until now it failed as a bare `os error 3` with nothing naming the cause.
+fn io_error(err: std::io::Error, doing: &str, path: &Path) -> eyre::Report {
+    // The hint is resolved while `err` is still borrowable, then the error becomes the source and
+    // the message the context -- the same order `PreparedAtomicWrite::commit` uses.
+    let msg = file::with_io_hint(format!("{doing}: {}", display_path(path)), path, &err);
+    eyre::Report::new(err).wrap_err(msg)
+}
+
 impl PartialDownload {
     fn new(destination: &Path, request_hash: String) -> Result<Self> {
         let parent = destination.parent().ok_or_else(|| {
@@ -279,10 +297,24 @@ impl PartialDownload {
 
     fn write_state(&self, state: &PartialDownloadState) -> Result<()> {
         let parent = self.state_path.parent().unwrap();
-        let mut temp = tempfile::NamedTempFile::with_prefix_in(".mise-download-state.", parent)?;
+        // The name `tempfile` is about to generate, not the directory holding it: the hint decides
+        // from the length of what it is given, and the generated name is 27 units longer than the
+        // directory. Measuring the directory would leave a window where the temp path is over the
+        // limit while the directory is under the hint's threshold, and the failure would go back
+        // to being unexplained. `XXXXXX` stands in for the six random characters and is the same
+        // length, so what is measured is what Windows sees.
+        let temp_name = parent.join(format!("{DOWNLOAD_STATE_PREFIX}XXXXXX"));
+        let mut temp = tempfile::NamedTempFile::with_prefix_in(DOWNLOAD_STATE_PREFIX, parent)
+            .map_err(|err| io_error(err, "failed to create the download state file", &temp_name))?;
         serde_json::to_writer(&mut temp, state)?;
         temp.as_file_mut().sync_all()?;
-        temp.persist(&self.state_path).map_err(|err| err.error)?;
+        temp.persist(&self.state_path).map_err(|err| {
+            io_error(
+                err.error,
+                "failed to write the download state file",
+                &self.state_path,
+            )
+        })?;
         Ok(())
     }
 
@@ -305,7 +337,11 @@ impl PartialDownload {
         if let Err(err) = temp_path.persist(destination) {
             let error = err.error;
             let _ = err.path.keep();
-            return Err(error.into());
+            return Err(io_error(
+                error,
+                "failed to move the downloaded file into place",
+                destination,
+            ));
         }
         self.remove_state_if_exists()?;
         Ok(())
@@ -1967,6 +2003,42 @@ mod tests {
     use reqwest::dns::{Name, Resolve, Resolving};
     use std::path::PathBuf;
     use url::Url;
+
+    #[test]
+    fn download_state_placeholder_is_the_length_tempfile_will_produce() {
+        // What the hint measures has to be what Windows will see. Compared against a name
+        // `tempfile` actually produces rather than against the placeholder's own definition:
+        // asserting `PREFIX.len() + 6` would be true whatever `tempfile` does, and the number
+        // that matters is its suffix width, which is its choice and not ours.
+        let placeholder = format!("{DOWNLOAD_STATE_PREFIX}XXXXXX");
+        let dir = tempfile::tempdir().unwrap();
+        let real = tempfile::NamedTempFile::with_prefix_in(DOWNLOAD_STATE_PREFIX, dir.path())
+            .unwrap()
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .chars()
+            .count();
+        assert_eq!(
+            real,
+            placeholder.chars().count(),
+            "tempfile's generated name is {real} characters; the stand-in the hint measures is \
+             {}. A stand-in shorter than the real name lets a path over the limit measure under \
+             the hint's threshold, which is the case this whole change exists for.",
+            placeholder.chars().count()
+        );
+
+        // And it has to be worth measuring separately from the directory: the reason the parent
+        // is not used is that this is meaningfully longer than it.
+        let parent = PathBuf::from(r"C:\some\dir");
+        let temp = parent.join(&placeholder);
+        assert!(
+            temp.as_os_str().len() > parent.as_os_str().len() + 16,
+            "the stand-in adds {} units, which the hint's own margin would absorb",
+            temp.as_os_str().len() - parent.as_os_str().len()
+        );
+    }
 
     // Mutex to ensure tests don't interfere with each other when modifying global settings
     static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

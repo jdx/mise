@@ -244,3 +244,47 @@ $injected
 
 named directly:
 $toplevel"
+
+# A parent that prints *and* injects. Such a parent keeps its own block, so it
+# cannot be moved behind its children — an earlier version therefore gave it no
+# anchor and appended what it injected, which left the position coming from
+# whichever parent injected first. Measured on 2026.8.14, two such parents split
+# 15/5 across twenty runs, and 10/10 with the sleep on the other child.
+#
+# Asserted as "two runs agree" rather than against a literal order: where a
+# printing parent's children belong is a layout question this does not settle,
+# and equality holds whichever way it is later decided. The sleep is inverted
+# between the two configs so a position that follows the scheduler cannot match
+# by luck.
+for skew in c1 c2; do
+  cat >mise.toml <<TOML
+[tasks.p1]
+run = ["echo P1-START", { tasks = ["c1"] }, "echo P1-END"]
+
+[tasks.p2]
+run = ["echo P2-START", { tasks = ["c2"] }, "echo P2-END"]
+
+[tasks.c1]
+run = '$([[ $skew == c1 ]] && echo "sleep 0.5; ")echo C1'
+
+[tasks.c2]
+run = '$([[ $skew == c2 ]] && echo "sleep 0.5; ")echo C2'
+TOML
+
+  # `pipefail` so a failing `mise run` cannot be swallowed by the pipeline and
+  # read as an ordering, and the emptiness check so a run that printed nothing
+  # cannot make two configs "agree" on nothing at all.
+  order="$(
+    set -o pipefail
+    MISE_JOBS=4 mise run --quiet --output keep-order p1 ::: p2 2>&1 | sed -n 's/^\[\([a-z0-9]*\)\].*/\1/p' | uniq | tr '\n' ' '
+  )" ||
+    fail "keep-order run failed for the sleep-on-$skew config"
+  [[ -n ${order// /} ]] || fail "keep-order run produced no task output for the sleep-on-$skew config"
+  if [[ -z ${first_order:-} ]]; then
+    first_order="$order"
+  else
+    [[ $order == "$first_order" ]] || fail "printing parents ordered by the scheduler:
+with the sleep on c1: $first_order
+with the sleep on c2: $order"
+  fi
+done

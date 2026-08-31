@@ -141,8 +141,6 @@ function PLUGIN:PostInstall(ctx)
         local openssl_path = find_openssl_prefix(homebrew_prefix)
         -- Homebrew paths
         local icu_path = homebrew_prefix .. "/opt/icu4c"
-        local ossp_uuid_path = homebrew_prefix .. "/opt/ossp-uuid"
-        local util_linux_path = homebrew_prefix .. "/opt/util-linux"
 
         -- Build library and include paths
         local lib_paths = {}
@@ -176,22 +174,9 @@ function PLUGIN:PostInstall(ctx)
             configureOptions = configureOptions .. " --without-icu"
         end
 
-        -- Check for UUID library: prefer ossp-uuid, then util-linux (e2fs), otherwise skip
-        if path_exists(ossp_uuid_path .. "/lib") then
-            configureOptions = configureOptions .. " --with-uuid=ossp"
-            table.insert(lib_paths, ossp_uuid_path .. "/lib")
-            table.insert(include_paths, ossp_uuid_path .. "/include")
-        else
-            if path_exists(util_linux_path .. "/lib") then
-                configureOptions = configureOptions .. " --with-uuid=e2fs"
-                table.insert(lib_paths, util_linux_path .. "/lib")
-                table.insert(include_paths, util_linux_path .. "/include")
-            else
-                -- Neither UUID library available
-                io.stderr:write("Warning: UUID library not found. Installing without UUID support.\n")
-                io.stderr:write("  To enable UUID: brew install ossp-uuid\n")
-            end
-        end
+        -- macOS provides the e2fs-compatible UUID API in libSystem. This is also
+        -- what the legacy asdf plugin uses, and requires no Homebrew UUID formula.
+        configureOptions = configureOptions .. " --with-uuid=e2fs"
 
         if #lib_paths > 0 then
             configureOptions = configureOptions .. " --with-libraries=" .. shell_quote(table.concat(lib_paths, ":"))

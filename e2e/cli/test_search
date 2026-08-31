@@ -12,19 +12,28 @@ jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jq
 
 assert "mise search --match-type equal jq" "jq  Command-line JSON processor. https://github.com/jqlang/jq"
 
-assert_contains "mise search 7zip" "aqua:ip7z/7zip"
-assert_contains "mise search --match-type contains 7zip" "aqua:ip7z/7zip"
-assert_contains "mise search --match-type equal 7zip" "aqua:ip7z/7zip"
+# An aqua package with no registry shorthand is still surfaced by name
+assert_contains "mise search buildkit" "aqua:moby/buildkit"
+assert_contains "mise search --match-type contains buildkit" "aqua:moby/buildkit"
+assert_contains "mise search --match-type equal buildkit" "aqua:moby/buildkit"
+
+# Querying an explicit backend returns the backend form even when a shorthand exists
 assert_contains "mise search aqua:ip7z/7zip" "aqua:ip7z/7zip"
 
+# The 7zip shorthand collapses its aqua and github packages into a single result
+assert "mise search --match-type equal 7zip" "7zip  7-Zip is a file archiver with a high compression ratio. https://github.com/ip7z/7zip"
+
 # Backend prefixes matching a shorthand do not dump translated aqua packages
-assert_not_contains "mise search cargo" "cargo:broot"
+assert_not_contains "mise search cargo" "cargo:wasmi_cli"
 assert_not_contains "mise search aqua" "aqua:"
 
 # Aqua Cargo and GoInstall packages use runnable backends in search results
-assert_contains "mise search --match-type equal broot" "cargo:broot"
-assert_not_contains "mise search --match-type equal broot" "aqua:crates.io/broot"
-assert_contains "mise search cargo:broot" "cargo:broot"
+assert_contains "mise search --match-type equal wasmi_cli" "cargo:wasmi_cli"
+assert_not_contains "mise search --match-type equal wasmi_cli" "aqua:crates.io/wasmi_cli"
+assert_contains "mise search cargo:wasmi_cli" "cargo:wasmi_cli"
+
+# The broot shorthand collapses its translated Cargo package into a single result
+assert "mise search --match-type equal broot" "broot  A new way to see and navigate directory trees. https://github.com/canop/broot"
 assert_contains "mise search --match-type equal benchstat" "go:golang.org/x/perf/cmd/benchstat"
 assert_not_contains "mise search --match-type equal benchstat" "aqua:golang.org/x/perf/cmd/benchstat"
 assert_contains "mise search go:golang.org/x/perf/cmd/benchstat" "go:golang.org/x/perf/cmd/benchstat"

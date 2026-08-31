@@ -131,18 +131,8 @@ mod tests {
             Some("github:owner/repo".to_string()),
         ));
         let requests = vec![
-            ToolRequest::Version {
-                backend: backend1,
-                version: "1.0.0".to_string(),
-                options: ToolVersionOptions::default(),
-                source: source.clone(),
-            },
-            ToolRequest::Version {
-                backend: backend2,
-                version: "1.0.0".to_string(),
-                options: ToolVersionOptions::default(),
-                source,
-            },
+            ToolRequest::new(backend1, "1.0.0", source.clone()).unwrap(),
+            ToolRequest::new(backend2, "1.0.0", source).unwrap(),
         ];
 
         let mut deps = ToolDeps::new(requests).unwrap();
@@ -160,14 +150,14 @@ mod tests {
     fn test_same_tool_and_version_with_different_options_are_rejected() {
         let backend = Arc::new(BackendArg::from("tiny"));
         let requests = vec![
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 backend.clone(),
                 "1.0.0",
                 parse_tool_options("flavor=one"),
                 ToolSource::Argument,
             )
             .unwrap(),
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 backend,
                 "1.0.0",
                 parse_tool_options("flavor=two"),
@@ -201,18 +191,15 @@ mod tests {
             ..Default::default()
         };
         let requests = vec![
-            ToolRequest::Version {
-                backend: backend.clone(),
-                version: "1.0.0".to_string(),
-                options: first_options,
-                source: ToolSource::Argument,
-            },
-            ToolRequest::Version {
-                backend,
-                version: "1.0.0".to_string(),
-                options: second_options,
-                source: ToolSource::Argument,
-            },
+            ToolRequest::new_with_options(
+                backend.clone(),
+                "1.0.0",
+                first_options,
+                ToolSource::Argument,
+            )
+            .unwrap(),
+            ToolRequest::new_with_options(backend, "1.0.0", second_options, ToolSource::Argument)
+                .unwrap(),
         ];
 
         let err = ToolDeps::new(requests).unwrap_err();
@@ -223,7 +210,7 @@ mod tests {
     }
 
     fn request(tool: &str, options: &str) -> ToolRequest {
-        ToolRequest::new_opts(
+        ToolRequest::new_with_options(
             Arc::new(BackendArg::from(tool)),
             "1.0.0",
             parse_tool_options(options),

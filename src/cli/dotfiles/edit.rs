@@ -65,6 +65,7 @@ impl DotfilesEdit {
 
         DotfilesAdd {
             targets: vec![self.target.clone()],
+            changed: false,
             mode: self.mode.clone(),
             source: self.source.clone(),
             global: true,

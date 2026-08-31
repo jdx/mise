@@ -697,6 +697,128 @@ pub(crate) fn apply(config: &Config, requests: &[EditRequest], opts: &ApplyOpts)
     Ok(true)
 }
 
+/// Print unified patches for the changes required to converge edit entries.
+/// Template blocks are rendered because an exact diff requires their desired
+/// content, matching the trust and execution semantics of dotfiles status.
+pub(crate) fn print_diffs(config: &Config, requests: &[EditRequest]) -> Result<()> {
+    let mut changed = false;
+    let mut problems = vec![];
+    for req in requests {
+        if let EditOp::Block {
+            source: BlockSource::File(path),
+            ..
+        } = &req.op
+            && !path.exists()
+        {
+            miseprintln!(
+                "{} ({}): source missing: {}",
+                req.path.display_user(),
+                req.describe_op(),
+                path.display_user()
+            );
+            changed = true;
+            continue;
+        }
+        let pre = match precheck(req) {
+            Ok(Some(EditCheck::Blocked(reason))) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {reason}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
+            Ok(pre) => pre,
+            Err(err) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {err}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
+        };
+        if matches!(&pre, Some(EditCheck::State(FileState::Applied))) {
+            continue;
+        }
+        let desired = match desired_content(config, req) {
+            Ok(desired) => desired,
+            Err(err) => {
+                problems.push(format!("  {err}"));
+                continue;
+            }
+        };
+        if pre.is_none() {
+            match block_state(req, desired.as_deref()) {
+                Ok(FileState::Applied) => continue,
+                Ok(_) => {}
+                Err(err) => {
+                    problems.push(format!(
+                        "  \"{}\" ({}): {err}",
+                        req.path_raw,
+                        req.describe_op()
+                    ));
+                    continue;
+                }
+            }
+        }
+        let current = if req.path.exists() {
+            match file::read_to_string(&req.path) {
+                Ok(current) => current,
+                Err(err) => {
+                    problems.push(format!(
+                        "  \"{}\" ({}): {err}",
+                        req.path_raw,
+                        req.describe_op()
+                    ));
+                    continue;
+                }
+            }
+        } else {
+            String::new()
+        };
+        let output = match apply_to_string(req, desired.as_deref(), &current) {
+            Ok(output) => output,
+            Err(err) => {
+                problems.push(format!(
+                    "  \"{}\" ({}): {err}",
+                    req.path_raw,
+                    req.describe_op()
+                ));
+                continue;
+            }
+        };
+        if current == output {
+            continue;
+        }
+        changed = true;
+        miseprintln!(
+            "edit differs: {} ({})",
+            req.path.display_user(),
+            req.describe_op()
+        );
+        let mut opts = diffy::DiffOptions::new();
+        opts.set_original_filename(format!("{} (current)", req.path.display_user()))
+            .set_modified_filename(format!(
+                "{} (desired: {})",
+                req.path.display_user(),
+                req.describe_op()
+            ));
+        let patch = opts.create_patch(&current, &output);
+        miseprint!("{}", diffy::PatchFormatter::new().fmt_patch(&patch))?;
+    }
+    if !problems.is_empty() {
+        bail!(
+            "edits: cannot diff these entries, fix them manually:\n{}",
+            problems.join("\n")
+        );
+    }
+    if !changed {
+        info!("edits: all edits are applied");
+    }
+    Ok(())
+}
+
 pub(crate) struct UnapplyOpts {
     pub dry_run: bool,
     pub verbose: bool,

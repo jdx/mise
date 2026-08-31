@@ -469,6 +469,15 @@ pub(crate) fn lookup_platform_value<'a>(
     )
 }
 
+/// Whether the lookup this list describes would get a value out of `value`.
+///
+/// Existence is not enough. `ToolVersionOptions`'s nested lookup converts scalars and returns
+/// nothing for a table or an array, so a `url` written as either resolves to no URL — and listing
+/// its platform as available would send the reader looking for a key that is already there.
+fn resolves_to_a_value(value: &toml::Value) -> bool {
+    crate::toolset::scalar_value_to_string(value).is_some()
+}
+
 /// Lists platform keys (e.g. "macos-x64") for which a given key_type exists (e.g. "url").
 pub(crate) fn list_available_platforms_with_key(
     opts: &ToolVersionOptions,
@@ -477,11 +486,12 @@ pub(crate) fn list_available_platforms_with_key(
     let mut set = IndexSet::new();
 
     // Gather from flat keys
-    for (k, _) in opts.iter() {
+    for (k, v) in opts.iter() {
         if let Some(rest) = k
             .strip_prefix("platforms_")
             .or_else(|| k.strip_prefix("platform_"))
             && let Some(platform_part) = rest.strip_suffix(&format!("_{}", key_type))
+            && resolves_to_a_value(v)
         {
             // Only convert the OS/arch separator underscore to a dash, preserving
             // underscores inside architecture names like x86_64
@@ -494,14 +504,37 @@ pub(crate) fn list_available_platforms_with_key(
         }
     }
 
-    // Probe nested keys using shared patterns
-    for os in BINARY_OS_TOKENS {
-        for arch in BINARY_ARCH_TOKENS {
-            for prefix in ["platforms", "platform"] {
-                let nested_key = format!("{prefix}.{os}-{arch}.{key_type}");
-                if opts.contains_key(&nested_key) {
-                    set.insert(format!("{os}-{arch}"));
+    // Read the keys that are actually there rather than probing a grid of known OS and arch
+    // tokens. The grid could only see platforms it already knew the name of, so a key mise does
+    // not recognise -- a typo like `lnux-x64`, an underscore where a dash belongs -- came back as
+    // nothing at all, and the caller reported "requires 'url' option" to someone who had written
+    // one. Naming what is declared is the whole point of this list.
+    //
+    // Two shapes, because `ToolVersionOptions::contains_key` resolves both: a nested table, and a
+    // literal dotted key at the top level. Together they are a superset of what the grid saw.
+    for (k, v) in opts.iter() {
+        // `platforms = { "lnux-x64" = { url = "..." } }`
+        if k == "platforms" || k == "platform" {
+            if let Some(table) = v.as_table() {
+                for (platform_key, entry) in table {
+                    if entry
+                        .as_table()
+                        .and_then(|entry| entry.get(key_type))
+                        .is_some_and(resolves_to_a_value)
+                    {
+                        set.insert(platform_key.clone());
+                    }
                 }
+            }
+            continue;
+        }
+        // `"platforms.lnux-x64.url" = "..."` written as one key
+        for prefix in ["platforms.", "platform."] {
+            if let Some(rest) = k.strip_prefix(prefix)
+                && let Some(platform_key) = rest.strip_suffix(&format!(".{key_type}"))
+                && resolves_to_a_value(v)
+            {
+                set.insert(platform_key.to_string());
             }
         }
     }
@@ -1863,6 +1896,161 @@ Path      : C:\\a\\deno\\deno\\target\\release\\deno-x86_64-pc-windows-msvc.zip
                 initial_target
             );
         }
+    }
+
+    /// `platforms = { "<name>" = { <key> = ... } }`, the shape a nested table takes.
+    fn nested_platforms(entries: &[(&str, &str)], key_type: &str) -> ToolVersionOptions {
+        let mut platforms = toml::value::Table::new();
+        for (platform_key, value) in entries {
+            let mut entry = toml::value::Table::new();
+            entry.insert(key_type.to_string(), toml::Value::String(value.to_string()));
+            platforms.insert(platform_key.to_string(), toml::Value::Table(entry));
+        }
+        let mut opts = IndexMap::new();
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn list_available_platforms_names_keys_mise_does_not_recognise() {
+        // What the list is for: telling someone which platform keys their tool declares. Probing a
+        // grid of known OS and arch tokens could only ever name the ones mise already knew, so a
+        // typo came back as an empty list and the http backend told the author to provide a `url`
+        // they had written. Measured before the change, host windows-x64:
+        //
+        //     platforms = { lnux-x64  = { url = ... } }  ->  Http backend requires 'url' option
+        //     platforms = { linux-x64 = { url = ... } }  ->  ... Available: linux-x64.
+        let opts = nested_platforms(
+            &[
+                ("lnux-x64", "https://example.invalid/a.tar.gz"),
+                ("linux_x64", "https://example.invalid/b.tar.gz"),
+                ("plan9-mips", "https://example.invalid/c.tar.gz"),
+            ],
+            "url",
+        );
+
+        let platforms = list_available_platforms_with_key(&opts, "url");
+
+        assert!(platforms.contains(&"lnux-x64".to_string()), "{platforms:?}");
+        assert!(
+            platforms.contains(&"linux_x64".to_string()),
+            "{platforms:?}"
+        );
+        assert!(
+            platforms.contains(&"plan9-mips".to_string()),
+            "{platforms:?}"
+        );
+    }
+
+    #[test]
+    fn list_available_platforms_still_names_the_keys_the_grid_used_to_find() {
+        // The control for removing the token grid: everything it could see is still seen.
+        let opts = nested_platforms(
+            &[
+                ("linux-x64", "https://example.invalid/linux.tar.gz"),
+                ("macos-arm64", "https://example.invalid/macos.tar.gz"),
+                ("windows-x64", "https://example.invalid/windows.zip"),
+            ],
+            "url",
+        );
+
+        let platforms = list_available_platforms_with_key(&opts, "url");
+
+        for expected in ["linux-x64", "macos-arm64", "windows-x64"] {
+            assert!(platforms.contains(&expected.to_string()), "{platforms:?}");
+        }
+    }
+
+    #[test]
+    fn list_available_platforms_is_about_one_key_not_every_platform() {
+        // The second control, and the one that stops this from becoming "list every platform
+        // mentioned anywhere": a platform that declares a checksum but no url must not be offered
+        // as somewhere a url could be found.
+        let opts = nested_platforms(&[("linux-x64", "sha256:abc")], "checksum");
+
+        assert!(list_available_platforms_with_key(&opts, "url").is_empty());
+        assert_eq!(
+            list_available_platforms_with_key(&opts, "checksum"),
+            vec!["linux-x64".to_string()]
+        );
+    }
+
+    #[test]
+    fn list_available_platforms_skips_a_value_the_lookup_would_reject() {
+        // Existence is not enough. The nested lookup converts scalars and returns nothing for a
+        // table or an array, so a `url` written as either resolves to no URL -- and offering its
+        // platform as available sends the reader looking for a key that is already there. The
+        // token grid this replaced had the same hole, since `contains_key` only asks whether
+        // something is at the path.
+        let mut platforms = toml::value::Table::new();
+
+        let mut as_table = toml::value::Table::new();
+        as_table.insert(
+            "url".to_string(),
+            toml::Value::Table({
+                let mut inner = toml::value::Table::new();
+                inner.insert("href".to_string(), toml::Value::String("x".to_string()));
+                inner
+            }),
+        );
+        platforms.insert("linux-x64".to_string(), toml::Value::Table(as_table));
+
+        let mut as_array = toml::value::Table::new();
+        as_array.insert(
+            "url".to_string(),
+            toml::Value::Array(vec![toml::Value::String("x".to_string())]),
+        );
+        platforms.insert("macos-arm64".to_string(), toml::Value::Table(as_array));
+
+        let mut as_string = toml::value::Table::new();
+        as_string.insert(
+            "url".to_string(),
+            toml::Value::String("https://example.invalid/w.zip".to_string()),
+        );
+        platforms.insert("windows-x64".to_string(), toml::Value::Table(as_string));
+
+        let mut opts = IndexMap::new();
+        opts.insert("platforms".to_string(), toml::Value::Table(platforms));
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        // The control is the third entry: a well-formed neighbour still shows up, so this is a
+        // value check rather than the list quietly emptying itself.
+        assert_eq!(platforms, vec!["windows-x64".to_string()]);
+    }
+
+    #[test]
+    fn list_available_platforms_reads_a_literal_dotted_key() {
+        // The other shape `ToolVersionOptions::contains_key` resolves, and the other half of what
+        // the grid was covering: the whole path written as one top-level key.
+        let mut opts = IndexMap::new();
+        opts.insert(
+            "platforms.lnux-x64.url".to_string(),
+            toml::Value::String("https://example.invalid/a.tar.gz".to_string()),
+        );
+        opts.insert(
+            "platform.macos-arm64.url".to_string(),
+            toml::Value::String("https://example.invalid/b.tar.gz".to_string()),
+        );
+        let tool_opts = ToolVersionOptions {
+            opts: opts.into(),
+            ..Default::default()
+        };
+
+        let platforms = list_available_platforms_with_key(&tool_opts, "url");
+
+        assert!(platforms.contains(&"lnux-x64".to_string()), "{platforms:?}");
+        assert!(
+            platforms.contains(&"macos-arm64".to_string()),
+            "{platforms:?}"
+        );
     }
 
     #[test]

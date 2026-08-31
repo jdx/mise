@@ -27,7 +27,7 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 Use the `--global` flag to use the global config file instead.
 
 ## Arguments
-- **`[TOOL@VERSION]…`** — Tool(s) to add to config file
+- **`<TOOL@VERSION>`** — Tool to add to config file
 
   e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
   If no version is specified, it will default to @latest
@@ -73,6 +73,7 @@ Use the `--global` flag to use the global config file instead.
 - **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`
 - **`--remove <TOOL>`** — Remove the tool(s) from config file
 - **`-h --help`** — Print help
+- **`--postinstall <COMMAND>`** — Command to run after installing this tool
 
 Examples:
 
@@ -83,6 +84,12 @@ $ mise use
 # set the current version of node to 20.x in mise.toml of current directory
 # will write the fuzzy version (e.g.: 20)
 $ mise use node@20
+
+# run a command after installing a tool
+$ mise use --postinstall "mbx setup --defaults" mr-boxington
+
+# associate a different postinstall command with each tool
+$ mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b
 
 # set the current version of node to 20.x in ~/.config/mise/config.toml
 # will write the precise version (e.g.: 20.0.0)

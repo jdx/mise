@@ -67,6 +67,8 @@ named parts. Both flags can be repeated or comma-separated, but they
 cannot be used together.
 
 ## Flags
+- **`--from <GIT_URL>`** — Clone a git repository and bootstrap from its configuration
+- **`--from-dir <DIR>`** — Directory used for the repository cloned by --from
 - **`-n --dry-run`** — Print what would happen without installing anything
 - **`-y --yes`** — Skip confirmation prompts
 - **`--skip-dirty`** — Skip configured repos with local changes instead of failing
@@ -106,6 +108,7 @@ Examples:
 
 ```
 mise bootstrap                    # packages + repos + dotfiles + tools + bootstrap task
+mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes
 mise bootstrap --force-dotfiles   # replace conflicting dotfile targets
 mise bootstrap --skip tools,task  # skip tool installation and the bootstrap task
 mise bootstrap --only tools       # run just tool installation

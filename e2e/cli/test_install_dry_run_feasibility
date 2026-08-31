@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+# `--dry-run` used to resolve a version and stop there, so it answered "would install" for tools
+# that cannot install here at all -- measured as `mise install --dry-run acli@latest` succeeding on
+# Windows while the same command without `--dry-run` failed with `unsupported env: windows/amd64`.
+# The check the install does was on the far side of an early return.
+#
+# That example no longer reproduces: aqua gained Windows support for `acli`, and mise's vendored
+# snapshot picked it up in v2026.8.15. It is kept as the history of why this file exists. The cases
+# below never depended on it.
+
+# The http backend can tell from its options alone. This suite runs on Linux (Windows has its own,
+# `e2e-win/`), so a tool that declares only `windows-x64` has no URL here and needs no platform
+# staging to stay reproducible.
+#
+# The platform has to be one mise recognises. `list_available_platforms_with_key` enumerates nested
+# keys by probing known OS tokens, so an invented platform like `plan9-mips` leaves the list empty
+# and the message becomes "Http backend requires 'url' option" -- true of a tool that declares no
+# URL at all, and misleading for one that declares a URL for somewhere else.
+cat <<EOF >mise.toml
+[tools."http:dry-run-no-url-here"]
+version = "1.0.0"
+platforms = { windows-x64 = { url = "https://example.invalid/tool-{{version}}.tar.gz" } }
+EOF
+assert_fail "mise install --dry-run" "No URL for platform"
+# and it names what the tool does declare, since adding that key is usually the fix
+assert_fail "mise install --dry-run" "Available: windows-x64"
+
+# aqua can tell from the registry entry. Specific versions are marked `no_asset` there regardless
+# of platform, which is what makes this runnable on any runner: `unsupported env` depends on the
+# host, and aqua reads the host from `env::consts::OS` rather than from settings, so `MISE_OS`
+# cannot stage it.
+assert_fail "mise install --dry-run age@1.0.0-beta1" "no asset released"
+
+# The controls. Both pass before this change as well as after, and a fix that simply made
+# `--dry-run` pessimistic would break them.
+cat <<EOF >mise.toml
+[tools."http:dry-run-installable"]
+version = "1.0.0"
+url = "https://mise.jdx.dev/test-fixtures/hello-world-{{version}}.tar.gz"
+bin_path = "hello-world-1.0.0/bin"
+EOF
+
+# A tool that can install still reports that it would.
+assert_contains "mise install --dry-run 2>&1" "would install"
+
+# And once it is installed, feasibility is not re-examined: the check only runs where an install
+# would actually be attempted, so a machine whose tools predate a registry restriction keeps
+# working rather than failing a dry run for an install nobody asked for.
+mise install
+assert_contains "mise install http:dry-run-installable@1.0.0 --dry-run 2>&1" "already installed"

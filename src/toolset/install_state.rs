@@ -234,7 +234,11 @@ fn load_plugins() -> MutexResult<InstallStatePlugins> {
 /// deletes every shim it cannot account for. Callers that are explicitly
 /// best-effort (read-only shared dirs) downgrade this to a warning.
 fn scan_versions(dir: &Path) -> Result<Vec<String>> {
-    Ok(file::dir_subdirs(dir)?
+    // Keeping the links that lead nowhere. `mise link` leaves one behind as soon as its target is
+    // moved or deleted, and dropping it here is what made the version invisible to `mise ls` and
+    // unreachable to `mise uninstall` — occupying a name nothing would admit to. It is listed, not
+    // treated as installed: `is_version_installed` still resolves the path and still says no.
+    Ok(file::dir_subdirs_keeping_broken_links(dir)?
         .into_iter()
         .filter(|v| !v.starts_with('.'))
         .filter(|v| !runtime_symlinks::is_runtime_symlink(&dir.join(v)))

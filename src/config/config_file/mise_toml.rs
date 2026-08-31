@@ -27,7 +27,7 @@ use crate::config::env_directive::{
     AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
 };
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config, Settings};
+use crate::config::{Alias, AliasMap, CommandWrapper, Config, Settings};
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -383,6 +383,8 @@ pub(crate) struct MiseToml {
     tool_alias: AliasMap,
     #[serde(default)]
     shell_alias: IndexMap<String, String>,
+    #[serde(default)]
+    wrappers: IndexMap<String, CommandWrapper>,
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
@@ -530,6 +532,7 @@ impl MiseToml {
             "config_root",
             config_root::config_root(path).to_str().unwrap(),
         );
+        context.insert("config_source", &config_root::config_source(path));
         let mut rf = Self {
             path: path.to_path_buf(),
             context,
@@ -575,6 +578,8 @@ impl MiseToml {
             "config_root",
             config_root::config_root(path).to_str().unwrap(),
         );
+        rf.context
+            .insert("config_source", &config_root::config_source(path));
         rf.update_context_env(env::PRISTINE_ENV.clone());
         rf.path = path.to_path_buf();
         let project_root = rf.project_root().map(|p| p.to_path_buf());
@@ -1338,7 +1343,8 @@ impl ConfigFile for MiseToml {
                 *table.decor_mut() = decor;
                 table.set_position(position);
             }
-            update_standard_tool_table(&mut table, &versions[0], ba.explicit_opts());
+            let explicit_options = versions[0].explicit_options();
+            update_standard_tool_table(&mut table, &versions[0], Some(&explicit_options));
             replace_tool_entries_preserving_position(tools, &keys, key, Item::Table(table));
             if is_tools_sorted {
                 tools.sort_values();
@@ -1533,7 +1539,7 @@ impl ConfigFile for MiseToml {
                     ba_opts.depends = options.depends.clone();
                     ba_opts.install_env = options.install_env.clone();
                     ba.set_opts(Some(ba_opts.clone()));
-                    ToolRequest::new_opts(ba.into(), &version, ba_opts, source.clone())
+                    ToolRequest::new_with_options(ba.into(), &version, ba_opts, source.clone())
                         .wrap_err_with(|| self.tool_request_error_context(&short, tool, &version))?
                 } else {
                     ToolRequest::new(ba.clone().into(), &version, source.clone())
@@ -1592,6 +1598,10 @@ impl ConfigFile for MiseToml {
                 Ok((k.clone(), v))
             })
             .collect()
+    }
+
+    fn command_wrappers(&self) -> eyre::Result<IndexMap<String, CommandWrapper>> {
+        Ok(self.wrappers.clone())
     }
 
     fn task_config(&self) -> &TaskConfig {
@@ -1870,6 +1880,7 @@ impl Clone for MiseToml {
             alias: self.alias.clone(),
             tool_alias: self.tool_alias.clone(),
             shell_alias: self.shell_alias.clone(),
+            wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
@@ -4124,7 +4135,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "2.0.0",
                     options,
@@ -4171,7 +4182,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "2.0.0",
                     options,
@@ -4213,7 +4224,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "2.0.0",
                     options,
@@ -4251,7 +4262,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new(dummy.clone()),
                     "prefix:2",
                     options,
@@ -4912,7 +4923,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &needs_dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new("needs-dummy".into()),
                     "1.0.1",
                     options,
@@ -5563,7 +5574,7 @@ run = 'echo "template"'
         cf.replace_versions(
             &dummy,
             vec![
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     Arc::new("dummy".into()),
                     "1.0.1",
                     options,

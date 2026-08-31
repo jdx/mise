@@ -150,8 +150,11 @@ impl std::fmt::Display for RepoRequest {
     }
 }
 
-pub(crate) fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
-    requests.iter().map(status_one).collect()
+pub(crate) async fn status(requests: &[RepoRequest]) -> Result<Vec<RepoStatus>> {
+    crate::parallel::parallel(requests.to_vec(), |request| async move {
+        tokio::task::spawn_blocking(move || status_one(&request)).await?
+    })
+    .await
 }
 
 pub(crate) fn preflight_statuses(statuses: &[RepoStatus]) -> Result<()> {
@@ -205,7 +208,7 @@ pub(crate) fn update_statuses(statuses: &[RepoStatus], dry_run: bool) -> Result<
     Ok(())
 }
 
-pub(crate) fn exec(
+pub(crate) async fn exec(
     requests: &[RepoRequest],
     command: &[String],
     dry_run: bool,
@@ -214,7 +217,7 @@ pub(crate) fn exec(
     let Some((program, args)) = command.split_first() else {
         bail!("repos: command is required");
     };
-    let statuses = status(requests)?;
+    let statuses = status(requests).await?;
     let mut failures = vec![];
     for status in statuses {
         match &status.state {
@@ -1160,8 +1163,8 @@ mod tests {
         assert!(!missing_path.exists());
     }
 
-    #[test]
-    fn ref_less_update_pulls_current_branch() {
+    #[tokio::test]
+    async fn ref_less_update_pulls_current_branch() {
         let tmp = tempfile::tempdir().unwrap();
         let source = tmp.path().join("source");
         let target = tmp.path().join("target");
@@ -1176,7 +1179,7 @@ mod tests {
             git_ref: None,
         };
 
-        let statuses = status(&[request]).unwrap();
+        let statuses = status(&[request]).await.unwrap();
         assert_eq!(statuses[0].state, RepoState::Current);
         update_statuses(&statuses, false).unwrap();
 
@@ -1186,8 +1189,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn ref_less_update_skips_detached_head() {
+    #[tokio::test]
+    async fn ref_less_update_skips_detached_head() {
         let tmp = tempfile::tempdir().unwrap();
         let source = tmp.path().join("source");
         let target = tmp.path().join("target");
@@ -1203,7 +1206,7 @@ mod tests {
             git_ref: None,
         };
 
-        update_statuses(&status(&[request]).unwrap(), false).unwrap();
+        update_statuses(&status(&[request]).await.unwrap(), false).unwrap();
 
         assert_eq!(
             fs::read_to_string(target.join("version.txt")).unwrap(),
@@ -1253,8 +1256,8 @@ mod tests {
         assert!(format!("{err:#}").contains("local changes"));
     }
 
-    #[test]
-    fn update_unpinned_repo_rechecks_clean_worktree_before_mutating() {
+    #[tokio::test]
+    async fn update_unpinned_repo_rechecks_clean_worktree_before_mutating() {
         let tmp = tempfile::tempdir().unwrap();
         let source = tmp.path().join("source");
         let target = tmp.path().join("target");
@@ -1267,7 +1270,7 @@ mod tests {
             url,
             git_ref: None,
         };
-        let statuses = status(&[request]).unwrap();
+        let statuses = status(&[request]).await.unwrap();
         let original_origin_sha = local_ref_sha(&target, "origin/main").unwrap();
         commit_version(&source, "v2");
         fs::write(target.join("local.txt"), "local").unwrap();
@@ -1281,9 +1284,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn exec_rejects_an_empty_command() {
-        let err = exec(&[], &[], false, false).unwrap_err();
+    #[tokio::test]
+    async fn exec_rejects_an_empty_command() {
+        let err = exec(&[], &[], false, false).await.unwrap_err();
         assert!(format!("{err:#}").contains("command is required"));
     }
 
@@ -1351,8 +1354,8 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
         assert_eq!(parse_remote_exact_ref_sha(out, "refs/heads/missing"), None);
     }
 
-    #[test]
-    fn empty_directory_is_missing() {
+    #[tokio::test]
+    async fn empty_directory_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("target");
         fs::create_dir(&path).unwrap();
@@ -1362,12 +1365,12 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: None,
         };
-        let status = status(&[request]).unwrap();
+        let status = status(&[request]).await.unwrap();
         assert_eq!(status[0].state, RepoState::Missing);
     }
 
-    #[test]
-    fn nested_directory_inside_parent_repo_is_missing() {
+    #[tokio::test]
+    async fn nested_directory_inside_parent_repo_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let parent = tmp.path().join("parent");
         let nested = parent.join("nested");
@@ -1385,7 +1388,7 @@ cccccccccccccccccccccccccccccccccccccccc\trefs/tags/release^{}
             url: "https://github.com/jdx/mise.git".to_string(),
             git_ref: None,
         };
-        let status = status(&[request]).unwrap();
+        let status = status(&[request]).await.unwrap();
         assert_eq!(status[0].state, RepoState::Missing);
     }
 

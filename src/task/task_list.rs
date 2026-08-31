@@ -228,7 +228,9 @@ async fn make_task_executable(
     // the file at all -- so on Windows it carries the remedy instead of handing off to a prompt.
     let windows_has_no_prompt = cfg!(windows);
     let remedy = if windows_has_no_prompt {
-        format!(" {}", file::make_executable_hint(&path))
+        // The stop matters: without it the path and the remedy run together into one unreadable
+        // line -- `...\mise-tasks\build Add a shebang line to ...`.
+        format!(". {}", file::make_executable_hint(&path))
     } else {
         String::new()
     };

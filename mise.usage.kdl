@@ -1,4 +1,4 @@
-min_usage_version "4.0"
+min_usage_version "6.6"
 name mise
 bin mise
 author "Jeff Dickey <@jdx>"
@@ -428,7 +428,13 @@ Use `--skip <part>` to skip named parts, or `--only <part>` to run just
 named parts. Both flags can be repeated or comma-separated, but they
 cannot be used together.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap\u{1b}[22m                    # packages + repos + dotfiles + tools + bootstrap task\n    $ \u{1b}[1mmise bootstrap --force-dotfiles\u{1b}[22m   # replace conflicting dotfile targets\n    $ \u{1b}[1mmise bootstrap --skip tools,task\u{1b}[22m  # skip tool installation and the bootstrap task\n    $ \u{1b}[1mmise bootstrap --only tools\u{1b}[22m       # run just tool installation\n    $ \u{1b}[1mmise bootstrap status --missing\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap mise-shell-activate apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos defaults status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos launchd-agents apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap linux systemd-units apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap user apply --dry-run\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap\u{1b}[22m                    # packages + repos + dotfiles + tools + bootstrap task\n    $ \u{1b}[1mmise -E work bootstrap --from git@github.com:example/dotfiles.git --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap --force-dotfiles\u{1b}[22m   # replace conflicting dotfile targets\n    $ \u{1b}[1mmise bootstrap --skip tools,task\u{1b}[22m  # skip tool installation and the bootstrap task\n    $ \u{1b}[1mmise bootstrap --only tools\u{1b}[22m       # run just tool installation\n    $ \u{1b}[1mmise bootstrap status --missing\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap packages apply --yes\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap repos apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap mise-shell-activate apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos defaults status\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap macos launchd-agents apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap linux systemd-units apply --dry-run\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap user apply --dry-run\u{1b}[22m\n"
+    flag --from help="Clone a git repository and bootstrap from its configuration" {
+        arg <GIT_URL>
+    }
+    flag --from-dir help="Directory used for the repository cloned by --from" requires=--from {
+        arg <DIR>
+    }
     flag "-n --dry-run" help="Print what would happen without installing anything"
     flag "-y --yes" help="Skip confirmation prompts"
     flag --skip-dirty help="Skip configured repos with local changes instead of failing"
@@ -562,7 +568,8 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `--source` is provided.
 """#
-            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n"
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --changed\u{1b}[22m\n"
+            flag --changed help="Update the sources of every changed file managed in copy mode"
             flag "-f --force" help="Overwrite existing sources without prompting"
             flag "-g --global" help="Write to the global config" {
                 conflicts "--local" "--path"
@@ -584,7 +591,7 @@ under `dotfiles.root` unless `--source` is provided.
             }
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
-            arg <TARGET>… help="Targets to add or update" var=#true
+            arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
         }
         cmd apply help="Apply dotfiles from `[dotfiles]`" effect=write {
             long_help #"""
@@ -601,6 +608,11 @@ mise doesn't otherwise own.
             flag "-y --yes" help="Skip the confirmation prompt"
             flag "-h --help" help="Print help" action=help builtin=#true
             arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+        }
+        cmd diff help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+            after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles diff\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles diff ~/.zshrc\u{1b}[22m\n"
+            flag "-h --help" help="Print help" action=help builtin=#true
+            arg "[TARGET]…" help="Only show these targets" required=#false var=#true
         }
         cmd edit help="Edit a managed dotfile source" effect=write {
             after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles edit ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml\u{1b}[22m\n"
@@ -1264,6 +1276,12 @@ If not provided, the nearest mise.toml file will be used
 """#
             arg <FILE>
         }
+        flag "-g --global" help="Read the global config file." {
+            conflicts "--file" "--system"
+        }
+        flag --system help="Read the system config file." {
+            conflicts "--file" "--global"
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[KEY]" help="The path of the config to display" required=#false
         complete file type=path
@@ -1279,7 +1297,7 @@ If not provided, the nearest mise.toml file will be used
         flag "-h --help" help="Print help" action=help builtin=#true
     }
     cmd set help="Set the value of a setting in a mise.toml file" effect=write {
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise config set tools.python 3.12\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.always_keep_download true\u{1b}[22m\n    $ \u{1b}[1mmise config set env.TEST_ENV_VAR ABC\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.disable_tools node,rust\u{1b}[22m\n\n    # Type for `settings` is inferred\n    $ \u{1b}[1mmise config set settings.jobs 4\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise config set tools.python 3.12\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.always_keep_download true\u{1b}[22m\n    $ \u{1b}[1mmise config set env.TEST_ENV_VAR ABC\u{1b}[22m\n    $ \u{1b}[1mmise config set settings.disable_tools node,rust\u{1b}[22m\n    $ \u{1b}[1mmise config set --append env._.path ~/.local/bin\u{1b}[22m\n    $ \u{1b}[1mmise config set --remove env._.path ~/.local/bin\u{1b}[22m\n\n    # Type for `settings` is inferred\n    $ \u{1b}[1mmise config set settings.jobs 4\u{1b}[22m\n"
         flag "-f --file --path" help="The path to the mise.toml file to edit" {
             long_help #"""
 The path to the mise.toml file to edit
@@ -1290,6 +1308,14 @@ If not provided, the nearest mise.toml file will be used
 """#
             arg <FILE>
         }
+        flag "-g --global" help="Edit the global config file." {
+            conflicts "--file" "--system"
+        }
+        flag --system help="Edit the system config file." {
+            conflicts "--file" "--global"
+        }
+        flag --append help="Append the value without duplicating an existing entry." conflicts=--remove
+        flag --remove help="Remove the value from an existing collection." conflicts=--append
         flag "-t --type" default=infer {
             arg <TYPE> {
                 choices {
@@ -1381,7 +1407,8 @@ If the target is already managed, this updates its source from the live
 target. Otherwise it creates a `[dotfiles]` entry and seeds the source
 under `dotfiles.root` unless `--source` is provided.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles add ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --mode copy ~/.config/starship.toml\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --source dotfiles/gitconfig ~/.gitconfig\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles add --changed\u{1b}[22m\n"
+        flag --changed help="Update the sources of every changed file managed in copy mode"
         flag "-f --force" help="Overwrite existing sources without prompting"
         flag "-g --global" help="Write to the global config" {
             conflicts "--local" "--path"
@@ -1403,7 +1430,7 @@ under `dotfiles.root` unless `--source` is provided.
         }
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
-        arg <TARGET>… help="Targets to add or update" var=#true
+        arg "[TARGET]…" help="Targets to add or update" required=#false var=#true
     }
     cmd apply hide=#true help="Apply dotfiles from `[dotfiles]`" effect=write {
         long_help #"""
@@ -1420,6 +1447,11 @@ mise doesn't otherwise own.
         flag "-y --yes" help="Skip the confirmation prompt"
         flag "-h --help" help="Print help" action=help builtin=#true
         arg "[TARGET]…" help="Only apply these targets" required=#false var=#true
+    }
+    cmd diff hide=#true help="Show the changes needed to apply dotfiles from `[dotfiles]`" effect=read {
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles diff\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles diff ~/.zshrc\u{1b}[22m\n"
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg "[TARGET]…" help="Only show these targets" required=#false var=#true
     }
     cmd edit hide=#true help="Edit a managed dotfile source" effect=write {
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise bootstrap dotfiles edit ~/.zshrc\u{1b}[22m\n    $ \u{1b}[1mmise bootstrap dotfiles edit --apply ~/.config/starship.toml\u{1b}[22m\n"
@@ -1796,8 +1828,32 @@ When a parent and nested task both exist, the parent stub is written to `<parent
 Path to a mise bin to use when running the task stub.
 
 Use `--mise-bin=./bin/mise` to use a mise bin generated from `mise generate install-script`
+
+On Windows a path is run as written, so that script needs its own launcher beside it:
+generate it with `mise generate install-script --write ./bin/mise --windows`. The default
+`mise` is a bare name and resolves off PATH, which needs nothing extra.
 """#
             arg <MISE_BIN>
+        }
+        flag --windows-launcher help="What to write beside each stub for Windows to launch" default=cmd {
+            long_help #"""
+What to write beside each stub for Windows to launch
+
+`cmd` writes `<task>.cmd`. cmd.exe re-parses the whole line before `%*` expands, so an
+argument containing `& ^ | " %VAR%` does not reach the task intact when the launcher is
+called from PowerShell.
+
+`exe` writes a native `<task>.exe` instead, which receives its arguments unchanged from
+every shell. It is a copy of the mise-shim.exe that ships with the Windows build, so it
+can only be generated on Windows, and it adds ~220KB per task to a directory that is
+normally committed.
+"""#
+            arg <WINDOWS_LAUNCHER> {
+                choices {
+                    choice cmd
+                    choice exe
+                }
+            }
         }
         flag "-h --help" help="Print help" action=help builtin=#true
         complete dir type=dir
@@ -4199,19 +4255,18 @@ Explicitly pinned versions like "22.5.0" are not filtered.
         long_help #"""
 Do not uninstall the versions that were upgraded away from
 
-By default the old version is removed once the new one installs, unless another
-tracked config or tool stub still needs it. Use this to keep it anyway, e.g. when
-something outside of mise points at the old install directory.
+The old version is left in place and is not scheduled for removal. Use this when something
+outside mise points at the install directory.
 
 Set `upgrade.auto_prune = false` to make this the default.
 """#
     }
-    flag --prune help="Uninstall the versions that were upgraded away from" overrides=--no-prune {
+    flag --prune help="Immediately uninstall the versions that were upgraded away from" overrides=--no-prune {
         long_help #"""
-Uninstall the versions that were upgraded away from
+Immediately uninstall the versions that were upgraded away from
 
-This is already the default. Use it to override `upgrade.auto_prune = false`
-for a single run.
+Use this to bypass `upgrade.prune_after`, or to override
+`upgrade.auto_prune = false` for a single run.
 """#
     }
     flag --raw help="Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1" overrides=--jobs
@@ -4253,7 +4308,7 @@ Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_glo
 
 Use the `--global` flag to use the global config file instead.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # run with no arguments to use the interactive selector\n    $ \u{1b}[1mmise use\u{1b}[22m\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ \u{1b}[1mmise use node@20\u{1b}[22m\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ \u{1b}[1mmise use -g --pin node@20\u{1b}[22m\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ \u{1b}[1mmise use --env local node@20\u{1b}[22m\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ \u{1b}[1mmise use --env staging node@20\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # run with no arguments to use the interactive selector\n    $ \u{1b}[1mmise use\u{1b}[22m\n\n    # set the current version of node to 20.x in mise.toml of current directory\n    # will write the fuzzy version (e.g.: 20)\n    $ \u{1b}[1mmise use node@20\u{1b}[22m\n\n    # run a command after installing a tool\n    $ \u{1b}[1mmise use --postinstall \"mbx setup --defaults\" mr-boxington\u{1b}[22m\n\n    # associate a different postinstall command with each tool\n    $ \u{1b}[1mmise use --postinstall \"setup-a\" tool-a --postinstall \"setup-b\" tool-b\u{1b}[22m\n\n    # set the current version of node to 20.x in ~/.config/mise/config.toml\n    # will write the precise version (e.g.: 20.0.0)\n    $ \u{1b}[1mmise use -g --pin node@20\u{1b}[22m\n\n    # sets .mise.local.toml (which is intended not to be committed to a project)\n    $ \u{1b}[1mmise use --env local node@20\u{1b}[22m\n\n    # sets .mise.staging.toml (which is used if MISE_ENV=staging)\n    $ \u{1b}[1mmise use --env staging node@20\u{1b}[22m\n"
     flag "-e --env" help="Create/modify an environment-specific config file like .mise.<env>.toml" {
         overrides "--global" "--path"
         arg <ENV>
@@ -4322,8 +4377,12 @@ https://mise.jdx.dev/configuration/settings.html#lockfile
         arg <TOOL>
     }
     flag "-h --help" help="Print help" action=help builtin=#true
-    arg "[TOOL@VERSION]…" help="Tool(s) to add to config file" help_long=#"""
-Tool(s) to add to config file
+    clause tools {
+        flag --postinstall help="Command to run after installing this tool" {
+            arg <COMMAND>
+        }
+        arg <TOOL@VERSION> help="Tool to add to config file" help_long=#"""
+Tool to add to config file
 
 e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
 If no version is specified, it will default to @latest
@@ -4331,7 +4390,8 @@ If no version is specified, it will default to @latest
 Tool options can be set with this syntax:
 
     mise use ubi:BurntSushi/ripgrep[exe=rg]
-"""# required=#false var=#true
+"""#
+    }
     complete path type=path
 }
 cmd version help="Display the version of mise" effect=read {

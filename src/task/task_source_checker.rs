@@ -769,7 +769,18 @@ pub(crate) async fn sources_are_fresh(task: &Task, config: &Arc<Config>) -> Resu
             let stored_output_hash = output_existing_hash(task, &root);
             let fresh = current_output_hash.is_some()
                 && current_output_hash.as_deref() == stored_output_hash.as_deref();
-            file::write(&source_hash_path, &source_hash)?;
+            // Only when there is nothing to do. The hash mismatch above has
+            // already returned, so `source_hash` equals what is stored and the
+            // write moves nothing but the file's mtime — which is the baseline
+            // `task_source_files(only_changed=true)` measures against. Advancing
+            // it on the way into a run that has to repair a missing or modified
+            // output told that run nothing was outstanding, and it rendered an
+            // empty file list. Same reason the mismatch branch does not write:
+            // the task is about to run, and `save_checksum` records the baseline
+            // once it succeeds.
+            if fresh {
+                file::write(&source_hash_path, &source_hash)?;
+            }
             return Ok(fresh);
         }
         let sources = get_last_modified_from_metadatas(&source_metadatas);
@@ -902,6 +913,24 @@ fn sources_hash_path(task: &Task, root: &Path, content_hash: bool) -> PathBuf {
     dirs::STATE
         .join("task-sources")
         .join(format!("{}{suffix}", task_state_key(task, root)))
+}
+
+/// Path of the marker recording that this task's work is done. Its mtime is
+/// the baseline for "changed since mise last considered this task up to date":
+/// `save_checksum` writes it after a successful run, and `sources_are_fresh`
+/// writes it when a freshness check finds there is nothing to do. A *failed*
+/// run advances neither, so its sources stay outstanding until it passes.
+///
+/// Callers outside this module cannot build the path themselves, because
+/// `task_state_key` hashes the working directory — it is only correct when
+/// the root comes from `task_cwd`.
+pub(crate) async fn source_baseline_path(task: &Task, config: &Arc<Config>) -> Result<PathBuf> {
+    let root = task_cwd(task, config).await?;
+    Ok(sources_hash_path(
+        task,
+        &root,
+        Settings::get().task.source_freshness_hash_contents,
+    ))
 }
 
 /// Get the existing source hash for a task, if it exists

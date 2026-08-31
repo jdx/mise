@@ -60,7 +60,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/os_filter_item"
-          }
+          },
+          "minItems": 1
         }
       ]
     },
@@ -859,6 +860,10 @@
             "compile": {
               "description": "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
               "type": "boolean"
+            },
+            "precompiled_os": {
+              "description": "Ubuntu release target to use for precompiled Erlang builds from builds.hex.pm.",
+              "type": "string"
             }
           }
         },
@@ -2083,8 +2088,13 @@
           "properties": {
             "auto_prune": {
               "default": true,
-              "description": "Uninstall the version `mise upgrade` replaced once the new one has installed.",
+              "description": "Schedule the version `mise upgrade` replaced for pruning once the new one has installed.",
               "type": "boolean"
+            },
+            "prune_after": {
+              "default": "24h",
+              "description": "Grace period before versions replaced by `mise upgrade` are automatically pruned.",
+              "type": "string"
             }
           }
         },
@@ -2445,7 +2455,8 @@
           }
         },
         "rust_cache": {
-          "description": "default experimental Rust compiler action cache configuration for tasks in this config scope",
+          "deprecated": true,
+          "description": "deprecated no-op; use mbx for Rust action caching instead: https://mr-boxington.jdx.dev/getting-started",
           "oneOf": [
             {
               "type": "boolean"
@@ -2686,6 +2697,19 @@
         },
         "os": {
           "$ref": "#/$defs/os_filter"
+        },
+        "minimum_release_age": {
+          "description": "minimum time since a version's release before mise selects it, as a duration such as \"7d\" or an absolute date",
+          "type": "string"
+        },
+        "install_before": {
+          "description": "deprecated alias for minimum_release_age",
+          "deprecated": true,
+          "type": "string"
+        },
+        "version_order": {
+          "description": "ordering applied to remote versions: \"source\" keeps the backend's order, \"semver\" sorts semantic versions",
+          "enum": ["source", "semver"]
         }
       },
       "oneOf": [
@@ -2819,7 +2843,8 @@
           "$ref": "#/$defs/hook_script_value"
         },
         "shell": {
-          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
+          "deprecated": true,
+          "description": "ignored for preinstall/postinstall hooks that use script; use a run hook to select an inline shell",
           "type": "string"
         }
       },
@@ -2836,7 +2861,8 @@
           "$ref": "#/$defs/hook_scripts_value"
         },
         "shell": {
-          "description": "ignored for this deprecated form; use a run hook to select an inline shell",
+          "deprecated": true,
+          "description": "ignored for preinstall/postinstall hooks that use scripts; use a run hook to select an inline shell",
           "type": "string"
         }
       },
@@ -3240,7 +3266,8 @@
           }
         },
         "rust_cache": {
-          "description": "experimental Rust compiler action cache configuration enabled only while this task runs",
+          "deprecated": true,
+          "description": "deprecated no-op; use mbx for Rust action caching instead: https://mr-boxington.jdx.dev/getting-started",
           "oneOf": [
             {
               "type": "boolean"
@@ -3580,6 +3607,47 @@
       "additionalProperties": {
         "description": "command to run",
         "type": "string"
+      }
+    },
+    "wrappers": {
+      "description": "commands that intercept a binary name before delegating to the active toolset",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "description": "command to run",
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "command": {
+                "description": "command to run",
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*"
+              },
+              "args": {
+                "description": "arguments inserted before the intercepted command's arguments",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "description": "environment variables set for the wrapper",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["command"],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "env": {

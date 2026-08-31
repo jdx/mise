@@ -133,20 +133,14 @@ impl Toolset {
                     continue;
                 }
                 // Use matching config options when available. If selection is
-                // ambiguous, preserve options already carried by the request;
-                // synthesize backend defaults only for an empty request.
+                // ambiguous, preserve options already carried by the request.
                 if let Some(config_options) =
                     super::tool_request_set::configured_options_for_runtime_request(
                         &tvl.requests,
                         tr,
                     )
                 {
-                    let options = tr.ba().opts_with_config(Some(config_options));
-                    if tr.options() != options {
-                        tr.set_options(options);
-                    }
-                } else if tr.options().is_empty() {
-                    tr.set_options(tr.ba().opts_with_config(None));
+                    tr.apply_config_options(config_options);
                 }
             }
         }
@@ -801,7 +795,7 @@ mod tests {
         let mut toolset = Toolset::new(ToolSource::Unknown);
         for version in ["1.0.0", "2.0.0"] {
             toolset.add_version(
-                ToolRequest::new_opts(
+                ToolRequest::new_with_options(
                     ba.clone(),
                     version,
                     parse_tool_options(&format!(r#"postinstall="echo configured {version}""#)),
@@ -812,7 +806,7 @@ mod tests {
         }
 
         let mut requests = vec![
-            ToolRequest::new_opts(
+            ToolRequest::new_with_options(
                 ba.clone(),
                 "3.0.0",
                 parse_tool_options(r#"postinstall="echo carried""#),
@@ -833,10 +827,14 @@ mod tests {
             _ => "linux",
         };
         inactive_options.core.os = Some(vec![inactive_os.to_string()]);
-        let inactive =
-            ToolRequest::new_opts(ba.clone(), "4.0.0", inactive_options, ToolSource::Unknown)
-                .unwrap();
-        let active = ToolRequest::new_opts(
+        let inactive = ToolRequest::new_with_options(
+            ba.clone(),
+            "4.0.0",
+            inactive_options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let active = ToolRequest::new_with_options(
             ba,
             "4.0.0",
             parse_tool_options(r#"postinstall="echo active""#),
@@ -850,5 +848,36 @@ mod tests {
         toolset.init_request_options(&mut requests);
 
         assert_eq!(requests, vec![inactive, active]);
+    }
+
+    #[tokio::test]
+    async fn test_init_request_options_preserves_matching_request_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy[inline_only=inline]"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="config""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut toolset = Toolset::new(ToolSource::Unknown);
+        toolset.add_version(configured);
+        let mut requests = vec![
+            ToolRequest::new_with_options(
+                ba,
+                "1.0.0",
+                parse_tool_options(r#"request_only="request""#),
+                ToolSource::Argument,
+            )
+            .unwrap(),
+        ];
+
+        toolset.init_request_options(&mut requests);
+
+        let options = requests[0].options();
+        assert_eq!(options.get("selected"), Some("config"));
+        assert_eq!(options.get("request_only"), Some("request"));
+        assert_eq!(options.get("inline_only"), Some("inline"));
     }
 }

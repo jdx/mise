@@ -44,7 +44,8 @@ pub(crate) use tool_version::{ResolveOptions, ToolVersion};
 pub(crate) use tool_version_list::ToolVersionList;
 pub(crate) use tool_version_options::{
     CoreToolOptions, EPHEMERAL_OPT_KEYS, RawBackendOptions, ResolvedToolOptions, ToolOptionSource,
-    ToolOptions, ToolVersionOptions, parse_tool_options, try_parse_tool_options,
+    ToolOptions, ToolVersionOptions, parse_tool_options, scalar_value_to_string,
+    try_parse_tool_options,
 };
 
 mod builder;

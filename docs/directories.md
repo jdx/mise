@@ -91,3 +91,8 @@ Setting it there can make an install use one directory while later commands and 
 
 This is where mise places shims. Generally these are used for IDE integration or if `mise activate`
 does not work for some reason.
+
+### `~/.local/share/mise/command-wrappers/bin`
+
+This is where mise places dispatch shims configured by `[wrappers]`. Mise manages
+this directory; use `mise reshim` after adding or removing a command wrapper.

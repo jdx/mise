@@ -1,3 +1,4 @@
+use chrono::{DateTime, SecondsFormat, Utc};
 use comfy_table::{Attribute, Cell, Color};
 use eyre::{Result, ensure};
 use indexmap::IndexMap;
@@ -6,6 +7,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use versions::Versioning;
 
 use crate::backend::Backend;
@@ -14,6 +16,7 @@ use crate::cli::prune;
 use crate::config;
 use crate::config::Config;
 use crate::env;
+use crate::file;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::{ToolRequestSet, ToolSource, ToolVersion, Toolset};
 use crate::ui::table::MiseTable;
@@ -139,11 +142,18 @@ impl Ls {
         if let Some(prefix) = &self.prefix {
             runtimes.retain(|(_, _, tv, _)| tv.version.starts_with(prefix));
         }
+        let scheduled_removals = match crate::tool_purgatory::scheduled_removals() {
+            Ok(scheduled_removals) => scheduled_removals,
+            Err(err) => {
+                warn!("failed to read tool purgatory state: {err:#}");
+                BTreeMap::new()
+            }
+        };
         if self.json {
-            self.display_json(&config, runtimes, sources_map.as_ref())
+            self.display_json(&config, runtimes, sources_map.as_ref(), &scheduled_removals)
                 .await
         } else {
-            self.display_user(&config, runtimes, sources_map.as_ref())
+            self.display_user(&config, runtimes, sources_map.as_ref(), &scheduled_removals)
                 .await
         }
     }
@@ -164,6 +174,7 @@ impl Ls {
         config: &Arc<Config>,
         runtimes: Vec<RuntimeRow<'_>>,
         sources_map: Option<&SourcesMap>,
+        scheduled_removals: &BTreeMap<PathBuf, u64>,
     ) -> Result<()> {
         if let Some(plugins) = &self.installed_tool {
             // only runtimes for 1 plugin
@@ -173,7 +184,16 @@ impl Ls {
                 .collect();
             let mut r = vec![];
             for row in runtimes {
-                r.push(json_tool_version_from(config, row, sources_map, self.all_sources).await);
+                r.push(
+                    json_tool_version_from(
+                        config,
+                        row,
+                        sources_map,
+                        self.all_sources,
+                        scheduled_removals,
+                    )
+                    .await,
+                );
             }
             miseprintln!("{}", serde_json::to_string_pretty(&r)?);
             return Ok(());
@@ -192,6 +212,7 @@ impl Ls {
                         (ls, p, tv, source),
                         sources_map,
                         self.all_sources,
+                        scheduled_removals,
                     )
                     .await,
                 );
@@ -207,6 +228,7 @@ impl Ls {
         config: &Arc<Config>,
         runtimes: Vec<RuntimeRow<'a>>,
         sources_map: Option<&SourcesMap>,
+        scheduled_removals: &BTreeMap<PathBuf, u64>,
     ) -> Result<()> {
         let mut rows = vec![];
         for (ls, p, tv, source) in runtimes {
@@ -232,6 +254,7 @@ impl Ls {
                     Some(source)
                 },
                 sources,
+                remove_after: scheduled_removals.get(&tv.install_path()).copied(),
             });
         }
         let mut table = MiseTable::new(self.no_header, &["Tool", "Version", "Source", "Requested"]);
@@ -336,9 +359,14 @@ impl Ls {
                 )
             })
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
-            // if it isn't installed and it's not specified, don't show it
+            // if it isn't installed and it's not specified, don't show it -- unless there is
+            // something at its install path that simply does not resolve. A `mise link` whose
+            // target went away is that case, and hiding it is how it became impossible to find:
+            // no config names it, and `is_version_installed` resolves the link before answering.
             .filter(|(_ls, p, tv, source)| {
-                !source.is_unknown() || p.is_version_installed(config, tv, true)
+                !source.is_unknown()
+                    || p.is_version_installed(config, tv, true)
+                    || file::entry_exists(tv.install_path())
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => matches_requested_tool(backend, p.ba()),
@@ -384,9 +412,14 @@ impl Ls {
             })
             .unique_by(|(_, tv)| tv.tv_pathname())
             .map(|(k, tv)| (self, k.0, tv.clone(), tv.request.source().clone()))
-            // if it isn't installed and it's not specified, don't show it
+            // if it isn't installed and it's not specified, don't show it -- unless there is
+            // something at its install path that simply does not resolve. A `mise link` whose
+            // target went away is that case, and hiding it is how it became impossible to find:
+            // no config names it, and `is_version_installed` resolves the link before answering.
             .filter(|(_ls, p, tv, source)| {
-                !source.is_unknown() || p.is_version_installed(config, tv, true)
+                !source.is_unknown()
+                    || p.is_version_installed(config, tv, true)
+                    || file::entry_exists(tv.install_path())
             })
             .filter(|(_ls, p, _, _)| match &self.installed_tool {
                 Some(backend) => matches_requested_tool(backend, p.ba()),
@@ -441,8 +474,23 @@ struct JSONToolVersion {
     sources: Option<Vec<JSONToolSource>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     symlinked_to: Option<PathBuf>,
+    /// The link at `install_path` no longer resolves.
+    ///
+    /// Omitted when false, so output for everything else is unchanged. `installed` is false for
+    /// these too — this says *why*, and distinguishes an entry that is still on disk and needs
+    /// removing from a version that was simply never installed.
+    #[serde(skip_serializing_if = "is_false")]
+    broken: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    scheduled_for_pruning: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prune_after: Option<String>,
     installed: bool,
     active: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 type RuntimeRow<'a> = (&'a Ls, Arc<dyn Backend>, ToolVersion, ToolSource);
@@ -453,6 +501,7 @@ struct Row {
     source: Option<ToolSource>,
     requested: Option<String>,
     sources: Vec<SourceEntry>,
+    remove_after: Option<u64>,
 }
 
 impl Row {
@@ -460,29 +509,40 @@ impl Row {
         Cell::new(&self.tool).fg(Color::Blue)
     }
     fn display_version(&self) -> Cell {
+        let annotate = |version: String| match self.remove_after {
+            Some(remove_after) => format!("{version} {}", pruning_label(remove_after)),
+            None => version,
+        };
         match &self.version {
             VersionStatus::Active(version, outdated) => {
                 if *outdated {
-                    Cell::new(format!("{version} (outdated)"))
+                    Cell::new(annotate(format!("{version} (outdated)")))
                         .fg(Color::Yellow)
                         .add_attribute(Attribute::Bold)
                 } else {
-                    Cell::new(version).fg(Color::Green)
+                    Cell::new(annotate(version.clone())).fg(Color::Green)
                 }
             }
-            VersionStatus::Inactive(version) => Cell::new(version).add_attribute(Attribute::Dim),
-            VersionStatus::Missing(version) => Cell::new(format!("{version} (missing)"))
+            VersionStatus::Inactive(version) => {
+                Cell::new(annotate(version.clone())).add_attribute(Attribute::Dim)
+            }
+            VersionStatus::Missing(version) => Cell::new(annotate(format!("{version} (missing)")))
                 .fg(Color::Red)
                 .add_attribute(Attribute::CrossedOut),
             VersionStatus::Symlink(version, active) => {
-                let mut cell = Cell::new(format!("{version} (symlink)"));
+                let mut cell = Cell::new(annotate(format!("{version} (symlink)")));
                 if !*active {
                     cell = cell.add_attribute(Attribute::Dim);
                 }
                 cell
             }
+            // Red like `Missing`, but not crossed out: the entry is still there, and the point of
+            // showing it is that the user has something to act on.
+            VersionStatus::BrokenSymlink(version) => {
+                Cell::new(annotate(format!("{version} (broken symlink)"))).fg(Color::Red)
+            }
             VersionStatus::Shared(version, active, label) => {
-                let mut cell = Cell::new(format!("{version} ({label})"));
+                let mut cell = Cell::new(annotate(format!("{version} ({label})")));
                 if *active {
                     cell = cell.fg(Color::Cyan);
                 } else {
@@ -536,6 +596,7 @@ async fn json_tool_version_from(
     row: RuntimeRow<'_>,
     sources_map: Option<&SourcesMap>,
     all_sources: bool,
+    scheduled_removals: &BTreeMap<PathBuf, u64>,
 ) -> JSONToolVersion {
     let (ls, p, tv, source) = row;
     let sources = sources_map
@@ -547,6 +608,10 @@ async fn json_tool_version_from(
         version_status_from(config, (ls, p.as_ref(), &tv, &source)).await
     };
     let install_path = tv.install_path();
+    let prune_after = scheduled_removals
+        .get(&install_path)
+        .copied()
+        .map(format_timestamp);
     let sources = sources
         .map(|entries| {
             entries
@@ -579,7 +644,15 @@ async fn json_tool_version_from(
             Some(source.as_json())
         },
         sources: if all_sources { sources } else { None },
-        installed: !matches!(vs, VersionStatus::Missing(_)),
+        broken: matches!(vs, VersionStatus::BrokenSymlink(_)),
+        scheduled_for_pruning: prune_after.is_some(),
+        prune_after,
+        // A link that leads nowhere is not an install, the same call `mise link` already makes by
+        // keeping the `incomplete` marker for one.
+        installed: !matches!(
+            vs,
+            VersionStatus::Missing(_) | VersionStatus::BrokenSymlink(_)
+        ),
         active: match &vs {
             VersionStatus::Active(_, _) => true,
             VersionStatus::Symlink(_, active) => *active,
@@ -589,12 +662,45 @@ async fn json_tool_version_from(
     }
 }
 
+fn format_timestamp(timestamp: u64) -> String {
+    i64::try_from(timestamp)
+        .ok()
+        .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0))
+        .map(|timestamp| timestamp.to_rfc3339_opts(SecondsFormat::Secs, true))
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn pruning_label(remove_after: u64) -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let remaining = remove_after.saturating_sub(now);
+    if remaining == 0 {
+        return "(pruning pending)".to_string();
+    }
+    let (amount, unit) = if remaining >= 86_400 {
+        (remaining.div_ceil(86_400), "d")
+    } else if remaining >= 3_600 {
+        (remaining.div_ceil(3_600), "h")
+    } else if remaining >= 60 {
+        (remaining.div_ceil(60), "m")
+    } else {
+        (remaining, "s")
+    };
+    format!("(pruned in {amount}{unit})")
+}
+
 #[derive(Debug)]
 enum VersionStatus {
     Active(String, bool),
     Inactive(String),
     Missing(String),
     Symlink(String, bool),
+    /// A link that is still on disk but no longer resolves — a `mise link` whose target moved or
+    /// was deleted. Distinct from `Missing`, which is a version that was never there: this one
+    /// occupies its name and has to be removed before that name is free again.
+    BrokenSymlink(String),
     /// Version from a shared or system install directory
     Shared(String, bool, &'static str),
 }
@@ -622,7 +728,12 @@ async fn resolve_version_status(
 ) -> VersionStatus {
     let install_path = tv.install_path();
     if install_path.is_symlink() && !is_runtime_symlink(&install_path) {
-        VersionStatus::Symlink(tv.version.clone(), active)
+        // `exists()` resolves the link, so this is asking whether it still leads anywhere.
+        if install_path.exists() {
+            VersionStatus::Symlink(tv.version.clone(), active)
+        } else {
+            VersionStatus::BrokenSymlink(tv.version.clone())
+        }
     } else if !p.is_version_installed(config, tv, true) {
         VersionStatus::Missing(tv.version.clone())
     } else {

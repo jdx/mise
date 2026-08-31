@@ -10,7 +10,7 @@ use std::{
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::exec::Exec;
-use crate::config::{Config, Settings};
+use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
@@ -53,8 +53,11 @@ pub(crate) async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    let (bin, ts) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    let (bin, ts, wrapper) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
     args[0] = bin.to_string_lossy().to_string();
+    if let Some(wrapper) = &wrapper {
+        args.splice(1..1, wrapper.args().iter().cloned());
+    }
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
         tool: vec![],
@@ -75,7 +78,20 @@ pub(crate) async fn handle_shim() -> Result<()> {
         allow_env: vec![],
     };
     time!("shim exec");
-    exec.run_with_toolset(config, ts).await?;
+    if let Some(wrapper) = wrapper {
+        exec.run_with_command_wrapper(
+            config,
+            ts,
+            wrapper
+                .env()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        )
+        .await?;
+    } else {
+        exec.run_with_toolset(config, ts).await?;
+    }
     Err(request_exit(0))
 }
 
@@ -101,7 +117,7 @@ async fn which_shim(
     config: &mut Arc<Config>,
     bin_name: &str,
     args: &[String],
-) -> Result<(PathBuf, Toolset)> {
+) -> Result<(PathBuf, Toolset, Option<CommandWrapper>)> {
     // Shell completion invokes `usage complete-word` through the `usage` shim.
     // It should use the installed CLI or fail locally, never resolve a floating
     // tool version or auto-install over the network while the user is pressing
@@ -124,6 +140,23 @@ async fn which_shim(
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
+    let wrappers = load_command_wrappers(&config.config_files)?;
+    validate_wrapper_names(wrappers.keys())?;
+    let wrapper = if cfg!(macos) {
+        wrappers
+            .iter()
+            .find(|(name, _)| command_names_eq(name, bin_stem))
+            .map(|(_, wrapper)| wrapper)
+    } else {
+        wrappers.get(bin_stem)
+    };
+    if let Some(wrapper) = wrapper {
+        if command_names_eq(wrapper.command(), bin_stem) {
+            bail!("command wrapper for {bin_stem} cannot delegate to itself");
+        }
+        trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
+        return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper.clone())));
+    }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
     // by the registry before resolving an incidental installed provider.
@@ -144,7 +177,7 @@ async fn which_shim(
                     "shim[{bin_name}] REGISTRY ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts));
+                return Ok((bin, ts, None));
             }
         }
     }
@@ -155,7 +188,7 @@ async fn which_shim(
             "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
             bin = display_path(&bin)
         );
-        return Ok((bin, ts));
+        return Ok((bin, ts, None));
     }
     // Auto-installing here would download a tool over the network; skip it for
     // offline completion so `usage complete-word` fails locally instead.
@@ -171,7 +204,7 @@ async fn which_shim(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts));
+                return Ok((bin, ts, None));
             }
         }
     }
@@ -179,11 +212,11 @@ async fn which_shim(
     if Settings::get().not_found_system_fallback {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
-            if file::is_mise_shims_dir(path) {
+            if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {
                 continue;
             }
             let bin = path.join(bin_name);
-            if bin.exists() {
+            if bin.is_file() && file::is_executable(&bin) {
                 if file::is_active_mise_shim(&bin) {
                     continue;
                 }
@@ -192,7 +225,7 @@ async fn which_shim(
                     continue;
                 }
                 trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-                return Ok((bin, ts));
+                return Ok((bin, ts, None));
             }
         }
     }
@@ -333,6 +366,84 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
 
+    sync_command_wrapper_shims(
+        config,
+        &mise_bin,
+        force || shim_mode_changed || shim_version_changed,
+    )?;
+
+    Ok(())
+}
+
+fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
+    let wrappers = load_command_wrappers(&config.config_files)?;
+    validate_wrapper_names(wrappers.keys())?;
+    if wrappers.is_empty() {
+        if cfg!(windows) {
+            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
+        } else {
+            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
+        }
+        return Ok(());
+    }
+    if force {
+        if cfg!(windows) {
+            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
+        } else {
+            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
+        }
+    }
+    file::create_dir_all(&*dirs::COMMAND_WRAPPERS)?;
+
+    let mut desired = HashSet::new();
+    for name in wrappers.keys() {
+        desired.extend(platform_shim_names(mise_bin, name));
+    }
+    let actual = list_shims_in(&dirs::COMMAND_WRAPPERS)?;
+    for shim in desired.difference(&actual) {
+        let path = dirs::COMMAND_WRAPPERS.join(shim);
+        if cfg!(windows) && path.exists() {
+            remove_shim_with_rename_fallback(&path)?;
+        }
+        add_shim(mise_bin, &path, shim)?;
+    }
+    for shim in actual.difference(&desired) {
+        let path = dirs::COMMAND_WRAPPERS.join(shim);
+        if cfg!(windows) {
+            remove_shim_with_rename_fallback(&path)?;
+        } else {
+            file::remove_all(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn command_names_eq(a: &str, b: &str) -> bool {
+    if cfg!(macos) {
+        a.to_lowercase() == b.to_lowercase()
+    } else {
+        a == b
+    }
+}
+
+fn validate_wrapper_name(name: &str) -> Result<()> {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        bail!("invalid command wrapper name: {name:?}");
+    }
+    if cfg!(windows) && name.contains('.') {
+        bail!("command wrapper names cannot contain dots on Windows: {name:?}");
+    }
+    Ok(())
+}
+
+fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -> Result<()> {
+    let mut normalized = HashSet::new();
+    for name in names {
+        validate_wrapper_name(name)?;
+        if cfg!(macos) && !normalized.insert(name.to_lowercase()) {
+            bail!("command wrapper names collide on macOS after case normalization: {name:?}");
+        }
+    }
     Ok(())
 }
 
@@ -400,7 +511,7 @@ fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
 /// reshim or when the lock is released.
 fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
     // First, try to clean up any leftover .old files from a previous run.
-    let old_path = path.with_extension("old");
+    let old_path = old_shim_path(path);
     if old_path.exists() {
         let _ = fs::remove_file(&old_path); // best-effort
     }
@@ -428,8 +539,18 @@ fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
     }
 }
 
-#[cfg(windows)]
-fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
+fn old_shim_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".old");
+    path.with_file_name(name)
+}
+
+/// Find the `mise-shim.exe` that ships beside `mise_bin`, if there is one.
+///
+/// Not `#[cfg(windows)]`, unlike the shim code around it: `mise generate task-stubs
+/// --windows-launcher=exe` asks the same question, and on a host where the answer is always `None`
+/// that is the honest answer to report rather than a compile error to route around.
+pub(crate) fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
     // Look next to the mise binary first
     if let Some(parent) = mise_bin.parent() {
         let candidate = parent.join("mise-shim.exe");
@@ -449,7 +570,8 @@ fn find_mise_shim_bin(mise_bin: &Path) -> Option<PathBuf> {
 fn effective_shim_mode(mise_bin: &Path) -> String {
     let mode = Settings::get().windows_shim_mode.clone();
     if mode == "exe" && find_mise_shim_bin(mise_bin).is_none() {
-        warn!(
+        // Once, not once per shim: this runs for every desired shim and for every shim written.
+        warn_once!(
             "mise-shim.exe not found next to {} or on PATH, falling back to \"file\" shim mode",
             display_path(mise_bin)
         );
@@ -502,6 +624,68 @@ fn bash_shim_script(tool: &str) -> String {
         "#}
 }
 
+/// The `.cmd` body for a `"file"`-mode shim: run `mise x -- <tool>` with the caller's arguments.
+///
+/// `%*` alone does not carry them. cmd.exe parses the whole command line before a batch file runs,
+/// so calling one from PowerShell loses `& ^ | " < >` and expands `%VAR%` before `%*` ever expands.
+/// Measured through a shim, every shape that arrives intact in `"exe"` mode arrives different here:
+/// `c&d` runs `d` as a second command, `i^j` becomes `ij`, `a>b` writes a file called `b`, `e%OS%f`
+/// becomes `eWindows_NTf`. The other three modes are native executables and are handed argv
+/// directly, so this is the only mode that needs it.
+///
+/// The recovery is the one [`crate::cli::generate::windows_launcher_body`] documents in full: what
+/// cmd destroys on the way in it also keeps, in its `CMDCMDLINE` pseudo-variable, so the body
+/// copies that out — `!CMDCMDLINE!` rather than `%CMDCMDLINE%`, which is substituted before special
+/// characters are parsed and truncates at the first `&` — and passes it through the environment,
+/// where cmd gets no second chance to parse it. mise re-splits it with the rules a native program's
+/// runtime uses and substitutes the result for everything after [`env::LAUNCHER_ARGS_SENTINEL`].
+///
+/// The guard decides whether cmd was spawned *for* this shim. When it was not — an interactive
+/// prompt, a `call` from another batch file — the shell already split the arguments as it would for
+/// a native program, so `%*` is correct and the script must not `exit`, which would close the
+/// caller's shell. When it was, `exit` (rather than `exit /b`) also stops cmd running whatever it
+/// queued from the same line, which would otherwise be reported as the tool's exit code.
+///
+/// Kept separate from the launcher body rather than shared: this one runs its recursion guard
+/// first, and the launcher's line layout is pinned by `is_generated_launcher`, which has no
+/// business tracking shim changes. The names come from the same constants, and
+/// `the_shim_body_carries_the_same_recovery` fails if the shapes drift.
+///
+/// Compiled for tests on every platform, unlike the shim code around it, so the body itself is
+/// unit-tested everywhere; `pub(crate)` so that comparison can live beside the launcher.
+#[cfg(any(windows, test))]
+pub(crate) fn windows_file_shim_body(shim: &str) -> String {
+    let raw = env::LAUNCHER_RAW_CMDLINE_ENV;
+    let path = env::LAUNCHER_PATH_ENV;
+    let sentinel = env::LAUNCHER_ARGS_SENTINEL;
+    let shim_env = env::MISE_SHIM_PATH_ENV;
+    let run = format!("mise x -- {shim} {sentinel} %*");
+    [
+        "@echo off",
+        // `%~f0` is captured before delayed expansion is on, so a `!` in the path survives.
+        "setlocal DisableDelayedExpansion",
+        "set \"shim_path=%~f0\"",
+        &format!("if /I \"%{shim_env}%\"==\"%shim_path%\" ("),
+        &format!("  echo mise: recursive shim invocation detected for {shim}: %shim_path% 1>&2"),
+        "  exit /b 1",
+        ")",
+        &format!("set \"{shim_env}=%shim_path%\""),
+        "setlocal EnableDelayedExpansion",
+        &format!("set \"{path}=!shim_path!\""),
+        &format!("set \"{raw}=!CMDCMDLINE!\""),
+        &format!("if \"!{raw}!\"==\"!{raw}:%{path}%=!\" goto mise_shim_fallback"),
+        &run,
+        "exit !ERRORLEVEL!",
+        ":mise_shim_fallback",
+        // Cleared, or a value inherited from an outer launcher would be recovered as this one's.
+        &format!("set \"{raw}=\""),
+        &format!("set \"{path}=\""),
+        &run,
+    ]
+    .join("\r\n")
+        + "\r\n"
+}
+
 #[cfg(windows)]
 fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
     match effective_shim_mode(mise_bin).as_ref() {
@@ -537,17 +721,7 @@ fn add_shim(mise_bin: &Path, symlink_path: &Path, shim: &str) -> Result<()> {
             )?;
             file::write(
                 symlink_path.with_extension("cmd"),
-                formatdoc! {r#"
-        @echo off
-        setlocal
-        set "shim_path=%~f0"
-        if /I "%__MISE_SHIM_PATH%"=="%shim_path%" (
-          echo mise: recursive shim invocation detected for {shim}: %shim_path% 1>&2
-          exit /b 1
-        )
-        set "__MISE_SHIM_PATH=%shim_path%"
-        mise x -- {shim} %*
-        "#},
+                windows_file_shim_body(shim),
             )
             .wrap_err_with(|| {
                 eyre!(
@@ -656,7 +830,11 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
 }
 
 fn list_shims() -> Result<HashSet<String>> {
-    Ok(dirs::SHIMS
+    list_shims_in(&dirs::SHIMS)
+}
+
+fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
+    Ok(dir
         .read_dir()?
         .map(|bin| {
             let bin = bin?;
@@ -715,45 +893,36 @@ async fn get_desired_shims(
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             });
-        if cfg!(windows) {
-            #[cfg(windows)]
-            let shim_mode = effective_shim_mode(_mise_bin);
-            #[cfg(not(windows))]
-            let shim_mode = String::new();
-            shims.extend(bins.into_iter().flat_map(|b| {
-                let p = PathBuf::from(&b);
-                match shim_mode.as_ref() {
-                    "hardlink" | "symlink" => {
-                        vec![p.with_extension("exe").to_string_lossy().to_string()]
-                    }
-                    "exe" => {
-                        // Only the native <tool>.exe is needed. Git Bash / Cygwin /
-                        // MSYS2 resolve a bare `tool` to `tool.exe` via their `.exe`
-                        // magic, and mise-shim.exe derives the tool from its own file
-                        // name, so it runs correctly however it is invoked. We do NOT
-                        // emit an extension-less bash shim here: that variant is only
-                        // required in "file" mode (no .exe, and Cygwin won't auto-append
-                        // .cmd) and is what leaked into WSL via /mnt/c PATH interop
-                        // (#10299).
-                        vec![p.with_extension("exe").to_string_lossy().to_string()]
-                    }
-                    "file" => {
-                        vec![
-                            p.with_extension("").to_string_lossy().to_string(),
-                            p.with_extension("cmd").to_string_lossy().to_string(),
-                        ]
-                    }
-                    _ => panic!("Unknown shim mode"),
-                }
-            }));
-        } else if cfg!(macos) {
-            // some bins might be uppercased but on mac APFS is case-insensitive
-            shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
-        } else {
-            shims.extend(bins);
-        }
+        shims.extend(
+            bins.into_iter()
+                .flat_map(|b| platform_shim_names(_mise_bin, &b)),
+        );
     }
     Ok(shims)
+}
+
+fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
+    if cfg!(windows) {
+        #[cfg(windows)]
+        let shim_mode = effective_shim_mode(_mise_bin);
+        #[cfg(not(windows))]
+        let shim_mode = String::new();
+        let p = PathBuf::from(bin);
+        match shim_mode.as_ref() {
+            "hardlink" | "symlink" | "exe" => {
+                vec![p.with_extension("exe").to_string_lossy().to_string()]
+            }
+            "file" => vec![
+                p.with_extension("").to_string_lossy().to_string(),
+                p.with_extension("cmd").to_string_lossy().to_string(),
+            ],
+            _ => panic!("Unknown shim mode"),
+        }
+    } else if cfg!(macos) {
+        vec![bin.to_lowercase()]
+    } else {
+        vec![bin.to_string()]
+    }
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
@@ -917,6 +1086,43 @@ pub(crate) fn inactive_installed_tool_message(
     Some(msg.trim().to_string())
 }
 
+/// Name the registry tool that provides `bin_name` on other platforms but not this one.
+///
+/// `registry/<tool>.toml` carries an `os` list, and a tool whose list omits the running OS is
+/// dropped by `ToolRequestSetBuilder::is_disabled` before any version is resolved. That drop is
+/// silent by design — the tool is not unknown, and the user has not disabled it — so nothing is
+/// installed and the bin is simply absent. `mise install` and `mise use` reach the backend and
+/// report the reason; `mise exec` only ever saw the missing bin. mise has the answer in its own
+/// registry, so say it rather than leaving the user with `cannot find binary path`.
+///
+/// Matched on `bins` and on the tool's own name, so `mise x aws-cli -- aws` is recognised through
+/// either. Returns `None` when the OS list is empty or includes this one, which is the normal case.
+pub(crate) fn os_unsupported_tool_message(bin_name: &str) -> Option<String> {
+    let shorts = crate::registry::REGISTRY
+        .values()
+        .unique_by(|rt| rt.short)
+        .filter(|rt| !rt.is_supported_os())
+        .filter(|rt| rt.short == bin_name || rt.bins.contains(&bin_name))
+        .map(|rt| (rt.short, rt.os.join(", ")))
+        .collect_vec();
+    if shorts.is_empty() {
+        return None;
+    }
+    let mut msg = String::new();
+    for (short, oses) in &shorts {
+        let provides = if *short == bin_name {
+            String::new()
+        } else {
+            format!(", which provides {bin_name},")
+        };
+        msg.push_str(&format!(
+            "{short}{provides} is not available on {}: mise's registry lists it for {oses} only.\n",
+            std::env::consts::OS,
+        ));
+    }
+    Some(msg.trim().to_string())
+}
+
 /// Gather what [`inactive_installed_tool_message`] needs. Only called once a
 /// binary has definitively failed to resolve, so the config/toolset load lands
 /// on a path that is about to abort anyway.
@@ -942,6 +1148,9 @@ pub(crate) async fn exec_resolution_hint(bin_name: &str) -> Option<String> {
         .filter(|short| crate::registry::tool_enabled(enable_tools.as_ref(), &disable_tools, short))
         .collect_vec();
     inactive_installed_tool_message(&ts, &installed_shorts, bin_stem)
+        // Checked second because the two cannot both apply: a tool this OS is excluded from is
+        // never installed here, so there is nothing to be "installed but not activated".
+        .or_else(|| os_unsupported_tool_message(bin_stem))
 }
 
 #[cfg(test)]
@@ -949,6 +1158,29 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn locked_windows_shims_get_distinct_old_paths() {
+        assert_eq!(old_shim_path(Path::new("foo")), PathBuf::from("foo.old"));
+        assert_eq!(
+            old_shim_path(Path::new("foo.cmd")),
+            PathBuf::from("foo.cmd.old")
+        );
+    }
+
+    #[cfg(macos)]
+    #[test]
+    fn case_colliding_macos_wrapper_names_are_rejected() {
+        let names = ["Foo".to_string(), "foo".to_string()];
+        assert!(validate_wrapper_names(&names).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dotted_windows_wrapper_names_are_rejected() {
+        let names = ["foo.bar".to_string()];
+        assert!(validate_wrapper_names(&names).is_err());
+    }
 
     #[test]
     fn snap_mise_bin_uses_refresh_stable_current_path() {
@@ -1070,6 +1302,124 @@ mod tests {
         // Matching is by tool name, so a bin like npm (provided by node) is not
         // recognized and the caller keeps its existing message.
         assert!(inactive_installed_tool_message(&ts, &["node".to_string()], "npm").is_none());
+    }
+
+    #[test]
+    fn os_unsupported_tool_message_names_the_tool_and_this_platform() {
+        // Taken from the registry rather than hardcoded: which tools are excluded depends on the
+        // platform the test runs on, and a hardcoded name would pass for the wrong reason
+        // wherever it happens to be supported. Every platform has some — the registry carries
+        // `["macos"]`, `["linux"]` and `["windows"]` entries.
+        let rt = crate::registry::REGISTRY
+            .values()
+            .unique_by(|rt| rt.short)
+            .find(|rt| !rt.is_supported_os() && !rt.bins.is_empty())
+            .expect("the registry lists no tool this platform is excluded from");
+
+        let msg = os_unsupported_tool_message(rt.bins[0])
+            .expect("a bin only an excluded tool provides should be explained");
+        assert!(msg.contains(rt.short), "{msg}");
+        assert!(msg.contains(std::env::consts::OS), "{msg}");
+        // and it must say where the tool *is* available, or the user learns nothing actionable
+        assert!(msg.contains(rt.os[0]), "{msg}");
+    }
+
+    #[test]
+    fn os_unsupported_tool_message_is_silent_when_nothing_is_excluded() {
+        // The control. Without it a message that fired for every name would satisfy the test
+        // above. `node` carries no `os` list, so it is supported everywhere.
+        assert_eq!(os_unsupported_tool_message("node"), None);
+        assert_eq!(os_unsupported_tool_message("not-a-registry-bin-9f3a"), None);
+    }
+
+    // `e2e-win/exec_os_unsupported_tool.Tests.ps1` observes this message by running
+    // `mise x docker-slim -- mint` on a Windows runner, and it can only observe it while
+    // `docker-slim` is still restricted away from Windows and still provides a bin under another
+    // name. A registry edit that takes either away leaves that file green with nothing to assert,
+    // and a full Windows e2e run to notice. The same strings are pinned here so `windows-unit`
+    // fails first, saying which one went.
+    //
+    // Windows-only because everywhere else `docker-slim` is supported and `None` is the right
+    // answer, so the assertions could not run at all.
+    #[cfg(windows)]
+    #[test]
+    fn os_unsupported_tool_message_still_backs_the_windows_e2e_fixture() {
+        let msg = os_unsupported_tool_message("mint")
+            .expect("docker-slim provides mint and its os list omits windows");
+        for expected in [
+            "docker-slim",
+            "not available on windows",
+            "mint",
+            "linux",
+            "macos",
+        ] {
+            assert!(msg.contains(expected), "{expected:?} missing from {msg:?}");
+        }
+    }
+
+    #[test]
+    fn windows_file_shim_body_recovers_the_arguments_cmd_destroys() {
+        let body = windows_file_shim_body("gh");
+        let lines: Vec<&str> = body.lines().collect();
+        let enable = lines
+            .iter()
+            .position(|l| l.contains("EnableDelayedExpansion"))
+            .unwrap();
+
+        // `%~f0` is captured before delayed expansion is on, or a `!` in the path would be eaten.
+        let capture = lines.iter().position(|l| l.contains("%~f0")).unwrap();
+        assert!(capture < enable, "{body}");
+
+        // `!CMDCMDLINE!`, not `%CMDCMDLINE%`: the percent form is substituted before special
+        // characters are parsed and truncates the line at the first `&`.
+        assert!(
+            body.contains(r#"set "__MISE_RAW_CMDLINE=!CMDCMDLINE!""#),
+            "{body}"
+        );
+        assert!(!body.contains("%CMDCMDLINE%"), "{body}");
+
+        // The recursion guard is unchanged, and still decides before anything else runs.
+        let guard = lines
+            .iter()
+            .position(|l| l.contains("%__MISE_SHIM_PATH%"))
+            .unwrap();
+        assert!(guard < enable, "{body}");
+        assert!(
+            body.contains("recursive shim invocation detected for gh"),
+            "{body}"
+        );
+        assert!(body.contains("exit /b 1"), "{body}");
+
+        // Both arms hand mise the same command; the sentinel marks where `%*` begins, so a run
+        // that cannot recover the raw line still gets what cmd managed to deliver.
+        let run = format!("mise x -- gh {} %*", env::LAUNCHER_ARGS_SENTINEL);
+        assert_eq!(lines.iter().filter(|l| **l == run).count(), 2, "{body}");
+
+        // The recovering arm exits rather than `exit /b`, so cmd does not go on to run whatever it
+        // queued from the same line -- given `gh c&d`, that is `d`.
+        assert!(body.contains("goto mise_shim_fallback"), "{body}");
+        assert!(body.contains("exit !ERRORLEVEL!"), "{body}");
+    }
+
+    #[test]
+    fn windows_file_shim_body_clears_the_launcher_variables_when_it_declines() {
+        let body = windows_file_shim_body("gh");
+        let after: Vec<&str> = body
+            .lines()
+            .skip_while(|l| *l != ":mise_shim_fallback")
+            .collect();
+        assert!(!after.is_empty(), "{body}");
+        // Or a value inherited from an outer launcher would be recovered as this shim's arguments.
+        assert!(after.contains(&r#"set "__MISE_RAW_CMDLINE=""#), "{body}");
+        assert!(after.contains(&r#"set "__MISE_LAUNCHER=""#), "{body}");
+    }
+
+    #[test]
+    fn windows_file_shim_body_is_crlf_terminated() {
+        // A label reached by `goto` is the classic thing a lone `\n` breaks in a batch file.
+        let body = windows_file_shim_body("gh");
+        assert!(body.ends_with("\r\n"));
+        assert_eq!(body.matches('\n').count(), body.matches("\r\n").count());
     }
 
     #[cfg(windows)]

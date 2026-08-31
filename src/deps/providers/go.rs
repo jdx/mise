@@ -48,36 +48,16 @@ impl DepsProvider for GoDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
         // Use `go mod vendor` if vendor/ exists, otherwise `go mod download`
         let vendor = self.base.config_root().join("vendor");
-        let (args, desc) = if vendor.exists() {
-            (
-                vec!["mod".to_string(), "vendor".to_string()],
-                "go mod vendor",
-            )
+        let subcommand = if vendor.exists() {
+            "vendor"
         } else {
-            (
-                vec!["mod".to_string(), "download".to_string()],
-                "go mod download",
-            )
+            "download"
         };
 
-        Ok(DepsCommand {
-            program: "go".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| desc.to_string()),
-        })
+        self.base
+            .install_command("go", &["mod", subcommand], &format!("go mod {subcommand}"))
     }
 
     fn applicability(&self) -> DepsProviderApplicability {

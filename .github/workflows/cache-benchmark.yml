@@ -1,0 +1,270 @@
+name: cache benchmark
+
+on:
+  pull_request:
+    paths:
+      - .github/actions/mbx/action.yml
+      - .github/workflows/cache-benchmark.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/mbx/action.yml
+      - .github/workflows/cache-benchmark.yml
+      - Cargo.lock
+      - Cargo.toml
+      - "**/*.rs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cache-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  mbx_linux:
+    name: mbx (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write # Main pushes authenticate to the cache server; its policy keeps other events read-only.
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+        with:
+          backend: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'server' || 'github' }}
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          mbx build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+          mbx cache stats
+
+  rust_cache_linux:
+    name: Swatinem rust-cache (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
+        with:
+          shared-key: cache-benchmark-linux-v2
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          cargo build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+
+  comparison_linux:
+    name: comparison (Linux)
+    needs: [mbx_linux, rust_cache_linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    env:
+      MBX_SECONDS: ${{ needs.mbx_linux.outputs.seconds }}
+      RUST_CACHE_SECONDS: ${{ needs.rust_cache_linux.outputs.seconds }}
+    steps:
+      - name: Summarize results
+        shell: bash
+        run: |
+          delta=$(awk -v mbx="$MBX_SECONDS" -v rust="$RUST_CACHE_SECONDS" \
+            'BEGIN { if (rust == 0) print "n/a"; else printf "%.1f%%", ((rust - mbx) / rust) * 100 }')
+          {
+            echo "## Linux cache build comparison"
+            echo
+            echo "| Backend | Build time |"
+            echo "| --- | ---: |"
+            echo "| mbx | ${MBX_SECONDS}s |"
+            echo "| Swatinem/rust-cache | ${RUST_CACHE_SECONDS}s |"
+            echo
+            echo "mbx delta: **${delta}** (positive means mbx was faster)."
+            echo
+            echo "> The main-branch push seeds both backends. Compare them with the warm cache benchmark dispatched on main. Build time excludes checkout and cache setup; compare those step durations separately."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mbx:
+    name: mbx (macOS)
+    runs-on: macos-14
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write # Main pushes authenticate to the cache server; its policy keeps other events read-only.
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+        with:
+          backend: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'server' || 'github' }}
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          mbx build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+          mbx cache stats
+
+  rust-cache:
+    name: Swatinem rust-cache (macOS)
+    runs-on: macos-14
+    timeout-minutes: 90
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
+        with:
+          shared-key: cache-benchmark-macos-v2
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build
+        id: build
+        shell: bash
+        run: |
+          started=$(python3 -c 'import time; print(time.monotonic_ns())')
+          cargo build --all-features --ignore-rust-version
+          ended=$(python3 -c 'import time; print(time.monotonic_ns())')
+          elapsed=$(python3 -c 'import sys; print(f"{(int(sys.argv[2]) - int(sys.argv[1])) / 1e9:.3f}")' "$started" "$ended")
+          echo "seconds=$elapsed" >> "$GITHUB_OUTPUT"
+
+  comparison_macos:
+    name: comparison (macOS)
+    needs: [mbx, rust-cache]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    env:
+      MBX_SECONDS: ${{ needs.mbx.outputs.seconds }}
+      RUST_CACHE_SECONDS: ${{ needs.rust-cache.outputs.seconds }}
+    steps:
+      - name: Summarize results
+        shell: bash
+        run: |
+          delta=$(awk -v mbx="$MBX_SECONDS" -v rust="$RUST_CACHE_SECONDS" \
+            'BEGIN { if (rust == 0) print "n/a"; else printf "%.1f%%", ((rust - mbx) / rust) * 100 }')
+          {
+            echo "## macOS cache build comparison"
+            echo
+            echo "| Backend | Build time |"
+            echo "| --- | ---: |"
+            echo "| mbx | ${MBX_SECONDS}s |"
+            echo "| Swatinem/rust-cache | ${RUST_CACHE_SECONDS}s |"
+            echo
+            echo "mbx delta: **${delta}** (positive means mbx was faster)."
+            echo
+            echo "> The main-branch push seeds both backends. Compare them with the warm cache benchmark dispatched on main. Build time excludes checkout and cache setup; compare those step durations separately."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  mbx_windows:
+    name: mbx (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write # Main pushes authenticate to the cache server; its policy keeps other events read-only.
+    env:
+      MBX_TARGET_VIEWS: 0
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/mbx
+        with:
+          backend: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'server' || 'github' }}
+      - name: Build
+        id: build
+        shell: pwsh
+        run: |
+          $timer = [System.Diagnostics.Stopwatch]::StartNew()
+          mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --ignore-rust-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $timer.Stop()
+          $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
+          "seconds=$elapsed" >> $env:GITHUB_OUTPUT
+          mbx cache stats
+
+  rust_cache_windows:
+    name: Swatinem rust-cache (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    outputs:
+      seconds: ${{ steps.build.outputs.seconds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning] save-if restricts writes to main pushes
+        with:
+          shared-key: cache-benchmark-windows-v2
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Build
+        id: build
+        shell: pwsh
+        run: |
+          $timer = [System.Diagnostics.Stopwatch]::StartNew()
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --ignore-rust-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $timer.Stop()
+          $elapsed = $timer.Elapsed.TotalSeconds.ToString("F3", [Globalization.CultureInfo]::InvariantCulture)
+          "seconds=$elapsed" >> $env:GITHUB_OUTPUT
+
+  comparison_windows:
+    name: comparison (Windows)
+    needs: [mbx_windows, rust_cache_windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    env:
+      MBX_SECONDS: ${{ needs.mbx_windows.outputs.seconds }}
+      RUST_CACHE_SECONDS: ${{ needs.rust_cache_windows.outputs.seconds }}
+    steps:
+      - name: Summarize results
+        shell: bash
+        run: |
+          delta=$(awk -v mbx="$MBX_SECONDS" -v rust="$RUST_CACHE_SECONDS" \
+            'BEGIN { if (rust == 0) print "n/a"; else printf "%.1f%%", ((rust - mbx) / rust) * 100 }')
+          {
+            echo "## Windows cache build comparison"
+            echo
+            echo "| Backend | Build time |"
+            echo "| --- | ---: |"
+            echo "| mbx | ${MBX_SECONDS}s |"
+            echo "| Swatinem/rust-cache | ${RUST_CACHE_SECONDS}s |"
+            echo
+            echo "mbx delta: **${delta}** (positive means mbx was faster)."
+            echo
+            echo "> The main-branch push seeds both backends. Compare them with the warm cache benchmark dispatched on main. Build time excludes checkout and cache setup; compare those step durations separately."
+          } >> "$GITHUB_STEP_SUMMARY"

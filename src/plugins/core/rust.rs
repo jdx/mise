@@ -557,7 +557,7 @@ impl Backend for RustPlugin {
             let mut oi = OutdatedInfo::new(config, tv.clone(), latest.clone())?;
             if bump && requested != latest {
                 oi.bump = Some(latest.clone());
-                oi.tool_request = ToolRequest::new_opts(
+                oi.tool_request = ToolRequest::new_with_options(
                     tv.request.ba().clone(),
                     &latest,
                     tv.request.options(),
@@ -938,7 +938,7 @@ fn external_rustup_bin_dir(
 ) -> Option<PathBuf> {
     paths
         .iter()
-        .filter(|path| !file::is_mise_shims_dir(path))
+        .filter(|path| !file::is_mise_dispatch_dir(path))
         .find(|path| {
             [RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]
                 .iter()
