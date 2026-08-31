@@ -141,6 +141,7 @@ async fn which_shim(
         .build(config)
         .await?;
     let wrappers = load_command_wrappers(&config.config_files)?;
+    validate_wrapper_names(wrappers.keys())?;
     let wrapper = if cfg!(macos) {
         wrappers
             .iter()
@@ -376,6 +377,7 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
 
 fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
     let wrappers = load_command_wrappers(&config.config_files)?;
+    validate_wrapper_names(wrappers.keys())?;
     if wrappers.is_empty() {
         if cfg!(windows) {
             remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
@@ -395,7 +397,6 @@ fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> 
 
     let mut desired = HashSet::new();
     for name in wrappers.keys() {
-        validate_wrapper_name(name)?;
         desired.extend(platform_shim_names(mise_bin, name));
     }
     let actual = list_shims_in(&dirs::COMMAND_WRAPPERS)?;
@@ -428,6 +429,20 @@ fn command_names_eq(a: &str, b: &str) -> bool {
 fn validate_wrapper_name(name: &str) -> Result<()> {
     if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
         bail!("invalid command wrapper name: {name:?}");
+    }
+    if cfg!(windows) && name.contains('.') {
+        bail!("command wrapper names cannot contain dots on Windows: {name:?}");
+    }
+    Ok(())
+}
+
+fn validate_wrapper_names<'a>(names: impl IntoIterator<Item = &'a String>) -> Result<()> {
+    let mut normalized = HashSet::new();
+    for name in names {
+        validate_wrapper_name(name)?;
+        if cfg!(macos) && !normalized.insert(name.to_lowercase()) {
+            bail!("command wrapper names collide on macOS after case normalization: {name:?}");
+        }
     }
     Ok(())
 }
@@ -1151,6 +1166,20 @@ mod tests {
             old_shim_path(Path::new("foo.cmd")),
             PathBuf::from("foo.cmd.old")
         );
+    }
+
+    #[cfg(macos)]
+    #[test]
+    fn case_colliding_macos_wrapper_names_are_rejected() {
+        let names = ["Foo".to_string(), "foo".to_string()];
+        assert!(validate_wrapper_names(&names).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dotted_windows_wrapper_names_are_rejected() {
+        let names = ["foo.bar".to_string()];
+        assert!(validate_wrapper_names(&names).is_err());
     }
 
     #[test]
