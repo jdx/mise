@@ -4,7 +4,7 @@ See the [contributing guide](https://mise.jdx.dev/contributing).
 
 ## mbx build cache
 
-`mise install` installs [mbx](https://mr-boxington.jdx.dev) 1.1 and activates
+`mise install` installs [mbx](https://mr-boxington.jdx.dev) 1.2 and activates
 its transparent Cargo shim. The normal `mise run build`, `mise run test:unit`,
 and `mise run lint` workflows therefore use the cache while invoking Cargo
 normally. To bypass mbx without skipping or weakening a check, prefix the
