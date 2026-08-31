@@ -27,7 +27,7 @@ use crate::config::env_directive::{
     AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
 };
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config, Settings};
+use crate::config::{Alias, AliasMap, CommandWrapper, Config, Settings};
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -383,6 +383,8 @@ pub(crate) struct MiseToml {
     tool_alias: AliasMap,
     #[serde(default)]
     shell_alias: IndexMap<String, String>,
+    #[serde(default)]
+    wrappers: IndexMap<String, CommandWrapper>,
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
@@ -1598,6 +1600,10 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn command_wrappers(&self) -> eyre::Result<IndexMap<String, CommandWrapper>> {
+        Ok(self.wrappers.clone())
+    }
+
     fn task_config(&self) -> &TaskConfig {
         &self.task_config
     }
@@ -1874,6 +1880,7 @@ impl Clone for MiseToml {
             alias: self.alias.clone(),
             tool_alias: self.tool_alias.clone(),
             shell_alias: self.shell_alias.clone(),
+            wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),

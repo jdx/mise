@@ -15,7 +15,7 @@ use crate::config::config_file::mise_toml::{MiseToml, MonorepoConfig};
 use crate::config::env_directive::EnvDirective;
 use crate::config::provenance::ConfigProvenance;
 use crate::config::settings::IdiomaticVersionFileSettings;
-use crate::config::{AliasMap, Settings, settings};
+use crate::config::{AliasMap, CommandWrapper, Settings, settings};
 use crate::deps::DepsConfig;
 use crate::errors::Error::UntrustedConfig;
 use crate::file::display_path;
@@ -146,6 +146,10 @@ pub(crate) trait ConfigFile: Debug + Send + Sync {
     }
 
     fn shell_aliases(&self) -> eyre::Result<IndexMap<String, String>> {
+        Ok(Default::default())
+    }
+
+    fn command_wrappers(&self) -> eyre::Result<IndexMap<String, CommandWrapper>> {
         Ok(Default::default())
     }
 

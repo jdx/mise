@@ -47,6 +47,7 @@ use crate::toolset::{
 use crate::ui::style;
 use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shims, timeout};
 
+pub(crate) mod command_wrapper;
 pub(crate) mod config_file;
 pub(crate) mod env_directive;
 pub(crate) mod miserc;
@@ -62,6 +63,7 @@ use crate::redactions::Redactor;
 use crate::tera::BASE_CONTEXT;
 use crate::watch_files::WatchFile;
 use crate::wildcard::Wildcard;
+pub(crate) use command_wrapper::CommandWrapper;
 
 type AliasMap = IndexMap<String, Alias>;
 pub(crate) type ConfigMap = IndexMap<PathBuf, Arc<dyn ConfigFile>>;
@@ -1263,7 +1265,7 @@ impl Config {
         if let Some(cache_key) = cache_key.as_ref()
             && let Some(cached) = CachedNonToolEnv::load(cache_key)?
         {
-            let env_results = EnvResults {
+            let mut env_results = EnvResults {
                 env: cached.env.clone(),
                 vars: Default::default(),
                 env_remove: cached.env_remove.clone(),
@@ -1277,6 +1279,13 @@ impl Config {
                 watch_files: cached.watch_files.clone(),
                 has_uncacheable: false,
             };
+            if !load_command_wrappers(&self.config_files)?.is_empty()
+                && !env_results.env_paths.contains(&*dirs::COMMAND_WRAPPERS)
+            {
+                env_results
+                    .env_paths
+                    .insert(0, dirs::COMMAND_WRAPPERS.clone());
+            }
             let redact_keys = self
                 .redaction_keys()
                 .into_iter()
@@ -1320,6 +1329,11 @@ impl Config {
             },
         )
         .await?;
+        if !load_command_wrappers(&self.config_files)?.is_empty() {
+            env_results
+                .env_paths
+                .insert(0, dirs::COMMAND_WRAPPERS.clone());
+        }
         for env_file in Settings::get().env_files() {
             if env_results.env_files.contains(&env_file) {
                 continue;
@@ -2964,6 +2978,21 @@ fn load_shell_aliases(config_files: &ConfigMap) -> Result<EnvWithSources> {
     trace!("load_shell_aliases: {}", shell_aliases.len());
 
     Ok(shell_aliases)
+}
+
+/// Load command wrappers from global through project scope.
+pub(crate) fn load_command_wrappers(
+    config_files: &ConfigMap,
+) -> Result<IndexMap<String, CommandWrapper>> {
+    let mut wrappers = IndexMap::new();
+    let safe_mode = Settings::safe_mode();
+    for config_file in config_files.values().rev() {
+        if safe_mode && !is_global_config(config_file.get_path()) {
+            continue;
+        }
+        wrappers.extend(config_file.command_wrappers()?);
+    }
+    Ok(wrappers)
 }
 
 fn load_plugins(config_files: &ConfigMap) -> Result<HashMap<String, String>> {

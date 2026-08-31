@@ -140,6 +140,42 @@ Note that `mise` already runs a reshim anytime a tool is installed/updated/remov
 
 Do not add additional executable in the `mise` directory, `mise` will delete them with the next reshim.
 
+## Command wrappers
+
+Use `[wrappers]` when a command should always pass through another program while
+keeping its ordinary name. For example, this routes every `cargo` invocation
+through [Mr Boxington](https://github.com/jdx/mr-boxington):
+
+```toml
+[tools]
+mr-boxington = "1.1.0"
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+```
+
+Run `mise reshim` after adding or removing a wrapper. The wrapper is available
+with both `mise activate` and `mise activate --shims`, and takes precedence over
+an executable with the same name. When it delegates, mise removes its dispatch
+directories from `PATH`, so `mbx` resolves Cargo from mise-managed Rust when
+configured and otherwise falls through to rustup or the system installation.
+
+A short form is available when no arguments or environment variables are needed:
+
+```toml
+[wrappers]
+terraform = "tofu"
+```
+
+The detailed form can insert arguments before those supplied by the user:
+
+```toml
+[wrappers.python]
+command = "uv"
+args = ["run", "python"]
+```
+
 ## Shims vs PATH {#shims-vs-path}
 
 The following features are affected when shims are used **instead** of [PATH activation](#path-activation):

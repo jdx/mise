@@ -122,6 +122,11 @@ impl Activate {
         if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS, prepended_exe_dir) {
             prelude.push(p);
         }
+        if dirs::COMMAND_WRAPPERS.is_dir()
+            && let Some(p) = self.shims_prepend_path(shell, &dirs::COMMAND_WRAPPERS, true)
+        {
+            prelude.push(p);
+        }
         miseprint!("{}", shell.format_activate_prelude(&prelude))?;
         Ok(())
     }

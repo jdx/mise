@@ -10,7 +10,7 @@ use std::{
 use crate::backend::Backend;
 use crate::cli::args::BackendArg;
 use crate::cli::exec::Exec;
-use crate::config::{Config, Settings};
+use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
 use crate::file::display_path;
 use crate::lock_file::LockFile;
 use crate::toolset::{ResolveOptions, ToolVersion, Toolset, ToolsetBuilder};
@@ -53,8 +53,11 @@ pub(crate) async fn handle_shim() -> Result<()> {
     let mut args = env::ARGS.read().unwrap().clone();
     env::PREFER_OFFLINE.store(true, Ordering::Relaxed);
     trace!("shim[{bin_name}] args: {}", args.join(" "));
-    let (bin, ts) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
+    let (bin, ts, wrapper) = which_shim(&mut config, &env::MISE_BIN_NAME, &args).await?;
     args[0] = bin.to_string_lossy().to_string();
+    if let Some(wrapper) = &wrapper {
+        args.splice(1..1, wrapper.args().iter().cloned());
+    }
     env::set_var("__MISE_SHIM", "1");
     let exec = Exec {
         tool: vec![],
@@ -75,7 +78,20 @@ pub(crate) async fn handle_shim() -> Result<()> {
         allow_env: vec![],
     };
     time!("shim exec");
-    exec.run_with_toolset(config, ts).await?;
+    if let Some(wrapper) = wrapper {
+        exec.run_with_command_wrapper(
+            config,
+            ts,
+            wrapper
+                .env()
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        )
+        .await?;
+    } else {
+        exec.run_with_toolset(config, ts).await?;
+    }
     Err(request_exit(0))
 }
 
@@ -101,7 +117,7 @@ async fn which_shim(
     config: &mut Arc<Config>,
     bin_name: &str,
     args: &[String],
-) -> Result<(PathBuf, Toolset)> {
+) -> Result<(PathBuf, Toolset, Option<CommandWrapper>)> {
     // Shell completion invokes `usage complete-word` through the `usage` shim.
     // It should use the installed CLI or fail locally, never resolve a floating
     // tool version or auto-install over the network while the user is pressing
@@ -124,6 +140,13 @@ async fn which_shim(
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
+    if let Some(wrapper) = load_command_wrappers(&config.config_files)?.get(bin_stem) {
+        if wrapper.command() == bin_stem {
+            bail!("command wrapper for {bin_stem} cannot delegate to itself");
+        }
+        trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
+        return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper.clone())));
+    }
     // A configured tool may intentionally override an executable bundled by another installed
     // tool (for example, a pinned npm overrides Node's npm). Install a missing provider declared
     // by the registry before resolving an incidental installed provider.
@@ -144,7 +167,7 @@ async fn which_shim(
                     "shim[{bin_name}] REGISTRY ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts));
+                return Ok((bin, ts, None));
             }
         }
     }
@@ -155,7 +178,7 @@ async fn which_shim(
             "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
             bin = display_path(&bin)
         );
-        return Ok((bin, ts));
+        return Ok((bin, ts, None));
     }
     // Auto-installing here would download a tool over the network; skip it for
     // offline completion so `usage complete-word` fails locally instead.
@@ -171,7 +194,7 @@ async fn which_shim(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
                 );
-                return Ok((bin, ts));
+                return Ok((bin, ts, None));
             }
         }
     }
@@ -179,7 +202,7 @@ async fn which_shim(
     if Settings::get().not_found_system_fallback {
         let mise_bin = file::canonicalize_or_self(&env::MISE_BIN);
         for path in &*env::PATH {
-            if file::is_mise_shims_dir(path) {
+            if file::is_mise_shims_dir(path) || file::is_command_wrapper_dir(path) {
                 continue;
             }
             let bin = path.join(bin_name);
@@ -192,7 +215,7 @@ async fn which_shim(
                     continue;
                 }
                 trace!("shim[{bin_name}] SYSTEM {bin}", bin = display_path(&bin));
-                return Ok((bin, ts));
+                return Ok((bin, ts, None));
             }
         }
     }
@@ -333,6 +356,54 @@ pub(crate) async fn reshim(config: &Arc<Config>, ts: &Toolset, force: bool) -> R
         .into_iter()
         .collect::<Result<Vec<_>>>()?;
 
+    sync_command_wrapper_shims(
+        config,
+        &mise_bin,
+        force || shim_mode_changed || shim_version_changed,
+    )?;
+
+    Ok(())
+}
+
+fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
+    if force {
+        if cfg!(windows) {
+            remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
+        } else {
+            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
+        }
+    }
+    file::create_dir_all(&*dirs::COMMAND_WRAPPERS)?;
+
+    let wrappers = load_command_wrappers(&config.config_files)?;
+    let mut desired = HashSet::new();
+    for name in wrappers.keys() {
+        validate_wrapper_name(name)?;
+        desired.extend(platform_shim_names(mise_bin, name));
+    }
+    let actual = list_shims_in(&dirs::COMMAND_WRAPPERS)?;
+    for shim in desired.difference(&actual) {
+        let path = dirs::COMMAND_WRAPPERS.join(shim);
+        if cfg!(windows) && path.exists() {
+            remove_shim_with_rename_fallback(&path)?;
+        }
+        add_shim(mise_bin, &path, shim)?;
+    }
+    for shim in actual.difference(&desired) {
+        let path = dirs::COMMAND_WRAPPERS.join(shim);
+        if cfg!(windows) {
+            remove_shim_with_rename_fallback(&path)?;
+        } else {
+            file::remove_all(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_wrapper_name(name: &str) -> Result<()> {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+        bail!("invalid command wrapper name: {name:?}");
+    }
     Ok(())
 }
 
@@ -713,7 +784,11 @@ fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
 }
 
 fn list_shims() -> Result<HashSet<String>> {
-    Ok(dirs::SHIMS
+    list_shims_in(&dirs::SHIMS)
+}
+
+fn list_shims_in(dir: &Path) -> Result<HashSet<String>> {
+    Ok(dir
         .read_dir()?
         .map(|bin| {
             let bin = bin?;
@@ -772,45 +847,36 @@ async fn get_desired_shims(
                 warn!("Error listing bin paths for {}: {:#}", tv, e);
                 Vec::new()
             });
-        if cfg!(windows) {
-            #[cfg(windows)]
-            let shim_mode = effective_shim_mode(_mise_bin);
-            #[cfg(not(windows))]
-            let shim_mode = String::new();
-            shims.extend(bins.into_iter().flat_map(|b| {
-                let p = PathBuf::from(&b);
-                match shim_mode.as_ref() {
-                    "hardlink" | "symlink" => {
-                        vec![p.with_extension("exe").to_string_lossy().to_string()]
-                    }
-                    "exe" => {
-                        // Only the native <tool>.exe is needed. Git Bash / Cygwin /
-                        // MSYS2 resolve a bare `tool` to `tool.exe` via their `.exe`
-                        // magic, and mise-shim.exe derives the tool from its own file
-                        // name, so it runs correctly however it is invoked. We do NOT
-                        // emit an extension-less bash shim here: that variant is only
-                        // required in "file" mode (no .exe, and Cygwin won't auto-append
-                        // .cmd) and is what leaked into WSL via /mnt/c PATH interop
-                        // (#10299).
-                        vec![p.with_extension("exe").to_string_lossy().to_string()]
-                    }
-                    "file" => {
-                        vec![
-                            p.with_extension("").to_string_lossy().to_string(),
-                            p.with_extension("cmd").to_string_lossy().to_string(),
-                        ]
-                    }
-                    _ => panic!("Unknown shim mode"),
-                }
-            }));
-        } else if cfg!(macos) {
-            // some bins might be uppercased but on mac APFS is case-insensitive
-            shims.extend(bins.into_iter().map(|b| b.to_lowercase()));
-        } else {
-            shims.extend(bins);
-        }
+        shims.extend(
+            bins.into_iter()
+                .flat_map(|b| platform_shim_names(_mise_bin, &b)),
+        );
     }
     Ok(shims)
+}
+
+fn platform_shim_names(_mise_bin: &Path, bin: &str) -> Vec<String> {
+    if cfg!(windows) {
+        #[cfg(windows)]
+        let shim_mode = effective_shim_mode(_mise_bin);
+        #[cfg(not(windows))]
+        let shim_mode = String::new();
+        let p = PathBuf::from(bin);
+        match shim_mode.as_ref() {
+            "hardlink" | "symlink" | "exe" => {
+                vec![p.with_extension("exe").to_string_lossy().to_string()]
+            }
+            "file" => vec![
+                p.with_extension("").to_string_lossy().to_string(),
+                p.with_extension("cmd").to_string_lossy().to_string(),
+            ],
+            _ => panic!("Unknown shim mode"),
+        }
+    } else if cfg!(macos) {
+        vec![bin.to_lowercase()]
+    } else {
+        vec![bin.to_string()]
+    }
 }
 
 // lists all the paths to bins in a tv that shims will be needed for
