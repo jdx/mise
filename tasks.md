@@ -106,10 +106,6 @@ Lint HK files
 
 - **Usage:** `perf`
 
-## `perf:build`
-
-- **Usage:** `perf:build`
-
 ## `perf:record`
 
 - **Usage:** `perf:record`

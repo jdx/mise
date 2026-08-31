@@ -72,6 +72,10 @@ jobs:
         env:
           MISE_LOCKED: "1"
 
+      # Keep development-only Cargo activation out of the measured process.
+      - name: Remove mbx benchmark activation
+        run: mbx setup --uninstall --global
+
       - name: Install valgrind
         run: |
           command -v valgrind || {
