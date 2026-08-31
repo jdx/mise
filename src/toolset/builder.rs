@@ -7,7 +7,9 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::toolset::tool_request_set::configured_options_for_runtime_request;
+use crate::toolset::tool_request_set::{
+    configured_options_for_runtime_request, postinstall_tool_request,
+};
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
@@ -111,6 +113,16 @@ impl ToolsetBuilder {
             // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }
+        let postinstall = postinstall_tool_request(&env)?.map(|(mut request, source)| {
+            if let Some(config_options) = ts
+                .versions
+                .get(request.ba())
+                .and_then(|tvl| configured_options_for_runtime_request(&tvl.requests, &request))
+            {
+                request.apply_config_options(config_options);
+            }
+            (request, source)
+        });
         for (k, v) in env {
             if let Some(tool_name) = tool_from_env_var_name(&k) {
                 let ba: Arc<BackendArg> = Arc::new(tool_name.as_str().into());
@@ -122,6 +134,11 @@ impl ToolsetBuilder {
                 }
                 ts.merge(env_ts);
             }
+        }
+        if let Some((request, source)) = postinstall {
+            let mut postinstall_ts = Toolset::new(source);
+            postinstall_ts.add_version(request);
+            ts.merge(postinstall_ts);
         }
         Ok(())
     }
@@ -185,6 +202,34 @@ impl ToolsetBuilder {
 mod tests {
     use super::*;
     use crate::toolset::parse_tool_options;
+
+    #[tokio::test]
+    async fn test_postinstall_request_preserves_configured_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="configured""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        ts.add_version(configured);
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/dummy".into()),
+            ("MISE_TOOL_NAME".into(), "dummy".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.0.0".into()),
+        ]);
+
+        ToolsetBuilder::new()
+            .load_runtime_env(&mut ts, env)
+            .unwrap();
+
+        let request = &ts.versions.get(&ba).unwrap().requests[0];
+        assert_eq!(request.version(), "2.0.0");
+        assert_eq!(request.options().get("selected"), Some("configured"));
+    }
 
     #[tokio::test]
     async fn test_bare_runtime_arg_uses_platform_supported_configured_version() {
