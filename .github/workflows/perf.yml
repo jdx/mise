@@ -145,6 +145,25 @@ jobs:
           sha=$(cat /tmp/tak-out/sha)
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin refs/notes/tak:refs/notes/tak || true
-          git notes --ref=tak add -f -F /tmp/tak-out/note "$sha"
-          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git" refs/notes/tak
+          git fetch origin +refs/notes/tak:refs/notes/tak-remote || true
+          if git rev-parse --verify --quiet refs/notes/tak-remote >/dev/null; then
+            git update-ref refs/notes/tak refs/notes/tak-remote
+          fi
+          {
+            git notes --ref=tak show "$sha" 2>/dev/null || true
+            cat /tmp/tak-out/note
+          } | LC_ALL=C sort -u > /tmp/tak-out/merged-note
+          git notes --ref=tak add -f -F /tmp/tak-out/merged-note "$sha"
+
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPOSITORY}.git"
+          for attempt in 1 2 3 4 5; do
+            if git push --quiet "$remote" refs/notes/tak:refs/notes/tak; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              echo "::error::could not publish refs/notes/tak after five attempts"
+              exit 1
+            fi
+            git fetch --quiet "$remote" +refs/notes/tak:refs/notes/tak-remote
+            git notes --ref=tak merge -s cat_sort_uniq refs/notes/tak-remote
+          done

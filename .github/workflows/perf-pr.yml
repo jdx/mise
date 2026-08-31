@@ -216,6 +216,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      checks: write # attach the regression gate to the measured PR head SHA
       pull-requests: write # the sticky comment, and nothing else
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -260,6 +261,29 @@ jobs:
       # after it, and the gate is the reason this workflow exists. Without it a
       # `gh api` hiccup would skip the gate — red for the wrong reason, and with
       # no regression error to read.
+      - name: Publish the pull request check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status=$(cat /tmp/tak-out/status 2>/dev/null || echo 2)
+          if [ "$status" -eq 0 ]; then
+            conclusion=success
+            title='Instruction counts passed'
+          else
+            conclusion=failure
+            title='Instruction-count regression or measurement failure'
+          fi
+          test -f /tmp/tak-out/report.md || echo 'The comparison did not produce a report.' > /tmp/tak-out/report.md
+          jq -n --arg head_sha "$HEAD_SHA" --arg conclusion "$conclusion" \
+            --arg title "$title" --arg details_url "$RUN_URL" \
+            --rawfile summary /tmp/tak-out/report.md \
+            '{name:"perf / instruction-count",head_sha:$head_sha,status:"completed",conclusion:$conclusion,details_url:$details_url,output:{title:$title,summary:$summary}}' \
+            | gh api --method POST "repos/$GH_REPO/check-runs" --input -
+
       - name: Fail on a regression
         if: always()
         run: |
