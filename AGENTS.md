@@ -9,8 +9,9 @@ command from `CONTRIBUTING.md` with `MBX_DISABLE=1`; this unblocks work without
 weakening the check. If bypassed Cargo succeeds, surface the mismatch and recommend a
 [mr-boxington Discussion](https://github.com/jdx/mr-boxington/discussions) with
 the repository and commit, OS, `mbx --version`, `mbx doctor`, and both commands
-and outputs. Do not permanently disable the shim, and do not post externally
-without user authorization.
+and outputs. Redact secrets, absolute cache paths, remote URLs, namespaces, and
+other sensitive or identifying details. Do not permanently disable the shim,
+and do not post externally without user authorization.
 
 This file is the canonical agent guide. `CLAUDE.md` is a symlink to `AGENTS.md` for compatibility with existing tooling.
 

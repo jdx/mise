@@ -12,9 +12,10 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@906ad32aec2915c312aceb21c2354cc8c0548f5f
+    - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563
       with:
         version: 1.1.0
         backend: github
+        cache-generation: v2
         cache-links: ${{ inputs.cache-links }}
         toolchain: ${{ inputs.toolchain }}
