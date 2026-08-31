@@ -503,6 +503,7 @@ checksum = "sha256:dfb0020b976d679af5a7504190ffbcb201c0e11b2f7788901fd6f60740cd8
 url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-gnu.tar.gz"
 url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992912"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools."github:jdx/tak"."platforms.linux-x64-baseline"]
 checksum = "sha256:dfb0020b976d679af5a7504190ffbcb201c0e11b2f7788901fd6f60740cd87d4"
