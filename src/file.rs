@@ -1804,7 +1804,7 @@ pub(crate) fn is_active_mise_shim(path: &Path) -> bool {
 pub(crate) fn path_env_without_shims() -> std::ffi::OsString {
     let filtered: Vec<_> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !is_mise_shims_dir(p))
+        .filter(|p| !is_mise_dispatch_dir(p))
         .cloned()
         .collect();
     std::env::join_paths(filtered)
@@ -1815,11 +1815,35 @@ pub(crate) fn path_env_without_shims() -> std::ffi::OsString {
 /// subprocess receives a custom env map (e.g. `PRISTINE_ENV`) rather
 /// than inheriting the current process's PATH.
 pub(crate) fn strip_shims_from_path(path_val: &str) -> String {
-    let filtered = env::split_paths(path_val).filter(|p| !is_mise_shims_dir(p));
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
     std::env::join_paths(filtered)
         .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
         .to_string_lossy()
         .into_owned()
+}
+
+/// Strip every mise dispatch directory from PATH before a command wrapper
+/// delegates. This lets the wrapped command resolve a tool managed by mise or
+/// fall through to rustup/the system without invoking the wrapper again.
+pub(crate) fn strip_dispatch_dirs_from_path(path_val: &str) -> String {
+    let filtered = env::split_paths(path_val).filter(|p| !is_mise_dispatch_dir(p));
+    std::env::join_paths(filtered)
+        .unwrap_or_else(|_| std::ffi::OsString::from(path_val))
+        .to_string_lossy()
+        .into_owned()
+}
+
+pub(crate) fn is_command_wrapper_dir(path: &Path) -> bool {
+    let resolved = replace_path(path);
+    paths_eq(&resolved, &dirs::COMMAND_WRAPPERS)
+        || paths_eq(
+            &canonicalize_or_self(&resolved),
+            &canonicalize_or_self(&dirs::COMMAND_WRAPPERS),
+        )
+}
+
+pub(crate) fn is_mise_dispatch_dir(path: &Path) -> bool {
+    is_mise_shims_dir(path) || is_command_wrapper_dir(path)
 }
 
 /// returns the first executable in PATH, excluding the mise shim directories
@@ -1828,7 +1852,7 @@ pub(crate) fn strip_shims_from_path(path_val: &str) -> String {
 pub(crate) fn which_no_shims<P: AsRef<Path>>(name: P) -> Option<PathBuf> {
     let paths: Vec<PathBuf> = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !is_mise_shims_dir(p))
+        .filter(|p| !is_mise_dispatch_dir(p))
         .cloned()
         .collect();
     _which(name, &paths)

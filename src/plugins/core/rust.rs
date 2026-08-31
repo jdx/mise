@@ -938,7 +938,7 @@ fn external_rustup_bin_dir(
 ) -> Option<PathBuf> {
     paths
         .iter()
-        .filter(|path| !file::is_mise_shims_dir(path))
+        .filter(|path| !file::is_mise_dispatch_dir(path))
         .find(|path| {
             [RUSTUP_BIN, CARGO_BIN, RUSTC_BIN]
                 .iter()

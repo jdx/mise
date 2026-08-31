@@ -3605,6 +3605,47 @@
         "type": "string"
       }
     },
+    "wrappers": {
+      "description": "commands that intercept a binary name before delegating to the active toolset",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "description": "command to run",
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "command": {
+                "description": "command to run",
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*"
+              },
+              "args": {
+                "description": "arguments inserted before the intercepted command's arguments",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "description": "environment variables set for the wrapper",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["command"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
     "env": {
       "description": "environment variables to set",
       "oneOf": [
