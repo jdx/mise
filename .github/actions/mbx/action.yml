@@ -1,7 +1,10 @@
 name: Set up mbx
-description: Set up mbx with the GitHub Actions cache backend
+description: Select the trusted jdx server or fork-safe GitHub cache backend
 
 inputs:
+  backend:
+    description: Explicit backend for structurally trusted or untrusted callers
+    default: auto
   cache-links:
     description: Cache native links; "auto" enables this on Linux
     default: auto
@@ -12,9 +15,13 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@906ad32aec2915c312aceb21c2354cc8c0548f5f
+    - uses: jdx/mr-boxington-action@9a406893b83a977c45324a34aed553e3c43f414d
       with:
-        version: 0.7.0
-        backend: github
+        version: 1.1.0
+        cache-generation: v2
         cache-links: ${{ inputs.cache-links }}
         toolchain: ${{ inputs.toolchain }}
+        backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
+        server-url: https://cache.mise.jdx.dev
+        namespace: jdx/mise
+        oidc-audience: https://cache.mise.jdx.dev
