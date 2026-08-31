@@ -103,6 +103,7 @@ jobs:
           if-no-files-found: error
 
       - name: Summary
+        continue-on-error: true
         run: tak history >> "$GITHUB_STEP_SUMMARY"
 
   publish:
