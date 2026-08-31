@@ -125,10 +125,11 @@ impl Activate {
             false
         };
         let has_command_wrappers = dirs::COMMAND_WRAPPERS.is_dir();
-        let mut dispatch_dirs = vec![dirs::COMMAND_WRAPPERS.as_path()];
-        dispatch_dirs.extend(shim_dirs.iter().map(PathBuf::as_path));
-        let dispatch_dirs_already_first =
-            has_command_wrappers && are_dirs_first_in_paths(&env::PATH, &dispatch_dirs);
+        let mut dispatch_dirs = shim_dirs.iter().map(PathBuf::as_path).collect::<Vec<_>>();
+        if has_command_wrappers {
+            dispatch_dirs.insert(0, dirs::COMMAND_WRAPPERS.as_path());
+        }
+        let dispatch_dirs_already_first = are_dirs_first_in_paths(&env::PATH, &dispatch_dirs);
         if shell.supports_move_path() || prepended_exe_dir || !dispatch_dirs_already_first {
             // Prepend in reverse order so user shims retain precedence over system
             // shims in shells where each operation inserts at the front.
@@ -151,7 +152,18 @@ impl Activate {
 
     fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let mut prelude = vec![];
-        if let Some(set_path) = position_shims_after_path()? {
+        // Preserve the user's PATH before adding the shim boundary. Shell activation
+        // normally snapshots this after preludes run, which would otherwise make
+        // `mise deactivate` restore mise's own shim farms.
+        if env::__MISE_ORIG_PATH.is_none() {
+            let path = std::env::join_paths(&*env::PATH)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+            prelude.push(ActivatePrelude::Set(
+                "__MISE_ORIG_PATH".to_string(),
+                path.to_string_lossy().to_string(),
+            ));
+        }
+        if let Some(set_path) = position_shims_before_path()? {
             prelude.push(set_path);
         }
         let exe_dir = mise_bin.parent().unwrap();
@@ -261,23 +273,19 @@ fn forwarded_logging_flags(args: &[String]) -> Vec<String> {
     flags
 }
 
-fn position_shims_after_path() -> std::io::Result<Option<ActivatePrelude>> {
+fn position_shims_before_path() -> std::io::Result<Option<ActivatePrelude>> {
     let user_shims = dirs::shims();
     let system_shims = dirs::system_shims();
-    let mut path = env::PATH
-        .iter()
-        .filter(|path| !file::is_mise_shims_dir(path))
-        .cloned()
-        .collect::<Vec<_>>();
-    path.push(user_shims);
-    if system_shims.is_dir()
-        && !file::paths_eq(
-            path.last().expect("user shims were appended"),
-            &system_shims,
-        )
-    {
+    let mut path = vec![user_shims];
+    if system_shims.is_dir() && !file::paths_eq(&path[0], &system_shims) {
         path.push(system_shims);
     }
+    path.extend(
+        env::PATH
+            .iter()
+            .filter(|path| !file::is_mise_shims_dir(path))
+            .cloned(),
+    );
     let path = std::env::join_paths(path)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
     Ok(Some(ActivatePrelude::Set(

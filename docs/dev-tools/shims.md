@@ -301,9 +301,9 @@ See [Troubleshooting: Slow shell prompts](/troubleshooting.html#slow-shell-promp
 
 The only difference between these would be that using `hook-env` you will need to call
 it again if you change directories but with shims that won't be necessary. If you use both, `mise activate`
-takes care of the shims directory for you: it is kept behind the tool paths as an auto-install fallback, or
-removed from `PATH` entirely when [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
-is disabled.
+takes care of the shim farms for you: they are kept behind the tool paths as a fallback. Disabling
+[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) disables general missing-tool
+installation, but explicit `lazy = true` declarations remain available through their shims.
 
 ## Neither shims nor PATH {#neither-shims-nor-path}
 

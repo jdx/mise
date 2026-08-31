@@ -9,7 +9,7 @@ use crate::build_time::built_info;
 use crate::cli::self_update::SelfUpdate;
 use crate::cli::version;
 use crate::cli::version::VERSION;
-use crate::config::{Config, IGNORED_CONFIG_FILES, Settings};
+use crate::config::{Config, IGNORED_CONFIG_FILES};
 use crate::env::PATH_KEY;
 use crate::file::{canonicalize_cached, canonicalize_or_self, display_path};
 use crate::git::Git;
@@ -106,11 +106,6 @@ impl Doctor {
             "self_update_available".into(),
             SelfUpdate::is_available().into(),
         );
-        // Warn about shims+activate conflict, but not when not_found_auto_install is enabled
-        // since that intentionally preserves shims for auto-install functionality
-        if env::is_activated() && shims_on_path() && !Settings::get().not_found_auto_install {
-            self.errors.push("shims are on PATH and mise is also activated. You should only use one of these methods.".to_string());
-        }
         data.insert(
             "build_info".into(),
             build_info()

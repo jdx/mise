@@ -31,6 +31,8 @@ mise install node@20.0.0 node@18.0.0
 eval "$(mise activate zsh --status)" && _mise_hook
 
 #mise install
+assert_path "$HOME/.local/share/mise/installs/node/20.0.0/bin:$HOME/.local/share/mise/shims"
+test "$(mise exec -- sh -c 'command -v node')" = "$HOME/.local/share/mise/installs/node/20.0.0/bin/node"
 test "$(node -v)" = "v20.0.0"
 
 cd 18 && _mise_hook

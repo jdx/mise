@@ -1098,7 +1098,7 @@ impl Settings {
         trace!("Settings: {:#?}", redacted_settings_for_debug(&settings));
         let settings = Arc::new(settings);
         let system_installs_changed =
-            settings.system_installs_dir() != &*env::MISE_SYSTEM_INSTALLS_DIR;
+            settings.system_installs_dir() != *env::MISE_SYSTEM_INSTALLS_DIR;
         LAST_SAFE.store(u8::from(settings.safe), Ordering::Relaxed);
         *BASE_SETTINGS.write().unwrap() = Some(settings.clone());
         if system_installs_changed {
@@ -1333,12 +1333,14 @@ impl Settings {
         *BASE_SETTINGS.write().unwrap() = None;
         // Clear caches that depend on settings and environment
         crate::config::config_file::config_root::reset();
+        crate::toolset::install_state::reset_tools();
     }
 
     /// Invalidate settings loaded from config files without discarding CLI overrides.
     pub(crate) fn reload() {
         *BASE_SETTINGS.write().unwrap() = None;
         crate::config::config_file::config_root::reset();
+        crate::toolset::install_state::reset_tools();
     }
 
     /// Merge an override into the CLI-level settings partial.
@@ -1355,6 +1357,7 @@ impl Settings {
         updater(partial);
         drop(lock);
         *BASE_SETTINGS.write().unwrap() = None;
+        crate::toolset::install_state::reset_tools();
     }
 
     pub(crate) fn lockfile_enabled(&self) -> bool {

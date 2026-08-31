@@ -3,12 +3,12 @@ use crate::direnv::DirenvDiff;
 use crate::env::{__MISE_DIFF, PATH_KEY, TERM_WIDTH};
 use crate::env::{join_paths, split_paths};
 use crate::env_diff::{EnvDiff, EnvDiffOperation, EnvMap};
-use crate::file::{canonicalize_cached, display_path, display_rel_path};
+use crate::file::{self, canonicalize_cached, display_path, display_rel_path};
 use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::ui::style;
-use crate::{env, hook_env, hooks, watch_files};
+use crate::{dirs, env, hook_env, hooks, watch_files};
 use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
@@ -316,6 +316,12 @@ impl HookEnv {
                 let mut seen_in_current: HashSet<&PathBuf> = HashSet::new();
                 let mise_install_dirs = crate::path_env::mise_install_dirs();
                 for path in &current_paths {
+                    // Shim farms are a mise-managed boundary. Reinsert them below
+                    // the selected tool paths instead of preserving their temporary
+                    // activation-prelude position as a user-owned prefix.
+                    if file::is_mise_shims_dir(path) {
+                        continue;
+                    }
                     if orig_set.contains(path) {
                         seen_orig = true;
                         orig_reordered.push(path.clone());
@@ -347,7 +353,7 @@ impl HookEnv {
                 // Append any orig paths that are no longer in current PATH
                 // (to avoid losing paths that may have been temporarily removed)
                 for path in &orig_paths {
-                    if !seen_in_current.contains(path) {
+                    if !file::is_mise_shims_dir(path) && !seen_in_current.contains(path) {
                         orig_reordered.push(path.clone());
                     }
                 }
@@ -434,12 +440,21 @@ impl HookEnv {
             .cloned()
             .collect();
 
+        let user_shims = dirs::shims();
+        let system_shims = dirs::system_shims();
+        let mut shim_dirs = vec![user_shims];
+        if system_shims.is_dir() && !file::paths_eq(&shim_dirs[0], &system_shims) {
+            shim_dirs.push(system_shims);
+        }
+
         // Combine paths in the correct order:
-        // pre (user shell prepends) -> user_paths (from config) -> tool_paths -> post (original PATH) -> post_user (user shell appends)
+        // pre (user shell prepends) -> user_paths (from config) -> tool_paths ->
+        // shim fallback boundary -> post (original PATH) -> post_user (user shell appends)
         let new_path = join_paths(
             pre.iter()
                 .chain(user_paths_filtered.iter())
                 .chain(tool_paths_filtered.iter())
+                .chain(shim_dirs.iter())
                 .chain(post.iter())
                 .chain(post_user.iter()),
         )?

@@ -3532,6 +3532,7 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
         let system_installs = Settings::get().system_installs_dir().to_path_buf();
         let installs_collocated = file::paths_eq(&system_installs, &dirs::INSTALLS);
         let system_changed = installs_collocated
+            || new_versions.is_empty()
             || new_versions
                 .iter()
                 .any(|tv| tv.install_path().starts_with(&system_installs));

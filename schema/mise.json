@@ -1794,19 +1794,15 @@
           "description": "Path to the system mise config file. Default is `/etc/mise/config.toml`. This must be an env var.",
           "type": "string"
         },
-        "system_installs_dir": {
-          "description": "Directory containing system tool installs.",
-          "type": "string"
-        },
-        "system_shims_dir": {
-          "description": "Directory containing system shims.",
-          "type": "string"
-        },
         "system_deps": {
           "default": "prompt",
           "description": "How to handle a plugin's declared system dependencies before installing a tool.",
           "type": "string",
           "enum": ["prompt", "auto", "warn", "ignore"]
+        },
+        "system_installs_dir": {
+          "description": "Directory containing system tool installs.",
+          "type": "string"
         },
         "system_packages": {
           "type": "object",
@@ -1825,6 +1821,10 @@
               "type": "boolean"
             }
           }
+        },
+        "system_shims_dir": {
+          "description": "Directory containing system shims.",
+          "type": "string"
         },
         "task": {
           "type": "object",

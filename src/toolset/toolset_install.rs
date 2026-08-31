@@ -90,7 +90,7 @@ impl Toolset {
         });
         let install_options = InstallOptions {
             reason: "lazy shim".into(),
-            install_dir: install_dir.filter(|dir| dir != &*crate::dirs::INSTALLS),
+            install_dir: install_dir.filter(|dir| dir != *crate::dirs::INSTALLS),
             ..Default::default()
         };
         let installed = self

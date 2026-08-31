@@ -2737,29 +2737,6 @@ env_only = true
 optional = true
 type = "Path"
 
-[system_installs_dir]
-description = "Directory containing system tool installs."
-docs = """
-The destination used by `mise install --system` and lazy tools declared in system config.
-Defaults to `$MISE_SYSTEM_DATA_DIR/installs`. The directory must be absolute after `~` expansion.
-"""
-env = "MISE_SYSTEM_INSTALLS_DIR"
-global_only = true
-optional = true
-type = "Path"
-
-[system_shims_dir]
-description = "Directory containing system shims."
-docs = """
-The system shim farm populated by `mise reshim --system` and system installs.
-Defaults to `$MISE_SYSTEM_DATA_DIR/shims`. It may equal `shims_dir`; when it does, mise reconciles
-one combined farm. The directory must be absolute after `~` expansion.
-"""
-env = "MISE_SYSTEM_SHIMS_DIR"
-global_only = true
-optional = true
-type = "Path"
-
 [system_deps]
 default = "prompt"
 description = "How to handle a plugin's declared system dependencies before installing a tool."
@@ -2788,6 +2765,17 @@ enum = ["prompt", "auto", "warn", "ignore"]
 env = "MISE_SYSTEM_DEPS"
 rust_type = "SystemDepsMode"
 type = "String"
+
+[system_installs_dir]
+description = "Directory containing system tool installs."
+docs = """
+The destination used by `mise install --system` and lazy tools declared in system config.
+Defaults to `$MISE_SYSTEM_DATA_DIR/installs`. The directory must be absolute after `~` expansion.
+"""
+env = "MISE_SYSTEM_INSTALLS_DIR"
+global_only = true
+optional = true
+type = "Path"
 
 [system_packages.managers]
 description = "Restrict which system package managers mise will use."
@@ -2826,6 +2814,18 @@ it, and skips sudo entirely when already running as root (e.g. containers/CI).
 """
 env = "MISE_SYSTEM_PACKAGES_SUDO"
 type = "Bool"
+
+[system_shims_dir]
+description = "Directory containing system shims."
+docs = """
+The system shim farm populated by `mise reshim --system` and system installs.
+Defaults to `$MISE_SYSTEM_DATA_DIR/shims`. It may equal `shims_dir`; when it does, mise reconciles
+one combined farm. The directory must be absolute after `~` expansion.
+"""
+env = "MISE_SYSTEM_SHIMS_DIR"
+global_only = true
+optional = true
+type = "Path"
 
 [task.auto_infer]
 default = []
