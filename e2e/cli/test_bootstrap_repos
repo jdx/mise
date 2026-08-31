@@ -72,6 +72,62 @@ assert_succeed "mise bootstrap --skip-dirty --yes --only repos"
 assert_directory_exists "$HOME/src/top-level-missing"
 rm -f "$HOME/src/dotfiles/local.txt"
 
+# Read-only status checks honor the global job limit. A serial run must not
+# overlap ls-remote processes, while two jobs must allow both checks to start.
+real_git="$(command -v git)"
+git_wrapper_dir="$PWD/git-wrapper"
+git_concurrency_dir="$PWD/git-concurrency"
+mkdir -p "$git_wrapper_dir" "$git_concurrency_dir"
+cat <<'EOF' >"$git_wrapper_dir/git"
+#!/usr/bin/env bash
+is_ls_remote=0
+for arg in "$@"; do
+  if [[ $arg == ls-remote ]]; then
+    is_ls_remote=1
+    break
+  fi
+done
+if ((is_ls_remote)); then
+  case "$GIT_CONCURRENCY_MODE" in
+    serial)
+      owns_lock=0
+      if mkdir "$GIT_CONCURRENCY_DIR/lock" 2>/dev/null; then
+        owns_lock=1
+      else
+        touch "$GIT_CONCURRENCY_DIR/overlap"
+      fi
+      sleep 0.2
+      if ((owns_lock)); then
+        rmdir "$GIT_CONCURRENCY_DIR/lock"
+      fi
+      ;;
+    parallel)
+      touch "$GIT_CONCURRENCY_DIR/started.$$"
+      count=0
+      for _ in {1..100}; do
+        count="$(find "$GIT_CONCURRENCY_DIR" -name 'started.*' | wc -l | tr -d ' ')"
+        if ((count >= 2)); then
+          break
+        fi
+        sleep 0.05
+      done
+      if ((count < 2)); then
+        touch "$GIT_CONCURRENCY_DIR/timed-out"
+      fi
+      ;;
+  esac
+fi
+exec "$REAL_GIT" "$@"
+EOF
+chmod +x "$git_wrapper_dir/git"
+
+assert_succeed "PATH='$git_wrapper_dir:$PATH' REAL_GIT='$real_git' GIT_CONCURRENCY_DIR='$git_concurrency_dir' GIT_CONCURRENCY_MODE=serial mise --jobs 1 bootstrap repos status --missing"
+[[ ! -e $git_concurrency_dir/overlap ]] || fail "--jobs 1 allowed repo status checks to overlap"
+
+rm -f "$git_concurrency_dir"/started.*
+assert_succeed "PATH='$git_wrapper_dir:$PATH' REAL_GIT='$real_git' GIT_CONCURRENCY_DIR='$git_concurrency_dir' GIT_CONCURRENCY_MODE=parallel mise --jobs 2 bootstrap repos status --missing"
+[[ ! -e $git_concurrency_dir/timed-out ]] || fail "--jobs 2 did not run repo status checks concurrently"
+
 # full branch refs update without detaching or skipping the pull
 cat <<EOF >mise.toml
 [bootstrap.repos]
