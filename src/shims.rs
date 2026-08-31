@@ -496,7 +496,7 @@ fn remove_shims_individually(shims_dir: &Path) -> Result<()> {
 /// reshim or when the lock is released.
 fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
     // First, try to clean up any leftover .old files from a previous run.
-    let old_path = path.with_extension("old");
+    let old_path = old_shim_path(path);
     if old_path.exists() {
         let _ = fs::remove_file(&old_path); // best-effort
     }
@@ -522,6 +522,12 @@ fn remove_shim_with_rename_fallback(path: &Path) -> Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(e).wrap_err_with(|| format!("failed to remove shim: {}", display_path(path))),
     }
+}
+
+fn old_shim_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".old");
+    path.with_file_name(name)
 }
 
 /// Find the `mise-shim.exe` that ships beside `mise_bin`, if there is one.
@@ -1137,6 +1143,15 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
+
+    #[test]
+    fn locked_windows_shims_get_distinct_old_paths() {
+        assert_eq!(old_shim_path(Path::new("foo")), PathBuf::from("foo.old"));
+        assert_eq!(
+            old_shim_path(Path::new("foo.cmd")),
+            PathBuf::from("foo.cmd.old")
+        );
+    }
 
     #[test]
     fn snap_mise_bin_uses_refresh_stable_current_path() {
