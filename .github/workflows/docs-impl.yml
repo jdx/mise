@@ -6,6 +6,9 @@ on:
       trusted:
         required: true
         type: boolean
+      mbx-backend:
+        required: true
+        type: string
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID:
         required: false
@@ -35,6 +38,8 @@ jobs:
         with:
           fetch-depth: 0 # for lastUpdated
       - uses: ./.github/actions/mbx
+        with:
+          backend: ${{ inputs.mbx-backend }}
       - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
         with:
           install_args: bun
