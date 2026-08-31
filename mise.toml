@@ -47,6 +47,10 @@ includes = ["tasks.toml", "xtasks"]
 # number whose absolute value does not matter. What matters is that every
 # measurement in a series is built the same way, and the series is partitioned
 # on runner class so a change of build profile would start a fresh one anyway.
+[tasks."perf:build"]
+env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml", MBX_DISABLE = "1" }
+run = "cargo build --release"
+
 [tasks.perf]
 dir = "{{config_root}}"
 # MISE_OFFLINE keeps `ls`, `env` and `hook-env` off the network. Without it they
@@ -55,7 +59,8 @@ dir = "{{config_root}}"
 # out of the fixture so editing this file does not change a benchmark's input.
 # Bypass mbx only for the build so its environment does not perturb the benchmark.
 env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
-run = ["MBX_DISABLE=1 cargo build --release", "tak run"]
+depends = ["perf:build"]
+run = "tak run"
 
 # Same measurement, appended to refs/notes/tak for this commit. Run by the
 # `perf` workflow on every push to main; the notes are the history. Safe to run
@@ -63,7 +68,8 @@ run = ["MBX_DISABLE=1 cargo build --release", "tak run"]
 [tasks."perf:record"]
 dir = "{{config_root}}"
 env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
-run = ["MBX_DISABLE=1 cargo build --release", "tak run --record"]
+depends = ["perf:build"]
+run = "tak run --record"
 
 # End-to-end task artifact cache phases. The harness generates an isolated
 # large fixture so benchmark inputs never need to be checked into the repo.
