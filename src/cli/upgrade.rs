@@ -29,6 +29,8 @@ use eyre::{Context, Result, eyre};
 use indexmap::IndexMap;
 use jiff::{Span, Timestamp, civil::date};
 
+const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
+
 /// Upgrades outdated tools
 ///
 /// By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
@@ -225,6 +227,9 @@ impl Upgrade {
         .await;
         if self.interactive && !outdated.is_empty() {
             outdated = self.get_interactive_tool_set(&outdated)?;
+            if outdated.is_empty() {
+                return Ok(());
+            }
         }
         if outdated.is_empty() {
             let bump_outdated = if self.bump {
@@ -245,16 +250,21 @@ impl Upgrade {
             if bump_outdated.is_empty() {
                 info!("All tools are up to date");
             } else {
-                let updates = bump_outdated
+                let hidden = bump_outdated.len().saturating_sub(MAX_OUT_OF_RANGE_UPDATES);
+                let mut updates = bump_outdated
                     .iter()
+                    .take(MAX_OUT_OF_RANGE_UPDATES)
                     .map(|o| {
                         let current = o.current.as_deref().unwrap_or("MISSING");
                         format!("  {} {} → {} ({})", o.name, current, o.latest, o.source)
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
+                if hidden > 0 {
+                    updates.push_str(&format!("\n  … and {hidden} more"));
+                }
                 info!(
-                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise upgrade --bump` to update the configuration and upgrade."
+                    "Newer versions are available but do not match the configured version ranges:\n{updates}\nRun `mise outdated --bump` to view all, or `mise upgrade --bump` to update the configuration and upgrade."
                 );
             }
         } else {
