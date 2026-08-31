@@ -14,7 +14,7 @@ runs:
   steps:
     - uses: jdx/mr-boxington-action@906ad32aec2915c312aceb21c2354cc8c0548f5f
       with:
-        version: 0.7.0
+        version: 1.1.0
         backend: github
         cache-links: ${{ inputs.cache-links }}
         toolchain: ${{ inputs.toolchain }}

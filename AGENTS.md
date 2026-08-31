@@ -2,14 +2,15 @@
 
 ## mbx build cache
 
-Compilation-heavy mise tasks and hk checks use `mbx`. If an mbx command fails
-or creates a development papercut, rerun the exact equivalent `cargo` command
-from `CONTRIBUTING.md`; this unblocks work without weakening the check. If Cargo
-succeeds, surface the mismatch and recommend a
+Mise installs mbx 1.1 and activates its transparent Cargo shim, so
+compilation-heavy mise tasks and hk checks use ordinary `cargo` commands. If
+the shim fails or creates a development papercut, rerun the exact equivalent
+command from `CONTRIBUTING.md` with `MBX_DISABLE=1`; this unblocks work without
+weakening the check. If bypassed Cargo succeeds, surface the mismatch and recommend a
 [mr-boxington Discussion](https://github.com/jdx/mr-boxington/discussions) with
-the repository and commit, OS, `mbx --version`, both commands and outputs, the
-cache summary, and `MBX_BYPASS_LOG` details when relevant. Do not silently make
-Cargo the permanent path, and do not post externally without user authorization.
+the repository and commit, OS, `mbx --version`, `mbx doctor`, and both commands
+and outputs. Do not permanently disable the shim, and do not post externally
+without user authorization.
 
 This file is the canonical agent guide. `CLAUDE.md` is a symlink to `AGENTS.md` for compatibility with existing tooling.
 
