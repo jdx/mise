@@ -144,13 +144,13 @@ async fn which_shim(
     let wrapper = if cfg!(macos) {
         wrappers
             .iter()
-            .find(|(name, _)| name.to_lowercase() == bin_stem)
+            .find(|(name, _)| command_names_eq(name, bin_stem))
             .map(|(_, wrapper)| wrapper)
     } else {
         wrappers.get(bin_stem)
     };
     if let Some(wrapper) = wrapper {
-        if wrapper.command() == bin_stem {
+        if command_names_eq(wrapper.command(), bin_stem) {
             bail!("command wrapper for {bin_stem} cannot delegate to itself");
         }
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
@@ -379,8 +379,9 @@ fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> 
     if wrappers.is_empty() {
         if cfg!(windows) {
             remove_shims_individually(&dirs::COMMAND_WRAPPERS)?;
+        } else {
+            file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
         }
-        file::remove_all(&*dirs::COMMAND_WRAPPERS)?;
         return Ok(());
     }
     if force {
@@ -414,6 +415,14 @@ fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> 
         }
     }
     Ok(())
+}
+
+fn command_names_eq(a: &str, b: &str) -> bool {
+    if cfg!(macos) {
+        a.to_lowercase() == b.to_lowercase()
+    } else {
+        a == b
+    }
 }
 
 fn validate_wrapper_name(name: &str) -> Result<()> {
