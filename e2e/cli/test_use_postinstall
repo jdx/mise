@@ -51,6 +51,9 @@ mkdir write-options
   mise use --path path.toml --postinstall "touch path-hook" dummy@1.0.0
   assert_contains "cat path.toml" "postinstall"
 
+  mise use --force --path nested.toml --postinstall "mise which dummy >nested-which" dummy@2.0.0
+  assert_contains "cat nested-which" "$MISE_DATA_DIR/installs/dummy/2.0.0/bin/dummy"
+
   mise use --env ci --postinstall "touch env-hook" dummy@1.0.0
   assert_contains "cat mise.ci.toml" "postinstall"
 
