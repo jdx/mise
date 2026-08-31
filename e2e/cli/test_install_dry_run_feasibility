@@ -4,6 +4,10 @@
 # that cannot install here at all -- measured as `mise install --dry-run acli@latest` succeeding on
 # Windows while the same command without `--dry-run` failed with `unsupported env: windows/amd64`.
 # The check the install does was on the far side of an early return.
+#
+# That example no longer reproduces: aqua gained Windows support for `acli`, and mise's vendored
+# snapshot picked it up in v2026.8.15. It is kept as the history of why this file exists. The cases
+# below never depended on it.
 
 # The http backend can tell from its options alone. This suite runs on Linux (Windows has its own,
 # `e2e-win/`), so a tool that declares only `windows-x64` has no URL here and needs no platform

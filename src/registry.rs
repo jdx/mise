@@ -1072,10 +1072,11 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
     // list that no longer matches what the backend can do makes mise refuse a tool that works.
     //
     // All 52 entries whose `os` line left out `windows` were put through `mise install` on Windows
-    // and then had whatever landed on disk executed. These five are the ones that produced a
-    // working Windows executable -- `entire.exe version` reports `OS/Arch: windows/amd64`,
-    // `gitsign.exe --version` reports `gitsign version v0.17.1` -- while their `os` line still said
-    // linux and macos only.
+    // and then had whatever landed on disk executed. Five of them produced a working Windows
+    // executable -- `entire.exe version` reports `OS/Arch: windows/amd64`, `gitsign.exe --version`
+    // reports `gitsign version v0.17.1` -- while their `os` line still said linux and macos only.
+    // `acli`, `mimirtool` and `specstory` joined them later, measured the same way, once the
+    // vendored aqua snapshot stopped restricting them.
     //
     // Installing is not evidence on its own: eight more installed successfully and unpacked no
     // Windows executable at all (`libsql-server` extracts a source tarball), so they keep their
@@ -1101,22 +1102,22 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
             "go-swagger",
             "grpc-health-probe",
             "httpie-go",
+            "acli",
+            "mimirtool",
+            "specstory",
         ] {
             let rt = BAKED_REGISTRY.get(short).unwrap();
             assert!(rt.is_supported_os(), "{short}: os = {:?}", rt.os);
         }
 
         // The controls, and they are the point: this is not "remove every os list". Each was
-        // checked the same way and each stays. `kpt` ships no Windows asset at all. `acli` looked
-        // like a candidate until `mise install` answered `unsupported env: windows/amd64
-        // (supported: ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64"])` -- the aqua
-        // registry mise carries still restricts it, whatever the upstream one now says.
+        // checked the same way and each stays. `kpt` ships no Windows asset at all.
         //
         // `docker-slim` is a control twice over: it is also the fixture in
         // `e2e-win/exec_os_unsupported_tool.Tests.ps1`, which asserts the exact message mise prints
         // for a tool this platform is not listed for. Dropping its `os` line would leave that test
         // with nothing to observe, so it fails here first, by name.
-        for short in ["acli", "docker-slim", "kpt"] {
+        for short in ["docker-slim", "kpt"] {
             let rt = BAKED_REGISTRY.get(short).unwrap();
             assert!(!rt.is_supported_os(), "{short}: os = {:?}", rt.os);
         }
