@@ -106,10 +106,6 @@ Lint HK files
 
 - **Usage:** `perf`
 
-## `perf:cache-shim`
-
-- **Usage:** `perf:cache-shim`
-
 ## `perf:record`
 
 - **Usage:** `perf:record`

@@ -38,22 +38,8 @@ impl DepsProvider for ComposerDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "composer".to_string(),
-            args: vec!["install".to_string()],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "composer install".to_string()),
-        })
+        self.base
+            .install_command("composer", &["install"], "composer install")
     }
 
     fn applicability(&self) -> DepsProviderApplicability {

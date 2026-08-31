@@ -37,7 +37,7 @@ pub(crate) struct Uninstall {
 }
 
 impl Uninstall {
-    fn is_dry_run(&self) -> bool {
+    pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
 
@@ -59,7 +59,14 @@ impl Uninstall {
         let mpr = MultiProgressReport::get();
         let mut has_work = false;
         for (plugin, tv) in tool_versions {
-            if !plugin.is_version_installed(&config, &tv, true) {
+            // `is_version_installed` resolves the install path, so it says no for a link whose
+            // target is gone -- and that entry is precisely what someone running `uninstall` is
+            // trying to get rid of. Refusing it left the name occupied with no command able to
+            // free it. It is still not *installed*: this only decides whether there is something
+            // here to remove.
+            if !plugin.is_version_installed(&config, &tv, true)
+                && !file::entry_exists(tv.install_path())
+            {
                 warn!("{} is not installed", tv.style());
                 continue;
             }
@@ -76,6 +83,9 @@ impl Uninstall {
             if self.is_dry_run() {
                 pr.finish_with_message("uninstalled (dry-run)".into());
             } else {
+                if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
+                    warn!("failed to clear tool purgatory entry: {err:#}");
+                }
                 pr.finish_with_message("uninstalled".into());
             }
         }

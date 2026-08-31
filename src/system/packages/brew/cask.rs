@@ -739,11 +739,7 @@ impl BinaryArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
-            None => Path::new(&self.source)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_string)
-                .ok_or_else(|| eyre!("brew-cask: invalid binary source '{}'", self.source)),
+            None => Ok(file_name_str(Path::new(&self.source), "binary source")?.to_string()),
         }
     }
 
@@ -801,11 +797,7 @@ impl CompletionArtifact {
     fn target_name(&self) -> Result<String> {
         match &self.target {
             Some(target) => Ok(target.clone()),
-            None => Path::new(&self.source)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_string)
-                .ok_or_else(|| eyre!("brew-cask: invalid completion source '{}'", self.source)),
+            None => Ok(file_name_str(Path::new(&self.source), "completion source")?.to_string()),
         }
     }
 
@@ -2638,12 +2630,16 @@ fn generic_artifact_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
         .collect()
 }
 
-fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
+/// The receipt of the currently installed version, if there is one.
+fn previous_receipt(cask: &Cask) -> Result<Option<CaskReceipt>> {
     let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    let Some(receipt) = read_receipt(&version_dir)? else {
+    read_receipt(&caskroom_version_dir(&cask.token, &version))
+}
+
+fn previous_generic_targets(cask: &Cask) -> Result<Vec<CaskTargetRecord>> {
+    let Some(receipt) = previous_receipt(cask)? else {
         return Ok(Vec::new());
     };
     Ok(receipt
@@ -2936,19 +2932,11 @@ fn font_filename(font: &FontArtifact) -> Result<String> {
                         return Ok(relative.to_string_lossy().to_string());
                     }
                 }
-                return expanded_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .map(str::to_string)
-                    .ok_or_else(|| eyre!("brew-cask: invalid font target '{}'", target));
+                return Ok(file_name_str(expanded_path, "font target")?.to_string());
             }
             Ok(expanded)
         }
-        None => Path::new(&font.source)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(str::to_string)
-            .ok_or_else(|| eyre!("brew-cask: invalid font source '{}'", font.source)),
+        None => Ok(file_name_str(Path::new(&font.source), "font source")?.to_string()),
     }
 }
 
@@ -2969,11 +2957,7 @@ fn font_target_paths(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
 }
 
 fn previous_font_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    Ok(read_receipt(&version_dir)?
+    Ok(previous_receipt(cask)?
         .map(|receipt| receipt.fonts)
         .unwrap_or_default())
 }
@@ -4365,13 +4349,7 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
         return Ok(None);
     };
     let relative = Path::new(relative);
-    if relative.components().next().is_none()
-        || relative
-            .components()
-            .any(|component| !matches!(component, Component::Normal(_)))
-    {
-        bail!("brew-cask: APPDIR artifact '{source}' must stay below Applications");
-    }
+    reject_appdir_escape(relative, "APPDIR artifact", source)?;
     let Some(Component::Normal(bundle)) = relative.components().next() else {
         return Ok(None);
     };
@@ -4392,12 +4370,17 @@ fn appdir_artifact_source(source: &str, apps: &[AppArtifact]) -> Result<Option<P
     }
     matches.sort();
     matches.dedup();
-    match matches.as_slice() {
+    single_match(&matches, "APPDIR artifact", source)
+}
+
+/// `kind` and `name` build the ambiguity error, e.g. "brew-cask: APPDIR
+/// artifact 'x' is ambiguous: a, b".
+fn single_match(matches: &[PathBuf], kind: &str, name: &str) -> Result<Option<PathBuf>> {
+    match matches {
         [] => Ok(None),
         [path] => Ok(Some(path.clone())),
         _ => bail!(
-            "brew-cask: APPDIR artifact '{}' is ambiguous: {}",
-            source,
+            "brew-cask: {kind} '{name}' is ambiguous: {}",
             matches
                 .iter()
                 .map(|path| path.display().to_string())
@@ -4414,19 +4397,7 @@ fn find_generated_completion_file(root: &Path, executable: &str) -> Result<Optio
         return Ok(Some(direct));
     }
     let matches = find_file_artifacts(root, executable_path);
-    match matches.as_slice() {
-        [] => Ok(None),
-        [path] => Ok(Some(path.clone())),
-        _ => bail!(
-            "brew-cask: completion executable '{}' is ambiguous: {}",
-            executable,
-            matches
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    }
+    single_match(&matches, "completion executable", executable)
 }
 
 fn find_file_artifacts(root: &Path, name: &Path) -> Vec<PathBuf> {
@@ -4579,10 +4550,7 @@ fn default_completion_dir(shell: CompletionShell) -> PathBuf {
 }
 
 fn completion_filename(shell: CompletionShell, target_name: &str) -> Result<String> {
-    let filename = Path::new(target_name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| eyre!("brew-cask: invalid completion target '{target_name}'"))?;
+    let filename = file_name_str(Path::new(target_name), "completion target")?;
     let stem = Path::new(filename)
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -4650,11 +4618,7 @@ fn completion_target_paths(cask: &Cask, artifacts: &CaskArtifacts) -> Result<Vec
 }
 
 fn previous_completion_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    Ok(read_receipt(&version_dir)?
+    Ok(previous_receipt(cask)?
         .map(|receipt| receipt.completions)
         .unwrap_or_default())
 }
@@ -4869,6 +4833,19 @@ fn generated_caskroom_artifact(root: &Path, cask: &Cask, source: &str) -> Option
         return None;
     }
     Some(root.join(relative))
+}
+
+/// Rejects an empty relative path and any component that could climb out of
+/// `$APPDIR` (`..`, a root, a prefix).
+fn reject_appdir_escape(relative: &Path, kind: &str, name: &str) -> Result<()> {
+    if relative.components().next().is_none()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        bail!("brew-cask: {kind} '{name}' must stay below Applications");
+    }
+    Ok(())
 }
 
 fn resolve_symlink_target(link: &Path, target: PathBuf) -> PathBuf {
@@ -5174,50 +5151,49 @@ fn platform_unavailable_state(cask: &Cask, artifacts: &CaskArtifacts) -> Option<
         .map(|err| PackageState::unavailable(err.to_string()))
 }
 
+fn declared_target(value: &Value) -> Option<String> {
+    value
+        .as_object()
+        .and_then(|o| o.get("target"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
 fn artifact_target(value: &Value, values: &[Value]) -> Option<String> {
     values
         .get(1)
         .and_then(|v| v.as_object())
         .and_then(|o| o.get("target"))
-        .or_else(|| value.as_object().and_then(|o| o.get("target")))
         .and_then(Value::as_str)
         .map(str::to_string)
+        .or_else(|| declared_target(value))
+}
+
+/// The `source` and `target` of an artifact declared either as a bare string or
+/// as a `[source, {target: ...}]` pair. A bare string carries no target of its
+/// own; artifacts that accept a sibling `target` key add it themselves.
+fn artifact_source_target(value: &Value, artifact: &Value) -> Option<(String, Option<String>)> {
+    match artifact {
+        Value::String(source) => Some((source.clone(), None)),
+        Value::Array(values) => Some((
+            values.first()?.as_str()?.to_string(),
+            artifact_target(value, values),
+        )),
+        _ => None,
+    }
 }
 
 fn parse_app_artifact(value: &Value) -> Option<AppArtifact> {
-    let app = value.as_object()?.get("app")?;
-    match app {
-        Value::String(source) => Some(AppArtifact {
-            source: source.clone(),
-            target: None,
-        }),
-        Value::Array(values) => {
-            let source = values.first()?.as_str()?.to_string();
-            let target = artifact_target(value, values);
-            Some(AppArtifact { source, target })
-        }
-        _ => None,
-    }
+    let (source, target) = artifact_source_target(value, value.as_object()?.get("app")?)?;
+    Some(AppArtifact { source, target })
 }
 
 fn parse_binary_artifact(value: &Value) -> Option<BinaryArtifact> {
-    let binary = value.as_object()?.get("binary")?;
-    match binary {
-        Value::String(source) => Some(BinaryArtifact {
-            source: source.clone(),
-            target: value
-                .as_object()
-                .and_then(|o| o.get("target"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        }),
-        Value::Array(values) => {
-            let source = values.first()?.as_str()?.to_string();
-            let target = artifact_target(value, values);
-            Some(BinaryArtifact { source, target })
-        }
-        _ => None,
-    }
+    let (source, target) = artifact_source_target(value, value.as_object()?.get("binary")?)?;
+    Some(BinaryArtifact {
+        source,
+        target: target.or_else(|| declared_target(value)),
+    })
 }
 
 fn parse_command_wrapper_artifact(value: &Value) -> Result<Option<CommandWrapperArtifact>> {
@@ -5270,21 +5246,7 @@ fn parse_command_wrapper_artifact(value: &Value) -> Result<Option<CommandWrapper
         }
         _ => {}
     }
-    let args = options
-        .get("args")
-        .map(|args| {
-            args.as_array()
-                .ok_or_else(|| eyre!("brew-cask: command_wrapper args must be an array"))?
-                .iter()
-                .map(|arg| {
-                    arg.as_str()
-                        .map(str::to_string)
-                        .ok_or_else(|| eyre!("brew-cask: command_wrapper args must be strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let args = string_args(options, "command_wrapper")?;
     let env = options
         .get("env")
         .map(|env| {
@@ -5360,25 +5322,28 @@ fn parse_installer_artifact(value: &Value) -> Result<Option<InstallerArtifact>> 
         .get("executable")
         .and_then(Value::as_str)
         .ok_or_else(|| eyre!("brew-cask: installer script requires an executable"))?;
-    let args = script
-        .get("args")
-        .map(|args| {
-            args.as_array()
-                .ok_or_else(|| eyre!("brew-cask: installer script args must be an array"))?
-                .iter()
-                .map(|arg| {
-                    arg.as_str()
-                        .map(str::to_string)
-                        .ok_or_else(|| eyre!("brew-cask: installer script args must be strings"))
-                })
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+    let args = string_args(script, "installer script")?;
     Ok(Some(InstallerArtifact {
         executable: executable.to_string(),
         args,
     }))
+}
+
+/// `kind` names the declaring artifact, so errors read e.g. "installer script
+/// args must be an array".
+fn string_args(object: &serde_json::Map<String, Value>, kind: &str) -> Result<Vec<String>> {
+    let Some(args) = object.get("args") else {
+        return Ok(Vec::new());
+    };
+    args.as_array()
+        .ok_or_else(|| eyre!("brew-cask: {kind} args must be an array"))?
+        .iter()
+        .map(|arg| {
+            arg.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| eyre!("brew-cask: {kind} args must be strings"))
+        })
+        .collect()
 }
 
 fn reject_unsupported_artifact_fields(
@@ -5420,19 +5385,8 @@ fn parse_generic_artifact(value: &Value) -> Result<Option<GenericArtifact>> {
 }
 
 fn parse_font_artifact(value: &Value) -> Option<FontArtifact> {
-    let font = value.as_object()?.get("font")?;
-    match font {
-        Value::String(source) => Some(FontArtifact {
-            source: source.clone(),
-            target: None,
-        }),
-        Value::Array(values) => {
-            let source = values.first()?.as_str()?.to_string();
-            let target = artifact_target(value, values);
-            Some(FontArtifact { source, target })
-        }
-        _ => None,
-    }
+    let (source, target) = artifact_source_target(value, value.as_object()?.get("font")?)?;
+    Some(FontArtifact { source, target })
 }
 
 fn parse_completion_artifact(value: &Value) -> Result<Option<CompletionArtifact>> {
@@ -5454,28 +5408,14 @@ fn parse_declared_completion_artifact(
     completion: &Value,
     shell: CompletionShell,
 ) -> Result<Option<CompletionArtifact>> {
-    match completion {
-        Value::String(source) => Ok(Some(CompletionArtifact {
-            shell,
-            source: source.clone(),
-            target: value
-                .as_object()
-                .and_then(|o| o.get("target"))
-                .and_then(Value::as_str)
-                .map(str::to_string),
-        })),
-        Value::Array(values) => {
-            let Some(source) = values.first().and_then(Value::as_str) else {
-                return Ok(None);
-            };
-            Ok(Some(CompletionArtifact {
-                shell,
-                source: source.to_string(),
-                target: artifact_target(value, values),
-            }))
-        }
-        _ => Ok(None),
-    }
+    let Some((source, target)) = artifact_source_target(value, completion) else {
+        return Ok(None);
+    };
+    Ok(Some(CompletionArtifact {
+        shell,
+        source,
+        target: target.or_else(|| declared_target(value)),
+    }))
 }
 
 fn parse_generated_completion_artifact(
@@ -6395,11 +6335,15 @@ fn resolve_appdir(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-fn app_bundle_name(target_name: &str) -> Result<&str> {
-    Path::new(target_name)
-        .file_name()
+/// `kind` names what the path is, so the error reads e.g. "invalid app target".
+fn file_name_str<'a>(path: &'a Path, kind: &str) -> Result<&'a str> {
+    path.file_name()
         .and_then(|name| name.to_str())
-        .ok_or_else(|| eyre!("brew-cask: invalid app target '{target_name}'"))
+        .ok_or_else(|| eyre!("brew-cask: invalid {kind} '{}'", path.display()))
+}
+
+fn app_bundle_name(target_name: &str) -> Result<&str> {
+    file_name_str(Path::new(target_name), "app target")
 }
 
 /// Roots that a cask's `binary` artifact may legitimately symlink into.
@@ -6447,13 +6391,7 @@ fn binary_target_path(target_name: &str, appdir: &Path) -> Result<PathBuf> {
     }
     if let Some(relative) = target_name.strip_prefix("$APPDIR/") {
         let relative = Path::new(relative);
-        if relative.components().next().is_none()
-            || relative
-                .components()
-                .any(|component| !matches!(component, Component::Normal(_)))
-        {
-            bail!("brew-cask: binary $APPDIR target '{target_name}' must stay below Applications");
-        }
+        reject_appdir_escape(relative, "binary $APPDIR target", target_name)?;
         if !allowed_appdir_roots()?.iter().any(|root| root == appdir) {
             bail!("brew-cask: invalid appdir '{}'", appdir.display());
         }
@@ -6664,35 +6602,22 @@ fn binary_targets(artifacts: &CaskArtifacts) -> Result<Vec<PathBuf>> {
 }
 
 fn previous_binary_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    Ok(read_receipt(&version_dir)?
+    Ok(previous_receipt(cask)?
         .map(|receipt| receipt.binaries)
         .unwrap_or_default())
 }
 
 fn previous_flight_symlink_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    let Some(receipt) = read_receipt(&version_dir)? else {
+    let Some(receipt) = previous_receipt(cask)? else {
         return Ok(Vec::new());
     };
     receipt_flight_symlink_targets(&receipt)
 }
 
 fn previous_flight_directory_targets(cask: &Cask) -> Result<Vec<PathBuf>> {
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(Vec::new());
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    let Some(receipt) = read_receipt(&version_dir)? else {
-        return Ok(Vec::new());
-    };
-    Ok(receipt.flight_directories)
+    Ok(previous_receipt(cask)?
+        .map(|receipt| receipt.flight_directories)
+        .unwrap_or_default())
 }
 
 fn remove_obsolete_flight_directories(
@@ -6741,14 +6666,7 @@ fn remove_obsolete_binary_links(
         let Ok(link_target) = std::fs::read_link(target) else {
             continue;
         };
-        let resolved = if link_target.is_absolute() {
-            link_target
-        } else {
-            target
-                .parent()
-                .map(|parent| parent.join(&link_target))
-                .unwrap_or(link_target)
-        };
+        let resolved = resolve_symlink_target(target, link_target);
         if file::desymlink_path(&resolved).starts_with(&token_dir) {
             remove_artifact_target_elevating(target)?;
         }
@@ -6770,11 +6688,7 @@ fn installed_cask_version_in(cask: &Cask, state_dir: &Path) -> Result<Option<Str
     if cask_journal_pending_in(state_dir, &cask.token) {
         return Ok(None);
     }
-    let Some(version) = installed_version(&cask.token) else {
-        return Ok(None);
-    };
-    let version_dir = caskroom_version_dir(&cask.token, &version);
-    match read_receipt(&version_dir)? {
+    match previous_receipt(cask)? {
         Some(receipt) => {
             if receipt.schema_version > 3 {
                 return Ok(None);

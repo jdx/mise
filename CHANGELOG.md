@@ -1,5 +1,337 @@
 # Changelog
 
+## [2026.8.16](https://github.com/jdx/mise/compare/v2026.8.15..v2026.8.16) - 2026-08-31
+
+### 🚀 Features
+
+- **(shims)** add command wrappers by @jdx in [#12617](https://github.com/jdx/mise/pull/12617)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** respect jobs for repo status checks by @jdx in [#12629](https://github.com/jdx/mise/pull/12629)
+- **(elvish)** write elvish's quoting rules, not bash's by @JamBalaya56562 in [#12584](https://github.com/jdx/mise/pull/12584)
+- **(fish)** split PATH on the host's separator, not always ':' by @JamBalaya56562 in [#12582](https://github.com/jdx/mise/pull/12582)
+- **(http)** list the platform keys a tool actually declares by @JamBalaya56562 in [#12580](https://github.com/jdx/mise/pull/12580)
+- **(npm)** isolate aube installs from enclosing workspaces by @jdx in [#12630](https://github.com/jdx/mise/pull/12630)
+- **(task)** preserve double-dash task arguments by @jdx in [#12628](https://github.com/jdx/mise/pull/12628)
+- **(upgrade)** show versions outside configured ranges by @jdx in [#12613](https://github.com/jdx/mise/pull/12613)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#12618](https://github.com/jdx/mise/pull/12618)
+
+### 📦 Registry
+
+- include llama.cpp prereleases by @jdx in [#12614](https://github.com/jdx/mise/pull/12614)
+- drop three more os limits aqua no longer restricts by @JamBalaya56562 in [#12627](https://github.com/jdx/mise/pull/12627)
+
+### Chore
+
+- **(ci)** fail closed without notarization credentials by @jdx in [#12612](https://github.com/jdx/mise/pull/12612)
+- **(ci)** restore mbx remote cache by @jdx in [#12587](https://github.com/jdx/mise/pull/12587)
+- adopt mr-boxington 1.1 cargo shim by @jdx in [#12615](https://github.com/jdx/mise/pull/12615)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (14)
+
+- [`FairwindsOps/gonogo`](https://github.com/FairwindsOps/gonogo)
+- [`GhostTroops/scan4all`](https://github.com/GhostTroops/scan4all)
+- [`arxanas/git-branchless`](https://github.com/arxanas/git-branchless)
+- [`aws/amazon-ec2-spot-interrupter`](https://github.com/aws/amazon-ec2-spot-interrupter)
+- [`bahdotsh/wrkflw`](https://github.com/bahdotsh/wrkflw)
+- [`bengadbois/pewpew`](https://github.com/bengadbois/pewpew)
+- [`cyberark/kubeletctl`](https://github.com/cyberark/kubeletctl)
+- [`gittower/git-flow-next`](https://github.com/gittower/git-flow-next)
+- [`hashicorp/vagrant/vagrant-go`](https://github.com/hashicorp/vagrant)
+- [`muquit/mailsend-go`](https://github.com/muquit/mailsend-go)
+- [`openvex/vexctl`](https://github.com/openvex/vexctl)
+- [`ryane/kfilt`](https://github.com/ryane/kfilt)
+- [`timvisee/ffsend`](https://github.com/timvisee/ffsend)
+- [`wfxr/csview`](https://github.com/wfxr/csview)
+
+## [2026.8.15](https://github.com/jdx/mise/compare/v2026.8.14..v2026.8.15) - 2026-08-30
+
+### 🚀 Features
+
+- **(bootstrap)** clone setup repository before bootstrap by @jdx in [#12525](https://github.com/jdx/mise/pull/12525)
+- **(config)** expose the config file's own path to templates by @Marukome0743 in [#12454](https://github.com/jdx/mise/pull/12454)
+- **(config)** support scoped collection updates by @jdx in [#12603](https://github.com/jdx/mise/pull/12603)
+- **(dotfiles)** add diff command by @jdx in [#12511](https://github.com/jdx/mise/pull/12511)
+- **(dotfiles)** capture changed copy targets by @jdx in [#12512](https://github.com/jdx/mise/pull/12512)
+- **(dotfiles)** support git-tracked directory manifests by @jdx in [#12523](https://github.com/jdx/mise/pull/12523)
+- **(dotfiles)** reconcile profile source switches by @jdx in [#12524](https://github.com/jdx/mise/pull/12524)
+- **(outdated)** report the release page URL in --json by @Marukome0743 in [#12494](https://github.com/jdx/mise/pull/12494)
+- **(task)** let task_source_files return only what changed by @Marukome0743 in [#12470](https://github.com/jdx/mise/pull/12470)
+
+### 🐛 Bug Fixes
+
+- **(activate)** keep pwsh deactivation preamble out of $Error by @JamBalaya56562 in [#12483](https://github.com/jdx/mise/pull/12483)
+- **(azure)** include pip for CLI extension support by @esteve in [#12555](https://github.com/jdx/mise/pull/12555)
+- **(backend)** detect rolling updates behind versions host by @jdx in [#12440](https://github.com/jdx/mise/pull/12440)
+- **(bootstrap)** preserve brew cask dependencies during prune by @jdx in [#12461](https://github.com/jdx/mise/pull/12461)
+- **(ci)** keep release builds on one compiler path by @jdx in [#12536](https://github.com/jdx/mise/pull/12536)
+- **(ci)** use large release runners for mise-en-dev by @jdx in [#12601](https://github.com/jdx/mise/pull/12601)
+- **(config)** merge minimum release age exclusions by @jdx in [#12460](https://github.com/jdx/mise/pull/12460)
+- **(config)** preserve request-specific tool options by @risu729 in [#12060](https://github.com/jdx/mise/pull/12060)
+- **(config)** resolve a bare tool_alias value through the registry by @Marukome0743 in [#12506](https://github.com/jdx/mise/pull/12506)
+- **(copr)** restore parallel Rust codegen by @jdx in [#12505](https://github.com/jdx/mise/pull/12505)
+- **(doctor)** gate self-update leftover check by @salim-b in [#12438](https://github.com/jdx/mise/pull/12438)
+- **(env,tasks)** stop discarding files Windows' own shell wrote as UTF-16 by @JamBalaya56562 in [#12507](https://github.com/jdx/mise/pull/12507)
+- **(exec)** say when a tool is not available on this platform by @JamBalaya56562 in [#12547](https://github.com/jdx/mise/pull/12547)
+- **(file)** silence chunks_exact_to_as_chunks in decode_text by @JamBalaya56562 in [#12449](https://github.com/jdx/mise/pull/12449)
+- **(file)** remove a link whose target is gone by @JamBalaya56562 in [#12468](https://github.com/jdx/mise/pull/12468)
+- **(generate)** deliver Windows launcher arguments intact by @JamBalaya56562 in [#12463](https://github.com/jdx/mise/pull/12463)
+- **(generate)** say when a --mise-bin path has no Windows launcher by @JamBalaya56562 in [#12496](https://github.com/jdx/mise/pull/12496)
+- **(github)** retry stale cached attestations by @jdx in [#12495](https://github.com/jdx/mise/pull/12495)
+- **(http)** copy raw binaries on Windows, where a junction cannot name a file by @Marukome0743 in [#12465](https://github.com/jdx/mise/pull/12465)
+- **(http)** explain a download that fails because the path is too long by @JamBalaya56562 in [#12550](https://github.com/jdx/mise/pull/12550)
+- **(install)** stop --dry-run claiming it would install what it cannot by @JamBalaya56562 in [#12568](https://github.com/jdx/mise/pull/12568)
+- **(link)** show and allow removing a link whose target is gone by @JamBalaya56562 in [#12469](https://github.com/jdx/mise/pull/12469)
+- **(lockfile)** break version ties when a legacy lockfile answers latest by @Marukome0743 in [#12583](https://github.com/jdx/mise/pull/12583)
+- **(lockfile)** ignore links from other backends by @jdx in [#12605](https://github.com/jdx/mise/pull/12605)
+- **(ls-remote)** fail on recorded listing errors by @jdx in [#12551](https://github.com/jdx/mise/pull/12551)
+- **(monorepo)** resolve idiomatic version files from the task's own config root by @kaii-zen in [#12565](https://github.com/jdx/mise/pull/12565)
+- **(npm)** repair dangling aube tool installs by @jdx in [#12570](https://github.com/jdx/mise/pull/12570)
+- **(registry)** let windows/arm64 use x64 backends, as aqua already does by @JamBalaya56562 in [#12560](https://github.com/jdx/mise/pull/12560)
+- **(schema)** mark ignored install hook shell as deprecated by @risu729 in [#12522](https://github.com/jdx/mise/pull/12522)
+- **(schema)** accept all backend and platform values in registry schema by @risu729 in [#12520](https://github.com/jdx/mise/pull/12520)
+- **(schema)** allow data and cache-key on all plugin script tables by @risu729 in [#12514](https://github.com/jdx/mise/pull/12514)
+- **(schema)** model minimum_release_age and version_order tool options by @risu729 in [#12527](https://github.com/jdx/mise/pull/12527)
+- **(schema)** align settings meta-schema with build consumers by @risu729 in [#12515](https://github.com/jdx/mise/pull/12515)
+- **(shim)** skip non-executable system fallbacks by @jdx in [#12545](https://github.com/jdx/mise/pull/12545)
+- **(shims)** deliver "file"-mode shim arguments intact by @JamBalaya56562 in [#12502](https://github.com/jdx/mise/pull/12502)
+- **(task)** give injected dependencies keep-order slots by @Marukome0743 in [#12450](https://github.com/jdx/mise/pull/12450)
+- **(task)** cascade task inputs from defining roots by @jrandolf in [#12482](https://github.com/jdx/mise/pull/12482)
+- **(task)** skip a task path that links back into itself by @JamBalaya56562 in [#12510](https://github.com/jdx/mise/pull/12510)
+- **(task)** order what a printing parent injects by its own slot by @Marukome0743 in [#12466](https://github.com/jdx/mise/pull/12466)
+- **(task)** suppress `taskkill` output on Windows by @sortA0329 in [#12563](https://github.com/jdx/mise/pull/12563)
+- **(test-tool)** fail when no versions resolve by @jdx in [#12490](https://github.com/jdx/mise/pull/12490)
+- **(trust)** read the ignore list by what its entries point at by @JamBalaya56562 in [#12428](https://github.com/jdx/mise/pull/12428)
+- **(upgrade)** defer pruning replaced tool versions by @jdx in [#12593](https://github.com/jdx/mise/pull/12593)
+- **(watch)** restore the terminal when the process is signalled by @Marukome0743 in [#12451](https://github.com/jdx/mise/pull/12451)
+
+### 🚜 Refactor
+
+- **(brew-cask)** extract open_dir_nofollow_at helper by @seuros in [#12446](https://github.com/jdx/mise/pull/12446)
+- **(brew-cask)** add CaskReceipt::standard_targets by @seuros in [#12453](https://github.com/jdx/mise/pull/12453)
+- **(brew-cask)** extract flight_guards_pass helper by @seuros in [#12456](https://github.com/jdx/mise/pull/12456)
+- **(brew-cask)** add app_target_paths and reuse font_target_paths by @seuros in [#12464](https://github.com/jdx/mise/pull/12464)
+- **(brew-cask)** dedupe prefix expansion and symlink walks by @seuros in [#12458](https://github.com/jdx/mise/pull/12458)
+- **(brew-cask)** extract previous_receipt helper by @seuros in [#12471](https://github.com/jdx/mise/pull/12471)
+- **(brew-cask)** extract file_name_str for basename lookups by @seuros in [#12467](https://github.com/jdx/mise/pull/12467)
+- **(brew-cask)** share artifact source/target parsing by @seuros in [#12473](https://github.com/jdx/mise/pull/12473)
+- **(brew-cask)** share artifact path helpers by @seuros in [#12474](https://github.com/jdx/mise/pull/12474)
+- **(brew-cask)** share artifact args parsing by @seuros in [#12472](https://github.com/jdx/mise/pull/12472)
+- **(config)** track config provenance by @jdx in [#12606](https://github.com/jdx/mise/pull/12606)
+- **(deps)** share provider command construction by @seuros in [#12513](https://github.com/jdx/mise/pull/12513)
+- **(system)** share platform-independent service config by @seuros in [#12479](https://github.com/jdx/mise/pull/12479)
+- **(task)** remove built-in Rust action cache by @jdx in [#12509](https://github.com/jdx/mise/pull/12509)
+- **(toolset)** drop duplicate toml scalar conversion by @seuros in [#12519](https://github.com/jdx/mise/pull/12519)
+- share os/arch selector normalization helpers by @risu729 in [#12493](https://github.com/jdx/mise/pull/12493)
+
+### ⚡ Performance
+
+- **(brew)** download bootstrap bottles concurrently by @jdx in [#12604](https://github.com/jdx/mise/pull/12604)
+- **(ci)** run clippy passes in parallel by @jdx in [#12586](https://github.com/jdx/mise/pull/12586)
+
+### 🧪 Testing
+
+- **(e2e)** avoid pinning live shfmt release by @risu729 in [#12595](https://github.com/jdx/mise/pull/12595)
+- **(env)** replace the argument-less format! calls clippy now rejects by @Marukome0743 in [#12455](https://github.com/jdx/mise/pull/12455)
+- **(http)** make DNS failure test deterministic by @jdx in [#12447](https://github.com/jdx/mise/pull/12447)
+
+### 📦️ Dependency Updates
+
+- update ghcr.io/jdx/mise:alpine docker digest to 778c88e by @renovate[bot] in [#12441](https://github.com/jdx/mise/pull/12441)
+- update ghcr.io/jdx/mise:deb docker digest to cf0109d by @renovate[bot] in [#12442](https://github.com/jdx/mise/pull/12442)
+- update ghcr.io/jdx/mise:rpm docker digest to 571a372 by @renovate[bot] in [#12443](https://github.com/jdx/mise/pull/12443)
+- update dependency usage to v6.4.1 by @renovate[bot] in [#12445](https://github.com/jdx/mise/pull/12445)
+- update rust crate usage-lib to v6.4.1 by @renovate[bot] in [#12353](https://github.com/jdx/mise/pull/12353)
+- update rust crate usage-cli to v6.4.1 by @renovate[bot] in [#12378](https://github.com/jdx/mise/pull/12378)
+- bump tak and mbx by @jdx in [#12499](https://github.com/jdx/mise/pull/12499)
+- update jdx-tar to 1.1.1 by @jdx in [#12544](https://github.com/jdx/mise/pull/12544)
+- update rust crate usage-lib to v6.5.0 by @renovate[bot] in [#12557](https://github.com/jdx/mise/pull/12557)
+- bump usage to 6.5.0 by @jdx in [#12558](https://github.com/jdx/mise/pull/12558)
+- update aube to 2.2.1 by @jdx in [#12576](https://github.com/jdx/mise/pull/12576)
+- update rust crate aube to v2.2.2 by @renovate[bot] in [#12347](https://github.com/jdx/mise/pull/12347)
+- update rust crate aube-registry to v2.2.2 by @renovate[bot] in [#12577](https://github.com/jdx/mise/pull/12577)
+- update rust crate aube to v2.2.3 by @renovate[bot] in [#12591](https://github.com/jdx/mise/pull/12591)
+- update rust crate aube-registry to v2.2.3 by @renovate[bot] in [#12592](https://github.com/jdx/mise/pull/12592)
+
+### 📦 Registry
+
+- add pkgx ([github:pkgxdev/pkgx](https://github.com/pkgxdev/pkgx)) by @i-api in [#12272](https://github.com/jdx/mise/pull/12272)
+- add onefetch ([github:o2sh/onefetch](https://github.com/o2sh/onefetch)) by @i-api in [#12437](https://github.com/jdx/mise/pull/12437)
+- add syncthing ([github:syncthing/syncthing](https://github.com/syncthing/syncthing)) by @i-api in [#12448](https://github.com/jdx/mise/pull/12448)
+- drop unused depends from schemacrawler by @risu729 in [#12336](https://github.com/jdx/mise/pull/12336)
+- drop unused bin from longbridge-terminal by @risu729 in [#12337](https://github.com/jdx/mise/pull/12337)
+- add ols ([github:DanielGavin/ols](https://github.com/DanielGavin/ols)) by @i-api in [#12484](https://github.com/jdx/mise/pull/12484)
+- Add spin-framework by @ThorstenHans in [#12485](https://github.com/jdx/mise/pull/12485)
+- add cursor-agent (http:cursor-agent) by @pb3975 in [#12478](https://github.com/jdx/mise/pull/12478)
+- drop perl depends from cloc by @risu729 in [#12335](https://github.com/jdx/mise/pull/12335)
+- add 7zip ([github:ip7z/7zip](https://github.com/ip7z/7zip)) by @i-api in [#12486](https://github.com/jdx/mise/pull/12486)
+- add mosh (conda:mosh) by @i-api in [#12532](https://github.com/jdx/mise/pull/12532)
+- add pastel ([github:sharkdp/pastel](https://github.com/sharkdp/pastel)) by @i-api in [#12535](https://github.com/jdx/mise/pull/12535)
+- add broot ([github:canop/broot](https://github.com/canop/broot)) by @i-api in [#12533](https://github.com/jdx/mise/pull/12533)
+- drop os limits that no longer match what installs by @JamBalaya56562 in [#12552](https://github.com/jdx/mise/pull/12552)
+- install magika from its github releases by @Marukome0743 in [#12553](https://github.com/jdx/mise/pull/12553)
+- install sbt from its github releases by @Marukome0743 in [#12567](https://github.com/jdx/mise/pull/12567)
+- add exiftool (conda:exiftool) by @i-api in [#12538](https://github.com/jdx/mise/pull/12538)
+- add spotify-player ([github:aome510/spotify-player](https://github.com/aome510/spotify-player)) by @i-api in [#12539](https://github.com/jdx/mise/pull/12539)
+- add yt-dlp-nightly ([github:yt-dlp/yt-dlp-nightly-builds](https://github.com/yt-dlp/yt-dlp-nightly-builds)) by @i-api in [#12542](https://github.com/jdx/mise/pull/12542)
+- fix conform rustfs and kiro-cli resolution by @jdx in [#12579](https://github.com/jdx/mise/pull/12579)
+- add cliamp ([github:bjarneo/cliamp](https://github.com/bjarneo/cliamp)) by @i-api in [#12581](https://github.com/jdx/mise/pull/12581)
+- avoid editorconfig-checker version assertion by @jdx in [#12589](https://github.com/jdx/mise/pull/12589)
+
+### Chore
+
+- **(ci)** adopt mbx for Rust builds by @jdx in [#12405](https://github.com/jdx/mise/pull/12405)
+- **(ci)** compare mbx with rust-cache by @jdx in [#12477](https://github.com/jdx/mise/pull/12477)
+- **(ci)** adopt mbx 0.5.4 by @jdx in [#12534](https://github.com/jdx/mise/pull/12534)
+- **(ci)** pin mr-boxington-action v1.0.1 by @jdx in [#12537](https://github.com/jdx/mise/pull/12537)
+- **(ci)** bump mr-boxington action by @jdx in [#12548](https://github.com/jdx/mise/pull/12548)
+- **(ci)** update mbx to 0.6.0 by @jdx in [#12554](https://github.com/jdx/mise/pull/12554)
+- **(ci)** use server cache for dispatched benchmarks by @jdx in [#12562](https://github.com/jdx/mise/pull/12562)
+- **(ci)** adopt mbx 0.7.0 by @jdx in [#12571](https://github.com/jdx/mise/pull/12571)
+- **(release)** support BSD tar ownership flags by @jdx in [#12585](https://github.com/jdx/mise/pull/12585)
+
+### Ci
+
+- **(docs)** skip the docs gate on forks, as its own jobs already are by @JamBalaya56562 in [#12498](https://github.com/jdx/mise/pull/12498)
+- seed mbx cache for fork PRs by @jdx in [#12459](https://github.com/jdx/mise/pull/12459)
+- notarize the macOS release binary by @jdx in [#12475](https://github.com/jdx/mise/pull/12475)
+- benchmark mbx against rust-cache on Linux by @jdx in [#12500](https://github.com/jdx/mise/pull/12500)
+- back mbx with the GitHub Actions cache alone by @jdx in [#12575](https://github.com/jdx/mise/pull/12575)
+
+### Registry
+
+- **(pre-commit)** use the pipx backend on Windows, as aws-sam does by @JamBalaya56562 in [#12549](https://github.com/jdx/mise/pull/12549)
+
+### New Contributors
+
+- @sortA0329 made their first contribution in [#12563](https://github.com/jdx/mise/pull/12563)
+- @seuros made their first contribution in [#12519](https://github.com/jdx/mise/pull/12519)
+- @pb3975 made their first contribution in [#12478](https://github.com/jdx/mise/pull/12478)
+- @ThorstenHans made their first contribution in [#12485](https://github.com/jdx/mise/pull/12485)
+
+### 📦 Aqua Registry Updates
+
+#### New Packages (7)
+
+- [`Gentleman-Programming/engram`](https://github.com/Gentleman-Programming/engram)
+- [`Gentleman-Programming/gentle-ai`](https://github.com/Gentleman-Programming/gentle-ai)
+- [`PSU3D0/agent-spreadsheet`](https://github.com/PSU3D0/agent-spreadsheet)
+- [`abemedia/stagelint`](https://github.com/abemedia/stagelint)
+- [`bgreenwell/lstr`](https://github.com/bgreenwell/lstr)
+- [`qpdf/qpdf`](https://github.com/qpdf/qpdf)
+- [`trailbaseio/trailbase`](https://github.com/trailbaseio/trailbase)
+
+#### Updated Packages (102)
+
+- [`Byron/dua-cli`](https://github.com/Byron/dua-cli)
+- [`CrociDB/bulletty`](https://github.com/CrociDB/bulletty)
+- [`GitGuardian/ggshield`](https://github.com/GitGuardian/ggshield)
+- [`GitTools/GitVersion`](https://github.com/GitTools/GitVersion)
+- [`GoogleContainerTools/skaffold`](https://github.com/GoogleContainerTools/skaffold)
+- [`Lifailon/lazyjournal`](https://github.com/Lifailon/lazyjournal)
+- [`OpenRouterLabs/ori-releases`](https://github.com/OpenRouterLabs/ori-releases)
+- [`Skardyy/mcat`](https://github.com/Skardyy/mcat)
+- [`StanMarek/ghost-complete`](https://github.com/StanMarek/ghost-complete)
+- [`TimothyYe/skm`](https://github.com/TimothyYe/skm)
+- [`WebAssembly/binaryen`](https://github.com/WebAssembly/binaryen)
+- [`amalshaji/portr`](https://github.com/amalshaji/portr)
+- [`amber-lang/amber`](https://github.com/amber-lang/amber)
+- [`apple/pkl-go/pkl-gen-go`](https://github.com/apple/pkl-go)
+- [`ariga/atlas/community`](https://github.com/ariga/atlas)
+- [`atlassian.com/acli`](https://github.com/ryan-pip/acli-versions)
+- [`aws/amazon-ecs-cli`](https://github.com/aws/amazon-ecs-cli)
+- [`blacknon/hwatch`](https://github.com/blacknon/hwatch)
+- [`bmf-san/ggc`](https://github.com/bmf-san/ggc)
+- [`cargo-bins/cargo-binstall`](https://github.com/cargo-bins/cargo-binstall)
+- [`cloudfoundry/uaa-cli`](https://github.com/cloudfoundry/uaa-cli)
+- [`clowdhaus/eksup`](https://github.com/clowdhaus/eksup)
+- [`coder/coder`](https://github.com/coder/coder)
+- [`colbymchenry/codegraph`](https://github.com/colbymchenry/codegraph)
+- [`containers/conmon`](https://github.com/containers/conmon)
+- [`controlplaneio-fluxcd/flux-operator`](https://github.com/controlplaneio-fluxcd/flux-operator)
+- [`controlplaneio-fluxcd/flux-operator/flux-operator-mcp`](https://github.com/controlplaneio-fluxcd/flux-operator)
+- [`crates.io/dd-rust-license-tool`](https://github.com/DataDog/rust-license-tool)
+- [`crates.io/rjo`](https://github.com/dskkato/rjo)
+- [`dex4er/tf`](https://github.com/dex4er/tf)
+- [`docker/buildx`](https://github.com/docker/buildx)
+- [`docker/cli/rootless`](https://github.com/docker/cli)
+- [`dthagard/tforganize`](https://github.com/dthagard/tforganize)
+- [`eza-community/eza`](https://github.com/eza-community/eza)
+- [`foundry-rs/foundry`](https://github.com/foundry-rs/foundry)
+- [`gastownhall/beads`](https://github.com/gastownhall/beads)
+- [`getdbt.com/dbt-fusion`](https://github.com/ryan-pip/dbt-fusion-versions)
+- [`github/gh-ost`](https://github.com/github/gh-ost)
+- [`gittuf/gittuf`](https://github.com/gittuf/gittuf)
+- [`gleam-lang/gleam`](https://github.com/gleam-lang/gleam)
+- [`go-delve/delve`](https://github.com/go-delve/delve)
+- [`go-simpler/sloglint`](https://github.com/go-simpler/sloglint)
+- [`goccy/bigquery-emulator`](https://github.com/goccy/bigquery-emulator)
+- [`gogs/gogs`](https://github.com/gogs/gogs)
+- [`graelo/pumas`](https://github.com/graelo/pumas)
+- [`grafana/flint`](https://github.com/grafana/flint)
+- [`grafana/mimir/mimirtool`](https://github.com/grafana/mimir)
+- [`gravitational/teleport`](https://github.com/gravitational/teleport)
+- [`gurgeous/tennis`](https://github.com/gurgeous/tennis)
+- [`hadolint/hadolint`](https://github.com/hadolint/hadolint)
+- [`herdrdev/herdr`](https://github.com/herdrdev/herdr)
+- [`hirosassa/ksnotify`](https://github.com/hirosassa/ksnotify)
+- [`homeport/dyff`](https://github.com/homeport/dyff)
+- [`in-toto/in-toto-golang`](https://github.com/in-toto/in-toto-golang)
+- [`in-toto/witness`](https://github.com/in-toto/witness)
+- [`interlynk-io/sbomqs`](https://github.com/interlynk-io/sbomqs)
+- [`jdx/aube`](https://github.com/jdx/aube)
+- [`kreuzwerker/m1-terraform-provider-helper`](https://github.com/kreuzwerker/m1-terraform-provider-helper)
+- [`kubernetes-sigs/zeitgeist`](https://github.com/kubernetes-sigs/zeitgeist)
+- [`lima-vm/lima`](https://github.com/lima-vm/lima)
+- [`lintnet/lintnet`](https://github.com/lintnet/lintnet)
+- [`lxc/incus`](https://github.com/lxc/incus)
+- [`masutaka/github-nippou`](https://github.com/masutaka/github-nippou)
+- [`matteo-sung/lockvet`](https://github.com/matteo-sung/lockvet)
+- [`mekedron/wolt-cli`](https://github.com/mekedron/wolt-cli)
+- [`mercari/tfnotify`](https://github.com/mercari/tfnotify)
+- [`metalbear-co/mirrord`](https://github.com/metalbear-co/mirrord)
+- [`moncho/dry`](https://github.com/moncho/dry)
+- [`openziti/zrok`](https://github.com/openziti/zrok)
+- [`ouch-org/ouch`](https://github.com/ouch-org/ouch)
+- [`pgrok/pgrok/pgrok`](https://github.com/pgrok/pgrok)
+- [`pgrok/pgrok/pgrokd`](https://github.com/pgrok/pgrok)
+- [`pnpm/pnpm`](https://github.com/pnpm/pnpm)
+- [`projectdiscovery/naabu`](https://github.com/projectdiscovery/naabu)
+- [`qarmin/czkawka`](https://github.com/qarmin/czkawka)
+- [`ricoberger/grafana-kubernetes-plugin`](https://github.com/ricoberger/grafana-kubernetes-plugin)
+- [`rui314/mold`](https://github.com/rui314/mold)
+- [`rustic-rs/rustic`](https://github.com/rustic-rs/rustic)
+- [`rvben/rumdl`](https://github.com/rvben/rumdl)
+- [`santosr2/TerraTidy`](https://github.com/santosr2/TerraTidy)
+- [`securego/gosec`](https://github.com/securego/gosec)
+- [`segmentio/topicctl`](https://github.com/segmentio/topicctl)
+- [`skaji/relocatable-perl`](https://github.com/skaji/relocatable-perl)
+- [`slsa-framework/slsa-github-generator/slsa-builder-go`](https://github.com/slsa-framework/slsa-github-generator)
+- [`smallstep/certificates`](https://github.com/smallstep/certificates)
+- [`specstoryai/getspecstory`](https://github.com/specstoryai/getspecstory)
+- [`squat/kilo`](https://github.com/squat/kilo)
+- [`stefanprodan/timoni`](https://github.com/stefanprodan/timoni)
+- [`supernovae-st/nika`](https://github.com/supernovae-st/nika)
+- [`taiki-e/cargo-llvm-cov`](https://github.com/taiki-e/cargo-llvm-cov)
+- [`terramate-io/terramate`](https://github.com/terramate-io/terramate)
+- [`terraprovider/statebridge`](https://github.com/terraprovider/statebridge)
+- [`truffleruby/truffleruby/community-native`](https://github.com/truffleruby/truffleruby)
+- [`truffleruby/truffleruby/oracle-native`](https://github.com/truffleruby/truffleruby)
+- [`updatecli/updatecli`](https://github.com/updatecli/updatecli)
+- [`uutils/coreutils`](https://github.com/uutils/coreutils)
+- [`veeso/termscp`](https://github.com/veeso/termscp)
+- [`wasilibs/go-yamllint`](https://github.com/wasilibs/go-yamllint)
+- [`wasmCloud/wasmCloud/wash`](https://github.com/wasmCloud/wasmCloud)
+- [`wasmerio/wasmer`](https://github.com/wasmerio/wasmer)
+- [`yorukot/superfile`](https://github.com/yorukot/superfile)
+- [`zmap/zlint`](https://github.com/zmap/zlint)
+
 ## [2026.8.14](https://github.com/jdx/mise/compare/v2026.8.13..v2026.8.14) - 2026-08-25
 
 ### 🐛 Bug Fixes

@@ -16,7 +16,7 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::registry::REGISTRY;
 use crate::toolset::{
     ConfigScope, InstallOptions, ResolveOptions, ToolRequest, ToolSource, ToolVersion,
-    ToolsetBuilder,
+    ToolVersionOptions, ToolsetBuilder,
 };
 use crate::ui::ctrlc;
 use crate::{config, env, exit, file};
@@ -48,16 +48,8 @@ use crate::{config, env, exit, file};
     unknown_flags = "error"
 )]
 pub(crate) struct Use {
-    /// Tool(s) to add to config file
-    ///
-    /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
-    /// If no version is specified, it will default to @latest
-    ///
-    /// Tool options can be set with this syntax:
-    ///
-    ///     mise use ubi:BurntSushi/ripgrep[exe=rg]
-    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
-    tool: Vec<ToolArg>,
+    #[usage(clause)]
+    tools: Vec<UseTool>,
 
     /// Create/modify an environment-specific config file like .mise.<env>.toml
     #[usage(long, short, overrides = & ["global", "path"])]
@@ -132,16 +124,42 @@ pub(crate) struct Use {
     remove: Vec<BackendArg>,
 }
 
+#[derive(Debug, usage_rs::Args)]
+struct UseTool {
+    /// Command to run after installing this tool
+    #[usage(long, value_name = "COMMAND")]
+    postinstall: Option<String>,
+
+    /// Tool to add to config file
+    ///
+    /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
+    /// If no version is specified, it will default to @latest
+    ///
+    /// Tool options can be set with this syntax:
+    ///
+    ///     mise use ubi:BurntSushi/ripgrep[exe=rg]
+    #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
+    tool: ToolArg,
+}
+
 impl Use {
-    fn is_dry_run(&self) -> bool {
+    pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
 
     pub(crate) async fn run(mut self) -> Result<()> {
-        if self.tool.is_empty() && self.remove.is_empty() {
-            self.tool = vec![self.tool_selector()?];
+        if self.tools.is_empty() && self.remove.is_empty() {
+            self.tools = vec![UseTool {
+                postinstall: None,
+                tool: self.tool_selector()?,
+            }];
         }
-        env::TOOL_ARGS.write().unwrap().clone_from(&self.tool);
+        let tool_args = self
+            .tools
+            .iter()
+            .map(|target| target.tool.clone())
+            .collect::<Vec<_>>();
+        env::TOOL_ARGS.write().unwrap().clone_from(&tool_args);
         let mut config = Config::get().await?;
         let scope = if self.global {
             ConfigScope::GlobalOnly
@@ -153,6 +171,11 @@ impl Use {
             .build(&config)
             .await?;
         let mut cf = self.get_config_file().await?;
+        if self.tools.iter().any(|target| target.postinstall.is_some())
+            && !matches!(cf.source(), ToolSource::MiseToml(_))
+        {
+            bail!("--postinstall requires a TOML config file");
+        }
         let pin = self.pin || !self.fuzzy && (Settings::get().pin || Settings::get().asdf_compat);
         let mut resolve_options = ResolveOptions {
             latest_versions: false,
@@ -167,24 +190,51 @@ impl Use {
             inactive: false,
         };
         let versions: Vec<_> = self
-            .tool
+            .tools
             .iter()
-            .cloned()
-            .map(|t| match t.tvr {
-                Some(tvr) => {
-                    if tvr.version() == "latest" && !Settings::get().locked {
-                        // user specified `@latest` so we should resolve the latest version
-                        // TODO: this should only happen on this tool, not all of them
-                        resolve_options.latest_versions = true;
-                        resolve_options.use_locked_version = false;
-                    }
-                    Ok(tvr)
+            .map(|target| {
+                if target.postinstall.is_some()
+                    && target
+                        .tool
+                        .ba
+                        .explicit_opts()
+                        .is_some_and(|options| options.contains_key("postinstall"))
+                {
+                    bail!(
+                        "cannot combine --postinstall with an inline postinstall option for {}",
+                        target.tool
+                    );
                 }
-                None => ToolRequest::new(
-                    t.ba,
-                    "latest",
-                    ToolSource::MiseToml(cf.get_path().to_path_buf()),
-                ),
+                let mut request_options = ToolVersionOptions::default();
+                if let Some(command) = &target.postinstall {
+                    request_options
+                        .insert_option(
+                            "postinstall".to_string(),
+                            toml::Value::String(command.clone()),
+                        )
+                        .map_err(|error| eyre!(error))?;
+                }
+                match target.tool.tvr.clone() {
+                    Some(tvr) => {
+                        if tvr.version() == "latest" && !Settings::get().locked {
+                            // user specified `@latest` so we should resolve the latest version
+                            // TODO: this should only happen on this tool, not all of them
+                            resolve_options.latest_versions = true;
+                            resolve_options.use_locked_version = false;
+                        }
+                        let mut tvr = tvr;
+                        if target.postinstall.is_some() {
+                            tvr.set_options(request_options);
+                        }
+                        Ok(tvr)
+                    }
+                    None => ToolRequest::new_with_options(
+                        target.tool.ba.clone(),
+                        "latest",
+                        request_options,
+                        ToolSource::MiseToml(cf.get_path().to_path_buf()),
+                    ),
+                }
             })
             .collect::<Result<_>>()?;
         let mut versions = ts
@@ -274,15 +324,23 @@ impl Use {
 
     async fn get_config_file(&self) -> Result<Arc<dyn ConfigFile>> {
         let cwd = env::current_dir()?;
+        let has_postinstall = self.tools.iter().any(|target| target.postinstall.is_some());
+        let explicit_file = self.path.as_ref().is_some_and(|path| !path.is_dir());
         let opts = ConfigPathOptions {
             global: self.global,
             path: self.path.clone(),
             env: self.env.clone(),
             cwd: Some(cwd),
-            prefer_toml: false, // mise use supports .tool-versions and other formats
+            prefer_toml: false,
             prevent_home_local: true, // When in HOME, use global config
         };
-        let path = resolve_target_config_path(opts)?;
+        let mut path = resolve_target_config_path(opts)?;
+        if has_postinstall && !explicit_file && path.extension().is_none_or(|ext| ext != "toml") {
+            // Tool-level options cannot be represented in .tool-versions or idiomatic
+            // version files. Keep the selected directory, but write the hook to its
+            // default TOML config rather than unexpectedly selecting a TOML file above it.
+            path.set_file_name(&*env::MISE_DEFAULT_CONFIG_FILENAME);
+        }
 
         config_file::parse_or_init(&path).await
     }
@@ -298,7 +356,8 @@ impl Use {
             let global = display_path(global);
             warn!("{plugin} is defined in {p} which overrides the global config ({global})");
         };
-        for targ in &self.tool {
+        for target in &self.tools {
+            let targ = &target.tool;
             if let Some(tv) = ts.versions.get(targ.ba.as_ref())
                 && let ToolSource::MiseToml(p) | ToolSource::ToolVersions(p) = &tv.source
                 && !file::same_file(p, global)
@@ -409,6 +468,12 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     # set the current version of node to 20.x in mise.toml of current directory
     # will write the fuzzy version (e.g.: 20)
     $ <bold>mise use node@20</bold>
+
+    # run a command after installing a tool
+    $ <bold>mise use --postinstall "mbx setup --defaults" mr-boxington</bold>
+
+    # associate a different postinstall command with each tool
+    $ <bold>mise use --postinstall "setup-a" tool-a --postinstall "setup-b" tool-b</bold>
 
     # set the current version of node to 20.x in ~/.config/mise/config.toml
     # will write the precise version (e.g.: 20.0.0)

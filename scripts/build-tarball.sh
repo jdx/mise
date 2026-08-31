@@ -160,8 +160,13 @@ if [[ $os == "windows" ]]; then
 	zip -r "$basename.zip" mise
 	ls -oh "$basename.zip"
 else
-	XZ_OPT=-9 tar --owner=0 --group=0 -acf "$basename.tar.xz" mise
-	tar --owner=0 --group=0 -cf - mise | gzip -9 >"$basename.tar.gz"
-	ZSTD_NBTHREADS=0 ZSTD_CLEVEL=19 tar --owner=0 --group=0 -acf "$basename.tar.zst" mise
+	tar_owner_args=(--owner=0 --group=0)
+	if tar --version 2>&1 | grep -q '^bsdtar'; then
+		# macOS ships BSD tar, whose ownership flags differ from GNU tar's.
+		tar_owner_args=(--uid 0 --gid 0 --uname root --gname root)
+	fi
+	XZ_OPT=-9 tar "${tar_owner_args[@]}" -acf "$basename.tar.xz" mise
+	tar "${tar_owner_args[@]}" -cf - mise | gzip -9 >"$basename.tar.gz"
+	ZSTD_NBTHREADS=0 ZSTD_CLEVEL=19 tar "${tar_owner_args[@]}" -acf "$basename.tar.zst" mise
 	ls -oh "$basename.tar."*
 fi

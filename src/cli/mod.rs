@@ -52,7 +52,7 @@ mod oci;
 mod outdated;
 mod patrons;
 mod plugins;
-mod prune;
+pub(crate) mod prune;
 mod registry;
 #[cfg(debug_assertions)]
 mod render_help;
@@ -292,6 +292,22 @@ pub(crate) enum Commands {
 }
 
 impl Commands {
+    fn is_dry_run(&self) -> bool {
+        match self {
+            Self::Bootstrap(cmd) => cmd.is_dry_run(),
+            Self::Edit(cmd) => cmd.is_dry_run(),
+            Self::Implode(cmd) => cmd.is_dry_run(),
+            Self::Install(cmd) => cmd.is_dry_run(),
+            Self::Lock(cmd) => cmd.dry_run,
+            Self::Prune(cmd) => cmd.is_dry_run(),
+            Self::Run(cmd) => cmd.dry_run,
+            Self::Uninstall(cmd) => cmd.is_dry_run(),
+            Self::Upgrade(cmd) => cmd.is_dry_run(),
+            Self::Use(cmd) => cmd.is_dry_run(),
+            _ => false,
+        }
+    }
+
     /// Whether this parsed command may trigger a pre-command automatic update.
     ///
     /// This operates on clap's canonical command variant so aliases such as
@@ -395,6 +411,18 @@ impl Commands {
             Self::Which(cmd) => cmd.run().await,
         }
     }
+}
+
+fn has_dry_run_flag(args: &[String], allow_short: bool) -> bool {
+    args.iter()
+        .take_while(|arg| arg.as_str() != "--")
+        .any(|arg| {
+            matches!(arg.as_str(), "--dry-run" | "--dry-run-code")
+                || allow_short
+                    && arg
+                        .strip_prefix('-')
+                        .is_some_and(|flags| !flags.starts_with('-') && flags.contains('n'))
+        })
 }
 
 fn get_global_flags(cmd: &usage_rs::Command<'_>) -> (Vec<String>, Vec<String>) {
@@ -860,6 +888,22 @@ impl Cli {
         if let Err(err) = crate::cache::auto_prune() {
             warn!("auto_prune failed: {err:?}");
         }
+        let dry_run_requested = cli.dry_run
+            || cli.command.as_ref().is_some_and(Commands::is_dry_run)
+            // Nested command structs are private to their modules, so inspect
+            // their parsed argument span as a fallback. Task/exec arguments
+            // after `--` cannot affect this policy. `watch -n` means
+            // `--no-shell`, unlike every other mise `-n` flag.
+            || has_dry_run_flag(
+                &processed_args,
+                !matches!(cli.command.as_ref(), Some(Commands::Watch(_))),
+            );
+        if !print_version
+            && !dry_run_requested
+            && let Err(err) = crate::tool_purgatory::auto_prune().await
+        {
+            warn!("tool purgatory cleanup failed: {err:#}");
+        }
 
         debug!("ARGS: {}", &args.join(" "));
         trace!("MISE_BIN: {}", crate::env::MISE_BIN.display_user());
@@ -928,7 +972,6 @@ impl Cli {
                         output_handler: None,
                         context_builder: Default::default(),
                         executor: None,
-                        cache_session: None,
                         no_cache: Default::default(),
                         task_cache: crate::task::TaskCacheMode::from_env()?,
                         task_cache_explain: false,
@@ -1092,6 +1135,25 @@ mod tests {
     fn parse_cli<'a>(args: &'a [&'a str]) -> std::result::Result<Cli, usage_rs::Error<'a, 'a>> {
         let argv: Vec<&std::ffi::OsStr> = args.iter().map(std::ffi::OsStr::new).collect();
         Cli::parse_from_argv(&argv)
+    }
+
+    #[test]
+    fn dry_run_flag_scan_handles_nested_clusters_and_separator() {
+        let args = |args: &[&str]| args.iter().map(ToString::to_string).collect::<Vec<_>>();
+
+        assert!(has_dry_run_flag(
+            &args(&["mise", "cache", "prune", "--dry-run"]),
+            true
+        ));
+        assert!(has_dry_run_flag(
+            &args(&["mise", "bootstrap", "files", "apply", "-nq"]),
+            true
+        ));
+        assert!(!has_dry_run_flag(
+            &args(&["mise", "exec", "--", "tool", "--dry-run"]),
+            true
+        ));
+        assert!(!has_dry_run_flag(&args(&["mise", "watch", "-n"]), false));
     }
 
     #[test]

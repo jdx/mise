@@ -630,7 +630,7 @@ fn is_self_replace_random_segment(s: &str) -> bool {
 ///
 /// Deliberately does not go through `ARGS`/`MISE_BIN_NAME`: this answers a question `main` asks
 /// before the runtime, logging or config exist, in the same shape as
-/// [`crate::cache::session::is_rustc_shim`].
+/// early executable-dispatch paths.
 ///
 /// The stem is not checked, unlike [`is_self_replace_helper`], and it cannot be: the original stem
 /// is *inside* the generated name, so a process running under one has nothing left to compare it
@@ -1242,6 +1242,142 @@ pub(crate) fn vars_safe() -> impl Iterator<Item = (String, String)> {
     })
 }
 
+/// The raw `CMDCMDLINE` a generated Windows `.cmd` launcher was invoked through.
+///
+/// cmd.exe parses its whole command line before a batch file's `%*` expands, so an argument
+/// containing `& ^ | " < >` or `%VAR%` never reaches `%*` intact. The original text does survive
+/// in cmd's `CMDCMDLINE` pseudo-variable, but that is not part of the environment a child
+/// inherits — measured — so the launcher copies it into this real variable.
+pub(crate) const LAUNCHER_RAW_CMDLINE_ENV: &str = "__MISE_RAW_CMDLINE";
+
+/// The launcher's own path, so [`recover_launcher_args`] can find where its arguments begin.
+pub(crate) const LAUNCHER_PATH_ENV: &str = "__MISE_LAUNCHER";
+
+/// Separates the launcher's own command from the caller's arguments.
+///
+/// The launcher always passes `%*` after this, so a run where the raw line cannot be trusted
+/// still gets the arguments cmd managed to deliver rather than none at all.
+pub(crate) const LAUNCHER_ARGS_SENTINEL: &str = "__MISE_LAUNCHER_ARGS__";
+
+/// Arguments recovered from the launcher's raw command line, or `None` when there are none to
+/// recover or the line cannot be shown to be this launcher's.
+///
+/// Read once and removed from the environment straight away: a task mise runs inherits this
+/// process's environment, and a launcher or shim invoked *by* that task would otherwise recover
+/// the outer invocation's arguments as its own.
+static RECOVERED_LAUNCHER_ARGS: Lazy<Option<Vec<String>>> = Lazy::new(|| {
+    let raw = var(LAUNCHER_RAW_CMDLINE_ENV).ok();
+    let launcher = var(LAUNCHER_PATH_ENV).ok();
+    remove_var(LAUNCHER_RAW_CMDLINE_ENV);
+    remove_var(LAUNCHER_PATH_ENV);
+    recover_launcher_args(&raw?, &launcher?)
+});
+
+/// The argument text `launcher` was called with, taken out of cmd's raw command line.
+///
+/// Deliberately strict about the shape. Only a line where cmd was spawned *for* this launcher is
+/// accepted — `<cmd.exe> /c "" <launcher> " <args>"`, which is what a shell building a native
+/// invocation produces. A line that merely mentions the launcher somewhere (a `call` from another
+/// batch file, a `cmd /c "<launcher> a & b"` chain typed by hand, an interactive prompt) is
+/// declined, because there the arguments were split by the shell before anything mise wrote ran
+/// and `%*` is already as good as it gets.
+pub(crate) fn recover_launcher_args(raw: &str, launcher: &str) -> Option<Vec<String>> {
+    let (_, after) = raw.split_once(" /c ").or_else(|| raw.split_once(" /C "))?;
+    // cmd's own `/c` argument, then the launcher path quoted inside it.
+    let inner = after.strip_prefix('"')?.strip_suffix('"')?;
+    let tail = inner
+        .strip_prefix('"')?
+        .strip_prefix(launcher)?
+        .strip_prefix('"')?;
+    Some(split_command_line(tail))
+}
+
+/// Split the argument section of a Windows command line the way a native program's runtime does.
+///
+/// The rules are the ones `CommandLineToArgvW` applies past the program name: arguments are
+/// separated by whitespace, `"` toggles a quoted run in which whitespace is literal, `2n`
+/// backslashes before a `"` are `n` backslashes and a toggle, and `2n+1` are `n` backslashes and
+/// a literal `"`. Written out rather than calling the Win32 function so it is testable on every
+/// platform — the end-to-end check that it agrees with a real Windows program lives in
+/// `e2e-win/task_stub_native_launcher.Tests.ps1`.
+pub(crate) fn split_command_line(line: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut started = false;
+    let mut backslashes = 0usize;
+
+    fn flush(current: &mut String, backslashes: &mut usize) {
+        for _ in 0..*backslashes {
+            current.push('\\');
+        }
+        *backslashes = 0;
+    }
+
+    for c in line.chars() {
+        match c {
+            '\\' => {
+                backslashes += 1;
+                started = true;
+            }
+            '"' => {
+                for _ in 0..backslashes / 2 {
+                    current.push('\\');
+                }
+                if backslashes % 2 == 1 {
+                    current.push('"');
+                } else {
+                    in_quotes = !in_quotes;
+                }
+                backslashes = 0;
+                // An empty quoted run is still an argument: `""` is one, not none.
+                started = true;
+            }
+            ' ' | '\t' if !in_quotes => {
+                flush(&mut current, &mut backslashes);
+                if started {
+                    args.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            _ => {
+                flush(&mut current, &mut backslashes);
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+    flush(&mut current, &mut backslashes);
+    if started {
+        args.push(current);
+    }
+    args
+}
+
+/// Replace what a Windows launcher forwarded with what it was actually called with.
+///
+/// Everything up to [`LAUNCHER_ARGS_SENTINEL`] is the launcher's own command and is kept. What
+/// follows is cmd's `%*`, used as-is unless the raw command line could be recovered, in which case
+/// the recovered arguments take its place.
+fn replace_after_sentinel(args: Vec<String>, recovered: Option<&Vec<String>>) -> Vec<String> {
+    let Some(at) = args.iter().position(|a| a == LAUNCHER_ARGS_SENTINEL) else {
+        return args;
+    };
+    let mut out = args[..at].to_vec();
+    match recovered {
+        Some(recovered) => out.extend(recovered.iter().cloned()),
+        None => out.extend_from_slice(&args[at + 1..]),
+    }
+    out
+}
+
+fn apply_launcher_args(args: Vec<String>) -> Vec<String> {
+    // Forced whatever argv looks like, so the environment variables never outlive this process
+    // even when mise was not started by a launcher.
+    let recovered = RECOVERED_LAUNCHER_ARGS.as_ref();
+    replace_after_sentinel(args, recovered)
+}
+
 /// Safe wrapper around std::env::args() that handles invalid UTF-8 gracefully.
 /// std::env::args() panics if any argument contains invalid UTF-8; this uses
 /// args_os() and lossily converts each argument (invalid sequences become U+FFFD).
@@ -1249,7 +1385,7 @@ pub(crate) fn vars_safe() -> impl Iterator<Item = (String, String)> {
 /// positions are preserved and a malformed argv yields a normal "unknown command"
 /// error instead of crashing.
 pub(crate) fn args_safe() -> Vec<String> {
-    args_os().map(|a| a.to_string_lossy().to_string()).collect()
+    apply_launcher_args(args_os().map(|a| a.to_string_lossy().to_string()).collect())
 }
 
 pub(crate) fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
@@ -1258,6 +1394,123 @@ pub(crate) fn set_current_dir<P: AsRef<Path>>(path: P) -> Result<()> {
     std::env::set_current_dir(path)
         .wrap_err_with(|| format!("failed to set current directory to {}", display_path(path)))?;
     Ok(())
+}
+
+/// Deliberately not `#[cfg(windows)]`: the code under test is pure string handling, and the whole
+/// point of writing the splitter out rather than calling `CommandLineToArgvW` was that it can be
+/// checked on every platform CI runs.
+#[cfg(test)]
+mod launcher_args_tests {
+    use super::*;
+
+    /// A command line shaped the way a shell builds one when it spawns cmd to run `launcher`.
+    fn cmd_line(launcher: &str, tail: &str) -> String {
+        format!("C:\\WINDOWS\\system32\\cmd.exe /c \"\"{launcher}\"{tail}\"")
+    }
+
+    const LAUNCHER: &str = "C:\\proj\\bin\\hello.cmd";
+
+    #[test]
+    fn splits_the_way_a_native_program_would() {
+        assert_eq!(split_command_line(" a b c"), ["a", "b", "c"]);
+        assert_eq!(split_command_line("  a   b  "), ["a", "b"]);
+        assert_eq!(split_command_line(""), Vec::<String>::new());
+        assert_eq!(split_command_line("   "), Vec::<String>::new());
+        // Whitespace is literal inside quotes, and the quotes themselves are not part of it.
+        assert_eq!(split_command_line(" \"m n\""), ["m n"]);
+        assert_eq!(split_command_line(" a\"b c\"d"), ["ab cd"]);
+        // An empty quoted run is an argument, not nothing.
+        assert_eq!(split_command_line(" \"\""), [""]);
+        // A tab separates like a space.
+        assert_eq!(split_command_line(" a\tb"), ["a", "b"]);
+    }
+
+    #[test]
+    fn applies_the_backslash_rules() {
+        // Backslashes are only special immediately before a quote, which is why a Windows path
+        // full of them survives untouched.
+        assert_eq!(split_command_line(" C:\\a\\b"), ["C:\\a\\b"]);
+        assert_eq!(split_command_line(" trail\\"), ["trail\\"]);
+        // `2n` backslashes then `"`: n backslashes, and the quote toggles.
+        assert_eq!(split_command_line(" \"a\\\\\"b"), ["a\\b"]);
+        // `2n+1`: n backslashes and a literal quote.
+        assert_eq!(split_command_line(" q\\\"r"), ["q\"r"]);
+        assert_eq!(split_command_line(" q\\\\\\\"r"), ["q\\\"r"]);
+    }
+
+    #[test]
+    fn recovers_the_arguments_cmd_destroyed() {
+        // Every shape measured to reach the task differently through a `%*` launcher.
+        for (tail, expected) in [
+            (" c&d", vec!["c&d"]),
+            (" i^j", vec!["i^j"]),
+            (" e%OS%f", vec!["e%OS%f"]),
+            (" a>b", vec!["a>b"]),
+            (" a<b", vec!["a<b"]),
+            (" ^caret", vec!["^caret"]),
+            (" a!b", vec!["a!b"]),
+            (" \"x y&z\"", vec!["x y&z"]),
+            (" a \"b c\" d", vec!["a", "b c", "d"]),
+            ("", Vec::<&str>::new()),
+        ] {
+            let raw = cmd_line(LAUNCHER, tail);
+            assert_eq!(
+                recover_launcher_args(&raw, LAUNCHER).unwrap(),
+                expected,
+                "{raw:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn declines_a_line_that_is_not_this_launchers_own() {
+        // The controls. Accepting any of these would either take arguments that were never meant
+        // as one -- the shell had already split them, exactly as it would for a native program --
+        // or, worse, let the `exit` in the launcher close a shell mise was not spawned by.
+        for raw in [
+            // An interactive prompt: no `/c` at all.
+            "\"C:\\WINDOWS\\system32\\cmd.exe\"".to_string(),
+            // `call` from another batch file: the line is the outer script's.
+            "\"cmd.exe\" /c \"C:\\proj\\outer.cmd\"".to_string(),
+            // Typed by hand to run the launcher and then something else: the launcher path is not
+            // quoted, so it is not the sole thing cmd was given.
+            format!("\"cmd.exe\" /c \"{LAUNCHER} foo & echo done\""),
+            // A different launcher's line.
+            cmd_line("C:\\proj\\bin\\other.cmd", " a"),
+            // Truncated or malformed.
+            format!("\"cmd.exe\" /c \"\"{LAUNCHER}\" a"),
+            format!("\"cmd.exe\" /c {LAUNCHER} a"),
+            String::new(),
+        ] {
+            assert!(recover_launcher_args(&raw, LAUNCHER).is_none(), "{raw:?}");
+        }
+    }
+
+    #[test]
+    fn the_sentinel_marks_where_the_callers_arguments_begin() {
+        let argv = |extra: &[&str]| {
+            let mut v = vec!["mise".to_string(), "run".to_string(), "hello".to_string()];
+            v.push(LAUNCHER_ARGS_SENTINEL.to_string());
+            v.extend(extra.iter().map(|s| s.to_string()));
+            v
+        };
+        // Nothing recovered: what cmd delivered is used, and the sentinel is not passed on.
+        assert_eq!(
+            replace_after_sentinel(argv(&["c"]), None),
+            ["mise", "run", "hello", "c"]
+        );
+        // Recovered: it replaces what cmd delivered rather than adding to it.
+        assert_eq!(
+            replace_after_sentinel(argv(&["c"]), Some(&vec!["c&d".to_string()])),
+            ["mise", "run", "hello", "c&d"]
+        );
+        // No sentinel at all -- an ordinary mise invocation -- is left exactly as it is.
+        let plain = vec!["mise".to_string(), "run".to_string(), "hello".to_string()];
+        assert_eq!(
+            replace_after_sentinel(plain.clone(), Some(&vec!["nope".to_string()])),
+            plain
+        );
+    }
 }
 
 #[cfg(test)]

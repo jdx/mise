@@ -6,7 +6,8 @@ use crate::plugins::PluginType;
 use crate::registry::REGISTRY;
 use crate::toolset::install_state::InstallStateTool;
 use crate::toolset::{
-    ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options, try_parse_tool_options,
+    ResolvedToolOptions, ToolOptionSource, ToolVersionOptions, install_state, parse_tool_options,
+    try_parse_tool_options,
 };
 use crate::{backend, config, dirs, lockfile, registry};
 use contracts::requires;
@@ -340,7 +341,7 @@ impl BackendArg {
             }
         } else {
             // Check if the tool is in the registry but has no available backends
-            if let Some(rt) = REGISTRY.get(self.short.as_str())
+            if let Some(rt) = REGISTRY.get(self.registry_short().as_str())
                 && rt.backends().is_empty()
                 && !rt.backends.is_empty()
             {
@@ -422,6 +423,47 @@ impl BackendArg {
         BackendType::Unknown
     }
 
+    /// The registry short a bare `[tool_alias]` value points at, if there is one.
+    ///
+    /// A value with no backend prefix names a *tool*, not a backend:
+    /// `llama = "llama.cpp"` means "whatever the registry installs for
+    /// llama.cpp". Left unresolved it reaches the plugin path, which builds an
+    /// asdf repo URL out of the name — so the alias either resolves to a
+    /// different tool through a backend this repo no longer accepts new plugins
+    /// for, or fails outright when no such plugin exists.
+    ///
+    /// Everything the registry knows about that tool has to be read from the
+    /// same entry, not from the alias key: options, version order and OS
+    /// support all key on a registry short, and `llama` is not one. Resolving
+    /// the backend while losing `llama.cpp`'s `version_prefix` would install
+    /// the right tool and then misread every version of it.
+    ///
+    /// Options are stripped for the lookup only — they are read from the alias
+    /// entry separately by `get_backend_alias_opts`, so they survive either way.
+    /// Legacy spellings are normalised, so `mytool = "nodejs"` finds `node`.
+    fn aliased_registry_short(&self) -> Option<String> {
+        if self.resolution.explicit || self.has_env_backend_override() || !config::is_loaded() {
+            return None;
+        }
+        let full = Config::get_()
+            .all_aliases
+            .get(unalias_backend(&self.short))
+            .and_then(|a| a.backend.clone())?;
+        let name = split_bracketed_opts(&full).map_or(full.as_str(), |(name, _)| name);
+        if name.contains(':') {
+            return None;
+        }
+        let name = unalias_backend(name);
+        REGISTRY.contains_key(name).then(|| name.to_string())
+    }
+
+    /// The registry key this arg's metadata should be read from: the tool a
+    /// bare alias points at, or the short itself.
+    fn registry_short(&self) -> String {
+        self.aliased_registry_short()
+            .unwrap_or_else(|| self.short.to_string())
+    }
+
     pub(crate) fn full(&self) -> String {
         let short = unalias_backend(&self.short);
 
@@ -446,6 +488,13 @@ impl BackendArg {
                 .get(short)
                 .and_then(|a| a.backend.clone())
             {
+                if let Some(registry_full) = self
+                    .aliased_registry_short()
+                    .and_then(|name| REGISTRY.get(name.as_str()))
+                    .and_then(|rt| rt.backends().first().cloned())
+                {
+                    return registry_full.to_string();
+                }
                 return full;
             }
             if let Some(url) = Config::get_().repo_urls.get(short) {
@@ -536,13 +585,14 @@ impl BackendArg {
     }
 
     pub(crate) fn opts(&self) -> ToolVersionOptions {
-        self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), None)
+        self.resolve_opts_with_layers(self.backend_alias_opts_from_loaded_config(), None, None)
+            .into_effective()
     }
 
     pub(crate) fn registry_opts(&self) -> ToolVersionOptions {
         let full = self.full_without_opts();
         REGISTRY
-            .get(self.short.as_str())
+            .get(self.registry_short().as_str())
             .map(|rt| rt.backend_options(&full))
             .unwrap_or_default()
     }
@@ -550,39 +600,49 @@ impl BackendArg {
     pub(crate) fn registry_version_order(&self) -> Option<VersionOrder> {
         let full = self.full_without_opts();
         REGISTRY
-            .get(self.short.as_str())
+            .get(self.registry_short().as_str())
             .and_then(|tool| tool.version_order(&full))
     }
 
-    pub(crate) fn opts_with_config(
+    pub(crate) fn resolve_opts_with_config_and_request(
         &self,
         config_opts: Option<ToolVersionOptions>,
-    ) -> ToolVersionOptions {
-        self.opts_with_layers(self.backend_alias_opts_from_loaded_config(), config_opts)
+        request_opts: Option<ToolVersionOptions>,
+    ) -> ResolvedToolOptions {
+        self.resolve_opts_with_layers(
+            self.backend_alias_opts_from_loaded_config(),
+            config_opts,
+            request_opts,
+        )
     }
 
-    fn opts_with_layers(
+    pub(crate) fn resolve_opts_with_layers(
         &self,
         alias_opts: Option<ToolVersionOptions>,
         config_opts: Option<ToolVersionOptions>,
-    ) -> ToolVersionOptions {
-        let mut opts = self.registry_opts();
+        request_opts: Option<ToolVersionOptions>,
+    ) -> ResolvedToolOptions {
+        let mut opts = ResolvedToolOptions::default();
+        opts.apply_overrides(&self.registry_opts(), ToolOptionSource::Registry);
         if let Some(manifest_opts) = self.install_manifest_opts() {
-            opts.apply_overrides(manifest_opts);
+            opts.apply_overrides(manifest_opts, ToolOptionSource::InstallManifest);
         }
         if alias_opts.is_none()
             && let Some(full_opts) = self.resolved_full_opts()
         {
-            opts.apply_overrides(&full_opts);
+            opts.apply_overrides(&full_opts, ToolOptionSource::BackendAlias);
         }
         if let Some(alias_opts) = alias_opts {
-            opts.apply_overrides(&alias_opts);
+            opts.apply_overrides(&alias_opts, ToolOptionSource::BackendAlias);
         }
         if let Some(config_opts) = config_opts {
-            opts.apply_overrides(&config_opts);
+            opts.apply_overrides(&config_opts, ToolOptionSource::Config);
+        }
+        if let Some(request_opts) = request_opts {
+            opts.apply_overrides(&request_opts, ToolOptionSource::Request);
         }
         if let Some(user_opts) = self.explicit_opts() {
-            opts.apply_overrides(user_opts);
+            opts.apply_overrides(user_opts, ToolOptionSource::InlineBackendArg);
         }
         opts
     }
@@ -712,7 +772,7 @@ impl BackendArg {
         if self.uses_plugin() {
             return true;
         }
-        if let Some(rt) = REGISTRY.get(self.short.as_str()) {
+        if let Some(rt) = REGISTRY.get(self.registry_short().as_str()) {
             return rt.is_supported_os();
         }
         true
@@ -1002,12 +1062,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_opts_with_config_overlays_registry_config_and_inline() {
+    async fn test_resolve_opts_overlays_registry_config_and_inline() {
         let _config = Config::get().await.unwrap();
         let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
         let config_opts = parse_tool_options("bin=config,bar=config");
 
-        let opts = ba.opts_with_config(Some(config_opts));
+        let resolved = ba.resolve_opts_with_config_and_request(Some(config_opts), None);
+        let opts = resolved.effective();
 
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("inline"));
@@ -1016,13 +1077,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_opts_with_layers_preserves_alias_options() {
+    async fn test_resolve_opts_with_layers_preserves_alias_options() {
         let _config = Config::get().await.unwrap();
         let ba: BackendArg = "solidity[bin=inline,foo=inline]".into();
         let alias_opts = parse_tool_options("bin=alias,alias_only=alias");
         let config_opts = parse_tool_options("bin=config,config_only=config");
 
-        let opts = ba.opts_with_layers(Some(alias_opts), Some(config_opts));
+        let resolved = ba.resolve_opts_with_layers(Some(alias_opts), Some(config_opts), None);
+        let opts = resolved.effective();
 
         assert_eq!(ba.registry_opts().get("bin"), Some("solc"));
         assert_eq!(opts.get("bin"), Some("inline"));

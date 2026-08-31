@@ -1,4 +1,7 @@
-backends = ["conda:sbt", "asdf:mise-plugins/mise-sbt"]
+backends = ["github:sbt/sbt", "conda:sbt", "asdf:mise-plugins/mise-sbt"]
 description = "sbt, the interactive build tool"
-test = { cmd = "sbt --version", expected = "sbt" }
+# The upstream `sbt` script looks for a JVM before it will answer `--version`,
+# where the conda wrapper reports its runner version without one. `tools` is how
+# `gradle` covers the same requirement.
+test = { cmd = "sbt --version", expected = "sbt", tools = ["java"] }
 version_order = "semver"

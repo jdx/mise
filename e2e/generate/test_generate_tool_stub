@@ -195,7 +195,10 @@ assert_contains "cat gh-test-stub" "size ="
 # It derives the stub path from its own filename rather than naming it, so a stub name containing
 # `%` cannot be expanded by cmd.exe into the wrong path.
 assert_succeed "test -f hello-stub.cmd"
-assert_contains "cat hello-stub.cmd" 'mise tool-stub "%~dpn0" %*'
+assert_contains "cat hello-stub.cmd" 'mise tool-stub "%~dpn0" __MISE_LAUNCHER_ARGS__ %*'
+# The same argument recovery task-stub launchers got: cmd parses its command line before `%*`
+# expands, so a tool argument containing `& ^ | " < >` never reaches the tool through `%*` alone.
+assert_contains "cat hello-stub.cmd" "!CMDCMDLINE!"
 
 # Explicitly cross-platform including windows -> written.
 assert_succeed "mise generate tool-stub cross-stub --skip-download \

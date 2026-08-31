@@ -213,7 +213,7 @@ mod tests {
     use crate::toolset::{ToolSource, parse_tool_options};
 
     fn request(tool: &str, options: &str) -> ToolRequest {
-        ToolRequest::new_opts(
+        ToolRequest::new_with_options(
             Arc::new(BackendArg::from(tool)),
             "1.0.0",
             parse_tool_options(options),

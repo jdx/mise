@@ -259,6 +259,29 @@ impl<'a> NpmOptions<'a> {
     }
 }
 
+/// Legacy embedded-aube installs linked each virtual-store entry into a shared
+/// cache. The install prefix can outlive that cache, leaving the directory in
+/// place while every package link is dangling. Check only the immediate
+/// virtual-store entries: each represents a whole package tree, so this stays
+/// cheap enough for mise's installed-version fast path.
+fn aube_install_tree_is_healthy(install_path: &Path) -> bool {
+    [".mise", ".aube"].iter().all(|name| {
+        let virtual_store = install_path.join("node_modules").join(name);
+        match virtual_store.symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return true,
+            Err(_) => return false,
+            Ok(_) => {}
+        }
+        let entries = match std::fs::read_dir(&virtual_store) {
+            Ok(entries) => entries,
+            Err(_) => return false,
+        };
+        entries
+            .map(|entry| entry.map(|entry| entry.path()))
+            .all(|path| path.is_ok_and(|path| path.try_exists().unwrap_or(false)))
+    })
+}
+
 #[async_trait]
 impl Backend for NPMBackend {
     fn get_type(&self) -> BackendType {
@@ -267,6 +290,10 @@ impl Backend for NPMBackend {
 
     fn ba(&self) -> &Arc<BackendArg> {
         &self.ba
+    }
+
+    fn is_install_path_healthy(&self, install_path: &Path) -> bool {
+        aube_install_tree_is_healthy(install_path)
     }
 
     fn get_dependencies(&self) -> eyre::Result<Vec<&str>> {
@@ -1158,11 +1185,11 @@ impl NPMBackend {
         }
     }
 
-    /// Write the throwaway project's `package.json` + aube config for an
-    /// embedded aube install. `allowBuilds` package lists go in `package.json`
-    /// (aube's manifest namespace); release age and trust-policy excludes go
-    /// in `.config/aube/config.toml`, which keeps aube-only keys out of npm's
-    /// config.
+    /// Write the throwaway project's manifest, workspace boundary, and aube
+    /// config for an embedded aube install. `allowBuilds` package lists go in
+    /// `package.json` (aube's manifest namespace); release age and trust-policy
+    /// excludes go in `.config/aube/config.toml`, which keeps aube-only keys out
+    /// of npm's config.
     fn write_aube_embed_project(
         &self,
         install_path: &Path,
@@ -1189,6 +1216,15 @@ impl NPMBackend {
         crate::file::write(
             install_path.join("package.json"),
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        // MISE_DATA_DIR may live inside a user's Node workspace (notably when
+        // GitLab CI caches it below CI_PROJECT_DIR). Aube otherwise walks up
+        // from this synthetic project and installs the enclosing workspace
+        // instead of the requested tool. Make the install prefix its own
+        // one-package workspace so discovery cannot escape it.
+        crate::file::write(
+            install_path.join("aube-workspace.yaml"),
+            "packages:\n  - .\n",
         )?;
 
         let config_dir = install_path.join(".config/aube");
@@ -1755,6 +1791,8 @@ mod tests {
             self.0.lock().unwrap().push(message);
         }
     }
+    #[cfg(unix)]
+    use crate::toolset::ToolVersion;
     use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions};
     use pretty_assertions::assert_eq;
 
@@ -2576,9 +2614,13 @@ pkg@1.2.0 '1.2.0'
             crate::config::env_directive::EnvValue::from("https://registry.example.com"),
         );
 
-        let request =
-            ToolRequest::new_opts(backend.ba().clone(), "latest", options, ToolSource::Unknown)
-                .unwrap();
+        let request = ToolRequest::new_with_options(
+            backend.ba().clone(),
+            "latest",
+            options,
+            ToolSource::Unknown,
+        )
+        .unwrap();
         let resolved = backend
             .resolve_lockfile_options(&request, &PlatformTarget::from_current())
             .unwrap();
@@ -2681,6 +2723,61 @@ pkg@1.2.0 '1.2.0'
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
         );
+        assert_eq!(
+            std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
+            "packages:\n  - .\n"
+        );
+    }
+
+    #[test]
+    fn aube_install_tree_without_virtual_store_is_healthy() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(aube_install_tree_is_healthy(tmp.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn aube_install_tree_rejects_dangling_legacy_entries() {
+        for name in [".mise", ".aube"] {
+            let tmp = tempfile::tempdir().unwrap();
+            let virtual_store = tmp.path().join("node_modules").join(name);
+            let target = tmp.path().join("shared-store/pkg@1.0.0");
+            std::fs::create_dir_all(&virtual_store).unwrap();
+            std::fs::create_dir_all(&target).unwrap();
+            std::os::unix::fs::symlink(&target, virtual_store.join("pkg@1.0.0")).unwrap();
+
+            assert!(aube_install_tree_is_healthy(tmp.path()));
+            std::fs::remove_dir_all(target).unwrap();
+            assert!(!aube_install_tree_is_healthy(tmp.path()));
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dangling_aube_tree_is_not_an_installed_npm_version() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ba = BackendArg::new_raw(
+            "npm".to_string(),
+            Some("pkg".to_string()),
+            "pkg".to_string(),
+            None,
+            BackendResolution::new(true),
+        );
+        ba.installs_path = tmp.path().join("installs/npm-pkg");
+        let backend = NPMBackend::from_arg(ba);
+        let request =
+            ToolRequest::new(backend.ba().clone(), "1.0.0", ToolSource::Argument).unwrap();
+        let tv = ToolVersion::new(request, "1.0.0".to_string());
+        let virtual_store = tv.install_path().join("node_modules/.mise");
+        std::fs::create_dir_all(&virtual_store).unwrap();
+        std::os::unix::fs::symlink(
+            tmp.path().join("missing-shared-store/pkg@1.0.0"),
+            virtual_store.join("pkg@1.0.0"),
+        )
+        .unwrap();
+
+        let config = crate::config::Config::get().await.unwrap();
+        assert!(!backend.is_version_installed(&config, &tv, true));
     }
 
     #[test]

@@ -50,7 +50,7 @@ jobs:
 
   docs:
     name: docs
-    if: ${{ always() && !cancelled() && needs.trusted.result != 'cancelled' && needs.untrusted.result != 'cancelled' }}
+    if: ${{ always() && !cancelled() && github.repository == 'jdx/mise' && needs.trusted.result != 'cancelled' && needs.untrusted.result != 'cancelled' }}
     permissions: {}
     needs: [trusted, untrusted]
     runs-on: ubuntu-latest

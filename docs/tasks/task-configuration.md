@@ -1008,41 +1008,29 @@ Cacheable dependencies contribute their artifact keys to dependent task keys, so
 restore the matching artifact after its dependencies execute, skip, or restore. If a dependency
 executes without a stable artifact key, its dependents conservatively execute.
 
-### `rust_cache` <Badge type="warning" text="experimental" />
+### `rust_cache` <Badge type="danger" text="deprecated" />
 
 - **Type**: `boolean | table`
 - **Default**: `false`
 
-Enables Rust compiler action caching only for this task run. `true` and `{}` both enable the default
-configuration; `false` and `{ enabled = false }` disable it. The table form is available from the
-start so future Rust-specific options do not require renaming the field.
+This setting no longer enables Rust compiler action caching. mise accepts it temporarily as a
+deprecated no-op so existing task configurations continue to run. Enabled values print a migration
+warning; disabled values are silent.
+
+Use [mbx](https://mr-boxington.jdx.dev/getting-started) for Rust action caching instead. Install it
+globally with `mise use -g mr-boxington`, or add it to the project tools, then put `mbx` in front of
+the Cargo subcommand:
 
 ```mise-toml
+[tools]
+mr-boxington = "latest"
+
 [tasks.build]
-run = "cargo build"
-rust_cache = true
+run = "mbx build"
 ```
 
-Set `rust_cache = { verify = true }` while qualifying the cache for a project or compiler upgrade.
-On a would-be hit, mise restores the cached result into a staging build, runs rustc anyway, compares
-diagnostics, output contents, and file modes, reports any divergence, and always returns rustc's live
-result. Verification hits are never served and are reported separately in the session statistics.
-
-mise injects compiler integration only into the task's child environment. Shell activation, bare
-`cargo build`, editor processes, and release builds are not intercepted. A top-level
-`mise run` owns the cache session, flushes pending uploads, and reports hits, misses, and transferred
-bytes before it succeeds. Compiler action-key collection and prefetch land with the compiler adapter
-rather than as unused task-manifest fields.
-
-Rust action caching disables incremental compilation for that task run because the two cache models
-are incompatible. This can make a tight local edit-and-build loop slower. Use `rust_cache` for CI,
-cold clones, worktrees, and branch switches; use bare `cargo build` for the local incremental loop.
-Outside CI, action cache sessions read local and remote results but do not upload them.
-
-`rust_cache` is independent of the task result `cache`: action caching can reuse individual compiler
-operations while the task still executes, and task result caching can be used without compiler
-interception. Set `task_config.rust_cache` to provide a scoped default; task-local `false` disables
-that inherited default.
+Remove `rust_cache` after changing the command. The compatibility field is scheduled for removal in
+mise 2027.8.14.
 
 ### `shell`
 
@@ -1374,9 +1362,14 @@ cascade = true
 shell = "bash -c"
 ```
 
-This applies to `dir`, `shell`, `cache`, `rust_cache`, and `includes`. Inherited include paths
-remain relative to the config root where they were defined, allowing a monorepo root to provide one
-shared task set.
+This applies to `dir`, `shell`, `cache`, `rust_cache`, `global_inputs`, `input_groups`, and
+`includes`. Inherited include paths and task inputs remain relative to the config root where they
+were defined.
+
+A descendant's non-empty `global_inputs` replaces the inherited value. Descendant `input_groups`
+merge with inherited groups by name; the nearest definition wins when the same name appears more
+than once. This also applies to group references in inherited `global_inputs`. Each group remains
+relative to the config root where it was defined.
 
 ### `task_config.dir`
 
@@ -1418,10 +1411,11 @@ env = ["NODE_ENV", "CI"]
 command_inputs = ["node --version"]
 ```
 
-### `task_config.rust_cache` <Badge type="warning" text="experimental" />
+### `task_config.rust_cache` <Badge type="danger" text="deprecated" />
 
-Sets the scoped default for Rust action caching. A task-local or task-template value takes
-precedence; an explicit `false` disables the inherited default.
+This deprecated compatibility setting no longer enables Rust action caching. An effective enabled
+value warns once while tasks continue normally. Remove it and run Rust build commands through
+[mbx](https://mr-boxington.jdx.dev/getting-started) instead.
 
 ```toml
 [task_config]

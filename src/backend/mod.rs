@@ -16,10 +16,11 @@ use jiff::Timestamp;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, global_config_path};
 use crate::duration::parse_into_timestamp;
 use crate::file::{
-    canonicalize_cached, display_path, remove_all_with_progress, remove_all_with_warning,
+    canonicalize_cached, display_path, entry_exists, remove_all_with_progress,
+    remove_all_with_warning,
 };
 use crate::install_before::resolve_before_date_for_tool;
 use crate::install_context::InstallContext;
@@ -850,7 +851,7 @@ fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
     let skip_shims = cfg!(windows);
     let dirs = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !skip_shims || !file::is_mise_shims_dir(p))
+        .filter(|p| !skip_shims || !file::is_mise_dispatch_dir(p))
         .cloned();
     which_in_dirs(dirs, bin, true)
 }
@@ -858,7 +859,7 @@ fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
 pub(crate) fn which_no_shims_spawnable(bin: &str) -> Option<PathBuf> {
     let dirs = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !file::is_mise_shims_dir(p))
+        .filter(|p| !file::is_mise_dispatch_dir(p))
         .cloned();
     which_in_dirs(dirs, bin, true)
 }
@@ -886,7 +887,7 @@ pub(crate) async fn configured_toolset_or_path_which(
 mod tests {
     use super::*;
     use crate::cli::args::{BackendArg, BackendResolution};
-    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList, ToolVersionOptions};
+    use crate::toolset::{ToolRequest, ToolSource, ToolVersionList};
     use std::fs;
     use std::sync::Arc;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -913,12 +914,7 @@ mod tests {
     }
 
     fn create_test_tool_request(ba: Arc<BackendArg>, version: &str) -> ToolRequest {
-        ToolRequest::Version {
-            backend: ba,
-            version: version.to_string(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        }
+        ToolRequest::new(ba, version, ToolSource::Argument).unwrap()
     }
 
     #[test]
@@ -1451,12 +1447,7 @@ mod tests {
         fs::create_dir_all(install_path.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
 
         assert_eq!(
@@ -1496,12 +1487,7 @@ mod tests {
         let install_path = backend.installs_path.join("1.0.1");
         fs::create_dir_all(install_path.join("bin"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
 
         assert_eq!(
@@ -1536,12 +1522,7 @@ mod tests {
         fs::create_dir_all(normal_install.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let exact_install = temp_dir.path().join("install-into");
         let mut tv = ToolVersion::new(request, "1.0.1".into());
         tv.install_path = Some(exact_install.clone());
@@ -1579,12 +1560,7 @@ mod tests {
         fs::create_dir_all(normal_install.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.1"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let explicit_install = temp_dir
             .path()
             .join("system/installs")
@@ -1626,12 +1602,7 @@ mod tests {
         fs::create_dir_all(normal_install.join("bin"))?;
         file::make_symlink_or_file(Path::new("./1.0.0"), &backend.installs_path.join("latest"))?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "latest".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "latest", ToolSource::Argument).unwrap();
         let shared_install = temp_dir
             .path()
             .join("shared/installs")
@@ -2259,7 +2230,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             &resolved_opts,
             self.remote_version_listing_tool_option_keys(),
         );
-        let opts = resolved_opts.options();
+        let opts = resolved_opts.effective();
         let versions = self
             .list_remote_versions_with_info_and_options(
                 config,
@@ -2292,7 +2263,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         let versions = self
             .list_remote_versions_with_info_and_options(
                 config,
-                resolved_opts.options(),
+                resolved_opts.effective(),
                 opts,
                 refresh,
                 has_local_version_listing_override,
@@ -2629,6 +2600,12 @@ pub(crate) trait Backend: Debug + Send + Sync {
     fn unresolved_latest_version(&self) -> Option<String> {
         None
     }
+    /// Backend-specific validation for an install prefix that exists and is
+    /// otherwise complete. Keep this check cheap: it runs anywhere mise asks
+    /// whether a version is installed, including activation and doctor.
+    fn is_install_path_healthy(&self, _install_path: &Path) -> bool {
+        true
+    }
     fn list_installed_versions(&self) -> Vec<String> {
         install_state::list_versions(&self.ba().short)
     }
@@ -2642,8 +2619,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
             let is_installed = install_path.exists();
             let is_not_incomplete = !self.incomplete_file_path(tv).exists();
             let is_valid_symlink = !check_symlink || !is_runtime_symlink(install_path);
+            let is_healthy = is_installed && self.is_install_path_healthy(install_path);
 
-            let installed = is_installed && is_not_incomplete && is_valid_symlink;
+            let installed = is_healthy && is_not_incomplete && is_valid_symlink;
             if log::log_enabled!(log::Level::Trace) && !installed {
                 let mut msg = format!(
                     "{} is not installed, path: {}",
@@ -2658,6 +2636,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 }
                 if !is_valid_symlink {
                     msg += " (runtime symlink)";
+                }
+                if is_installed && !is_healthy {
+                    msg += " (unhealthy)";
                 }
                 trace!("{}", msg);
             }
@@ -3352,6 +3333,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 ctx.pr
                     .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
             } else {
+                // Only when an install would actually happen. Asking whether an already-installed
+                // tool *could* be installed is a different question, and answering it here would
+                // start failing `--dry-run` on machines whose tools predate a registry
+                // restriction -- for an install that is not going to be attempted.
+                self.verify_install_feasible(&ctx, &tv).await?;
                 ctx.pr
                     .finish_with_icon("would install".into(), ProgressIcon::Skipped);
             }
@@ -3577,13 +3563,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
             runner = runner.env_remove(key);
         }
 
-        // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
+        // Keep the declaring config and active project distinct. MISE_CONFIG_FILE is also a
+        // legacy alias for the global config, so pin the actual global path for nested mise calls.
         if let Some(source_path) = tv.request.source().path() {
-            let root = config_root::config_root(source_path);
-            let root = root.to_string_lossy().to_string();
+            let config_root = config_root::config_root(source_path);
+            let project_root = ctx.config.project_root.as_ref().unwrap_or(&config_root);
             runner = runner
-                .env("MISE_CONFIG_ROOT", &root)
-                .env("MISE_PROJECT_ROOT", &root);
+                .env("MISE_CONFIG_FILE", source_path)
+                .env("MISE_GLOBAL_CONFIG_FILE", global_config_path())
+                .env("MISE_CONFIG_ROOT", &config_root)
+                .env("MISE_PROJECT_ROOT", project_root);
         }
 
         runner.execute()?;
@@ -3595,6 +3584,24 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Default is 3: download, checksum, extract
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         3
+    }
+
+    /// Whether this version could install here at all, judged without downloading anything.
+    ///
+    /// `--dry-run` answers before `install_version_` runs, so a backend that would have refused
+    /// the platform, the version or the package type never got asked, and the answer came back
+    /// "would install" for something that cannot. Backends that can tell cheaply -- from data
+    /// already on disk or already fetched -- override this.
+    ///
+    /// **The default is silence, not a claim of feasibility.** A backend that has not implemented
+    /// this says nothing about whether the install would work, and `--dry-run` stays as optimistic
+    /// for it as it was before.
+    async fn verify_install_feasible(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> Result<()> {
+        Ok(())
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;
@@ -3631,7 +3638,9 @@ pub(crate) trait Backend: Debug + Send + Sync {
         }
         let rmdir = |dir: &Path| {
             if dryrun {
-                if dir.exists() {
+                // Not `exists()`, which resolves a link: a dry run has to name the entry the real
+                // run would remove, and a link whose target is gone is one of them.
+                if entry_exists(dir) {
                     pr.set_message(format!("remove {}", display_path(dir)));
                 }
                 return Ok(());
@@ -4028,7 +4037,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             let original_len = paths.len();
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| !file::is_mise_shims_dir(p))
+                .filter(|p| !file::is_mise_dispatch_dir(p))
                 .collect();
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;
@@ -4384,7 +4393,7 @@ mod latest_version_tests {
     use super::*;
     use crate::cli::args::BackendResolution;
     use crate::config::settings::SettingsPartial;
-    use crate::toolset::ToolSource;
+    use crate::toolset::{ResolvedToolOptions, ToolSource};
     use confique::Layer;
     use pretty_assertions::assert_eq;
     use std::fs;
@@ -4914,7 +4923,7 @@ mod latest_version_tests {
         let request = ToolRequest::Version {
             backend: backend.ba.clone(),
             version: "nightly".to_string(),
-            options: ToolVersionOptions::default(),
+            options: ResolvedToolOptions::default(),
             source: ToolSource::Argument,
         };
         let tv = ToolVersion::new(request, "nightly".to_string());

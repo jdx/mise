@@ -2,6 +2,13 @@
 
 mkdir -p .mise/tasks "$HOME/.config/mise/tasks"
 
+# Defined in the config, not as a file. It shares nothing with the walk below except that both
+# happen while tasks load, which is what made it collateral damage of a bad entry in that walk.
+cat <<'EOF' >mise.toml
+[tasks.from_config]
+run = "echo 'config ran'"
+EOF
+
 cat <<'EOF' >.mise/tasks/healthy
 #!/usr/bin/env bash
 echo "healthy ran"
@@ -22,9 +29,18 @@ ln -s missing-target .mise/tasks/.#healthy
 # the task group dangling while other local and global tasks remain usable.
 ln -s "$MISE_TMP_DIR/missing-global-task-dir" "$HOME/.config/mise/tasks/global"
 
-assert "mise tasks ls --name-only" "global-ok
+# A "current"-style link pointing at the directory being walked. Discovery follows links so a
+# shared task directory can be linked in, which is also what makes a loop reachable. Skipping the
+# looping entry loses nothing -- it is the same directory, already visited -- and one of these
+# used to fail every task command, including tasks defined in a config file with no task file at
+# all.
+ln -s "$PWD/.mise/tasks" .mise/tasks/current
+
+assert "mise tasks ls --name-only" "from_config
+global-ok
 healthy"
 assert_contains "mise run healthy" "healthy ran"
 assert_contains "mise run global-ok" "global ran"
+assert_contains "mise run from_config" "config ran"
 assert_contains "mise tasks --usage" 'cmd healthy help="" {'
 assert_contains "mise tasks --usage" 'cmd global-ok help="" {'

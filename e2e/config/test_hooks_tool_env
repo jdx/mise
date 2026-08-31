@@ -4,11 +4,11 @@
 
 cat <<EOF >mise.toml
 [tools]
-dummy = { version = "latest", postinstall = "echo TOOL_NAME=\$MISE_TOOL_NAME TOOL_VERSION=\$MISE_TOOL_VERSION INSTALL_PATH=\$MISE_TOOL_INSTALL_PATH" }
+dummy = { version = "latest", postinstall = "echo TOOL_NAME=\$MISE_TOOL_NAME TOOL_VERSION=\$MISE_TOOL_VERSION INSTALL_PATH=\$MISE_TOOL_INSTALL_PATH CONFIG_FILE=\$MISE_CONFIG_FILE" }
 EOF
 
 # Remove any existing dummy installation to force reinstall
-rm -rf ~/.mise/installs/dummy
+mise uninstall dummy --all >/dev/null 2>&1 || true
 
 # Run install and capture output
 output=$(mise install dummy 2>&1)
@@ -36,6 +36,48 @@ if [[ $output == *"INSTALL_PATH="* ]] && [[ $output == *"/mise/installs/dummy"* 
   echo "✓ MISE_TOOL_INSTALL_PATH is set"
 else
   echo "✗ MISE_TOOL_INSTALL_PATH is NOT set correctly"
+  echo "Output: $output"
+  exit 1
+fi
+
+if [[ $output == *"CONFIG_FILE=$PWD/mise.toml"* ]]; then
+  echo "✓ MISE_CONFIG_FILE identifies the declaring config"
+else
+  echo "✗ MISE_CONFIG_FILE is not the declaring config"
+  echo "Output: $output"
+  exit 1
+fi
+
+# A tool declared globally receives the exact global source path as well.
+rm mise.toml
+mkdir -p "$MISE_CONFIG_DIR"
+cat <<EOF >"$MISE_CONFIG_DIR/config.toml"
+[tools]
+dummy = { version = "latest", postinstall = "mise config set --global env.HOOK_NESTED hooked && echo GLOBAL_CONFIG_FILE=\$MISE_CONFIG_FILE PROJECT_ROOT=\$MISE_PROJECT_ROOT" }
+EOF
+mkdir -p project
+cd project
+printf '[env]\nPROJECT_MARKER = "local"\n' >mise.toml
+mise uninstall dummy --all >/dev/null 2>&1 || true
+output=$(mise install dummy 2>&1)
+if [[ $output == *"GLOBAL_CONFIG_FILE=$MISE_CONFIG_DIR/config.toml"* ]]; then
+  echo "✓ MISE_CONFIG_FILE identifies the global declaring config"
+else
+  echo "✗ MISE_CONFIG_FILE is not the global declaring config"
+  echo "Output: $output"
+  exit 1
+fi
+if [[ $output == *"PROJECT_ROOT=$PWD"* ]]; then
+  echo "✓ MISE_PROJECT_ROOT identifies the active project"
+else
+  echo "✗ MISE_PROJECT_ROOT is not the active project"
+  echo "Output: $output"
+  exit 1
+fi
+if [[ $(mise config get --file "$MISE_CONFIG_DIR/config.toml" env.HOOK_NESTED) == "hooked" ]]; then
+  echo "✓ nested mise calls retain the actual global config"
+else
+  echo "✗ nested mise calls treat the declaring config as global"
   echo "Output: $output"
   exit 1
 fi

@@ -61,6 +61,33 @@ pub(crate) static ARCH: Lazy<String> = Lazy::new(|| {
     .to_string()
 });
 
+/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
+pub(crate) fn normalize_os(os: &str) -> &str {
+    match os {
+        "darwin" | "macos" => "macos",
+        "windows" | "win" => "windows",
+        other => other,
+    }
+}
+
+/// Normalize architecture name aliases to the canonical form used by [`ARCH`].
+pub(crate) fn normalize_arch(arch: &str) -> &str {
+    match arch {
+        "x86_64" | "amd64" | "x64" => "x64",
+        "aarch64" | "arm64" => "arm64",
+        other => other,
+    }
+}
+
+/// Whether an `os` or `os/arch` selector matches the current platform.
+pub(crate) fn os_selector_matches(entry: &str) -> bool {
+    if let Some((os, arch)) = entry.split_once('/') {
+        normalize_os(os) == OS.as_str() && normalize_arch(arch) == ARCH.as_str()
+    } else {
+        normalize_os(entry) == OS.as_str()
+    }
+}
+
 pub(crate) static VERSION_PLAIN: Lazy<String> = Lazy::new(|| {
     let mut v = V.to_string();
     if cfg!(debug_assertions) {
@@ -310,6 +337,26 @@ mod tests {
         let p = dir.join("latest-version");
         std::fs::write(&p, body).unwrap();
         p
+    }
+
+    #[test]
+    fn test_normalize_os() {
+        assert_eq!(normalize_os("macos"), "macos");
+        assert_eq!(normalize_os("darwin"), "macos");
+        assert_eq!(normalize_os("linux"), "linux");
+        assert_eq!(normalize_os("windows"), "windows");
+        assert_eq!(normalize_os("win"), "windows");
+        assert_eq!(normalize_os("freebsd"), "freebsd");
+    }
+
+    #[test]
+    fn test_normalize_arch() {
+        assert_eq!(normalize_arch("arm64"), "arm64");
+        assert_eq!(normalize_arch("aarch64"), "arm64");
+        assert_eq!(normalize_arch("x64"), "x64");
+        assert_eq!(normalize_arch("x86_64"), "x64");
+        assert_eq!(normalize_arch("amd64"), "x64");
+        assert_eq!(normalize_arch("riscv64"), "riscv64");
     }
 
     #[test]

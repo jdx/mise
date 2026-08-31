@@ -45,26 +45,8 @@ impl DepsProvider for PipDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "pip".to_string(),
-            args: vec![
-                "install".to_string(),
-                "-r".to_string(),
-                "requirements.txt".to_string(),
-            ],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "pip install".to_string()),
-        })
+        self.base
+            .install_command("pip", &["install", "-r", "requirements.txt"], "pip install")
     }
 
     fn applicability(&self) -> DepsProviderApplicability {

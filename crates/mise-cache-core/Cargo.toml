@@ -3,7 +3,7 @@ name = "mise-cache-core"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Action cache protocol, CAS, authentication, and transport primitives for mise"
+description = "Remote task cache protocol, CAS, authentication, and transport primitives for mise"
 homepage = "https://github.com/jdx/mise"
 repository = "https://github.com/jdx/mise"
 
@@ -11,12 +11,10 @@ repository = "https://github.com/jdx/mise"
 base64 = "0.23"
 blake3 = "1"
 eyre = "0.6"
-fslock = "0.2"
 futures-util = "0.3"
 hex = "0.4"
 log = "0.4"
 rand = "0.10"
-reflink-copy = "0.1"
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "stream",

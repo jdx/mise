@@ -38,22 +38,8 @@ impl DepsProvider for PnpmDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "pnpm".to_string(),
-            args: vec!["install".to_string()],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "pnpm install".to_string()),
-        })
+        self.base
+            .install_command("pnpm", &["install"], "pnpm install")
     }
 
     fn applicability(&self) -> DepsProviderApplicability {
@@ -61,31 +47,12 @@ impl DepsProvider for PnpmDepsProvider {
     }
 
     fn add_command(&self, packages: &[&str], dev: bool) -> Result<DepsCommand> {
-        let mut args = vec!["add".to_string()];
-        if dev {
-            args.push("--save-dev".to_string());
-        }
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "pnpm".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("pnpm add {}", packages.join(" ")),
-        })
+        Ok(self
+            .base
+            .package_command("pnpm", "add", dev.then_some("--save-dev"), packages))
     }
 
     fn remove_command(&self, packages: &[&str]) -> Result<DepsCommand> {
-        let mut args = vec!["remove".to_string()];
-        args.extend(packages.iter().map(|p| p.to_string()));
-
-        Ok(DepsCommand {
-            program: "pnpm".to_string(),
-            args,
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: format!("pnpm remove {}", packages.join(" ")),
-        })
+        Ok(self.base.package_command("pnpm", "remove", None, packages))
     }
 }

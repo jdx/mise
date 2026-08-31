@@ -3,10 +3,11 @@
 # The canonical command is visible while the deprecated top-level alias is hidden.
 assert_not_contains "mise --help" "  dotfiles "
 assert_contains "mise bootstrap dotfiles --help" "add"
+assert_contains "mise bootstrap dotfiles --help" "diff"
 assert_contains "mise bootstrap dotfiles --help" "edit"
 
 mkdir -p dotfiles/nvim dotfiles/bin
-echo "gitconfig content" >dotfiles/gitconfig
+printf '[user]\n\tname = Test User\n' >dotfiles/gitconfig
 echo "starship config" >dotfiles/starship.toml
 echo "init.lua" >dotfiles/nvim/init.lua
 echo "one" >dotfiles/bin/one
@@ -52,6 +53,15 @@ assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
 assert "readlink ~/.local/mybin/two" "$PWD/dotfiles/bin/two"
 assert "cat ~/.config/inline.conf" "inline content"
 
+# diff is read-only, accepts target filters, and prints unified content changes.
+echo "locally changed" >~/.config/starship.toml
+assert_contains "mise bootstrap dotfiles diff ~/.config/starship.toml" "--- ~/.config/starship.toml (current)"
+assert_contains "mise bootstrap dotfiles diff ~/.config/starship.toml" "+starship config"
+assert_not_contains "mise bootstrap dotfiles diff ~/.config/starship.toml" ".gitconfig"
+assert "cat ~/.config/starship.toml" "locally changed"
+assert_fail "mise bootstrap dotfiles diff ~/.not-managed" "no dotfiles matched target filter"
+assert_succeed "mise bootstrap dotfiles apply ~/.config/starship.toml --yes"
+
 # Inline content is a whole-file entry and overwrites content drift.
 assert_contains "mise dotfiles status ~/.config/inline.conf --json" '"source": null'
 echo "drifted" >~/.config/inline.conf
@@ -66,6 +76,7 @@ ln -s "$PWD/linked-inline-source" ~/.config/linked-inline.conf
 cat <<EOF >>mise.toml
 "~/.config/linked-inline.conf" = { content = "linked inline\n" }
 EOF
+assert_contains "mise bootstrap dotfiles diff ~/.config/linked-inline.conf" "file type differs: current symlink"
 assert_fail "mise dotfiles unapply ~/.config/linked-inline.conf --yes" "target differs from the managed content"
 assert "readlink ~/.config/linked-inline.conf" "$PWD/linked-inline-source"
 
@@ -142,6 +153,107 @@ chmod 000 ~/.local/mybin/private
 assert_not_contains "MISE_DEBUG=1 mise dotfiles status 2>&1" "$HOME/.local/mybin/private"
 chmod 700 ~/.local/mybin/private
 
+# A Git manifest manages the index instead of requiring every file in the
+# directory to be listed in mise config. Ignored/untracked files stay alone.
+mkdir -p tracked-home/.config
+git -C tracked-home init -q
+printf '*\n' >tracked-home/.gitignore
+echo "tracked" >tracked-home/.config/tracked.conf
+ln -s tracked.conf tracked-home/.config/tracked-link.conf
+echo "excluded source" >tracked-home/.config/excluded.conf
+echo "untracked" >tracked-home/.config/untracked.conf
+mkdir -p tracked-home/vendor/submodule
+echo "gitlink source" >tracked-home/vendor/submodule/untracked-inside
+git -C tracked-home add -f .gitignore .config/tracked.conf .config/tracked-link.conf .config/excluded.conf
+git -C tracked-home config user.email test@example.com
+git -C tracked-home config user.name "mise test"
+git -C tracked-home commit -qm initial
+gitlink_commit=$(git -C tracked-home rev-parse HEAD)
+git -C tracked-home update-index --add --cacheinfo "160000,$gitlink_commit,vendor/submodule"
+
+# Conflicted index stages must not duplicate a manifest path or its operations.
+mkdir conflicted-home
+git -C conflicted-home init -q
+git -C conflicted-home config user.email test@example.com
+git -C conflicted-home config user.name "mise test"
+echo "base" >conflicted-home/file
+git -C conflicted-home add file
+git -C conflicted-home commit -qm base
+base_branch=$(git -C conflicted-home branch --show-current)
+git -C conflicted-home checkout -qb side
+echo "side" >conflicted-home/file
+git -C conflicted-home commit -am side -q
+git -C conflicted-home checkout -q "$base_branch"
+echo "main" >conflicted-home/file
+git -C conflicted-home commit -am main -q
+git -C conflicted-home merge side >/dev/null 2>&1 || true
+cat >conflicted-manifest.toml <<EOF
+[dotfiles]
+"~/.local/conflicted-home" = { source = "conflicted-home", mode = "symlink-each", manifest = "git" }
+EOF
+assert_fail "MISE_CONFIG_FILE=$PWD/conflicted-manifest.toml mise dotfiles apply --yes" "unresolved Git index entry"
+
+cat <<EOF >>mise.toml
+"~/.local/tracked-home" = { source = "tracked-home", mode = "symlink-each", manifest = "git", exclude = [".config/excluded.conf"] }
+"~/.local/tracked-copy" = { source = "tracked-home", mode = "copy", manifest = "git", exclude = [".config/excluded.conf"] }
+"~/.local/tracked-subdir" = { source = "tracked-home/.config", mode = "symlink-each", manifest = "git", exclude = ["excluded.conf"] }
+EOF
+assert_succeed "GIT_DIR=/nonexistent GIT_INDEX_FILE=/nonexistent mise dotfiles apply ~/.local/tracked-home --yes"
+assert "readlink ~/.local/tracked-home/.config/tracked.conf" "$PWD/tracked-home/.config/tracked.conf"
+assert_fail "test -e ~/.local/tracked-home/.config/untracked.conf"
+assert_succeed "mise dotfiles apply ~/.local/tracked-subdir --yes"
+assert "readlink ~/.local/tracked-subdir/tracked.conf" "$PWD/tracked-home/.config/tracked.conf"
+
+# Refreshing an existing Git-manifest copy validates against its repository and
+# captures tracked files without replacing the repository or its index.
+assert_succeed "mise dotfiles apply ~/.local/tracked-copy --yes"
+echo "captured" >~/.local/tracked-copy/.config/tracked.conf
+assert_succeed "mise dotfiles add ~/.local/tracked-copy --yes"
+assert "cat tracked-home/.config/tracked.conf" "captured"
+assert "readlink tracked-home/.config/tracked-link.conf" "tracked.conf"
+assert "cat tracked-home/.config/excluded.conf" "excluded source"
+assert "cat tracked-home/vendor/submodule/untracked-inside" "gitlink source"
+assert_succeed "git -C tracked-home status --short"
+
+# Dropping a still-present ignored file from the index also prunes its old link.
+git -C tracked-home rm -fq --cached .config/tracked.conf
+assert_contains "mise dotfiles status ~/.local/tracked-home" "stale link"
+assert_succeed "mise dotfiles apply ~/.local/tracked-home --yes"
+assert_fail "test -e ~/.local/tracked-home/.config/tracked.conf"
+
+# Switching environments reconciles state from the previous source for the
+# same target, like selecting a home or work dotfile profile.
+mkdir profile-home profile-work
+echo "home shared" >profile-home/shared
+echo "home only" >profile-home/home-only
+echo "work shared" >profile-work/shared
+echo "work only" >profile-work/work-only
+cat <<EOF >mise.home.toml
+[dotfiles]
+"~/.local/profile-home" = { source = "profile-home", mode = "symlink-each" }
+EOF
+cat <<EOF >mise.work.toml
+[dotfiles]
+"~/.local/profile-home" = { source = "profile-work", mode = "symlink-each" }
+EOF
+assert_succeed "MISE_ENV=home mise dotfiles apply ~/.local/profile-home --yes"
+echo "unmanaged" >~/.local/profile-home/unmanaged
+assert "readlink ~/.local/profile-home/shared" "$PWD/profile-home/shared"
+assert_contains "MISE_ENV=work mise dotfiles apply ~/.local/profile-home --dry-run" "profile-home/home-only"
+assert_succeed "MISE_ENV=work mise dotfiles apply ~/.local/profile-home --yes"
+assert "readlink ~/.local/profile-home/shared" "$PWD/profile-work/shared"
+assert "readlink ~/.local/profile-home/work-only" "$PWD/profile-work/work-only"
+assert_fail "test -e ~/.local/profile-home/home-only"
+assert "cat ~/.local/profile-home/unmanaged" "unmanaged"
+# Keep prior profile state so switching back uses the recorded footprint, and
+# normalize equivalent source spellings when identifying that state.
+sed -i.bak 's/source = "profile-home"/source = ".\/profile-home"/' mise.home.toml
+assert_succeed "MISE_ENV=home mise dotfiles apply ~/.local/profile-home --yes"
+assert "readlink ~/.local/profile-home/shared" "$PWD/./profile-home/shared"
+assert "readlink ~/.local/profile-home/home-only" "$PWD/./profile-home/home-only"
+assert_fail "test -e ~/.local/profile-home/work-only"
+assert "cat ~/.local/profile-home/unmanaged" "unmanaged"
+
 # symlink-each cleans up after itself: deleting a source file removes the
 # link it left behind (and any directory that emptied out), while files and
 # links mise didn't create stay put
@@ -178,6 +290,8 @@ assert "cat ~/.config/starship.toml" "starship v2"
 chmod 644 ~/.ssh/config
 chmod 600 dotfiles/ssh_config.tmpl
 assert_contains "mise dotfiles status" "permissions differ"
+assert_contains "mise dotfiles diff ~/.ssh/config" "dotfile differs: ~/.ssh/config"
+assert_contains "mise dotfiles diff ~/.ssh/config" "permissions differ: 0644 (current) -> 0600 (desired)"
 assert_succeed "mise dotfiles apply --yes"
 case "$(uname -s)" in
   Darwin) assert "stat -f %Lp ~/.ssh/config" "600" ;;
@@ -352,9 +466,11 @@ assert_fail "mise dotfiles apply --yes"
 # all problems are reported in one pass: a broken template doesn't hide a
 # missing source (or vice versa)
 echo "{{ not_a_real_function() }}" >dotfiles/bad.tmpl
+echo "{{ another_missing_function() }}" >dotfiles/bad2.tmpl
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.broken" = { source = "dotfiles/bad.tmpl", mode = "template" }
+"~/.also-broken" = { source = "dotfiles/bad2.tmpl", mode = "template" }
 "~/.missing" = "dotfiles/does-not-exist"
 EOF
 if install_out="$(mise dotfiles apply --yes 2>&1)"; then
@@ -362,6 +478,11 @@ if install_out="$(mise dotfiles apply --yes 2>&1)"; then
 fi
 assert_contains_text "$install_out" "sources do not exist"
 assert_contains_text "$install_out" "failed to render"
+if diff_out="$(mise dotfiles diff 2>&1)"; then
+  fail "[mise dotfiles diff] expected failure"
+fi
+assert_contains_text "$diff_out" '"~/.broken"'
+assert_contains_text "$diff_out" '"~/.also-broken"'
 
 # implied sources mirror home-relative paths under dotfiles.root and use
 # dotfiles.default_mode when mode is omitted
@@ -419,6 +540,10 @@ MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.captured-each --mod
 assert "cat captured-root/.captured-each/file" "captured each"
 assert "readlink ~/.captured-each/file" "$PWD/captured-root/.captured-each/file"
 assert_contains "cat ~/.config/mise/config.toml" '"~/.captured-each" = { mode = "symlink-each" }'
+# Refreshing an already-applied symlink-each entry must plan ownership from the
+# configured source, not the live target used to validate the captured shape.
+MISE_DOTFILES_ROOT="$PWD/captured-root" mise dotfiles add ~/.captured-each --yes
+assert "readlink ~/.captured-each/file" "$PWD/captured-root/.captured-each/file"
 rm ~/.config/mise/config.toml
 
 # standalone apply never replaces an existing real directory without --force,
@@ -515,15 +640,69 @@ dotfiles.root = "$PWD/copied-root"
 
 [dotfiles]
 "~/.copied" = { mode = "copy" }
+"~/.copied-two" = { mode = "copy" }
 EOF
 mkdir -p copied-root
 echo "source copy" >copied-root/.copied
+echo "source copy two" >copied-root/.copied-two
 assert_succeed "mise dotfiles apply --yes"
 echo "live copy edit" >~/.copied
 assert_succeed "mise dotfiles add ~/.copied --yes"
 assert "cat copied-root/.copied" "live copy edit"
 mode_warn="$(mise dotfiles add --mode symlink ~/.copied --yes 2>&1)"
 assert_contains "echo \"$mode_warn\"" "--mode symlink was ignored"
+
+# --changed captures every drifted copy-mode file, but remains read-only in dry-run.
+echo "bulk copy edit" >~/.copied
+echo "bulk copy edit two" >~/.copied-two
+assert_contains "mise dotfiles add --changed --dry-run --yes" "cp ~/.copied"
+assert "cat copied-root/.copied" "live copy edit"
+assert_succeed "mise dotfiles add --changed --yes"
+assert "cat copied-root/.copied" "bulk copy edit"
+assert "cat copied-root/.copied-two" "bulk copy edit two"
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert_fail "mise dotfiles add" "at least one target or --changed is required"
+assert_fail "mise dotfiles add --changed ~/.copied" "--changed does not accept target arguments"
+
+# Bulk reverse capture skips additive directory copies, where excluded source
+# files intentionally have no corresponding live target and must be preserved.
+mkdir -p copied-root/tree
+echo "managed" >copied-root/tree/managed
+echo "source only" >copied-root/tree/source-only
+cat <<EOF >mise.toml
+[settings]
+dotfiles.root = "$PWD/copied-root"
+
+[dotfiles]
+"~/.copied-tree" = { source = "copied-root/tree", mode = "copy", exclude = ["source-only"] }
+EOF
+assert_succeed "mise dotfiles apply --yes"
+echo "live edit" >~/.copied-tree/managed
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert "cat copied-root/tree/source-only" "source only"
+
+# A missing source may have been a directory. Bulk capture cannot safely infer
+# its old shape from a replacement target file, so explicit add is required.
+rm -r copied-root/tree ~/.copied-tree
+echo "replacement file" >~/.copied-tree
+assert_contains "mise dotfiles add --changed --yes 2>&1" "no changed copy-mode files"
+assert_directory_not_exists "$PWD/copied-root/tree"
+
+# An ignored config warning remains visible when no eligible entries were
+# loaded, instead of implying that every configured copy is in sync.
+assert_contains "MISE_IGNORED_CONFIG_PATHS='$PWD/mise.toml' mise dotfiles add --changed --yes 2>&1" "are not trusted"
+
+# Safe mode may inspect untrusted configuration, but it must not let that
+# configuration bulk-copy arbitrary live files into its checkout.
+mkdir -p "$HOME/untrusted-changed/source"
+echo "configured" >"$HOME/untrusted-changed/source/file"
+echo "live secret" >"$HOME/untrusted-changed-target"
+cat <<EOF >"$HOME/untrusted-changed/mise.toml"
+[dotfiles]
+"$HOME/untrusted-changed-target" = { source = "source/file", mode = "copy" }
+EOF
+assert_fail "MISE_SAFE=1 MISE_TRUSTED_CONFIG_PATHS='' mise --cd '$HOME/untrusted-changed' dotfiles add --changed --yes" "--changed requires trusted configuration"
+assert "cat '$HOME/untrusted-changed/source/file'" "configured"
 
 # edit opens the managed source, including symlink sources
 cat <<'EOF' >editor-write

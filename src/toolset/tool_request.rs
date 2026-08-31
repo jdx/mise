@@ -18,7 +18,9 @@ use crate::lockfile::LockfileTool;
 use crate::path::PathExt;
 use crate::runtime_symlinks::is_runtime_symlink;
 use crate::toolset::tool_version::ResolveOptions;
-use crate::toolset::{ToolSource, ToolVersion, ToolVersionOptions};
+use crate::toolset::{
+    ResolvedToolOptions, ToolOptionSource, ToolSource, ToolVersion, ToolVersionOptions,
+};
 use crate::{backend, lockfile};
 use crate::{
     backend::ABackend,
@@ -30,44 +32,53 @@ pub(crate) enum ToolRequest {
     Version {
         backend: Arc<BackendArg>,
         version: String,
-        options: ToolVersionOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Prefix {
         backend: Arc<BackendArg>,
         prefix: String,
-        options: ToolVersionOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Ref {
         backend: Arc<BackendArg>,
         ref_: String,
         ref_type: String,
-        options: ToolVersionOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Sub {
         backend: Arc<BackendArg>,
         sub: String,
         orig_version: String,
-        options: ToolVersionOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     Path {
         backend: Arc<BackendArg>,
         path: PathBuf,
-        options: ToolVersionOptions,
+        options: ResolvedToolOptions,
         source: ToolSource,
     },
     System {
         backend: Arc<BackendArg>,
         source: ToolSource,
-        options: ToolVersionOptions,
+        options: ResolvedToolOptions,
     },
 }
 
 impl ToolRequest {
     pub(crate) fn new(backend: Arc<BackendArg>, s: &str, source: ToolSource) -> eyre::Result<Self> {
+        Self::new_with_options(backend, s, ToolVersionOptions::default(), source)
+    }
+
+    pub(crate) fn new_with_options(
+        backend: Arc<BackendArg>,
+        s: &str,
+        request_options: ToolVersionOptions,
+        source: ToolSource,
+    ) -> eyre::Result<Self> {
         let s = match s.split_once('-') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => format!("{ref_type}:{r}"),
             _ => s.to_string(),
@@ -89,13 +100,14 @@ impl ToolRequest {
                 backend.short
             );
         }
+        let options = backend.resolve_opts_with_config_and_request(None, Some(request_options));
         Ok(match s.split_once(':') {
             Some((ref_type @ ("ref" | "tag" | "branch" | "rev"), r)) => {
                 validate_ref_string(r)?;
                 Self::Ref {
                     ref_: r.to_string(),
                     ref_type: ref_type.to_string(),
-                    options: backend.opts(),
+                    options,
                     backend,
                     source,
                 }
@@ -104,7 +116,7 @@ impl ToolRequest {
                 validate_version_string(p)?;
                 Self::Prefix {
                     prefix: p.to_string(),
-                    options: backend.opts(),
+                    options,
                     backend,
                     source,
                 }
@@ -115,7 +127,7 @@ impl ToolRequest {
                 let path = resolve_path(&p, &source);
                 Self::Path {
                     path,
-                    options: backend.opts(),
+                    options,
                     backend,
                     source,
                 }
@@ -126,7 +138,7 @@ impl ToolRequest {
                 validate_version_string(v)?;
                 Self::Sub {
                     sub: sub.to_string(),
-                    options: backend.opts(),
+                    options,
                     orig_version: v.to_string(),
                     backend,
                     source,
@@ -135,7 +147,7 @@ impl ToolRequest {
             None => {
                 if s == "system" {
                     Self::System {
-                        options: backend.opts(),
+                        options,
                         backend,
                         source,
                     }
@@ -143,7 +155,7 @@ impl ToolRequest {
                     validate_version_string(&s)?;
                     Self::Version {
                         version: s,
-                        options: backend.opts(),
+                        options,
                         backend,
                         source,
                     }
@@ -152,21 +164,24 @@ impl ToolRequest {
             _ => bail!("invalid tool version request: {s}"),
         })
     }
-    pub(crate) fn new_opts(
+
+    /// Construct an unvalidated version request for tests that exercise paths
+    /// derived from otherwise-invalid version strings.
+    #[cfg(test)]
+    pub(crate) fn new_version_for_test(
         backend: Arc<BackendArg>,
-        s: &str,
-        options: ToolVersionOptions,
+        version: &str,
         source: ToolSource,
-    ) -> eyre::Result<Self> {
-        let mut tvr = Self::new(backend, s, source)?;
-        match &mut tvr {
-            Self::Version { options: o, .. }
-            | Self::Prefix { options: o, .. }
-            | Self::Ref { options: o, .. } => *o = options,
-            _ => Default::default(),
+    ) -> Self {
+        let options = backend.resolve_opts_with_config_and_request(None, None);
+        Self::Version {
+            backend,
+            version: version.to_string(),
+            options,
+            source,
         }
-        Ok(tvr)
     }
+
     pub(crate) fn set_source(&mut self, source: ToolSource) -> Self {
         match self {
             Self::Version { source: s, .. }
@@ -202,25 +217,25 @@ impl ToolRequest {
         }
     }
     pub(crate) fn os(&self) -> &Option<Vec<String>> {
-        match self {
-            Self::Version { options, .. }
-            | Self::Prefix { options, .. }
-            | Self::Ref { options, .. }
-            | Self::Path { options, .. }
-            | Self::Sub { options, .. }
-            | Self::System { options, .. } => &options.os,
-        }
+        &self.resolved_options().effective().os
     }
     pub(crate) fn set_options(&mut self, options: ToolVersionOptions) -> &mut Self {
+        let resolved = self
+            .ba()
+            .resolve_opts_with_config_and_request(None, Some(options));
+        *self.resolved_options_mut() = resolved;
+        self
+    }
+
+    fn resolved_options_mut(&mut self) -> &mut ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => *o = options,
+            | Self::System { options: o, .. } => o,
         }
-        self
     }
     pub(crate) fn version(&self) -> String {
         match self {
@@ -238,14 +253,64 @@ impl ToolRequest {
     }
 
     pub(crate) fn options(&self) -> ToolVersionOptions {
+        self.resolved_options().effective().clone()
+    }
+
+    pub(crate) fn explicit_options(&self) -> ToolVersionOptions {
+        self.resolved_options().options_from_sources(&[
+            ToolOptionSource::Request,
+            ToolOptionSource::InlineBackendArg,
+        ])
+    }
+
+    fn resolved_options(&self) -> &ResolvedToolOptions {
         match self {
             Self::Version { options: o, .. }
             | Self::Prefix { options: o, .. }
             | Self::Ref { options: o, .. }
             | Self::Sub { options: o, .. }
             | Self::Path { options: o, .. }
-            | Self::System { options: o, .. } => o.clone(),
+            | Self::System { options: o, .. } => o,
         }
+    }
+
+    /// Apply matching configuration through the canonical option precedence chain.
+    ///
+    /// Request provenance is retained internally, so an explicit value that
+    /// equals a backend default still overrides configuration.
+    pub(super) fn apply_config_options(&mut self, config_options: ToolVersionOptions) -> &mut Self {
+        let request_options = self
+            .resolved_options()
+            .options_from_sources(&[ToolOptionSource::Request]);
+        let resolved = self
+            .ba()
+            .resolve_opts_with_config_and_request(Some(config_options), Some(request_options));
+        *self.resolved_options_mut() = resolved;
+        self
+    }
+
+    pub(super) fn to_ref(&self, ref_: String, ref_type: String) -> Self {
+        Self::Ref {
+            backend: self.ba().clone(),
+            ref_,
+            ref_type,
+            options: self.resolved_options().clone(),
+            source: self.source().clone(),
+        }
+    }
+
+    pub(super) fn to_path(&self, path: PathBuf) -> Self {
+        Self::Path {
+            backend: self.ba().clone(),
+            path,
+            options: self.resolved_options().clone(),
+            source: self.source().clone(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn option_source(&self, key: &str) -> Option<ToolOptionSource> {
+        self.resolved_options().source_for_key(key)
     }
 
     /// Rejects install options that can execute configuration-provided code in safe mode.
@@ -472,16 +537,9 @@ impl ToolRequest {
 
     pub(crate) fn is_os_supported(&self) -> bool {
         if let Some(os_list) = self.os() {
-            let current_os = &crate::cli::version::OS;
-            let current_arch = &crate::cli::version::ARCH;
-            let matched = os_list.iter().any(|entry| {
-                if let Some((os, arch)) = entry.split_once('/') {
-                    normalize_os(os) == current_os.as_str()
-                        && normalize_arch(arch) == current_arch.as_str()
-                } else {
-                    normalize_os(entry) == current_os.as_str()
-                }
-            });
+            let matched = os_list
+                .iter()
+                .any(|entry| crate::cli::version::os_selector_matches(entry));
             if !matched {
                 return false;
             }
@@ -666,24 +724,6 @@ fn resolve_path(p: &str, source: &ToolSource) -> PathBuf {
     base.join(p)
 }
 
-/// Normalize OS name aliases to the canonical form used by `std::env::consts::OS`.
-fn normalize_os(os: &str) -> &str {
-    match os {
-        "darwin" | "macos" => "macos",
-        "windows" | "win" => "windows",
-        other => other,
-    }
-}
-
-/// Normalize architecture name aliases to the canonical form used by `cli::version::ARCH`.
-fn normalize_arch(arch: &str) -> &str {
-    match arch {
-        "x86_64" | "amd64" | "x64" => "x64",
-        "aarch64" | "arm64" => "arm64",
-        other => other,
-    }
-}
-
 /// subtracts sub from orig and removes suffix
 /// e.g. version_sub("18.2.3", "2") -> "16"
 /// e.g. version_sub("18.2.3", "0.1") -> "18.1"
@@ -761,12 +801,7 @@ mod tests {
         // "prefix:0.8" could never starts_with-match a stored "0.8.1" (#5781).
         // Prefix requests also require separator-boundary matching so a stale
         // "0.81.0" entry cannot satisfy prefix:0.8.
-        let prefix = ToolRequest::Prefix {
-            backend: test_ba(),
-            prefix: "0.8".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let prefix = ToolRequest::new(test_ba(), "prefix:0.8", ToolSource::Argument).unwrap();
         let (query, boundary) = prefix.lockfile_version_query();
         assert_str_eq!(query, "0.8");
         assert!(boundary);
@@ -774,12 +809,7 @@ mod tests {
 
         // Every other variant keeps matching on its version() string, without
         // the boundary restriction (pre-existing fuzzy semantics).
-        let version = ToolRequest::Version {
-            backend: test_ba(),
-            version: "0.8".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let version = ToolRequest::new(test_ba(), "0.8", ToolSource::Argument).unwrap();
         let (query, boundary) = version.lockfile_version_query();
         assert_str_eq!(query, "0.8");
         assert!(!boundary);
@@ -1050,27 +1080,5 @@ mod tests {
         assert!(version_sub("latest", "1").is_err());
         assert!(version_sub("1.2.3", "x").is_err());
         assert!(version_sub("", "1").is_err());
-    }
-
-    #[test]
-    fn test_normalize_os() {
-        use super::normalize_os;
-        assert_eq!(normalize_os("macos"), "macos");
-        assert_eq!(normalize_os("darwin"), "macos");
-        assert_eq!(normalize_os("linux"), "linux");
-        assert_eq!(normalize_os("windows"), "windows");
-        assert_eq!(normalize_os("win"), "windows");
-        assert_eq!(normalize_os("freebsd"), "freebsd");
-    }
-
-    #[test]
-    fn test_normalize_arch() {
-        use super::normalize_arch;
-        assert_eq!(normalize_arch("arm64"), "arm64");
-        assert_eq!(normalize_arch("aarch64"), "arm64");
-        assert_eq!(normalize_arch("x64"), "x64");
-        assert_eq!(normalize_arch("x86_64"), "x64");
-        assert_eq!(normalize_arch("amd64"), "x64");
-        assert_eq!(normalize_arch("riscv64"), "riscv64");
     }
 }

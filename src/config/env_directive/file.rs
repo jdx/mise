@@ -9,6 +9,7 @@ use eyre::{WrapErr, bail, eyre};
 use indexmap::IndexMap;
 use rops::file::format::{JsonFileFormat, TomlFileFormat, YamlFileFormat};
 use std::{
+    fs,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -221,13 +222,26 @@ impl EnvResults {
         // Read here rather than letting dotenvy open the file, so a byte-order mark can be taken
         // off before the parser sees it. A mark belongs to the first key's name as far as dotenvy
         // is concerned, and one bad line fails the whole file — so a `.env` saved by an editor
-        // that writes one is rejected entirely, naming a character nobody can see. An unreadable
-        // file still yields nothing rather than an error, which is what the previous
-        // `if let Ok(..)` did.
-        let Ok(content) = file::read_to_string(p) else {
+        // that writes one is rejected entirely, naming a character nobody can see.
+        //
+        // `decode_text` rather than `read_to_string`: the latter is UTF-8 only, and Windows
+        // PowerShell 5.1's `>` and `Out-File` write UTF-16LE by default, so a `.env` saved with
+        // the shell that ships with the OS used to be thrown away here without a word.
+        let Ok(bytes) = fs::read(p) else {
+            // Unchanged: a file that cannot be opened yields nothing rather than an error, which
+            // is what the original `if let Ok(..)` did. A glob can match a file that has since
+            // gone, and that is not worth a diagnostic.
             return Ok(EnvMap::new());
         };
-        let content = file::strip_utf8_bom(&content);
+        let content = match file::decode_text(&bytes) {
+            Ok(content) => content,
+            Err(err) => {
+                // Read and then discarded is a different thing from never opened, and it is the
+                // silence this exists to end: the user wrote a file mise looked at and dropped.
+                warn!("ignoring {}: {err:#}", display_path(p));
+                return Ok(EnvMap::new());
+            }
+        };
         if !expand {
             // Preserve dotenvy's normal behavior unless cross-file expansion was
             // explicitly requested.
@@ -528,5 +542,33 @@ mod tests {
         assert!(!is_env_key("1FOO"));
         assert!(!is_env_key("FOO-BAR"));
         assert!(!is_env_key(""));
+    }
+
+    #[tokio::test]
+    async fn dotenv_reads_a_file_whatever_it_is_encoded_in() {
+        // Windows PowerShell 5.1's `>` and `Out-File` write UTF-16LE by default, so the shell
+        // that ships with the OS produces the second of these. It used to yield nothing at all,
+        // with no diagnostic -- the variable was simply absent.
+        async fn read(dir: &Path, name: &str, bytes: &[u8]) -> EnvMap {
+            let path = dir.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            EnvResults::dotenv(&path, &TeraEnvMap::new(), false)
+                .await
+                .unwrap()
+        }
+        let tmp = tempfile::tempdir().unwrap();
+
+        let utf8 = read(tmp.path(), "utf8.env", b"FROM_ENV=hello\n").await;
+        let utf16 = read(
+            tmp.path(),
+            "utf16.env",
+            b"\xff\xfeF\0R\0O\0M\0_\0E\0N\0V\0=\0h\0e\0l\0l\0o\0\n\0",
+        )
+        .await;
+
+        assert_eq!(utf8.get("FROM_ENV").map(String::as_str), Some("hello"));
+        // Stated as equality rather than two separate assertions: the claim is that the encoding
+        // makes no difference, not merely that each one happens to work.
+        assert_eq!(utf16, utf8);
     }
 }

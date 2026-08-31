@@ -127,3 +127,19 @@ _.file = 'bom.json'
 TOML
 printf '\xef\xbb\xbf{"BOM_BAZ": "qux"}\n' >bom.json
 assert "mise env | grep '^export BOM_BAZ='" "export BOM_BAZ=qux"
+
+# The same shell one step further: Windows PowerShell 5.1's bare `>` and `Out-File` write UTF-16LE,
+# not UTF-8 with a mark. `read_to_string` is UTF-8 only, so this file used to be opened, decoded
+# unsuccessfully and dropped without a word -- the variable was simply absent. Not a Windows-only
+# path: a `.env` written there and committed was skipped by every platform reading it.
+cat <<TOML >mise.toml
+[env]
+_.file = 'utf16-env'
+TOML
+printf '\xff\xfeU\x00T\x00F\x001\x006\x00_\x00F\x00O\x00O\x00=\x00b\x00a\x00r\x00\n\x00' >utf16-env
+assert "mise env | grep '^export UTF16_FOO='" "export UTF16_FOO=bar"
+
+# The control: byte-for-byte the same text as UTF-8, same expectation. The claim is that the
+# encoding makes no difference, not that this one file happens to work.
+printf 'UTF16_FOO=bar\n' >utf16-env
+assert "mise env | grep '^export UTF16_FOO='" "export UTF16_FOO=bar"

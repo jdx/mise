@@ -77,27 +77,11 @@ impl DepsProvider for GitSubmoduleDepsProvider {
     }
 
     fn install_command(&self) -> Result<DepsCommand> {
-        if let Some(run) = &self.base.config.run {
-            return DepsCommand::from_string(run, &self.base.project_root, &self.base.config);
-        }
-
-        Ok(DepsCommand {
-            program: "git".to_string(),
-            args: vec![
-                "submodule".to_string(),
-                "update".to_string(),
-                "--init".to_string(),
-                "--recursive".to_string(),
-            ],
-            env: self.base.config.env.clone(),
-            cwd: Some(self.base.config_root()),
-            description: self
-                .base
-                .config
-                .description
-                .clone()
-                .unwrap_or_else(|| "git submodule update --init --recursive".to_string()),
-        })
+        self.base.install_command(
+            "git",
+            &["submodule", "update", "--init", "--recursive"],
+            "git submodule update --init --recursive",
+        )
     }
 
     fn applicability(&self) -> DepsProviderApplicability {

@@ -15,7 +15,7 @@ use crate::hash::hash_to_str;
 use crate::install_before::{BeforeDateSource, resolve_before_date_for_tool_with_source};
 use crate::lockfile::{CondaPackageInfo, LockfileTool, PkgxPackageInfo, PlatformInfo};
 use crate::runtime_symlinks::is_runtime_symlink;
-use crate::toolset::{ToolRequest, ToolSource, ToolVersionOptions, tool_request};
+use crate::toolset::{ToolRequest, ToolSource, install_state, tool_request};
 use crate::{dirs, env};
 use console::style;
 use dashmap::DashMap;
@@ -400,7 +400,6 @@ impl ToolVersion {
                 return Ok(Self::resolve_ref(
                     r.to_string(),
                     ref_type.to_string(),
-                    request.options(),
                     &request,
                 ));
             }
@@ -731,31 +730,15 @@ impl ToolVersion {
         Ok(Self::new(request, v.to_string()))
     }
 
-    fn resolve_ref(
-        ref_: String,
-        ref_type: String,
-        opts: ToolVersionOptions,
-        tr: &ToolRequest,
-    ) -> Self {
-        let request = ToolRequest::Ref {
-            backend: tr.ba().clone(),
-            ref_,
-            ref_type,
-            options: opts.clone(),
-            source: tr.source().clone(),
-        };
+    fn resolve_ref(ref_: String, ref_type: String, tr: &ToolRequest) -> Self {
+        let request = tr.to_ref(ref_, ref_type);
         let version = request.version();
         Self::new(request, version)
     }
 
     fn resolve_path(path: PathBuf, tr: &ToolRequest) -> Result<ToolVersion> {
         let path = fs::canonicalize(path)?;
-        let request = ToolRequest::Path {
-            backend: tr.ba().clone(),
-            path,
-            source: tr.source().clone(),
-            options: tr.options().clone(),
-        };
+        let request = tr.to_path(path);
         let version = request.version();
         Ok(Self::new(request, version))
     }
@@ -913,6 +896,11 @@ impl ResolveOptions {
 /// A linked version is an installed version whose path is a symlink to an external
 /// absolute path, as opposed to runtime symlinks or mise-managed install/cache links.
 fn has_linked_version(ba: &BackendArg) -> bool {
+    if install_state::get_tool_full(&ba.short)
+        .is_some_and(|installed| installed != ba.full_without_opts())
+    {
+        return false;
+    }
     let installs_dir = &ba.installs_path;
     let Ok(entries) = std::fs::read_dir(installs_dir) else {
         return false;
@@ -994,7 +982,7 @@ impl Display for ResolveOptions {
 mod tests {
     use super::*;
     use crate::cli::args::BackendResolution;
-    use crate::toolset::CoreToolOptions;
+    use crate::toolset::{CoreToolOptions, ToolOptionSource, ToolVersionOptions};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_name(prefix: &str) -> String {
@@ -1032,14 +1020,7 @@ mod tests {
             ("tag:v1.0.0", "tag-v1.0.0"),
             ("branch:main", "branch-main"),
         ] {
-            let (ref_type, ref_) = version.split_once(':').unwrap();
-            let request = ToolRequest::Ref {
-                backend: backend.clone(),
-                ref_: ref_.to_string(),
-                ref_type: ref_type.to_string(),
-                options: ToolVersionOptions::default(),
-                source: ToolSource::Argument,
-            };
+            let request = ToolRequest::new(backend.clone(), version, ToolSource::Argument).unwrap();
             let tv = ToolVersion::new(request, version.to_string());
             assert_eq!(tv.tv_pathname(), pathname);
         }
@@ -1063,12 +1044,9 @@ mod tests {
             "registry".to_string(),
             toml::Value::String("https://registry.example.test".to_string()),
         );
-        let request = ToolRequest::Version {
-            backend,
-            version: "latest".to_string(),
-            options,
-            source: ToolSource::Argument,
-        };
+        let request =
+            ToolRequest::new_with_options(backend, "latest", options, ToolSource::Argument)
+                .unwrap();
         let lt = LockfileTool {
             version: "11.17.0".to_string(),
             backend: Some("npm:npm".to_string()),
@@ -1095,6 +1073,27 @@ mod tests {
                 "https://registry.example.test".to_string()
             ))
         );
+    }
+
+    #[tokio::test]
+    async fn ref_resolution_preserves_request_option_source() {
+        crate::toolset::install_state::init().await.unwrap();
+        let backend = Arc::new(BackendArg::from("solidity"));
+        let mut options = ToolVersionOptions::default();
+        options
+            .opts
+            .insert("bin".to_string(), toml::Value::String("solc".to_string()));
+        let request =
+            ToolRequest::new_with_options(backend, "latest", options.clone(), ToolSource::Argument)
+                .unwrap();
+
+        let resolved = ToolVersion::resolve_ref("main".to_string(), "ref".to_string(), &request);
+
+        assert_eq!(
+            resolved.request.option_source("bin"),
+            Some(ToolOptionSource::Request)
+        );
+        assert_eq!(resolved.request.options().get("bin"), Some("solc"));
     }
 
     #[test]
@@ -1210,12 +1209,7 @@ mod tests {
         fs::create_dir_all(install_path.join("bin"))?;
         fs::write(backend.installs_path.join("1.0"), "./1.0.1")?;
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "1.0".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "1.0", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.1".into());
 
         let runtime_path = tv.runtime_path();
@@ -1263,12 +1257,7 @@ mod tests {
         fs::write(&runtime_link, "./3.13.9")?;
 
         // Fuzzy request ("3") resolved to a concrete version ("3.14.6").
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "3".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "3", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "3.14.6".into());
         assert!(!tv.resolved_from_lockfile());
 
@@ -1315,12 +1304,7 @@ mod tests {
         );
         backend.installs_path = temp_dir.path().join("installs").join("dummy-cache");
 
-        let request = ToolRequest::Version {
-            backend: Arc::new(backend),
-            version: "1.0.0".into(),
-            options: ToolVersionOptions::default(),
-            source: ToolSource::Argument,
-        };
+        let request = ToolRequest::new(Arc::new(backend), "1.0.0", ToolSource::Argument).unwrap();
         let tv = ToolVersion::new(request, "1.0.0".into());
 
         // First call: nothing exists yet. Should return the primary path but

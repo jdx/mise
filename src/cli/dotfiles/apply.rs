@@ -34,6 +34,7 @@ impl DotfilesApply {
         self.dry_run
     }
 
+    /// Load and filter the configured whole-file and edit requests.
     pub(crate) fn requests(
         &self,
         config: &Config,
@@ -41,32 +42,7 @@ impl DotfilesApply {
         Vec<system::files::FileRequest>,
         Vec<system::edits::EditRequest>,
     )> {
-        let all_files = system::files::files_from_config(config)?;
-        system::files::validate_composed_file_footprints(&all_files)?;
-        let files = all_files
-            .iter()
-            .filter(|req| {
-                system::files::matches_target(&req.target, &req.target_raw, &self.targets)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
-        let all_edits = system::edits::edits_from_config(config)?;
-        let edits = all_edits
-            .iter()
-            .filter(|req| system::edits::matches_target(req, &self.targets))
-            .cloned()
-            .collect::<Vec<_>>();
-        if files.is_empty()
-            && edits.is_empty()
-            && !self.targets.is_empty()
-            && (!all_files.is_empty() || !all_edits.is_empty())
-        {
-            eyre::bail!(
-                "no dotfiles matched target filter: {}",
-                self.targets.join(", ")
-            );
-        }
-        Ok((files, edits))
+        super::select_requests(config, &self.targets)
     }
 
     pub(crate) async fn run(self) -> Result<bool> {

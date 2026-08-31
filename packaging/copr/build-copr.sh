@@ -186,6 +186,12 @@ echo "=== Creating RPM Spec File ==="
 cat >"SPECS/${PACKAGE_NAME}.spec" <<'EOF'
 %global debug_package %{nil}
 %global _missing_build_ids_terminate_build 0
+# Fedora's automatic %%set_build_flags expands these Rust RPM macros into
+# RUSTFLAGS before %%build, even though the spec invokes Cargo directly. Keep
+# release optimizations while restoring Cargo's parallel release defaults;
+# debuginfo is unused because this package does not produce a debug package.
+%global rustflags_codegen_units 16
+%global rustflags_debuginfo 0
 
 Name:           __PACKAGE_NAME__
 Version:        __VERSION__

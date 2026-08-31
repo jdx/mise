@@ -576,14 +576,15 @@ pub(crate) struct TaskWatchOptions {
 #[serde(default, deny_unknown_fields)]
 struct TaskRustCacheOptions {
     enabled: bool,
-    verify: bool,
+    #[serde(rename = "verify")]
+    _verify: bool,
 }
 
 impl Default for TaskRustCacheOptions {
     fn default() -> Self {
         Self {
             enabled: true,
-            verify: false,
+            _verify: false,
         }
     }
 }
@@ -591,15 +592,11 @@ impl Default for TaskRustCacheOptions {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskRustCacheConfig {
     pub enabled: bool,
-    pub verify: bool,
 }
 
 impl Default for TaskRustCacheConfig {
     fn default() -> Self {
-        Self {
-            enabled: true,
-            verify: false,
-        }
+        Self { enabled: true }
     }
 }
 
@@ -621,10 +618,7 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
             where
                 E: serde::de::Error,
             {
-                Ok(TaskRustCacheConfig {
-                    enabled,
-                    verify: false,
-                })
+                Ok(TaskRustCacheConfig { enabled })
             }
 
             fn visit_map<M>(self, map: M) -> std::result::Result<Self::Value, M::Error>
@@ -636,7 +630,6 @@ impl<'de> Deserialize<'de> for TaskRustCacheConfig {
                 )?;
                 Ok(TaskRustCacheConfig {
                     enabled: options.enabled,
-                    verify: options.verify,
                 })
             }
         }
@@ -727,7 +720,7 @@ pub(crate) struct Task {
     /// Experimental local artifact cache configuration.
     #[serde(default)]
     pub cache: Option<TaskCacheConfig>,
-    /// Rust compiler action caching enabled only for this task run.
+    /// Deprecated compatibility field; enabled values emit an mbx migration warning.
     #[serde(default)]
     pub rust_cache: Option<TaskRustCacheConfig>,
     #[serde(skip)]
@@ -1915,8 +1908,8 @@ impl Task {
             .any(|a| a == "--help" || a == "-h")
     }
 
-    /// Reconstruct the command-line separator clap consumed before populating
-    /// `trailing_args` when the active usage command requires it.
+    /// Reconstruct the command-line separator the outer CLI consumed before populating
+    /// `trailing_args` when the active usage command requires or preserves it.
     pub(crate) fn args_for_usage_parser(&self, spec: &usage::Spec, args: &[String]) -> Vec<String> {
         if self.trailing_args.is_empty() {
             return args.to_vec();
@@ -1939,7 +1932,12 @@ impl Task {
         if !usage_command_for_args(spec, task_prefix)
             .args
             .iter()
-            .any(|arg| arg.double_dash == usage::SpecDoubleDashChoices::Required)
+            .any(|arg| {
+                matches!(
+                    arg.double_dash,
+                    usage::SpecDoubleDashChoices::Required | usage::SpecDoubleDashChoices::Preserve
+                )
+            })
         {
             return args.to_vec();
         }
@@ -2020,7 +2018,9 @@ impl Task {
                 Some(cwd) => Some(cwd),
                 None => self.dir(config).await?,
             };
-            let (scripts, spec) = Self::make_script_parser(parser_dir, extra_vars)
+            let (scripts, spec) = self
+                .make_script_parser(config, parser_dir, extra_vars)
+                .await
                 .parse_run_scripts(config, self, &scripts_only, &env)
                 .await?;
             (spec, scripts)
@@ -2030,11 +2030,39 @@ impl Task {
         Ok((spec, scripts))
     }
 
-    fn make_script_parser(
+    /// Build the script parser for this task.
+    ///
+    /// The source baseline is resolved here rather than inside the parser
+    /// because `task_source_files(only_changed=true)` needs the marker written
+    /// under the task's *real* working directory, and only this layer has the
+    /// config needed to determine it.
+    async fn make_script_parser(
+        &self,
+        config: &Arc<Config>,
         cwd: Option<PathBuf>,
         extra_vars: Option<IndexMap<String, String>>,
     ) -> TaskScriptParser {
         let parser = TaskScriptParser::new(cwd);
+        // Skipped for a task with no sources: `task_source_files()` returns an
+        // empty array there regardless, and resolving the baseline would mean
+        // a `task_cwd` call — and with it a possible `dir` template render —
+        // that the task would not otherwise pay for.
+        let parser = if self.sources.is_empty() {
+            parser
+        } else {
+            match task_source_checker::source_baseline_path(self, config).await {
+                Ok(baseline) => parser.with_baseline(baseline),
+                Err(err) => {
+                    // Without a baseline `only_changed` falls back to reporting
+                    // every source, which is the safe direction.
+                    trace!(
+                        "could not resolve source baseline for task {}: {err:?}",
+                        self.name
+                    );
+                    parser
+                }
+            }
+        };
         match extra_vars {
             Some(vars) => parser.with_extra_vars(vars),
             None => parser,
@@ -2124,7 +2152,9 @@ impl Task {
                 None => self.dir(config).await?,
             };
             let scripts_only = self.run_script_strings();
-            let scripts = Self::make_script_parser(parser_dir, extra_vars)
+            let scripts = self
+                .make_script_parser(config, parser_dir, extra_vars)
+                .await
                 .parse_run_scripts_with_args(config, self, &scripts_only, &env, &args, &spec)
                 .await?;
             Ok(scripts.into_iter().map(|s| (s, vec![])).collect())
@@ -3871,13 +3901,7 @@ rust_cache = { verify = true }
 "#,
         )
         .unwrap();
-        assert_eq!(
-            verify.rust_cache,
-            Some(TaskRustCacheConfig {
-                verify: true,
-                ..TaskRustCacheConfig::default()
-            })
-        );
+        assert_eq!(verify.rust_cache, Some(TaskRustCacheConfig::default()));
     }
 
     #[test]
@@ -3899,17 +3923,11 @@ rust_cache = { enabled = false }
 
         assert_eq!(
             disabled.rust_cache,
-            Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            })
+            Some(TaskRustCacheConfig { enabled: false })
         );
         assert_eq!(
             table.rust_cache,
-            Some(TaskRustCacheConfig {
-                enabled: false,
-                ..TaskRustCacheConfig::default()
-            })
+            Some(TaskRustCacheConfig { enabled: false })
         );
     }
 

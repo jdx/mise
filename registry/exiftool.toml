@@ -1,0 +1,5 @@
+backends = ["conda:exiftool"]
+bins = ["exiftool"]
+description = "ExifTool meta information reader/writer"
+test = { cmd = "exiftool -ver", expected = "{{version}}" }
+version_order = "source"

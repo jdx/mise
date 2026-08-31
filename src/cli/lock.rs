@@ -1430,7 +1430,7 @@ impl Lock {
                         Some(backend) => config.resolve_alias(backend, &version).await?,
                         None => version.clone(),
                     };
-                    let request = ToolRequest::new_opts(
+                    let request = ToolRequest::new_with_options(
                         Arc::new(ba.clone()),
                         &effective_version,
                         tv.request.options(),
@@ -1517,7 +1517,7 @@ impl Lock {
                 let Some(request) = tool.tvr else {
                     continue;
                 };
-                let request = ToolRequest::new_opts(
+                let request = ToolRequest::new_with_options(
                     tool.ba.clone(),
                     &request.version(),
                     request.options(),
@@ -1949,9 +1949,13 @@ mod tests {
                 .insert_option(key.to_string(), toml::Value::String(value.to_string()))
                 .unwrap();
         }
-        let request =
-            ToolRequest::new_opts(Arc::new(ba.clone()), request, options, ToolSource::Argument)
-                .unwrap();
+        let request = ToolRequest::new_with_options(
+            Arc::new(ba.clone()),
+            request,
+            options,
+            ToolSource::Argument,
+        )
+        .unwrap();
         let tv = ToolVersion::new(request, resolved_version.to_string());
         (ba, tv)
     }

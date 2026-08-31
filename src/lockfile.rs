@@ -3550,9 +3550,7 @@ pub(crate) fn get_locked_version(
         // Only sort when prefix is "latest" and we have multiple matches
         // This is expensive, so avoid it for specific version prefixes
         if prefix == "latest" && matching.len() > 1 {
-            matching.sort_by(|a, b| {
-                versions::Versioning::new(&b.version).cmp(&versions::Versioning::new(&a.version))
-            });
+            matching.sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
         }
 
         if let Some(found) = matching.first() {
@@ -3566,10 +3564,7 @@ pub(crate) fn get_locked_version(
                 .filter(|v| version_matches(v) && v.options.is_empty())
                 .collect();
             if prefix == "latest" && legacy.len() > 1 {
-                legacy.sort_by(|a, b| {
-                    versions::Versioning::new(&b.version)
-                        .cmp(&versions::Versioning::new(&a.version))
-                });
+                legacy.sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
             }
             if let Some(found) = legacy.first() {
                 trace!(
@@ -3585,6 +3580,36 @@ pub(crate) fn get_locked_version(
     }
 
     Ok(None)
+}
+
+/// Newest-first ordering for the lockfile entries that all satisfy one
+/// `latest` request.
+///
+/// The version string is a tie-break, not decoration. `versions` compares an
+/// alphanumeric chunk by its leading digits and stops there, so `3.7b` and
+/// `3.7c` both reduce to `7` and come back `Equal` (fosskers/rs-versions#39).
+/// Entries are written in lexicographic order of the version string
+/// (`merge_tool_entries`) and `sort_by` is stable, so with nothing to break the
+/// tie that file order survives and the *older* entry always wins.
+/// `install_state` breaks the same tie the same way.
+///
+/// Two identical strings still compare `Equal`, which leaves the stable sort to
+/// keep duplicate entries in the order they were read.
+///
+/// Deliberately not `Backend::version_order`, which is what the versioned
+/// branch delegates to. That enum has two variants and neither answers this
+/// better:
+///
+/// - `Source` means "the order the source listed them". The source here is
+///   `merge_tool_entries`, which writes entries sorted by the version *string*,
+///   so taking the end of that list answers `1.9.0` for a pair of `1.9.0` and
+///   `1.10.0`.
+/// - `Semver` parks everything `semver::Version` cannot parse ahead of
+///   everything it can, in that same lexicographic order, so it answers `1.9b`
+///   for a pair of `1.9b` and `1.10b`. Where it does order, `Versioning` agrees
+///   with it: `Versioning::new` reaches for `SemVer` first.
+fn cmp_lockfile_versions_newest_first(a: &str, b: &str) -> std::cmp::Ordering {
+    (versions::Versioning::new(b), b).cmp(&(versions::Versioning::new(a), a))
 }
 
 fn select_unbound_lockfile_tool<'a>(
@@ -4092,18 +4117,15 @@ mod tests {
             })
             .to_string();
         let short = tool_name.clone();
-        let request = crate::toolset::ToolRequest::Version {
-            backend: Arc::new(crate::cli::args::BackendArg::new_raw(
-                short,
-                Some(backend.to_string()),
-                tool_name,
-                None,
-                crate::cli::args::BackendResolution::new(true),
-            )),
-            version: version.to_string(),
-            options: crate::toolset::ToolVersionOptions::default(),
-            source: ToolSource::Unknown,
-        };
+        let backend = Arc::new(crate::cli::args::BackendArg::new_raw(
+            short,
+            Some(backend.to_string()),
+            tool_name,
+            None,
+            crate::cli::args::BackendResolution::new(true),
+        ));
+        let request =
+            crate::toolset::ToolRequest::new(backend, version, ToolSource::Unknown).unwrap();
         ToolVersion::new(request, version.to_string())
     }
 
@@ -4560,6 +4582,73 @@ options = { exe = "rg" }
         // an empty prefix must not match everything
         assert!(!lockfile_version_matches_prefix_boundary("", "1.0.0"));
         assert!(!lockfile_version_matches_prefix_boundary("2", "1.0.0"));
+    }
+
+    #[test]
+    fn test_cmp_lockfile_versions_newest_first() {
+        use std::cmp::Ordering;
+
+        // The tie `versions` cannot break on its own: both chunks reduce to `7`.
+        // Without the version-string tie-break these compare Equal and the
+        // caller's stable sort keeps whichever the file listed first.
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("3.7b", "3.7c"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("3.7c", "3.7b"),
+            Ordering::Less
+        );
+
+        // The tie-break must stay a tie-break: where the versions really do
+        // order, the string must not get a say. Lexicographically "1.10.0" is
+        // the smaller of these two.
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("1.9.0", "1.10.0"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("1.10.0", "1.9.0"),
+            Ordering::Less
+        );
+
+        // Non-semver, and the pair that separates this from every ordering
+        // that falls back to file order: `semver::Version` parses neither, and
+        // lexicographically "1.10b" comes first, so reading off the end of the
+        // stored order answers "1.9b".
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("1.9b", "1.10b"),
+            Ordering::Greater
+        );
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("1.10b", "1.9b"),
+            Ordering::Less
+        );
+
+        // A prerelease is older than its release. `Versioning::new` tries
+        // `SemVer` before anything else, so this follows semver precedence
+        // rather than the "package release revision" reading of `-rc1`.
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("1.0.0-rc1", "1.0.0"),
+            Ordering::Greater
+        );
+
+        // Identical strings still tie, so a stable sort leaves duplicate
+        // entries in the order they were read.
+        assert_eq!(
+            cmp_lockfile_versions_newest_first("1.0.0", "1.0.0"),
+            Ordering::Equal
+        );
+    }
+
+    #[test]
+    fn test_latest_selection_picks_the_newer_of_a_tied_pair() {
+        // The order `merge_tool_entries` writes: lexicographic by version
+        // string. `get_locked_version` sorts this newest-first and takes the
+        // head, so the head has to be `3.7c`.
+        let mut entries = ["3.7b", "3.7c"];
+        entries.sort_by(|a, b| cmp_lockfile_versions_newest_first(a, b));
+        assert_eq!(entries.first(), Some(&"3.7c"));
     }
 
     #[test]

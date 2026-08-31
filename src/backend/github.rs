@@ -453,30 +453,7 @@ impl Backend for UnifiedGitBackend {
         let api_url = opts.api_url();
         let version_prefix = opts.version_prefix();
 
-        // Derive web URL base from API URL for enterprise support
-        let web_url_base = if self.is_gitlab() {
-            if api_url == DEFAULT_GITLAB_API_BASE_URL {
-                format!("https://gitlab.com/{}", repo)
-            } else {
-                // Enterprise GitLab - derive web URL from API URL
-                let web_url = api_url.replace("/api/v4", "");
-                format!("{}/{}", web_url, repo)
-            }
-        } else if self.is_forgejo() {
-            if api_url == DEFAULT_FORGEJO_API_BASE_URL {
-                format!("https://codeberg.org/{}", repo)
-            } else {
-                // Enterprise Forgejo - derive web URL from API URL
-                let web_url = api_url.replace("/api/v1", "");
-                format!("{}/{}", web_url, repo)
-            }
-        } else if api_url == DEFAULT_GITHUB_API_BASE_URL {
-            format!("https://github.com/{}", repo)
-        } else {
-            // Enterprise GitHub - derive web URL from API URL
-            let web_url = api_url.replace("/api/v3", "").replace("api.", "");
-            format!("{}/{}", web_url, repo)
-        };
+        let web_url_base = self.web_url_base(&api_url, &repo);
 
         // Get releases with full metadata from GitHub, GitLab, or Forgejo
         let raw_versions: Vec<VersionInfo> = if self.is_gitlab() {
@@ -594,12 +571,20 @@ impl Backend for UnifiedGitBackend {
             }
         };
 
+        let web_url_base = self.web_url_base(&api_url, &repo);
         Ok(latest_release
             .filter(|(tag, _, _)| version_prefix.is_none_or(|p| tag.starts_with(p)))
             .map(|(tag, created_at, prerelease)| VersionInfo {
                 version: self.strip_version_prefix(&tag, &opts),
                 created_at: Some(created_at),
                 prerelease: Some(prerelease),
+                // Same URL the listing would give for this release. Without it
+                // the shortcut answers about the newest release while knowing
+                // less about it than the slower path does, and a caller reading
+                // `release_url` gets nothing for exactly the release it is most
+                // likely to be asked about. GitLab has already returned above,
+                // so this is the GitHub/Forgejo tag form.
+                release_url: Some(format!("{web_url_base}/releases/tag/{tag}")),
                 ..Default::default()
             }))
     }
@@ -1345,6 +1330,38 @@ impl UnifiedGitBackend {
 
     fn is_forgejo(&self) -> bool {
         self.ba.backend_type() == BackendType::Forgejo
+    }
+
+    /// Web URL for the repository, derived from the API URL so an enterprise
+    /// host resolves to its own front end rather than the public one.
+    ///
+    /// Shared by the version listing and the stable-latest shortcut, which have
+    /// to agree: a release reached through one and then described by the other
+    /// would otherwise be handed two different URLs.
+    fn web_url_base(&self, api_url: &str, repo: &str) -> String {
+        if self.is_gitlab() {
+            if api_url == DEFAULT_GITLAB_API_BASE_URL {
+                format!("https://gitlab.com/{repo}")
+            } else {
+                // Enterprise GitLab - derive web URL from API URL
+                let web_url = api_url.replace("/api/v4", "");
+                format!("{web_url}/{repo}")
+            }
+        } else if self.is_forgejo() {
+            if api_url == DEFAULT_FORGEJO_API_BASE_URL {
+                format!("https://codeberg.org/{repo}")
+            } else {
+                // Enterprise Forgejo - derive web URL from API URL
+                let web_url = api_url.replace("/api/v1", "");
+                format!("{web_url}/{repo}")
+            }
+        } else if api_url == DEFAULT_GITHUB_API_BASE_URL {
+            format!("https://github.com/{repo}")
+        } else {
+            // Enterprise GitHub - derive web URL from API URL
+            let web_url = api_url.replace("/api/v3", "").replace("api.", "");
+            format!("{web_url}/{repo}")
+        }
     }
 
     fn repo(&self) -> String {

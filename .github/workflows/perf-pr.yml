@@ -13,43 +13,83 @@ name: perf-pr
 # main contributes to the history — a branch's numbers are not the trunk's, and
 # a series that mixes them cannot be read.
 
-on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    # These files change the repository's development environment rather than
-    # the mise binary. In particular, root mise.toml tools are inherited by the
-    # benchmark fixture and would make the head and base inputs differ.
-    paths-ignore:
-      - ".github/**"
-      - "mise.lock"
-      - "mise.toml"
+on: # zizmor: ignore[dangerous-triggers] validates live PR metadata before any self-hosted job
+  workflow_run:
+    workflows: [perf-pr-preflight]
+    types: [completed]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  TAK_RUNNER: bamboo-v2-ubuntu24.04-x64-30vcpu-24gb-rust1.97.1
+  TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1
 
 jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs:
+      authorized: ${{ steps.pr.outputs.authorized }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - id: pr
+        name: Validate the pull request from the trusted default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          exec 3>>"$GITHUB_OUTPUT"
+          echo 'authorized=false' >&3
+          [ "$TRIGGER_EVENT" = pull_request ] || exit 0
+          [ "$TRIGGER_CONCLUSION" = success ] || exit 0
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 0
+          pr="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER")"
+          [ "$(jq -r .state <<<"$pr")" = open ] || exit 0
+          [ "$(jq -r .user.login <<<"$pr")" = jdx ] || exit 0
+          [ "$(jq -r .head.repo.full_name <<<"$pr")" = "$REPOSITORY" ] || exit 0
+          [ "$(jq -r .base.repo.full_name <<<"$pr")" = "$REPOSITORY" ] || exit 0
+          head_sha="$(jq -r .head.sha <<<"$pr")"
+          [ "$head_sha" = "$TRIGGER_SHA" ] || exit 0
+          echo 'authorized=true' >&3
+          echo "base_ref=$(jq -r .base.ref <<<"$pr")" >&3
+          echo "head_sha=$head_sha" >&3
+          echo "pr_number=$PR_NUMBER" >&3
+
   measure:
     name: Compare instruction counts
-    if: github.event.pull_request.user.login == 'jdx'
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
     # Same runner class as perf.yml and perf-backfill.yml. Absolute counts shift
     # between machine types by more than a real regression does, so a comparison
     # across runner classes is not a comparison — tak refuses to make one, and
     # the report would say "nothing was compared" instead of anything useful.
-    runs-on: bamboo-perf
+    runs-on: [self-hosted, jdx-perf-v1]
+    container:
+      image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
+      options: --cpuset-cpus 0-7
     timeout-minutes: 40
     permissions:
       # Read only. This job builds and runs code from the pull request, so it
       # must not hold a token that can write anything — see the `report` job.
       contents: read
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -58,37 +98,53 @@ jobs:
           # for the run, changes whenever main advances, and measuring it would
           # attribute a number to a commit nobody can check out. It would also
           # make the footer below name a commit the measurement is not of.
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.authorize.outputs.head_sha }}
           # Needed twice over: to find the merge base, and for the sparkline,
           # which walks twenty commits of trunk history.
           fetch-depth: 0
           persist-credentials: false
 
-      # Compile inside this disposable VM. Restoring target/ can relabel a
-      # binary built on a different runner class as a Bamboo measurement.
+      # Compile inside the pinned job container. Restoring target/ could relabel
+      # a binary built on another runner class as a jdx-perf-v1 measurement.
       - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
         with:
           cache: false
         env:
           MISE_LOCKED: "1"
 
-      - name: Install valgrind
+      - name: Runner metadata
         run: |
-          command -v valgrind || {
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends valgrind
-          }
-          valgrind --version
+          {
+            echo '### Runner metadata'
+            echo '```text'
+            echo 'environment-revision: perf-runner@6ab972a'
+            echo 'image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9'
+            uname -a
+            lscpu
+            mise --version
+            rustc --version
+            cargo --version
+            valgrind --version
+            for zone in /sys/class/thermal/thermal_zone*/temp; do
+              [ -r "$zone" ] && printf '%s: %s\n' "$zone" "$(cat "$zone")"
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify valgrind
+        run: valgrind --version
 
       # `--record` writes a git note locally and nothing more. There is no
       # `tak push` in this workflow and there should never be one.
       - name: Measure this pull request
-        run: mise run perf:record
+        run: |
+          cargo build --release
+          taskset -c 0-3 mise run perf:record
 
       - name: Find the base commit
         id: base
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ needs.authorize.outputs.base_ref }}
         run: |
           git fetch --quiet origin "$BASE_REF"
           # The merge base, not the branch tip: comparing against a moving
@@ -116,7 +172,7 @@ jobs:
         if: always()
         env:
           BASE_SHA: ${{ steps.base.outputs.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
         run: |
           mkdir -p /tmp/tak-out
           # A missing report means an earlier step died. Say so, rather than
@@ -145,11 +201,12 @@ jobs:
   # code: it reads an artifact and talks to the API.
   report:
     name: Report and gate
-    needs: measure
-    if: always() && github.event.pull_request.user.login == 'jdx'
+    needs: [authorize, measure]
+    if: always() && needs.authorize.outputs.authorized == 'true' && needs.measure.result != 'cancelled'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      checks: write # attach the regression gate to the measured PR head SHA
       pull-requests: write # the sticky comment, and nothing else
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -160,11 +217,10 @@ jobs:
       # Skipped for pull requests from forks, which get a read-only token. The
       # comparison and the gate still run there; only the comment is missing.
       - name: Comment on the pull request
-        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
           GH_mise: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
         run: |
           marker='<!-- mise-perf-pr -->'
           read -r head_sha base_sha < /tmp/tak-out/shas
@@ -195,6 +251,29 @@ jobs:
       # after it, and the gate is the reason this workflow exists. Without it a
       # `gh api` hiccup would skip the gate — red for the wrong reason, and with
       # no regression error to read.
+      - name: Publish the pull request check
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status=$(cat /tmp/tak-out/status 2>/dev/null || echo 2)
+          if [ "$status" -eq 0 ]; then
+            conclusion=success
+            title='Instruction counts passed'
+          else
+            conclusion=failure
+            title='Instruction-count regression or measurement failure'
+          fi
+          test -f /tmp/tak-out/report.md || echo 'The comparison did not produce a report.' > /tmp/tak-out/report.md
+          jq -n --arg head_sha "$HEAD_SHA" --arg conclusion "$conclusion" \
+            --arg title "$title" --arg details_url "$RUN_URL" \
+            --rawfile summary /tmp/tak-out/report.md \
+            '{name:"perf / instruction-count",head_sha:$head_sha,status:"completed",conclusion:$conclusion,details_url:$details_url,output:{title:$title,summary:$summary}}' \
+            | gh api --method POST "repos/$GH_REPO/check-runs" --input -
+
       - name: Fail on a regression
         if: always()
         run: |

@@ -23,6 +23,7 @@ dotfiles.default_mode = "symlink"
 "~/.ssh/config" = { source = "dotfiles/ssh_config.tmpl", mode = "template" }
 "~/.config/nvim" = "dotfiles/nvim"                                   # symlink the directory itself
 "~/.local/bin" = { source = "dotfiles/bin", mode = "symlink-each" }  # symlink each file within
+"~/managed-home" = { source = "home", mode = "symlink-each", manifest = "git" }
 "~/hosts/dev" = { line = "127.0.0.1 dev.local" }                     # edit one line in ~/hosts
 ```
 
@@ -109,24 +110,49 @@ everything under it.
 Excluding a file mise already applied removes what it left behind on the next
 apply, the same as deleting the source would.
 
+## Git-tracked directories
+
+Set `manifest = "git"` on a directory-walking entry to manage only files in
+Git's index. This supports repositories that use `gitignore *` and opt files
+in with `git add -f`, without listing every path again in mise:
+
+```toml
+[dotfiles]
+"~" = { source = ".", mode = "symlink-each", manifest = "git" }
+```
+
+mise runs `git ls-files` from the source directory. Ignored and untracked
+files are left alone, while removing a file from the index removes a
+mise-owned `symlink-each` link on the next apply. `exclude` can be combined
+with the Git manifest for an additional filter. Git manifests require a
+directory source and either `symlink-each` or `copy` mode.
+
+When environment-specific configs select different `symlink-each` sources for
+the same target, applying the new environment reconciles links recorded for
+the previous source. This makes `mise bootstrap -E home` and
+`mise bootstrap -E work` usable as profile switches: links unique to the old
+profile are removed, shared paths are repointed, and unmanaged neighbors are
+preserved.
+
 ## Modes
 
-| Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                                                                                                                                                      |
-| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file removes the link it left behind on the next apply; files and links mise didn't create are never touched. Managed links are recorded under `$MISE_STATE_DIR/dotfiles`, so shared targets are not recursively scanned after the first apply. |
-| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.                                                                                                                                       |
-| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                                                                                                                                                    |
+| Mode           | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `symlink`      | Symlink the target to the source. Works for files and directories — a directory source gets one link for the whole directory. This is the default.                                                                                                                                                                                                                                                                                                                                                                |
+| `symlink-each` | Source must be a directory: recreate its directory structure under the target and symlink each file individually, so the target directory (say, `~/.config`) can also hold files mise doesn't manage. Deleting a source file or removing it from the selected manifest removes the link it left behind on the next apply; files and links mise didn't create are never touched. Managed links are recorded under `$MISE_STATE_DIR/dotfiles`, so shared targets are not recursively scanned after the first apply. |
+| `copy`         | Copy the source file (or directory, recursively). Use when the target must be a real file — e.g. tools that rewrite their config in place. Directory copies are additive: matching files are overwritten, files mise doesn't manage are left in place. Copies are never pruned, so removing a source file leaves the copy behind.                                                                                                                                                                                 |
+| `template`     | Render the source through the [mise template engine](/templates.html) and write the result. Permissions are taken from the source file (and repaired if they drift).                                                                                                                                                                                                                                                                                                                                              |
 
 Templates get the same context as other mise templates (`env`, `vars`,
 `exec()`, etc.), which is the main reason to use them: one source file,
 per-machine output.
 
 Detecting whether a template's output has drifted requires rendering it, so
-`mise bootstrap dotfiles status` and a real apply evaluate templates — including any
-`exec()` calls — from your trusted config, just like `[env]` templates.
-`--dry-run` is the exception: it promises to execute nothing, so it skips
-template rendering and lists those entries as `(if changed)`.
+`mise bootstrap dotfiles status`, `mise bootstrap dotfiles diff`, and a real
+apply evaluate templates — including any `exec()` calls — from your trusted
+config, just like `[env]` templates. `--dry-run` is the exception: it promises
+to execute nothing, so it skips template rendering and lists those entries as
+`(if changed)`.
 
 ## Edit entries
 
@@ -245,6 +271,8 @@ dry-runs do not render or execute template functions.
 ```sh
 mise bootstrap dotfiles status            # shows applied/missing/differs/source missing
 mise bootstrap dotfiles status --missing  # exit 1 if anything is out of sync
+mise bootstrap dotfiles diff              # show changes needed to apply
+mise bootstrap dotfiles diff ~/.zshrc     # show changes for one target
 
 mise bootstrap dotfiles apply                     # apply files and edits
 mise bootstrap dotfiles apply --dry-run           # print what would be done
@@ -257,6 +285,7 @@ mise bootstrap dotfiles unapply --dry-run   # preview removals
 mise bootstrap dotfiles unapply --force     # also remove modified/ambiguous targets
 
 mise bootstrap dotfiles add ~/.zshrc       # capture a live file into dotfiles.root
+mise bootstrap dotfiles add --changed      # capture all changed copy-mode files
 mise bootstrap dotfiles edit ~/.zshrc      # edit the managed source or owning config
 mise bootstrap dotfiles edit --apply ~/.zshrc
 ```
@@ -273,6 +302,13 @@ in your dotfiles, run `mise bootstrap dotfiles add` again:
 $EDITOR ~/.config/starship.toml
 mise bootstrap dotfiles add ~/.config/starship.toml
 ```
+
+Use `mise bootstrap dotfiles add --changed` to update every changed regular file
+managed in `copy` mode at once. Directory copies are excluded because reversing
+an additive copy could delete source files intentionally excluded from the live
+tree. Symlinks already edit their source directly, and templates and inline
+content cannot be reverse-rendered, so they are not included. Bulk capture also
+requires the configuration declaring each selected file to be trusted.
 
 For an unmanaged target, `add` creates a `[dotfiles]` entry and seeds the
 source under `dotfiles.root`. For an already-managed target, it updates the

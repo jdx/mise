@@ -61,7 +61,7 @@ pub(crate) struct Prune {
 }
 
 impl Prune {
-    fn is_dry_run(&self) -> bool {
+    pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
 
@@ -114,7 +114,7 @@ impl Prune {
     }
 }
 
-pub(super) async fn prunable_tools(
+pub(crate) async fn prunable_tools(
     config: &Arc<Config>,
     tools: Vec<&BackendArg>,
 ) -> Result<Vec<(Arc<dyn Backend>, ToolVersion)>> {
@@ -195,6 +195,9 @@ async fn delete(
         p.uninstall_version(config, &tv, pr.as_ref(), dry_run)
             .await?;
         if !dry_run {
+            if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
+                warn!("failed to clear tool purgatory entry: {err:#}");
+            }
             runtime_symlinks::remove_missing_symlinks(p)?;
         }
         pr.finish();

@@ -158,6 +158,17 @@ enum GithubAttestationStatus {
     Unavailable,
 }
 
+/// What `install_version_` needs before it fetches anything, and the point at which aqua can
+/// already tell that a version is not installable on this machine.
+struct ResolvedPackage {
+    platform_key: String,
+    existing_platform: Option<String>,
+    existing_url_api: Option<String>,
+    pkg: AquaPackage,
+    v: String,
+    v_prefixed: Option<String>,
+}
+
 #[async_trait]
 impl Backend for AquaBackend {
     fn version_order(&self, opts: &ToolVersionOptions) -> Result<VersionOrder> {
@@ -419,76 +430,27 @@ impl Backend for AquaBackend {
         self.latest_marked_release_version().await
     }
 
+    /// aqua knows, from the registry entry alone, when a version cannot be installed here:
+    /// `no_asset`, an `error_message`, a platform outside `supported_envs`, or a package type
+    /// this backend does not implement. `validate` has always said so during the install; this
+    /// makes `--dry-run` ask the same question before answering "would install".
+    async fn verify_install_feasible(&self, _ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        self.resolve_validated_package(tv).await.map(|_| ())
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
-        // Check if URL already exists in lockfile platforms first
-        // This allows us to skip API calls when lockfile has the URL
-        let platform_key = self.get_platform_key();
-        let existing_platform = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|asset| asset.url.clone());
-        // Private repos download via the API asset endpoint; carry it from the lockfile so
-        // `--locked` installs of private tools can still fall back to it.
-        let existing_url_api = tv
-            .lock_platforms
-            .get(&platform_key)
-            .and_then(|asset| asset.url_api.clone());
-
-        // Skip get_version_tags() API call if the lockfile URL contains the release tag.
-        // Keep the tag for selecting Aqua version overrides, which may be scoped by prefix.
-        let locked_tag = existing_platform
-            .as_deref()
-            .and_then(github_release_tag_from_url);
-        let tag = if let Some(tag) = locked_tag {
-            Some(tag)
-        } else if existing_platform.is_some() {
-            None
-        } else {
-            match self.get_version_tags().await {
-                Ok(tags) => tags
-                    .iter()
-                    .find(|(version, _)| version == &tv.version)
-                    .map(|(_, tag)| tag.clone()),
-                Err(e) => {
-                    warn!(
-                        "[{}] failed to fetch version tags, URL may be incorrect: {e}",
-                        self.id
-                    );
-                    None
-                }
-            }
-        };
-        if tag.is_none() && existing_platform.is_none() && !tv.version.starts_with('v') {
-            debug!(
-                "[{}] no tag found for version {}, will try with 'v' prefix",
-                self.id, tv.version
-            );
-        }
-        let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
-        let mut v_prefixed =
-            (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
-        let pkg = AQUA_REGISTRY.package(&self.id).await?;
-        let versions = install_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
-        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
-        let mut pkg = Self::package_with_options_for_pkg(&tv, pkg, &versions)?;
-        if let Some(prefix) = &pkg.version_prefix
-            && !v.starts_with(prefix)
-        {
-            v = format!("{prefix}{v}");
-            // Don't add prefix to v_prefixed if it already starts with the prefix
-            v_prefixed = v_prefixed.map(|vp| {
-                if vp.starts_with(prefix) {
-                    vp
-                } else {
-                    format!("{prefix}{vp}")
-                }
-            });
-        }
-        validate(&pkg, &v)?;
+        let ResolvedPackage {
+            platform_key,
+            existing_platform,
+            existing_url_api,
+            mut pkg,
+            v,
+            v_prefixed,
+        } = self.resolve_validated_package(&tv).await?;
 
         // Validate lockfile URL matches expected asset pattern from registry
         // This handles cases where the registry format changed (e.g., raw binary -> tar.gz)
@@ -1035,6 +997,90 @@ impl Backend for AquaBackend {
 }
 
 impl AquaBackend {
+    /// Resolve the registry entry for `tv` and decide whether it can be installed here at all.
+    ///
+    /// Split out of `install_version_` so `verify_install_feasible` can reach `validate` without
+    /// downloading anything. Extracted rather than reimplemented on purpose: skipping the tag
+    /// lookup would select a different `version_overrides` block, and a feasibility check reading
+    /// the wrong block would call a tool impossible when it installs fine -- a worse answer than
+    /// the optimism it replaces.
+    async fn resolve_validated_package(&self, tv: &ToolVersion) -> Result<ResolvedPackage> {
+        // Check if URL already exists in lockfile platforms first
+        // This allows us to skip API calls when lockfile has the URL
+        let platform_key = self.get_platform_key();
+        let existing_platform = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url.clone());
+        // Private repos download via the API asset endpoint; carry it from the lockfile so
+        // `--locked` installs of private tools can still fall back to it.
+        let existing_url_api = tv
+            .lock_platforms
+            .get(&platform_key)
+            .and_then(|asset| asset.url_api.clone());
+
+        // Skip get_version_tags() API call if the lockfile URL contains the release tag.
+        // Keep the tag for selecting Aqua version overrides, which may be scoped by prefix.
+        let locked_tag = existing_platform
+            .as_deref()
+            .and_then(github_release_tag_from_url);
+        let tag = if let Some(tag) = locked_tag {
+            Some(tag)
+        } else if existing_platform.is_some() {
+            None
+        } else {
+            match self.get_version_tags().await {
+                Ok(tags) => tags
+                    .iter()
+                    .find(|(version, _)| version == &tv.version)
+                    .map(|(_, tag)| tag.clone()),
+                Err(e) => {
+                    warn!(
+                        "[{}] failed to fetch version tags, URL may be incorrect: {e}",
+                        self.id
+                    );
+                    None
+                }
+            }
+        };
+        if tag.is_none() && existing_platform.is_none() && !tv.version.starts_with('v') {
+            debug!(
+                "[{}] no tag found for version {}, will try with 'v' prefix",
+                self.id, tv.version
+            );
+        }
+        let mut v = tag.clone().unwrap_or_else(|| tv.version.clone());
+        let mut v_prefixed =
+            (tag.is_none() && !tv.version.starts_with('v')).then(|| format!("v{v}"));
+        let pkg = AQUA_REGISTRY.package(&self.id).await?;
+        let versions = install_package_version_candidates(&tv.version, tag.as_deref(), &pkg);
+        let versions = versions.iter().map(|v| v.as_ref()).collect_vec();
+        let pkg = Self::package_with_options_for_pkg(tv, pkg, &versions)?;
+        if let Some(prefix) = &pkg.version_prefix
+            && !v.starts_with(prefix)
+        {
+            v = format!("{prefix}{v}");
+            // Don't add prefix to v_prefixed if it already starts with the prefix
+            v_prefixed = v_prefixed.map(|vp| {
+                if vp.starts_with(prefix) {
+                    vp
+                } else {
+                    format!("{prefix}{vp}")
+                }
+            });
+        }
+        validate(&pkg, &v)?;
+
+        Ok(ResolvedPackage {
+            platform_key,
+            existing_platform,
+            existing_url_api,
+            pkg,
+            v,
+            v_prefixed,
+        })
+    }
+
     fn package_with_options_for_pkg(
         tv: &ToolVersion,
         pkg: AquaPackage,
@@ -3558,6 +3604,43 @@ pub(crate) fn is_install_time_option_key(key: &str) -> bool {
 mod tests {
     use super::*;
     use aqua_registry::{AquaFile, AquaVar, ParsedRegistry};
+
+    // `--dry-run` reaches `validate` through `resolve_validated_package`, and this is the sentence
+    // it has to be able to produce before the install starts. Pinned here because
+    // `e2e/cli/test_install_dry_run_feasibility` greps for it: aqua marks specific versions
+    // `no_asset` regardless of platform, which is what makes that e2e runnable on any runner.
+    #[test]
+    fn validate_refuses_a_package_the_registry_marks_as_having_no_asset() {
+        // `validate` reads the package it is handed; selecting the right `version_overrides` block
+        // happens upstream in `package_with_options_for_pkg`. So the two cases are two packages
+        // here, not two versions of one -- writing `no_asset` under `version_overrides` would
+        // leave the base package unmarked and assert nothing.
+        let registry = ParsedRegistry::parse_yaml(
+            r#"
+packages:
+  - type: github_release
+    repo_owner: example
+    repo_name: unreleased
+    no_asset: true
+  - type: github_release
+    repo_owner: example
+    repo_name: released
+    asset: tool.tar.gz
+"#,
+        )
+        .unwrap();
+
+        let unreleased = registry.package("example/unreleased").unwrap();
+        assert_eq!(
+            validate(&unreleased, "v1.0.0").unwrap_err().to_string(),
+            "no asset released"
+        );
+
+        // The control: an otherwise identical package that does ship an asset passes. Without it
+        // this test would be satisfied by a `validate` that rejected everything.
+        let released = registry.package("example/released").unwrap();
+        assert!(validate(&released, "v1.0.0").is_ok());
+    }
 
     #[test]
     fn cargo_warning_uses_crate_name() {

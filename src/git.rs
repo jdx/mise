@@ -514,6 +514,12 @@ fn sanitize_git_cmd_runner<'a>(cmd: CmdLineRunner<'a>) -> CmdLineRunner<'a> {
         .fold(cmd, |cmd, env| cmd.env_remove(env))
 }
 
+pub(crate) fn sanitize_git_command(cmd: &mut std::process::Command) {
+    for env in GIT_CONTEXT_ENV {
+        cmd.env_remove(env);
+    }
+}
+
 const GIT_CONTEXT_ENV: &[&str] = &[
     "GIT_DIR",
     "GIT_WORK_TREE",

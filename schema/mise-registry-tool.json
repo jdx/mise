@@ -7,7 +7,7 @@
   "$defs": {
     "backendFull": {
       "type": "string",
-      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|gem|github|gitlab|go|http|npm|pipx|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
+      "pattern": "^(aqua|asdf|cargo|conda|core|dotnet|forgejo|gem|github|gitlab|go|http|npm|pipx|pkgx|s3|spm|ubi|vfox):([^\\[\\]]|\\[[^\\]=]*\\])+$"
     },
     "optionValue": {
       "description": "Backend option value.",
@@ -41,11 +41,11 @@
     },
     "platform": {
       "type": "string",
-      "pattern": "^(linux|macos|windows)-(x64|arm64|x86|loongarch64|riscv64)$"
+      "pattern": "^(freebsd|linux|macos|openbsd|windows)-(x64|arm64|x86|loongarch64|riscv64)$"
     },
     "optionPlatform": {
       "type": "string",
-      "pattern": "^(linux|macos|darwin|windows)-(x64|amd64|x86_64|arm64|aarch64|x86|loongarch64|riscv64)$"
+      "pattern": "^(freebsd|linux|macos|darwin|openbsd|windows)-(x64|amd64|x86_64|arm64|aarch64|x86|loongarch64|riscv64)$"
     },
     "platformSelector": {
       "description": "OS, architecture, or platform this backend supports.",
