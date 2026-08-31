@@ -3295,9 +3295,10 @@ packages:
           cosign:
             opts:
               - --key
-              - https://artifacts.fairwinds.com/cosign.pub
-              - --signature
-              - https://github.com/FairwindsOps/gonogo/releases/download/{{.Version}}/checksums.txt.sig
+              - https://artifacts.fairwinds.com/cosign-p256.pub
+            bundle:
+              type: github_release
+              asset: checksums.txt.sigstore.json
   - type: github_release
     repo_owner: FairwindsOps
     repo_name: nova
@@ -4036,8 +4037,21 @@ packages:
           type: github_release
           asset: scan4all-mac-checksums.txt
           algorithm: sha256
-    version_constraint: semver(">= 2.8.7")
+    version_constraint: "false"
     version_overrides:
+      - version_constraint: semver(">= 2.9.0")
+        rosetta2: true
+        supported_envs:
+          - darwin
+          - amd64
+      - version_constraint: semver(">= 2.8.8")
+        supported_envs:
+          - linux/amd64
+          - windows/amd64
+      - version_constraint: semver(">= 2.8.7")
+        supported_envs:
+          - darwin
+          - amd64
       - version_constraint: semver(">= 2.8.6")
         supported_envs:
           - linux/amd64
@@ -16387,7 +16401,7 @@ packages:
         supported_envs:
           - linux/amd64
           - windows
-      - version_constraint: "true"
+      - version_constraint: semver("< 0.11.0")
         asset: git-branchless-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
         format: tar.gz
         rosetta2: true
@@ -16404,6 +16418,23 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: git-branchless-{{.Version}}-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-musl
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
+        supported_envs:
+          - darwin/arm64
+          - linux
+          - windows
   - type: github_release
     repo_owner: asciidoctor
     repo_name: asciidoctor-reveal.js
@@ -17498,7 +17529,7 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.0.10")
         asset: ec2-spot-interrupter_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -17511,6 +17542,18 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
+      - version_constraint: Version == "v0.0.11"
+        no_asset: true
+      - version_constraint: "true"
+        asset: ec2-spot-interrupter_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        checksum:
+          type: github_release
+          asset: ec2-spot-interrupter_{{trimV .Version}}_checksums.txt
+          algorithm: sha256
+        supported_envs:
+          - darwin
+          - linux
   - type: http
     repo_owner: aws
     repo_name: amazon-ecs-cli
@@ -18758,7 +18801,7 @@ packages:
     description: Validate and execute GitHub Actions workflows locally
     version_constraint: "false"
     version_overrides:
-      - version_constraint: "true"
+      - version_constraint: semver("< 0.8.0")
         asset: wrkflw-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         replacements:
@@ -18767,6 +18810,19 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
+      - version_constraint: "true"
+        asset: wrkflw-{{.Arch}}-{{.OS}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        replacements:
+          amd64: x86_64
+          arm64: aarch64
+          darwin: apple-darwin
+          linux: unknown-linux-gnu
+          windows: pc-windows-msvc
+        overrides:
+          - goos: windows
+            format: zip
   - type: github_release
     repo_owner: banzaicloud
     repo_name: banzai-cli
@@ -19622,7 +19678,7 @@ packages:
     version_overrides:
       - version_constraint: Version == "v0.3"
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.1.0")
         asset: "{{.OS}}_{{.Arch}}.{{.Format}}"
         format: tar.gz
         rosetta2: true
@@ -19634,6 +19690,15 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: pewpew_{{trimV .Version}}_{{.OS}}_{{.Arch}}.{{.Format}}
+        format: tar.gz
+        files:
+          - name: pewpew
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
   - type: github_release
     repo_owner: bensadeh
     repo_name: tailspin
@@ -30870,7 +30935,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: Version == "v1.12"
         asset: kubeletctl_{{.OS}}_{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -30878,6 +30943,10 @@ packages:
           - goos: windows
             replacements:
               amd64: x64
+      - version_constraint: "true"
+        asset: kubeletctl_{{.OS}}_{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
   - type: github_release
     repo_owner: cybozu
     repo_name: assam
@@ -42473,13 +42542,26 @@ packages:
     version_overrides:
       - version_constraint: Version == "v0.1.0-alpha.1"
         no_asset: true
-      - version_constraint: "true"
+      - version_constraint: semver("< 2.0.0")
         asset: git-flow-next-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
         files:
           - name: git-flow
             src: git-flow-{{.Version}}-{{.OS}}-{{.Arch}}
+        checksum:
+          type: github_release
+          asset: git-flow-next-{{.Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+      - version_constraint: "true"
+        asset: git-flow-next-{{.Version}}-{{.OS}}-{{.Arch}}.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        files:
+          - name: git-flow
         checksum:
           type: github_release
           asset: git-flow-next-{{.Version}}-checksums.txt
@@ -48106,6 +48188,11 @@ packages:
       - name: vagrant
     version_constraint: "false"
     version_overrides:
+      - version_constraint: semver(">= 2.4.4")
+        error_message: |
+          The Go implementation of Vagrant was removed from the main branch and isn't released since v2.4.4.
+
+          https://github.com/hashicorp/vagrant/issues/12819#issuecomment-2738619021
       - version_constraint: "true"
         asset: vagrant-go_{{.OS}}_{{.Arch}}
         format: raw
@@ -68969,7 +69056,7 @@ packages:
         files:
           - name: mailsend-go
             src: mailsend-go-dir/mailsend-go
-      - version_constraint: "true"
+      - version_constraint: semver("<= 1.0.11")
         asset: mailsend-go-{{.Version}}-{{.OS}}-{{.Arch}}.d.{{.Format}}
         format: tar.gz
         windows_arm_emulation: true
@@ -68983,6 +69070,20 @@ packages:
         files:
           - name: mailsend-go
             src: "{{.AssetWithoutExt}}/mailsend-go-{{.Version}}-{{.OS}}-{{.Arch}}"
+      - version_constraint: "true"
+        asset: mailsend-go-{{.Version}}-{{.OS}}-{{.Arch}}.d.{{.Format}}
+        format: tar.gz
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: mailsend-go-{{.Version}}-checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: windows
+            format: zip
+        files:
+          - name: mailsend-go
+            src: mailsend-go-{{.Version}}-{{.OS}}-{{.Arch}}
   - type: github_release
     repo_owner: mutagen-io
     repo_name: mutagen
@@ -73431,7 +73532,7 @@ packages:
             - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.sig
             - --certificate
             - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.pem
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.4.1")
         asset: vexctl-{{.OS}}-{{.Arch}}
         format: raw
         windows_arm_emulation: true
@@ -73459,6 +73560,32 @@ packages:
             - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.sig
             - --certificate
             - https://github.com/openvex/vexctl/releases/download/{{.Version}}/{{.Asset}}.pem
+      - version_constraint: "true"
+        asset: vexctl-{{.OS}}-{{.Arch}}
+        format: raw
+        windows_arm_emulation: true
+        checksum:
+          type: github_release
+          asset: vexctl_checksums.txt
+          algorithm: sha256
+          cosign:
+            opts:
+              - --certificate-identity-regexp
+              - "https://github\\.com/openvex/vexctl/\\.github/workflows/release\\.yaml@.*"
+              - --certificate-oidc-issuer
+              - "https://token.actions.githubusercontent.com"
+            bundle:
+              type: github_release
+              asset: vexctl_checksums.txt.sigstore.json
+        cosign:
+          opts:
+            - --certificate-identity-regexp
+            - "https://github\\.com/openvex/vexctl/\\.github/workflows/release\\.yaml@.*"
+            - --certificate-oidc-issuer
+            - "https://token.actions.githubusercontent.com"
+          bundle:
+            type: github_release
+            asset: "{{.Asset}}.sigstore.json"
   - type: github_release
     repo_owner: openziti
     repo_name: zrok
@@ -82260,7 +82387,7 @@ packages:
           - darwin
           - windows
           - amd64
-      - version_constraint: "true"
+      - version_constraint: semver("< 1.0.0")
         asset: kfilt_{{trimV .Version}}_{{.OS}}_{{.Arch}}
         format: raw
         checksum:
@@ -82270,6 +82397,16 @@ packages:
         overrides:
           - goos: darwin
             asset: kfilt_{{trimV .Version}}_{{.OS}}_all
+      - version_constraint: "true"
+        asset: kfilt_{{.OS}}_{{.Arch}}
+        format: raw
+        checksum:
+          type: github_release
+          asset: checksums.txt
+          algorithm: sha256
+        overrides:
+          - goos: darwin
+            asset: kfilt_{{.OS}}_all
   - type: github_release
     repo_owner: ryodocx
     repo_name: kube-credential-cache
@@ -95604,7 +95741,7 @@ packages:
         supported_envs:
           - linux/amd64
           - darwin
-      - version_constraint: "true"
+      - version_constraint: semver("<= 0.2.76")
         asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
         format: raw
         windows_arm_emulation: true
@@ -95618,6 +95755,13 @@ packages:
           - darwin
           - windows
           - amd64
+      - version_constraint: "true"
+        asset: ffsend-{{.Version}}-{{.OS}}-{{.Arch}}-static
+        format: raw
+        replacements:
+          amd64: x64
+        supported_envs:
+          - linux/amd64
   - type: github_release
     repo_owner: tinygo-org
     repo_name: tinygo
@@ -102102,13 +102246,22 @@ packages:
         src: csview-{{.Version}}-{{.Arch}}-{{.OS}}/csview
     replacements:
       amd64: x86_64
+      arm64: aarch64
       darwin: apple-darwin
       windows: pc-windows-msvc
-    supported_envs:
-      - darwin
-      - linux
-      - amd64
-    rosetta2: true
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver(">= 1.3.4")
+        supported_envs:
+          - darwin/arm64
+          - linux
+          - windows/amd64
+      - version_constraint: "true"
+        supported_envs:
+          - darwin
+          - linux
+          - amd64
+        rosetta2: true
   - type: github_release
     repo_owner: whalebrew
     repo_name: whalebrew

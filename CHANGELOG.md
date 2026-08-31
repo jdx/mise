@@ -1,5 +1,55 @@
 # Changelog
 
+## [2026.8.16](https://github.com/jdx/mise/compare/v2026.8.15..v2026.8.16) - 2026-08-31
+
+### 🚀 Features
+
+- **(shims)** add command wrappers by @jdx in [#12617](https://github.com/jdx/mise/pull/12617)
+
+### 🐛 Bug Fixes
+
+- **(bootstrap)** respect jobs for repo status checks by @jdx in [#12629](https://github.com/jdx/mise/pull/12629)
+- **(elvish)** write elvish's quoting rules, not bash's by @JamBalaya56562 in [#12584](https://github.com/jdx/mise/pull/12584)
+- **(fish)** split PATH on the host's separator, not always ':' by @JamBalaya56562 in [#12582](https://github.com/jdx/mise/pull/12582)
+- **(http)** list the platform keys a tool actually declares by @JamBalaya56562 in [#12580](https://github.com/jdx/mise/pull/12580)
+- **(npm)** isolate aube installs from enclosing workspaces by @jdx in [#12630](https://github.com/jdx/mise/pull/12630)
+- **(task)** preserve double-dash task arguments by @jdx in [#12628](https://github.com/jdx/mise/pull/12628)
+- **(upgrade)** show versions outside configured ranges by @jdx in [#12613](https://github.com/jdx/mise/pull/12613)
+
+### 📦️ Dependency Updates
+
+- lock file maintenance by @renovate[bot] in [#12618](https://github.com/jdx/mise/pull/12618)
+
+### 📦 Registry
+
+- include llama.cpp prereleases by @jdx in [#12614](https://github.com/jdx/mise/pull/12614)
+- drop three more os limits aqua no longer restricts by @JamBalaya56562 in [#12627](https://github.com/jdx/mise/pull/12627)
+
+### Chore
+
+- **(ci)** fail closed without notarization credentials by @jdx in [#12612](https://github.com/jdx/mise/pull/12612)
+- **(ci)** restore mbx remote cache by @jdx in [#12587](https://github.com/jdx/mise/pull/12587)
+- adopt mr-boxington 1.1 cargo shim by @jdx in [#12615](https://github.com/jdx/mise/pull/12615)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (14)
+
+- [`FairwindsOps/gonogo`](https://github.com/FairwindsOps/gonogo)
+- [`GhostTroops/scan4all`](https://github.com/GhostTroops/scan4all)
+- [`arxanas/git-branchless`](https://github.com/arxanas/git-branchless)
+- [`aws/amazon-ec2-spot-interrupter`](https://github.com/aws/amazon-ec2-spot-interrupter)
+- [`bahdotsh/wrkflw`](https://github.com/bahdotsh/wrkflw)
+- [`bengadbois/pewpew`](https://github.com/bengadbois/pewpew)
+- [`cyberark/kubeletctl`](https://github.com/cyberark/kubeletctl)
+- [`gittower/git-flow-next`](https://github.com/gittower/git-flow-next)
+- [`hashicorp/vagrant/vagrant-go`](https://github.com/hashicorp/vagrant)
+- [`muquit/mailsend-go`](https://github.com/muquit/mailsend-go)
+- [`openvex/vexctl`](https://github.com/openvex/vexctl)
+- [`ryane/kfilt`](https://github.com/ryane/kfilt)
+- [`timvisee/ffsend`](https://github.com/timvisee/ffsend)
+- [`wfxr/csview`](https://github.com/wfxr/csview)
+
 ## [2026.8.15](https://github.com/jdx/mise/compare/v2026.8.14..v2026.8.15) - 2026-08-30
 
 ### 🚀 Features
