@@ -54,6 +54,19 @@ jobs:
         env:
           MISE_LOCKED: "1"
 
+      # Keep development-only Cargo activation out of the measured process.
+      - name: Remove mbx benchmark activation
+        run: |
+          mbx setup --uninstall --global
+          cargo_path=$(command -v cargo)
+          case "$cargo_path" in
+            */mbx/bin/cargo) rm -f "$cargo_path" ;;
+          esac
+          hash -r
+          command -v cargo
+          clean_path=$(printf '%s\n' "$PATH" | tr ':' '\n' | grep -v '/mbx/bin$' | paste -sd:)
+          echo "PATH=$clean_path" >> "$GITHUB_ENV"
+
       # cachegrind is the whole point: it counts instructions, which reproduce
       # to ~0.02% run-to-run where wall clock on this same hardware moves by
       # 4-20%. Without it tak still records timing, but the series stops being
