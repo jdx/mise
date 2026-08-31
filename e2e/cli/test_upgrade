@@ -9,15 +9,19 @@ mise install dummy@1.0.0
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 
-mise upgrade dummy
+mise upgrade dummy --prune
 
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
-assert_contains "mise upgrade dummy 2>&1" "Newer versions are available outside the configured version ranges"
+assert_contains "mise upgrade dummy 2>&1" 'Newer versions are available but do not match the configured version ranges'
+assert_contains "mise upgrade dummy 2>&1" 'dummy 1.1.0 → 2.0.0'
+assert_contains "mise upgrade dummy 2>&1" 'mise outdated --bump'
+assert_contains "mise upgrade dummy 2>&1" "to update the configuration and upgrade"
+assert_not_contains "mise upgrade dummy 2>&1" "All tools are up to date"
 assert_contains "mise upgrade dummy -l --dry-run 2>&1" "deprecated [cli.upgrade.bump-l]"
 assert_contains "mise upgrade dummy -l --dry-run 2>&1" "Would install dummy@2.0.0"
 
-mise upgrade dummy -b
+mise upgrade dummy -b --prune
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_not_contains "mise ls --installed dummy" "1.1.0"
 rm .tool-versions
@@ -39,7 +43,7 @@ assert_contains "mise ls --installed tiny" "1.0.0"
 assert_contains "mise upgrade --local -n" "Would install dummy@1.1.0"
 assert_not_contains "mise upgrade --local -n" "tiny"
 # Actual upgrade should only upgrade dummy
-mise upgrade --local
+mise upgrade --local --prune
 assert_contains "mise ls --installed dummy" "1.1.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
 # tiny should remain at 1.0.0 since it's in global config
@@ -75,22 +79,22 @@ echo "tools.dummy = 'prefix:1'" >mise.toml
 mise uninstall dummy --all
 mkdir -p "$MISE_DATA_DIR/installs/dummy/1.0.0"
 assert "mise ls dummy --outdated" "dummy  1.0.0 (outdated)  ~/workdir/mise.toml  prefix:1"
-assert "mise up -n" "Would uninstall dummy@1.0.0
+assert "mise up -n --prune" "Would uninstall dummy@1.0.0
 Would install dummy@1.1.0"
-mise up
+mise up --prune
 assert "mise ls dummy" "dummy  1.1.0  ~/workdir/mise.toml  prefix:1"
-assert "mise up dummy -n --bump" "Would uninstall dummy@1.1.0
+assert "mise up dummy -n --bump --prune" "Would uninstall dummy@1.1.0
 Would install dummy@2.0.0
 Would bump dummy@prefix:2 in ~/workdir/mise.toml"
-mise up dummy --bump
+mise up dummy --bump --prune
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  prefix:2"
 echo "tools.dummy = 'prefix:1'" >mise.toml
 mise uninstall dummy --all
 mise i dummy@1.0.0
-assert "mise up dummy -n --bump" "Would uninstall dummy@1.0.0
+assert "mise up dummy -n --bump --prune" "Would uninstall dummy@1.0.0
 Would install dummy@2.0.0
 Would bump dummy@prefix:2 in ~/workdir/mise.toml"
-mise up dummy --bump
+mise up dummy --bump --prune
 assert "mise ls dummy" "dummy  2.0.0  ~/workdir/mise.toml  prefix:2"
 
 cat <<EOF >mise.toml
@@ -111,9 +115,9 @@ assert_fail_contains "mise up --dry-run-code 2>&1" "Would install"
 # Verify nothing was actually upgraded
 assert "ls $MISE_DATA_DIR/installs/dummy/1.0.0"
 
-# Test: --dry-run-code should exit 0 when everything is up to date
+# Test: --dry-run-code should exit 0 when the configured range is up to date
 mise up
-assert_contains "mise up --dry-run-code 2>&1" "All tools are up to date"
+assert_contains "mise up --dry-run-code 2>&1" "do not match the configured version ranges"
 
 # Test: upgrade should not re-download a version that is already installed
 # This verifies the fix for https://github.com/jdx/mise/discussions/8260
@@ -127,8 +131,8 @@ mise install dummy@1.0.0
 mise install dummy@1.1.0
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_contains "mise ls --installed dummy" "1.1.0"
-# upgrade should report "All tools are up to date" since 1.1.0 is already installed
-assert_contains "mise up 2>&1" "All tools are up to date"
+# upgrade should report the newer release outside the configured range
+assert_contains "mise up 2>&1" "dummy 1.1.0 → 2.0.0"
 
 # Test: upgrade with lockfile should update the lockfile to the new version
 cat <<EOF >mise.toml
@@ -146,7 +150,7 @@ EOF
 # Verify the lockfile pins to 1.0.0
 assert "mise ls dummy" "dummy  1.0.0  ~/workdir/mise.toml  1"
 # Upgrade should install 1.1.0 and update the lockfile
-output="$(mise up 2>&1)"
+output="$(mise up --prune 2>&1)"
 assert_contains "echo '$output'" "  dummy 1.0.0 → 1.1.0"
 assert "mise ls dummy" "dummy  1.1.0  ~/workdir/mise.toml  1"
 # Verify the lockfile was updated to 1.1.0
@@ -165,7 +169,7 @@ mise uninstall dummy tiny --all
 mise install dummy@1.0.0 tiny@1.0.0
 
 # Upgrade only dummy, should not see any warnings about tiny
-output=$(mise upgrade dummy --bump 2>&1)
+output=$(mise upgrade dummy --bump --prune 2>&1)
 assert_not_contains "echo '$output'" "Error getting latest version for tiny"
 assert_not_contains "echo '$output'" "WARN.*tiny"
 assert_contains "mise ls --installed dummy" "2.0.0"
@@ -230,7 +234,7 @@ done
 mise install dummy@1.0.0
 (cd tracked-upgrade/foo && mise ls dummy >/dev/null)
 (cd tracked-upgrade/bar && mise ls dummy >/dev/null)
-(cd tracked-upgrade/bar && mise upgrade dummy@2.0.0)
+(cd tracked-upgrade/bar && mise upgrade dummy@2.0.0 --prune)
 assert_contains "mise ls --installed dummy" "1.0.0"
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_contains "cd tracked-upgrade/foo && mise ls dummy" "1.0.0"
@@ -269,7 +273,7 @@ EOF
 mise install dummy@1.0.0
 assert_contains "mise ls --installed dummy" "1.0.0"
 # upgrade should install 2.0.0 and uninstall 1.0.0
-mise upgrade dummy
+mise upgrade dummy --prune
 assert_contains "mise ls --installed dummy" "2.0.0"
 assert_not_contains "mise ls --installed dummy" "1.0.0"
 rm -f mise.toml

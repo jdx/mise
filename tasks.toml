@@ -98,6 +98,9 @@ run = "usage generate manpage --file mise.usage.kdl > man/man1/mise.1"
 ["render:help"]
 description = 'Render help documentation'
 depends = ["build"]
+# markdown-magic scans docs/cli while render:usage replaces that directory.
+# When both tasks are part of `mise run render`, wait for the replacement to finish.
+wait_for = ["render:usage"]
 env = { NO_COLOR = "1" }
 sources = ["mise"]
 outputs = ["README.md"]

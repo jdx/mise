@@ -257,7 +257,7 @@ pub(crate) fn remove_missing_symlinks(backend: Arc<dyn Backend>) -> Result<()> {
     remove_missing_symlinks_in_dir(&backend.ba().installs_path)
 }
 
-fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
+pub(crate) fn remove_missing_symlinks_in_dir(installs_dir: &Path) -> Result<()> {
     if !installs_dir.exists() {
         return Ok(());
     }

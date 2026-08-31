@@ -1197,6 +1197,52 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         }
     }
 
+    // `pre-commit` ships a `.pyz` zipapp rather than a native binary, so aqua marks the package
+    // `supported_envs: [darwin, linux]` and always will -- Windows has nothing to run a shebang
+    // with. A short name resolves to `backends().first()` and there is no install-time fallback,
+    // so without the `platforms` annotation Windows lands on that backend and stops, with the
+    // registered `pipx:` one never reached. Split by platform rather than written as one test
+    // because the pair is its own control: the same expression has to answer differently by
+    // platform, which is the whole claim.
+    //
+    // Both first assert that `MISE_BACKENDS_PRE_COMMIT` is unset: `backends()` returns that
+    // override ahead of every filter, so a process carrying one would make these pass or fail
+    // without touching the registry at all. Asserted rather than cleared, because removing it
+    // would mutate process-wide state other tests share.
+    //
+    // Read from `BAKED_REGISTRY` for the same reason the `os` test above does: the claim is about
+    // `registry/pre-commit.toml` in this commit, and `REGISTRY` substitutes a cached floating
+    // registry whenever `registry_floating` is on and the cache exists.
+    #[cfg(windows)]
+    #[test]
+    fn pre_commit_falls_through_to_pipx_on_windows() {
+        use super::*;
+
+        assert!(env::var("MISE_BACKENDS_PRE_COMMIT").is_err());
+        let backends = BAKED_REGISTRY.get("pre-commit").unwrap().backends();
+        assert_eq!(
+            backends.first().copied(),
+            Some("pipx:pre-commit"),
+            "{backends:?}"
+        );
+    }
+
+    // Not `not(windows)`: mise runs on Android too, where `backend_matches_platform` sees `android`
+    // and drops the aqua backend along with Windows, so this expectation would be wrong there.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn pre_commit_keeps_the_aqua_backend_off_windows() {
+        use super::*;
+
+        assert!(env::var("MISE_BACKENDS_PRE_COMMIT").is_err());
+        let backends = BAKED_REGISTRY.get("pre-commit").unwrap().backends();
+        assert_eq!(
+            backends.first().copied(),
+            Some("aqua:pre-commit/pre-commit"),
+            "{backends:?}"
+        );
+    }
+
     #[test]
     fn test_backend_platform_matching_preserves_os_only_and_order() {
         use super::*;

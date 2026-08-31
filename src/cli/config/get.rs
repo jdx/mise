@@ -1,4 +1,6 @@
-use crate::config::{ConfigPathOptions, resolve_target_config_path, top_toml_config};
+use crate::config::{
+    ConfigPathOptions, resolve_target_config_path, system_config_path, top_toml_config,
+};
 use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
@@ -17,6 +19,14 @@ pub(super) struct ConfigGet {
     /// If not provided, the nearest mise.toml file will be used
     #[usage(short, long, visible_alias = "path", value_hint = usage_rs::ValueHint::AnyPath)]
     pub file: Option<PathBuf>,
+
+    /// Read the global config file.
+    #[usage(long, short = 'g', conflicts = ["file", "system"])]
+    pub global: bool,
+
+    /// Read the system config file.
+    #[usage(long, conflicts = ["file", "global"])]
+    pub system: bool,
 }
 
 impl ConfigGet {
@@ -29,6 +39,12 @@ impl ConfigGet {
                 prefer_toml: true,
                 ..Default::default()
             })?),
+            None if self.global => Some(resolve_target_config_path(ConfigPathOptions {
+                global: true,
+                prefer_toml: true,
+                ..Default::default()
+            })?),
+            None if self.system => Some(system_config_path()),
             None => top_toml_config(),
         };
         if let Some(file) = file {

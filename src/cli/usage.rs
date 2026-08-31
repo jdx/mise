@@ -80,11 +80,11 @@ pub(super) fn completion_spec() -> usage::Spec {
 
 impl Usage {
     pub(crate) fn run(self) -> Result<()> {
-        // 3.6 added `effect=` (jdx/usage#739) and 4.0 added it on flags and args
-        // (jdx/usage#742); older `usage` CLIs reject the spec outright with
-        // "unsupported cmd prop effect", so this moves in lockstep with the
-        // fields the spec actually carries.
-        let min_version = r#"min_usage_version "4.0""#;
+        // 3.6 added `effect=` (jdx/usage#739), 4.0 added it on flags and args
+        // (jdx/usage#742), and 6.6 added flags scoped to implicit clauses
+        // (jdx/usage#1343). Older `usage` CLIs reject the spec outright, so this
+        // moves in lockstep with the fields and layouts the spec actually carries.
+        let min_version = r#"min_usage_version "6.6""#;
         println!("{min_version}\n{}", completion_spec().to_string().trim());
         Ok(())
     }

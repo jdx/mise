@@ -186,6 +186,28 @@ EOF
 
 assert "cd unbound-versioned && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
 
+echo "=== legacy latest picks the newer of two versions that compare equal ==="
+# `versions` compares an alphanumeric chunk by its leading digits and stops, so
+# 3.7b and 3.7c both reduce to 7 and tie. Entries are written in lexicographic
+# order of the version string, and the sort is stable, so without a tie-break
+# the older entry always won. Listed here in the order mise itself writes.
+mkdir legacy-tie
+cat >legacy-tie/mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+cat >legacy-tie/mise.lock <<'EOF'
+[[tools.dummy]]
+version = "3.7b"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "3.7c"
+backend = "asdf:dummy"
+EOF
+
+assert "cd legacy-tie && mise ls dummy --json --current | jq -r '.[0].version'" "3.7c"
+
 echo "=== failed upgrades preserve legacy monorepo lockfiles ==="
 mkdir -p failed-monorepo-upgrade/packages/b
 cat >failed-monorepo-upgrade/mise.toml <<'EOF'

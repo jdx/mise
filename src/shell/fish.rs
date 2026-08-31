@@ -148,9 +148,25 @@ impl Shell for Fish {
 
     fn set_env(&self, key: &str, v: &str) -> String {
         let k = escape(key.into());
-        // Fish uses space-separated list for PATH, not colon-separated string
-        if key == "PATH" {
-            let paths = v.split(':').map(|p| escape(p.into())).join(" ");
+        // Fish keeps PATH as a list, so the value is split on the host's separator -- `;` on
+        // Windows, `:` on unix -- the way `prepend_env` below already does it. Splitting on `:`
+        // unconditionally severed every Windows drive letter from its path, and matching on the
+        // literal name missed `Path`, which is how Windows itself spells it.
+        //
+        // Empty entries are dropped, as they are in `prepend_env` and in `env::split_colon_list`:
+        // an empty element of a fish list is the current directory, and a Windows PATH ending in
+        // `;` -- the usual shape -- yields one from `split_paths`.
+        if env::is_path_key(key) {
+            let paths = env::split_paths(v)
+                .filter_map(|p| {
+                    let p = p.to_string_lossy().into_owned();
+                    if p.is_empty() {
+                        None
+                    } else {
+                        Some(escape(p.into()))
+                    }
+                })
+                .join(" ");
             format!("set -gx PATH {paths}\n")
         } else {
             let v = escape(v.into());
@@ -261,6 +277,40 @@ mod tests {
         assert_snapshot!(Fish::default().set_env("FOO", "1"));
     }
 
+    /// The regression guard for the Windows fix. On unix `env::split_paths` splits on `:` and
+    /// `env::is_path_key` is `key == "PATH"`, so both are the identity on what this did before --
+    /// the only unix output that moves is a value with an empty segment, pinned below. Written
+    /// out rather than snapshotted so the expected string is next to the claim.
+    #[test]
+    fn a_colon_list_still_becomes_one_fish_element_per_directory() {
+        assert_eq!(
+            Fish::default().set_env("PATH", "/some/dir:/2/dir"),
+            "set -gx PATH /some/dir /2/dir\n"
+        );
+    }
+
+    /// `Path` is PATH on Windows and a variable of its own on unix -- which is the distinction
+    /// `env::is_path_key` exists to make. Without this, folding every spelling everywhere would
+    /// look like a fix.
+    #[test]
+    fn another_spelling_of_path_is_not_path_here() {
+        assert_eq!(
+            Fish::default().set_env("Path", "/a:/b"),
+            "set -gx Path '/a:/b'\n"
+        );
+    }
+
+    /// The one place unix output does move. An empty element of a fish list is the current
+    /// directory, so `PATH=/a::/b` used to put the cwd on PATH; `prepend_env` below and
+    /// `env::split_colon_list` already drop these.
+    #[test]
+    fn an_empty_segment_does_not_become_the_current_directory() {
+        assert_eq!(
+            Fish::default().set_env("PATH", "/a::/b"),
+            "set -gx PATH /a /b\n"
+        );
+    }
+
     #[test]
     fn test_prepend_env() {
         let sh = Fish::default();
@@ -284,5 +334,53 @@ mod tests {
     fn test_deactivate() {
         let deactivate = Fish::default().deactivate();
         assert_snapshot!(replace_path(&deactivate));
+    }
+}
+
+/// A sibling of the module above rather than tests inside it: that one is `not(windows)` whole,
+/// and Windows is the platform these are about.
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use test_log::test;
+
+    use super::*;
+
+    /// The reproduction. `mise env -s fish` on Windows printed
+    /// `set -gx PATH C '\a\bin;C' '\b\bin'` -- every drive letter severed from its path, because
+    /// the split was on `:` while a Windows PATH is separated by `;`.
+    #[test]
+    fn a_windows_path_becomes_one_fish_element_per_directory() {
+        assert_eq!(
+            Fish::default().set_env("PATH", r"C:\a\bin;C:\b\bin"),
+            concat!(r"set -gx PATH 'C:\a\bin' 'C:\b\bin'", "\n")
+        );
+    }
+
+    /// The other half, and the reason for `env::is_path_key` rather than `key == "PATH"`:
+    /// `Path` is how Windows itself writes it, and it names the same variable. Matching on the
+    /// literal name left it in the scalar branch as `set -gx Path 'C:\a\bin;C:\b\bin'`.
+    #[test]
+    fn the_windows_spelling_of_path_takes_the_list_branch_too() {
+        assert_eq!(
+            Fish::default().set_env("Path", r"C:\a\bin;C:\b\bin"),
+            concat!(r"set -gx PATH 'C:\a\bin' 'C:\b\bin'", "\n")
+        );
+    }
+
+    /// A Windows PATH usually ends in `;`, and `split_paths` yields an empty entry for it --
+    /// measured, not assumed. An empty element of a fish list is the current directory.
+    #[test]
+    fn a_trailing_separator_does_not_add_the_current_directory() {
+        assert_eq!(
+            Fish::default().set_env("PATH", r"C:\a\bin;"),
+            concat!(r"set -gx PATH 'C:\a\bin'", "\n")
+        );
+    }
+
+    /// The control. Only PATH is a list; any other variable holding a `;` has to survive whole,
+    /// or this would read as "mise now splits everything on the path separator".
+    #[test]
+    fn a_semicolon_in_any_other_variable_is_left_alone() {
+        assert_eq!(Fish::default().set_env("FOO", "a;b"), "set -gx FOO 'a;b'\n");
     }
 }

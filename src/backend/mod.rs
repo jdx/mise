@@ -16,7 +16,7 @@ use jiff::Timestamp;
 use crate::cli::args::{BackendArg, ToolVersionType};
 use crate::cmd::CmdLineRunner;
 use crate::config::config_file::config_root;
-use crate::config::{Config, Settings};
+use crate::config::{Config, Settings, global_config_path};
 use crate::duration::parse_into_timestamp;
 use crate::file::{
     canonicalize_cached, display_path, entry_exists, remove_all_with_progress,
@@ -3333,6 +3333,11 @@ pub(crate) trait Backend: Debug + Send + Sync {
                 ctx.pr
                     .finish_with_icon("already installed".into(), ProgressIcon::Skipped);
             } else {
+                // Only when an install would actually happen. Asking whether an already-installed
+                // tool *could* be installed is a different question, and answering it here would
+                // start failing `--dry-run` on machines whose tools predate a registry
+                // restriction -- for an install that is not going to be attempted.
+                self.verify_install_feasible(&ctx, &tv).await?;
                 ctx.pr
                     .finish_with_icon("would install".into(), ProgressIcon::Skipped);
             }
@@ -3558,13 +3563,16 @@ pub(crate) trait Backend: Debug + Send + Sync {
             runner = runner.env_remove(key);
         }
 
-        // Set MISE_CONFIG_ROOT and MISE_PROJECT_ROOT from the tool's source config file
+        // Keep the declaring config and active project distinct. MISE_CONFIG_FILE is also a
+        // legacy alias for the global config, so pin the actual global path for nested mise calls.
         if let Some(source_path) = tv.request.source().path() {
-            let root = config_root::config_root(source_path);
-            let root = root.to_string_lossy().to_string();
+            let config_root = config_root::config_root(source_path);
+            let project_root = ctx.config.project_root.as_ref().unwrap_or(&config_root);
             runner = runner
-                .env("MISE_CONFIG_ROOT", &root)
-                .env("MISE_PROJECT_ROOT", &root);
+                .env("MISE_CONFIG_FILE", source_path)
+                .env("MISE_GLOBAL_CONFIG_FILE", global_config_path())
+                .env("MISE_CONFIG_ROOT", &config_root)
+                .env("MISE_PROJECT_ROOT", project_root);
         }
 
         runner.execute()?;
@@ -3576,6 +3584,24 @@ pub(crate) trait Backend: Debug + Send + Sync {
     /// Default is 3: download, checksum, extract
     async fn install_operation_count(&self, _tv: &ToolVersion, _ctx: &InstallContext) -> usize {
         3
+    }
+
+    /// Whether this version could install here at all, judged without downloading anything.
+    ///
+    /// `--dry-run` answers before `install_version_` runs, so a backend that would have refused
+    /// the platform, the version or the package type never got asked, and the answer came back
+    /// "would install" for something that cannot. Backends that can tell cheaply -- from data
+    /// already on disk or already fetched -- override this.
+    ///
+    /// **The default is silence, not a claim of feasibility.** A backend that has not implemented
+    /// this says nothing about whether the install would work, and `--dry-run` stays as optimistic
+    /// for it as it was before.
+    async fn verify_install_feasible(
+        &self,
+        _ctx: &InstallContext,
+        _tv: &ToolVersion,
+    ) -> Result<()> {
+        Ok(())
     }
 
     async fn install_version_(&self, ctx: &InstallContext, tv: ToolVersion) -> Result<ToolVersion>;

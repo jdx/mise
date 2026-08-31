@@ -50,6 +50,7 @@ use crate::{backend, dirs, env, file, lockfile, registry, runtime_symlinks, shim
 pub(crate) mod config_file;
 pub(crate) mod env_directive;
 pub(crate) mod miserc;
+pub(crate) mod provenance;
 pub(crate) mod settings;
 pub(crate) mod tracking;
 
@@ -2711,6 +2712,15 @@ pub(crate) fn global_config_path() -> PathBuf {
         .cloned()
         .or_else(|| env::MISE_GLOBAL_CONFIG_FILE.clone())
         .unwrap_or_else(|| dirs::CONFIG.join("config.toml"))
+}
+
+/// The preferred system config file to write to, or the path where it should be created.
+pub(crate) fn system_config_path() -> PathBuf {
+    let files = system_config_files();
+    first_config_file(&files)
+        .cloned()
+        .or_else(|| env::MISE_SYSTEM_CONFIG_FILE.clone())
+        .unwrap_or_else(|| dirs::SYSTEM_CONFIG.join("config.toml"))
 }
 
 /// the top-most mise.toml (local or global)

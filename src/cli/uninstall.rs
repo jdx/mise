@@ -37,7 +37,7 @@ pub(crate) struct Uninstall {
 }
 
 impl Uninstall {
-    fn is_dry_run(&self) -> bool {
+    pub(super) fn is_dry_run(&self) -> bool {
         self.dry_run || self.dry_run_code
     }
 
@@ -83,6 +83,9 @@ impl Uninstall {
             if self.is_dry_run() {
                 pr.finish_with_message("uninstalled (dry-run)".into());
             } else {
+                if let Err(err) = crate::tool_purgatory::forget_path(&tv.install_path()) {
+                    warn!("failed to clear tool purgatory entry: {err:#}");
+                }
                 pr.finish_with_message("uninstalled".into());
             }
         }

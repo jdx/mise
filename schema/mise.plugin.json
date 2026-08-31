@@ -11,11 +11,15 @@
       "unevaluatedProperties": false,
       "properties": {
         "cache-key": {
-          "description": "cache the script results separately based on these values",
+          "description": "cache the script results separately based on these values; only consumed for list-bin-paths and exec-env, accepted elsewhere",
           "type": "array",
           "items": {
             "type": "string"
           }
+        },
+        "data": {
+          "description": "static data to use instead of executing the script; only consumed for list-aliases, list-idiomatic-filenames, and list-legacy-filenames, accepted elsewhere",
+          "type": "string"
         }
       }
     }
@@ -23,36 +27,15 @@
   "properties": {
     "list-aliases": {
       "description": "configuration for bin/list-aliases script",
-      "type": "object",
-      "unevaluatedProperties": false,
-      "properties": {
-        "data": {
-          "description": "list of aliases to add",
-          "type": "string"
-        }
-      }
+      "$ref": "#/$defs/plugin-script-config"
     },
     "list-legacy-filenames": {
       "description": "configuration for bin/list-legacy-filenames script",
-      "type": "object",
-      "unevaluatedProperties": false,
-      "properties": {
-        "data": {
-          "description": "list of idiomatic filenames to check for",
-          "type": "string"
-        }
-      }
+      "$ref": "#/$defs/plugin-script-config"
     },
     "list-idiomatic-filenames": {
       "description": "configuration for idiomatic filename discovery",
-      "type": "object",
-      "unevaluatedProperties": false,
-      "properties": {
-        "data": {
-          "description": "list of idiomatic filenames to check for",
-          "type": "string"
-        }
-      }
+      "$ref": "#/$defs/plugin-script-config"
     },
     "list-bin-paths": {
       "description": "configuration for bin/list-bin-paths script",
@@ -61,6 +44,14 @@
     "exec-env": {
       "description": "configuration for bin/exec-env script",
       "$ref": "#/$defs/plugin-script-config"
+    },
+    "idiomatic-filenames": {
+      "description": "legacy key from old plugins (e.g. rtx-python) that is ignored; when present, mise stops parsing the file entirely",
+      "deprecated": true
+    },
+    "legacy-filenames": {
+      "description": "legacy key from old plugins (e.g. rtx-python) that is ignored; when present, mise stops parsing the file entirely",
+      "deprecated": true
     },
     "package-manager": {
       "description": "configuration for a package-manager plugin",
