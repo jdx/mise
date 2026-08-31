@@ -23,11 +23,25 @@ See available versions with `mise ls-remote erlang`.
 The plugin uses [kerl](https://github.com/kerl/kerl) under the hood to build erlang.
 See kerl's docs for information on configuring kerl.
 
-On GitHub Actions Linux runners, `ImageOS=ubuntu24`, `ImageOS=ubuntu22`, and `ImageOS=ubuntu20`
-map to the precompiled Erlang build targets `ubuntu-24.04`, `ubuntu-22.04`, and
-`ubuntu-20.04`. In the default `erlang.compile` mode, unsupported values record the
-Erlang/OTP source archive as the platform's locked input so installs can reproduce the
-kerl fallback.
+On GitHub Actions Linux runners, `ImageOS=ubuntu26`, `ImageOS=ubuntu24`,
+`ImageOS=ubuntu22`, and `ImageOS=ubuntu20` map to their corresponding precompiled
+Erlang build targets. In the default `erlang.compile` mode, unsupported values record
+the Erlang/OTP source archive as the platform's locked input so installs can reproduce
+the kerl fallback.
+
+The builds published by [Bob](https://github.com/hexpm/bob#erlang-builds) target Ubuntu,
+but may also run on another glibc-based Linux distribution with compatible system
+libraries. Set `erlang.precompiled_os` to opt in to one of Bob's Ubuntu targets:
+
+```toml
+[settings.erlang]
+precompiled_os = "ubuntu-22.04"
+```
+
+Precompiled builds link to system libraries such as OpenSSL, ncurses, ODBC, and
+wxWidgets. A compatible glibc version alone does not guarantee that every optional
+Erlang application will work. The selected target is recorded in `mise.lock`; use a
+target compatible with every machine that consumes the lockfile.
 
 ## Tool Options
 
