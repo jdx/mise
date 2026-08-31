@@ -1228,6 +1228,9 @@ impl Settings {
         if let Some(cd) = &cli.cd {
             s.cd = Some(cd.clone());
         }
+        if let Some(jobs) = cli.jobs {
+            s.jobs = Some(jobs);
+        }
         if cli.profile.is_some() {
             s.env = cli.profile.clone();
         }

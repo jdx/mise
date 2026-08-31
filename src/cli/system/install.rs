@@ -220,7 +220,7 @@ pub(crate) fn apply_shell_activation(
 }
 
 /// Apply `[bootstrap.repos]` entries that are missing or differ.
-pub(crate) fn apply_repos(
+pub(crate) async fn apply_repos(
     repos: Vec<system::repos::RepoRequest>,
     dry_run: bool,
     yes: bool,
@@ -240,10 +240,11 @@ pub(crate) fn apply_repos(
         |status| !status.state.is_current(),
         system::repos::apply_statuses,
     )
+    .await
 }
 
 /// Update `[bootstrap.repos]` entries, including unpinned repos.
-pub(crate) fn update_repos(
+pub(crate) async fn update_repos(
     repos: Vec<system::repos::RepoRequest>,
     dry_run: bool,
     yes: bool,
@@ -263,6 +264,7 @@ pub(crate) fn update_repos(
         |status| !status.state.is_current() || status.request.git_ref.is_none(),
         system::repos::update_statuses,
     )
+    .await
 }
 
 struct RepoMutation {
@@ -272,7 +274,7 @@ struct RepoMutation {
     report_all_current: bool,
 }
 
-fn mutate_repos(
+async fn mutate_repos(
     repos: Vec<system::repos::RepoRequest>,
     dry_run: bool,
     yes: bool,
@@ -285,7 +287,7 @@ fn mutate_repos(
     if repos.is_empty() {
         return Ok(());
     }
-    let mut statuses = repos::status(&repos)?;
+    let mut statuses = repos::status(&repos).await?;
     let mut skipped_dirty = false;
     if skip_dirty {
         statuses.retain(|status| {
