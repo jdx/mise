@@ -79,7 +79,7 @@ jobs:
           {
             echo '### Runner metadata'
             echo '```text'
-            echo 'environment-revision: perf-runner@d7c0e81'
+            echo 'environment-revision: perf-runner@78e4231'
             echo 'image: ghcr.io/jdx/perf-runner@sha256:1b44fc9f1c93fc1b7a2db56a1ef743bbf8a8df60035121d455c9834fe8001922'
             uname -a
             lscpu

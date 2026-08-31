@@ -13,22 +13,17 @@ name: perf-pr
 # main contributes to the history — a branch's numbers are not the trunk's, and
 # a series that mixes them cannot be read.
 
-on:
-  pull_request_target:
-    types: [opened, synchronize, reopened]
-    # These files change the repository's development environment rather than
-    # the mise binary. In particular, root mise.toml tools are inherited by the
-    # benchmark fixture and would make the head and base inputs differ.
-    paths-ignore:
-      - ".github/**"
-      - "mise.lock"
-      - "mise.toml"
+on: # zizmor: ignore[dangerous-triggers] validates live PR metadata before any self-hosted job
+  workflow_run:
+    workflows: [perf-pr-preflight]
+    types: [completed]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: true
 
 env:
@@ -37,9 +32,48 @@ env:
   TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1
 
 jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs:
+      authorized: ${{ steps.pr.outputs.authorized }}
+      base_ref: ${{ steps.pr.outputs.base_ref }}
+      head_sha: ${{ steps.pr.outputs.head_sha }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - id: pr
+        name: Validate the pull request from the trusted default branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          exec 3>>"$GITHUB_OUTPUT"
+          echo 'authorized=false' >&3
+          [ "$TRIGGER_EVENT" = pull_request ] || exit 0
+          [ "$TRIGGER_CONCLUSION" = success ] || exit 0
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || exit 0
+          pr="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER")"
+          [ "$(jq -r .state <<<"$pr")" = open ] || exit 0
+          [ "$(jq -r .user.login <<<"$pr")" = jdx ] || exit 0
+          [ "$(jq -r .head.repo.full_name <<<"$pr")" = "$REPOSITORY" ] || exit 0
+          [ "$(jq -r .base.repo.full_name <<<"$pr")" = "$REPOSITORY" ] || exit 0
+          head_sha="$(jq -r .head.sha <<<"$pr")"
+          [ "$head_sha" = "$TRIGGER_SHA" ] || exit 0
+          echo 'authorized=true' >&3
+          echo "base_ref=$(jq -r .base.ref <<<"$pr")" >&3
+          echo "head_sha=$head_sha" >&3
+          echo "pr_number=$PR_NUMBER" >&3
+
   measure:
     name: Compare instruction counts
-    if: github.event.pull_request.user.login == 'jdx' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: authorize
+    if: needs.authorize.outputs.authorized == 'true'
     # Same runner class as perf.yml and perf-backfill.yml. Absolute counts shift
     # between machine types by more than a real regression does, so a comparison
     # across runner classes is not a comparison — tak refuses to make one, and
@@ -61,7 +95,7 @@ jobs:
           # for the run, changes whenever main advances, and measuring it would
           # attribute a number to a commit nobody can check out. It would also
           # make the footer below name a commit the measurement is not of.
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ needs.authorize.outputs.head_sha }}
           # Needed twice over: to find the merge base, and for the sparkline,
           # which walks twenty commits of trunk history.
           fetch-depth: 0
@@ -93,7 +127,7 @@ jobs:
           {
             echo '### Runner metadata'
             echo '```text'
-            echo 'environment-revision: perf-runner@d7c0e81'
+            echo 'environment-revision: perf-runner@78e4231'
             echo 'image: ghcr.io/jdx/perf-runner@sha256:1b44fc9f1c93fc1b7a2db56a1ef743bbf8a8df60035121d455c9834fe8001922'
             uname -a
             lscpu
@@ -120,7 +154,7 @@ jobs:
       - name: Find the base commit
         id: base
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ needs.authorize.outputs.base_ref }}
         run: |
           git fetch --quiet origin "$BASE_REF"
           # The merge base, not the branch tip: comparing against a moving
@@ -148,7 +182,7 @@ jobs:
         if: always()
         env:
           BASE_SHA: ${{ steps.base.outputs.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ needs.authorize.outputs.head_sha }}
         run: |
           mkdir -p /tmp/tak-out
           # A missing report means an earlier step died. Say so, rather than
@@ -177,8 +211,8 @@ jobs:
   # code: it reads an artifact and talks to the API.
   report:
     name: Report and gate
-    needs: measure
-    if: always() && github.event.pull_request.user.login == 'jdx'
+    needs: [authorize, measure]
+    if: always() && needs.authorize.outputs.authorized == 'true' && needs.measure.result != 'cancelled'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -192,11 +226,10 @@ jobs:
       # Skipped for pull requests from forks, which get a read-only token. The
       # comparison and the gate still run there; only the comment is missing.
       - name: Comment on the pull request
-        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
           GH_mise: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ needs.authorize.outputs.pr_number }}
         run: |
           marker='<!-- mise-perf-pr -->'
           read -r head_sha base_sha < /tmp/tak-out/shas
