@@ -8,6 +8,7 @@ use crate::backend::backend_type::BackendType;
 use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap, Settings};
 use crate::env;
+use crate::env_diff::EnvMap;
 use crate::registry::{REGISTRY, tool_enabled};
 use crate::toolset::{ToolRequest, ToolSource, Toolset};
 use heck::{ToKebabCase, ToShoutySnakeCase};
@@ -231,8 +232,22 @@ impl ToolRequestSetBuilder {
         Ok(trs)
     }
 
-    fn load_runtime_env(&self, mut trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
-        for (short, k, v) in tool_env_vars() {
+    fn load_runtime_env(&self, trs: ToolRequestSet) -> eyre::Result<ToolRequestSet> {
+        let env = env::vars_safe().collect();
+        self.load_runtime_env_from(trs, env)
+    }
+
+    fn load_runtime_env_from(
+        &self,
+        mut trs: ToolRequestSet,
+        env: EnvMap,
+    ) -> eyre::Result<ToolRequestSet> {
+        let postinstall = postinstall_tool_request(&env)?
+            .map(|(request, source)| (apply_config_options_to_runtime_arg(&trs, request), source));
+        for (k, v) in env {
+            let Some(short) = tool_from_env_var_name(&k) else {
+                continue;
+            };
             let ba: Arc<BackendArg> = Arc::new(short.as_str().into());
             let source = ToolSource::Environment(k, v.clone());
             let mut env_ts = ToolRequestSet::new();
@@ -241,6 +256,11 @@ impl ToolRequestSetBuilder {
                 env_ts.add_version(tvr, &source);
             }
             trs = merge(trs, env_ts);
+        }
+        if let Some((request, source)) = postinstall {
+            let mut postinstall_trs = ToolRequestSet::new();
+            postinstall_trs.add_version(request, &source);
+            trs = merge(trs, postinstall_trs);
         }
         Ok(trs)
     }
@@ -328,6 +348,28 @@ pub(super) fn configured_options_for_runtime_request(
         .map(ToolRequest::options)
 }
 
+/// Keep the exact tool currently running its postinstall hook active for
+/// nested mise invocations. Unlike `MISE_<TOOL>_VERSION`, this pair keeps
+/// backend-qualified names containing `:` or `/` intact.
+pub(super) fn postinstall_tool_request(
+    env: &EnvMap,
+) -> eyre::Result<Option<(ToolRequest, ToolSource)>> {
+    if !env.contains_key("MISE_TOOL_INSTALL_PATH") {
+        return Ok(None);
+    }
+    let (Some(name), Some(version)) = (
+        env.get("MISE_TOOL_NAME"),
+        env.get(env::MISE_TOOL_VERSION_ENV_VAR),
+    ) else {
+        return Ok(None);
+    };
+    let backend = Arc::new(BackendArg::from(name));
+    let source =
+        ToolSource::Environment(env::MISE_TOOL_VERSION_ENV_VAR.into(), version.to_string());
+    let request = ToolRequest::new(backend, version, source.clone())?;
+    Ok(Some((request, source)))
+}
+
 fn merge(mut a: ToolRequestSet, mut b: ToolRequestSet) -> ToolRequestSet {
     // move things around such that the tools are in the config order
     a.tools.retain(|ba, _| !b.tools.contains_key(ba));
@@ -372,6 +414,48 @@ pub(crate) fn tool_env_vars() -> impl Iterator<Item = (String, String, String)> 
 mod tests {
     use super::*;
     use crate::toolset::{CoreToolOptions, ToolVersionOptions, parse_tool_options};
+
+    #[test]
+    fn test_postinstall_tool_request_preserves_backend_identity() {
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/aws-cli".into()),
+            ("MISE_TOOL_NAME".into(), "aqua:aws/aws-cli".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.31.0".into()),
+        ]);
+
+        let (request, _) = postinstall_tool_request(&env).unwrap().unwrap();
+
+        assert_eq!(request.ba().short, "aqua:aws/aws-cli");
+        assert_eq!(request.version(), "2.31.0");
+    }
+
+    #[tokio::test]
+    async fn test_postinstall_request_set_preserves_configured_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="configured""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut trs = ToolRequestSet::new();
+        trs.add_version(configured, &ToolSource::Unknown);
+        let env = EnvMap::from_iter([
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/dummy".into()),
+            ("MISE_TOOL_NAME".into(), "dummy".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.0.0".into()),
+        ]);
+
+        let trs = ToolRequestSetBuilder::new()
+            .load_runtime_env_from(trs, env)
+            .unwrap();
+
+        let request = &trs.tools.get(&ba).unwrap()[0];
+        assert_eq!(request.version(), "2.0.0");
+        assert_eq!(request.options().get("selected"), Some("configured"));
+    }
 
     #[test]
     fn test_tool_env_var_name_round_trip() {

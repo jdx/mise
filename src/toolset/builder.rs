@@ -7,7 +7,9 @@ use crate::cli::args::{BackendArg, ToolArg};
 use crate::config::{Config, ConfigMap};
 use crate::env_diff::EnvMap;
 use crate::errors::Error;
-use crate::toolset::tool_request_set::configured_options_for_runtime_request;
+use crate::toolset::tool_request_set::{
+    configured_options_for_runtime_request, postinstall_tool_request,
+};
 use crate::toolset::{ResolveOptions, ToolRequest, ToolSource, Toolset, tool_from_env_var_name};
 use crate::{config, env};
 
@@ -111,7 +113,16 @@ impl ToolsetBuilder {
             // LocalOnly excludes env-based tool versions (MISE_*_VERSION).
             return Ok(());
         }
-        let postinstall = postinstall_tool_request(&env)?;
+        let postinstall = postinstall_tool_request(&env)?.map(|(mut request, source)| {
+            if let Some(config_options) = ts
+                .versions
+                .get(request.ba())
+                .and_then(|tvl| configured_options_for_runtime_request(&tvl.requests, &request))
+            {
+                request.apply_config_options(config_options);
+            }
+            (request, source)
+        });
         for (k, v) in env {
             if let Some(tool_name) = tool_from_env_var_name(&k) {
                 let ba: Arc<BackendArg> = Arc::new(tool_name.as_str().into());
@@ -187,43 +198,37 @@ impl ToolsetBuilder {
     }
 }
 
-/// Keep the exact tool currently running its postinstall hook active for
-/// nested mise invocations. Unlike `MISE_<TOOL>_VERSION`, this pair keeps
-/// backend-qualified names containing `:` or `/` intact.
-fn postinstall_tool_request(env: &EnvMap) -> eyre::Result<Option<(ToolRequest, ToolSource)>> {
-    if !env.contains_key("MISE_TOOL_INSTALL_PATH") {
-        return Ok(None);
-    }
-    let (Some(name), Some(version)) = (
-        env.get("MISE_TOOL_NAME"),
-        env.get(env::MISE_TOOL_VERSION_ENV_VAR),
-    ) else {
-        return Ok(None);
-    };
-    let backend = Arc::new(BackendArg::from(name));
-    let source =
-        ToolSource::Environment(env::MISE_TOOL_VERSION_ENV_VAR.into(), version.to_string());
-    let request = ToolRequest::new(backend, version, source.clone())?;
-    Ok(Some((request, source)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::toolset::parse_tool_options;
 
-    #[test]
-    fn test_postinstall_tool_request_preserves_backend_identity() {
+    #[tokio::test]
+    async fn test_postinstall_request_preserves_configured_options() {
+        crate::toolset::install_state::init().await.unwrap();
+        let ba = Arc::new(BackendArg::from("dummy"));
+        let configured = ToolRequest::new_with_options(
+            ba.clone(),
+            "1.0.0",
+            parse_tool_options(r#"selected="configured""#),
+            ToolSource::Unknown,
+        )
+        .unwrap();
+        let mut ts = Toolset::new(ToolSource::Unknown);
+        ts.add_version(configured);
         let env = EnvMap::from_iter([
-            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/aws-cli".into()),
-            ("MISE_TOOL_NAME".into(), "aqua:aws/aws-cli".into()),
-            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.31.0".into()),
+            ("MISE_TOOL_INSTALL_PATH".into(), "/tmp/dummy".into()),
+            ("MISE_TOOL_NAME".into(), "dummy".into()),
+            (env::MISE_TOOL_VERSION_ENV_VAR.into(), "2.0.0".into()),
         ]);
 
-        let (request, _) = postinstall_tool_request(&env).unwrap().unwrap();
+        ToolsetBuilder::new()
+            .load_runtime_env(&mut ts, env)
+            .unwrap();
 
-        assert_eq!(request.ba().short, "aqua:aws/aws-cli");
-        assert_eq!(request.version(), "2.31.0");
+        let request = &ts.versions.get(&ba).unwrap().requests[0];
+        assert_eq!(request.version(), "2.0.0");
+        assert_eq!(request.options().get("selected"), Some("configured"));
     }
 
     #[tokio::test]
