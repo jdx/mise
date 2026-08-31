@@ -23,7 +23,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 env:
@@ -87,6 +87,9 @@ jobs:
       # Read only. This job builds and runs code from the pull request, so it
       # must not hold a token that can write anything — see the `report` job.
       contents: read
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
