@@ -82,7 +82,9 @@ jobs:
           esac
           hash -r
           command -v cargo
-          clean_path=$(printf '%s\n' "$PATH" | tr ':' '\n' | grep -v '/mbx/bin$' | paste -sd:)
+          clean_path=$(printf '%s\n' "$PATH" | tr ':' '\n' \
+            | grep -v -e '/mbx/bin$' -e '/mise/installs/mr-boxington/' \
+            | paste -sd:)
           echo "PATH=$clean_path" >> "$GITHUB_ENV"
 
       - name: Install valgrind
