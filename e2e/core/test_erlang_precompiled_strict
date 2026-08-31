@@ -37,8 +37,7 @@ assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-22.04"'
 assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-22\.04/OTP-28\.5\.tar\.gz"'
 
 rm -f mise.lock
-sed -i '/precompiled_os/d' mise.toml
-export ImageOS=ubuntu26
+sed -i 's/ubuntu-22\.04/ubuntu-26.04/' mise.toml
 mise lock --platform "$MISE_PLATFORM"
 assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-26.04"'
 assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-26\.04/OTP-28\.5\.tar\.gz"'
