@@ -104,8 +104,6 @@ Lint HK files
 
 ## `perf`
 
-- Depends: perf:build
-
 - **Usage:** `perf`
 
 ## `perf:build`
@@ -113,8 +111,6 @@ Lint HK files
 - **Usage:** `perf:build`
 
 ## `perf:record`
-
-- Depends: perf:build
 
 - **Usage:** `perf:record`
 
