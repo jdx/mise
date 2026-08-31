@@ -56,7 +56,14 @@ jobs:
 
       # Keep development-only Cargo activation out of the measured process.
       - name: Remove mbx benchmark activation
-        run: mbx setup --uninstall --global
+        run: |
+          mbx setup --uninstall --global
+          cargo_path=$(command -v cargo)
+          case "$cargo_path" in
+            */mbx/bin/cargo) rm -f "$cargo_path" ;;
+          esac
+          hash -r
+          command -v cargo
 
       # cachegrind is the whole point: it counts instructions, which reproduce
       # to ~0.02% run-to-run where wall clock on this same hardware moves by
