@@ -1,0 +1,9 @@
+backends = [
+  "aqua:Gentleman-Programming/gentle-ai",
+  "github:Gentleman-Programming/gentle-ai",
+]
+bins = ["gentle-ai"]
+description = "Ecosystem, frameworks, and workflows for AI coding agents"
+os = ["linux", "macos"]
+test = { cmd = "gentle-ai version", expected = "gentle-ai {{version}}" }
+version_order = "semver"
