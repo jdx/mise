@@ -674,7 +674,8 @@ impl Toolset {
             pr: mpr.add_with_options(&tv.style(), opts.dry_run),
             force: opts.force,
             dry_run: opts.dry_run,
-            locked: opts.locked || config.tool_config_locked(tr.source()),
+            locked: config.invocation_locked_for(tr.source(), opts.locked)
+                || config.tool_config_locked(tr.source()),
             before_date,
             dependency_context: OnceCell::new(),
         };

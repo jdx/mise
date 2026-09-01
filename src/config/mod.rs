@@ -185,6 +185,28 @@ pub(crate) fn is_loaded() -> bool {
 }
 
 impl Config {
+    /// Whether invocation-wide locked mode applies to a tool's config scope.
+    /// Sources outside configuration files remain locked because they have no
+    /// scope that can be excluded.
+    pub(crate) fn invocation_locked_for(
+        &self,
+        source: &ToolSource,
+        invocation_locked: bool,
+    ) -> bool {
+        if !invocation_locked {
+            return false;
+        }
+        let Some(path) = source.path() else {
+            return true;
+        };
+        let scope = match provenance::ConfigProvenance::from_path(path).scope() {
+            provenance::ConfigFileScope::System => "system",
+            provenance::ConfigFileScope::User => "global",
+            provenance::ConfigFileScope::Project => "project",
+        };
+        Settings::get().locked_scopes.contains(scope)
+    }
+
     /// Whether the config root that owns this tool request opted it into strict
     /// lockfile enforcement. Non-config sources remain governed only by the
     /// invocation-wide `locked` setting/flag.

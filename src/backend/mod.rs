@@ -3290,7 +3290,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
         // Also exempt backends that don't support URL locking (e.g., Rust uses rustup)
         // This must run before the dry-run check so that --locked --dry-run still validates
         let settings = Settings::get();
-        if (ctx.locked || settings.locked) && settings.lockfile == Some(false) {
+        if ctx.locked && settings.lockfile == Some(false) {
             bail!(
                 "locked mode requires lockfile to be enabled\n\
                 hint: Remove `lockfile = false` or set `lockfile = true`, or disable locked mode"
