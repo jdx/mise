@@ -156,8 +156,8 @@ pgp = "0.20"
 phf = "0.14"
 rand = "0.10"
 rattler = { version = "0.48", default-features = false }
-rattler_conda_types = { version = "0.50", default-features = false }
-rattler_repodata_gateway = { version = "0.32", default-features = false, features = [
+rattler_conda_types = { version = "0.51", default-features = false }
+rattler_repodata_gateway = { version = "0.33", default-features = false, features = [
   "gateway",
 ] }
 rattler_solve = { version = "9", default-features = false, features = [
