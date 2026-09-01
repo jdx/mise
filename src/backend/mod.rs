@@ -1181,6 +1181,23 @@ mod tests {
     }
 
     #[test]
+    fn test_dotnet_registry_parses_global_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("global.json");
+        fs::write(
+            &path,
+            r#"{"sdk":{"version":"10.0.400","rollForward":"latestFeature"}}"#,
+        )
+        .unwrap();
+        let specs = REGISTRY.get("dotnet").unwrap().idiomatic_files;
+
+        assert_eq!(
+            parse_matching_registry_idiomatic_file(&path, specs).unwrap(),
+            Some(vec!["10.0.400".to_string()])
+        );
+    }
+
+    #[test]
     fn test_registry_idiomatic_file_without_parser_uses_backend_fallback() {
         let spec = RegistryIdiomaticFile {
             path: ".tool-version",

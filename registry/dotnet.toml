@@ -5,5 +5,5 @@ backends = [
   "asdf:mise-plugins/mise-dotnet",
 ]
 description = ".NET SDK"
-idiomatic_files = ["global.json"]
+idiomatic_files = [{ path = "global.json", version_json_path = ".sdk.version" }]
 version_order = "semver"
