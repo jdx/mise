@@ -14,6 +14,14 @@ EOF
 mise reshim --system
 assert_succeed "test -e '$MISE_SYSTEM_SHIMS_DIR/dummy'"
 assert_fail "test -e '$MISE_SHIMS_DIR/dummy'"
+# If only the user farm is already on PATH, the missing system farm follows it
+# at the same fallback boundary rather than being promoted ahead of it.
+path_without_farms="${PATH#"$MISE_SHIMS_DIR:$MISE_SYSTEM_SHIMS_DIR:"}"
+mise_path="$(PATH="$MISE_SHIMS_DIR:$path_without_farms" mise env -s bash | sed -n 's/^export PATH=//p' | tr -d "'\"")"
+case "$mise_path" in
+  *"$MISE_SHIMS_DIR:$MISE_SYSTEM_SHIMS_DIR:"*) ;;
+  *) fail "expected user shims before system shims: $mise_path" ;;
+esac
 assert_contains "dummy --version" "This is Dummy 1.0.0"
 assert_directory_exists "$MISE_SYSTEM_INSTALLS_DIR/dummy/1.0.0"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"

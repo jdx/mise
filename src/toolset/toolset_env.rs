@@ -44,22 +44,40 @@ impl Toolset {
     /// already puts tool paths ahead of it, and a shared directory such as
     /// `~/.local/bin` must not be reordered.
     fn child_path(&self, paths: impl IntoIterator<Item = PathBuf>) -> String {
-        let pristine = pristine_path_without_install_dirs();
+        let mut pristine = pristine_path_without_install_dirs();
+        let mut shim_farms = Vec::new();
+        let mut shim_boundary = None;
+        if self.has_lazy_declarations() {
+            shim_farms = crate::shims::shim_farm_dirs();
+            for (index, path) in pristine.iter().enumerate() {
+                if shim_farms.iter().any(|farm| {
+                    file::paths_eq(
+                        &file::canonicalize_or_self(path),
+                        &file::canonicalize_or_self(farm),
+                    )
+                }) {
+                    shim_boundary.get_or_insert(index);
+                }
+            }
+            if let Some(boundary) = shim_boundary {
+                pristine.retain(|path| {
+                    !shim_farms.iter().any(|farm| {
+                        file::paths_eq(
+                            &file::canonicalize_or_self(path),
+                            &file::canonicalize_or_self(farm),
+                        )
+                    })
+                });
+                pristine.splice(boundary..boundary, shim_farms.iter().cloned());
+            }
+        }
         let mut path_env = PathEnv::from_iter(pristine.iter().cloned());
         for p in paths {
             path_env.add(p);
         }
-        if self.has_lazy_declarations() {
-            for dir in crate::shims::shim_farm_dirs() {
-                let on_path = pristine.iter().any(|p| {
-                    file::paths_eq(
-                        &file::canonicalize_or_self(p),
-                        &file::canonicalize_or_self(&dir),
-                    )
-                });
-                if !on_path {
-                    path_env.add(dir);
-                }
+        if shim_boundary.is_none() {
+            for dir in shim_farms {
+                path_env.add(dir);
             }
         }
         path_env.to_string()

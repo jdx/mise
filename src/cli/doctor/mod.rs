@@ -822,7 +822,8 @@ impl Doctor {
         } else {
             shims::ShimScope::User
         };
-        if let Ok(diffs) = shims::get_shim_diffs(config, mise_bin, toolset, &shims_dir, scope).await
+        if let Ok(diffs) =
+            shims::get_shim_diffs(config, mise_bin, toolset, &shims_dir, scope, false).await
         {
             let cmd = style::nyellow("mise reshim");
 

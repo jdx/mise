@@ -385,12 +385,20 @@ pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
 pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
     let mut shims_by_dir = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    let mut lazy_bins_error = None;
     for tv in missing {
         if tv.request.options().lazy != Some(true) {
             continue;
         }
-        let Some(bins) = tv.request.lazy_bins()? else {
-            continue;
+        let bins = match tv.request.lazy_bins() {
+            Ok(Some(bins)) => bins,
+            Ok(None) => continue,
+            Err(err) => {
+                // One malformed lazy declaration must not prevent bootstrap shims
+                // from being written for every other declaration in the toolset.
+                lazy_bins_error.get_or_insert(err);
+                continue;
+            }
         };
         let shims_dir = if shim_scope_contains_request(ShimScope::System, &tv.request) {
             dirs::system_shims()
@@ -412,7 +420,11 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
             }
         }
     }
-    Ok(())
+    if let Some(err) = lazy_bins_error {
+        Err(err)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) async fn reshim_for(
@@ -471,7 +483,7 @@ pub(crate) async fn reshim_for(
 
     let dedicated = is_dedicated_shims_dir(&shims_dir);
     let (desired, shims_to_stage, known_owned, prune_entries) = if full_rebuild {
-        let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
+        let desired = get_desired_shims(config, &mise_bin, ts, scope, force).await?;
         let shims_to_stage = desired.iter().cloned().collect();
         if dedicated {
             (desired, shims_to_stage, HashSet::new(), HashSet::new())
@@ -481,7 +493,7 @@ pub(crate) async fn reshim_for(
             (desired, shims_to_stage, actual.owned, prune_entries)
         }
     } else {
-        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
+        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope, false).await?;
         (
             diffs.desired,
             diffs.missing,
@@ -1335,11 +1347,12 @@ pub(crate) async fn get_shim_diffs(
     toolset: &Toolset,
     shims_dir: &Path,
     scope: ShimScope,
+    strict_lazy_bins: bool,
 ) -> Result<ShimDiffs> {
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) = tokio::join!(
         get_actual_shims(mise_bin, shims_dir),
-        get_desired_shims(config, mise_bin, toolset, scope)
+        get_desired_shims(config, mise_bin, toolset, scope, strict_lazy_bins)
     );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
     let (missing, extra) = calculate_shim_diffs(
@@ -1495,6 +1508,7 @@ async fn get_desired_shims(
     mise_bin: &Path,
     toolset: &Toolset,
     scope: ShimScope,
+    strict_lazy_bins: bool,
 ) -> Result<HashSet<String>> {
     let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
@@ -1517,11 +1531,14 @@ async fn get_desired_shims(
         if !shim_scope_contains_request(scope, request) {
             continue;
         }
-        if let Some(bins) = request.lazy_bins()? {
-            shims.extend(
+        match request.lazy_bins() {
+            Ok(Some(bins)) => shims.extend(
                 bins.into_iter()
                     .flat_map(|bin| platform_shim_names(_mise_bin, &bin)),
-            );
+            ),
+            Ok(None) => {}
+            Err(err) if strict_lazy_bins => return Err(err),
+            Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
         }
     }
     Ok(shims)
