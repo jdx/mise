@@ -31,6 +31,7 @@ type Element = {
   enum?: EnumValue[];
   items?: {
     type: string | string[];
+    enum?: EnumValue[];
   };
   additionalProperties?: {
     type: string;
@@ -154,17 +155,18 @@ function buildElement(key: string, props: Props): Element {
   if (props.deprecated) {
     element.deprecated = true;
   }
-  if (props.enum) {
-    element.enum = props.enum.map((e) =>
-      typeof e === "object" && e !== null && "value" in e ? e.value : e,
-    );
-  }
+  const enumValues = props.enum?.map((e) =>
+    typeof e === "object" && e !== null && "value" in e ? e.value : e,
+  );
 
   if (type === "string[]") {
     element.type = "array";
     element.items = {
       type: "string",
+      ...(enumValues ? { enum: enumValues } : {}),
     };
+  } else if (enumValues) {
+    element.enum = enumValues;
   }
 
   if (type === "object") {

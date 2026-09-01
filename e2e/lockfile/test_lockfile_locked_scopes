@@ -60,3 +60,6 @@ assert_fail_contains "MISE_LOCKED=1 MISE_LOCKED_SCOPES=project,global mise insta
 # Direct arguments do not have a config scope and remain strict.
 rm "$MISE_SYSTEM_CONFIG_FILE"
 assert_fail_contains "MISE_LOCKED=1 MISE_LOCKED_SCOPES=project mise install --dry-run jq@1.7.1 2>&1" "No lockfile URL found"
+
+# Unsupported values fail closed instead of silently weakening locked mode.
+assert_fail_contains "MISE_LOCKED_SCOPES=projct mise settings get locked_scopes 2>&1" 'invalid locked_scopes value "projct"'

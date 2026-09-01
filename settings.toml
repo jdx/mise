@@ -1544,6 +1544,7 @@ This is a global-only setting so project configuration cannot weaken a user's
 locked-mode policy. Set it in user-global or system config, or with
 `MISE_LOCKED_SCOPES`.
 """
+enum = ["project", "global", "system"]
 env = "MISE_LOCKED_SCOPES"
 global_only = true
 parse_env = "set_by_comma"

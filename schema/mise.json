@@ -1216,7 +1216,8 @@
           "description": "Config scopes where invocation-wide locked mode is enforced.",
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "string",
+            "enum": ["project", "global", "system"]
           }
         },
         "locked_verify_provenance": {
