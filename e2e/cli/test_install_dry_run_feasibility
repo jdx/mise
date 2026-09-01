@@ -26,6 +26,18 @@ assert_fail "mise install --dry-run" "No URL for platform"
 # and it names what the tool does declare, since adding that key is usually the fix
 assert_fail "mise install --dry-run" "Available: windows-x64"
 
+# The s3 backend is structurally the same question as http: a tool that declares a URL for
+# another platform only cannot install here, and its options say so before any request. It used
+# to answer "would install" like http did before the feasibility hook reached it.
+cat <<EOF >mise.toml
+[tools."s3:dry-run-no-url-here"]
+version = "1.0.0"
+platforms = { windows-x64 = { url = "s3://example/tool-{{version}}.tar.gz" } }
+EOF
+assert_fail "mise install --dry-run" "No URL for platform"
+# and it names what the tool does declare, since adding that key is usually the fix
+assert_fail "mise install --dry-run" "Available: windows-x64"
+
 # aqua can tell from the registry entry. Specific versions are marked `no_asset` there regardless
 # of platform, which is what makes this runnable on any runner: `unsupported env` depends on the
 # host, and aqua reads the host from `env::consts::OS` rather than from settings, so `MISE_OS`

@@ -5,7 +5,7 @@ use crate::cli::prune::prune;
 use crate::config::config_file::ConfigFile;
 use crate::config::{Config, config_file};
 use crate::file::display_path;
-use crate::{config, env};
+use crate::{config, env, shims};
 use eyre::Result;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
@@ -59,6 +59,7 @@ impl Unuse {
     pub(crate) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let cf = self.get_config_file(&config).await?;
+        let system_config = config::is_system_config(cf.get_path());
         let tools = cf.to_tool_request_set()?.tools;
         let mut removed: Vec<&ToolArg> = vec![];
         for ta in &self.installed_tool {
@@ -132,15 +133,16 @@ impl Unuse {
                 false,
             )
             .await?;
+        }
+        if !removed.is_empty() || !self.no_prune {
+            let shim_scope = match (system_config, self.no_prune) {
+                (true, false) => shims::ShimScope::Both,
+                (true, true) => shims::ShimScope::System,
+                (false, _) => shims::ShimScope::User,
+            };
             let config = Config::reset().await?;
             let ts = config.get_toolset().await?;
-            config::rebuild_shims_and_runtime_symlinks(
-                &config,
-                ts,
-                &[],
-                crate::lockfile::LockfileUpdateMode::Normal,
-            )
-            .await?;
+            config::rebuild_shims_and_runtime_symlinks_for_scope(&config, ts, shim_scope).await?;
         }
 
         Ok(())

@@ -10,6 +10,11 @@ A tool stub is an executable file that begins with a shebang line pointing to `m
 
 Tool stubs can use any mise backend but because they default to http—and http backend tools have things like urls and don't require a version—the http stubs look a bit different than non-http stubs.
 
+For a machine-wide catalogue of ordinary tools, prefer
+[`lazy = true` in `[tools]`](/dev-tools/shims.html#lazy-tools). Standalone tool
+stub scripts remain useful when the executable file itself should carry a
+portable, self-contained tool definition.
+
 ::: tip
 Tool stubs are particularly useful for adding less-commonly used tools to your mise setup. Since tools are only installed when their stub is first executed, you can define many tools without the overhead of installing them all upfront. This is perfect for specialized tools, testing utilities, or project-specific binaries that you might not use every day.
 :::

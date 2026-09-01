@@ -198,8 +198,9 @@ pub(crate) static MISE_SYSTEM_DATA_DIR: Lazy<PathBuf> = Lazy::new(|| {
     var_path("MISE_SYSTEM_DATA_DIR").unwrap_or_else(|| PathBuf::from("/usr/local/share/mise"))
 });
 /// System-level installs directory, derived from MISE_SYSTEM_DATA_DIR.
-pub(crate) static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> =
-    Lazy::new(|| MISE_SYSTEM_DATA_DIR.join("installs"));
+pub(crate) static MISE_SYSTEM_INSTALLS_DIR: Lazy<PathBuf> = Lazy::new(|| {
+    var_path("MISE_SYSTEM_INSTALLS_DIR").unwrap_or_else(|| MISE_SYSTEM_DATA_DIR.join("installs"))
+});
 
 /// Extra shared install directories parsed from the environment variable.
 /// This is the early/fallback source; prefer `shared_install_dirs()` which also
@@ -229,12 +230,14 @@ pub(crate) fn shared_install_dirs() -> Vec<PathBuf> {
     } else {
         MISE_SHARED_INSTALL_DIRS_ENV.clone()
     };
-    let system = &*MISE_SYSTEM_INSTALLS_DIR;
+    let system = Settings::try_get()
+        .map(|settings| settings.system_installs_dir().to_path_buf())
+        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
     // System dir first (if it exists and isn't the user's own install dir),
     // then user-configured dirs.
     let mut result = Vec::new();
-    if system.is_dir() && *system != *MISE_INSTALLS_DIR {
-        result.push(system.clone());
+    if system.is_dir() && system != *MISE_INSTALLS_DIR {
+        result.push(system);
     }
     result.extend(user_dirs);
     result
@@ -253,7 +256,10 @@ pub(crate) fn shared_install_dirs_early() -> Vec<PathBuf> {
 
 /// Categorize an install path as system, shared, or local.
 pub(crate) fn install_path_category(path: &Path) -> InstallPathCategory {
-    if path.starts_with(&*MISE_SYSTEM_INSTALLS_DIR) {
+    let system_installs = crate::config::Settings::try_get()
+        .map(|settings| settings.system_installs_dir().to_path_buf())
+        .unwrap_or_else(|_| MISE_SYSTEM_INSTALLS_DIR.clone());
+    if system_installs != *MISE_INSTALLS_DIR && path.starts_with(system_installs) {
         InstallPathCategory::System
     } else if shared_install_dirs().iter().any(|d| path.starts_with(d)) {
         InstallPathCategory::Shared

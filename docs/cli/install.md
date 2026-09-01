@@ -38,6 +38,9 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 
   This prepares task tools without running task commands or dependencies.
   Combine with --monorepo to include tasks from every configured root.
+- **`--include-lazy`** — Also install tools configured with `lazy = true`
+
+  By default, a bare `mise install` leaves lazy tools for first-command installation.
 - **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only install versions released before this date or older than this duration
 
   Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
@@ -65,5 +68,6 @@ mise install node@20.0.0  # install specific node version
 mise install node@20      # install fuzzy node version
 mise install node         # install version specified in mise.toml
 mise install              # installs everything specified in mise.toml
+mise install --include-lazy # also install tools configured for lazy installation
 mise install --include-task-tools # also install tools required by tasks
 ```

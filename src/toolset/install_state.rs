@@ -71,6 +71,14 @@ static INSTALL_STATE_TOOL_MEMO: Mutex<Option<HashMap<String, Option<InstallState
 static ROOT_MANIFEST_MEMO: Mutex<Option<Arc<Manifest>>> = Mutex::new(None);
 static MANIFEST_LOCK: Mutex<()> = Mutex::new(());
 
+fn shared_install_dirs_for_scan() -> Vec<PathBuf> {
+    if crate::config::settings::is_loaded() {
+        env::shared_install_dirs()
+    } else {
+        env::shared_install_dirs_early()
+    }
+}
+
 fn manifest_path() -> PathBuf {
     dirs::INSTALLS.join(".mise-installs.toml")
 }
@@ -441,7 +449,7 @@ fn full_scan_tools() -> MutexResult<InstallStateTools> {
         }
 
         // Scan shared install directories (read-only fallback directories)
-        for shared_dir in env::shared_install_dirs_early() {
+        for shared_dir in shared_install_dirs_for_scan() {
             if !shared_dir.is_dir() {
                 continue;
             }
@@ -613,7 +621,7 @@ fn load_tool(short: &str) -> Option<InstallStateTool> {
     }
 
     // Shared install directories can add versions or supply the whole tool.
-    for shared_dir in env::shared_install_dirs_early() {
+    for shared_dir in shared_install_dirs_for_scan() {
         let shared_manifest = shared_manifest(&shared_dir);
         // Like the root manifest above, a shared manifest may record this
         // short under a dir that doesn't kebab-match it; the full scan finds
@@ -991,6 +999,25 @@ pub(crate) fn reset() {
     *INSTALL_STATE_PLUGINS
         .lock()
         .expect("INSTALL_STATE_PLUGINS lock failed") = None;
+    *INSTALL_STATE_TOOLS
+        .lock()
+        .expect("INSTALL_STATE_TOOLS lock failed") = None;
+    *INSTALL_STATE_TOOL_MEMO
+        .lock()
+        .expect("INSTALL_STATE_TOOL_MEMO lock failed") = None;
+    *ROOT_MANIFEST_MEMO
+        .lock()
+        .expect("ROOT_MANIFEST_MEMO lock failed") = None;
+    *MANIFEST_BY_SHORT
+        .lock()
+        .expect("MANIFEST_BY_SHORT lock failed") = None;
+    *SHARED_MANIFEST_MEMO
+        .lock()
+        .expect("SHARED_MANIFEST_MEMO lock failed") = None;
+    super::tool_version::reset_install_path_cache();
+}
+
+pub(crate) fn reset_tools() {
     *INSTALL_STATE_TOOLS
         .lock()
         .expect("INSTALL_STATE_TOOLS lock failed") = None;

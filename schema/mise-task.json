@@ -894,6 +894,20 @@
                     }
                   ]
                 },
+                "lazy": {
+                  "description": "defer installation until one of the tool's bootstrap shims is invoked",
+                  "type": "boolean",
+                  "default": false
+                },
+                "lazy_bins": {
+                  "description": "bootstrap shim names for lazy tools without registry bin metadata",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true
+                },
                 "postinstall": {
                   "description": "command to run after tool installation",
                   "type": "string"

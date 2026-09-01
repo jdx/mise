@@ -16,6 +16,8 @@ Toolset {
                             os: None,
                             depends: None,
                             install_env: {},
+                            lazy: None,
+                            lazy_bins: [],
                         },
                         opts: RawBackendOptions {
                             values: {},
@@ -33,6 +35,8 @@ Toolset {
                             os: None,
                             depends: None,
                             install_env: {},
+                            lazy: None,
+                            lazy_bins: [],
                         },
                         opts: RawBackendOptions {
                             values: {},

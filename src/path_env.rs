@@ -54,29 +54,10 @@ impl PathEnv {
             .collect()
     }
 
-    /// Every entry, duplicates included, in order. The projection for the one surface
-    /// that writes PATH back into the user's live shell — `mise activate`'s shim
-    /// removal — where a duplicate the user put there deliberately is theirs to keep
-    /// (`cli/test_deactivate` pins that contract, three copies and all). Deduplicating
-    /// here would silently rewrite the user's PATH as a side effect of removing shims.
-    pub(crate) fn to_vec_verbatim(&self) -> Vec<PathBuf> {
-        self.pre
-            .iter()
-            .chain(self.mise.iter())
-            .chain(self.post.iter())
-            .map(|p| p.to_path_buf())
-            .collect()
-    }
-
     pub(crate) fn join(&self) -> OsString {
         let joined = join_paths(self.to_vec()).unwrap();
         warn_if_cmd_ignores_path(&joined);
         joined
-    }
-
-    /// [`Self::join`] over the verbatim projection — see [`Self::to_vec_verbatim`].
-    pub(crate) fn join_verbatim(&self) -> OsString {
-        join_paths(self.to_vec_verbatim()).unwrap()
     }
 }
 
@@ -90,22 +71,14 @@ impl FromIterator<PathBuf> for PathEnv {
     fn from_iter<T: IntoIterator<Item = PathBuf>>(paths: T) -> Self {
         let settings = Settings::get();
 
-        // When not_found_auto_install is enabled, preserve shims in PATH so they can
-        // trigger auto-install for tools that aren't installed yet
-        let preserve_shims = settings.not_found_auto_install;
-
         let mut path_env = Self::new();
 
         for path in paths {
             if path_env.seen_shims {
                 path_env.post.push(path);
-            } else if crate::file::paths_eq(&crate::file::replace_path(&path), &dirs::SHIMS)
-                && !settings.activate_aggressive
-            {
+            } else if crate::file::is_mise_shims_dir(&path) && !settings.activate_aggressive {
                 path_env.seen_shims = true;
-                if preserve_shims {
-                    path_env.post.push(path);
-                }
+                path_env.post.push(path);
             } else {
                 path_env.pre.push(path);
             }
@@ -248,20 +221,6 @@ mod dedup_tests {
     }
 
     #[test]
-    fn to_vec_verbatim_preserves_user_duplicates() {
-        // The live-shell projection: `mise activate`'s shim removal writes this PATH
-        // back into the user's shell, and a duplicate the user put there deliberately
-        // must survive exactly as written — the boundary cli/test_deactivate pins.
-        let mut path_env =
-            PathEnv::from_iter(["/shared", "/usr/bin", "/shared"].map(PathBuf::from));
-        path_env.add("/tool".into());
-        assert_eq!(
-            path_env.to_vec_verbatim(),
-            ["/tool", "/shared", "/usr/bin", "/shared"].map(PathBuf::from)
-        );
-    }
-
-    #[test]
     fn to_vec_dedups_by_path_components_not_bytes() {
         // `PathBuf` equality is component-wise, so a trailing-separator variant is the
         // same entry (`/dir/` == `/dir`) and collapses too — those resolve to identical
@@ -327,7 +286,8 @@ mod tests {
     #[tokio::test]
     async fn test_path_env() {
         let _config = Config::get().await.unwrap();
-        let shims = dirs::SHIMS.to_str().unwrap();
+        let shims_dir = dirs::shims();
+        let shims = shims_dir.to_str().unwrap();
         let mut path_env = PathEnv::from_iter(
             [
                 "/before-1",

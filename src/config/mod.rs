@@ -3523,15 +3523,95 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks(
     new_versions: &[ToolVersion],
     lockfile_update_mode: lockfile::LockfileUpdateMode,
 ) -> Result<()> {
+    let changed_install_paths = new_versions
+        .iter()
+        .map(ToolVersion::install_path)
+        .collect::<Vec<_>>();
+    rebuild_shims_and_runtime_symlinks_for_changes(
+        config,
+        ts,
+        new_versions,
+        &changed_install_paths,
+        lockfile_update_mode,
+    )
+    .await
+}
+
+/// Reconcile runtime links and shim farms after versions have been removed.
+/// Removed versions determine which physical farm changed, but are not passed
+/// to lockfile update logic as newly installed versions.
+pub(crate) async fn rebuild_shims_and_runtime_symlinks_after_removal(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    removed_install_paths: &[PathBuf],
+) -> Result<()> {
+    rebuild_shims_and_runtime_symlinks_for_changes(
+        config,
+        ts,
+        &[],
+        removed_install_paths,
+        lockfile::LockfileUpdateMode::Normal,
+    )
+    .await
+}
+
+/// Reconcile a shim farm after a configuration-only change, where there is no
+/// installed or removed tool path from which to infer ownership.
+pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_scope(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    scope: shims::ShimScope,
+) -> Result<()> {
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    let changed_install_paths = match scope {
+        shims::ShimScope::User => vec![dirs::INSTALLS.to_path_buf()],
+        shims::ShimScope::System => vec![system_installs],
+        shims::ShimScope::Both => vec![dirs::INSTALLS.to_path_buf(), system_installs],
+    };
+    rebuild_shims_and_runtime_symlinks_for_changes(
+        config,
+        ts,
+        &[],
+        &changed_install_paths,
+        lockfile::LockfileUpdateMode::Normal,
+    )
+    .await
+}
+
+async fn rebuild_shims_and_runtime_symlinks_for_changes(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    new_versions: &[ToolVersion],
+    changed_install_paths: &[PathBuf],
+    lockfile_update_mode: lockfile::LockfileUpdateMode,
+) -> Result<()> {
     measure!("rebuilding runtime symlinks", {
         runtime_symlinks::rebuild_for_toolset(config, ts)
             .await
             .wrap_err("failed to rebuild runtime symlinks")?;
     });
     measure!("rebuilding shims", {
-        shims::reshim(config, ts, false)
-            .await
-            .wrap_err("failed to rebuild shims")?;
+        let system_installs = Settings::get().system_installs_dir().to_path_buf();
+        let installs_collocated = file::storage_paths_eq(&system_installs, &dirs::INSTALLS);
+        let system_changed = installs_collocated
+            || changed_install_paths
+                .iter()
+                .any(|path| path.starts_with(&system_installs));
+        let user_changed = installs_collocated
+            || changed_install_paths.is_empty()
+            || changed_install_paths
+                .iter()
+                .any(|path| !path.starts_with(&system_installs));
+        if user_changed {
+            shims::reshim_for(config, ts, false, shims::ShimScope::User)
+                .await
+                .wrap_err("failed to rebuild user shims")?;
+        }
+        if system_changed {
+            shims::reshim_for(config, ts, false, shims::ShimScope::System)
+                .await
+                .wrap_err("failed to rebuild system shims")?;
+        }
     });
     lockfile::migrate_monorepo_lockfiles(config, false)?;
     // Snapshot the lockfiles' platform keys BEFORE update_lockfiles writes
