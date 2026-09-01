@@ -1,0 +1,13 @@
+# mkd — cross-platform directory bookmark manager with a Rust TUI
+description = "A directory bookmark tool: TUI-managed, shell-integrated jumps"
+test = { cmd = "mkd --version", expected = "mkd {{version}}" }
+version_order = "semver"
+
+bins = ["mkd"]
+
+[[backends]]
+full = "github:821869798/markd"
+
+[backends.options]
+archive_name = 'mkd-{{ arch(x64="x86_64", arm64="aarch64") }}-{{ os(macos="apple-darwin", linux="unknown-linux-gnu", windows="pc-windows-msvc") }}.tar.gz'
+bin_path = 'mkd-{{ arch(x64="x86_64", arm64="aarch64") }}-{{ os(macos="apple-darwin", linux="unknown-linux-gnu", windows="pc-windows-msvc") }}/mkd'
