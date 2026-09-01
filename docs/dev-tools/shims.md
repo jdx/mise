@@ -184,7 +184,7 @@ through [Mr Boxington](https://github.com/jdx/mr-boxington):
 
 ```toml
 [tools]
-mr-boxington = "1.2.0"
+mr-boxington = "1.3.0"
 
 [wrappers.cargo]
 command = "mbx"
