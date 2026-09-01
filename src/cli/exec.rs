@@ -231,7 +231,8 @@ impl Exec {
             // was installed. Refresh it so a successful install is not reported
             // as missing below.
             missing = ts.list_missing_versions(&config).await;
-        } else if ts.has_lazy_declarations()
+        }
+        if ts.has_lazy_declarations()
             && !opts.dry_run
             && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
         {
