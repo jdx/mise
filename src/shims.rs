@@ -1198,7 +1198,9 @@ fn calculate_shim_diffs(
                 .iter()
                 .filter(|name| {
                     !actual.current.contains(*name)
-                        && (!actual.occupied.contains(*name) || actual.repairable.contains(*name))
+                        && (!actual.occupied.contains(*name)
+                            || actual.owned.contains(*name)
+                            || actual.repairable.contains(*name))
                 })
                 .cloned()
                 .collect(),
@@ -2220,6 +2222,23 @@ mod tests {
         assert!(extra.is_empty());
     }
 
+    #[test]
+    fn stale_owned_shim_is_missing_in_shared_directory() {
+        let actual = ActualShims {
+            current: HashSet::new(),
+            dedicated_present: HashSet::new(),
+            owned: HashSet::from(["node".to_string()]),
+            occupied: HashSet::from(["node".to_string()]),
+            repairable: HashSet::new(),
+        };
+        let desired = HashSet::from(["node".to_string()]);
+
+        let (missing, extra) = calculate_shim_diffs(&actual, &desired, false);
+
+        assert_eq!(missing, BTreeSet::from(["node".to_string()]));
+        assert!(extra.is_empty());
+    }
+
     #[cfg(unix)]
     #[test]
     fn symlinked_dedicated_farm_is_treated_as_shared() {
@@ -2304,8 +2323,8 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn current_shim_check_migrates_to_stable_launcher_path() {
+    #[tokio::test]
+    async fn current_shim_check_migrates_to_stable_launcher_path() {
         let dir = tempfile::tempdir().unwrap();
         let versioned = dir.path().join("Cellar/mise/1/bin/mise");
         fs::create_dir_all(versioned.parent().unwrap()).unwrap();
@@ -2319,6 +2338,14 @@ mod tests {
 
         assert!(is_mise_shim(&shim, &launcher).unwrap());
         assert!(!is_current_owned_mise_shim(&shim, &launcher).unwrap());
+
+        let actual = get_actual_shims(&launcher, shim.parent().unwrap())
+            .await
+            .unwrap();
+        let desired = HashSet::from(["node".to_string()]);
+        let (missing, extra) = calculate_shim_diffs(&actual, &desired, false);
+        assert_eq!(missing, BTreeSet::from(["node".to_string()]));
+        assert!(extra.is_empty());
     }
 
     #[test]
