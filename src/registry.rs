@@ -1244,6 +1244,35 @@ idiomatic_files = [{ path = ".example-version", parser = "shell" }]
         );
     }
 
+    // Nothing is left to try: the github backend is gone by `platforms`, the asdf one by
+    // `cfg!(windows)` in `backends()`. That is the claim, so it is asserted rather than described.
+    // `MISE_BACKENDS_LIBSQL_SERVER` would bypass every filter, so both tests check it is unset.
+    #[cfg(windows)]
+    #[test]
+    fn libsql_server_has_no_backend_left_on_windows() {
+        use super::*;
+
+        assert!(env::var("MISE_BACKENDS_LIBSQL_SERVER").is_err());
+        let backends = BAKED_REGISTRY.get("libsql-server").unwrap().backends();
+        assert!(backends.is_empty(), "{backends:?}");
+    }
+
+    // The control. Not `not(windows)`: on Android `backend_matches_platform` sees `android` and
+    // drops the github backend too, so this expectation would be wrong there.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn libsql_server_keeps_its_github_backend_off_windows() {
+        use super::*;
+
+        assert!(env::var("MISE_BACKENDS_LIBSQL_SERVER").is_err());
+        let backends = BAKED_REGISTRY.get("libsql-server").unwrap().backends();
+        assert_eq!(
+            backends.first().copied(),
+            Some("github:tursodatabase/libsql"),
+            "{backends:?}"
+        );
+    }
+
     #[test]
     fn test_backend_platform_matching_preserves_os_only_and_order() {
         use super::*;

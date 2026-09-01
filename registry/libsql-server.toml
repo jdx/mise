@@ -4,8 +4,13 @@ test = { cmd = "sqld --version", expected = "sqld sqld {{version}}" }
 version_order = "semver"
 
 bins = ["sqld"]
+
+# Builds for linux and darwin only. Without this, `mise install libsql-server` on Windows picked
+# the release's `source.tar.gz` and reported a successful install. `os` above does not cover it --
+# it filters config-declared tools, not an explicit install.
 [[backends]]
 full = "github:tursodatabase/libsql"
+platforms = ["linux", "macos"]
 
 [backends.options]
 version_prefix = "libsql-server-v"
