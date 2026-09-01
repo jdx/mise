@@ -341,43 +341,20 @@ pub(crate) async fn reshim_for(
     let full_rebuild = force || shim_mode_changed || shim_version_changed;
     file::create_dir_all(&shims_dir)?;
 
-    if full_rebuild {
-        // Resolve and materialize the complete target farm before moving any
-        // working shim. Configuration, metadata, and shim creation errors must
-        // all leave the live farm intact.
-        let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
-        let staging = stage_shim_farm(
-            &shims_dir,
-            &mise_bin,
-            scope,
-            &desired.into_iter().collect::<BTreeSet<_>>(),
-            &shim_mode,
-            shim_version,
-        )
-        .await?;
-        publish_staged_shim_farm(&shims_dir, staging)?;
-    } else {
-        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
-        write_shim_metadata(&shims_dir, &shim_mode, shim_version)?;
-        for shim in diffs.missing {
-            let symlink_path = shims_dir.join(&shim);
-            // On Windows, remove the old shim first (with rename fallback for
-            // locked .exe files) so the new one can be written.
-            if cfg!(windows) && symlink_path.exists() {
-                remove_shim_with_rename_fallback(&symlink_path)?;
-            }
-            add_shim(&mise_bin, &symlink_path, &shim)?;
-        }
-        for shim in diffs.extra {
-            let symlink_path = shims_dir.join(shim);
-            if cfg!(windows) {
-                remove_shim_with_rename_fallback(&symlink_path)?;
-            } else {
-                file::remove_all(&symlink_path)?;
-            }
-        }
-        add_plugin_shims(&shims_dir, scope).await?;
-    }
+    // Always materialize the complete farm first. Besides keeping publication
+    // atomic per shim, this gives us the exact content used to decide whether a
+    // same-named entry in a shared directory is ours or a collision.
+    let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
+    let staging = stage_shim_farm(
+        &shims_dir,
+        &mise_bin,
+        scope,
+        &desired.into_iter().collect::<BTreeSet<_>>(),
+        &shim_mode,
+        shim_version,
+    )
+    .await?;
+    publish_staged_shim_farm(&shims_dir, &mise_bin, staging)?;
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
         sync_command_wrapper_shims(config, &mise_bin, full_rebuild)?;
@@ -448,8 +425,11 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
     Ok(())
 }
 
-fn publish_staged_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Result<()> {
-    let desired = list_shims_in(staging.path())?;
+fn publish_staged_shim_farm(
+    shims_dir: &Path,
+    mise_bin: &Path,
+    staging: tempfile::TempDir,
+) -> Result<()> {
     let mut entries = staging
         .path()
         .read_dir()
@@ -464,9 +444,23 @@ fn publish_staged_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Res
     // the next reshim retry instead of treating a partially published farm as
     // current.
     entries.sort_by_key(|entry| is_hidden_shim_name(&entry.file_name()));
+    let desired = entries
+        .iter()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .collect::<HashSet<_>>();
     for entry in entries {
         let source = entry.path();
         let destination = shims_dir.join(entry.file_name());
+        if (destination.exists() || destination.is_symlink())
+            && !is_mise_shim(&destination, mise_bin)?
+            && !files_identical(&source, &destination)?
+        {
+            warn!(
+                "not replacing unmanaged file in shims directory: {}",
+                display_path(&destination)
+            );
+            continue;
+        }
         // Rename replaces a same-named file atomically. A publication error
         // therefore leaves that live shim untouched; an interrupted rebuild can
         // leave a mixture of old and new shims, but never evacuates the farm.
@@ -479,14 +473,16 @@ fn publish_staged_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Res
         })?;
     }
 
-    // Only prune obsolete shims after every desired replacement is live. A
-    // pruning error may leave harmless extras, but cannot remove a required shim.
+    // A shared executable directory can contain arbitrary user and package
+    // manager files. Only prune entries that can be identified as mise shims.
     for shim in list_shims_in(shims_dir)?.difference(&desired) {
         let path = shims_dir.join(shim);
-        if cfg!(windows) {
-            remove_shim_with_rename_fallback(&path)?;
-        } else {
-            file::remove_all(&path)?;
+        if is_mise_shim(&path, mise_bin)? {
+            if cfg!(windows) {
+                remove_shim_with_rename_fallback(&path)?;
+            } else {
+                file::remove_all(&path)?;
+            }
         }
     }
 
@@ -494,6 +490,49 @@ fn publish_staged_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Res
         warn!("failed to remove shim staging directory: {err}");
     }
     Ok(())
+}
+
+fn files_identical(a: &Path, b: &Path) -> Result<bool> {
+    if a.is_symlink() || b.is_symlink() {
+        return Ok(a.is_symlink() && b.is_symlink() && fs::read_link(a)? == fs::read_link(b)?);
+    }
+    if !a.is_file() || !b.is_file() {
+        return Ok(false);
+    }
+    Ok(fs::read(a)? == fs::read(b)?)
+}
+
+fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
+    if path.is_symlink() {
+        let target = fs::read_link(path)?;
+        let target = if target.is_absolute() {
+            target
+        } else {
+            path.parent().unwrap_or_else(|| Path::new(".")).join(target)
+        };
+        return Ok(file::paths_eq(
+            &file::canonicalize_or_self(&target),
+            &file::canonicalize_or_self(mise_bin),
+        ));
+    }
+
+    #[cfg(windows)]
+    {
+        // Native copy and hardlink shims do not carry an ownership marker.
+        // Retain the existing Windows shim-farm behavior.
+        return Ok(path.is_file());
+    }
+
+    #[cfg(not(windows))]
+    {
+        if !path.is_file() {
+            return Ok(false);
+        }
+        let contents = fs::read_to_string(path).unwrap_or_default();
+        Ok(contents.starts_with("#!/bin/sh\n# mise generated shim\n")
+            || (contents.starts_with("#!/bin/sh\nexport ASDF_DATA_DIR=")
+                && contents.contains("\nmise x -- ")))
+    }
 }
 
 fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
@@ -920,11 +959,7 @@ async fn get_actual_shims(mise_bin: impl AsRef<Path>, shims_dir: &Path) -> Resul
 
     Ok(list_shims_in(shims_dir)?
         .into_iter()
-        .filter(|bin| {
-            let path = shims_dir.join(bin);
-
-            !path.is_symlink() || path.read_link().is_ok_and(|p| p == mise_bin)
-        })
+        .filter(|bin| is_mise_shim(&shims_dir.join(bin), mise_bin).unwrap_or(false))
         .collect::<HashSet<_>>())
 }
 
@@ -1106,6 +1141,7 @@ async fn make_shim(target: &Path, shim: &Path) -> Result<()> {
         shim,
         formatdoc! {r#"
         #!/bin/sh
+        # mise generated shim
         export ASDF_DATA_DIR={data_dir}
         export PATH="{fake_asdf_dir}:$PATH"
         mise x -- {target} "$@"
@@ -1621,6 +1657,120 @@ mod tests {
 
         assert!(bins.contains(visible_name));
         assert!(!bins.contains(".librsvg-post-link.exe"));
+    }
+
+    #[test]
+    fn staged_shim_publication_preserves_unmanaged_and_modified_files() {
+        let live = tempfile::tempdir().unwrap();
+        let mise_bin = live.path().join("mise");
+        fs::write(&mise_bin, "mise").unwrap();
+        let unmanaged = live.path().join("unmanaged");
+        fs::write(&unmanaged, "from another package manager").unwrap();
+        file::make_executable(&unmanaged).unwrap();
+
+        let staging = tempfile::Builder::new()
+            .prefix(".mise-shims-stage-")
+            .tempdir_in(live.path())
+            .unwrap();
+        fs::write(staging.path().join("unmanaged"), "mise shim").unwrap();
+        fs::write(
+            staging.path().join("owned"),
+            "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n",
+        )
+        .unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, staging).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&unmanaged).unwrap(),
+            "from another package manager"
+        );
+        assert_eq!(
+            fs::read_to_string(live.path().join("owned")).unwrap(),
+            "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n"
+        );
+
+        // Once an owned shim is changed outside mise, an otherwise empty
+        // reshim cedes ownership instead of deleting the replacement.
+        fs::write(live.path().join("owned"), "user replacement").unwrap();
+        let empty_staging = tempfile::Builder::new()
+            .prefix(".mise-shims-stage-")
+            .tempdir_in(live.path())
+            .unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(live.path().join("owned")).unwrap(),
+            "user replacement"
+        );
+    }
+
+    #[test]
+    fn staged_shim_publication_removes_unchanged_owned_shims() {
+        let live = tempfile::tempdir().unwrap();
+        let mise_bin = live.path().join("mise");
+        fs::write(&mise_bin, "mise").unwrap();
+        let staging = tempfile::Builder::new()
+            .prefix(".mise-shims-stage-")
+            .tempdir_in(live.path())
+            .unwrap();
+        fs::write(
+            staging.path().join("owned"),
+            "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n",
+        )
+        .unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, staging).unwrap();
+
+        let empty_staging = tempfile::Builder::new()
+            .prefix(".mise-shims-stage-")
+            .tempdir_in(live.path())
+            .unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging).unwrap();
+
+        assert!(!live.path().join("owned").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn mise_shim_detection_distinguishes_symlink_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let mise_bin = dir.path().join("mise");
+        let other_bin = dir.path().join("other");
+        fs::write(&mise_bin, "mise").unwrap();
+        fs::write(&other_bin, "other").unwrap();
+        let shim = dir.path().join("shim");
+
+        std::os::unix::fs::symlink(&mise_bin, &shim).unwrap();
+        assert!(is_mise_shim(&shim, &mise_bin).unwrap());
+
+        fs::remove_file(&shim).unwrap();
+        std::os::unix::fs::symlink(&other_bin, &shim).unwrap();
+        assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn mise_shim_detection_recognizes_current_and_legacy_plugin_scripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mise_bin = dir.path().join("mise");
+        fs::write(&mise_bin, "mise").unwrap();
+        let shim = dir.path().join("shim");
+
+        fs::write(
+            &shim,
+            "#!/bin/sh\n# mise generated shim\nmise x -- foo \"$@\"\n",
+        )
+        .unwrap();
+        assert!(is_mise_shim(&shim, &mise_bin).unwrap());
+
+        fs::write(
+            &shim,
+            "#!/bin/sh\nexport ASDF_DATA_DIR=/tmp/mise\nexport PATH=x\nmise x -- foo \"$@\"\n",
+        )
+        .unwrap();
+        assert!(is_mise_shim(&shim, &mise_bin).unwrap());
+
+        fs::write(&shim, "#!/bin/sh\necho user-script\n").unwrap();
+        assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
     }
 
     #[cfg(target_os = "linux")]

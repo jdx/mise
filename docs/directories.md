@@ -97,6 +97,10 @@ does not work for some reason.
 
 The setting is global-only, expands `~`, and must resolve to an absolute path.
 
+The shim directory may also be a shared executable directory such as `~/.local/bin` or
+`/usr/local/bin`. `mise reshim` only replaces or removes entries it recognizes as mise shims. A
+same-named file owned by you or another package manager is preserved.
+
 ## System installs and shims
 
 System installs default to `/usr/local/share/mise/installs` and system shims
