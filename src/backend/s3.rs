@@ -165,6 +165,10 @@ impl<'a> S3Options<'a> {
     fn version_expr(&self) -> Option<String> {
         self.values.platform_string("version_expr")
     }
+
+    fn url_platforms(&self) -> Vec<String> {
+        self.values.available_platforms_with_key("url")
+    }
 }
 
 impl S3Backend {
@@ -188,13 +192,26 @@ impl S3Backend {
 
     /// Resolve the download URL from options and version
     fn resolve_url(&self, tv: &ToolVersion, opts: &S3Options<'_>) -> Result<String> {
-        let url_template = opts.url().ok_or_else(|| {
-            eyre!(
-                "S3 backend requires 'url' option. Example: url = \"s3://bucket/tool-{{version}}.tar.gz\""
-            )
-        })?;
+        let url_template = opts.url().ok_or_else(|| self.missing_url_error(opts))?;
 
         Ok(template_string(&url_template, tv))
+    }
+
+    /// Built in one place so the dry-run check and the install itself cannot drift apart.
+    /// Names the platform it looked for and the ones the tool does declare, because the fix is
+    /// usually to add that key rather than to pick a different tool.
+    fn missing_url_error(&self, opts: &S3Options<'_>) -> eyre::Report {
+        let platform_key = self.get_platform_key();
+        let available = opts.url_platforms();
+        if available.is_empty() {
+            eyre::eyre!("S3 backend requires 'url' option")
+        } else {
+            eyre::eyre!(
+                "No URL for platform {platform_key}. Available: {}. \
+                 Provide 'url' or add 'platforms.{platform_key}.url'",
+                available.join(", ")
+            )
+        }
     }
 
     fn lock_url_for_target(
@@ -555,6 +572,18 @@ impl Backend for S3Backend {
             .collect())
     }
 
+    /// An s3 tool with no URL for this platform cannot be installed, and the options say so
+    /// without a single request. `--dry-run` used to answer "would install" for exactly the case
+    /// the real install rejects on its first line (the same gap http and aqua closed in #12568).
+    async fn verify_install_feasible(&self, _ctx: &InstallContext, tv: &ToolVersion) -> Result<()> {
+        let raw_opts = tv.request.options();
+        let opts = S3Options::new(&raw_opts);
+        match opts.url() {
+            Some(_) => Ok(()),
+            None => Err(self.missing_url_error(&opts)),
+        }
+    }
+
     async fn install_version_(
         &self,
         ctx: &InstallContext,
@@ -815,5 +844,28 @@ checksum = "sha256:abc123"
     fn test_s3_url_missing_bucket() {
         let result = S3Url::parse("s3:///path/to/file");
         assert!(result.is_err());
+    }
+
+    // The message `--dry-run` now produces before claiming it would install. Built by
+    // `missing_url_error` so the dry-run check and the install itself cannot drift apart; this
+    // asserts both of its branches, which are two different mistakes with two different fixes.
+    #[test]
+    fn missing_url_error_names_this_platform_and_the_ones_declared() {
+        let backend = s3_test_backend();
+
+        let declared = crate::toolset::parse_tool_options("platforms_linux_x64_url=s3://bucket/t");
+        let declared = S3Options::new(&declared);
+        let err = backend.missing_url_error(&declared).to_string();
+        assert!(err.contains(&backend.get_platform_key()), "{err}");
+        assert!(err.contains("linux-x64"), "{err}");
+
+        // A tool that declares no URL anywhere is a different mistake: there is no list to print
+        // and nothing platform-specific to say.
+        let none = ToolVersionOptions::default();
+        let none = S3Options::new(&none);
+        assert_eq!(
+            backend.missing_url_error(&none).to_string(),
+            "S3 backend requires 'url' option"
+        );
     }
 }
