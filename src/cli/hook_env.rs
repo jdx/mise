@@ -360,7 +360,14 @@ impl HookEnv {
 
                 (pre, orig_reordered, post_user)
             }
-            _ => (vec![], current_paths, vec![]),
+            _ => (
+                vec![],
+                current_paths
+                    .into_iter()
+                    .filter(|path| !file::is_mise_shims_dir(path))
+                    .collect(),
+                vec![],
+            ),
         };
 
         // Filter out tool paths that are already in the original PATH (post) or
