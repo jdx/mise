@@ -2,8 +2,9 @@
 
 ## mbx build cache
 
-Mise installs mbx 1.3 and activates its transparent Cargo wrapper, so
-compilation-heavy mise tasks and hk checks use ordinary `cargo` commands. If
+`mise install` installs mbx 1.3. `mise run` activates the project's transparent
+Cargo wrapper, so compilation-heavy mise tasks and hk checks use ordinary
+`cargo` commands. Standalone Cargo commands require an activated mise shell. If
 the wrapper fails or creates a development papercut, rerun the exact equivalent
 command from `CONTRIBUTING.md` with `MBX_DISABLE=1`; this unblocks work without
 weakening the check. If bypassed Cargo succeeds, surface the mismatch and recommend a
