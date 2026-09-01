@@ -5625,6 +5625,7 @@ run = 'echo "template"'
         description = "sync files"
         after = ["network-online.target"]
         wants = ["network-online.target"]
+        requires = ["credentials.service"]
         exec_start = "~/.local/bin/my-sync --watch"
         type = "oneshot"
         remain_after_exit = true
@@ -5634,6 +5635,9 @@ run = 'echo "template"'
         no_new_privileges = true
         private_tmp = true
         environment = { PATH = "/usr/bin:/bin" }
+        environment_file = ["-%h/.config/my-sync.env"]
+        nice = 10
+        umask = "0007"
         working_directory = "~"
         restart = "on-failure"
         restart_sec = "5s"
@@ -5658,6 +5662,7 @@ run = 'echo "template"'
         assert_eq!(unit.description.as_deref(), Some("sync files"));
         assert_eq!(unit.after, vec!["network-online.target"]);
         assert_eq!(unit.wants, vec!["network-online.target"]);
+        assert_eq!(unit.requires, vec!["credentials.service"]);
         assert_eq!(
             unit.exec_start.as_deref(),
             Some("~/.local/bin/my-sync --watch")
@@ -5676,6 +5681,9 @@ run = 'echo "template"'
             unit.environment.get("PATH").map(String::as_str),
             Some("/usr/bin:/bin")
         );
+        assert_eq!(unit.environment_file, vec!["-%h/.config/my-sync.env"]);
+        assert_eq!(unit.nice, Some(10));
+        assert_eq!(unit.umask.as_deref(), Some("0007"));
         assert_eq!(unit.working_directory.as_deref(), Some("~"));
         assert_eq!(unit.restart.as_deref(), Some("on-failure"));
         assert_eq!(unit.restart_sec.as_deref(), Some("5s"));
