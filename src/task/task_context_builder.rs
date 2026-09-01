@@ -253,8 +253,26 @@ impl TaskContextBuilder {
             .await?;
 
         // Resolve config-level env from ALL config files, not just task_cf
+        //
+        // This path replays config directives to resolve them relative to the task's
+        // config hierarchy. Start that replay with caller values that the already
+        // resolved config removed: a `required` directive must still be able to
+        // validate the original caller value before a later directive removes it.
+        // The replay's EnvResults and env_remove set keep those values out of the
+        // final task environment.
+        let mut config_resolution_env = env.clone();
+        for key in &env_remove {
+            if let Some(value) = env::PRISTINE_ENV.get(key) {
+                config_resolution_env.insert(key.clone(), value.clone());
+            }
+        }
         let config_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries)
+            .resolve_env_directives(
+                config,
+                &tera_ctx,
+                &config_resolution_env,
+                all_config_env_entries,
+            )
             .await?;
         Self::apply_env_results(&mut env, &mut env_remove, &config_env_results);
 
