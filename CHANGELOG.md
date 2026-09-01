@@ -1,5 +1,47 @@
 # Changelog
 
+## [2026.9.0](https://github.com/jdx/mise/compare/v2026.8.16..v2026.9.0) - 2026-09-01
+
+### 🚀 Features
+
+- **(erlang)** add precompiled OS override by @jdx in [#12637](https://github.com/jdx/mise/pull/12637)
+- **(tools)** add lazy tool shims by @jdx in [#12594](https://github.com/jdx/mise/pull/12594)
+
+### 🐛 Bug Fixes
+
+- **(install)** expose postinstall tool to nested mise by @jdx in [#12635](https://github.com/jdx/mise/pull/12635)
+
+### 📦️ Dependency Updates
+
+- update rust crate aube to v2.2.4 by @renovate[bot] in [#12639](https://github.com/jdx/mise/pull/12639)
+- update rust crate aube-registry to v2.2.4 by @renovate[bot] in [#12640](https://github.com/jdx/mise/pull/12640)
+- bump aube workspace crates to 2.2.4 by @jdx in [#12643](https://github.com/jdx/mise/pull/12643)
+
+### 📦 Registry
+
+- add engram by @AndryOre in [#12480](https://github.com/jdx/mise/pull/12480)
+- add gentle-ai ([aqua:Gentleman-Programming/gentle-ai](https://github.com/Gentleman-Programming/gentle-ai)) by @AndryOre in [#12444](https://github.com/jdx/mise/pull/12444)
+
+### Chore
+
+- bump mr-boxington to 1.2.0 by @jdx in [#12633](https://github.com/jdx/mise/pull/12633)
+
+### Ci
+
+- **(perf)** move benchmarks to dedicated runner by @jdx in [#12616](https://github.com/jdx/mise/pull/12616)
+
+### New Contributors
+
+- @AndryOre made their first contribution in [#12444](https://github.com/jdx/mise/pull/12444)
+
+### 📦 Aqua Registry Updates
+
+#### Updated Packages (3)
+
+- [`KeisukeYamashita/commitlint-rs`](https://github.com/KeisukeYamashita/commitlint-rs)
+- [`keilerkonzept/terraform-module-versions`](https://github.com/keilerkonzept/terraform-module-versions)
+- [`linebender/resvg`](https://github.com/linebender/resvg)
+
 ## [2026.8.16](https://github.com/jdx/mise/compare/v2026.8.15..v2026.8.16) - 2026-08-31
 
 ### 🚀 Features
