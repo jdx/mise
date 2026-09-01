@@ -3090,6 +3090,11 @@ Also install tools required by tasks in the current scope
 This prepares task tools without running task commands or dependencies.
 Combine with \-\-monorepo to include tasks from every configured root.
 .TP
+\fB\-\-include\-lazy\fR
+Also install tools configured with `lazy = true`
+
+By default, a bare `mise install` leaves lazy tools for first\-command installation.
+.TP
 \fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
 Only install versions released before this date or older than this duration
 
@@ -4129,7 +4134,8 @@ Show only the specified tool's full name
 .SH "MISE RESHIM"
 Creates new shims based on bin paths from currently installed tools.
 
-This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
+This creates new shims in the configured user shim directory for CLIs that have been added.
+With `\-\-system`, it rebuilds the configured system shim farm instead.
 mise will try to do this automatically for commands like `npm i \-g` but there are
 other ways to install things (like using yarn or pnpm for node) that mise does
 not know about and so it will be necessary to call this explicitly.
@@ -4153,6 +4159,9 @@ currently active in mise.toml.
 .TP
 \fB\-f, \-\-force\fR
 Removes all shims before reshimming
+.TP
+\fB\-\-system\fR
+Rebuild the system shim farm
 .TP
 \fB\-h, \-\-help\fR
 Print help

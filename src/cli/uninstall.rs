@@ -55,6 +55,10 @@ impl Uninstall {
         if !self.all && tool_versions.len() > self.installed_tool.len() {
             bail!("multiple tools specified, use --all to uninstall all versions");
         }
+        let removed_install_paths = tool_versions
+            .iter()
+            .map(|(_, tv)| tv.install_path())
+            .collect::<Vec<_>>();
 
         let mpr = MultiProgressReport::get();
         let mut has_work = false;
@@ -100,11 +104,10 @@ impl Uninstall {
         file::touch_dir(&dirs::DATA)?;
         let config = Config::reset().await?;
         let ts = config.get_toolset().await?;
-        config::rebuild_shims_and_runtime_symlinks(
+        config::rebuild_shims_and_runtime_symlinks_after_removal(
             &config,
             ts,
-            &[],
-            crate::lockfile::LockfileUpdateMode::Normal,
+            &removed_install_paths,
         )
         .await?;
 

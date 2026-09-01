@@ -18,7 +18,7 @@ github.credential_command = "$credential_command"
 EOF
 cat >mise.toml <<'EOF'
 [tools]
-usage = "latest"
+usage = { version = "latest", lazy = true }
 EOF
 
 ln -s "$(which mise)" "$MISE_DATA_DIR/shims/usage"

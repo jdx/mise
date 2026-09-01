@@ -6,7 +6,8 @@ use crate::toolset::ToolsetBuilder;
 
 /// Creates new shims based on bin paths from currently installed tools.
 ///
-/// This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
+/// This creates new shims in the configured user shim directory for CLIs that have been added.
+/// With `--system`, it rebuilds the configured system shim farm instead.
 /// mise will try to do this automatically for commands like `npm i -g` but there are
 /// other ways to install things (like using yarn or pnpm for node) that mise does
 /// not know about and so it will be necessary to call this explicitly.
@@ -33,6 +34,10 @@ pub(crate) struct Reshim {
     /// Removes all shims before reshimming
     #[usage(long, short)]
     pub force: bool,
+
+    /// Rebuild the system shim farm
+    #[usage(long)]
+    pub system: bool,
 }
 
 impl Reshim {
@@ -40,7 +45,12 @@ impl Reshim {
         let config = Config::get().await?;
         let ts = ToolsetBuilder::new().build(&config).await?;
 
-        shims::reshim(&config, &ts, self.force).await
+        let scope = if self.system {
+            shims::ShimScope::System
+        } else {
+            shims::ShimScope::User
+        };
+        shims::reshim_for(&config, &ts, self.force, scope).await
     }
 }
 

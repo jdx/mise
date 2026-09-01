@@ -2100,7 +2100,7 @@ Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool w
 
 Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise install node@20.0.0\u{1b}[22m  # install specific node version\n    $ \u{1b}[1mmise install node@20\u{1b}[22m      # install fuzzy node version\n    $ \u{1b}[1mmise install node\u{1b}[22m         # install version specified in mise.toml\n    $ \u{1b}[1mmise install\u{1b}[22m              # installs everything specified in mise.toml\n    $ \u{1b}[1mmise install --include-task-tools\u{1b}[22m # also install tools required by tasks\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise install node@20.0.0\u{1b}[22m  # install specific node version\n    $ \u{1b}[1mmise install node@20\u{1b}[22m      # install fuzzy node version\n    $ \u{1b}[1mmise install node\u{1b}[22m         # install version specified in mise.toml\n    $ \u{1b}[1mmise install\u{1b}[22m              # installs everything specified in mise.toml\n    $ \u{1b}[1mmise install --include-lazy\u{1b}[22m # also install tools configured for lazy installation\n    $ \u{1b}[1mmise install --include-task-tools\u{1b}[22m # also install tools required by tasks\n"
     flag "-f --force" help=#"""
 Force reinstall even if already installed
 With no tools specified, reinstall all configured tools
@@ -2133,6 +2133,13 @@ Also install tools required by tasks in the current scope
 
 This prepares task tools without running task commands or dependencies.
 Combine with --monorepo to include tasks from every configured root.
+"""#
+    }
+    flag --include-lazy help="Also install tools configured with `lazy = true`" {
+        long_help #"""
+Also install tools configured with `lazy = true`
+
+By default, a bare `mise install` leaves lazy tools for first-command installation.
 """#
     }
     flag --minimum-release-age help="Only install versions released before this date or older than this duration" {
@@ -3044,7 +3051,8 @@ cmd reshim help="Creates new shims based on bin paths from currently installed t
     long_help #"""
 Creates new shims based on bin paths from currently installed tools.
 
-This creates new shims in ~/.local/share/mise/shims for CLIs that have been added.
+This creates new shims in the configured user shim directory for CLIs that have been added.
+With `--system`, it rebuilds the configured system shim farm instead.
 mise will try to do this automatically for commands like `npm i -g` but there are
 other ways to install things (like using yarn or pnpm for node) that mise does
 not know about and so it will be necessary to call this explicitly.
@@ -3063,6 +3071,7 @@ currently active in mise.toml.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise reshim\u{1b}[22m\n    $ \u{1b}[1m~/.local/share/mise/shims/node -v\u{1b}[22m\n    v20.0.0\n"
     flag "-f --force" help="Removes all shims before reshimming"
+    flag --system help="Rebuild the system shim farm"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]" required=#false hide=#true
     arg "[VERSION]" required=#false hide=#true
