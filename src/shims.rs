@@ -599,7 +599,7 @@ fn has_mise_native_shim_fingerprint(contents: &[u8]) -> bool {
             && bytes_contain(contents, b"mise x --"))
 }
 
-#[cfg(any(windows, test))]
+#[cfg(test)]
 fn is_generated_windows_file_shim(path: &Path) -> bool {
     fs::read(path).is_ok_and(|contents| is_generated_windows_file_shim_contents(path, &contents))
 }
