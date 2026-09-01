@@ -2078,6 +2078,7 @@ impl TaskExecutor {
     ) -> Result<PreparedTaskContext> {
         let mut tools = self.tool.clone();
         tools.extend(task.tool_args()?);
+        let task_tool_args_env = crate::shims::task_tool_args_env(&tools)?;
         let ts_build_start = std::time::Instant::now();
 
         // Remote tasks need tools from the full config hierarchy rather than a
@@ -2206,6 +2207,14 @@ impl TaskExecutor {
                 &mut nested_mise_diff_exclude_keys,
                 "MISE_CONFIG_ROOT",
                 task_env_path(config_root),
+            );
+        }
+        if let Some(task_tool_args) = task_tool_args_env {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                crate::shims::TASK_TOOL_ARGS_ENV,
+                task_tool_args,
             );
         }
         if Settings::get().env_cache {

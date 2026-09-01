@@ -9,7 +9,7 @@ use std::{
 };
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::exec::Exec;
 use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
 use crate::file::display_path;
@@ -32,6 +32,69 @@ const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_BASH_SHIM_HEADER: &str = "#!/bin/bash\n# mise generated shim\n";
 const SHIM_SCRIPT_INSPECTION_LIMIT: u64 = 16 * 1024;
+
+pub(crate) const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct TaskToolArg {
+    backend: String,
+    version: Option<String>,
+    options: crate::toolset::ToolVersionOptions,
+}
+
+/// Preserve runtime-only task tool requests for a shim process. A task's `tools`
+/// entries are not part of the config that a shim reloads, so without this context
+/// a bootstrap shim cannot find a lazy provider declared only on the task.
+pub(crate) fn task_tool_args_env(tools: &[ToolArg]) -> Result<Option<String>> {
+    let tools = tools
+        .iter()
+        .map(|tool| TaskToolArg {
+            backend: tool.ba.short.clone(),
+            version: tool.version.clone(),
+            options: tool
+                .tvr
+                .as_ref()
+                .map(|request| request.options())
+                .unwrap_or_default(),
+        })
+        .collect_vec();
+    if tools.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(serde_json::to_string(&tools)?))
+    }
+}
+
+fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
+    let Ok(serialized) = env::var(TASK_TOOL_ARGS_ENV) else {
+        return Ok(vec![]);
+    };
+    serde_json::from_str::<Vec<TaskToolArg>>(&serialized)?
+        .into_iter()
+        .map(|tool| {
+            let input = tool.version.as_ref().map_or_else(
+                || tool.backend.clone(),
+                |version| format!("{}@{version}", tool.backend),
+            );
+            let mut arg: ToolArg = input.parse()?;
+            if !tool.options.is_empty() {
+                Arc::make_mut(&mut arg.ba).set_opts(Some(tool.options));
+            }
+            arg.tvr = arg
+                .version
+                .as_ref()
+                .map(|version| {
+                    crate::toolset::ToolRequest::new(
+                        arg.ba.clone(),
+                        version,
+                        crate::toolset::ToolSource::Argument,
+                    )
+                })
+                .transpose()?;
+            Ok(arg)
+        })
+        .collect()
+}
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub(crate) async fn handle_shim() -> Result<()> {
@@ -147,7 +210,9 @@ async fn which_shim(
     } else {
         ResolveOptions::default()
     };
+    let task_tools = task_tool_args_from_env()?;
     let mut ts = ToolsetBuilder::new()
+        .with_args(&task_tools)
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;

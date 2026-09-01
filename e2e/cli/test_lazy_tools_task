@@ -54,7 +54,14 @@ assert "printf '%s' \"$mise_path\" | tr ':' '\\n' | grep -c -x \"$MISE_SHIMS_DIR
 # `mise x -- <cmd>` names the lazy command directly and installs its provider.
 mise uninstall --all dummy
 rm -f "$MISE_SHIMS_DIR/dummy"
-assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- dummy --version" "This is Dummy 1.0.0"
+output=$(MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- dummy --version 2>&1)
+case "$output" in
+  *"missing: dummy@1.0.0"*) fail "lazy provider was reported missing after installation: $output" ;;
+esac
+case "$output" in
+  *"This is Dummy 1.0.0"*) ;;
+  *) fail "lazy provider did not run: $output" ;;
+esac
 assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
 
 # Commands started by the child reach the tool through its bootstrap shim.
@@ -62,6 +69,19 @@ mise uninstall --all dummy
 rm -f "$MISE_SHIMS_DIR/dummy"
 assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- sh -c 'dummy --version'" "This is Dummy 1.0.0"
 assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Lazy declarations that exist only in a task also get bootstrap shims after
+# task tools are collected, not just those in the project toolset.
+mise uninstall --all dummy
+rm -f "$MISE_SHIMS_DIR/dummy"
+cat >mise.toml <<'EOF'
+[tasks.task-local]
+tools = { dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] } }
+run = "dummy --version"
+EOF
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise run task-local" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
 
 # Without a lazy declaration the child environment leaves the farm off PATH.
 cat >mise.toml <<'EOF'

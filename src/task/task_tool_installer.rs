@@ -205,7 +205,7 @@ impl<'a> TaskToolInstaller<'a> {
                 tvl.versions.retain(|tv| !previewed_tools.contains(tv));
             }
         }
-        let _ = ts
+        let (_, missing) = ts
             .install_missing_versions(
                 config,
                 &InstallOptions {
@@ -217,6 +217,9 @@ impl<'a> TaskToolInstaller<'a> {
                 },
             )
             .await?;
+        if !dry_run && let Err(err) = crate::shims::ensure_lazy_shims(config, &ts, &missing).await {
+            warn!("failed to create shims for lazy tools: {err:#}");
+        }
 
         Ok(())
     }

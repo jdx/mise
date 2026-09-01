@@ -207,7 +207,7 @@ impl Exec {
             resolve_options,
             ..Default::default()
         };
-        let (_, missing) = measure!("install_arg_versions", {
+        let (_, mut missing) = measure!("install_arg_versions", {
             ts.install_missing_versions(&mut config, &opts).await?
         });
 
@@ -227,6 +227,10 @@ impl Exec {
             && ts.has_missing_lazy_bin_provider(&config, &program).await?
         {
             ts.install_missing_lazy_bin(&mut config, &program).await?;
+            // The original list was computed before the command's lazy provider
+            // was installed. Refresh it so a successful install is not reported
+            // as missing below.
+            missing = ts.list_missing_versions(&config).await;
         } else if ts.has_lazy_declarations()
             && !opts.dry_run
             && let Err(err) = crate::shims::ensure_lazy_shims(&config, &ts, &missing).await
