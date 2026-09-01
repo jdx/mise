@@ -44,7 +44,6 @@ impl LockFile {
         Ok(lock)
     }
 
-    #[cfg(feature = "self_update")]
     pub(crate) fn try_lock(self) -> Result<Option<fslock::LockFile>> {
         if let Some(parent) = self.path.parent() {
             create_dir_all(parent)?;
