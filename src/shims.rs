@@ -295,7 +295,7 @@ pub(crate) async fn reshim_for(
 ) -> Result<()> {
     let user_shims = dirs::shims();
     let system_shims = dirs::system_shims();
-    let collocated = file::paths_eq(&user_shims, &system_shims);
+    let collocated = file::storage_paths_eq(&user_shims, &system_shims);
     let scope = if collocated {
         ShimScope::Both
     } else {
@@ -338,7 +338,25 @@ pub(crate) async fn reshim_for(
         let prev = fs::read_to_string(&version_file).ok();
         shim_version_stale(prev.as_deref(), shim_version, &shim_mode)
     };
-    if force || shim_mode_changed || shim_version_changed {
+    let full_rebuild = force || shim_mode_changed || shim_version_changed;
+    file::create_dir_all(&shims_dir)?;
+
+    // Resolve the complete target set before removing any working shims. Lazy
+    // declarations can fail validation here (for example, an explicit backend
+    // without lazy_bins), and that configuration error must not erase the
+    // existing farm.
+    let (shims_to_add, shims_to_remove) = if full_rebuild {
+        let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
+        (
+            desired.into_iter().collect::<BTreeSet<_>>(),
+            BTreeSet::new(),
+        )
+    } else {
+        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
+        (diffs.missing, diffs.extra)
+    };
+
+    if full_rebuild {
         // On Windows, .exe shims may be locked by processes or the shell (they
         // are on PATH).  Instead of removing the entire directory (which fails
         // with "Access is denied"), remove individual files with a rename-first
@@ -360,18 +378,6 @@ pub(crate) async fn reshim_for(
         let version_file = shims_dir.join(".version");
         file::write(&version_file, shim_version)?;
     }
-
-    let (shims_to_add, shims_to_remove) = if force || shim_mode_changed || shim_version_changed {
-        // After a full wipe, all desired shims need to be re-created.
-        let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
-        (
-            desired.into_iter().collect::<BTreeSet<_>>(),
-            BTreeSet::new(),
-        )
-    } else {
-        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
-        (diffs.missing, diffs.extra)
-    };
 
     for shim in shims_to_add {
         let symlink_path = shims_dir.join(&shim);
@@ -413,11 +419,7 @@ pub(crate) async fn reshim_for(
     }
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
-        sync_command_wrapper_shims(
-            config,
-            &mise_bin,
-            force || shim_mode_changed || shim_version_changed,
-        )?;
+        sync_command_wrapper_shims(config, &mise_bin, full_rebuild)?;
     }
 
     Ok(())
@@ -930,7 +932,7 @@ fn shim_scope_contains_install(scope: ShimScope, install_path: &Path) -> bool {
         return true;
     }
     let system_installs = Settings::get().system_installs_dir().to_path_buf();
-    if system_installs == *dirs::INSTALLS {
+    if file::storage_paths_eq(&system_installs, &dirs::INSTALLS) {
         return true;
     }
     let is_system = install_path.starts_with(system_installs);

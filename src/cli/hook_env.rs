@@ -176,7 +176,17 @@ impl HookEnv {
             .chain(env_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        patches.extend(self.build_path_operations(&user_paths, &tool_paths, &__MISE_DIFF.path)?);
+        let retain_shims = Settings::get().not_found_auto_install
+            || ts
+                .list_current_requests()
+                .iter()
+                .any(|request| request.options().lazy == Some(true));
+        patches.extend(self.build_path_operations(
+            &user_paths,
+            &tool_paths,
+            &__MISE_DIFF.path,
+            retain_shims,
+        )?);
         patches.push(self.build_diff_operation(&diff)?);
         patches.push(
             self.build_session_operation(
@@ -287,6 +297,7 @@ impl HookEnv {
         user_paths: &[PathBuf],
         tool_paths: &[PathBuf],
         to_remove: &[PathBuf],
+        retain_shims: bool,
     ) -> Result<Vec<EnvDiffOperation>> {
         let full = join_paths(&*env::PATH)?.to_string_lossy().to_string();
         let current_paths: Vec<PathBuf> = split_paths(&full).collect();
@@ -449,8 +460,11 @@ impl HookEnv {
 
         let user_shims = dirs::shims();
         let system_shims = dirs::system_shims();
-        let mut shim_dirs = vec![user_shims];
-        if system_shims.is_dir() && !file::paths_eq(&shim_dirs[0], &system_shims) {
+        let mut shim_dirs = retain_shims.then_some(user_shims).into_iter().collect_vec();
+        if retain_shims
+            && system_shims.is_dir()
+            && !file::storage_paths_eq(&shim_dirs[0], &system_shims)
+        {
             shim_dirs.push(system_shims);
         }
 

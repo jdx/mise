@@ -817,7 +817,7 @@ impl Doctor {
         let mise_bin = shims::mise_bin_for_shims();
 
         let shims_dir = dirs::shims();
-        let scope = if file::paths_eq(&shims_dir, &dirs::system_shims()) {
+        let scope = if file::storage_paths_eq(&shims_dir, &dirs::system_shims()) {
             shims::ShimScope::Both
         } else {
             shims::ShimScope::User

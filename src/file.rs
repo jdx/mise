@@ -859,6 +859,14 @@ pub(crate) fn paths_eq(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// Compare configured storage paths by both platform-aware spelling and
+/// resolved filesystem identity. The latter matters when distributions
+/// deliberately point user and system storage at the same directory through
+/// different symlinks.
+pub(crate) fn storage_paths_eq(a: &Path, b: &Path) -> bool {
+    paths_eq(a, b) || same_file(a, b)
+}
+
 pub(crate) fn touch_file(file: &Path) -> Result<()> {
     if !file.exists() {
         create(file)?;

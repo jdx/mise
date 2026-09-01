@@ -27,6 +27,18 @@ mise upgrade dummy
 assert_directory_exists "$MISE_SYSTEM_INSTALLS_DIR/dummy/1.1.0"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.1.0'"
 
+# Removing a non-lazy system install reconciles the system farm rather than
+# leaving a stale dispatcher behind.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+pitchfork = "0.1.5"
+EOF
+mise install --system pitchfork
+assert_succeed "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+mise uninstall pitchfork@0.1.5
+assert_fail "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+
 # When both farms are collocated, either selector reconciles the same union and
 # cannot remove shims required by the other scope.
 export MISE_SHIMS_DIR="$HOME/collocated-shims"
@@ -35,6 +47,17 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 [tools]
 pitchfork = { version = "0.1.5", lazy = true, lazy_bins = ["pitchfork"] }
 EOF
+mise reshim
+mise reshim --system
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_succeed "test -e '$MISE_SHIMS_DIR/pitchfork'"
+
+# Different configured paths that resolve to one physical directory are also
+# one union farm. A scoped rebuild must not remove the other scope's shims.
+export MISE_SHIMS_DIR="$HOME/physical-shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/physical-system-shims"
+mkdir -p "$MISE_SHIMS_DIR"
+ln -s "$MISE_SHIMS_DIR" "$MISE_SYSTEM_SHIMS_DIR"
 mise reshim
 mise reshim --system
 assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"

@@ -107,7 +107,7 @@ impl Activate {
         let user_shims = dirs::shims();
         let system_shims = dirs::system_shims();
         let mut shim_dirs = vec![user_shims];
-        if system_shims.is_dir() && !file::paths_eq(&shim_dirs[0], &system_shims) {
+        if system_shims.is_dir() && !file::storage_paths_eq(&shim_dirs[0], &system_shims) {
             shim_dirs.push(system_shims);
         }
         let mut prelude = vec![];
@@ -163,7 +163,12 @@ impl Activate {
                 path.to_string_lossy().to_string(),
             ));
         }
-        if let Some(set_path) = position_shims_before_path()? {
+        let shim_path_update = if Settings::get().not_found_auto_install {
+            position_shims_before_path()?
+        } else {
+            remove_shims_from_path()?
+        };
+        if let Some(set_path) = shim_path_update {
             prelude.push(set_path);
         }
         let exe_dir = mise_bin.parent().unwrap();
@@ -277,7 +282,7 @@ fn position_shims_before_path() -> std::io::Result<Option<ActivatePrelude>> {
     let user_shims = dirs::shims();
     let system_shims = dirs::system_shims();
     let mut path = vec![user_shims];
-    if system_shims.is_dir() && !file::paths_eq(&path[0], &system_shims) {
+    if system_shims.is_dir() && !file::storage_paths_eq(&path[0], &system_shims) {
         path.push(system_shims);
     }
     path.extend(
@@ -288,6 +293,22 @@ fn position_shims_before_path() -> std::io::Result<Option<ActivatePrelude>> {
     );
     let path = std::env::join_paths(path)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+    Ok(Some(ActivatePrelude::Set(
+        PATH_KEY.to_string(),
+        path.to_string_lossy().to_string(),
+    )))
+}
+
+fn remove_shims_from_path() -> std::io::Result<Option<ActivatePrelude>> {
+    if !env::PATH.iter().any(|path| file::is_mise_shims_dir(path)) {
+        return Ok(None);
+    }
+    let path = std::env::join_paths(
+        env::PATH
+            .iter()
+            .filter(|path| !file::is_mise_shims_dir(path)),
+    )
+    .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
     Ok(Some(ActivatePrelude::Set(
         PATH_KEY.to_string(),
         path.to_string_lossy().to_string(),

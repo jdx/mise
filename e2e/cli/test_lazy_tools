@@ -40,7 +40,9 @@ cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
 [tools]
 "aqua:tinygo-org/tinygo" = { version = "0.39.0", lazy = true }
 EOF
-assert_fail_contains "mise reshim 2>&1" "set lazy_bins explicitly"
+assert_fail_contains "mise reshim --force 2>&1" "set lazy_bins explicitly"
+# A failed forced rebuild must leave the previously working farm intact.
+assert_succeed "test -e '$MISE_SHIMS_DIR/rtx-tiny'"
 
 # A higher-precedence project selection blocks a global lazy fallback, even
 # when the selected project version is missing.

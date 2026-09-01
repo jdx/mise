@@ -544,7 +544,7 @@ impl SelfUpdate {
         crate::shims::reshim_for(&config, &ts, true, crate::shims::ShimScope::User).await?;
         let user_shims = crate::dirs::shims();
         let system_shims = crate::dirs::system_shims();
-        if system_shims.is_dir() && !crate::file::paths_eq(&user_shims, &system_shims) {
+        if system_shims.is_dir() && !crate::file::storage_paths_eq(&user_shims, &system_shims) {
             crate::shims::reshim_for(&config, &ts, true, crate::shims::ShimScope::System).await?;
         }
         Ok(())

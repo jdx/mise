@@ -135,11 +135,13 @@ In this example, we use [`mise activate --shims`](/cli/activate.html#shims) in t
 ::: info
 It's fine to call [`mise activate --shims`](/cli/activate.html#shims) in your shell profile file and then
 later call [`mise activate`](/cli/activate.html) in an interactive session. PATH
-activation keeps the user and existing system shim farms behind real tool
-paths. This makes lazy bootstrap commands available without adding dispatch
-overhead after installation. `not_found_auto_install` still controls general
-missing-tool installation, but does not disable an explicit `lazy = true`
-declaration.
+activation keeps the user and existing system shim farms behind real tool paths
+when the effective toolset contains a lazy declaration or
+`not_found_auto_install` is enabled. Without either behavior, full activation
+removes the shim farms as before. This makes lazy bootstrap commands available
+without adding dispatch overhead after installation. `not_found_auto_install`
+still controls general missing-tool installation, but does not disable an
+explicit `lazy = true` declaration.
 
 :::
 
