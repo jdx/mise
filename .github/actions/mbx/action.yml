@@ -8,7 +8,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563
+    - uses: jdx/mr-boxington-action@b296cd252864fce4f84642a2e0062d54621d5b41
       with:
         version: 1.3.1
         cache-generation: v2
