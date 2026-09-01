@@ -73,6 +73,12 @@ pub(crate) struct Install {
     #[usage(long, verbatim_doc_comment)]
     include_task_tools: bool,
 
+    /// Also install tools configured with `lazy = true`
+    ///
+    /// By default, a bare `mise install` leaves lazy tools for first-command installation.
+    #[usage(long, verbatim_doc_comment)]
+    include_lazy: bool,
+
     /// Only install versions released before this date or older than this duration
     ///
     /// Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
@@ -425,7 +431,7 @@ impl Install {
             jobs: self.jobs,
             raw: self.raw,
             missing_args_only: false,
-            include_lazy: self.tool.is_some(),
+            include_lazy: self.tool.is_some() || self.include_lazy,
             resolve_options: ResolveOptions {
                 use_locked_version: true,
                 latest_versions: true,
@@ -548,7 +554,7 @@ impl Install {
             }
         })
         .into_iter()
-        .filter(|request| request.options().lazy != Some(true))
+        .filter(|request| self.include_lazy || request.options().lazy != Some(true))
         .collect_vec();
         let has_work = !requests.is_empty();
         let (versions, install_error) = if requests.is_empty() {
@@ -702,6 +708,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise install node@20</bold>      # install fuzzy node version
     $ <bold>mise install node</bold>         # install version specified in mise.toml
     $ <bold>mise install</bold>              # installs everything specified in mise.toml
+    $ <bold>mise install --include-lazy</bold> # also install tools configured for lazy installation
     $ <bold>mise install --include-task-tools</bold> # also install tools required by tasks
 "#
 );

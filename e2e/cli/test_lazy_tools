@@ -21,6 +21,11 @@ assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
 assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 dummy --version" "This is Dummy 1.0.0"
 assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
 
+# Provisioning can opt into installing every configured lazy declaration.
+mise uninstall --all dummy
+mise install --include-lazy
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
 # An explicit install request still installs a lazy declaration.
 mise uninstall --all dummy
 mise install dummy

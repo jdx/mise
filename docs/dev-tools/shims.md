@@ -95,11 +95,12 @@ Invoking a lazy shim installs only its configured provider and then executes
 it. This is independent of `not_found_auto_install`; an explicit project tool
 selection is never bypassed by a lower-precedence lazy declaration.
 
-A bare `mise install` skips missing lazy tools. Naming one explicitly, such as
-`mise install node`, installs it immediately. Once installed, normal
-`mise activate` places the real tool path ahead of the shim farms, so later
-calls have no shim dispatch overhead. `mise activate --shims` remains
-project-aware and dispatches every call through mise by design.
+A bare `mise install` skips missing lazy tools. Pass `--include-lazy` to install
+all configured tools including lazy declarations, or name one explicitly, such
+as `mise install node`, to install only that lazy tool immediately. Once
+installed, normal `mise activate` places the real tool path ahead of the shim
+farms, so later calls have no shim dispatch overhead. `mise activate --shims`
+remains project-aware and dispatches every call through mise by design.
 
 ::: tip
 [`mise activate --shims`](/cli/activate.html#shims) is a shorthand for adding the shims directory to PATH.
