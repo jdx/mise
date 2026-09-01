@@ -7,7 +7,11 @@ bins = ["mkd"]
 
 [[backends]]
 full = "github:821869798/markd"
+platforms = ["windows-x64", "windows-arm64", "macos-arm64", "linux-x64", "linux-arm64"]
 
-[backends.options]
-archive_name = 'mkd-{{ arch(x64="x86_64", arm64="aarch64") }}-{{ os(macos="apple-darwin", linux="unknown-linux-gnu", windows="pc-windows-msvc") }}.tar.gz'
-bin_path = 'mkd-{{ arch(x64="x86_64", arm64="aarch64") }}-{{ os(macos="apple-darwin", linux="unknown-linux-gnu", windows="pc-windows-msvc") }}/mkd'
+[backends.options.platforms]
+windows-x64 = { archive_name = "mkd-x86_64-pc-windows-msvc.zip", bin_path = "mkd-x86_64-pc-windows-msvc/mkd.exe" }
+windows-arm64 = { archive_name = "mkd-aarch64-pc-windows-msvc.zip", bin_path = "mkd-aarch64-pc-windows-msvc/mkd.exe" }
+macos-arm64 = { archive_name = "mkd-aarch64-apple-darwin.tar.gz", bin_path = "mkd-aarch64-apple-darwin/mkd" }
+linux-x64 = { archive_name = "mkd-x86_64-unknown-linux-gnu.tar.gz", bin_path = "mkd-x86_64-unknown-linux-gnu/mkd" }
+linux-arm64 = { archive_name = "mkd-aarch64-unknown-linux-gnu.tar.gz", bin_path = "mkd-aarch64-unknown-linux-gnu/mkd" }
