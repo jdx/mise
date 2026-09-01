@@ -242,6 +242,9 @@ arg "<file>" double_dash="optional"
 
 // After first arg, behaves as if -- was used
 arg "<files>" double_dash="automatic"
+
+// Keep double dashes as values in a variadic argument
+arg "<args>..." double_dash="preserve"
 ```
 
 ### Flags (`flag`)

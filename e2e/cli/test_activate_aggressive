@@ -10,4 +10,4 @@ chmod +x "$MISE_DATA_DIR/installs/dummy/1.0.0/bin/dummy"
 echo "tools.dummy = '1'" >mise.toml
 assert_contains "mise hook-env -s bash --trace" "export PATH='/added:$MISE_DATA_DIR/installs/dummy/1.0.0/bin:"
 export MISE_ACTIVATE_AGGRESSIVE=1
-assert_contains "mise hook-env -s bash --trace" "export PATH='$MISE_DATA_DIR/installs/dummy/1.0.0/bin:/added:"
+assert_contains "mise hook-env -s bash --trace" "export PATH='$MISE_DATA_DIR/installs/dummy/1.0.0/bin:$MISE_DATA_DIR/shims:/added:"

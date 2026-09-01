@@ -860,6 +860,10 @@
             "compile": {
               "description": "If true, compile erlang from source. If false, use precompiled binaries. If not set, use precompiled binaries if available.",
               "type": "boolean"
+            },
+            "precompiled_os": {
+              "description": "Ubuntu release target to use for precompiled Erlang builds from builds.hex.pm.",
+              "type": "string"
             }
           }
         },
@@ -1686,6 +1690,10 @@
             "type": "string"
           }
         },
+        "shims_dir": {
+          "description": "Directory containing user shims.",
+          "type": "string"
+        },
         "shorthands_file": {
           "description": "[deprecated] Path to a file containing custom tool shorthands.",
           "type": "string",
@@ -1792,6 +1800,10 @@
           "type": "string",
           "enum": ["prompt", "auto", "warn", "ignore"]
         },
+        "system_installs_dir": {
+          "description": "Directory containing system tool installs.",
+          "type": "string"
+        },
         "system_packages": {
           "type": "object",
           "unevaluatedProperties": false,
@@ -1809,6 +1821,10 @@
               "type": "boolean"
             }
           }
+        },
+        "system_shims_dir": {
+          "description": "Directory containing system shims.",
+          "type": "string"
         },
         "task": {
           "type": "object",
@@ -2641,6 +2657,20 @@
                       }
                     }
                   ]
+                },
+                "lazy": {
+                  "description": "defer installation until one of the tool's bootstrap shims is invoked",
+                  "type": "boolean",
+                  "default": false
+                },
+                "lazy_bins": {
+                  "description": "bootstrap shim names for lazy tools without registry bin metadata",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "uniqueItems": true
                 },
                 "postinstall": {
                   "description": "command to run after tool installation",
@@ -3603,6 +3633,47 @@
       "additionalProperties": {
         "description": "command to run",
         "type": "string"
+      }
+    },
+    "wrappers": {
+      "description": "commands that intercept a binary name before delegating to the active toolset",
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "description": "command to run",
+            "type": "string",
+            "minLength": 1,
+            "pattern": ".*\\S.*"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "command": {
+                "description": "command to run",
+                "type": "string",
+                "minLength": 1,
+                "pattern": ".*\\S.*"
+              },
+              "args": {
+                "description": "arguments inserted before the intercepted command's arguments",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "description": "environment variables set for the wrapper",
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["command"],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     "env": {

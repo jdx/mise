@@ -6,12 +6,12 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
-"github:jdx/mr-boxington" = "latest"
+mr-boxington = { version = "1.2.0", postinstall = "mbx setup --global" }
 # Pinned rather than "latest" because tak is the measuring instrument: an
 # upgrade that changes how it samples would land in the series as a step change
 # in mise's numbers, indistinguishable from a real regression. Bump
 # deliberately, on a commit that does nothing else.
-"github:jdx/tak" = "0.0.8"
+"github:jdx/tak" = "0.0.9"
 age = "latest"
 aube = "latest"
 bun = "latest"

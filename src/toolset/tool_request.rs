@@ -256,6 +256,29 @@ impl ToolRequest {
         self.resolved_options().effective().clone()
     }
 
+    /// Command names that should receive bootstrap shims before a lazy tool is installed.
+    /// Registry metadata is authoritative when the config does not provide an explicit list.
+    pub(crate) fn lazy_bins(&self) -> Result<Option<Vec<String>>> {
+        let options = self.resolved_options().effective();
+        if options.lazy != Some(true) {
+            return Ok(None);
+        }
+        if !options.lazy_bins.is_empty() {
+            return Ok(Some(options.lazy_bins.clone()));
+        }
+        if let Some(tool) = self.ba().registry_tool()
+            && !tool.bins.is_empty()
+        {
+            return Ok(Some(
+                tool.bins.iter().map(|bin| (*bin).to_string()).collect(),
+            ));
+        }
+        bail!(
+            "lazy tool {} has no registry bin metadata; set lazy_bins explicitly",
+            self.ba().short
+        )
+    }
+
     pub(crate) fn explicit_options(&self) -> ToolVersionOptions {
         self.resolved_options().options_from_sources(&[
             ToolOptionSource::Request,

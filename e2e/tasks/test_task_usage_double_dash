@@ -31,3 +31,17 @@ EOF
 output=$(mise run extract bundle -- --mode=universal 2>&1)
 assert_contains "echo \"$output\"" "dependency=--mode=universal"
 assert_contains "echo \"$output\"" "bundletool=--mode=universal"
+
+cat <<'EOF' >mise.toml
+[tasks.preserve]
+usage = '''
+flag "--base <ref>"
+arg "<cmd>..." double_dash="preserve"
+'''
+run = 'echo "cmd=[$usage_cmd] base=[$usage_base]"'
+EOF
+
+assert "mise preserve foo -- bar" "cmd=[foo -- bar] base=[]"
+assert "mise run preserve foo -- bar" "cmd=[foo -- bar] base=[]"
+assert "mise preserve --base X -- foo -- bar" "cmd=[-- foo -- bar] base=[X]"
+assert "mise run preserve --base X -- foo -- bar" "cmd=[-- foo -- bar] base=[X]"

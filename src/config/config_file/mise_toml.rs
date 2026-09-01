@@ -27,7 +27,7 @@ use crate::config::env_directive::{
     AgeFormat, EnvDirective, EnvDirectiveOptions, EnvValue, RequiredValue,
 };
 use crate::config::settings::SettingsPartial;
-use crate::config::{Alias, AliasMap, Config, Settings};
+use crate::config::{Alias, AliasMap, CommandWrapper, Config, Settings};
 use crate::deps::{DepsConfig, DepsTemplateContext};
 use crate::env_diff::EnvMap;
 use crate::file::{create_dir_all, display_path};
@@ -88,7 +88,8 @@ fn normalize_option_template_value(value: toml::Value) -> toml::Value {
 }
 
 fn should_normalize_option_template(key: &str) -> bool {
-    !matches!(key, "os" | "depends" | "install_env") && !key.starts_with("install_env.")
+    !matches!(key, "os" | "depends" | "install_env" | "lazy" | "lazy_bins")
+        && !key.starts_with("install_env.")
 }
 
 fn insert_tool_option<E>(
@@ -197,6 +198,16 @@ fn insert_core_options(table: &mut InlineTable, options: ToolVersionOptions) {
         }
         table.insert("install_env", env.into());
     }
+    if let Some(lazy) = core.lazy {
+        table.insert("lazy", Value::from(lazy));
+    }
+    if !core.lazy_bins.is_empty() {
+        let mut bins = Array::new();
+        for bin in core.lazy_bins {
+            bins.push(Value::from(bin));
+        }
+        table.insert("lazy_bins", Value::Array(bins));
+    }
 }
 
 const TOOL_SELECTOR_KEYS: [&str; 4] = ["version", "prefix", "ref", "path"];
@@ -291,6 +302,16 @@ fn update_explicit_tool_options(table: &mut toml_edit::Table, options: &ToolVers
         }
         insert_table_item_preserving_decor(table, "depends", Item::Value(Value::Array(arr)));
     }
+    if let Some(lazy) = options.lazy {
+        insert_table_item_preserving_decor(table, "lazy", value(lazy));
+    }
+    if !options.lazy_bins.is_empty() {
+        let mut bins = Array::new();
+        for bin in &options.lazy_bins {
+            bins.push(bin.as_str());
+        }
+        insert_table_item_preserving_decor(table, "lazy_bins", Item::Value(Value::Array(bins)));
+    }
     update_install_env_table(table, options);
 }
 
@@ -383,6 +404,8 @@ pub(crate) struct MiseToml {
     tool_alias: AliasMap,
     #[serde(default)]
     shell_alias: IndexMap<String, String>,
+    #[serde(default)]
+    wrappers: IndexMap<String, CommandWrapper>,
     #[serde(skip)]
     doc: Mutex<OnceCell<DocumentMut>>,
     #[serde(default)]
@@ -1271,6 +1294,8 @@ impl ConfigFile for MiseToml {
             if opts.os.as_ref().is_some_and(|o| !o.is_empty())
                 || opts.depends.as_ref().is_some_and(|d| !d.is_empty())
                 || !opts.install_env.is_empty()
+                || opts.lazy.is_some()
+                || !opts.lazy_bins.is_empty()
             {
                 return false;
             }
@@ -1598,6 +1623,10 @@ impl ConfigFile for MiseToml {
             .collect()
     }
 
+    fn command_wrappers(&self) -> eyre::Result<IndexMap<String, CommandWrapper>> {
+        Ok(self.wrappers.clone())
+    }
+
     fn task_config(&self) -> &TaskConfig {
         &self.task_config
     }
@@ -1874,6 +1903,7 @@ impl Clone for MiseToml {
             alias: self.alias.clone(),
             tool_alias: self.tool_alias.clone(),
             shell_alias: self.shell_alias.clone(),
+            wrappers: self.wrappers.clone(),
             doc: Mutex::new(self.doc.lock().unwrap().clone()),
             hooks: self.hooks.clone(),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),

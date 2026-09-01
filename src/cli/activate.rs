@@ -2,15 +2,14 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Settings;
 use crate::env::PATH_KEY;
-use crate::file::{canonicalize_cached, canonicalize_or_self, touch_dir};
-use crate::path_env::PathEnv;
+use crate::file;
+use crate::file::{canonicalize_or_self, touch_dir};
 use crate::shell::{
     ActivateOptions, ActivatePrelude, EXAMPLE_SHELL, Shell, ShellType, require_shell,
 };
 use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
-use itertools::Itertools;
 
 /// Initializes mise in the current shell session
 ///
@@ -105,6 +104,12 @@ impl Activate {
 
     fn activate_shims(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let exe_dir = mise_bin.parent().unwrap();
+        let user_shims = dirs::shims();
+        let system_shims = dirs::system_shims();
+        let mut shim_dirs = vec![user_shims];
+        if system_shims.is_dir() && !file::storage_paths_eq(&shim_dirs[0], &system_shims) {
+            shim_dirs.push(system_shims);
+        }
         let mut prelude = vec![];
         // The shims dir is always (move-)prepended so it stays at the front of PATH
         // even when activation is re-sourced (e.g. VS Code terminals) — see #8757.
@@ -119,8 +124,27 @@ impl Activate {
         } else {
             false
         };
-        if let Some(p) = self.shims_prepend_path(shell, &dirs::SHIMS, prepended_exe_dir) {
-            prelude.push(p);
+        let has_command_wrappers = dirs::COMMAND_WRAPPERS.is_dir();
+        let mut dispatch_dirs = shim_dirs.iter().map(PathBuf::as_path).collect::<Vec<_>>();
+        if has_command_wrappers {
+            dispatch_dirs.insert(0, dirs::COMMAND_WRAPPERS.as_path());
+        }
+        let dispatch_dirs_already_first = are_dirs_first_in_paths(&env::PATH, &dispatch_dirs);
+        if shell.supports_move_path() || prepended_exe_dir || !dispatch_dirs_already_first {
+            // Prepend in reverse order so user shims retain precedence over system
+            // shims in shells where each operation inserts at the front.
+            let mut path_changed = prepended_exe_dir;
+            for shims_dir in shim_dirs.iter().rev() {
+                if let Some(p) = self.shims_prepend_path(shell, shims_dir, path_changed) {
+                    prelude.push(p);
+                    path_changed = true;
+                }
+            }
+            if has_command_wrappers
+                && let Some(p) = self.shims_prepend_path(shell, &dirs::COMMAND_WRAPPERS, true)
+            {
+                prelude.push(p);
+            }
         }
         miseprint!("{}", shell.format_activate_prelude(&prelude))?;
         Ok(())
@@ -128,7 +152,23 @@ impl Activate {
 
     fn activate(&self, shell: &dyn Shell, mise_bin: &Path) -> std::io::Result<()> {
         let mut prelude = vec![];
-        if let Some(set_path) = remove_shims()? {
+        // Preserve the user's PATH before adding the shim boundary. Shell activation
+        // normally snapshots this after preludes run, which would otherwise make
+        // `mise deactivate` restore mise's own shim farms.
+        if env::__MISE_ORIG_PATH.is_none() {
+            let path = std::env::join_paths(&*env::PATH)
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+            prelude.push(ActivatePrelude::Set(
+                "__MISE_ORIG_PATH".to_string(),
+                path.to_string_lossy().to_string(),
+            ));
+        }
+        let shim_path_update = if Settings::get().not_found_auto_install {
+            position_shims_before_path()?
+        } else {
+            remove_shims_from_path()?
+        };
+        if let Some(set_path) = shim_path_update {
             prelude.push(set_path);
         }
         let exe_dir = mise_bin.parent().unwrap();
@@ -238,28 +278,41 @@ fn forwarded_logging_flags(args: &[String]) -> Vec<String> {
     flags
 }
 
-fn remove_shims() -> std::io::Result<Option<ActivatePrelude>> {
-    // When not_found_auto_install is enabled, preserve shims in PATH so they can
-    // trigger auto-install for tools that aren't installed yet
-    if Settings::get().not_found_auto_install {
+fn position_shims_before_path() -> std::io::Result<Option<ActivatePrelude>> {
+    let user_shims = dirs::shims();
+    let system_shims = dirs::system_shims();
+    let mut path = vec![user_shims];
+    if system_shims.is_dir() && !file::storage_paths_eq(&path[0], &system_shims) {
+        path.push(system_shims);
+    }
+    path.extend(
+        env::PATH
+            .iter()
+            .filter(|path| !file::is_mise_shims_dir(path))
+            .cloned(),
+    );
+    let path = std::env::join_paths(path)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+    Ok(Some(ActivatePrelude::Set(
+        PATH_KEY.to_string(),
+        path.to_string_lossy().to_string(),
+    )))
+}
+
+fn remove_shims_from_path() -> std::io::Result<Option<ActivatePrelude>> {
+    if !env::PATH.iter().any(|path| file::is_mise_shims_dir(path)) {
         return Ok(None);
     }
-
-    let shims = canonicalize_or_self(&dirs::SHIMS);
-    if env::PATH
-        .iter()
-        .filter_map(|p| canonicalize_cached(p))
-        .contains(&shims)
-    {
-        let path_env = PathEnv::from_iter(env::PATH.clone());
-        // PathEnv automatically removes the shims directory. Verbatim, because this PATH
-        // goes back into the user's live shell: a duplicate entry the user put there is
-        // theirs to keep, and only the shims dir may be dropped here.
-        let path = path_env.join_verbatim().to_string_lossy().to_string();
-        Ok(Some(ActivatePrelude::Set(PATH_KEY.to_string(), path)))
-    } else {
-        Ok(None)
-    }
+    let path = std::env::join_paths(
+        env::PATH
+            .iter()
+            .filter(|path| !file::is_mise_shims_dir(path)),
+    )
+    .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidInput, err))?;
+    Ok(Some(ActivatePrelude::Set(
+        PATH_KEY.to_string(),
+        path.to_string_lossy().to_string(),
+    )))
 }
 
 fn is_dir_in_path(dir: &Path) -> bool {
@@ -281,6 +334,14 @@ fn is_dir_first_in_paths(paths: &[PathBuf], dir: &Path) -> bool {
         .is_some_and(|p| canonicalize_or_self(p) == dir)
 }
 
+fn are_dirs_first_in_paths(paths: &[PathBuf], dirs: &[&Path]) -> bool {
+    paths.len() >= dirs.len()
+        && paths
+            .iter()
+            .zip(dirs)
+            .all(|(path, dir)| canonicalize_or_self(path) == canonicalize_or_self(dir))
+}
+
 fn is_dir_not_in_nix(dir: &Path) -> bool {
     !canonicalize_or_self(dir).starts_with("/nix/")
 }
@@ -298,7 +359,10 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
 #[cfg(test)]
 mod tests {
-    use super::{forwarded_logging_flags, is_dir_first_in_paths, should_prepend_shims};
+    use super::{
+        are_dirs_first_in_paths, forwarded_logging_flags, is_dir_first_in_paths,
+        should_prepend_shims,
+    };
     use std::path::PathBuf;
 
     fn args(values: &[&str]) -> Vec<String> {
@@ -389,6 +453,27 @@ mod tests {
             std::slice::from_ref(&target),
             &target,
             true
+        ));
+    }
+
+    #[test]
+    fn detects_an_existing_dispatch_prefix() {
+        let root = tempfile::tempdir().unwrap();
+        let wrappers = root.path().join("wrappers");
+        let shims = root.path().join("shims");
+        let other = root.path().join("other");
+
+        assert!(are_dirs_first_in_paths(
+            &[wrappers.clone(), shims.clone(), other.clone()],
+            &[&wrappers, &shims]
+        ));
+        assert!(!are_dirs_first_in_paths(
+            &[shims.clone(), wrappers.clone(), other],
+            &[&wrappers, &shims]
+        ));
+        assert!(!are_dirs_first_in_paths(
+            std::slice::from_ref(&wrappers),
+            &[&wrappers, &shims]
         ));
     }
 }

@@ -54,7 +54,7 @@ jobs:
           # build to use dependencies whose rust-version metadata exceeds our MSRV.
           # Keep using the same compiler path as the bootstrap build above: changing
           # to mbx in an existing CMake tree makes AWS-LC reject the reconfigure.
-          MISE_CARGO_BUILD_COMMAND: cargo build
+          MISE_CARGO_BUILD_COMMAND: MBX_DISABLE=1 cargo build
           MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
           # The full-feature build above already covers compilation. Avoid HK's
           # redundant cargo-check, which enforces dependency rust-version metadata.

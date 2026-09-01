@@ -19,3 +19,25 @@ fi
 
 [[ $output != *"build-install"* ]] ||
   fail "erlang.compile=false should not fall back to kerl build-install: $output"
+
+export MISE_LOCKFILE=1
+detect_platform
+
+cat <<'EOF' >mise.toml
+[tools]
+erlang = "28.5"
+
+[settings.erlang]
+compile = false
+precompiled_os = "ubuntu-22.04"
+EOF
+
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-22.04"'
+assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-22\.04/OTP-28\.5\.tar\.gz"'
+
+rm -f mise.lock
+sed -i 's/ubuntu-22\.04/ubuntu-26.04/' mise.toml
+mise lock --platform "$MISE_PLATFORM"
+assert_contains "cat mise.lock" 'precompiled_os = "ubuntu-26.04"'
+assert_matches "cat mise.lock" 'url = "https://builds\.hex\.pm/builds/otp/(amd64|arm64)/ubuntu-26\.04/OTP-28\.5\.tar\.gz"'

@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+export MISE_SYSTEM_CONFIG_FILE="$HOME/system-mise.toml"
+export MISE_SYSTEM_INSTALLS_DIR="$HOME/system-installs"
+export MISE_SHIMS_DIR="$HOME/user-shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/system-shims"
+export PATH="$MISE_SHIMS_DIR:$MISE_SYSTEM_SHIMS_DIR:$PATH"
+
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+
+mise reshim --system
+assert_succeed "test -e '$MISE_SYSTEM_SHIMS_DIR/dummy'"
+assert_fail "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_contains "dummy --version" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_SYSTEM_INSTALLS_DIR/dummy/1.0.0"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+# Upgrades preserve an existing system install's storage scope.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+EOF
+mise upgrade dummy
+assert_directory_exists "$MISE_SYSTEM_INSTALLS_DIR/dummy/1.1.0"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.1.0'"
+
+# Removing a non-lazy system install reconciles the system farm rather than
+# leaving a stale dispatcher behind or touching the distinct user farm.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+pitchfork = "0.1.5"
+EOF
+mise install --system pitchfork
+assert_succeed "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+user_shims_dir="$MISE_SHIMS_DIR"
+export MISE_SHIMS_DIR="/proc/mise-user-shims"
+mise uninstall pitchfork@0.1.5
+export MISE_SHIMS_DIR="$user_shims_dir"
+assert_fail "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+
+# Removing a lazy declaration from system config reconciles the system farm,
+# including with --no-prune.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+pitchfork = { version = "0.1.5", lazy = true, lazy_bins = ["pitchfork"] }
+EOF
+mise reshim --system
+mise unuse --path "$MISE_SYSTEM_CONFIG_FILE" --no-prune pitchfork
+assert_fail "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+EOF
+
+# When both farms are collocated, either selector reconciles the same union and
+# cannot remove shims required by the other scope.
+export MISE_SHIMS_DIR="$HOME/collocated-shims"
+export MISE_SYSTEM_SHIMS_DIR="$MISE_SHIMS_DIR"
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+[tools]
+pitchfork = { version = "0.1.5", lazy = true, lazy_bins = ["pitchfork"] }
+EOF
+mise reshim
+mise reshim --system
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_succeed "test -e '$MISE_SHIMS_DIR/pitchfork'"
+
+# Different configured paths that resolve to one physical directory are also
+# one union farm. A scoped rebuild must not remove the other scope's shims.
+export MISE_SHIMS_DIR="$HOME/physical-shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/physical-system-shims"
+mkdir -p "$MISE_SHIMS_DIR"
+ln -s "$MISE_SHIMS_DIR" "$MISE_SYSTEM_SHIMS_DIR"
+mise reshim
+mise reshim --system
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_succeed "test -e '$MISE_SHIMS_DIR/pitchfork'"
+
+# Equal install roots are local storage. Rebuilding either distinct farm sees
+# the same installs, so neither scope loses ordinary installed-tool shims.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+EOF
+cat >"$MISE_CONFIG_DIR/config.toml" <<'EOF'
+EOF
+export MISE_SYSTEM_INSTALLS_DIR="$MISE_DATA_DIR/installs"
+export MISE_SHIMS_DIR="$HOME/equal-root-user-shims"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/equal-root-system-shims"
+mise install dummy@2.0.0
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_succeed "test -e '$MISE_SYSTEM_SHIMS_DIR/dummy'"
+
+# Lazy dispatch never elevates an unwritable system destination and explains
+# both supported recovery paths.
+export MISE_SYSTEM_INSTALLS_DIR="/proc/mise-installs"
+export MISE_SYSTEM_SHIMS_DIR="$HOME/permission-system-shims"
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = { version = "3.0.0", lazy = true, lazy_bins = ["dummy"] }
+EOF
+mise reshim --system
+assert_fail_contains "'$MISE_SYSTEM_SHIMS_DIR/dummy' --version 2>&1" "appropriate privileges or set system_installs_dir"

@@ -140,6 +140,10 @@ jobs:
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
+      # The bootstrap build below uses explicit mbx before mise installs the
+      # project tools. Keep nested task builds on the same entrypoint so AWS-LC
+      # does not reconfigure an existing CMake tree with a different compiler.
+      MISE_CARGO_BUILD_COMMAND: mbx build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -396,7 +400,7 @@ jobs:
 
   windows-unit:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:

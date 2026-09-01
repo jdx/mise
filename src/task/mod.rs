@@ -1908,8 +1908,8 @@ impl Task {
             .any(|a| a == "--help" || a == "-h")
     }
 
-    /// Reconstruct the command-line separator clap consumed before populating
-    /// `trailing_args` when the active usage command requires it.
+    /// Reconstruct the command-line separator the outer CLI consumed before populating
+    /// `trailing_args` when the active usage command requires or preserves it.
     pub(crate) fn args_for_usage_parser(&self, spec: &usage::Spec, args: &[String]) -> Vec<String> {
         if self.trailing_args.is_empty() {
             return args.to_vec();
@@ -1932,7 +1932,12 @@ impl Task {
         if !usage_command_for_args(spec, task_prefix)
             .args
             .iter()
-            .any(|arg| arg.double_dash == usage::SpecDoubleDashChoices::Required)
+            .any(|arg| {
+                matches!(
+                    arg.double_dash,
+                    usage::SpecDoubleDashChoices::Required | usage::SpecDoubleDashChoices::Preserve
+                )
+            })
         {
             return args.to_vec();
         }

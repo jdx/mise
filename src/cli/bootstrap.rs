@@ -1375,9 +1375,9 @@ impl Bootstrap {
             } else {
                 info!("bootstrap: repos");
                 if self.update {
-                    install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty)?;
+                    install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty).await?;
                 } else {
-                    install::apply_repos(repos, self.dry_run, self.yes, self.skip_dirty)?;
+                    install::apply_repos(repos, self.dry_run, self.yes, self.skip_dirty).await?;
                 }
             }
             self.run_hooks(&hooks, BootstrapHookPhase::PostRepos)
@@ -2691,7 +2691,7 @@ impl BootstrapStatus {
         self.collect_services(&service_requests, &notified_services, &mut report);
         self.collect_firewall(firewall_request.as_ref(), &mut report);
         self.collect_compose(&compose_requests, &mut report);
-        self.collect_repos(config, &mut report)?;
+        self.collect_repos(config, &mut report).await?;
         self.collect_dotfiles(config, &mut report)?;
         self.collect_shell(config, &mut report)?;
         self.collect_defaults(config, &mut report).await?;
@@ -2978,14 +2978,14 @@ impl BootstrapStatus {
         Ok(())
     }
 
-    fn collect_repos(
+    async fn collect_repos(
         &self,
         config: &Arc<Config>,
         report: &mut BootstrapStatusReport,
     ) -> Result<()> {
         let repos = system::repos_from_config(config);
         let mut json_entries = vec![];
-        for s in system::repos::status(&repos)? {
+        for s in system::repos::status(&repos).await? {
             let state = s.state.as_str();
             let (row_state, reason, missing) = match &s.state {
                 RepoState::Current => ("current".to_string(), "".to_string(), false),
@@ -3633,6 +3633,7 @@ impl BootstrapReposApply {
             self.yes,
             self.skip_dirty,
         )
+        .await
     }
 }
 
@@ -3640,7 +3641,7 @@ impl BootstrapReposUpdate {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
-        install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty)
+        install::update_repos(repos, self.dry_run, self.yes, self.skip_dirty).await
     }
 }
 
@@ -3648,7 +3649,7 @@ impl BootstrapReposExec {
     async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let repos = filter_repos(system::repos_from_config(&config), &self.paths)?;
-        system::repos::exec(&repos, &self.command, self.dry_run, self.continue_on_error)
+        system::repos::exec(&repos, &self.command, self.dry_run, self.continue_on_error).await
     }
 }
 
@@ -3685,7 +3686,7 @@ impl BootstrapReposStatus {
         let mut any_missing = false;
         let mut rows: Vec<Vec<String>> = vec![];
         let mut json_entries = vec![];
-        for s in system::repos::status(&repos)? {
+        for s in system::repos::status(&repos).await? {
             if !s.state.is_current() {
                 any_missing = true;
             }

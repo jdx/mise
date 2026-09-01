@@ -482,122 +482,64 @@ checksum = "sha256:3ae3a5549e85c7ad5b20192ebcfee4371269deca51255f6f2f2e051c6541f
 url = "https://github.com/orhun/git-cliff/releases/download/v2.13.1/git-cliff-2.13.1-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/orhun/git-cliff/releases/assets/405851866"
 
-[[tools."github:jdx/mr-boxington"]]
-version = "1.0.1"
-backend = "github:jdx/mr-boxington"
-
-[tools."github:jdx/mr-boxington"."platforms.linux-arm64"]
-checksum = "sha256:203a915cace2ca0afbd90ecb36a0ebb31f99159d13acd5a6d3cd98d84daa899b"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844924"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.linux-arm64-musl"]
-checksum = "sha256:d2532ae7d83ef0c30e7ad0c1840a41788d0cc93d5971383d959630bfd6800fe2"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844928"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.linux-x64"]
-checksum = "sha256:032d302c68a0a2273fdf9dc1a597aef8bb1647f5446616fdb036a03222ae3300"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844934"
-provenance = "github-attestations"
-provenance_verified = true
-
-[tools."github:jdx/mr-boxington"."platforms.linux-x64-baseline"]
-checksum = "sha256:032d302c68a0a2273fdf9dc1a597aef8bb1647f5446616fdb036a03222ae3300"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844934"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.linux-x64-musl"]
-checksum = "sha256:2392e9946aadbc97d27fd0852ff242d1c0b4421950ac1bd3c9401116cc4af9f7"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844936"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:2392e9946aadbc97d27fd0852ff242d1c0b4421950ac1bd3c9401116cc4af9f7"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844936"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.macos-arm64"]
-checksum = "sha256:d5210df76f9364341d3d6c1c5004e7a7321db45352a34d1d92f9831ee3df4b1c"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844925"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.windows-x64"]
-checksum = "sha256:86350b98708f315881f8d43e217d1c8545a8834c9222d26ed7299dd2561e767e"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844932"
-provenance = "github-attestations"
-
-[tools."github:jdx/mr-boxington"."platforms.windows-x64-baseline"]
-checksum = "sha256:86350b98708f315881f8d43e217d1c8545a8834c9222d26ed7299dd2561e767e"
-url = "https://github.com/jdx/mr-boxington/releases/download/v1.0.1/mbx-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/535844932"
-provenance = "github-attestations"
-
 [[tools."github:jdx/tak"]]
-version = "0.0.8"
+version = "0.0.9"
 backend = "github:jdx/tak"
 
 [tools."github:jdx/tak"."platforms.linux-arm64"]
-checksum = "sha256:d3b5ee39a9be283586fcc1f40fffbe4003d0fce79905462f9e798ec488e148dd"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283627"
+checksum = "sha256:9069450a581d5918c7f40fe4120f054a71835da322604becb42b7acb5bd1e0a1"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992902"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-arm64-musl"]
-checksum = "sha256:a3261a9ffe9fcb2c997687d1d044107ff311429e0d7385ec98e92c6ea1935e2c"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283626"
+checksum = "sha256:0caa3b6b66fe98298714a90e6de0690402a417f5b3c34d9aa9c912edf69a18f1"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992901"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-x64"]
-checksum = "sha256:8def2146c565a331e2de9abebda238c22bb868335dc139db9a76aff1de1339c4"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283644"
+checksum = "sha256:dfb0020b976d679af5a7504190ffbcb201c0e11b2f7788901fd6f60740cd87d4"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992912"
 provenance = "github-attestations"
 provenance_verified = true
 
 [tools."github:jdx/tak"."platforms.linux-x64-baseline"]
-checksum = "sha256:8def2146c565a331e2de9abebda238c22bb868335dc139db9a76aff1de1339c4"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283644"
+checksum = "sha256:dfb0020b976d679af5a7504190ffbcb201c0e11b2f7788901fd6f60740cd87d4"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992912"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-x64-musl"]
-checksum = "sha256:442c866a7572936f639c39edb32042a2f60d78a9dd86116a429f6e31cc9840fe"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283646"
+checksum = "sha256:c761a4dbf695dc493744c79de0f3ab67a1698ee5af9afd35f6d019af36145420"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992915"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.linux-x64-musl-baseline"]
-checksum = "sha256:442c866a7572936f639c39edb32042a2f60d78a9dd86116a429f6e31cc9840fe"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283646"
+checksum = "sha256:c761a4dbf695dc493744c79de0f3ab67a1698ee5af9afd35f6d019af36145420"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992915"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.macos-arm64"]
-checksum = "sha256:fbd5e2c3366f085cb8ce71362bcdc05fbf549e7787bd401ae085a1dee09bdb22"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283628"
+checksum = "sha256:be4690bad41265946803d11f145c22e01368164e7f1fe49befef8789259c9471"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992905"
 provenance = "github-attestations"
+provenance_verified = true
 
 [tools."github:jdx/tak"."platforms.windows-x64"]
-checksum = "sha256:fd3157419889dc558c87e5779f89d123dc909bfc4f7557c970dcb95d71a97d1b"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283641"
+checksum = "sha256:a15f62ea6fa0051f8ae01fca58da26c550ae95fd9d7eccaa167ca53d6f2262b3"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992910"
 provenance = "github-attestations"
 
 [tools."github:jdx/tak"."platforms.windows-x64-baseline"]
-checksum = "sha256:fd3157419889dc558c87e5779f89d123dc909bfc4f7557c970dcb95d71a97d1b"
-url = "https://github.com/jdx/tak/releases/download/v0.0.8/tak-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/jdx/tak/releases/assets/531283641"
+checksum = "sha256:a15f62ea6fa0051f8ae01fca58da26c550ae95fd9d7eccaa167ca53d6f2262b3"
+url = "https://github.com/jdx/tak/releases/download/v0.0.9/tak-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/tak/releases/assets/537992910"
 provenance = "github-attestations"
 
 [[tools.hk]]
@@ -755,6 +697,65 @@ url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/asset
 checksum = "sha256:fdb9a59108cf62517813c97fa5549b0e16d1ef0688306bac728b08434db7e4cd"
 url = "https://github.com/LuaLS/lua-language-server/releases/download/3.19.1/lua-language-server-3.19.1-win32-x64.zip"
 url_api = "https://api.github.com/repos/LuaLS/lua-language-server/releases/assets/513572668"
+
+[[tools.mr-boxington]]
+version = "1.2.0"
+backend = "github:jdx/mr-boxington"
+
+[tools.mr-boxington."platforms.linux-arm64"]
+checksum = "sha256:511a0ec5ea3ebdfe5c1bf37b678b347969c655f7730f33e6328a385b77ee6409"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954373"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.linux-arm64-musl"]
+checksum = "sha256:59e892a14e765f1b59304c139fee998dc00f02b7d5d60a2d0c5b5bc39b958e61"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954371"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.linux-x64"]
+checksum = "sha256:8c146d2fc9a0ab4cdf493226796e11685f224e40f2695dfffc7cb83be5dbd67e"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954388"
+provenance = "github-attestations"
+provenance_verified = true
+
+[tools.mr-boxington."platforms.linux-x64-baseline"]
+checksum = "sha256:8c146d2fc9a0ab4cdf493226796e11685f224e40f2695dfffc7cb83be5dbd67e"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954388"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.linux-x64-musl"]
+checksum = "sha256:011c3241051a3a31302fdf50c66e35aed1549bb5406afee16dea4e7466784c68"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954386"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.linux-x64-musl-baseline"]
+checksum = "sha256:011c3241051a3a31302fdf50c66e35aed1549bb5406afee16dea4e7466784c68"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954386"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.macos-arm64"]
+checksum = "sha256:b4da7ecacbf21a649c952025b821e8dfcec3d046bcfcdb4c86d21c9d53875489"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954370"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.windows-x64"]
+checksum = "sha256:c65892951de08d331fcc3e80a8cde33892aaf297f186194906d42f35f8a82277"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954384"
+provenance = "github-attestations"
+
+[tools.mr-boxington."platforms.windows-x64-baseline"]
+checksum = "sha256:c65892951de08d331fcc3e80a8cde33892aaf297f186194906d42f35f8a82277"
+url = "https://github.com/jdx/mr-boxington/releases/download/v1.2.0/mbx-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/jdx/mr-boxington/releases/assets/537954384"
+provenance = "github-attestations"
 
 [[tools.node]]
 version = "24.20.0"

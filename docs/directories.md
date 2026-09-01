@@ -91,3 +91,41 @@ Setting it there can make an install use one directory while later commands and 
 
 This is where mise places shims. Generally these are used for IDE integration or if `mise activate`
 does not work for some reason.
+
+- Setting: `shims_dir`
+- Environment override: `MISE_SHIMS_DIR`
+
+The setting is global-only, expands `~`, and must resolve to an absolute path.
+
+## System installs and shims
+
+System installs default to `/usr/local/share/mise/installs` and system shims
+default to `/usr/local/share/mise/shims`. Their locations can be changed with
+the global-only `system_installs_dir` and `system_shims_dir` settings or the
+`MISE_SYSTEM_INSTALLS_DIR` and `MISE_SYSTEM_SHIMS_DIR` environment variables.
+Both paths expand `~` and must resolve to absolute paths.
+
+`mise install --system` writes to the system install root and
+`mise reshim --system` rebuilds the system farm. Mise never elevates privileges
+automatically. Preinstall with the necessary privileges or redirect these
+settings when the defaults are not writable.
+
+Distributions may collocate system and user storage while retaining system
+configuration. For example, Omarchy can keep every tool artifact in the user's
+home directory:
+
+```toml
+[settings]
+system_installs_dir = "~/.local/share/mise/installs"
+shims_dir = "~/.local/share/mise/shims"
+system_shims_dir = "~/.local/share/mise/shims"
+```
+
+When the shim paths are equal, mise manages one union farm with one lock. When
+the install roots are equal, the root is treated as local storage rather than
+being scanned and classified twice.
+
+### `~/.local/share/mise/command-wrappers/bin`
+
+This is where mise places dispatch shims configured by `[wrappers]`. Mise manages
+this directory; use `mise reshim` after adding or removing a command wrapper.

@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
 
+# Keep mise's data inside a pnpm workspace, as GitLab CI commonly does so the
+# directory can be cached. The synthetic npm tool project must not be adopted
+# by this enclosing workspace.
+MISE_DATA_DIR="$PWD/.mise-data"
+mkdir -p pkg
+cat >package.json <<'EOF'
+{"name":"root","private":true}
+EOF
+cat >pnpm-workspace.yaml <<'EOF'
+packages:
+  - pkg
+EOF
+cat >pkg/package.json <<'EOF'
+{"name":"pkg","version":"0.0.0","dependencies":{"is-number":"7.0.0"}}
+EOF
+
 install_dir="$MISE_DATA_DIR/installs/npm-cowsay/1.6.0"
 
 # npm: tools install via the embedded aube package manager in-process — no
@@ -11,9 +27,12 @@ assert_contains "mise x node@20.11.1 npm:cowsay@1.6.0 -- cowsay hello" "hello"
 assert_succeed "test -d '$install_dir/node_modules'"
 assert_succeed "test -x '$install_dir/node_modules/.bin/cowsay'"
 assert_succeed "test -f '$install_dir/aube-lock.yaml'"
+assert_succeed "test -f '$install_dir/aube-workspace.yaml'"
 assert_contains "cat '$install_dir/aube-lock.yaml'" "cowsay@1.6.0"
 assert_succeed "test -f '$install_dir/.config/aube/config.toml'"
 assert_succeed "test ! -e '$install_dir/.npmrc'"
+assert_succeed "test ! -e '$PWD/node_modules'"
+assert_succeed "test ! -e '$PWD/aube-lock.yaml'"
 
 # Regenerable aube state stays under mise's npm cache root, where
 # `mise cache prune npm` owns its lifecycle.

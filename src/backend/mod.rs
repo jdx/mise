@@ -851,7 +851,7 @@ fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
     let skip_shims = cfg!(windows);
     let dirs = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !skip_shims || !file::is_mise_shims_dir(p))
+        .filter(|p| !skip_shims || !file::is_mise_dispatch_dir(p))
         .cloned();
     which_in_dirs(dirs, bin, true)
 }
@@ -859,7 +859,7 @@ fn which_non_pristine_spawnable(bin: &str) -> Option<PathBuf> {
 pub(crate) fn which_no_shims_spawnable(bin: &str) -> Option<PathBuf> {
     let dirs = env::PATH_NON_PRISTINE
         .iter()
-        .filter(|p| !file::is_mise_shims_dir(p))
+        .filter(|p| !file::is_mise_dispatch_dir(p))
         .cloned();
     which_in_dirs(dirs, bin, true)
 }
@@ -4037,7 +4037,7 @@ pub(crate) trait Backend: Debug + Send + Sync {
             let original_len = paths.len();
             let filtered: Vec<_> = paths
                 .into_iter()
-                .filter(|p| !file::is_mise_shims_dir(p))
+                .filter(|p| !file::is_mise_dispatch_dir(p))
                 .collect();
             if filtered.len() != original_len {
                 let joined = env::join_paths(&filtered)?;

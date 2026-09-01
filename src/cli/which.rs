@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::cli::args::ToolArg;
 use crate::config::Config;
-use crate::dirs::SHIMS;
+use crate::dirs;
 use crate::file;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
@@ -124,7 +124,7 @@ impl Which {
         ))
     }
     fn has_shim(&self, shim: &str) -> bool {
-        SHIMS.join(shim).exists()
+        dirs::shims().join(shim).exists() || dirs::system_shims().join(shim).exists()
     }
 }
 

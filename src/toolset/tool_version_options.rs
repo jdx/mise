@@ -26,6 +26,10 @@ pub(crate) struct CoreToolOptions {
     pub depends: Option<Vec<String>>,
     #[serde(default)]
     pub install_env: IndexMap<String, EnvValue>,
+    #[serde(default)]
+    pub lazy: Option<bool>,
+    #[serde(default)]
+    pub lazy_bins: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -237,6 +241,18 @@ impl ResolvedToolOptions {
                 options.install_env.insert(key.clone(), value.clone());
             }
         }
+        if self
+            .source_for_key("lazy")
+            .is_some_and(|source| sources.contains(&source))
+        {
+            options.lazy = self.options.lazy;
+        }
+        if self
+            .source_for_key("lazy_bins")
+            .is_some_and(|source| sources.contains(&source))
+        {
+            options.lazy_bins.clone_from(&self.options.lazy_bins);
+        }
         options
     }
 
@@ -261,6 +277,12 @@ impl ResolvedToolOptions {
                 self.sources.insert(format!("install_env.{key}"), source);
             }
         }
+        if options.lazy.is_some() {
+            self.sources.insert("lazy".to_string(), source);
+        }
+        if !options.lazy_bins.is_empty() {
+            self.sources.insert("lazy_bins".to_string(), source);
+        }
     }
 }
 
@@ -276,6 +298,8 @@ impl std::hash::Hash for ToolOptions {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.os.hash(state);
         self.depends.hash(state);
+        self.lazy.hash(state);
+        self.lazy_bins.hash(state);
 
         // Hash install_env in sorted order for deterministic hashing
         let mut install_env_sorted: Vec<_> = self.install_env.iter().collect();
@@ -325,6 +349,8 @@ impl ToolOptions {
         self.os.as_ref().is_none_or(|os| os.is_empty())
             && self.depends.as_ref().is_none_or(|d| d.is_empty())
             && self.install_env.is_empty()
+            && self.lazy.is_none()
+            && self.lazy_bins.is_empty()
             && self.opts.is_empty()
     }
 
@@ -385,6 +411,12 @@ impl ToolOptions {
         if overrides.depends.is_some() {
             self.depends = overrides.depends.clone();
         }
+        if overrides.lazy.is_some() {
+            self.lazy = overrides.lazy;
+        }
+        if !overrides.lazy_bins.is_empty() {
+            self.lazy_bins.clone_from(&overrides.lazy_bins);
+        }
     }
 
     pub(crate) fn insert_option(&mut self, key: String, value: toml::Value) -> Result<(), String> {
@@ -416,6 +448,25 @@ impl ToolOptions {
                 for (key, value) in env {
                     self.install_env
                         .insert(key.clone(), EnvValue::try_from(value)?);
+                }
+                Ok(true)
+            }
+            "lazy" => {
+                self.lazy = Some(
+                    value
+                        .as_bool()
+                        .ok_or_else(|| "lazy must be a boolean".to_string())?,
+                );
+                Ok(true)
+            }
+            "lazy_bins" => {
+                self.lazy_bins = parse_string_or_array(value, "lazy_bins")?;
+                if self
+                    .lazy_bins
+                    .iter()
+                    .any(|bin| bin.is_empty() || bin.contains(['/', '\\']))
+                {
+                    return Err("lazy_bins must contain command names, not paths".to_string());
                 }
                 Ok(true)
             }
@@ -463,6 +514,12 @@ impl ToolOptions {
         }
         if key == "install_env" {
             return !self.install_env.is_empty();
+        }
+        if key == "lazy" {
+            return self.lazy.is_some();
+        }
+        if key == "lazy_bins" {
+            return !self.lazy_bins.is_empty();
         }
         if let Some(env_key) = key.strip_prefix("install_env.") {
             return self.install_env.contains_key(env_key);
@@ -1181,6 +1238,7 @@ mod tests {
                 .iter()
                 .cloned()
                 .collect(),
+                ..Default::default()
             },
             ..Default::default()
         };
@@ -1364,6 +1422,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                ..Default::default()
             },
             opts: [
                 ("api_url".to_string(), s("https://config.example")),
@@ -1381,6 +1440,7 @@ mod tests {
                     .iter()
                     .cloned()
                     .collect(),
+                ..Default::default()
             },
             opts: [("api_url".to_string(), s("https://inline.example"))]
                 .iter()
@@ -1398,5 +1458,40 @@ mod tests {
         );
         assert_eq!(base.get("api_url"), Some("https://inline.example"));
         assert_eq!(base.get("version_prefix"), Some("v"));
+    }
+
+    #[test]
+    fn test_lazy_options_parse_and_override_false() {
+        let mut base = ToolVersionOptions::default();
+        base.insert_option("lazy".into(), toml::Value::Boolean(true))
+            .unwrap();
+        base.insert_option(
+            "lazy_bins".into(),
+            toml::Value::Array(vec![toml::Value::String("acme".into())]),
+        )
+        .unwrap();
+        assert_eq!(base.lazy, Some(true));
+        assert_eq!(base.lazy_bins, ["acme"]);
+
+        let mut overrides = ToolVersionOptions::default();
+        overrides
+            .insert_option("lazy".into(), toml::Value::Boolean(false))
+            .unwrap();
+        base.apply_overrides(&overrides);
+        assert_eq!(base.lazy, Some(false));
+    }
+
+    #[test]
+    fn test_lazy_bins_reject_paths() {
+        let mut options = ToolVersionOptions::default();
+        assert_eq!(
+            options
+                .insert_option(
+                    "lazy_bins".into(),
+                    toml::Value::Array(vec![toml::Value::String("bin/acme".into())]),
+                )
+                .unwrap_err(),
+            "lazy_bins must contain command names, not paths"
+        );
     }
 }

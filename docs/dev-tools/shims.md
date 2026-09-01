@@ -70,6 +70,38 @@ export PATH="$HOME/.local/share/mise/shims:/usr/local/bin:/usr/bin:/bin:/usr/sbi
 
 This will effectively make all dev tools available in your current shell session as well as non-interactive environments.
 
+## Lazy tools
+
+Set `lazy = true` on a tool when it should be installed the first time one of
+its commands is invoked instead of by a bare `mise install`:
+
+```toml
+[tools]
+node = { version = "24", lazy = true }
+```
+
+For registry shorthands, mise creates bootstrap shims from the registry's
+`bins` metadata. Explicit backends and tools that are not in the registry must
+declare their command names with `lazy_bins`:
+
+```toml
+[tools]
+"github:example/acme" = { version = "1.2.3", lazy = true, lazy_bins = ["acme", "acmectl"] }
+```
+
+Run `mise reshim` after editing a lazy declaration directly. Commands such as
+`mise use` that update tool configuration rebuild the farm automatically.
+Invoking a lazy shim installs only its configured provider and then executes
+it. This is independent of `not_found_auto_install`; an explicit project tool
+selection is never bypassed by a lower-precedence lazy declaration.
+
+A bare `mise install` skips missing lazy tools. Pass `--include-lazy` to install
+all configured tools including lazy declarations, or name one explicitly, such
+as `mise install node`, to install only that lazy tool immediately. Once
+installed, normal `mise activate` places the real tool path ahead of the shim
+farms, so later calls have no shim dispatch overhead. `mise activate --shims`
+remains project-aware and dispatches every call through mise by design.
+
 ::: tip
 [`mise activate --shims`](/cli/activate.html#shims) is a shorthand for adding the shims directory to PATH.
 :::
@@ -103,14 +135,14 @@ In this example, we use [`mise activate --shims`](/cli/activate.html#shims) in t
 
 ::: info
 It's fine to call [`mise activate --shims`](/cli/activate.html#shims) in your shell profile file and then
-later call [`mise activate`](/cli/activate.html) in an interactive session — what happens to the shims
-directory depends on [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install):
-
-- **enabled (the default)**: `mise activate` keeps the shims directory in `PATH`, behind the tool paths it
-  manages. Tools resolved by the current toolset still win, and the shims stay available as a fallback so a
-  missing version of a tool that already has a shim can trigger an auto-install. `mise doctor` does not
-  report this combination as a problem.
-- **disabled**: `mise activate` removes the shims directory from `PATH`. The rest of `PATH` is left as it is.
+later call [`mise activate`](/cli/activate.html) in an interactive session. PATH
+activation keeps the user and existing system shim farms behind real tool paths
+when the effective toolset contains a lazy declaration or
+`not_found_auto_install` is enabled. Without either behavior, full activation
+removes the shim farms as before. This makes lazy bootstrap commands available
+without adding dispatch overhead after installation. `not_found_auto_install`
+still controls general missing-tool installation, but does not disable an
+explicit `lazy = true` declaration.
 
 :::
 
@@ -133,12 +165,52 @@ alongside `not_found_auto_install = false`, if you'd rather an unresolvable shim
 
 To force `mise` to update the content of the `shims` directory, you can manually call `mise reshim`.
 
+Use `mise reshim --system` for the system shim farm. If `shims_dir` and
+`system_shims_dir` resolve to the same physical path, either command reconciles
+one combined farm containing both scopes.
+
 Note that `mise` already runs a reshim anytime a tool is installed/updated/removed, so you don't need to use it for those scenarios. It is also done by default when using most tools such as `npm`.
 
 `mise reshim` only creates/removes the shims. Some users sometimes use it as a
 "fix it" button, but it is only necessary if `~/.local/share/mise/shims` doesn't contain something it should.
 
 Do not add additional executable in the `mise` directory, `mise` will delete them with the next reshim.
+
+## Command wrappers
+
+Use `[wrappers]` when a command should always pass through another program while
+keeping its ordinary name. For example, this routes every `cargo` invocation
+through [Mr Boxington](https://github.com/jdx/mr-boxington):
+
+```toml
+[tools]
+mr-boxington = "1.2.0"
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+```
+
+Run `mise reshim` after adding or removing a wrapper. The wrapper is available
+with both `mise activate` and `mise activate --shims`, and takes precedence over
+an executable with the same name. When it delegates, mise removes its dispatch
+directories from `PATH`, so `mbx` resolves Cargo from mise-managed Rust when
+configured and otherwise falls through to rustup or the system installation.
+
+A short form is available when no arguments or environment variables are needed:
+
+```toml
+[wrappers]
+terraform = "tofu"
+```
+
+The detailed form can insert arguments before those supplied by the user:
+
+```toml
+[wrappers.python]
+command = "uv"
+args = ["run", "python"]
+```
 
 ## Shims vs PATH {#shims-vs-path}
 
@@ -232,9 +304,9 @@ See [Troubleshooting: Slow shell prompts](/troubleshooting.html#slow-shell-promp
 
 The only difference between these would be that using `hook-env` you will need to call
 it again if you change directories but with shims that won't be necessary. If you use both, `mise activate`
-takes care of the shims directory for you: it is kept behind the tool paths as an auto-install fallback, or
-removed from `PATH` entirely when [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install)
-is disabled.
+takes care of the shim farms for you: they are kept behind the tool paths as a fallback. Disabling
+[`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) disables general missing-tool
+installation, but explicit `lazy = true` declarations remain available through their shims.
 
 ## Neither shims nor PATH {#neither-shims-nor-path}
 

@@ -1185,11 +1185,11 @@ impl NPMBackend {
         }
     }
 
-    /// Write the throwaway project's `package.json` + aube config for an
-    /// embedded aube install. `allowBuilds` package lists go in `package.json`
-    /// (aube's manifest namespace); release age and trust-policy excludes go
-    /// in `.config/aube/config.toml`, which keeps aube-only keys out of npm's
-    /// config.
+    /// Write the throwaway project's manifest, workspace boundary, and aube
+    /// config for an embedded aube install. `allowBuilds` package lists go in
+    /// `package.json` (aube's manifest namespace); release age and trust-policy
+    /// excludes go in `.config/aube/config.toml`, which keeps aube-only keys out
+    /// of npm's config.
     fn write_aube_embed_project(
         &self,
         install_path: &Path,
@@ -1216,6 +1216,15 @@ impl NPMBackend {
         crate::file::write(
             install_path.join("package.json"),
             format!("{}\n", serde_json::to_string_pretty(&manifest)?),
+        )?;
+        // MISE_DATA_DIR may live inside a user's Node workspace (notably when
+        // GitLab CI caches it below CI_PROJECT_DIR). Aube otherwise walks up
+        // from this synthetic project and installs the enclosing workspace
+        // instead of the requested tool. Make the install prefix its own
+        // one-package workspace so discovery cannot escape it.
+        crate::file::write(
+            install_path.join("aube-workspace.yaml"),
+            "packages:\n  - .\n",
         )?;
 
         let config_dir = install_path.join(".config/aube");
@@ -2713,6 +2722,10 @@ pkg@1.2.0 '1.2.0'
         assert_eq!(
             manifest["aube"]["allowBuilds"],
             serde_json::json!({ "esbuild": true })
+        );
+        assert_eq!(
+            std::fs::read_to_string(install_path.join("aube-workspace.yaml")).unwrap(),
+            "packages:\n  - .\n"
         );
     }
 
