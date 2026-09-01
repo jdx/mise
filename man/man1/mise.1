@@ -3090,6 +3090,11 @@ Also install tools required by tasks in the current scope
 This prepares task tools without running task commands or dependencies.
 Combine with \-\-monorepo to include tasks from every configured root.
 .TP
+\fB\-\-include\-lazy\fR
+Also install tools configured with `lazy = true`
+
+By default, a bare `mise install` leaves lazy tools for first\-command installation.
+.TP
 \fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
 Only install versions released before this date or older than this duration
 
