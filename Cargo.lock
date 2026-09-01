@@ -5362,7 +5362,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -10174,7 +10174,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -11064,9 +11064,9 @@ dependencies = [
 
 [[package]]
 name = "usage-lib"
-version = "6.6.0"
+version = "6.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34f3bb5ed62f3818c8247f41491cd254d05a597df665e4f5aadd2738e91b3be0"
+checksum = "51885bad73098a961fa7e9e70a54d9065159619b70e485a21e6acecee4a3af49"
 dependencies = [
  "indexmap 2.14.1",
  "itertools 0.15.0",
@@ -11106,9 +11106,9 @@ dependencies = [
 
 [[package]]
 name = "usage-validation"
-version = "6.6.0"
+version = "6.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "890da4780f658da4caddf45172b2468cb6ce9dadd98ec3d07491bcf6f22cff4e"
+checksum = "ac1ad114756c8800d2b9b6093f9bd38c7c7a747a4a5f94da204eac7ae8b8ad54"
 dependencies = [
  "expr-lang",
 ]
