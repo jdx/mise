@@ -12,3 +12,21 @@ assert \
 
 mise uninstall -a dummy
 assert_fail "which dummy"
+
+# A shared executable directory keeps a same-named unmanaged command without
+# reporting a shim state that reshim can never repair.
+shared_bin="$HOME/.local/bin"
+mkdir -p "$shared_bin"
+printf '%s\n' '#!/bin/sh' 'echo unmanaged-dummy' >"$shared_bin/dummy"
+chmod +x "$shared_bin/dummy"
+export MISE_SHIMS_DIR="$shared_bin"
+export PATH="$shared_bin:$PATH"
+
+mise i dummy@latest
+mise reshim
+assert "dummy" "unmanaged-dummy"
+assert_not_contains "mise doctor" "shims are missing"
+
+# Force remains conservative in a shared directory.
+mise reshim --force
+assert "dummy" "unmanaged-dummy"

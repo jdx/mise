@@ -1,12 +1,12 @@
 #:schema ./schema/mise.json
-min_version = "2024.1.1"
+min_version = "2026.8.16"
 
 [env]
 _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
-mr-boxington = { version = "1.2.0", postinstall = "mbx setup --global" }
+mr-boxington = "1.3.2"
 # Pinned rather than "latest" because tak is the measuring instrument: an
 # upgrade that changes how it samples would land in the series as a step change
 # in mise's numbers, indistinguishable from a real regression. Bump
@@ -35,6 +35,10 @@ usage = "6.6.0"
 wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
 
 [task_config]
 includes = ["tasks.toml", "xtasks"]

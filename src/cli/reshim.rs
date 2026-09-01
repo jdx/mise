@@ -31,7 +31,7 @@ pub(crate) struct Reshim {
     #[usage(hide = true)]
     pub version: Option<String>,
 
-    /// Removes all shims before reshimming
+    /// Rebuilds all mise-owned shims
     #[usage(long, short)]
     pub force: bool,
 

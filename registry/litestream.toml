@@ -1,4 +1,3 @@
 backends = ["aqua:benbjohnson/litestream", "asdf:threkk/asdf-litestream"]
-bins = ["litestream"]
 description = "Streaming replication for SQLite"
 version_order = "semver"

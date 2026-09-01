@@ -28,7 +28,7 @@ Note that this creates shims for _all_ installed tools, not just the ones that a
 currently active in mise.toml.
 
 ## Flags
-- **`-f --force`** — Removes all shims before reshimming
+- **`-f --force`** — Rebuilds all mise-owned shims
 - **`--system`** — Rebuild the system shim farm
 - **`-h --help`** — Print help
 

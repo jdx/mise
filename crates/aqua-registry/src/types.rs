@@ -6,7 +6,7 @@ use itertools::Itertools;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Deserializer};
 use std::cmp::PartialEq;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use versions::Versioning;
 
 /// Type of Aqua package
@@ -385,6 +385,30 @@ fn yaml_scalar_to_string(value: serde_yaml::Value) -> Option<String> {
 }
 
 impl AquaPackage {
+    /// Return every command name this package may install across its version and platform
+    /// overrides.
+    ///
+    /// This is intentionally conservative: callers that need command metadata before resolving a
+    /// concrete version can safely create provider shims for the union. Once installed, the
+    /// backend still uses the resolved package's exact file destinations.
+    pub fn possible_bin_names(&self) -> Vec<String> {
+        let mut bins = BTreeSet::new();
+
+        if self.version_constraint.is_empty() {
+            collect_package_bin_names(self, &mut bins);
+            return bins.into_iter().collect();
+        }
+        if self.version_constraint.trim() != "false" {
+            collect_package_bin_names(self, &mut bins);
+        }
+        for version_override in &self.version_overrides {
+            let package = apply_override(self.clone(), version_override);
+            collect_package_bin_names(&package, &mut bins);
+        }
+
+        bins.into_iter().collect()
+    }
+
     /// Return the package type, preserving aqua's default of `github_release`
     /// when the field is omitted.
     pub fn package_type(&self) -> AquaPackageType {
@@ -887,6 +911,48 @@ impl AquaPackage {
         let mut ctx = Context::default();
         ctx.insert("Version", v);
         ctx
+    }
+}
+
+fn collect_package_bin_names(package: &AquaPackage, bins: &mut BTreeSet<String>) {
+    if package.no_asset == Some(true) {
+        return;
+    }
+
+    collect_direct_bin_names(package, bins);
+    for platform_override in package.platform_overrides() {
+        collect_direct_bin_names(&platform_override.package, bins);
+    }
+}
+
+fn collect_direct_bin_names(package: &AquaPackage, bins: &mut BTreeSet<String>) {
+    if package.files.is_empty() {
+        let name = package
+            .name
+            .as_deref()
+            .and_then(|name| name.rsplit('/').next())
+            .unwrap_or(&package.repo_name);
+        if !name.is_empty() {
+            bins.insert(name.to_string());
+        }
+        return;
+    }
+
+    for file in &package.files {
+        let destination = file.link.as_deref().unwrap_or(&file.name);
+        // Aqua file links are paths relative to the extracted artifact. Accept both separators so
+        // registry generation is target-independent.
+        if let Some(name) = destination.rsplit(['/', '\\']).next()
+            && !name.is_empty()
+            && !name.contains("{{")
+        {
+            bins.insert(
+                name.strip_suffix(".exe")
+                    .or_else(|| name.strip_suffix(".EXE"))
+                    .unwrap_or(name)
+                    .to_string(),
+            );
+        }
     }
 }
 
@@ -1537,6 +1603,50 @@ impl AquaGithubArtifactAttestations {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn possible_bin_names_include_version_and_platform_overrides() {
+        let package = first_registry_package(
+            r#"
+packages:
+  - repo_owner: example
+    repo_name: tool
+    version_constraint: "false"
+    version_overrides:
+      - version_constraint: semver("< 2.0.0")
+        files:
+          - name: old-tool
+      - version_constraint: "true"
+        files:
+          - name: tool
+          - name: tool-alias
+            src: tool
+            link: bin/toolctl
+        overrides:
+          - goos: windows
+            files:
+              - name: tool.exe
+"#,
+        );
+
+        assert_eq!(
+            package.possible_bin_names(),
+            ["old-tool", "tool", "toolctl"]
+        );
+    }
+
+    #[test]
+    fn possible_bin_names_fall_back_to_package_name() {
+        let package = first_registry_package(
+            r#"
+packages:
+  - name: example.com/tools/acme
+    type: go_install
+"#,
+        );
+
+        assert_eq!(package.possible_bin_names(), ["acme"]);
+    }
 
     fn default_str(value: &str) -> Option<String> {
         Some(value.to_string())

@@ -2,7 +2,6 @@ backends = [
   "aqua:grafana/mimir/mimirtool",
   "asdf:asdf-community/asdf-mimirtool",
 ]
-bins = ["mimirtool"]
 description = "Mimirtool is a command-line tool that operators and tenants can use to execute a number of common tasks that involve Grafana Mimir or Grafana Cloud Metrics"
 test = { cmd = "mimirtool version", expected = "Mimirtool, version {{version}}" }
 version_order = "semver"

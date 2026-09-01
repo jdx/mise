@@ -44,6 +44,12 @@ source = "203.0.113.0/24"
 interface = "eth0"
 direction = "incoming"
 state = "present"
+
+[[bootstrap.linux.firewall.rules]]
+name = "ssh-limited"
+port = 22
+protocol = "tcp"
+action = "limit"
 TOML
 
 cd "$HOME/workdir"

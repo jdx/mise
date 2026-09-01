@@ -1,4 +1,3 @@
 backends = ["aqua:linkerd/linkerd2", "asdf:kforsthoevel/asdf-linkerd"]
-bins = ["linkerd"]
 description = "Ultralight, security-first service mesh for Kubernetes. Main repo for Linkerd 2.x"
 version_order = "source"

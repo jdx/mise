@@ -22,6 +22,8 @@ pub(crate) struct SystemdTomlConfig {
     #[serde(default)]
     pub wants: Vec<String>,
     #[serde(default)]
+    pub requires: Vec<String>,
+    #[serde(default)]
     pub exec_start: Option<String>,
     #[serde(default, rename = "type")]
     pub service_type: Option<String>,
@@ -39,6 +41,12 @@ pub(crate) struct SystemdTomlConfig {
     pub private_tmp: Option<bool>,
     #[serde(default)]
     pub environment: IndexMap<String, String>,
+    #[serde(default)]
+    pub environment_file: Vec<String>,
+    #[serde(default)]
+    pub nice: Option<i8>,
+    #[serde(default)]
+    pub umask: Option<String>,
     #[serde(default)]
     pub working_directory: Option<String>,
     #[serde(default)]
@@ -85,6 +93,7 @@ pub(crate) struct SystemdRequest {
     pub description: Option<String>,
     pub after: Vec<String>,
     pub wants: Vec<String>,
+    pub requires: Vec<String>,
     pub exec_start: Option<String>,
     pub service_type: Option<String>,
     pub remain_after_exit: Option<bool>,
@@ -94,6 +103,9 @@ pub(crate) struct SystemdRequest {
     pub no_new_privileges: Option<bool>,
     pub private_tmp: Option<bool>,
     pub environment: IndexMap<String, String>,
+    pub environment_file: Vec<String>,
+    pub nice: Option<i8>,
+    pub umask: Option<String>,
     pub working_directory: Option<String>,
     pub restart: Option<String>,
     pub restart_sec: Option<String>,
@@ -171,6 +183,9 @@ impl SystemdRequest {
                 (config.no_new_privileges.is_some(), "no_new_privileges"),
                 (config.private_tmp.is_some(), "private_tmp"),
                 (!config.environment.is_empty(), "environment"),
+                (!config.environment_file.is_empty(), "environment_file"),
+                (config.nice.is_some(), "nice"),
+                (config.umask.is_some(), "umask"),
                 (config.working_directory.is_some(), "working_directory"),
                 (config.restart.is_some(), "restart"),
                 (config.restart_sec.is_some(), "restart_sec"),
@@ -197,6 +212,18 @@ impl SystemdRequest {
                 );
             }
         }
+        if let Some(nice) = config.nice
+            && !(-20..=19).contains(&nice)
+        {
+            bail!("service unit '{name}' has invalid `nice` value {nice}; expected -20 through 19");
+        }
+        if let Some(umask) = &config.umask
+            && !valid_umask(umask)
+        {
+            bail!(
+                "service unit '{name}' has invalid `umask` value '{umask}'; expected an octal access mask from 0000 through 0777"
+            );
+        }
         let wanted_by = config.wanted_by.unwrap_or_else(|| match kind {
             SystemdUnitKind::Service => vec!["default.target".to_string()],
             SystemdUnitKind::Timer => vec!["timers.target".to_string()],
@@ -214,6 +241,7 @@ impl SystemdRequest {
             description: config.description,
             after: config.after,
             wants: config.wants,
+            requires: config.requires,
             exec_start,
             service_type: config.service_type,
             remain_after_exit: config.remain_after_exit,
@@ -223,6 +251,9 @@ impl SystemdRequest {
             no_new_privileges: config.no_new_privileges,
             private_tmp: config.private_tmp,
             environment: config.environment,
+            environment_file: config.environment_file,
+            nice: config.nice,
+            umask: config.umask,
             working_directory: config.working_directory,
             restart: config.restart,
             restart_sec: config.restart_sec,
@@ -460,6 +491,9 @@ pub(crate) fn render_unit(request: &SystemdRequest) -> String {
     if !request.wants.is_empty() {
         out.push_str(&format!("Wants={}\n", request.wants.join(" ")));
     }
+    if !request.requires.is_empty() {
+        out.push_str(&format!("Requires={}\n", request.requires.join(" ")));
+    }
     match request.kind {
         SystemdUnitKind::Service => render_service(request, &mut out),
         SystemdUnitKind::Timer => render_timer(request, &mut out),
@@ -506,6 +540,17 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
             quote_environment(&format!("{key}={value}"))
         ));
     }
+    for environment_file in &request.environment_file {
+        // EnvironmentFile treats the entire value as a path, including spaces.
+        // Quotes are literal here and make an absolute path invalid.
+        out.push_str(&format!("EnvironmentFile={environment_file}\n"));
+    }
+    if let Some(nice) = request.nice {
+        out.push_str(&format!("Nice={nice}\n"));
+    }
+    if let Some(umask) = &request.umask {
+        out.push_str(&format!("UMask={umask}\n"));
+    }
     if let Some(restart) = &request.restart {
         out.push_str(&format!("Restart={restart}\n"));
     }
@@ -518,6 +563,13 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
     if let Some(standard_error) = &request.standard_error {
         out.push_str(&format!("StandardError={standard_error}\n"));
     }
+}
+
+fn valid_umask(umask: &str) -> bool {
+    let valid_width = (1..=3).contains(&umask.len()) || umask.len() == 4 && umask.starts_with('0');
+    valid_width
+        && umask.chars().all(|c| matches!(c, '0'..='7'))
+        && u16::from_str_radix(umask, 8).is_ok_and(|value| value <= 0o777)
 }
 
 fn render_timer(request: &SystemdRequest, out: &mut String) {
@@ -811,12 +863,36 @@ mod tests {
                 on_boot_sec: Some("1min".to_string()),
                 restart: Some("on-failure".to_string()),
                 environment: IndexMap::from([("KEY".to_string(), "value".to_string())]),
+                environment_file: vec!["%h/.config/service.env".to_string()],
                 ..Default::default()
             },
         )
         .unwrap_err();
         assert!(err.to_string().contains("restart"));
         assert!(err.to_string().contains("environment"));
+        assert!(err.to_string().contains("environment_file"));
+
+        let err = SystemdRequest::from_toml(
+            "invalid-nice".to_string(),
+            SystemdTomlConfig {
+                exec_start: Some("/bin/true".to_string()),
+                nice: Some(20),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("-20 through 19"));
+
+        let err = SystemdRequest::from_toml(
+            "invalid-umask".to_string(),
+            SystemdTomlConfig {
+                exec_start: Some("/bin/true".to_string()),
+                umask: Some("0888".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("octal access mask"));
     }
 
     #[test]
@@ -830,6 +906,7 @@ mod tests {
                 description: Some("sync files".to_string()),
                 after: vec!["network-online.target".to_string()],
                 wants: vec!["network-online.target".to_string()],
+                requires: vec!["credentials.service".to_string()],
                 exec_start: Some("~/.local/bin/sync --watch".to_string()),
                 service_type: Some("oneshot".to_string()),
                 remain_after_exit: Some(true),
@@ -839,6 +916,12 @@ mod tests {
                 no_new_privileges: Some(true),
                 private_tmp: Some(true),
                 environment,
+                environment_file: vec![
+                    "-%h/.config/sync.env".to_string(),
+                    "%h/.config/sync config.env".to_string(),
+                ],
+                nice: Some(10),
+                umask: Some("0007".to_string()),
                 working_directory: Some("~".to_string()),
                 restart: Some("on-failure".to_string()),
                 restart_sec: Some("5s".to_string()),
@@ -855,6 +938,7 @@ mod tests {
         assert!(unit.contains("Description=sync files\n"));
         assert!(unit.contains("After=network-online.target\n"));
         assert!(unit.contains("Wants=network-online.target\n"));
+        assert!(unit.contains("Requires=credentials.service\n"));
         assert!(unit.contains(&format!(
             "ExecStart={}\n",
             expand_path_string("~/.local/bin/sync --watch")
@@ -872,6 +956,10 @@ mod tests {
         assert!(unit.contains(&format!("WorkingDirectory={}\n", expand_path_string("~"))));
         assert!(unit.contains("Environment=\"PATH=/usr/bin:/bin\"\n"));
         assert!(unit.contains("Environment=\"QUOTED=hello \\\"there\\\"\"\n"));
+        assert!(unit.contains("EnvironmentFile=-%h/.config/sync.env\n"));
+        assert!(unit.contains("EnvironmentFile=%h/.config/sync config.env\n"));
+        assert!(unit.contains("Nice=10\n"));
+        assert!(unit.contains("UMask=0007\n"));
         assert!(unit.contains("Restart=on-failure\n"));
         assert!(unit.contains("RestartSec=5s\n"));
         assert!(unit.contains("StandardOutput=append:%h/.local/state/sync.log\n"));
@@ -884,6 +972,7 @@ mod tests {
         let request = SystemdRequest::from_toml(
             "healthcheck".to_string(),
             SystemdTomlConfig {
+                requires: vec!["network-online.target".to_string()],
                 on_boot_sec: Some("2min".to_string()),
                 on_unit_inactive_sec: Some("5min".to_string()),
                 randomized_delay_sec: Some("30s".to_string()),
@@ -900,7 +989,7 @@ mod tests {
         assert_eq!(request.wanted_by, vec!["timers.target"]);
         assert_eq!(
             render_unit(&request),
-            "[Unit]\n\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=5min\nRandomizedDelaySec=30s\nAccuracySec=1s\nPersistent=yes\nUnit=dev.mise.healthcheck.service\n\n[Install]\nWantedBy=timers.target\n"
+            "[Unit]\nRequires=network-online.target\n\n[Timer]\nOnBootSec=2min\nOnUnitInactiveSec=5min\nRandomizedDelaySec=30s\nAccuracySec=1s\nPersistent=yes\nUnit=dev.mise.healthcheck.service\n\n[Install]\nWantedBy=timers.target\n"
         );
     }
 

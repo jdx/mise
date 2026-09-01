@@ -17,6 +17,7 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 const STATE_PATH: &str = "/var/lib/mise/bootstrap/firewall.json";
 const NFT_TABLE: &str = "mise_bootstrap";
+const NFT_STATELESS_LIST_ARGS: [&str; 5] = ["--stateless", "list", "table", "inet", NFT_TABLE];
 const NFT_RULES_PATH: &str = "/etc/mise/bootstrap/firewall.nft";
 const NFT_UNIT_PATH: &str = "/etc/systemd/system/mise-bootstrap-firewall.service";
 const FIREWALLD_INCOMING: &str = "mise-bootstrap-in";
@@ -118,6 +119,7 @@ pub(crate) enum FirewallDirection {
 pub(crate) enum FirewallAction {
     #[default]
     Allow,
+    Limit,
     Deny,
     Reject,
 }
@@ -126,6 +128,7 @@ impl FirewallAction {
     fn ufw(self) -> &'static str {
         match self {
             Self::Allow => "allow",
+            Self::Limit => "limit",
             Self::Deny => "deny",
             Self::Reject => "reject",
         }
@@ -134,6 +137,7 @@ impl FirewallAction {
     fn nft(self) -> &'static str {
         match self {
             Self::Allow => "accept",
+            Self::Limit => unreachable!("nftables limit rules use a dedicated renderer"),
             Self::Deny => "drop",
             Self::Reject => "reject",
         }
@@ -142,9 +146,14 @@ impl FirewallAction {
     fn firewalld(self) -> &'static str {
         match self {
             Self::Allow => "accept",
+            Self::Limit => unreachable!("firewalld limit rules are rejected during validation"),
             Self::Deny => "drop",
             Self::Reject => "reject",
         }
+    }
+
+    fn preserves_access(self) -> bool {
+        matches!(self, Self::Allow | Self::Limit)
     }
 }
 
@@ -497,7 +506,7 @@ impl FirewallRequest {
                     .destination
                     .is_none_or(|destination| destination.contains(&connection.server))
         }) {
-            if rule.action != FirewallAction::Allow {
+            if !rule.action.preserves_access() {
                 match backend {
                     Some(FirewallBackend::Nftables | FirewallBackend::Ufw) if !covered => bail!(
                         "refusing firewall default incoming {} over SSH: blocking rule '{}' precedes a proven allow for peer {} on server port {}; reorder or narrow the rule, or set allow_lockout = true",
@@ -1030,6 +1039,22 @@ fn managed_backend_active(backend: FirewallBackend) -> bool {
 
 fn validate_backend_request(request: &FirewallRequest, backend: FirewallBackend) -> Result<()> {
     for rule in &request.rules {
+        if rule.action == FirewallAction::Limit {
+            if rule.direction != FirewallDirection::Incoming
+                || rule.protocol != Some(FirewallProtocol::Tcp)
+            {
+                bail!(
+                    "firewall rule '{}' uses action = \"limit\", which requires direction = \"incoming\" and protocol = \"tcp\"",
+                    rule.name
+                );
+            }
+            if backend == FirewallBackend::Firewalld {
+                bail!(
+                    "firewall rule '{}' uses per-source connection limiting, which firewalld policies cannot express safely; select backend = \"nftables\" or \"ufw\"",
+                    rule.name
+                );
+            }
+        }
         if backend == FirewallBackend::Firewalld && rule.interface.is_some() {
             bail!(
                 "firewall rule '{}' uses interface matching, which firewalld policies cannot express safely; select backend = \"nftables\" or \"ufw\"",
@@ -1108,17 +1133,15 @@ fn live_matches(
             FirewallBackend::Auto => false,
         },
         FirewallState::Enabled => match backend {
-            FirewallBackend::Nftables => {
-                command_output("nft", &["list", "table", "inet", NFT_TABLE])
-                    .ok()
-                    .filter(|output| output.status.success())
-                    .is_some_and(|output| {
-                        String::from_utf8_lossy(&output.stdout)
-                            .contains(&format!("mise-bootstrap:{digest}"))
-                            && expected_live_fingerprint
-                                .is_some_and(|expected| fingerprint(&output.stdout) == expected)
-                    })
-            }
+            FirewallBackend::Nftables => command_output("nft", &NFT_STATELESS_LIST_ARGS)
+                .ok()
+                .filter(|output| output.status.success())
+                .is_some_and(|output| {
+                    String::from_utf8_lossy(&output.stdout)
+                        .contains(&format!("mise-bootstrap:{digest}"))
+                        && expected_live_fingerprint
+                            .is_some_and(|expected| fingerprint(&output.stdout) == expected)
+                }),
             FirewallBackend::Firewalld => {
                 backend_active(backend)
                     && firewalld_policy_matches(
@@ -1150,13 +1173,9 @@ fn backend_live_fingerprint(backend: FirewallBackend) -> Result<Option<String>> 
     if backend != FirewallBackend::Nftables {
         return Ok(None);
     }
-    let output = command_output("nft", &["list", "table", "inet", NFT_TABLE])?;
+    let output = command_output("nft", &NFT_STATELESS_LIST_ARGS)?;
     if !output.status.success() {
-        return Err(command_error(
-            "nft",
-            &["list", "table", "inet", NFT_TABLE],
-            &output,
-        ));
+        return Err(command_error("nft", &NFT_STATELESS_LIST_ARGS, &output));
     }
     Ok(Some(fingerprint(&output.stdout)))
 }
@@ -1255,8 +1274,8 @@ fn render_nftables(request: &FirewallRequest, digest: &str, replace: bool) -> St
         format!("add rule inet {NFT_TABLE} input meta l4proto icmp accept"),
         format!("add rule inet {NFT_TABLE} input meta l4proto ipv6-icmp accept"),
     ]);
-    for rule in &request.rules {
-        lines.push(render_nftables_rule(rule));
+    for (index, rule) in request.rules.iter().enumerate() {
+        lines.extend(render_nftables_rule(rule, index));
     }
     if request.default_incoming == FirewallPolicy::Reject {
         lines.push(format!("add rule inet {NFT_TABLE} input reject"));
@@ -1267,7 +1286,7 @@ fn render_nftables(request: &FirewallRequest, digest: &str, replace: bool) -> St
     lines.join("\n") + "\n"
 }
 
-fn render_nftables_rule(rule: &FirewallRule) -> String {
+fn render_nftables_rule(rule: &FirewallRule, index: usize) -> Vec<String> {
     let chain = match rule.direction {
         FirewallDirection::Incoming => "input",
         FirewallDirection::Outgoing => "output",
@@ -1318,9 +1337,59 @@ fn render_nftables_rule(rule: &FirewallRule) -> String {
             ]);
         }
     }
-    parts.push(rule.action.nft().to_string());
-    parts.extend(["comment".to_string(), format!("\"mise:{}\"", rule.name)]);
-    parts.join(" ")
+    if rule.action != FirewallAction::Limit {
+        parts.push(rule.action.nft().to_string());
+        parts.extend(["comment".to_string(), format!("\"mise:{}\"", rule.name)]);
+        return vec![parts.join(" ")];
+    }
+
+    let family = rule.source.or(rule.destination).map(|network| {
+        if network.addr().is_ipv4() {
+            "ip"
+        } else {
+            "ip6"
+        }
+    });
+    let mut rendered = ["ip", "ip6"]
+        .into_iter()
+        .filter(|candidate| family.is_none_or(|family| family == *candidate))
+        .map(|family| {
+            let mut limited = parts.clone();
+            limited.extend([
+                "ct".to_string(),
+                "state".to_string(),
+                "new".to_string(),
+                "meter".to_string(),
+                format!("mise_limit_{index}_{family}"),
+                "size".to_string(),
+                "65535".to_string(),
+                "{".to_string(),
+                family.to_string(),
+                "saddr".to_string(),
+                "timeout".to_string(),
+                "30s".to_string(),
+                "limit".to_string(),
+                "rate".to_string(),
+                "over".to_string(),
+                "12/minute".to_string(),
+                "burst".to_string(),
+                "5".to_string(),
+                "packets".to_string(),
+                "}".to_string(),
+                "drop".to_string(),
+                "comment".to_string(),
+                format!("\"mise:{}:{family}-limit\"", rule.name),
+            ]);
+            limited.join(" ")
+        })
+        .collect::<Vec<_>>();
+    parts.extend([
+        "accept".to_string(),
+        "comment".to_string(),
+        format!("\"mise:{}\"", rule.name),
+    ]);
+    rendered.push(parts.join(" "));
+    rendered
 }
 
 fn render_nftables_unit(nft: &Path) -> String {
@@ -2070,6 +2139,13 @@ mod tests {
     }
 
     #[test]
+    fn ssh_lockout_guard_accepts_covering_limit_rule() {
+        let mut request = request_with_ssh(Some("203.0.113.0/24"));
+        request.rules[0].action = FirewallAction::Limit;
+        request.validate_safety().unwrap();
+    }
+
+    #[test]
     fn ssh_lockout_guard_rejects_uncovered_peer() {
         let error = request_with_ssh(Some("198.51.100.0/24"))
             .validate_safety()
@@ -2244,7 +2320,7 @@ mod tests {
                 port = "8000-8010"
                 protocol = "tcp"
                 source = "2001:db8::/32"
-                action = "allow"
+                action = "limit"
             "#,
         )
         .unwrap();
@@ -2261,6 +2337,7 @@ mod tests {
             request.rules[0].source,
             Some("2001:db8::/32".parse().unwrap())
         );
+        assert_eq!(request.rules[0].action, FirewallAction::Limit);
     }
 
     #[test]
@@ -2293,9 +2370,30 @@ mod tests {
     fn renders_backend_native_actions() {
         let mut request = request_with_ssh(None);
         request.rules[0].action = FirewallAction::Deny;
-        assert!(render_nftables_rule(&request.rules[0]).contains(" drop comment"));
+        assert!(render_nftables_rule(&request.rules[0], 0)[0].contains(" drop comment"));
         assert!(render_firewalld_rule(&request.rules[0]).ends_with(" drop"));
         assert_eq!(render_ufw_rule(&request.rules[0])[0], "deny");
+    }
+
+    #[test]
+    fn renders_per_source_connection_limits() {
+        let mut request = request_with_ssh(None);
+        request.rules[0].action = FirewallAction::Limit;
+
+        assert_eq!(render_ufw_rule(&request.rules[0])[0], "limit");
+        let rendered = render_nftables_rule(&request.rules[0], 0);
+        assert_eq!(rendered.len(), 3);
+        assert!(rendered[0].contains("meter mise_limit_0_ip"));
+        assert!(rendered[0].contains("ip saddr timeout 30s"));
+        assert!(rendered[1].contains("meter mise_limit_0_ip6"));
+        assert!(rendered[1].contains("ip6 saddr timeout 30s"));
+        assert!(rendered[2].ends_with("accept comment \"mise:ssh\""));
+
+        request.rules[0].source = Some("203.0.113.0/24".parse().unwrap());
+        let rendered = render_nftables_rule(&request.rules[0], 0);
+        assert_eq!(rendered.len(), 2);
+        assert!(rendered[0].contains("meter mise_limit_0_ip"));
+        assert!(!rendered[0].contains("ip6 saddr"));
     }
 
     #[test]
@@ -2463,6 +2561,15 @@ mod tests {
         request.rules[0].interface = None;
         request.rules[0].protocol = Some(FirewallProtocol::Sctp);
         assert!(validate_backend_request(&request, FirewallBackend::Ufw).is_err());
+
+        request.rules[0].action = FirewallAction::Limit;
+        request.rules[0].protocol = Some(FirewallProtocol::Tcp);
+        assert!(validate_backend_request(&request, FirewallBackend::Nftables).is_ok());
+        assert!(validate_backend_request(&request, FirewallBackend::Ufw).is_ok());
+        assert!(validate_backend_request(&request, FirewallBackend::Firewalld).is_err());
+
+        request.rules[0].direction = FirewallDirection::Outgoing;
+        assert!(validate_backend_request(&request, FirewallBackend::Nftables).is_err());
     }
 
     #[test]

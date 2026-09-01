@@ -166,7 +166,7 @@ jobs:
           mbx build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
-      - run: mise x -- mbx test --all-features --ignore-rust-version
+      - run: mise x -- cargo test --all-features --ignore-rust-version
       # `cargo test` above resolves to the root package, so the workspace members are built as
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.

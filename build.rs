@@ -25,9 +25,10 @@ fn main() -> Result<()> {
     }
     built::write_built_file()?;
 
+    let aqua_registry = load_aqua_registry()?;
     codegen_settings();
-    codegen_registry();
-    codegen_aqua_standard_registry()?;
+    codegen_registry(&aqua_registry.packages);
+    codegen_aqua_standard_registry(&aqua_registry)?;
     Ok(())
 }
 
@@ -129,12 +130,13 @@ fn load_registry_tools() -> toml::map::Map<String, toml::Value> {
     tools
 }
 
-fn codegen_registry() {
+fn codegen_registry(aqua_packages: &[RegistryPackageRow]) {
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("registry.rs");
     let mut generated_entries = BTreeMap::new();
 
     let tools = load_registry_tools();
+    let aqua_bins = aqua_package_bin_names(aqua_packages);
     for (short, info) in &tools {
         let info = info.as_table().unwrap();
         let version_order = match info.get("version_order").and_then(|v| v.as_str()) {
@@ -267,7 +269,25 @@ fn codegen_registry() {
                     })
                     .collect::<Vec<_>>()
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                let preferred_aqua_package = info
+                    .get("backends")
+                    .and_then(toml::Value::as_array)
+                    .and_then(|backends| backends.first())
+                    .and_then(registry_backend_full)
+                    .and_then(|backend| backend.strip_prefix("aqua:"));
+                let Some(package) = preferred_aqua_package else {
+                    return vec![];
+                };
+                let bins = aqua_bins.get(package).unwrap_or_else(|| {
+                    panic!("[{short}] preferred Aqua package {package:?} was not found")
+                });
+                assert!(
+                    !bins.is_empty(),
+                    "[{short}] preferred Aqua package {package:?} has no inferred bins"
+                );
+                bins.clone()
+            });
         let idiomatic_files = info
             .get("idiomatic_files")
             .map(|idiomatic_files| {
@@ -435,7 +455,38 @@ fn phf_usize_map_code(entries: Vec<(String, String)>) -> String {
     map.build().to_string()
 }
 
-fn codegen_aqua_standard_registry() -> Result<()> {
+fn load_aqua_registry() -> Result<RegistryYaml> {
+    let registry_file = Path::new("vendor/aqua-registry/registry.yml");
+    println!("cargo:rerun-if-changed={}", registry_file.display());
+    Ok(serde_yaml::from_str::<RegistryYaml>(&fs::read_to_string(
+        registry_file,
+    )?)?)
+}
+
+fn registry_backend_full(backend: &toml::Value) -> Option<&str> {
+    match backend {
+        toml::Value::String(backend) => Some(backend),
+        toml::Value::Table(backend) => backend.get("full")?.as_str(),
+        _ => None,
+    }
+}
+
+fn aqua_package_bin_names(rows: &[RegistryPackageRow]) -> HashMap<String, Vec<String>> {
+    let mut bins = HashMap::new();
+    for row in rows {
+        let Some(id) = aqua_canonical_package_id(&row.package) else {
+            continue;
+        };
+        let package_bins = row.package.possible_bin_names();
+        bins.insert(id, package_bins.clone());
+        for alias in &row.aliases {
+            bins.insert(alias.clone(), package_bins.clone());
+        }
+    }
+    bins
+}
+
+fn codegen_aqua_standard_registry(registry_yaml: &RegistryYaml) -> Result<()> {
     let out_dir = env::var("OUT_DIR")?;
     let files_dest_path = Path::new(&out_dir).join("aqua_standard_registry_files.rs");
     let aliases_dest_path = Path::new(&out_dir).join("aqua_standard_registry_aliases.rs");
@@ -443,19 +494,15 @@ fn codegen_aqua_standard_registry() -> Result<()> {
     let metadata_dest_path = Path::new(&out_dir).join("aqua_standard_registry_metadata.rs");
     let packages_dir = Path::new(&out_dir).join("aqua_standard_registry_packages");
 
-    let registry_file = Path::new("vendor/aqua-registry/registry.yml");
     let metadata_file = Path::new("vendor/aqua-registry/metadata.json");
 
-    println!("cargo:rerun-if-changed={}", registry_file.display());
     println!("cargo:rerun-if-changed={}", metadata_file.display());
-
-    let registry_yaml = serde_yaml::from_str::<RegistryYaml>(&fs::read_to_string(registry_file)?)?;
 
     let registries = aqua_package_registries(&registry_yaml.packages)?;
     if registries.is_empty() {
         return Err(eyre!(
             "Aqua registry file {} contains no packages",
-            registry_file.display()
+            "vendor/aqua-registry/registry.yml"
         ));
     }
 

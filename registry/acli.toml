@@ -1,5 +1,4 @@
 backends = ["aqua:atlassian.com/acli"]
-bins = ["acli"]
 description = "Software to interact with Atlassian Cloud from the terminal"
 test = { cmd = "acli --version", expected = "acli version {{version}}" }
 version_order = "semver"
