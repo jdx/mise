@@ -1,0 +1,49 @@
+ok fix all 4 issues you found and push to the pr /plan
+
+---
+
+can you kick the tires by trying to use this on this omarchy box?
+
+---
+
+ok fix it
+
+---
+
+we shold probably have a flag to `mise install` to install all lazy tools
+
+---
+
+the mise release is out, so make a pr for omarchy to do this
+
+---
+
+is there a good way to test it in a vm or anything like that/
+
+---
+
+is there a good way to test it in a vm or anything like that?
+
+---
+
+i would prefer using /etc/mise/config.toml i think, btw we shold add the skill from the other pr and also not use non-short registry tools
+
+---
+
+don't build mise, use the lates release version
+
+---
+
+"their commands are available immediately" obviously
+
+---
+
+maybe add something about how it installs the latest version but won't auto-update unless `omarchy update` is called
+
+---
+
+how will this setup work if a user has --locked set or settings.locked?
+
+---
+
+i think we should make a pr for mise to add a setting to disable the system or global lockfile

@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "dc4e775f13df",
+  "strategy": "manual-commit",
+  "branch": "feat/locked-config-excludes",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/dev-tools/mise-lock.md",
+    "e2e/lockfile/test_lockfile_locked_scopes",
+    "settings.toml",
+    "src/backend/mod.rs",
+    "src/config/mod.rs",
+    "src/toolset/tool_version.rs",
+    "src/toolset/toolset_install.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/dc/4e775f13df/0/metadata.json",
+      "transcript": "/dc/4e775f13df/0/full.jsonl",
+      "compact_transcript": "/dc/4e775f13df/0/transcript.jsonl",
+      "content_hash": "/dc/4e775f13df/0/content_hash.txt",
+      "prompt": "/dc/4e775f13df/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1408797,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 47789056,
+    "output_tokens": 137858,
+    "api_call_count": 409
+  }
+}
