@@ -378,7 +378,14 @@ fn parse_registry_tool(short: &str, value: &toml::Value) -> Result<(RegistryTool
     };
 
     let aliases = string_array(table.get("aliases"), "aliases")?;
-    let bins = string_array(table.get("bins"), "bins")?;
+    let bins = if table.contains_key("bins") {
+        string_array(table.get("bins"), "bins")?
+    } else {
+        BAKED_REGISTRY
+            .get(short)
+            .map(|tool| tool.bins.to_vec())
+            .unwrap_or_default()
+    };
     let overrides = string_array(table.get("overrides"), "overrides")?;
     let os = string_array(table.get("os"), "os")?;
     let idiomatic_files = parse_registry_idiomatic_files(table.get("idiomatic_files"))?;
@@ -817,7 +824,29 @@ pub(crate) fn tool_enabled<T: Ord>(
 
 #[cfg(test)]
 mod tests {
+    use super::{BTreeMap, baked_registry, registry_from_sources};
     use crate::config::Config;
+
+    #[test]
+    fn baked_registry_infers_bins_from_preferred_aqua_backend() {
+        let tool = baked_registry().get("jq").unwrap();
+        assert_eq!(tool.bins, &["jq"]);
+    }
+
+    #[test]
+    fn floating_registry_reuses_baked_inferred_bins() {
+        let registry = registry_from_sources(BTreeMap::from([(
+            "jq".to_string(),
+            r#"
+backends = ["aqua:jqlang/jq"]
+version_order = "source"
+"#
+            .to_string(),
+        )]))
+        .unwrap();
+
+        assert_eq!(registry.get("jq").unwrap().bins, &["jq"]);
+    }
 
     fn registry_archive(entries: &[(&str, &str)]) -> tempfile::NamedTempFile {
         use std::io::Cursor;

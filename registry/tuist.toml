@@ -1,5 +1,4 @@
 backends = ["aqua:tuist/tuist", "asdf:mise-plugins/mise-tuist"]
-bins = ["tuist"]
 description = "A toolchain to generate Xcode projects from Swift packages"
 os = ["macos", "linux"]
 test = { cmd = "tuist version", expected = "{{version}}" }

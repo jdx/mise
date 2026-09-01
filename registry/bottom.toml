@@ -3,7 +3,6 @@ backends = [
   "asdf:carbonteq/asdf-btm",
   "cargo:bottom",
 ]
-bins = ["btm"]
 description = "Yet another cross-platform graphical process/system monitor"
 version_order = "semver"
 # TODO: re-enable once latest resolves to a release whose binary reports the same version string.

@@ -32,11 +32,21 @@ aws s3 cp "./schema/mise.plugin.json" "s3://$AWS_S3_BUCKET/schema/mise.plugin.js
 aws s3 cp "./schema/mise-task.json" "s3://$AWS_S3_BUCKET/schema/mise-task.json" --cache-control "$cache_day" --no-progress --content-type "application/json"
 
 # Publish only the registry files so older mise builds can opt into the registry
-# tested by this release without downloading the entire source repository.
+# tested by this release without downloading the entire source repository. Materialize
+# Aqua-derived bins in the archive because older clients only understand explicit bins.
 registry_tmpdir="$(mktemp -d)"
 trap 'rm -rf "$registry_tmpdir"' EXIT
 registry_archive="$registry_tmpdir/registry.tar.zst"
-git archive --format=tar HEAD registry | zstd -q -10 -c >"$registry_archive"
+git archive --format=tar HEAD registry | tar -C "$registry_tmpdir" -xf -
+cargo run --locked --quiet --release -- registry --json --hide-aliased |
+	jq -r '.[] | select(.bins | length > 0) | [.short, (.bins | tojson)] | @tsv' |
+	while IFS=$'\t' read -r short bins; do
+		registry_file="$registry_tmpdir/registry/$short.toml"
+		if [[ -f $registry_file ]] && ! grep -q '^bins[[:space:]]*=' "$registry_file"; then
+			printf '\nbins = %s\n' "$bins" >>"$registry_file"
+		fi
+	done
+tar -C "$registry_tmpdir" -cf - registry | zstd -q -10 -c >"$registry_archive"
 aws s3 cp "$registry_archive" "s3://$AWS_S3_BUCKET/registry/latest.tar.zst" --cache-control "$cache_hour" --no-progress --content-type "application/zstd"
 
 # Upload shell-specific mise.run scripts

@@ -1,6 +1,5 @@
 backends = ["aqua:zk-org/zk"]
 
-bins = ["zk"]
 
 description = "A plain text note-taking assistant"
 

@@ -50,6 +50,8 @@ pub(crate) struct Registry {
 struct RegistryToolOutput {
     short: String,
     backends: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    bins: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     description: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -61,6 +63,7 @@ struct RegistryToolOutput {
 struct RegistryToolOutputArgs {
     short: String,
     backends: Vec<String>,
+    bins: Vec<String>,
     description: Option<String>,
     aliases: Vec<String>,
 }
@@ -108,6 +111,7 @@ impl Registry {
         RegistryToolOutputArgs {
             short: short.to_string(),
             backends,
+            bins: rt.bins.iter().map(|bin| (*bin).to_string()).collect(),
             description: rt.description.map(|s| s.to_string()),
             aliases: rt.aliases.iter().map(|s| s.to_string()).collect(),
         }
@@ -217,6 +221,7 @@ async fn to_output(tool: RegistryToolOutputArgs, security: bool) -> RegistryTool
     RegistryToolOutput {
         short: tool.short,
         backends: tool.backends,
+        bins: tool.bins,
         description: tool.description,
         aliases: tool.aliases,
         security,

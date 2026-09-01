@@ -1,5 +1,4 @@
 backends = ["aqua:pnpm/pnpm", "npm:pnpm"]
-bins = ["pn", "pnpm", "pnpx", "pnx"]
 description = "Fast, disk space efficient package manager"
 detect = ["pnpm-lock.yaml", "pnpm-workspace.yaml"]
 idiomatic_files = ["package.json"]
