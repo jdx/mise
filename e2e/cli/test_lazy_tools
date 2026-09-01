@@ -33,6 +33,8 @@ tiny = { version = "1.0.0", lazy = true }
 EOF
 mise reshim
 assert_succeed "test -e '$MISE_SHIMS_DIR/rtx-tiny'"
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 rtx-tiny --version" "rtx-tiny: v1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/1.0.0"
 
 # Explicit backends cannot borrow bin metadata from a similarly named registry
 # entry and must declare lazy_bins.

@@ -442,7 +442,10 @@ impl BackendArg {
     /// entry separately by `get_backend_alias_opts`, so they survive either way.
     /// Legacy spellings are normalised, so `mytool = "nodejs"` finds `node`.
     fn aliased_registry_short(&self) -> Option<String> {
-        if self.resolution.explicit || self.has_env_backend_override() || !config::is_loaded() {
+        if self.has_explicit_backend_identifier()
+            || self.has_env_backend_override()
+            || !config::is_loaded()
+        {
             return None;
         }
         let full = Config::get_()
@@ -466,12 +469,18 @@ impl BackendArg {
 
     /// Registry metadata associated with a shorthand selected by the user.
     /// Explicit backend identifiers must not accidentally inherit metadata from
-    /// an unrelated registry entry with the same trailing tool name.
+    /// an unrelated registry entry with the same trailing tool name. A concrete
+    /// backend restored from a lockfile under a bare shorthand remains eligible:
+    /// it records resolution, not an explicit backend identifier from the user.
     pub(crate) fn registry_tool(&self) -> Option<&'static crate::registry::RegistryTool> {
-        if self.resolution.explicit {
+        if self.has_explicit_backend_identifier() {
             return None;
         }
         REGISTRY.get(&self.registry_short())
+    }
+
+    fn has_explicit_backend_identifier(&self) -> bool {
+        self.resolution.explicit && self.short.contains(':')
     }
 
     pub(crate) fn full(&self) -> String {
@@ -949,6 +958,17 @@ mod tests {
             assert_str_eq!("aqua:npm/cli", fa.full());
             assert_eq!(BackendType::Aqua, fa.backend_type());
         }
+    }
+
+    #[tokio::test]
+    async fn test_lockfile_resolved_shorthand_keeps_registry_metadata() {
+        let _config = Config::get().await.unwrap();
+
+        let resolved = BackendArg::new("tiny".to_string(), Some("vfox:jdx/vfox-tiny".to_string()));
+        assert_eq!(resolved.registry_tool().unwrap().bins, ["rtx-tiny"]);
+
+        let explicit: BackendArg = "vfox:jdx/vfox-tiny".into();
+        assert!(explicit.registry_tool().is_none());
     }
 
     #[tokio::test]
