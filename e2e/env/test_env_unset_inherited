@@ -6,9 +6,17 @@ cat >mise.toml <<'EOF'
 UNSET_ENV = false
 UNSET_TOOLS_ENV = { value = false, tools = true }
 
+[deps.check-env]
+auto = true
+run = 'printf "%s|%s" "${UNSET_ENV-absent}" "${UNSET_TOOLS_ENV-absent}" > deps-env'
+outputs = ["deps-env"]
+
 [tasks.check]
 run = 'printf "%s|%s" "${UNSET_ENV-absent}" "${UNSET_TOOLS_ENV-absent}"'
 EOF
+
+UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise exec -- true
+assert "cat deps-env" "absent|absent"
 
 assert \
   "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise exec -- sh -c 'printf \"%s|%s\" \"\${UNSET_ENV-absent}\" \"\${UNSET_TOOLS_ENV-absent}\"'" \

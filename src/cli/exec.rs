@@ -237,6 +237,7 @@ impl Exec {
                 .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     env: env.clone(),
+                    env_remove: env_remove.clone(),
                     ..Default::default()
                 })
                 .await?;
@@ -272,7 +273,8 @@ impl Exec {
             final_env.remove(key);
         }
         final_env.extend(env.clone());
-        let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
+        let serialized =
+            EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env, &env_remove).serialize();
         if let Some(mise_env) = removed_mise_env {
             env.insert("MISE_ENV".to_string(), mise_env);
         }

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -153,6 +153,8 @@ pub(crate) struct DepsOptions {
     pub skip: Vec<String>,
     /// Environment variables to pass to deps commands (e.g., toolset PATH)
     pub env: BTreeMap<String, String>,
+    /// Environment variables explicitly removed by config directives
+    pub env_remove: BTreeSet<String>,
     /// If true, only run providers with auto=true
     pub auto_only: bool,
 }
@@ -751,7 +753,7 @@ impl DepsEngine {
 
             if has_deps {
                 let run_results = self
-                    .run_with_deps(to_run, &satisfied_ids, &opts.env)
+                    .run_with_deps(to_run, &satisfied_ids, &opts.env, &opts.env_remove)
                     .await?;
                 for (step_result, outputs) in run_results {
                     for output in &outputs {
@@ -761,7 +763,9 @@ impl DepsEngine {
                 }
             } else {
                 // No dependencies — use simple parallel execution
-                let run_results = self.run_parallel(to_run, &opts.env).await?;
+                let run_results = self
+                    .run_parallel(to_run, &opts.env, &opts.env_remove)
+                    .await?;
                 for (step_result, outputs) in run_results {
                     for output in &outputs {
                         super::clear_output_stale(output);
@@ -811,34 +815,39 @@ impl DepsEngine {
         &self,
         to_run: Vec<DepsJob>,
         toolset_env: &BTreeMap<String, String>,
+        env_remove: &BTreeSet<String>,
     ) -> Result<Vec<(DepsStepResult, Vec<PathBuf>)>> {
         let mpr = MultiProgressReport::get();
 
         let to_run_with_context: Vec<_> = to_run
             .into_iter()
-            .map(|job| (job, mpr.clone(), toolset_env.clone()))
+            .map(|job| (job, mpr.clone(), toolset_env.clone(), env_remove.clone()))
             .collect();
 
-        crate::parallel::parallel(to_run_with_context, |(job, mpr, toolset_env)| async move {
-            let (stdout_prefix, stderr_prefix) = Self::deps_prefixes(&job.id);
-            let pr = mpr.add(&stderr_prefix);
-            match Self::execute_command(
-                &job.cmd,
-                &toolset_env,
-                job.timeout,
-                Some((&stdout_prefix, &stderr_prefix)),
-                Some(pr.as_ref()),
-            ) {
-                Ok(()) => {
-                    pr.finish_with_message("done".to_string());
-                    Ok((DepsStepResult::Ran(job.id), job.outputs))
+        crate::parallel::parallel(
+            to_run_with_context,
+            |(job, mpr, toolset_env, env_remove)| async move {
+                let (stdout_prefix, stderr_prefix) = Self::deps_prefixes(&job.id);
+                let pr = mpr.add(&stderr_prefix);
+                match Self::execute_command(
+                    &job.cmd,
+                    &toolset_env,
+                    &env_remove,
+                    job.timeout,
+                    Some((&stdout_prefix, &stderr_prefix)),
+                    Some(pr.as_ref()),
+                ) {
+                    Ok(()) => {
+                        pr.finish_with_message("done".to_string());
+                        Ok((DepsStepResult::Ran(job.id), job.outputs))
+                    }
+                    Err(e) => {
+                        pr.finish_with_message(format!("failed: {e}"));
+                        Err(e)
+                    }
                 }
-                Err(e) => {
-                    pr.finish_with_message(format!("failed: {e}"));
-                    Err(e)
-                }
-            }
-        })
+            },
+        )
         .await
     }
 
@@ -848,6 +857,7 @@ impl DepsEngine {
         to_run: Vec<DepsJob>,
         satisfied_ids: &HashSet<String>,
         toolset_env: &BTreeMap<String, String>,
+        env_remove: &BTreeSet<String>,
     ) -> Result<Vec<StepOutput>> {
         let mpr = MultiProgressReport::get();
         let mut results: Vec<StepOutput> = vec![];
@@ -970,6 +980,7 @@ impl DepsEngine {
                     let permit = semaphore.clone().acquire_owned().await.unwrap();
                     let mpr = mpr.clone();
                     let toolset_env = toolset_env.clone();
+                    let env_remove = env_remove.clone();
 
                     let handle = join_set.spawn(async move {
                         let id = job.id;
@@ -979,6 +990,7 @@ impl DepsEngine {
                             Self::execute_command(
                                 &job.cmd,
                                 &toolset_env,
+                                &env_remove,
                                 job.timeout,
                                 Some((&stdout_prefix, &stderr_prefix)),
                                 Some(pr.as_ref()),
@@ -1195,6 +1207,7 @@ impl DepsEngine {
     pub(crate) fn execute_command(
         cmd: &super::DepsCommand,
         toolset_env: &BTreeMap<String, String>,
+        env_remove: &BTreeSet<String>,
         timeout: Option<std::time::Duration>,
         prefixes: Option<(&str, &str)>,
         progress: Option<&dyn SingleReport>,
@@ -1222,6 +1235,9 @@ impl DepsEngine {
         // Apply toolset environment (includes PATH with installed tools)
         for (k, v) in toolset_env {
             runner = runner.env(k, v);
+        }
+        for key in env_remove {
+            runner = runner.env_remove(key);
         }
 
         // Apply command-specific environment (can override toolset env).

@@ -124,7 +124,7 @@ impl DepsInstall {
             .await?;
 
         // Get toolset environment with PATH
-        let env = ts.env_with_path(&install_config).await?;
+        let (env, env_remove) = ts.env_with_path_and_removals(&install_config).await?;
 
         let opts = DepsOptions {
             dry_run: self.dry_run,
@@ -132,6 +132,7 @@ impl DepsInstall {
             only,
             skip,
             env,
+            env_remove,
             ..Default::default()
         };
 
