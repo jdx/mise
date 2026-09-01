@@ -1,0 +1,31 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "8e36663a3dda",
+  "strategy": "manual-commit",
+  "branch": "feat/locked-config-excludes",
+  "checkpoints_count": 4,
+  "files_touched": [
+    "build.rs",
+    "e2e/lockfile/test_lockfile_locked_scopes",
+    "schema/mise.json",
+    "settings.toml",
+    "src/config/settings.rs",
+    "xtasks/render/schema.ts"
+  ],
+  "sessions": [
+    {
+      "metadata": "/8e/36663a3dda/0/metadata.json",
+      "transcript": "/8e/36663a3dda/0/full.jsonl",
+      "compact_transcript": "/8e/36663a3dda/0/transcript.jsonl",
+      "content_hash": "/8e/36663a3dda/0/content_hash.txt",
+      "prompt": "/8e/36663a3dda/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 1742585,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 60539392,
+    "output_tokens": 167846,
+    "api_call_count": 527
+  }
+}
