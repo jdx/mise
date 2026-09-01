@@ -578,12 +578,12 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
             return Ok(false);
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let is_default_farm = file::storage_paths_eq(parent, &dirs::DATA.join("shims"))
-            || file::storage_paths_eq(parent, &env::MISE_SYSTEM_DATA_DIR.join("shims"));
-        if is_default_farm {
+        if is_dedicated_shims_dir(parent) {
             // Preserve the existing upgrade behavior in mise's dedicated
             // farms. Native copies from an older mise cannot be identified by
-            // their contents after mise-shim.exe changes.
+            // their contents after mise-shim.exe changes. Use the same
+            // unredirected check as pruning so a junction to a shared bin
+            // directory never grants ownership of every regular file there.
             return Ok(true);
         }
 
