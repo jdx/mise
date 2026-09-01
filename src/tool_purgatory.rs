@@ -124,6 +124,17 @@ pub(crate) async fn auto_prune() -> Result<()> {
     if !state_path().exists() {
         return Ok(());
     }
+    // Config resolution below may execute trusted templates. If one of those
+    // templates invokes mise, the child reaches auto-prune before the parent
+    // has removed the due receipt. Serialize the whole cleanup separately
+    // from the short state-file lock so nested and concurrent invocations can
+    // skip it without blocking commands that legitimately update the state.
+    let cleanup_lock_path = state_path().with_extension("auto-prune");
+    let Some(_cleanup_lock) = crate::lock_file::LockFile::new(&cleanup_lock_path).try_lock()?
+    else {
+        debug!("skipping deferred pruning because another invocation is handling it");
+        return Ok(());
+    };
     let now = now_epoch_seconds()?;
     let due = {
         let _lock = crate::lock_file::get(state_path(), false)?;

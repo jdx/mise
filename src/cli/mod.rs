@@ -330,6 +330,16 @@ impl Commands {
         )
     }
 
+    /// Shell integration runs on startup and every prompt, so it must not do
+    /// an all-project tracked-config scan or mutate installed tools. Deferred
+    /// cleanup will run on the next ordinary command instead.
+    fn allows_tool_purgatory_auto_prune(&self) -> bool {
+        !matches!(
+            self,
+            Self::Activate(_) | Self::Deactivate(_) | Self::HookEnv(_) | Self::HookNotFound(_)
+        )
+    }
+
     fn implicitly_trusts_active_config(&self) -> bool {
         matches!(
             self,
@@ -900,6 +910,11 @@ impl Cli {
             );
         if !print_version
             && !dry_run_requested
+            && !Settings::no_config()
+            && cli
+                .command
+                .as_ref()
+                .is_none_or(Commands::allows_tool_purgatory_auto_prune)
             && let Err(err) = crate::tool_purgatory::auto_prune().await
         {
             warn!("tool purgatory cleanup failed: {err:#}");
