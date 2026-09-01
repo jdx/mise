@@ -541,7 +541,10 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
         ));
     }
     for environment_file in &request.environment_file {
-        out.push_str(&format!("EnvironmentFile={environment_file}\n"));
+        out.push_str(&format!(
+            "EnvironmentFile={}\n",
+            quote_environment(environment_file)
+        ));
     }
     if let Some(nice) = request.nice {
         out.push_str(&format!("Nice={nice}\n"));
@@ -914,7 +917,10 @@ mod tests {
                 no_new_privileges: Some(true),
                 private_tmp: Some(true),
                 environment,
-                environment_file: vec!["-%h/.config/sync.env".to_string()],
+                environment_file: vec![
+                    "-%h/.config/sync.env".to_string(),
+                    "%h/.config/sync config.env".to_string(),
+                ],
                 nice: Some(10),
                 umask: Some("0007".to_string()),
                 working_directory: Some("~".to_string()),
@@ -951,7 +957,8 @@ mod tests {
         assert!(unit.contains(&format!("WorkingDirectory={}\n", expand_path_string("~"))));
         assert!(unit.contains("Environment=\"PATH=/usr/bin:/bin\"\n"));
         assert!(unit.contains("Environment=\"QUOTED=hello \\\"there\\\"\"\n"));
-        assert!(unit.contains("EnvironmentFile=-%h/.config/sync.env\n"));
+        assert!(unit.contains("EnvironmentFile=\"-%h/.config/sync.env\"\n"));
+        assert!(unit.contains("EnvironmentFile=\"%h/.config/sync config.env\"\n"));
         assert!(unit.contains("Nice=10\n"));
         assert!(unit.contains("UMask=0007\n"));
         assert!(unit.contains("Restart=on-failure\n"));
