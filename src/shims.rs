@@ -518,9 +518,26 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
 
     #[cfg(windows)]
     {
-        // Native copy and hardlink shims do not carry an ownership marker.
-        // Retain the existing Windows shim-farm behavior.
-        return Ok(path.is_file());
+        if !path.is_file() {
+            return Ok(false);
+        }
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let is_default_farm = file::storage_paths_eq(parent, &dirs::DATA.join("shims"))
+            || file::storage_paths_eq(parent, &env::MISE_SYSTEM_DATA_DIR.join("shims"));
+        if is_default_farm {
+            // Preserve the existing upgrade behavior in mise's dedicated
+            // farms. Native copies from an older mise cannot be identified by
+            // their contents after mise-shim.exe changes.
+            return Ok(true);
+        }
+
+        if is_generated_windows_file_shim(path) {
+            return Ok(true);
+        }
+        let matches_mise = files_identical(path, mise_bin).unwrap_or(false);
+        let matches_launcher = find_mise_shim_bin(mise_bin)
+            .is_some_and(|launcher| files_identical(path, &launcher).unwrap_or(false));
+        return Ok(matches_mise || matches_launcher);
     }
 
     #[cfg(not(windows))]
@@ -532,6 +549,29 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
         Ok(contents.starts_with("#!/bin/sh\n# mise generated shim\n")
             || (contents.starts_with("#!/bin/sh\nexport ASDF_DATA_DIR=")
                 && contents.contains("\nmise x -- ")))
+    }
+}
+
+#[cfg(any(windows, test))]
+fn is_generated_windows_file_shim(path: &Path) -> bool {
+    let Some(name) = path.file_stem().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Ok(contents) = fs::read_to_string(path) else {
+        return false;
+    };
+    if path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"))
+    {
+        contents == windows_file_shim_body(name)
+    } else if path.extension().is_none() {
+        #[cfg(windows)]
+        return contents == bash_shim_script(name);
+        #[cfg(not(windows))]
+        return false;
+    } else {
+        false
     }
 }
 
@@ -1613,6 +1653,17 @@ mod tests {
         let body = windows_file_shim_body("gh");
         assert!(body.ends_with("\r\n"));
         assert_eq!(body.matches('\n').count(), body.matches("\r\n").count());
+    }
+
+    #[test]
+    fn windows_file_shim_detection_requires_the_exact_generated_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let shim = dir.path().join("gh.cmd");
+        fs::write(&shim, windows_file_shim_body("gh")).unwrap();
+        assert!(is_generated_windows_file_shim(&shim));
+
+        fs::write(&shim, "@echo off\r\necho user script\r\n").unwrap();
+        assert!(!is_generated_windows_file_shim(&shim));
     }
 
     #[cfg(windows)]
