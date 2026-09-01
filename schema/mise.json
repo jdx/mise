@@ -4516,7 +4516,7 @@
                       },
                       "action": {
                         "type": "string",
-                        "enum": ["allow", "deny", "reject"],
+                        "enum": ["allow", "limit", "deny", "reject"],
                         "default": "allow"
                       },
                       "port": {

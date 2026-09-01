@@ -22,7 +22,7 @@ name = "ssh-admin"
 port = 22
 protocol = "tcp"
 source = "203.0.113.10/32"
-action = "allow"
+action = "limit"
 ```
 
 Firewall convergence runs after packages, privileged files, and system
@@ -66,7 +66,7 @@ Each `[[bootstrap.linux.firewall.rules]]` supports:
 - `name` (required): stable ASCII identifier used to reconcile the rule
 - `state`: `"present"` (default) or `"absent"`
 - `direction`: `"incoming"` (default) or `"outgoing"`
-- `action`: `"allow"` (default), `"deny"`, or `"reject"`
+- `action`: `"allow"` (default), `"limit"`, `"deny"`, or `"reject"`
 - `protocol`: `"tcp"`, `"udp"`, `"sctp"`, or `"dccp"`
 - `port`: a number or inclusive string range such as `"8000-8010"`
 - `source` and `destination`: IPv4 or IPv6 CIDR networks
@@ -76,6 +76,15 @@ A port requires a protocol. One rule cannot mix IPv4 and IPv6 source and
 destination networks. UFW supports only TCP and UDP; firewalld policy rules do
 not safely support per-rule interface matching, so mise asks you to select
 nftables or UFW for those combinations rather than silently weakening a rule.
+
+`action = "limit"` rate-limits new incoming TCP connections per source address.
+UFW uses its native limit action, which rejects an address after six connection
+attempts within 30 seconds. The nftables backend uses separate bounded IPv4 and
+IPv6 meters with a 12/minute token-bucket rate and a burst of five packets.
+These algorithms are intentionally backend-native rather than exactly
+equivalent. Firewalld can limit only the rule as a whole, so mise refuses limit
+rules on that backend instead of allowing one source to exhaust a shared rate
+budget.
 
 ## Ownership and deletion
 
@@ -93,9 +102,9 @@ destructive operation.
 
 When bootstrap runs over SSH and incoming policy is deny or reject, mise checks
 `SSH_CONNECTION` before making changes. At least one present incoming TCP allow
-rule must cover both the connected peer address and the server port. Otherwise
-apply fails before elevation. A deliberately out-of-band deployment can set
-`allow_lockout = true` as an explicit escape hatch.
+or limit rule must cover both the connected peer address and the server port.
+Otherwise apply fails before elevation. A deliberately out-of-band deployment
+can set `allow_lockout = true` as an explicit escape hatch.
 
 Rules are installed in declared order before deny policies for UFW. nftables
 installs the complete ruleset atomically, and firewalld changes permanent
