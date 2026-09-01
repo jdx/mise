@@ -157,6 +157,9 @@ impl CachedEnv {
     ) -> String {
         let mut hasher = Hasher::new();
 
+        // Bump when CachedEnv gains fields whose absence changes behavior.
+        hasher.update(b"env-cache-v2");
+
         // mise version
         hasher.update(env!("CARGO_PKG_VERSION").as_bytes());
 
