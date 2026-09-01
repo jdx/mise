@@ -521,7 +521,7 @@ fn is_dedicated_shims_dir(path: &Path) -> bool {
 
 fn matches_unredirected_dedicated_dir(path: &Path, dedicated: &Path) -> bool {
     file::paths_eq(path, dedicated)
-        && fs::canonicalize(path).is_ok_and(|resolved| file::paths_eq(&resolved, path))
+        && dunce::canonicalize(path).is_ok_and(|resolved| file::paths_eq(&resolved, path))
 }
 
 fn files_identical(a: &Path, b: &Path) -> Result<bool> {
