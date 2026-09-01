@@ -38,7 +38,7 @@ registry_tmpdir="$(mktemp -d)"
 trap 'rm -rf "$registry_tmpdir"' EXIT
 registry_archive="$registry_tmpdir/registry.tar.zst"
 git archive --format=tar HEAD registry | tar -C "$registry_tmpdir" -xf -
-cargo run --locked --quiet --release -- registry --json --hide-aliased |
+mise registry --json --hide-aliased |
 	jq -r '.[] | select(.bins | length > 0) | [.short, (.bins | tojson)] | @tsv' |
 	while IFS=$'\t' read -r short bins; do
 		registry_file="$registry_tmpdir/registry/$short.toml"
