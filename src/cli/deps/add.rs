@@ -43,7 +43,7 @@ impl DepsAdd {
         ts.install_missing_versions(&mut config, &install_opts)
             .await?;
 
-        let env = ts.env_with_path(&config).await?;
+        let (env, env_remove) = ts.env_with_path_and_removals(&config).await?;
 
         let project_root = config
             .project_root
@@ -65,7 +65,7 @@ impl DepsAdd {
 
             let pkg_refs: Vec<&str> = packages.iter().map(|s| s.as_str()).collect();
             let cmd = provider.add_command(&pkg_refs, self.dev)?;
-            DepsEngine::execute_command(&cmd, &env, provider.timeout(), None, None)?;
+            DepsEngine::execute_command(&cmd, &env, &env_remove, provider.timeout(), None, None)?;
         }
 
         Ok(())

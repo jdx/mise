@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -32,9 +32,20 @@ fn pristine_path_without_install_dirs() -> Vec<PathBuf> {
 
 impl Toolset {
     pub(crate) async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        Ok(self.full_env_with_removals(config).await?.0)
+    }
+
+    pub(crate) async fn full_env_with_removals(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(EnvMap, BTreeSet<String>)> {
+        let (mise_env, env_remove) = self.env_with_path_and_removals(config).await?;
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
-        env.extend(self.env_with_path(config).await?.clone());
-        Ok(env)
+        for key in &env_remove {
+            env.remove(key);
+        }
+        env.extend(mise_env);
+        Ok((env, env_remove))
     }
 
     /// Like full_env but skips `tools=true` env directives (load_post_env).
@@ -43,6 +54,9 @@ impl Toolset {
     /// would trigger spurious errors from modules expecting the full PATH.
     pub(crate) async fn full_env_without_tools(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
+        for key in &config.env_results().await?.env_remove {
+            env.remove(key);
+        }
         env.extend(self.env_with_path_without_tools(config).await?);
         Ok(env)
     }
@@ -55,6 +69,9 @@ impl InstallDependencyContext {
     /// evaluate arbitrary modules.
     pub(crate) async fn base_env_for_install(&self, config: &Arc<Config>) -> Result<EnvMap> {
         let mut full_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
+        for key in &config.env_results().await?.env_remove {
+            full_env.remove(key);
+        }
         let (mut env, add_paths) = self.toolset.env(config).await?;
         let mut path_env = PathEnv::new();
         for path in &self.paths {
@@ -98,13 +115,20 @@ impl Toolset {
 
     /// the full mise environment including all tool paths
     pub(crate) async fn env_with_path(&self, config: &Arc<Config>) -> Result<EnvMap> {
+        Ok(self.env_with_path_and_removals(config).await?.0)
+    }
+
+    pub(crate) async fn env_with_path_and_removals(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<(EnvMap, BTreeSet<String>)> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
-            && let Some(mut cached) = self.try_load_env_cache(config).await?
+            && let Some((mut cached, env_remove)) = self.try_load_env_cache(config).await?
         {
             trace!("env_cache: using cached environment");
             github::oauth::inject_token_env(&mut cached);
-            return Ok(cached);
+            return Ok((cached, env_remove));
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
@@ -132,7 +156,7 @@ impl Toolset {
         // ephemeral token is never persisted to disk.
         github::oauth::inject_token_env(&mut env);
 
-        Ok(env)
+        Ok((env, env_results.env_remove))
     }
 
     /// Get environment with split paths (user_paths and tool_paths separate)
@@ -141,7 +165,13 @@ impl Toolset {
     pub(crate) async fn env_with_path_and_split(
         &self,
         config: &Arc<Config>,
-    ) -> Result<(EnvMap, Vec<PathBuf>, Vec<PathBuf>, Vec<PathBuf>)> {
+    ) -> Result<(
+        EnvMap,
+        BTreeSet<String>,
+        Vec<PathBuf>,
+        Vec<PathBuf>,
+        Vec<PathBuf>,
+    )> {
         // Try to load from cache if enabled
         if CachedEnv::is_enabled()
             && let Some(cached) = self.try_load_env_cache_full(config).await?
@@ -157,6 +187,7 @@ impl Toolset {
             github::oauth::inject_token_env(&mut env);
             return Ok((
                 env,
+                cached.env_remove,
                 cached.user_paths,
                 cached.tool_paths,
                 cached.watch_files,
@@ -189,7 +220,13 @@ impl Toolset {
         // ephemeral token is never persisted to disk.
         github::oauth::inject_token_env(&mut env);
 
-        Ok((env, user_paths, tool_paths, env_results.watch_files))
+        Ok((
+            env,
+            env_results.env_remove,
+            user_paths,
+            tool_paths,
+            env_results.watch_files,
+        ))
     }
 
     /// Try to load environment from cache (returns full CachedEnv)
@@ -203,7 +240,10 @@ impl Toolset {
     }
 
     /// Try to load environment from cache (returns reconstructed EnvMap)
-    async fn try_load_env_cache(&self, config: &Arc<Config>) -> Result<Option<EnvMap>> {
+    async fn try_load_env_cache(
+        &self,
+        config: &Arc<Config>,
+    ) -> Result<Option<(EnvMap, BTreeSet<String>)>> {
         match self.try_load_env_cache_full(config).await? {
             Some(cached) => {
                 let mut env = cached.env;
@@ -213,7 +253,7 @@ impl Toolset {
                     path_env.add(p);
                 }
                 env.insert(PATH_KEY.to_string(), path_env.to_string());
-                Ok(Some(env))
+                Ok(Some((env, cached.env_remove)))
             }
             None => Ok(None),
         }
@@ -265,6 +305,7 @@ impl Toolset {
 
         let cached = CachedEnv {
             env: env_without_path,
+            env_remove: env_results.env_remove.clone(),
             user_paths: user_paths.to_vec(),
             tool_paths: tool_paths.to_vec(),
             created_at: now,
@@ -400,13 +441,20 @@ impl Toolset {
                 env.insert(k, v);
             }
         }
+        for key in &config.env_results().await?.env_remove {
+            env.remove(key);
+        }
         time!("env end");
         Ok((env, paths_to_add))
     }
 
     pub(crate) async fn final_env(&self, config: &Arc<Config>) -> Result<(EnvMap, EnvResults)> {
         let (mut env, add_paths) = self.env(config).await?;
+        let non_tool_env = config.env_results().await?;
         let mut tera_env = env::PRISTINE_ENV.clone().into_iter().collect::<EnvMap>();
+        for key in &non_tool_env.env_remove {
+            tera_env.remove(key);
+        }
         tera_env.extend(env.clone());
         let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
 
@@ -446,6 +494,16 @@ impl Toolset {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.0.clone())),
         );
+        for key in &env_results.env_remove {
+            env.remove(key);
+        }
+
+        let mut effective_removals = non_tool_env.env_remove.clone();
+        for key in env_results.env.keys() {
+            effective_removals.remove(key);
+        }
+        effective_removals.extend(env_results.env_remove.clone());
+        env_results.env_remove = effective_removals;
 
         // Apply redactions from tools-only env vars (e.g. redact=true + tools=true)
         if !env_results.redactions.is_empty() {

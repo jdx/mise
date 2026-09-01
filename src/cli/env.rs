@@ -182,12 +182,16 @@ impl Env {
     ) -> Result<()> {
         let default_shell = get_shell(Some(fallback_shell())).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
-        let mut env = ts.env_with_path(config).await?;
+        let (mut env, mut env_remove) = ts.env_with_path_and_removals(config).await?;
 
         if let Some(keys) = redacted_keys {
             env.retain(|k, _| self.should_include_key(k, keys));
+            env_remove.retain(|k| self.should_include_key(k, keys));
         }
 
+        for k in env_remove {
+            miseprint!("{}", shell.unset_env(&k))?;
+        }
         for (k, v) in env {
             let k = k.to_string();
             let v = v.to_string();

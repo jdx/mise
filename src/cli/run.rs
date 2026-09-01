@@ -805,12 +805,13 @@ impl Run {
 
         // Run auto-enabled deps steps (unless --no-deps)
         if let Some(engine) = deps_engine {
-            let env = ts.env_with_path(&config).await?;
+            let (env, env_remove) = ts.env_with_path_and_removals(&config).await?;
             let result = engine
                 .run(DepsOptions {
                     auto_only: true, // Only run providers with auto=true
                     dry_run: self.dry_run,
                     env,
+                    env_remove,
                     ..Default::default()
                 })
                 .await?;

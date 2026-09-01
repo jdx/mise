@@ -8,7 +8,7 @@ use crate::task::task_helpers::canonicalize_path;
 use crate::toolset::{Toolset, ToolsetBuilder};
 use eyre::Result;
 use indexmap::IndexMap;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -16,6 +16,7 @@ type EnvResolutionResult = (
     BTreeMap<String, String>,
     Vec<(String, String)>,
     Option<IndexMap<String, String>>,
+    BTreeSet<String>,
 );
 
 /// Builds toolset and environment context for task execution
@@ -151,6 +152,7 @@ impl TaskContextBuilder {
         BTreeMap<String, String>,
         Vec<(String, String)>,
         Option<IndexMap<String, String>>,
+        BTreeSet<String>,
     )> {
         // Determine if this is a monorepo task (task config differs from current project root)
         let is_monorepo_task = task_cf.project_root() != config.project_root;
@@ -219,8 +221,8 @@ impl TaskContextBuilder {
         // Check using task_cf entries for compatibility with existing logic
         let task_cf_env_entries = task_cf.env_entries()?;
         if self.should_use_standard_env_resolution(task, task_cf, config, &task_cf_env_entries) {
-            let (env, task_env) = task.render_env(config, ts).await?;
-            return Ok((env, task_env, None));
+            let (env, task_env, env_remove) = task.render_env(config, ts).await?;
+            return Ok((env, task_env, None, env_remove));
         }
 
         let config_path = canonicalize_path(task_cf.get_path());
@@ -245,16 +247,34 @@ impl TaskContextBuilder {
             }
         }
 
-        let mut env = ts.full_env(config).await?;
+        let (mut env, mut env_remove) = ts.full_env_with_removals(config).await?;
         let (tera_ctx, resolved_vars) = self
             .build_tera_context(task_cf, ts, config, task_config_files.as_ref())
             .await?;
 
         // Resolve config-level env from ALL config files, not just task_cf
+        //
+        // This path replays config directives to resolve them relative to the task's
+        // config hierarchy. Start that replay with caller values that the already
+        // resolved config removed: a `required` directive must still be able to
+        // validate the original caller value before a later directive removes it.
+        // The replay's EnvResults and env_remove set keep those values out of the
+        // final task environment.
+        let mut config_resolution_env = env.clone();
+        for key in &env_remove {
+            if let Some(value) = env::PRISTINE_ENV.get(key) {
+                config_resolution_env.insert(key.clone(), value.clone());
+            }
+        }
         let config_env_results = self
-            .resolve_env_directives(config, &tera_ctx, &env, all_config_env_entries)
+            .resolve_env_directives(
+                config,
+                &tera_ctx,
+                &config_resolution_env,
+                all_config_env_entries,
+            )
             .await?;
-        Self::apply_env_results(&mut env, &config_env_results);
+        Self::apply_env_results(&mut env, &mut env_remove, &config_env_results);
 
         // Register config-level redactions resolved through the task context
         if !config_env_results.redactions.is_empty() {
@@ -271,7 +291,7 @@ impl TaskContextBuilder {
             .await?;
 
         let task_env = self.extract_task_env(&task_env_results);
-        Self::apply_env_results(&mut env, &task_env_results);
+        Self::apply_env_results(&mut env, &mut env_remove, &task_env_results);
 
         // Register task-specific redactions with the global redactor
         // Include both task-level redact=true keys and config-level redaction patterns
@@ -304,11 +324,16 @@ impl TaskContextBuilder {
                     task.name,
                     config_path.display()
                 );
-                (env.clone(), task_env.clone(), resolved_vars.clone())
+                (
+                    env.clone(),
+                    task_env.clone(),
+                    resolved_vars.clone(),
+                    env_remove.clone(),
+                )
             });
         }
 
-        Ok((env, task_env, resolved_vars))
+        Ok((env, task_env, resolved_vars, env_remove))
     }
 
     /// Check if standard env resolution should be used instead of special context
@@ -444,16 +469,22 @@ impl TaskContextBuilder {
 
     /// Apply EnvResults to an environment map
     /// Handles env vars, env_remove, and env_paths (PATH modifications)
-    fn apply_env_results(env: &mut BTreeMap<String, String>, results: &EnvResults) {
+    fn apply_env_results(
+        env: &mut BTreeMap<String, String>,
+        env_remove: &mut BTreeSet<String>,
+        results: &EnvResults,
+    ) {
         // Apply environment variables
         for (k, (v, _)) in &results.env {
             env.insert(k.clone(), v.clone());
+            env_remove.remove(k);
         }
 
         // Remove explicitly unset variables
         for key in &results.env_remove {
             env.remove(key);
         }
+        env_remove.extend(results.env_remove.iter().cloned());
 
         // Apply path additions
         if !results.env_paths.is_empty() {
@@ -505,7 +536,7 @@ mod tests {
             ("new_value".to_string(), PathBuf::from("/test")),
         );
 
-        TaskContextBuilder::apply_env_results(&mut env, &results);
+        TaskContextBuilder::apply_env_results(&mut env, &mut BTreeSet::new(), &results);
 
         assert_eq!(env.get("EXISTING"), Some(&"value".to_string()));
         assert_eq!(env.get("NEW_VAR"), Some(&"new_value".to_string()));
@@ -520,10 +551,12 @@ mod tests {
         let mut results = EnvResults::default();
         results.env_remove.insert("TO_REMOVE".to_string());
 
-        TaskContextBuilder::apply_env_results(&mut env, &results);
+        let mut env_remove = BTreeSet::new();
+        TaskContextBuilder::apply_env_results(&mut env, &mut env_remove, &results);
 
         assert_eq!(env.get("TO_REMOVE"), None);
         assert_eq!(env.get("TO_KEEP"), Some(&"value".to_string()));
+        assert!(env_remove.contains("TO_REMOVE"));
     }
 
     #[test]
@@ -536,7 +569,7 @@ mod tests {
             .env_paths
             .push(PathBuf::from("/new/path").to_path_buf());
 
-        TaskContextBuilder::apply_env_results(&mut env, &results);
+        TaskContextBuilder::apply_env_results(&mut env, &mut BTreeSet::new(), &results);
 
         let path = env.get(&*env::PATH_KEY).unwrap();
         assert!(path.contains("/new/path"));
