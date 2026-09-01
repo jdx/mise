@@ -2220,8 +2220,7 @@ impl TaskExecutor {
 
         let env_for_diff = self.env_for_nested_mise_diff(&env, &nested_mise_diff_exclude_keys);
         if let Ok(serialized) =
-            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff, &env_remove)
-                .serialize()
+            EnvDiff::from_final_env(&crate::env::PRISTINE_ENV, &env_for_diff).serialize()
         {
             env.insert("__MISE_DIFF".into(), serialized);
         }

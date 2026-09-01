@@ -5,6 +5,7 @@ cat >mise.toml <<'EOF'
 [env]
 UNSET_ENV = false
 UNSET_TOOLS_ENV = { value = false, tools = true }
+UNSET_SECRET = false
 
 [deps.check-env]
 auto = true
@@ -24,6 +25,9 @@ assert \
 assert \
   "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise run check" \
   "absent|absent"
+assert \
+  "UNSET_SECRET=super-secret mise exec -- python3 -c 'import base64, os, zlib; raw = os.environ[\"__MISE_DIFF\"]; print(b\"super-secret\" in zlib.decompress(base64.b64decode(raw + \"=\" * (-len(raw) % 4))))'" \
+  "False"
 assert_contains \
   "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise env -s bash" \
   "unset UNSET_ENV"

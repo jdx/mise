@@ -1232,12 +1232,12 @@ impl DepsEngine {
             runner = runner.with_timeout(timeout);
         }
 
+        for key in env_remove {
+            runner = runner.env_remove(key);
+        }
         // Apply toolset environment (includes PATH with installed tools)
         for (k, v) in toolset_env {
             runner = runner.env(k, v);
-        }
-        for key in env_remove {
-            runner = runner.env_remove(key);
         }
 
         // Apply command-specific environment (can override toolset env).

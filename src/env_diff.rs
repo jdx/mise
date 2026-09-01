@@ -237,11 +237,7 @@ impl EnvDiff {
     /// write. This mirrors what `mise hook-env` writes during shell activation,
     /// so nested `mise` invocations can reverse it via `get_pristine_env` and
     /// avoid stacking outer tool paths on top of inner ones.
-    pub(crate) fn from_final_env<'a>(
-        pristine: &EnvMap,
-        final_env: &EnvMap,
-        removals: impl IntoIterator<Item = &'a String>,
-    ) -> EnvDiff {
+    pub(crate) fn from_final_env(pristine: &EnvMap, final_env: &EnvMap) -> EnvDiff {
         use std::collections::HashSet;
 
         let path_key = PATH_KEY.as_str();
@@ -250,14 +246,6 @@ impl EnvDiff {
             .filter(|(k, _)| k.as_str() != path_key && k.as_str() != "__MISE_DIFF")
             .map(|(k, v)| (k.clone(), v.clone()));
         let mut diff = EnvDiff::new(pristine, additions);
-        for key in removals {
-            if key.as_str() != path_key
-                && key.as_str() != "__MISE_DIFF"
-                && let Some(value) = pristine.get(key)
-            {
-                diff.old.insert(key.clone(), value.clone());
-            }
-        }
 
         let pristine_paths: HashSet<PathBuf> = pristine
             .get(path_key)
@@ -578,7 +566,6 @@ mod tests {
         let pristine: EnvMap = [
             (path_key, pristine_path.as_str()),
             ("EXISTING", "old"),
-            ("REMOVED", "gone"),
             ("__MISE_DIFF", "outer-diff"),
         ]
         .into_iter()
@@ -594,8 +581,7 @@ mod tests {
         .map(|(k, v)| (k.into(), v.into()))
         .collect();
 
-        let removals = ["REMOVED".to_string()];
-        let diff = EnvDiff::from_final_env(&pristine, &final_env, &removals);
+        let diff = EnvDiff::from_final_env(&pristine, &final_env);
 
         // PATH entries new in final_env land in diff.path; shared entries don't.
         assert_eq!(diff.path, vec![PathBuf::from("/tool/bin")]);
@@ -603,8 +589,6 @@ mod tests {
         assert_eq!(diff.new.get("ADDED"), Some(&"yes".to_string()));
         assert_eq!(diff.new.get("EXISTING"), Some(&"new".to_string()));
         assert_eq!(diff.old.get("EXISTING"), Some(&"old".to_string()));
-        assert_eq!(diff.old.get("REMOVED"), Some(&"gone".to_string()));
-        assert!(!diff.new.contains_key("REMOVED"));
         // PATH and __MISE_DIFF are filtered out of old/new.
         assert!(!diff.new.contains_key(path_key));
         assert!(!diff.old.contains_key(path_key));
@@ -627,7 +611,6 @@ mod tests {
             }
         }
         assert_eq!(restored.get("EXISTING"), Some(&"old".to_string()));
-        assert_eq!(restored.get("REMOVED"), Some(&"gone".to_string()));
         assert!(!restored.contains_key("ADDED"));
         let to_remove: std::collections::HashSet<_> = diff.path.iter().collect();
         let restored_path: Vec<PathBuf> = crate::env::split_paths(&final_env[path_key])
