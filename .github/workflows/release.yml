@@ -116,11 +116,11 @@ jobs:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12 }}
           p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTS_P12_PASS }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - name: Setup Rust toolchain
-        run: rustup toolchain install stable --profile minimal --target ${{matrix.target}}
+      - name: Add Rust target
+        run: rustup target add ${{matrix.target}}
       - name: Install llvm-tools (PGO)
         if: matrix.pgo
-        run: rustup component add --toolchain stable llvm-tools
+        run: rustup component add llvm-tools
       - name: build-tarball ${{matrix.target}}
         uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60 # v4
         env:
@@ -128,10 +128,7 @@ jobs:
         with:
           timeout_minutes: 280
           max_attempts: 3
-          # Keep rustc, rust-std, and the profiling runtime on the same
-          # toolchain. A mismatched runner default makes PGO training fail
-          # before it can write any profile data.
-          command: rustup run stable scripts/build-tarball.sh ${{matrix.target}}
+          command: scripts/build-tarball.sh ${{matrix.target}}
       # Signing settles who built the binary; notarization is what Gatekeeper
       # demands once an archive carries the quarantine bit, which is to say
       # whenever someone downloads it in a browser rather than with curl.
