@@ -357,7 +357,12 @@ pub(crate) async fn reshim_for(
         shim_version,
     )
     .await?;
-    publish_staged_shim_farm(&shims_dir, &mise_bin, staging)?;
+    publish_staged_shim_farm(
+        &shims_dir,
+        &mise_bin,
+        staging,
+        is_dedicated_shims_dir(&shims_dir),
+    )?;
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
         sync_command_wrapper_shims(config, &mise_bin, full_rebuild)?;
@@ -432,6 +437,7 @@ fn publish_staged_shim_farm(
     shims_dir: &Path,
     mise_bin: &Path,
     staging: tempfile::TempDir,
+    prune_unmanaged: bool,
 ) -> Result<()> {
     let mut entries = staging
         .path()
@@ -481,9 +487,10 @@ fn publish_staged_shim_farm(
 
     // A shared executable directory can contain arbitrary user and package
     // manager files. Only prune entries that can be identified as mise shims.
+    // Mise's default, dedicated farms retain their historical full cleanup.
     for shim in list_shims_in(shims_dir)?.difference(&desired) {
         let path = shims_dir.join(shim);
-        if is_mise_shim(&path, mise_bin)? {
+        if prune_unmanaged || is_mise_shim(&path, mise_bin)? {
             if cfg!(windows) {
                 remove_shim_with_rename_fallback(&path)?;
             } else {
@@ -496,6 +503,11 @@ fn publish_staged_shim_farm(
         warn!("failed to remove shim staging directory: {err}");
     }
     Ok(())
+}
+
+fn is_dedicated_shims_dir(path: &Path) -> bool {
+    file::storage_paths_eq(path, &dirs::DATA.join("shims"))
+        || file::storage_paths_eq(path, &env::MISE_SYSTEM_DATA_DIR.join("shims"))
 }
 
 fn files_identical(a: &Path, b: &Path) -> Result<bool> {
@@ -1778,7 +1790,7 @@ mod tests {
             "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n",
         )
         .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, staging).unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, staging, false).unwrap();
 
         assert_eq!(
             fs::read_to_string(&unmanaged).unwrap(),
@@ -1796,7 +1808,7 @@ mod tests {
             .prefix(".mise-shims-stage-")
             .tempdir_in(live.path())
             .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging).unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging, false).unwrap();
 
         assert_eq!(
             fs::read_to_string(live.path().join("owned")).unwrap(),
@@ -1818,15 +1830,33 @@ mod tests {
             "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n",
         )
         .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, staging).unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, staging, false).unwrap();
 
         let empty_staging = tempfile::Builder::new()
             .prefix(".mise-shims-stage-")
             .tempdir_in(live.path())
             .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging).unwrap();
+        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging, false).unwrap();
 
         assert!(!live.path().join("owned").exists());
+    }
+
+    #[test]
+    fn staged_shim_publication_prunes_unmanaged_files_in_dedicated_farm() {
+        let live = tempfile::tempdir().unwrap();
+        let mise_bin = live.path().join("mise");
+        fs::write(&mise_bin, "mise").unwrap();
+        let orphan = live.path().join("orphan");
+        fs::write(&orphan, "not a mise shim").unwrap();
+        file::make_executable(&orphan).unwrap();
+        let staging = tempfile::Builder::new()
+            .prefix(".mise-shims-stage-")
+            .tempdir_in(live.path())
+            .unwrap();
+
+        publish_staged_shim_farm(live.path(), &mise_bin, staging, true).unwrap();
+
+        assert!(!orphan.exists());
     }
 
     #[cfg(unix)]
