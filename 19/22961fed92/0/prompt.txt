@@ -1,0 +1,9 @@
+ok fix all 4 issues you found and push to the pr /plan
+
+---
+
+can you kick the tires by trying to use this on this omarchy box?
+
+---
+
+ok fix it
