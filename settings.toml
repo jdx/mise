@@ -2589,8 +2589,9 @@ description = "Directory containing user shims."
 docs = """
 The user shim farm. Lazy tools declared in user config publish their bootstrap shims here.
 The directory must be absolute after `~` expansion.
-It may be a shared executable directory such as `~/.local/bin`; mise only replaces or removes
-entries it recognizes as mise shims.
+`mise reshim` may publish into a shared executable directory such as `~/.local/bin`; it only
+replaces or removes entries it recognizes as mise shims. Other mise features filter this directory
+as one PATH entry, so use a dedicated directory with activation and internal dependency lookups.
 """
 env = "MISE_SHIMS_DIR"
 global_only = true

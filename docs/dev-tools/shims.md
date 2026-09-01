@@ -174,10 +174,12 @@ Note that `mise` already runs a reshim anytime a tool is installed/updated/remov
 `mise reshim` only creates/removes the shims. Some users sometimes use it as a
 "fix it" button, but it is only necessary if `~/.local/share/mise/shims` doesn't contain something it should.
 
-The configured shim directory can safely be a shared executable directory such as `~/.local/bin`
-or `/usr/local/bin`. `mise reshim` only replaces or removes entries it recognizes as mise shims.
-When an unmanaged file has the same name as a desired shim, mise keeps the existing file and prints
-a warning.
+For `mise reshim`, the configured shim directory may be a shared executable directory such as
+`~/.local/bin` or `/usr/local/bin`: reshim only replaces or removes entries it recognizes as mise
+shims, and leaves a same-named unmanaged file in place. Other mise features still identify shim
+directories as whole `PATH` entries, however, so a shared directory is not yet supported with
+`mise activate`, hook-env, or internal dependency lookups. Use a dedicated `shims_dir` if you use
+those features.
 
 ## Command wrappers
 

@@ -1,5 +1,6 @@
 use crate::request_exit;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{
@@ -26,6 +27,11 @@ use tokio::task::JoinSet;
 #[cfg(any(windows, test))]
 const NATIVE_SHIM_MARKER: &[u8] = include_bytes!("../crates/mise-shim/native-shim-marker");
 const GENERATED_SHELL_SHIM_HEADER: &str = "#!/bin/sh\n# mise generated shim\n";
+#[cfg(any(windows, test))]
+const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated shim\r\n";
+#[cfg(any(windows, test))]
+const GENERATED_WINDOWS_BASH_SHIM_HEADER: &str = "#!/bin/bash\n# mise generated shim\n";
+const SHIM_SCRIPT_INSPECTION_LIMIT: u64 = 16 * 1024;
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub(crate) async fn handle_shim() -> Result<()> {
@@ -346,13 +352,25 @@ pub(crate) async fn reshim_for(
     let full_rebuild = force || shim_mode_changed || shim_version_changed;
     file::create_dir_all(&shims_dir)?;
 
-    let (desired, shims_to_stage) = if full_rebuild {
+    let dedicated = is_dedicated_shims_dir(&shims_dir);
+    let (desired, shims_to_stage, known_owned, prune_entries) = if full_rebuild {
         let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
         let shims_to_stage = desired.iter().cloned().collect();
-        (desired, shims_to_stage)
+        if dedicated {
+            (desired, shims_to_stage, HashSet::new(), HashSet::new())
+        } else {
+            let actual = get_actual_shims(&mise_bin, &shims_dir).await?;
+            let prune_entries = actual.owned.difference(&desired).cloned().collect();
+            (desired, shims_to_stage, actual.owned, prune_entries)
+        }
     } else {
         let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
-        (diffs.desired, diffs.missing)
+        (
+            diffs.desired,
+            diffs.missing,
+            diffs.owned,
+            diffs.extra.into_iter().collect(),
+        )
     };
     let staging = stage_shim_farm(
         &shims_dir,
@@ -368,7 +386,9 @@ pub(crate) async fn reshim_for(
         &mise_bin,
         staging,
         desired,
-        is_dedicated_shims_dir(&shims_dir),
+        known_owned,
+        prune_entries,
+        full_rebuild && dedicated,
     )?;
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
@@ -445,6 +465,8 @@ fn publish_staged_shim_farm(
     mise_bin: &Path,
     staging: tempfile::TempDir,
     mut desired: HashSet<String>,
+    known_owned: HashSet<String>,
+    prune_entries: HashSet<String>,
     prune_unmanaged: bool,
 ) -> Result<()> {
     let mut entries = staging
@@ -469,8 +491,15 @@ fn publish_staged_shim_farm(
     for entry in entries {
         let source = entry.path();
         let destination = shims_dir.join(entry.file_name());
-        if (destination.exists() || destination.is_symlink())
-            && !is_mise_shim(&destination, mise_bin)?
+        let destination_exists = destination.exists() || destination.is_symlink();
+        let destination_owned = is_hidden_shim_name(&entry.file_name())
+            || known_owned.contains(&entry.file_name().to_string_lossy().into_owned())
+            || (destination_exists
+                && (is_mise_shim(&destination, mise_bin)?
+                    || symlink_target_names_mise(&destination)?));
+        if destination_exists
+            && !prune_unmanaged
+            && !destination_owned
             && !files_identical(&source, &destination).unwrap_or(false)
         {
             warn!(
@@ -479,7 +508,7 @@ fn publish_staged_shim_farm(
             );
             continue;
         }
-        if cfg!(windows) && (destination.exists() || destination.is_symlink()) {
+        if cfg!(windows) && destination_exists {
             remove_shim_with_rename_fallback(&destination)?;
         }
         // Rename replaces a same-named file atomically. A publication error
@@ -499,7 +528,7 @@ fn publish_staged_shim_farm(
     // Mise's default, dedicated farms retain their historical full cleanup.
     for shim in list_shims_in(shims_dir)?.difference(&desired) {
         let path = shims_dir.join(shim);
-        if prune_unmanaged || is_mise_shim(&path, mise_bin)? {
+        if prune_unmanaged || prune_entries.contains(shim) {
             if cfg!(windows) {
                 remove_shim_with_rename_fallback(&path)?;
             } else {
@@ -541,35 +570,65 @@ fn files_identical(a: &Path, b: &Path) -> Result<bool> {
     if !a.is_file() || !b.is_file() {
         return Ok(false);
     }
+    if fs::metadata(a)?.len() != fs::metadata(b)?.len() {
+        return Ok(false);
+    }
     Ok(fs::read(a)? == fs::read(b)?)
+}
+
+fn read_file_prefix(path: &Path) -> Result<Vec<u8>> {
+    let mut contents = Vec::new();
+    fs::File::open(path)?
+        .take(SHIM_SCRIPT_INSPECTION_LIMIT)
+        .read_to_end(&mut contents)?;
+    Ok(contents)
+}
+
+fn is_mise_dispatcher_name(name: &str) -> bool {
+    if cfg!(windows) {
+        name.eq_ignore_ascii_case("mise") || name.eq_ignore_ascii_case("mise.exe")
+    } else {
+        name == "mise"
+    }
+}
+
+fn resolved_symlink_target(path: &Path) -> Result<Option<PathBuf>> {
+    if !path.is_symlink() {
+        return Ok(None);
+    }
+    let target = fs::read_link(path)?;
+    Ok(Some(if target.is_absolute() {
+        target
+    } else {
+        path.parent().unwrap_or_else(|| Path::new(".")).join(target)
+    }))
+}
+
+fn symlink_target_names_mise(path: &Path) -> Result<bool> {
+    Ok(resolved_symlink_target(path)?.is_some_and(|target| {
+        target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(is_mise_dispatcher_name)
+    }))
 }
 
 fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
     if path
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(env::is_mise_binary)
+        .is_some_and(is_mise_dispatcher_name)
     {
         // A package manager may install mise itself as a symlink in the shared
         // directory. It is the dispatcher, not one of its shims.
         return Ok(false);
     }
     if path.is_symlink() {
-        let target = fs::read_link(path)?;
-        let target = if target.is_absolute() {
-            target
-        } else {
-            path.parent().unwrap_or_else(|| Path::new(".")).join(target)
-        };
-        let target_names_mise = target
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(env::is_mise_binary);
-        return Ok(target_names_mise
-            || file::paths_eq(
-                &file::canonicalize_or_self(&target),
-                &file::canonicalize_or_self(mise_bin),
-            ));
+        let target = resolved_symlink_target(path)?.expect("symlink target");
+        return Ok(file::paths_eq(
+            &file::canonicalize_or_self(&target),
+            &file::canonicalize_or_self(mise_bin),
+        ));
     }
 
     #[cfg(windows)]
@@ -587,17 +646,32 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
             return Ok(true);
         }
 
-        let contents = fs::read(path).unwrap_or_default();
+        let is_script = path.extension().is_none()
+            || path
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"));
+        let contents = if is_script {
+            read_file_prefix(path).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
         if is_generated_shell_shim(&contents)
             || is_generated_windows_file_shim_contents(path, &contents)
-            || has_mise_native_shim_fingerprint(&contents)
         {
             return Ok(true);
         }
         let matches_mise = files_identical(path, mise_bin).unwrap_or(false);
         let matches_launcher = find_mise_shim_bin(mise_bin)
             .is_some_and(|launcher| files_identical(path, &launcher).unwrap_or(false));
-        return Ok(matches_mise || matches_launcher);
+        if matches_mise || matches_launcher {
+            return Ok(true);
+        }
+        let contents = if is_script {
+            contents
+        } else {
+            fs::read(path).unwrap_or_default()
+        };
+        return Ok(has_mise_native_shim_fingerprint(&contents));
     }
 
     #[cfg(not(windows))]
@@ -605,7 +679,9 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
         if !path.is_file() {
             return Ok(false);
         }
-        Ok(is_generated_shell_shim(&fs::read(path).unwrap_or_default()))
+        Ok(is_generated_shell_shim(
+            &read_file_prefix(path).unwrap_or_default(),
+        ))
     }
 }
 
@@ -666,8 +742,13 @@ fn is_generated_windows_file_shim_contents(path: &Path, contents: &[u8]) -> bool
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"))
     {
-        contents == windows_file_shim_body(name).as_bytes()
+        contents.starts_with(GENERATED_WINDOWS_CMD_SHIM_HEADER.as_bytes())
+            || contents == windows_file_shim_body(name).as_bytes()
+            || is_legacy_windows_cmd_shim(contents)
     } else if path.extension().is_none() {
+        if contents.starts_with(GENERATED_WINDOWS_BASH_SHIM_HEADER.as_bytes()) {
+            return true;
+        }
         #[cfg(windows)]
         return contents == bash_shim_script(name).as_bytes();
         #[cfg(not(windows))]
@@ -675,6 +756,15 @@ fn is_generated_windows_file_shim_contents(path: &Path, contents: &[u8]) -> bool
     } else {
         false
     }
+}
+
+#[cfg(any(windows, test))]
+fn is_legacy_windows_cmd_shim(contents: &[u8]) -> bool {
+    let normalized = String::from_utf8_lossy(contents).replace("\r\n", "\n");
+    matches!(
+        normalized.as_str(),
+        "@echo off\nsetlocal\nmise x -- %*\n" | "@echo off\nsetlocal\nmise x -- %*"
+    )
 }
 
 fn sync_command_wrapper_shims(config: &Config, mise_bin: &Path, force: bool) -> Result<()> {
@@ -898,6 +988,7 @@ fn effective_shim_mode(mise_bin: &Path) -> String {
 fn bash_shim_script(tool: &str) -> String {
     formatdoc! {r#"
         #!/bin/bash
+        # mise generated shim
 
         shim_dir=$(cd -- "$(dirname -- "$0")" && pwd -P)
         shim_path="$shim_dir/${{0##*/}}"
@@ -964,6 +1055,7 @@ pub(crate) fn windows_file_shim_body(shim: &str) -> String {
     let run = format!("mise x -- {shim} {sentinel} %*");
     [
         "@echo off",
+        "rem mise generated shim",
         // `%~f0` is captured before delayed expansion is on, so a `!` in the path survives.
         "setlocal DisableDelayedExpansion",
         "set \"shim_path=%~f0\"",
@@ -1069,6 +1161,51 @@ pub(crate) struct ShimDiffs {
     pub missing: BTreeSet<String>,
     pub extra: BTreeSet<String>,
     pub desired: HashSet<String>,
+    owned: HashSet<String>,
+}
+
+struct ActualShims {
+    current: HashSet<String>,
+    dedicated_present: HashSet<String>,
+    owned: HashSet<String>,
+    occupied: HashSet<String>,
+    repairable: HashSet<String>,
+}
+
+fn calculate_shim_diffs(
+    actual: &ActualShims,
+    desired: &HashSet<String>,
+    dedicated: bool,
+) -> (BTreeSet<String>, BTreeSet<String>) {
+    // In a shared executable directory, a same-named unmanaged entry is an
+    // intentional collision, not a missing shim that reshim can repair. Treat
+    // it as occupied so doctor and automatic post-install reshims stay quiet.
+    let (missing, extra) = if dedicated {
+        (
+            desired
+                .difference(&actual.dedicated_present)
+                .cloned()
+                .collect(),
+            actual
+                .dedicated_present
+                .difference(desired)
+                .cloned()
+                .collect(),
+        )
+    } else {
+        (
+            desired
+                .iter()
+                .filter(|name| {
+                    !actual.current.contains(*name)
+                        && (!actual.occupied.contains(*name) || actual.repairable.contains(*name))
+                })
+                .cloned()
+                .collect(),
+            actual.owned.difference(desired).cloned().collect(),
+        )
+    };
+    (missing, extra)
 }
 
 // get_shim_diffs contrasts the actual shims on disk
@@ -1086,42 +1223,59 @@ pub(crate) async fn get_shim_diffs(
         get_desired_shims(config, mise_bin, toolset, scope)
     );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
-    let missing: BTreeSet<_> = desired_shims.difference(&actual_shims).cloned().collect();
-    let extra: BTreeSet<_> = actual_shims.difference(&desired_shims).cloned().collect();
+    let (missing, extra) = calculate_shim_diffs(
+        &actual_shims,
+        &desired_shims,
+        is_dedicated_shims_dir(shims_dir),
+    );
     time!("get_shim_diffs sizes: ({},{})", missing.len(), extra.len());
     Ok(ShimDiffs {
         missing,
         extra,
         desired: desired_shims,
+        owned: actual_shims.owned,
     })
 }
 
-async fn get_actual_shims(mise_bin: impl AsRef<Path>, shims_dir: &Path) -> Result<HashSet<String>> {
+async fn get_actual_shims(mise_bin: impl AsRef<Path>, shims_dir: &Path) -> Result<ActualShims> {
     let mise_bin = mise_bin.as_ref();
-
-    Ok(list_shims_in(shims_dir)?
-        .into_iter()
-        .filter(|bin| is_current_mise_shim(&shims_dir.join(bin), mise_bin).unwrap_or(false))
-        .collect::<HashSet<_>>())
+    let occupied = list_shims_in(shims_dir)?;
+    let mut current = HashSet::new();
+    let mut dedicated_present = HashSet::new();
+    let mut owned = HashSet::new();
+    let mut repairable = HashSet::new();
+    for bin in &occupied {
+        let path = shims_dir.join(bin);
+        if is_mise_shim(&path, mise_bin).unwrap_or(false) {
+            owned.insert(bin.clone());
+            if is_current_owned_mise_shim(&path, mise_bin).unwrap_or(false) {
+                current.insert(bin.clone());
+            }
+        } else if symlink_target_names_mise(&path).unwrap_or(false) {
+            repairable.insert(bin.clone());
+        }
+        if !path.is_symlink() || current.contains(bin) {
+            dedicated_present.insert(bin.clone());
+        }
+    }
+    Ok(ActualShims {
+        current,
+        dedicated_present,
+        owned,
+        occupied,
+        repairable,
+    })
 }
 
-fn is_current_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
-    if !is_mise_shim(path, mise_bin)? {
-        return Ok(false);
-    }
+fn is_current_owned_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
     if !path.is_symlink() {
         return Ok(true);
     }
-    let target = fs::read_link(path)?;
-    let target = if target.is_absolute() {
-        target
-    } else {
-        path.parent().unwrap_or_else(|| Path::new(".")).join(target)
-    };
-    Ok(file::paths_eq(
-        &file::canonicalize_or_self(&target),
-        &file::canonicalize_or_self(mise_bin),
-    ))
+    let target = resolved_symlink_target(path)?.expect("symlink target");
+    // Raw path equality is deliberate. A shim that points through to the same
+    // binary but bypasses the stable package-manager launcher must be migrated
+    // before the versioned path disappears during an upgrade.
+    Ok(file::paths_eq(&target, mise_bin))
 }
 
 fn list_executables_in_dir(dir: &Path) -> Result<HashSet<String>> {
@@ -1773,14 +1927,32 @@ mod tests {
     }
 
     #[test]
-    fn windows_file_shim_detection_requires_the_exact_generated_body() {
+    fn windows_file_shim_detection_uses_stable_markers_and_legacy_body() {
         let dir = tempfile::tempdir().unwrap();
         let shim = dir.path().join("gh.cmd");
         fs::write(&shim, windows_file_shim_body("gh")).unwrap();
         assert!(is_generated_windows_file_shim(&shim));
 
+        fs::write(
+            &shim,
+            format!("{GENERATED_WINDOWS_CMD_SHIM_HEADER}echo future body\r\n"),
+        )
+        .unwrap();
+        assert!(is_generated_windows_file_shim(&shim));
+
+        fs::write(&shim, "@echo off\r\nsetlocal\r\nmise x -- %*\r\n").unwrap();
+        assert!(is_generated_windows_file_shim(&shim));
+
         fs::write(&shim, "@echo off\r\necho user script\r\n").unwrap();
         assert!(!is_generated_windows_file_shim(&shim));
+
+        let bash_shim = dir.path().join("gh");
+        fs::write(
+            &bash_shim,
+            format!("{GENERATED_WINDOWS_BASH_SHIM_HEADER}echo future body\n"),
+        )
+        .unwrap();
+        assert!(is_generated_windows_file_shim(&bash_shim));
     }
 
     #[cfg(windows)]
@@ -1846,7 +2018,16 @@ mod tests {
             "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n",
         )
         .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, staging, HashSet::new(), false).unwrap();
+        publish_staged_shim_farm(
+            live.path(),
+            &mise_bin,
+            staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            false,
+        )
+        .unwrap();
 
         assert_eq!(
             fs::read_to_string(&unmanaged).unwrap(),
@@ -1864,8 +2045,16 @@ mod tests {
             .prefix(".mise-shims-stage-")
             .tempdir_in(live.path())
             .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging, HashSet::new(), false)
-            .unwrap();
+        publish_staged_shim_farm(
+            live.path(),
+            &mise_bin,
+            empty_staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            false,
+        )
+        .unwrap();
 
         assert_eq!(
             fs::read_to_string(live.path().join("owned")).unwrap(),
@@ -1887,14 +2076,31 @@ mod tests {
             "#!/bin/sh\n# mise generated shim\nmise x -- owned \"$@\"\n",
         )
         .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, staging, HashSet::new(), false).unwrap();
+        publish_staged_shim_farm(
+            live.path(),
+            &mise_bin,
+            staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            false,
+        )
+        .unwrap();
 
         let empty_staging = tempfile::Builder::new()
             .prefix(".mise-shims-stage-")
             .tempdir_in(live.path())
             .unwrap();
-        publish_staged_shim_farm(live.path(), &mise_bin, empty_staging, HashSet::new(), false)
-            .unwrap();
+        publish_staged_shim_farm(
+            live.path(),
+            &mise_bin,
+            empty_staging,
+            HashSet::new(),
+            HashSet::from(["owned".to_string()]),
+            HashSet::from(["owned".to_string()]),
+            false,
+        )
+        .unwrap();
 
         assert!(!live.path().join("owned").exists());
     }
@@ -1911,10 +2117,107 @@ mod tests {
             .prefix(".mise-shims-stage-")
             .tempdir_in(live.path())
             .unwrap();
+        let collision = live.path().join("collision");
+        fs::write(&collision, "unmanaged old file").unwrap();
+        fs::write(staging.path().join("collision"), "replacement shim").unwrap();
 
-        publish_staged_shim_farm(live.path(), &mise_bin, staging, HashSet::new(), true).unwrap();
+        publish_staged_shim_farm(
+            live.path(),
+            &mise_bin,
+            staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            true,
+        )
+        .unwrap();
 
         assert!(!orphan.exists());
+        assert_eq!(fs::read_to_string(collision).unwrap(), "replacement shim");
+    }
+
+    #[test]
+    fn staged_shim_publication_updates_metadata_in_shared_directory() {
+        let live = tempfile::tempdir().unwrap();
+        let mise_bin = live.path().join("mise");
+        fs::write(&mise_bin, "mise").unwrap();
+        fs::write(live.path().join(".version"), "old").unwrap();
+        let staging = tempfile::Builder::new()
+            .prefix(".mise-shims-stage-")
+            .tempdir_in(live.path())
+            .unwrap();
+        fs::write(staging.path().join(".version"), "new").unwrap();
+
+        publish_staged_shim_farm(
+            live.path(),
+            &mise_bin,
+            staging,
+            HashSet::new(),
+            HashSet::new(),
+            HashSet::new(),
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(live.path().join(".version")).unwrap(),
+            "new"
+        );
+    }
+
+    #[test]
+    fn shared_collision_is_not_missing_or_extra() {
+        let actual = ActualShims {
+            current: HashSet::new(),
+            dedicated_present: HashSet::new(),
+            owned: HashSet::new(),
+            occupied: HashSet::from(["black".to_string()]),
+            repairable: HashSet::new(),
+        };
+        let desired = HashSet::from(["black".to_string()]);
+
+        let (missing, extra) = calculate_shim_diffs(&actual, &desired, false);
+
+        assert!(missing.is_empty());
+        assert!(extra.is_empty());
+    }
+
+    #[test]
+    fn dedicated_diff_reports_the_same_entries_incremental_pruning_removes() {
+        let actual = ActualShims {
+            current: HashSet::from(["node".to_string()]),
+            dedicated_present: HashSet::from(["node".to_string(), "orphan".to_string()]),
+            owned: HashSet::from(["node".to_string()]),
+            occupied: HashSet::from([
+                "node".to_string(),
+                "orphan".to_string(),
+                "foreign-symlink".to_string(),
+            ]),
+            repairable: HashSet::new(),
+        };
+        let desired = HashSet::from(["node".to_string()]);
+
+        let (missing, extra) = calculate_shim_diffs(&actual, &desired, true);
+
+        assert!(missing.is_empty());
+        assert_eq!(extra, BTreeSet::from(["orphan".to_string()]));
+    }
+
+    #[test]
+    fn dangling_desired_mise_symlink_remains_missing_in_shared_directory() {
+        let actual = ActualShims {
+            current: HashSet::new(),
+            dedicated_present: HashSet::new(),
+            owned: HashSet::new(),
+            occupied: HashSet::from(["node".to_string()]),
+            repairable: HashSet::from(["node".to_string()]),
+        };
+        let desired = HashSet::from(["node".to_string()]);
+
+        let (missing, extra) = calculate_shim_diffs(&actual, &desired, false);
+
+        assert_eq!(missing, BTreeSet::from(["node".to_string()]));
+        assert!(extra.is_empty());
     }
 
     #[cfg(unix)]
@@ -1952,6 +2255,8 @@ mod tests {
             &mise_bin,
             staging,
             HashSet::from(["existing".to_string()]),
+            HashSet::from(["existing".to_string()]),
+            HashSet::new(),
             false,
         )
         .unwrap();
@@ -1976,12 +2281,19 @@ mod tests {
         std::os::unix::fs::symlink(&other_bin, &shim).unwrap();
         assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
 
-        // A dangling shim left after mise moved can still be identified by its
-        // target name and repaired.
+        // A dangling target name alone is not proof of ownership: an unrelated
+        // symlink in a shared directory may also point at a file named `mise`.
+        // Publication uses this weaker signal only for a desired collision.
         fs::remove_file(&shim).unwrap();
         std::os::unix::fs::symlink(dir.path().join("old/bin/mise"), &shim).unwrap();
-        assert!(is_mise_shim(&shim, &mise_bin).unwrap());
-        assert!(!is_current_mise_shim(&shim, &mise_bin).unwrap());
+        assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+        assert!(symlink_target_names_mise(&shim).unwrap());
+        assert!(!is_current_owned_mise_shim(&shim, &mise_bin).unwrap());
+
+        fs::remove_file(&shim).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("scripts/mise-wrapper.sh"), &shim).unwrap();
+        assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+        assert!(!symlink_target_names_mise(&shim).unwrap());
 
         // The real mise dispatcher may itself be installed as a symlink in a
         // shared bin directory; its own name keeps it out of shim pruning.
@@ -1989,6 +2301,24 @@ mod tests {
         fs::remove_file(&dispatcher).unwrap();
         std::os::unix::fs::symlink(&other_bin, &dispatcher).unwrap();
         assert!(!is_mise_shim(&dispatcher, &mise_bin).unwrap());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn current_shim_check_migrates_to_stable_launcher_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let versioned = dir.path().join("Cellar/mise/1/bin/mise");
+        fs::create_dir_all(versioned.parent().unwrap()).unwrap();
+        fs::write(&versioned, "mise").unwrap();
+        let launcher = dir.path().join("bin/mise");
+        fs::create_dir_all(launcher.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&versioned, &launcher).unwrap();
+        let shim = dir.path().join("shims/node");
+        fs::create_dir_all(shim.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&versioned, &shim).unwrap();
+
+        assert!(is_mise_shim(&shim, &launcher).unwrap());
+        assert!(!is_current_owned_mise_shim(&shim, &launcher).unwrap());
     }
 
     #[test]
