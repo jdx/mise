@@ -461,6 +461,9 @@ fn publish_staged_shim_farm(
             );
             continue;
         }
+        if cfg!(windows) && (destination.exists() || destination.is_symlink()) {
+            remove_shim_with_rename_fallback(&destination)?;
+        }
         // Rename replaces a same-named file atomically. A publication error
         // therefore leaves that live shim untouched; an interrupted rebuild can
         // leave a mixture of old and new shims, but never evacuates the farm.
@@ -503,6 +506,15 @@ fn files_identical(a: &Path, b: &Path) -> Result<bool> {
 }
 
 fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
+    if path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(env::is_mise_binary)
+    {
+        // A package manager may install mise itself as a symlink in the shared
+        // directory. It is the dispatcher, not one of its shims.
+        return Ok(false);
+    }
     if path.is_symlink() {
         let target = fs::read_link(path)?;
         let target = if target.is_absolute() {
@@ -510,10 +522,15 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
         } else {
             path.parent().unwrap_or_else(|| Path::new(".")).join(target)
         };
-        return Ok(file::paths_eq(
-            &file::canonicalize_or_self(&target),
-            &file::canonicalize_or_self(mise_bin),
-        ));
+        let target_names_mise = target
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(env::is_mise_binary);
+        return Ok(target_names_mise
+            || file::paths_eq(
+                &file::canonicalize_or_self(&target),
+                &file::canonicalize_or_self(mise_bin),
+            ));
     }
 
     #[cfg(windows)]
@@ -1796,6 +1813,19 @@ mod tests {
         fs::remove_file(&shim).unwrap();
         std::os::unix::fs::symlink(&other_bin, &shim).unwrap();
         assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+
+        // A dangling shim left after mise moved can still be identified by its
+        // target name and repaired.
+        fs::remove_file(&shim).unwrap();
+        std::os::unix::fs::symlink(dir.path().join("old/bin/mise"), &shim).unwrap();
+        assert!(is_mise_shim(&shim, &mise_bin).unwrap());
+
+        // The real mise dispatcher may itself be installed as a symlink in a
+        // shared bin directory; its own name keeps it out of shim pruning.
+        let dispatcher = dir.path().join("mise");
+        fs::remove_file(&dispatcher).unwrap();
+        std::os::unix::fs::symlink(&other_bin, &dispatcher).unwrap();
+        assert!(!is_mise_shim(&dispatcher, &mise_bin).unwrap());
     }
 
     #[cfg(not(windows))]
