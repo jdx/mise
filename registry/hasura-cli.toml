@@ -1,4 +1,3 @@
 backends = ["aqua:hasura/graphql-engine", "asdf:gurukulkarni/asdf-hasura"]
-bins = ["hasura"]
 description = "Hasura GraphQL Engine CLI"
 version_order = "semver"

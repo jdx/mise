@@ -1,4 +1,3 @@
 backends = ["aqua:xo/usql", "asdf:itspngu/asdf-usql"]
-bins = ["usql"]
 description = "Universal command-line interface for SQL databases"
 version_order = "semver"

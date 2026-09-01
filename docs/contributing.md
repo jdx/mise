@@ -751,6 +751,12 @@ or whenever the convention is uncertain. Semantic ordering currently affects
 the Aqua, GitHub, GitLab, Forgejo, and HTTP backends; the field still documents
 the policy for tools whose current backend owns version ordering itself.
 
+When `aqua` is the preferred backend, mise derives the tool's command names from
+the Aqua registry's file metadata. Do not add `bins` when that inferred list is
+correct. Set `bins` explicitly only when the registry shorthand needs a different
+backend-independent command set, such as commands bundled by a fallback backend
+that Aqua does not describe.
+
 #### Idiomatic version files
 
 Registry tools can opt into [idiomatic version files](/configuration.html#idiomatic-version-files)

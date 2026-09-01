@@ -1,5 +1,4 @@
 backends = ["aqua:bats-core/bats-core", "asdf:timgluz/asdf-bats"]
-bins = ["bats"]
 description = "Bash Automated Testing System"
 os = ["linux", "macos"]
 test = { cmd = "bats -v", expected = "Bats" }

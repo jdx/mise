@@ -3,4 +3,3 @@ test = { cmd = "bao version", expected = "OpenBao v{{version}}" }
 version_order = "semver"
 
 backends = ["aqua:openbao/openbao/bao", "github:openbao/openbao"]
-bins = ["bao"]
