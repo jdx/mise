@@ -480,9 +480,9 @@ jobs:
 
           ## 💚 Sponsor mise
 
-          mise is maintained by [@jdx](https://github.com/jdx), an open source developer for [**entire.io**](https://entire.io), the title sponsor of the [jdx.dev](https://jdx.dev) open source tools. Development is funded by sponsors.
+          mise is built and maintained by [@jdx](https://github.com/jdx), an open source developer at [**entire.io**](https://entire.io/), the title sponsor of his open source work.
 
-          If mise saves you or your team time, please consider sponsoring at [jdx.dev](https://jdx.dev/sponsors.html). Individual and company sponsorships keep mise fast, free, and independent.
+          If mise saves you or your team time, please consider becoming an [individual or company sponsor](https://jdx.dev/sponsors.html). Your support funds ongoing development and helps keep mise fast, free, and independent.
           EOF
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
