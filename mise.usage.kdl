@@ -3070,7 +3070,7 @@ Note that this creates shims for _all_ installed tools, not just the ones that a
 currently active in mise.toml.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise reshim\u{1b}[22m\n    $ \u{1b}[1m~/.local/share/mise/shims/node -v\u{1b}[22m\n    v20.0.0\n"
-    flag "-f --force" help="Removes all shims before reshimming"
+    flag "-f --force" help="Rebuilds all mise-owned shims"
     flag --system help="Rebuild the system shim farm"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[TOOL]" required=#false hide=#true
