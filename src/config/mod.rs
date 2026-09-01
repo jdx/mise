@@ -3555,6 +3555,29 @@ pub(crate) async fn rebuild_shims_and_runtime_symlinks_after_removal(
     .await
 }
 
+/// Reconcile a shim farm after a configuration-only change, where there is no
+/// installed or removed tool path from which to infer ownership.
+pub(crate) async fn rebuild_shims_and_runtime_symlinks_for_scope(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    scope: shims::ShimScope,
+) -> Result<()> {
+    let system_installs = Settings::get().system_installs_dir().to_path_buf();
+    let changed_install_paths = match scope {
+        shims::ShimScope::User => vec![dirs::INSTALLS.to_path_buf()],
+        shims::ShimScope::System => vec![system_installs],
+        shims::ShimScope::Both => vec![dirs::INSTALLS.to_path_buf(), system_installs],
+    };
+    rebuild_shims_and_runtime_symlinks_for_changes(
+        config,
+        ts,
+        &[],
+        &changed_install_paths,
+        lockfile::LockfileUpdateMode::Normal,
+    )
+    .await
+}
+
 async fn rebuild_shims_and_runtime_symlinks_for_changes(
     config: &Arc<Config>,
     ts: &Toolset,

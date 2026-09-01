@@ -28,7 +28,7 @@ assert_directory_exists "$MISE_SYSTEM_INSTALLS_DIR/dummy/1.1.0"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.1.0'"
 
 # Removing a non-lazy system install reconciles the system farm rather than
-# leaving a stale dispatcher behind.
+# leaving a stale dispatcher behind or touching the distinct user farm.
 cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
 [tools]
 dummy = "1"
@@ -36,8 +36,27 @@ pitchfork = "0.1.5"
 EOF
 mise install --system pitchfork
 assert_succeed "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+user_shims_dir="$MISE_SHIMS_DIR"
+export MISE_SHIMS_DIR="/proc/mise-user-shims"
 mise uninstall pitchfork@0.1.5
+export MISE_SHIMS_DIR="$user_shims_dir"
 assert_fail "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+
+# Removing a lazy declaration from system config reconciles the system farm,
+# including with --no-prune.
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+pitchfork = { version = "0.1.5", lazy = true, lazy_bins = ["pitchfork"] }
+EOF
+mise reshim --system
+mise unuse --path "$MISE_SYSTEM_CONFIG_FILE" --no-prune pitchfork
+assert_fail "test -e '$MISE_SYSTEM_SHIMS_DIR/pitchfork'"
+
+cat >"$MISE_SYSTEM_CONFIG_FILE" <<'EOF'
+[tools]
+dummy = "1"
+EOF
 
 # When both farms are collocated, either selector reconciles the same union and
 # cannot remove shims required by the other scope.
