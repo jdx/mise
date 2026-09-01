@@ -541,10 +541,9 @@ fn render_service(request: &SystemdRequest, out: &mut String) {
         ));
     }
     for environment_file in &request.environment_file {
-        out.push_str(&format!(
-            "EnvironmentFile={}\n",
-            quote_environment(environment_file)
-        ));
+        // EnvironmentFile treats the entire value as a path, including spaces.
+        // Quotes are literal here and make an absolute path invalid.
+        out.push_str(&format!("EnvironmentFile={environment_file}\n"));
     }
     if let Some(nice) = request.nice {
         out.push_str(&format!("Nice={nice}\n"));
@@ -957,8 +956,8 @@ mod tests {
         assert!(unit.contains(&format!("WorkingDirectory={}\n", expand_path_string("~"))));
         assert!(unit.contains("Environment=\"PATH=/usr/bin:/bin\"\n"));
         assert!(unit.contains("Environment=\"QUOTED=hello \\\"there\\\"\"\n"));
-        assert!(unit.contains("EnvironmentFile=\"-%h/.config/sync.env\"\n"));
-        assert!(unit.contains("EnvironmentFile=\"%h/.config/sync config.env\"\n"));
+        assert!(unit.contains("EnvironmentFile=-%h/.config/sync.env\n"));
+        assert!(unit.contains("EnvironmentFile=%h/.config/sync config.env\n"));
         assert!(unit.contains("Nice=10\n"));
         assert!(unit.contains("UMask=0007\n"));
         assert!(unit.contains("Restart=on-failure\n"));
