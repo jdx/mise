@@ -1211,6 +1211,15 @@
           "description": "Require lockfile URLs to be present during installation.",
           "type": "boolean"
         },
+        "locked_scopes": {
+          "default": ["global", "project", "system"],
+          "description": "Config scopes where invocation-wide locked mode is enforced.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["project", "global", "system"]
+          }
+        },
         "locked_verify_provenance": {
           "default": false,
           "description": "Re-verify provenance at install time even when the lockfile already has provenance.",

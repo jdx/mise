@@ -1516,6 +1516,41 @@ Equivalent to passing `--locked` to `mise install`.
 env = "MISE_LOCKED"
 type = "Bool"
 
+[locked_scopes]
+default = ["global", "project", "system"]
+description = "Config scopes where invocation-wide locked mode is enforced."
+docs = """
+Restrict invocation-wide locked mode (`--locked`, `MISE_LOCKED=1`, or
+`locked = true`) to tools originating in the selected config scopes. Valid
+scopes are `project`, `global` (the user config), and `system`.
+
+For example, distributions that declare rolling tools in system config can
+exclude those tools while retaining strict locking for project and user-global
+tools:
+
+```toml
+[settings]
+locked_scopes = ["project", "global"]
+```
+
+To lock only project tools, set `locked_scopes = ["project"]`. Explicit tool
+arguments and environment-supplied tool versions remain subject to
+invocation-wide locked mode because they do not belong to a config scope.
+Config-root policy set with `[tool_config] locked = true` is always enforced,
+even when that scope is absent from this list. Excluding a scope relaxes locked
+mode for that scope; it does not prevent mise from reading an existing lockfile.
+
+This is a global-only setting so project configuration cannot weaken a user's
+locked-mode policy. Set it in user-global or system config, or with
+`MISE_LOCKED_SCOPES`.
+"""
+enum = ["project", "global", "system"]
+env = "MISE_LOCKED_SCOPES"
+global_only = true
+parse_env = "set_by_comma"
+rust_type = "BTreeSet<String>"
+type = "SetString"
+
 [locked_verify_provenance]
 default = false
 description = "Re-verify provenance at install time even when the lockfile already has provenance."

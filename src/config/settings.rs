@@ -993,6 +993,7 @@ impl Settings {
         }
         let mut settings = builder.load()?;
         normalize_storage_dirs(&mut settings)?;
+        validate_settings_enum_values(&settings)?;
         Ok(settings)
     }
 
@@ -1913,6 +1914,20 @@ where
         .map(|set| set.into_iter().collect())
 }
 
+fn validate_setting_enum_values<'a>(
+    name: &str,
+    values: impl IntoIterator<Item = &'a str>,
+    allowed: &[&str],
+) -> Result<()> {
+    if let Some(invalid) = values.into_iter().find(|value| !allowed.contains(value)) {
+        bail!(
+            "invalid {name} value {invalid:?}; expected one of: {}",
+            allowed.join(", ")
+        );
+    }
+    Ok(())
+}
+
 fn normalize_tool_names(tools: &BTreeSet<String>) -> BTreeSet<String> {
     tools
         .iter()
@@ -2831,6 +2846,18 @@ mod tests {
         let expected: BTreeSet<String> =
             ["foo".to_string(), "bar".to_string()].into_iter().collect();
         assert_eq!(result.unwrap(), expected);
+    }
+
+    #[test]
+    fn test_generated_collection_enum_validation() {
+        let mut settings = Settings::builder().load().unwrap();
+        settings.locked_scopes = BTreeSet::from(["projct".to_string()]);
+        assert_eq!(
+            validate_settings_enum_values(&settings)
+                .unwrap_err()
+                .to_string(),
+            "invalid locked_scopes value \"projct\"; expected one of: project, global, system"
+        );
     }
 
     #[test]

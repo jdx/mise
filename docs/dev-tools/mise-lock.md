@@ -216,9 +216,24 @@ mise settings locked=true
 MISE_LOCKED=1 mise install
 ```
 
-::: warning
-All mise settings are global in scope. Setting `locked = true` in a project's `mise.toml` applies to **all** tool resolution, including tools from your global `~/.config/mise/config.toml`. If you see warnings about global tools missing from the lockfile, run `mise lock -g` to generate a global lockfile.
-:::
+By default, invocation-wide locked mode applies to project, user-global, and
+system config. Use `locked_scopes` to exclude config scopes that intentionally
+contain rolling or distribution-managed tools:
+
+```toml
+# In ~/.config/mise/config.toml or /etc/mise/config.toml
+[settings]
+locked = true
+locked_scopes = ["project"]
+```
+
+Valid scopes are `project`, `global`, and `system`. Explicit tool arguments and
+environment-supplied tool versions remain locked because they do not belong to
+a config scope. Excluding a scope relaxes locked mode for that scope; mise still
+uses an existing lockfile when one is present. If global tools should be locked
+and are missing from the lockfile, run `mise lock -g` to generate the global
+lockfiles. `locked_scopes` is global-only so project configuration cannot weaken
+a user's locked-mode policy.
 
 To enforce strict mode only for tools declared by one config root, use
 `tool_config.locked` instead of the invocation-wide setting:
@@ -234,8 +249,8 @@ node = "24"
 This policy belongs to the containing config root: tools declared by `mise.toml`,
 `mise.local.toml`, and other configs sharing that root must be present in their
 respective lockfiles. Tools inherited from global or parent config roots keep
-their own policy. `--locked`, `MISE_LOCKED=1`, and `[settings] locked = true`
-continue to apply to the entire active toolset.
+their own policy. A config-root policy remains enforced even when its scope is
+excluded from `locked_scopes`.
 
 When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
 

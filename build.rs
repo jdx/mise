@@ -922,6 +922,61 @@ pub(crate) struct {name} {{"#,
 
     lines.push(
         r#"
+/// Validate collection values constrained by `enum` in settings.toml.
+pub(crate) fn validate_settings_enum_values(settings: &Settings) -> Result<()> {"#
+            .to_string(),
+    );
+    /// Emit runtime validators for constrained string collections.
+    fn emit_collection_enum_validators(
+        lines: &mut Vec<String>,
+        table: &toml::Table,
+        path: &[&str],
+    ) {
+        for (key, value) in table {
+            let props = value.as_table().unwrap();
+            let mut field_path = path.to_vec();
+            field_path.push(key);
+            let Some(type_) = props.get("type").and_then(toml::Value::as_str) else {
+                emit_collection_enum_validators(lines, props, &field_path);
+                continue;
+            };
+            if !matches!(type_, "ListString" | "SetString") {
+                continue;
+            }
+            let Some(allowed) = props.get("enum").and_then(toml::Value::as_array) else {
+                continue;
+            };
+            let allowed = allowed
+                .iter()
+                .map(|value| {
+                    value.as_str().unwrap_or_else(|| {
+                        panic!("enum values for {} must be strings", field_path.join("."))
+                    })
+                })
+                .collect::<Vec<_>>();
+            let allowed_code = allowed
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let name = field_path.join(".");
+            let field = format!("settings.{name}");
+            let values = if props.get("optional").is_some_and(|v| v.as_bool().unwrap()) {
+                format!("{field}.as_ref().into_iter().flatten().map(String::as_str)")
+            } else {
+                format!("{field}.iter().map(String::as_str)")
+            };
+            lines.push(format!(
+                "    validate_setting_enum_values({name:?}, {values}, &[{allowed_code}])?;"
+            ));
+        }
+    }
+    emit_collection_enum_validators(&mut lines, &settings, &[]);
+    lines.push("    Ok(())".to_string());
+    lines.push("}".to_string());
+
+    lines.push(
+        r#"
 /// Apply the merge strategies declared in settings.toml to config-file layers.
 pub(crate) fn merge_settings_file_layers(layers: &mut [SettingsPartial]) {"#
             .to_string(),
