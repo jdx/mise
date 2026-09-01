@@ -355,7 +355,7 @@ pub(crate) async fn reshim_for(
             shim_version,
         )
         .await?;
-        replace_shim_farm(&shims_dir, staging)?;
+        publish_staged_shim_farm(&shims_dir, staging)?;
     } else {
         let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
         write_shim_metadata(&shims_dir, &shim_mode, shim_version)?;
@@ -448,83 +448,51 @@ async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
     Ok(())
 }
 
-fn replace_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Result<()> {
-    let backup = tempfile::Builder::new()
-        .prefix(".mise-shims-backup-")
-        .tempdir_in(shims_dir)
+fn publish_staged_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Result<()> {
+    let desired = list_shims_in(staging.path())?;
+    let mut entries = staging
+        .path()
+        .read_dir()
         .wrap_err_with(|| {
             format!(
-                "failed to create shim backup directory in {}",
-                display_path(shims_dir)
+                "failed to read staged shim directory: {}",
+                display_path(staging.path())
             )
-        })?;
-
-    if let Err(err) =
-        move_directory_entries(shims_dir, backup.path(), &[staging.path(), backup.path()])
-    {
-        restore_shim_backup(shims_dir, &backup)?;
-        return Err(err).wrap_err("failed to stage the existing shim farm for replacement");
-    }
-
-    if let Err(err) = move_directory_entries(staging.path(), shims_dir, &[]) {
-        clear_directory_except(shims_dir, &[staging.path(), backup.path()])?;
-        restore_shim_backup(shims_dir, &backup)?;
-        return Err(err).wrap_err("failed to publish the staged shim farm");
-    }
-
-    if let Err(err) = backup.close() {
-        warn!("failed to remove old shim farm: {err}");
-    }
-    if let Err(err) = staging.close() {
-        warn!("failed to remove shim staging directory: {err}");
-    }
-    Ok(())
-}
-
-fn move_directory_entries(from: &Path, to: &Path, exclude: &[&Path]) -> Result<()> {
-    for entry in from
-        .read_dir()
-        .wrap_err_with(|| format!("failed to read shim directory: {}", display_path(from)))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-        if exclude
-            .iter()
-            .any(|excluded| file::paths_eq(&path, excluded))
-        {
-            continue;
-        }
-        let destination = to.join(entry.file_name());
-        fs::rename(&path, &destination).wrap_err_with(|| {
+        })?
+        .collect::<std::io::Result<Vec<_>>>()?;
+    // Publish metadata last. If publication is interrupted, an old marker makes
+    // the next reshim retry instead of treating a partially published farm as
+    // current.
+    entries.sort_by_key(|entry| is_hidden_shim_name(&entry.file_name()));
+    for entry in entries {
+        let source = entry.path();
+        let destination = shims_dir.join(entry.file_name());
+        // Rename replaces a same-named file atomically. A publication error
+        // therefore leaves that live shim untouched; an interrupted rebuild can
+        // leave a mixture of old and new shims, but never evacuates the farm.
+        fs::rename(&source, &destination).wrap_err_with(|| {
             format!(
-                "failed to move shim {} to {}",
-                display_path(&path),
+                "failed to publish shim {} to {}",
+                display_path(&source),
                 display_path(&destination)
             )
         })?;
     }
-    Ok(())
-}
 
-fn clear_directory_except(dir: &Path, exclude: &[&Path]) -> Result<()> {
-    for entry in dir
-        .read_dir()
-        .wrap_err_with(|| format!("failed to read shim directory: {}", display_path(dir)))?
-    {
-        let path = entry?.path();
-        if exclude
-            .iter()
-            .any(|excluded| file::paths_eq(&path, excluded))
-        {
-            continue;
+    // Only prune obsolete shims after every desired replacement is live. A
+    // pruning error may leave harmless extras, but cannot remove a required shim.
+    for shim in list_shims_in(shims_dir)?.difference(&desired) {
+        let path = shims_dir.join(shim);
+        if cfg!(windows) {
+            remove_shim_with_rename_fallback(&path)?;
+        } else {
+            file::remove_all(&path)?;
         }
-        file::remove_all(&path)?;
     }
-    Ok(())
-}
 
-fn restore_shim_backup(shims_dir: &Path, backup: &tempfile::TempDir) -> Result<()> {
-    move_directory_entries(backup.path(), shims_dir, &[])?;
+    if let Err(err) = staging.close() {
+        warn!("failed to remove shim staging directory: {err}");
+    }
     Ok(())
 }
 
