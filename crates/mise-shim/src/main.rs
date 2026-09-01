@@ -8,6 +8,7 @@ use std::path::Path;
 use std::process::{Command, ExitCode};
 
 const MISE_SHIM_PATH_ENV: &str = "__MISE_SHIM_PATH";
+const NATIVE_SHIM_MARKER: &[u8] = b"mise generated native shim v1";
 
 fn paths_eq(a: &Path, b: &Path) -> bool {
     let lexical_eq = |a: &Path, b: &Path| {
@@ -28,6 +29,9 @@ fn paths_eq(a: &Path, b: &Path) -> bool {
 }
 
 fn main() -> ExitCode {
+    // Keep a stable ownership marker in every native shim binary. mise reads
+    // this without executing the file when maintaining a shared shim directory.
+    std::hint::black_box(NATIVE_SHIM_MARKER);
     match run() {
         Ok(code) => ExitCode::from(code as u8),
         Err(err) => {

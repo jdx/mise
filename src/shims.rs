@@ -22,6 +22,9 @@ use itertools::Itertools;
 use path_absolutize::Absolutize;
 use tokio::task::JoinSet;
 
+#[cfg(any(windows, test))]
+const NATIVE_SHIM_MARKER: &[u8] = b"mise generated native shim v1";
+
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub(crate) async fn handle_shim() -> Result<()> {
     // TODO: instead, check if bin is in shims dir
@@ -548,7 +551,11 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
             return Ok(true);
         }
 
-        if is_generated_windows_file_shim(path) {
+        let contents = fs::read(path).unwrap_or_default();
+        if is_generated_shell_shim(&contents)
+            || is_generated_windows_file_shim_contents(path, &contents)
+            || has_mise_native_shim_fingerprint(&contents)
+        {
             return Ok(true);
         }
         let matches_mise = files_identical(path, mise_bin).unwrap_or(false);
@@ -562,29 +569,54 @@ fn is_mise_shim(path: &Path, mise_bin: &Path) -> Result<bool> {
         if !path.is_file() {
             return Ok(false);
         }
-        let contents = fs::read_to_string(path).unwrap_or_default();
-        Ok(contents.starts_with("#!/bin/sh\n# mise generated shim\n")
-            || (contents.starts_with("#!/bin/sh\nexport ASDF_DATA_DIR=")
-                && contents.contains("\nmise x -- ")))
+        Ok(is_generated_shell_shim(&fs::read(path).unwrap_or_default()))
     }
+}
+
+fn bytes_contain(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
+fn is_generated_shell_shim(contents: &[u8]) -> bool {
+    contents.starts_with(b"#!/bin/sh\n# mise generated shim\n")
+        || (contents.starts_with(b"#!/bin/sh\nexport ASDF_DATA_DIR=")
+            && bytes_contain(contents, b"\nmise x -- "))
+}
+
+#[cfg(any(windows, test))]
+fn has_mise_native_shim_fingerprint(contents: &[u8]) -> bool {
+    bytes_contain(contents, NATIVE_SHIM_MARKER)
+        // Transition shims made by mise versions predating the stable marker.
+        || (bytes_contain(
+            contents,
+            b"mise-shim: failed to determine executable path",
+        ) && bytes_contain(contents, b"mise-shim: failed to execute mise"))
+        || (bytes_contain(contents, b"__MISE_SHIM_PATH")
+            && bytes_contain(contents, b"recursive shim invocation detected")
+            && bytes_contain(contents, b"mise x --"))
 }
 
 #[cfg(any(windows, test))]
 fn is_generated_windows_file_shim(path: &Path) -> bool {
+    fs::read(path).is_ok_and(|contents| is_generated_windows_file_shim_contents(path, &contents))
+}
+
+#[cfg(any(windows, test))]
+fn is_generated_windows_file_shim_contents(path: &Path, contents: &[u8]) -> bool {
     let Some(name) = path.file_stem().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    let Ok(contents) = fs::read_to_string(path) else {
         return false;
     };
     if path
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd"))
     {
-        contents == windows_file_shim_body(name)
+        contents == windows_file_shim_body(name).as_bytes()
     } else if path.extension().is_none() {
         #[cfg(windows)]
-        return contents == bash_shim_script(name);
+        return contents == bash_shim_script(name).as_bytes();
         #[cfg(not(windows))]
         return false;
     } else {
@@ -1828,7 +1860,6 @@ mod tests {
         assert!(!is_mise_shim(&dispatcher, &mise_bin).unwrap());
     }
 
-    #[cfg(not(windows))]
     #[test]
     fn mise_shim_detection_recognizes_current_and_legacy_plugin_scripts() {
         let dir = tempfile::tempdir().unwrap();
@@ -1852,6 +1883,22 @@ mod tests {
 
         fs::write(&shim, "#!/bin/sh\necho user-script\n").unwrap();
         assert!(!is_mise_shim(&shim, &mise_bin).unwrap());
+    }
+
+    #[test]
+    fn native_shim_fingerprint_recognizes_current_and_transition_binaries() {
+        assert!(has_mise_native_shim_fingerprint(
+            b"PE\0mise generated native shim v1\0"
+        ));
+        assert!(has_mise_native_shim_fingerprint(
+            b"mise-shim: failed to determine executable path\0mise-shim: failed to execute mise"
+        ));
+        assert!(has_mise_native_shim_fingerprint(
+            b"__MISE_SHIM_PATH\0recursive shim invocation detected\0mise x --"
+        ));
+        assert!(!has_mise_native_shim_fingerprint(
+            b"an unrelated executable mentioning mise x --"
+        ));
     }
 
     #[cfg(target_os = "linux")]
