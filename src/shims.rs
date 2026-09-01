@@ -520,8 +520,18 @@ fn is_dedicated_shims_dir(path: &Path) -> bool {
 }
 
 fn matches_unredirected_dedicated_dir(path: &Path, dedicated: &Path) -> bool {
-    file::paths_eq(path, dedicated)
-        && dunce::canonicalize(path).is_ok_and(|resolved| file::paths_eq(&resolved, path))
+    if !file::paths_eq(path, dedicated) {
+        return false;
+    }
+    let Some((parent, file_name)) = path.parent().zip(path.file_name()) else {
+        return false;
+    };
+    match (dunce::canonicalize(path), dunce::canonicalize(parent)) {
+        (Ok(resolved), Ok(resolved_parent)) => {
+            file::paths_eq(&resolved, &resolved_parent.join(file_name))
+        }
+        _ => false,
+    }
 }
 
 fn files_identical(a: &Path, b: &Path) -> Result<bool> {
