@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fmt::{Debug, Display, Formatter};
-use std::fs::File;
 use std::hash::Hash;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -3752,7 +3751,13 @@ pub(crate) trait Backend: Debug + Send + Sync {
         file::create_dir_all(tv.install_path())?;
         file::create_dir_all(tv.download_path())?;
         file::create_dir_all(tv.cache_path())?;
-        File::create(self.incomplete_file_path(tv))?;
+        // `file::create` rather than `File::create`: it names the path in the error. The three
+        // calls above can return Ok without having created anything -- `std::fs::create_dir_all`
+        // does that for a path Windows refuses, such as one ending in `nul` -- and the first thing
+        // to notice is this write, three calls away from the cause. Unwrapped it was a bare
+        // `The system cannot find the path specified. (os error 3)` naming neither the file nor
+        // the operation.
+        file::create(&self.incomplete_file_path(tv))?;
         Ok(())
     }
     fn cleanup_install_dirs_on_error(&self, tv: &ToolVersion) {
