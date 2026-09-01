@@ -40,7 +40,7 @@ jobs:
       - uses: ./.github/actions/mbx
         with:
           backend: ${{ inputs.mbx-backend }}
-      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4
         with:
           install_args: bun
       # Check the API directly instead of bootstrapping the rate-limit helper,
