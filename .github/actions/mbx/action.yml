@@ -8,9 +8,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@203ebddb3bdb1b3832473207d0a837b23b660563
+    - uses: jdx/mr-boxington-action@adc5c234c02592f7edd008bf81d5bc0e9584dc03 # v1.2.0
       with:
-        version: 1.3.1
+        version: 1.3.2
         cache-generation: v2
         backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
         server-url: https://cache.mise.jdx.dev
