@@ -1,0 +1,37 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "7d4772149ee8",
+  "strategy": "manual-commit",
+  "branch": "pr-12594",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/dev-tools/shims.md",
+    "e2e/cli/test_lazy_tools",
+    "e2e/cli/test_lazy_tools_system",
+    "e2e/shell/test_shims_activation_conditional",
+    "src/cli/activate.rs",
+    "src/cli/doctor/mod.rs",
+    "src/cli/hook_env.rs",
+    "src/cli/self_update.rs",
+    "src/cli/uninstall.rs",
+    "src/config/mod.rs",
+    "src/file.rs",
+    "src/shims.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/7d/4772149ee8/0/metadata.json",
+      "transcript": "/7d/4772149ee8/0/full.jsonl",
+      "compact_transcript": "/7d/4772149ee8/0/transcript.jsonl",
+      "content_hash": "/7d/4772149ee8/0/content_hash.txt",
+      "prompt": "/7d/4772149ee8/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 323493,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13236224,
+    "output_tokens": 38704,
+    "api_call_count": 113
+  }
+}

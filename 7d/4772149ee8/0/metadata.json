@@ -1,0 +1,58 @@
+{
+  "cli_version": "0.10.3",
+  "checkpoint_id": "7d4772149ee8",
+  "session_id": "01a05a60-662f-7260-ac88-4866a1cc2f6f",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-01T00:56:39.947728882Z",
+  "branch": "pr-12594",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "docs/dev-tools/shims.md",
+    "e2e/cli/test_lazy_tools",
+    "e2e/cli/test_lazy_tools_system",
+    "e2e/shell/test_shims_activation_conditional",
+    "src/cli/activate.rs",
+    "src/cli/doctor/mod.rs",
+    "src/cli/hook_env.rs",
+    "src/cli/self_update.rs",
+    "src/cli/uninstall.rs",
+    "src/config/mod.rs",
+    "src/file.rs",
+    "src/shims.rs"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "b602d36053f2",
+  "compact_transcript_start": 0,
+  "token_usage": {
+    "input_tokens": 323493,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 13236224,
+    "output_tokens": 38704,
+    "api_call_count": 113
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-01T00:56:39.797735404Z",
+    "agent_lines": 219,
+    "agent_removed": 43,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 219,
+    "total_lines_changed": 262,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
