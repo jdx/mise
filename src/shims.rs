@@ -416,8 +416,8 @@ fn write_shim_metadata(shims_dir: &Path, shim_mode: &str, shim_version: &str) ->
         // Written for every shim mode even though `.version` is only consulted
         // for exe/hardlink shims. Keeping both markers current makes later mode
         // transitions deterministic.
-        file::write(&shims_dir.join(".mode"), shim_mode)?;
-        file::write(&shims_dir.join(".version"), shim_version)?;
+        file::write(shims_dir.join(".mode"), shim_mode)?;
+        file::write(shims_dir.join(".version"), shim_version)?;
     }
     Ok(())
 }
