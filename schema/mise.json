@@ -4589,6 +4589,13 @@
                           "type": "string"
                         }
                       },
+                      "requires": {
+                        "type": "array",
+                        "description": "write Requires dependencies in the [Unit] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "exec_start": {
                         "type": "string",
                         "minLength": 1,
@@ -4639,6 +4646,24 @@
                         "additionalProperties": {
                           "type": "string"
                         }
+                      },
+                      "environment_file": {
+                        "type": "array",
+                        "description": "write one EnvironmentFile entry per path in the [Service] section",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "nice": {
+                        "type": "integer",
+                        "minimum": -20,
+                        "maximum": 19,
+                        "description": "write Nice in the [Service] section"
+                      },
+                      "umask": {
+                        "type": "string",
+                        "pattern": "^(?:[0-7]{1,3}|0[0-7]{3})$",
+                        "description": "write UMask in the [Service] section"
                       },
                       "working_directory": {
                         "type": "string",
@@ -4787,6 +4812,21 @@
                                   "minProperties": 1
                                 }
                               }
+                            },
+                            {
+                              "required": ["environment_file"],
+                              "properties": {
+                                "environment_file": {
+                                  "type": "array",
+                                  "minItems": 1
+                                }
+                              }
+                            },
+                            {
+                              "required": ["nice"]
+                            },
+                            {
+                              "required": ["umask"]
                             },
                             {
                               "required": ["working_directory"]

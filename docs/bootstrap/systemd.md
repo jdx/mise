@@ -11,7 +11,11 @@ description = "sync files"
 exec_start = "~/.local/bin/my-sync --watch"
 after = ["network-online.target"]
 wants = ["network-online.target"]
+requires = ["credentials.service"]
 environment = { PATH = "/usr/local/bin:/usr/bin:/bin" }
+environment_file = ["-%h/.config/my-sync.env"]
+nice = 10
+umask = "0007"
 working_directory = "~"
 restart = "on-failure"
 restart_sec = "5s"
@@ -69,6 +73,7 @@ managed with `systemctl --user`. Unit names may contain letters, numbers, `.`,
 | `description`          | `Description`                  |
 | `after`                | `After`                        |
 | `wants`                | `Wants`                        |
+| `requires`             | `Requires`                     |
 | `exec_start`           | `ExecStart`                    |
 | `type`                 | `Type`                         |
 | `remain_after_exit`    | `RemainAfterExit`              |
@@ -78,6 +83,9 @@ managed with `systemctl --user`. Unit names may contain letters, numbers, `.`,
 | `no_new_privileges`    | `NoNewPrivileges`              |
 | `private_tmp`          | `PrivateTmp`                   |
 | `environment`          | `Environment`                  |
+| `environment_file`     | `EnvironmentFile`              |
+| `nice`                 | `Nice`                         |
+| `umask`                | `UMask`                        |
 | `working_directory`    | `WorkingDirectory`             |
 | `restart`              | `Restart`                      |
 | `restart_sec`          | `RestartSec`                   |
@@ -93,6 +101,12 @@ managed with `systemctl --user`. Unit names may contain letters, numbers, `.`,
 | `unit`                 | `Unit`                         |
 | `wanted_by`            | `WantedBy`                     |
 | `start`                | run `systemctl --user restart` |
+
+`requires` does not imply ordering; add the same unit to `after` when it must
+start first. `environment_file` accepts a list of absolute paths or paths using
+systemd specifiers such as `%h`; prefix a path with `-` to make it optional.
+systemd does not expand `~` or `$HOME` in these paths. Environment variables are
+not appropriate for secrets; use systemd credentials for sensitive values.
 
 `exec_start` and `working_directory` expand bare `~` and `~/` to the current
 user's home directory before writing the service file. `wanted_by` defaults to

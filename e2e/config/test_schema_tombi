@@ -100,6 +100,10 @@ timeout_start_sec = "2min"
 timeout_stop_sec = "30s"
 no_new_privileges = true
 private_tmp = true
+requires = ["network-online.target"]
+environment_file = ["-%h/.config/sync.env"]
+nice = 10
+umask = "0007"
 
 [bootstrap.linux.systemd.units.sync-timer]
 on_boot_sec = "2min"
@@ -416,6 +420,8 @@ for unit in \
   '{ description = "service missing exec_start" }' \
   '{ persistent = true }' \
   '{ exec_start = "/bin/true", on_boot_sec = "1min" }' \
+  '{ exec_start = "/bin/true", nice = 20 }' \
+  '{ exec_start = "/bin/true", umask = "0888" }' \
   '{ exec_start = "/bin/true", type = "daemon" }'; do
   cat >"$HOME/workdir/mise-bad-systemd.toml" <<TOML
 [bootstrap.linux.systemd.units]
