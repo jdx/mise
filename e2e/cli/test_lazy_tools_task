@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+export MISE_SHIMS_DIR="$HOME/.local/share/mise/user-shims"
+
+# A lazy tool must install the first time a task runs one of its commands, the
+# same way it does when the command is typed into an activated shell. Neither a
+# shim farm on PATH nor a prior `mise reshim` is required: a hand-edited
+# `lazy = true` entry has no shim yet, and a task's shell has no
+# command-not-found handler to fall back on (discussion #12678).
+case ":$PATH:" in
+  *":$MISE_SHIMS_DIR:"*) fail "expected user shims to be absent from PATH: $PATH" ;;
+esac
+mise use tiny@1.0.0
+assert_directory_exists "$MISE_DATA_DIR/installs/tiny/1.0.0"
+# Edited by hand: nothing rebuilds the shim farm, so no `dummy` shim exists.
+cat >mise.toml <<'EOF'
+[tools]
+tiny = "1.0.0"
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+
+[tasks.check]
+run = "dummy --version"
+EOF
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+assert_fail "test -e '$MISE_SHIMS_DIR/dummy'"
+
+# With a lazy declaration, the child PATH keeps the shim farm behind tool paths.
+mise_path="$(mise env -s bash | sed -n 's/^export PATH=//p' | tr -d "'\"")"
+case "$mise_path" in
+  "$MISE_DATA_DIR/installs/tiny/1.0.0/bin:$MISE_SHIMS_DIR:"*) ;;
+  *) fail "expected tool paths, then the shim farm, then the rest: $mise_path" ;;
+esac
+
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise run check" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+
+# Once installed, the real bin directory precedes the farm.
+mise_path="$(mise env -s bash | sed -n 's/^export PATH=//p' | tr -d "'\"")"
+case "$mise_path" in
+  *"$MISE_DATA_DIR/installs/dummy/1.0.0/bin:"*"$MISE_SHIMS_DIR:"*) ;;
+  *) fail "expected the tool bin dir ahead of the shim farm: $mise_path" ;;
+esac
+assert_contains "mise run check" "This is Dummy 1.0.0"
+
+# A farm already on PATH keeps its place and is not duplicated.
+mise_path="$(PATH="$MISE_SHIMS_DIR:$PATH" mise env -s bash | sed -n 's/^export PATH=//p' | tr -d "'\"")"
+case "$mise_path" in
+  "$MISE_DATA_DIR/installs/tiny/1.0.0/bin:$MISE_DATA_DIR/installs/dummy/1.0.0/bin:$MISE_SHIMS_DIR:"*) ;;
+  *) fail "expected tool paths, then the farm from the original PATH: $mise_path" ;;
+esac
+assert "printf '%s' \"$mise_path\" | tr ':' '\\n' | grep -c -x \"$MISE_SHIMS_DIR\"" "1"
+
+# `mise x -- <cmd>` names the lazy command directly and installs its provider.
+mise uninstall --all dummy
+rm -f "$MISE_SHIMS_DIR/dummy"
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- dummy --version" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Commands started by the child reach the tool through its bootstrap shim.
+mise uninstall --all dummy
+rm -f "$MISE_SHIMS_DIR/dummy"
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- sh -c 'dummy --version'" "This is Dummy 1.0.0"
+assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
+
+# Without a lazy declaration the child environment leaves the farm off PATH.
+cat >mise.toml <<'EOF'
+[tools]
+dummy = "1.0.0"
+EOF
+assert_not_contains "mise env -s bash" "$MISE_SHIMS_DIR"

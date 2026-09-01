@@ -14,7 +14,7 @@ use crate::path_env::PathEnv;
 use crate::toolset::Toolset;
 use crate::toolset::env_cache::{CachedEnv, compute_settings_hash, get_file_mtime};
 use crate::toolset::tool_request::ToolRequest;
-use crate::{env, github, parallel, uv};
+use crate::{env, file, github, parallel, uv};
 
 /// PATH with mise-managed install dirs filtered out. mise re-adds the current
 /// toolset's bin dirs below, so a stale `installs/<tool>/<ver>/bin` left on PATH
@@ -31,6 +31,40 @@ fn pristine_path_without_install_dirs() -> Vec<PathBuf> {
 }
 
 impl Toolset {
+    /// PATH for an environment mise hands to a child process or prints (`mise x`,
+    /// `mise run`, `mise env`): the pristine PATH with the given mise-managed paths
+    /// ahead of it.
+    ///
+    /// The pristine PATH never contains a shim farm that PATH activation added on its
+    /// own, and a shell without activation may not have one at all. A `lazy = true`
+    /// tool relies on its bootstrap shim being found, so when the toolset declares one
+    /// the farms follow the tool paths, mirroring the fallback boundary hook-env retains
+    /// in the interactive shell. Installed tools still resolve to their real bin
+    /// directories first. A farm already on the pristine PATH keeps its place: `PathEnv`
+    /// already puts tool paths ahead of it, and a shared directory such as
+    /// `~/.local/bin` must not be reordered.
+    fn child_path(&self, paths: impl IntoIterator<Item = PathBuf>) -> String {
+        let pristine = pristine_path_without_install_dirs();
+        let mut path_env = PathEnv::from_iter(pristine.iter().cloned());
+        for p in paths {
+            path_env.add(p);
+        }
+        if self.has_lazy_declarations() {
+            for dir in crate::shims::shim_farm_dirs() {
+                let on_path = pristine.iter().any(|p| {
+                    file::paths_eq(
+                        &file::canonicalize_or_self(p),
+                        &file::canonicalize_or_self(&dir),
+                    )
+                });
+                if !on_path {
+                    path_env.add(dir);
+                }
+            }
+        }
+        path_env.to_string()
+    }
+
     pub(crate) async fn full_env(&self, config: &Arc<Config>) -> Result<EnvMap> {
         Ok(self.full_env_with_removals(config).await?.0)
     }
@@ -132,15 +166,14 @@ impl Toolset {
         }
 
         let (mut env, env_results) = self.final_env(config).await?;
-        let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
         // Use split paths so we save a cache compatible with env_with_path_and_split
         let (user_paths, tool_paths) = self
             .list_final_paths_split(config, env_results.clone())
             .await?;
-        for p in user_paths.iter().chain(tool_paths.iter()) {
-            path_env.add(p.clone());
-        }
-        env.insert(PATH_KEY.to_string(), path_env.to_string());
+        env.insert(
+            PATH_KEY.to_string(),
+            self.child_path(user_paths.iter().chain(tool_paths.iter()).cloned()),
+        );
 
         // Save to cache if enabled and no uncacheable directives
         // Use save_env_cache_split to ensure cache is compatible with env_with_path_and_split
@@ -248,11 +281,10 @@ impl Toolset {
             Some(cached) => {
                 let mut env = cached.env;
                 // Reconstruct PATH from cached paths
-                let mut path_env = PathEnv::from_iter(pristine_path_without_install_dirs());
-                for p in cached.user_paths.into_iter().chain(cached.tool_paths) {
-                    path_env.add(p);
-                }
-                env.insert(PATH_KEY.to_string(), path_env.to_string());
+                env.insert(
+                    PATH_KEY.to_string(),
+                    self.child_path(cached.user_paths.into_iter().chain(cached.tool_paths)),
+                );
                 Ok(Some((env, cached.env_remove)))
             }
             None => Ok(None),

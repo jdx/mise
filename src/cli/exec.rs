@@ -216,11 +216,29 @@ impl Exec {
             ts.resolve_with_opts(&config, &opts.resolve_options).await?;
         }
 
+        let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
+
+        // Running a lazy tool's command is what installs it, and `mise x -- <cmd>`
+        // names that command directly. Install its provider here: program resolution
+        // below deliberately looks past shim directories, so the bootstrap shim that
+        // would otherwise do this never gets the chance.
+        if ts.has_lazy_declarations()
+            && !program.contains(['/', '\\'])
+            && ts.has_missing_lazy_bin_provider(&config, &program).await?
+        {
+            ts.install_missing_lazy_bin(&mut config, &program).await?;
+        } else if ts.has_lazy_declarations()
+            && !opts.dry_run
+            && let Err(err) = crate::shims::ensure_lazy_shims(&config, &ts, &missing).await
+        {
+            // Commands started by the child (a shell, a script) reach lazy tools
+            // through their bootstrap shims, which a hand-edited declaration lacks.
+            warn!("failed to create shims for lazy tools: {err:#}");
+        }
+
         measure!("notify_if_versions_missing", {
             ts.notify_missing_versions(missing);
         });
-
-        let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
 
         let (mut env, env_remove) = measure!("env_with_path", {
             ts.env_with_path_and_removals(&config).await?

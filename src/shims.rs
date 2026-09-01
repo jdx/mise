@@ -298,6 +298,62 @@ pub(crate) enum ShimScope {
     Both,
 }
 
+/// The shim farms that serve as the lazy-install fallback boundary on PATH: the user
+/// farm, plus the system farm when it exists as separate storage.
+pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
+    let user_shims = dirs::shims();
+    let system_shims = dirs::system_shims();
+    let mut dirs = vec![user_shims];
+    if system_shims.is_dir() && !file::storage_paths_eq(&dirs[0], &system_shims) {
+        dirs.push(system_shims);
+    }
+    dirs
+}
+
+/// Reconcile the shim farms whose missing lazy declarations lack a bootstrap shim.
+///
+/// A `lazy = true` entry written by hand has no shim until something rebuilds the farm.
+/// An interactive shell still recovers, because its not-found handler installs the
+/// tool, but a task or `mise x` child has no such handler and fails with "command not
+/// found" (discussion #12678). `missing` is the toolset's already-computed missing
+/// version list, so the common case costs only a few file existence checks.
+pub(crate) async fn ensure_lazy_shims(
+    config: &Arc<Config>,
+    ts: &Toolset,
+    missing: &[ToolVersion],
+) -> Result<()> {
+    let mise_bin = mise_bin_for_shims();
+    let mut scopes = Vec::new();
+    for tv in missing {
+        if tv.request.options().lazy != Some(true) {
+            continue;
+        }
+        let Some(bins) = tv.request.lazy_bins()? else {
+            continue;
+        };
+        let scope = if shim_scope_contains_request(ShimScope::System, &tv.request) {
+            ShimScope::System
+        } else {
+            ShimScope::User
+        };
+        let shims_dir = match scope {
+            ShimScope::System => dirs::system_shims(),
+            ShimScope::User | ShimScope::Both => dirs::shims(),
+        };
+        let has_missing_shim = bins
+            .iter()
+            .flat_map(|bin| platform_shim_names(&mise_bin, bin))
+            .any(|shim| !shims_dir.join(shim).exists());
+        if has_missing_shim && !scopes.contains(&scope) {
+            scopes.push(scope);
+        }
+    }
+    for scope in scopes {
+        reshim_for(config, ts, false, scope).await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn reshim_for(
     config: &Arc<Config>,
     ts: &Toolset,

@@ -793,7 +793,15 @@ impl Run {
             ..Default::default()
         };
         let previewed_tools = if !self.skip_tools {
-            let (installed, _) = ts.install_missing_versions(&mut config, &opts).await?;
+            let (installed, missing) = ts.install_missing_versions(&mut config, &opts).await?;
+            // Lazy tools stay uninstalled until a task runs one of their commands, which
+            // only works if their bootstrap shims exist. A hand-edited `lazy = true`
+            // entry has none until the farm is rebuilt (discussion #12678).
+            if !self.dry_run
+                && let Err(err) = crate::shims::ensure_lazy_shims(&config, &ts, &missing).await
+            {
+                warn!("failed to create shims for lazy tools: {err:#}");
+            }
             if self.dry_run {
                 installed.into_iter().collect()
             } else {

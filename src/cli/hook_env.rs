@@ -8,7 +8,7 @@ use crate::hook_env::{PREV_SESSION, WatchFilePattern};
 use crate::shell::{EXAMPLE_SHELL, ShellType, require_shell};
 use crate::toolset::{ResolveOptions, Toolset, ToolsetBuilder};
 use crate::ui::style;
-use crate::{dirs, env, hook_env, hooks, watch_files};
+use crate::{env, hook_env, hooks, watch_files};
 use console::truncate_str;
 use eyre::Result;
 use indexmap::IndexSet;
@@ -181,11 +181,7 @@ impl HookEnv {
             .chain(env_watch_files.iter().map(|p| p.as_path().into()))
             .collect();
 
-        let retain_shims = Settings::get().not_found_auto_install
-            || ts
-                .list_current_requests()
-                .iter()
-                .any(|request| request.options().lazy == Some(true));
+        let retain_shims = Settings::get().not_found_auto_install || ts.has_lazy_declarations();
         patches.extend(self.build_path_operations(
             &user_paths,
             &tool_paths,
@@ -463,15 +459,11 @@ impl HookEnv {
             .cloned()
             .collect();
 
-        let user_shims = dirs::shims();
-        let system_shims = dirs::system_shims();
-        let mut shim_dirs = retain_shims.then_some(user_shims).into_iter().collect_vec();
-        if retain_shims
-            && system_shims.is_dir()
-            && !file::storage_paths_eq(&shim_dirs[0], &system_shims)
-        {
-            shim_dirs.push(system_shims);
-        }
+        let shim_dirs = if retain_shims {
+            crate::shims::shim_farm_dirs()
+        } else {
+            vec![]
+        };
 
         // Combine paths in the correct order:
         // pre (user shell prepends) -> user_paths (from config) -> tool_paths ->
