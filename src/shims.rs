@@ -341,87 +341,190 @@ pub(crate) async fn reshim_for(
     let full_rebuild = force || shim_mode_changed || shim_version_changed;
     file::create_dir_all(&shims_dir)?;
 
-    // Resolve the complete target set before removing any working shims. Lazy
-    // declarations can fail validation here (for example, an explicit backend
-    // without lazy_bins), and that configuration error must not erase the
-    // existing farm.
-    let (shims_to_add, shims_to_remove) = if full_rebuild {
+    if full_rebuild {
+        // Resolve and materialize the complete target farm before moving any
+        // working shim. Configuration, metadata, and shim creation errors must
+        // all leave the live farm intact.
         let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
-        (
-            desired.into_iter().collect::<BTreeSet<_>>(),
-            BTreeSet::new(),
+        let staging = stage_shim_farm(
+            &shims_dir,
+            &mise_bin,
+            scope,
+            &desired.into_iter().collect::<BTreeSet<_>>(),
+            &shim_mode,
+            shim_version,
         )
+        .await?;
+        replace_shim_farm(&shims_dir, staging)?;
     } else {
         let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
-        (diffs.missing, diffs.extra)
-    };
-
-    if full_rebuild {
-        // On Windows, .exe shims may be locked by processes or the shell (they
-        // are on PATH).  Instead of removing the entire directory (which fails
-        // with "Access is denied"), remove individual files with a rename-first
-        // fallback so locked executables are moved out of the way.
-        if cfg!(windows) {
-            remove_shims_individually(&shims_dir)?;
-        } else {
-            file::remove_all(&shims_dir)?;
+        write_shim_metadata(&shims_dir, &shim_mode, shim_version)?;
+        for shim in diffs.missing {
+            let symlink_path = shims_dir.join(&shim);
+            // On Windows, remove the old shim first (with rename fallback for
+            // locked .exe files) so the new one can be written.
+            if cfg!(windows) && symlink_path.exists() {
+                remove_shim_with_rename_fallback(&symlink_path)?;
+            }
+            add_shim(&mise_bin, &symlink_path, &shim)?;
         }
-    }
-    file::create_dir_all(&shims_dir)?;
-    if cfg!(windows) {
-        let mode_file = shims_dir.join(".mode");
-        file::write(&mode_file, &shim_mode)?;
-        // Written for every shim mode (like `.mode`) even though it is only
-        // consulted for "exe"/"hardlink" modes; for "file"/"symlink" it is
-        // harmless and keeps the marker current if the mode later changes
-        // (mode transitions themselves are handled by `shim_mode_changed`).
-        let version_file = shims_dir.join(".version");
-        file::write(&version_file, shim_version)?;
-    }
-
-    for shim in shims_to_add {
-        let symlink_path = shims_dir.join(&shim);
-        // On Windows, remove the old shim first (with rename fallback for
-        // locked .exe files) so the new one can be written.
-        if cfg!(windows) && symlink_path.exists() {
-            remove_shim_with_rename_fallback(&symlink_path)?;
+        for shim in diffs.extra {
+            let symlink_path = shims_dir.join(shim);
+            if cfg!(windows) {
+                remove_shim_with_rename_fallback(&symlink_path)?;
+            } else {
+                file::remove_all(&symlink_path)?;
+            }
         }
-        add_shim(&mise_bin, &symlink_path, &shim)?;
-    }
-    for shim in shims_to_remove {
-        let symlink_path = shims_dir.join(shim);
-        if cfg!(windows) {
-            remove_shim_with_rename_fallback(&symlink_path)?;
-        } else {
-            file::remove_all(&symlink_path)?;
-        }
-    }
-    if matches!(scope, ShimScope::User | ShimScope::Both) {
-        let mut jset = JoinSet::new();
-        for plugin in backend::list() {
-            let shims_dir = shims_dir.clone();
-            jset.spawn(async move {
-                if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
-                    for bin in files {
-                        let bin = bin?;
-                        let bin_name = bin.file_name().into_string().unwrap();
-                        let symlink_path = shims_dir.join(bin_name);
-                        make_shim(&bin.path(), &symlink_path).await?;
-                    }
-                }
-                Ok(())
-            });
-        }
-        jset.join_all()
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>>>()?;
+        add_plugin_shims(&shims_dir, scope).await?;
     }
 
     if matches!(requested_scope, ShimScope::User | ShimScope::Both) {
         sync_command_wrapper_shims(config, &mise_bin, full_rebuild)?;
     }
 
+    Ok(())
+}
+
+async fn stage_shim_farm(
+    shims_dir: &Path,
+    mise_bin: &Path,
+    scope: ShimScope,
+    desired: &BTreeSet<String>,
+    shim_mode: &str,
+    shim_version: &str,
+) -> Result<tempfile::TempDir> {
+    let staging = tempfile::Builder::new()
+        .prefix(".mise-shims-stage-")
+        .tempdir_in(shims_dir)
+        .wrap_err_with(|| {
+            format!(
+                "failed to create shim staging directory in {}",
+                display_path(shims_dir)
+            )
+        })?;
+    write_shim_metadata(staging.path(), shim_mode, shim_version)?;
+    for shim in desired {
+        add_shim(mise_bin, &staging.path().join(shim), shim)?;
+    }
+    add_plugin_shims(staging.path(), scope).await?;
+    Ok(staging)
+}
+
+fn write_shim_metadata(shims_dir: &Path, shim_mode: &str, shim_version: &str) -> Result<()> {
+    if cfg!(windows) {
+        // Written for every shim mode even though `.version` is only consulted
+        // for exe/hardlink shims. Keeping both markers current makes later mode
+        // transitions deterministic.
+        file::write(&shims_dir.join(".mode"), shim_mode)?;
+        file::write(&shims_dir.join(".version"), shim_version)?;
+    }
+    Ok(())
+}
+
+async fn add_plugin_shims(shims_dir: &Path, scope: ShimScope) -> Result<()> {
+    if !matches!(scope, ShimScope::User | ShimScope::Both) {
+        return Ok(());
+    }
+    let mut jset = JoinSet::new();
+    for plugin in backend::list() {
+        let shims_dir = shims_dir.to_path_buf();
+        jset.spawn(async move {
+            if let Ok(files) = dirs::PLUGINS.join(plugin.id()).join("shims").read_dir() {
+                for bin in files {
+                    let bin = bin?;
+                    let bin_name = bin.file_name().into_string().unwrap();
+                    let symlink_path = shims_dir.join(bin_name);
+                    make_shim(&bin.path(), &symlink_path).await?;
+                }
+            }
+            Ok(())
+        });
+    }
+    jset.join_all()
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>>>()?;
+    Ok(())
+}
+
+fn replace_shim_farm(shims_dir: &Path, staging: tempfile::TempDir) -> Result<()> {
+    let backup = tempfile::Builder::new()
+        .prefix(".mise-shims-backup-")
+        .tempdir_in(shims_dir)
+        .wrap_err_with(|| {
+            format!(
+                "failed to create shim backup directory in {}",
+                display_path(shims_dir)
+            )
+        })?;
+
+    if let Err(err) =
+        move_directory_entries(shims_dir, backup.path(), &[staging.path(), backup.path()])
+    {
+        restore_shim_backup(shims_dir, &backup)?;
+        return Err(err).wrap_err("failed to stage the existing shim farm for replacement");
+    }
+
+    if let Err(err) = move_directory_entries(staging.path(), shims_dir, &[]) {
+        clear_directory_except(shims_dir, &[staging.path(), backup.path()])?;
+        restore_shim_backup(shims_dir, &backup)?;
+        return Err(err).wrap_err("failed to publish the staged shim farm");
+    }
+
+    if let Err(err) = backup.close() {
+        warn!("failed to remove old shim farm: {err}");
+    }
+    if let Err(err) = staging.close() {
+        warn!("failed to remove shim staging directory: {err}");
+    }
+    Ok(())
+}
+
+fn move_directory_entries(from: &Path, to: &Path, exclude: &[&Path]) -> Result<()> {
+    for entry in from
+        .read_dir()
+        .wrap_err_with(|| format!("failed to read shim directory: {}", display_path(from)))?
+    {
+        let entry = entry?;
+        let path = entry.path();
+        if exclude
+            .iter()
+            .any(|excluded| file::paths_eq(&path, excluded))
+        {
+            continue;
+        }
+        let destination = to.join(entry.file_name());
+        fs::rename(&path, &destination).wrap_err_with(|| {
+            format!(
+                "failed to move shim {} to {}",
+                display_path(&path),
+                display_path(&destination)
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn clear_directory_except(dir: &Path, exclude: &[&Path]) -> Result<()> {
+    for entry in dir
+        .read_dir()
+        .wrap_err_with(|| format!("failed to read shim directory: {}", display_path(dir)))?
+    {
+        let path = entry?.path();
+        if exclude
+            .iter()
+            .any(|excluded| file::paths_eq(&path, excluded))
+        {
+            continue;
+        }
+        file::remove_all(&path)?;
+    }
+    Ok(())
+}
+
+fn restore_shim_backup(shims_dir: &Path, backup: &tempfile::TempDir) -> Result<()> {
+    move_directory_entries(backup.path(), shims_dir, &[])?;
     Ok(())
 }
 
