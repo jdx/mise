@@ -89,7 +89,7 @@ assert_contains "mise run test-env-types" "BOOL_TRUE_VAR=true"
 assert_contains "mise run test-env-types" "INT_VAR=42"
 assert_contains "mise run test-env-types" "STRING_VAR=test_string"
 # false values should unset the variable, so BOOL_FALSE_VAR should not be present
-assert_not_contains "mise run test-env-types" "BOOL_FALSE_VAR"
+assert_not_contains "BOOL_FALSE_VAR=inherited mise run test-env-types" "BOOL_FALSE_VAR"
 
 # Test 7: Verify task info shows correct directive syntax
 cat <<EOF >mise.toml

@@ -568,7 +568,7 @@ async fn execute_with_tool_request(
         Ok(bin_path) => {
             // env_with_path already has _.path and filters outer install dirs.
             // Prepend backend dependency bins (e.g. node for npm); see #7777.
-            let mut env = toolset.env_with_path(config).await?;
+            let (mut env, env_remove) = toolset.env_with_path_and_removals(config).await?;
             if let Some((backend, _tv)) = toolset.list_current_installed_versions(config).first() {
                 let dep_paths = backend
                     .dependency_toolset(config)
@@ -588,7 +588,15 @@ async fn execute_with_tool_request(
                     );
                 }
             }
-            crate::cli::exec::exec_program(bin_path, args, env, &Default::default(), false).await
+            crate::cli::exec::exec_program(
+                bin_path,
+                args,
+                env,
+                env_remove,
+                &Default::default(),
+                false,
+            )
+            .await
         }
         Err(e) => match e {
             BinPathError::ToolNotFound(tool_name) => {
@@ -723,6 +731,7 @@ pub(crate) async fn short_circuit_stub(args: &[String]) -> Result<()> {
             bin_path,
             args,
             BTreeMap::new(),
+            Default::default(),
             &Default::default(),
             false,
         )

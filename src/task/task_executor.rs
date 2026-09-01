@@ -36,7 +36,7 @@ use indoc::formatdoc;
 use itertools::Itertools;
 #[cfg(unix)]
 use nix::errno::Errno;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::iter::once;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -72,6 +72,7 @@ pub(crate) struct TaskRunContext<'a> {
 struct TaskExecContext<'a> {
     task: &'a Task,
     env: &'a BTreeMap<String, String>,
+    env_remove: &'a BTreeSet<String>,
     prefix: &'a str,
     output_capture: Option<&'a TaskOutputCapture>,
     allow_during_interruption: bool,
@@ -91,6 +92,7 @@ struct TaskRunEntriesContext<'a> {
 struct PreparedTaskContext {
     toolset: Toolset,
     env: BTreeMap<String, String>,
+    env_remove: BTreeSet<String>,
     task_env: Vec<(String, String)>,
     extra_vars: Option<IndexMap<String, String>>,
 }
@@ -524,6 +526,7 @@ impl TaskExecutor {
         let PreparedTaskContext {
             toolset: ts,
             mut env,
+            env_remove,
             task_env,
             extra_vars,
         } = self.prepare_task_context(config, task).await?;
@@ -692,6 +695,7 @@ impl TaskExecutor {
         let exec_ctx = TaskExecContext {
             task,
             env: &env,
+            env_remove: &env_remove,
             prefix: &prefix,
             output_capture: output_capture.as_ref(),
             allow_during_interruption,
@@ -1539,6 +1543,7 @@ impl TaskExecutor {
         let TaskExecContext {
             task,
             env,
+            env_remove,
             prefix,
             output_capture,
             allow_during_interruption,
@@ -1603,6 +1608,9 @@ impl TaskExecutor {
             })
             .map(|(key, _)| key);
         let runner = inherited_usage_keys.fold(runner, |runner, key| runner.env_remove(key));
+        let runner = env_remove
+            .iter()
+            .fold(runner, |runner, key| runner.env_remove(key));
         let mut cmd = runner
             .envs(env.as_ref())
             .redact(redactions.deref().clone())
@@ -2091,13 +2099,15 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars) = if let Some(task_cf) = task_cf {
-            self.context_builder
+        let (mut env, task_env, extra_vars, env_remove) = if let Some(task_cf) = task_cf {
+            let (env, task_env, extra_vars, env_remove) = self
+                .context_builder
                 .resolve_task_env_with_config(config, task, task_cf, &toolset)
-                .await?
+                .await?;
+            (env, task_env, extra_vars, env_remove)
         } else {
-            let (env, task_env) = task.render_env(config, &toolset).await?;
-            (env, task_env, None)
+            let (env, task_env, env_remove) = task.render_env(config, &toolset).await?;
+            (env, task_env, None, env_remove)
         };
         trace!(
             "task {} render_env took {}ms",
@@ -2218,6 +2228,7 @@ impl TaskExecutor {
         Ok(PreparedTaskContext {
             toolset,
             env,
+            env_remove,
             task_env,
             extra_vars,
         })

@@ -129,7 +129,7 @@ impl HookEnv {
         miseprint!("{}", hook_env::clear_old_env(&*shell))?;
 
         // Use env_with_path_and_split which handles caching internally
-        let (mut mise_env, user_paths, tool_paths, env_watch_files) =
+        let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
             ts.env_with_path_and_split(&config).await?;
         mise_env.remove(&*PATH_KEY);
 
@@ -139,6 +139,11 @@ impl HookEnv {
             .await?;
 
         let mut diff = EnvDiff::new(&env::PRISTINE_ENV, mise_env.clone());
+        for key in env_remove {
+            if let Some(value) = env::PRISTINE_ENV.get(&key) {
+                diff.old.insert(key, value.clone());
+            }
+        }
         let mut patches = diff.to_patches();
 
         // For fish shell, filter out PATH operations from diff patches because

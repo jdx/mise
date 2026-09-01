@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cat >mise.toml <<'EOF'
+[env]
+UNSET_ENV = false
+UNSET_TOOLS_ENV = { value = false, tools = true }
+
+[tasks.check]
+run = 'printf "%s|%s" "${UNSET_ENV-absent}" "${UNSET_TOOLS_ENV-absent}"'
+EOF
+
+assert \
+  "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise exec -- sh -c 'printf \"%s|%s\" \"\${UNSET_ENV-absent}\" \"\${UNSET_TOOLS_ENV-absent}\"'" \
+  "absent|absent"
+assert \
+  "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise run check" \
+  "absent|absent"
+assert_contains \
+  "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise env -s bash" \
+  "unset UNSET_ENV"
+assert_contains \
+  "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise env -s bash" \
+  "unset UNSET_TOOLS_ENV"
+assert \
+  "UNSET_ENV=parent UNSET_TOOLS_ENV=parent mise env --json | jq -r 'has(\"UNSET_ENV\") or has(\"UNSET_TOOLS_ENV\")'" \
+  "false"
+
+# A forced refresh should apply the unset to an activated shell.
+export UNSET_ENV=parent
+export UNSET_TOOLS_ENV=parent
+eval "$(mise hook-env -s bash --force)"
+# shellcheck disable=SC2016
+assert \
+  'printf "%s|%s" "${UNSET_ENV-absent}" "${UNSET_TOOLS_ENV-absent}"' \
+  "absent|absent"
+
+# Removals must survive the full environment cache, not only initial resolution.
+export UNSET_ENV=parent
+export UNSET_TOOLS_ENV=parent
+MISE_ENV_CACHE=true mise env -s bash >/dev/null
+assert_contains "MISE_ENV_CACHE=true mise env -s bash" "unset UNSET_ENV"
+assert_contains "MISE_ENV_CACHE=true mise env -s bash" "unset UNSET_TOOLS_ENV"

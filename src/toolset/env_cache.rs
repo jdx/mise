@@ -89,6 +89,9 @@ fn validate_watch_files(watch_files: &[PathBuf], expected_mtimes: &[u64]) -> Res
 pub(crate) struct CachedEnv {
     /// Cached environment variables
     pub env: BTreeMap<String, String>,
+    /// Variables explicitly removed by env directives
+    #[serde(default)]
+    pub env_remove: BTreeSet<String>,
     /// User-configured paths from env._.path directives
     pub user_paths: Vec<PathBuf>,
     /// Tool paths from installations

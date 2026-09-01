@@ -222,7 +222,9 @@ impl Exec {
 
         let (program, mut args) = parse_command(&env::SHELL, &self.command, &self.c);
 
-        let mut env = measure!("env_with_path", { ts.env_with_path(&config).await? });
+        let (mut env, env_remove) = measure!("env_with_path", {
+            ts.env_with_path_and_removals(&config).await?
+        });
         env.extend(wrapper_env);
         if strip_dispatch_dirs && let Some(path) = env.get_mut(&*env::PATH_KEY) {
             *path = crate::file::strip_dispatch_dirs_from_path(path);
@@ -265,7 +267,12 @@ impl Exec {
             None
         };
         env.remove("__MISE_DIFF");
-        let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &env).serialize();
+        let mut final_env = env::PRISTINE_ENV.clone();
+        for key in &env_remove {
+            final_env.remove(key);
+        }
+        final_env.extend(env.clone());
+        let serialized = EnvDiff::from_final_env(&env::PRISTINE_ENV, &final_env).serialize();
         if let Some(mise_env) = removed_mise_env {
             env.insert("MISE_ENV".to_string(), mise_env);
         }
@@ -321,7 +328,7 @@ impl Exec {
         // shell_body_mode: true only for the `-c`/`--command` path, where
         // parse_command synthesized `shell + [flags.., body]`. A positional
         // command must not be reinterpreted as a shell body.
-        exec_program(program, args, env, &sandbox, self.c.is_some()).await
+        exec_program(program, args, env, env_remove, &sandbox, self.c.is_some()).await
     }
 }
 
@@ -330,6 +337,7 @@ pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
+    env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     _shell_body_mode: bool,
 ) -> Result<()>
@@ -341,6 +349,9 @@ where
     // Capture the marker before deny-env removes variables from the process.
     // The lazy state must retain the dispatching shim for candidate filtering.
     drop(env::MISE_SHIM_PATH.read().unwrap());
+    for key in env_remove {
+        env::remove_var(key);
+    }
     if sandbox.effective_deny_env() {
         // When env is sandboxed, clear all vars and only set the filtered ones.
         //
@@ -497,6 +508,7 @@ pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
+    env_remove: std::collections::BTreeSet<String>,
     sandbox: &SandboxConfig,
     shell_body_mode: bool,
 ) -> Result<()>
@@ -507,6 +519,9 @@ where
 {
     if sandbox.is_active() {
         warn!("sandbox is not supported on Windows, running unsandboxed");
+    }
+    for key in env_remove {
+        env::remove_var(key);
     }
     for (k, v) in env.iter() {
         env::set_var(k, v);
@@ -632,6 +647,7 @@ pub(crate) async fn exec_program<T, U>(
     program: T,
     args: U,
     env: BTreeMap<String, String>,
+    env_remove: std::collections::BTreeSet<String>,
     _sandbox: &SandboxConfig,
     _shell_body_mode: bool,
 ) -> Result<()>
@@ -643,6 +659,9 @@ where
     let mut cmd = cmd::cmd(program, args);
     for (k, v) in env.iter() {
         cmd = cmd.env(k, v);
+    }
+    for key in env_remove {
+        cmd = cmd.env_remove(key);
     }
     let res = cmd.unchecked().run()?;
     match res.status.code() {
