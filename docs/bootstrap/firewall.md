@@ -102,9 +102,10 @@ destructive operation.
 
 When bootstrap runs over SSH and incoming policy is deny or reject, mise checks
 `SSH_CONNECTION` before making changes. At least one present incoming TCP allow
-or limit rule must cover both the connected peer address and the server port.
-Otherwise apply fails before elevation. A deliberately out-of-band deployment
-can set `allow_lockout = true` as an explicit escape hatch.
+or limit rule must cover the connected peer address, server address, and server
+port without an `interface` constraint. Otherwise apply fails before elevation.
+A deliberately out-of-band deployment can set `allow_lockout = true` as an
+explicit escape hatch.
 
 Rules are installed in declared order before deny policies for UFW. nftables
 installs the complete ruleset atomically, and firewalld changes permanent

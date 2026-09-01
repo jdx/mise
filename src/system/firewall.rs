@@ -17,6 +17,7 @@ use crate::system::resources::{ResourceAction, ResourceId, ResourcePlan};
 
 const STATE_PATH: &str = "/var/lib/mise/bootstrap/firewall.json";
 const NFT_TABLE: &str = "mise_bootstrap";
+const NFT_STATELESS_LIST_ARGS: [&str; 5] = ["--stateless", "list", "table", "inet", NFT_TABLE];
 const NFT_RULES_PATH: &str = "/etc/mise/bootstrap/firewall.nft";
 const NFT_UNIT_PATH: &str = "/etc/systemd/system/mise-bootstrap-firewall.service";
 const FIREWALLD_INCOMING: &str = "mise-bootstrap-in";
@@ -1132,17 +1133,15 @@ fn live_matches(
             FirewallBackend::Auto => false,
         },
         FirewallState::Enabled => match backend {
-            FirewallBackend::Nftables => {
-                command_output("nft", &["list", "table", "inet", NFT_TABLE])
-                    .ok()
-                    .filter(|output| output.status.success())
-                    .is_some_and(|output| {
-                        String::from_utf8_lossy(&output.stdout)
-                            .contains(&format!("mise-bootstrap:{digest}"))
-                            && expected_live_fingerprint
-                                .is_some_and(|expected| fingerprint(&output.stdout) == expected)
-                    })
-            }
+            FirewallBackend::Nftables => command_output("nft", &NFT_STATELESS_LIST_ARGS)
+                .ok()
+                .filter(|output| output.status.success())
+                .is_some_and(|output| {
+                    String::from_utf8_lossy(&output.stdout)
+                        .contains(&format!("mise-bootstrap:{digest}"))
+                        && expected_live_fingerprint
+                            .is_some_and(|expected| fingerprint(&output.stdout) == expected)
+                }),
             FirewallBackend::Firewalld => {
                 backend_active(backend)
                     && firewalld_policy_matches(
@@ -1174,13 +1173,9 @@ fn backend_live_fingerprint(backend: FirewallBackend) -> Result<Option<String>> 
     if backend != FirewallBackend::Nftables {
         return Ok(None);
     }
-    let output = command_output("nft", &["list", "table", "inet", NFT_TABLE])?;
+    let output = command_output("nft", &NFT_STATELESS_LIST_ARGS)?;
     if !output.status.success() {
-        return Err(command_error(
-            "nft",
-            &["list", "table", "inet", NFT_TABLE],
-            &output,
-        ));
+        return Err(command_error("nft", &NFT_STATELESS_LIST_ARGS, &output));
     }
     Ok(Some(fingerprint(&output.stdout)))
 }
