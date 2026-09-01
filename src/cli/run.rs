@@ -798,7 +798,7 @@ impl Run {
             // only works if their bootstrap shims exist. A hand-edited `lazy = true`
             // entry has none until the farm is rebuilt (discussion #12678).
             if !self.dry_run
-                && let Err(err) = crate::shims::ensure_lazy_shims(&config, &ts, &missing).await
+                && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
             {
                 warn!("failed to create shims for lazy tools: {err:#}");
             }

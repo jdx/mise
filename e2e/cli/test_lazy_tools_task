@@ -74,14 +74,29 @@ assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
 # task tools are collected, not just those in the project toolset.
 mise uninstall --all dummy
 rm -f "$MISE_SHIMS_DIR/dummy"
+ln -s "$(command -v mise)" "$MISE_SHIMS_DIR/unrelated"
 cat >mise.toml <<'EOF'
 [tasks.task-local]
 tools = { dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] } }
-run = "dummy --version"
+run = 'test -e "$MISE_SHIMS_DIR/unrelated" && dummy --version'
 EOF
 assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise run task-local" "This is Dummy 1.0.0"
 assert_directory_exists "$MISE_DATA_DIR/installs/dummy/1.0.0"
 assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"
+
+# A nested task without runtime tools must not inherit its parent's serialized
+# task toolset. The parent's unused lazy tool remains uninstalled.
+mise uninstall --all dummy
+cat >mise.toml <<'EOF'
+[tasks.parent]
+tools = { dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] } }
+run = "mise run no-tools"
+
+[tasks.no-tools]
+run = 'test -z "${__MISE_TASK_TOOL_ARGS-}" && echo cleared'
+EOF
+assert_contains "mise run parent" "cleared"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
 
 # Without a lazy declaration the child environment leaves the farm off PATH.
 cat >mise.toml <<'EOF'

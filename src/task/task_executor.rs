@@ -2100,7 +2100,7 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars, env_remove) = if let Some(task_cf) = task_cf {
+        let (mut env, task_env, extra_vars, mut env_remove) = if let Some(task_cf) = task_cf {
             let (env, task_env, extra_vars, env_remove) = self
                 .context_builder
                 .resolve_task_env_with_config(config, task, task_cf, &toolset)
@@ -2216,6 +2216,9 @@ impl TaskExecutor {
                 crate::shims::TASK_TOOL_ARGS_ENV,
                 task_tool_args,
             );
+        } else {
+            env.remove(crate::shims::TASK_TOOL_ARGS_ENV);
+            env_remove.insert(crate::shims::TASK_TOOL_ARGS_ENV.to_string());
         }
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();

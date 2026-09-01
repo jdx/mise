@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::atomic::Ordering,
 };
 
@@ -375,20 +375,16 @@ pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-/// Reconcile the shim farms whose missing lazy declarations lack a bootstrap shim.
+/// Add bootstrap shims for missing lazy declarations without pruning either farm.
 ///
 /// A `lazy = true` entry written by hand has no shim until something rebuilds the farm.
 /// An interactive shell still recovers, because its not-found handler installs the
 /// tool, but a task or `mise x` child has no such handler and fails with "command not
 /// found" (discussion #12678). `missing` is the toolset's already-computed missing
 /// version list, so the common case costs only a few file existence checks.
-pub(crate) async fn ensure_lazy_shims(
-    config: &Arc<Config>,
-    ts: &Toolset,
-    missing: &[ToolVersion],
-) -> Result<()> {
-    let mise_bin = mise_bin_for_shims();
-    let mut scopes = Vec::new();
+pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
+    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+    let mut shims_by_dir = BTreeMap::<PathBuf, BTreeSet<String>>::new();
     for tv in missing {
         if tv.request.options().lazy != Some(true) {
             continue;
@@ -396,25 +392,25 @@ pub(crate) async fn ensure_lazy_shims(
         let Some(bins) = tv.request.lazy_bins()? else {
             continue;
         };
-        let scope = if shim_scope_contains_request(ShimScope::System, &tv.request) {
-            ShimScope::System
+        let shims_dir = if shim_scope_contains_request(ShimScope::System, &tv.request) {
+            dirs::system_shims()
         } else {
-            ShimScope::User
+            dirs::shims()
         };
-        let shims_dir = match scope {
-            ShimScope::System => dirs::system_shims(),
-            ShimScope::User | ShimScope::Both => dirs::shims(),
-        };
-        let has_missing_shim = bins
-            .iter()
-            .flat_map(|bin| platform_shim_names(&mise_bin, bin))
-            .any(|shim| !shims_dir.join(shim).exists());
-        if has_missing_shim && !scopes.contains(&scope) {
-            scopes.push(scope);
-        }
+        shims_by_dir.entry(shims_dir).or_default().extend(
+            bins.iter()
+                .flat_map(|bin| platform_shim_names(&mise_bin, bin)),
+        );
     }
-    for scope in scopes {
-        reshim_for(config, ts, false, scope).await?;
+    for (shims_dir, shims) in shims_by_dir {
+        file::create_dir_all(&shims_dir)?;
+        let _lock = LockFile::new(&shims_dir).lock();
+        for shim in shims {
+            let path = shims_dir.join(&shim);
+            if !path.exists() {
+                add_shim(&mise_bin, &path, &shim)?;
+            }
+        }
     }
     Ok(())
 }

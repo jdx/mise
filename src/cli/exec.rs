@@ -233,7 +233,7 @@ impl Exec {
             missing = ts.list_missing_versions(&config).await;
         } else if ts.has_lazy_declarations()
             && !opts.dry_run
-            && let Err(err) = crate::shims::ensure_lazy_shims(&config, &ts, &missing).await
+            && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
         {
             // Commands started by the child (a shell, a script) reach lazy tools
             // through their bootstrap shims, which a hand-edited declaration lacks.
