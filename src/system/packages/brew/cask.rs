@@ -4747,6 +4747,11 @@ fn stage_binary(
     // needs nothing further, and must not be removed to be re-copied onto
     // itself.
     if let Some(payload) = payload_binary_path(stage, caskroom, binary) {
+        // A cask can declare a binary the payload does not ship executable, so
+        // the bit is set on the payload copy itself: it is what the target
+        // resolves to, whether the link points at it or the layout already put
+        // it at the target path.
+        file::make_executable(&payload)?;
         if payload == caskroom_binary {
             return Ok(());
         }
@@ -13779,6 +13784,10 @@ end
         let target = binary.target_path(Path::new("/Applications"))?;
         assert_eq!(std::fs::read_link(&target)?, caskroom.join("bin/tool"));
         assert_eq!(crate::file::read_to_string(&target)?, "launcher");
+        assert!(
+            crate::file::is_executable(&caskroom.join("bin/tool")),
+            "a payload the cask ships without the bit still has to run"
+        );
         for (path, contents) in [
             ("bin/tool-helper", "helper"),
             ("package.json", "{}"),
@@ -13824,6 +13833,7 @@ end
             caskroom.join("pkg/bin/tool"),
             "must link into the payload, not copy the launcher out of it"
         );
+        assert!(crate::file::is_executable(&caskroom.join("pkg/bin/tool")));
         file::remove_all(&stage)?;
         assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
         assert!(
@@ -13832,6 +13842,56 @@ end
                 .and_then(Path::parent)
                 .is_some_and(|root| root.join("lib").is_dir())
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn retargets_a_payload_binary_link_when_the_caskroom_is_renamed() -> Result<()> {
+        // The payload link is absolute and points into the temporary caskroom,
+        // which only exists until activation renames it. `symlinks_under` takes a
+        // *minimum* depth, so the walk reaches a link nested under `bin/` and
+        // rewrites it onto the final caskroom rather than leaving it dangling.
+        let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+        let tmp = tempfile::tempdir()?;
+        let _guard = BrewPrefixGuard::set(tmp.path());
+        let stage = tmp.path().join("stage");
+        file::create_dir_all(stage.join("pkg/bin"))?;
+        crate::file::write(stage.join("pkg/bin/tool"), "launcher")?;
+        let final_caskroom = caskroom_version_dir("renamed-payload", "1.0.0");
+        let tmp_caskroom = tmp.path().join("tmp-caskroom");
+        file::create_dir_all(&tmp_caskroom)?;
+        let cask = test_cask("renamed-payload", "1.0.0");
+        let binary = BinaryArtifact {
+            source: "pkg/bin/tool".to_string(),
+            target: Some("$HOMEBREW_PREFIX/bin/tool".to_string()),
+        };
+
+        durabilize_stage_payload(&stage, &tmp_caskroom, &[])?;
+        stage_binary(&stage, &tmp_caskroom, &cask, &[], &binary)?;
+        assert_eq!(
+            std::fs::read_link(tmp_caskroom.join("bin/tool"))?,
+            tmp_caskroom.join("pkg/bin/tool")
+        );
+
+        // Activation: the temporary caskroom becomes the installed one.
+        file::create_dir_all(final_caskroom.parent().unwrap())?;
+        std::fs::rename(&tmp_caskroom, &final_caskroom)?;
+        retarget_transient_symlinks(
+            &tmp_caskroom,
+            &final_caskroom,
+            &final_caskroom,
+            &FlightTargetTransaction::default(),
+        )?;
+
+        let staged = final_caskroom.join("bin/tool");
+        assert_eq!(
+            std::fs::read_link(&staged)?,
+            final_caskroom.join("pkg/bin/tool"),
+            "the link must follow the caskroom it was renamed into"
+        );
+        file::remove_all(&stage)?;
+        assert_eq!(crate::file::read_to_string(&staged)?, "launcher");
         Ok(())
     }
 
