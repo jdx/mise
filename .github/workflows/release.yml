@@ -321,7 +321,7 @@ jobs:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     needs: [build-tarball-linux]
-    container: ghcr.io/jdx/mise:deb@sha256:cf0109de714157b9a458f312da1cd2b42f1eeb938b3ac23fa97c67e78f10d45a
+    container: ghcr.io/jdx/mise:deb@sha256:d952c001014be8c424c1f3b0b04e0f57a4ee4138e25a01ec383f2cb91c8cb8e1
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
