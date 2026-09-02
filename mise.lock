@@ -159,9 +159,8 @@ provenance = "github-attestations"
 
 [tools.aube."platforms.macos-arm64"]
 checksum = "sha256:702de7f549cef800a1f35900e638ea4fbe07bce854f234cef869cd5442484c90"
-url = "https://github.com/jdx/aube/releases/download/v2.2.0/aube-v2.2.0-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jdx/aube/releases/assets/529761660"
-provenance = "github-attestations"
+url = "https://github.com/aubepkg/aube/releases/download/v2.2.0/aube-v2.2.0-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/aubepkg/aube/releases/assets/529761660"
 
 [tools.aube."platforms.windows-x64"]
 checksum = "sha256:2d68e3e995c336486647034eb8b99c3cfa68894e385a44200af2bc14bc4064cf"
