@@ -27,12 +27,13 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  # Persistent appliance-local store; no remote backend is configured.
-  MBX_CACHE_DIR: /var/cache/mbx
   TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1
 
 jobs:
   measure:
+    env:
+      # Persistent appliance-local store; no remote backend is configured.
+      MBX_CACHE_DIR: /var/cache/mbx
     name: Measure
     # Pinned to one runner class on purpose. Absolute instruction counts shift
     # between machine types by more than a real regression does, so a series

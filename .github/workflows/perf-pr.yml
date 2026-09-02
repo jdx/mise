@@ -29,8 +29,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  # Persistent appliance-local store; no remote backend is configured.
-  MBX_CACHE_DIR: /var/cache/mbx
   TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1
 
 jobs:
@@ -73,6 +71,9 @@ jobs:
           echo "pr_number=$PR_NUMBER" >&3
 
   measure:
+    env:
+      # Persistent appliance-local store; no remote backend is configured.
+      MBX_CACHE_DIR: /var/cache/mbx
     name: Compare instruction counts
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
