@@ -82,7 +82,8 @@ assert "mise run -q missing-output" "generated output"
 assert "mise run -q missing-output" "generated output"
 assert "wc -l < missing-output-runs.txt | tr -d ' '" "1"
 
-# A dangling symlink created by the task must not make artifact-cache storage
-# fail after the task completes.
+# A dangling symlink created by the task must be stored in the artifact cache
+# so the second invocation does not execute the task body again.
+assert "mise run -q created-dangling-output" "dangling output"
 assert "mise run -q created-dangling-output" "dangling output"
 assert "wc -l < dangling-output-runs.txt | tr -d ' '" "1"

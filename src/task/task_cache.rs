@@ -9,7 +9,7 @@ use crate::task::task_cache_store::{
 };
 use crate::task::task_source_checker::{
     TaskCacheInputs, build_output_matcher, expand_enumeration_patterns, glob_walk, is_output,
-    output_glob_patterns, prune_symlink_walk_error, task_cache_inputs, task_cwd,
+    output_glob_patterns, symlink_walk_error_path, task_cache_inputs, task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -1277,10 +1277,13 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
             for expanded in expand_enumeration_patterns(&output)? {
                 ensure_safe_relative(Path::new(&expanded))?;
                 for entry in glob_walk(&root.join(expanded), false)? {
-                    let Some(entry) = prune_symlink_walk_error(entry)? else {
-                        continue;
+                    let path = match entry {
+                        Ok(entry) => entry.into_path(),
+                        Err(err) => match symlink_walk_error_path(&err) {
+                            Some(path) => path.to_path_buf(),
+                            None => return Err(err.into()),
+                        },
                     };
-                    let path = entry.into_path();
                     glob_matched = true;
                     let rel = path.strip_prefix(root)?.to_path_buf();
                     ensure_safe_relative(&rel)?;
@@ -1419,6 +1422,19 @@ fn copy_excluded_outputs(
     let mut directories = Vec::new();
     for root in roots {
         let backup_root = backup.join(root);
+        let root_metadata = fs::symlink_metadata(&backup_root)?;
+        if root_metadata.file_type().is_symlink() {
+            if !is_output(matcher, &matcher.path().join(root), false) {
+                let to = staging.join(root);
+                if let Some(parent) = to.parent() {
+                    file::create_dir_all(parent)?;
+                }
+                if fs::symlink_metadata(&to).is_err() {
+                    file::make_symlink(&fs::read_link(&backup_root)?, &to)?;
+                }
+            }
+            continue;
+        }
         for entry in WalkDir::new(&backup_root).follow_links(false) {
             let entry = entry?;
             let from = entry.path();
@@ -1534,6 +1550,13 @@ fn write_archive(
     let mut entries = BTreeMap::<PathBuf, PathBuf>::new();
     for rel_root in roots {
         let abs_root = root.join(rel_root);
+        let root_metadata = fs::symlink_metadata(&abs_root)?;
+        if root_metadata.file_type().is_symlink() {
+            if is_output(output_matcher, &abs_root, false) {
+                entries.insert(rel_root.clone(), abs_root);
+            }
+            continue;
+        }
         for entry in WalkDir::new(&abs_root).follow_links(false) {
             let entry = entry?;
             let abs = entry.path().to_path_buf();
@@ -1930,6 +1953,25 @@ mod tests {
                 PathBuf::from("dist/client/app.js"),
                 PathBuf::from("dist/server/app.js"),
             ]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_roots_include_dangling_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("links")).unwrap();
+        symlink("missing", root.path().join("links/broken")).unwrap();
+        let task = Task {
+            outputs: crate::task::task_sources::TaskOutputs::Files(vec!["links/**/*".to_string()]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            resolve_output_roots(&task, root.path(), true).unwrap(),
+            [PathBuf::from("links/broken")]
         );
     }
 

@@ -549,18 +549,27 @@ pub(crate) fn prune_symlink_walk_error(
 ) -> Result<Option<DirEntry>> {
     match entry {
         Ok(entry) => Ok(Some(entry)),
-        Err(err) if err.loop_ancestor().is_some() => Ok(None),
-        Err(err)
-            if err.io_error().is_some_and(|error| {
-                error.kind() == std::io::ErrorKind::NotFound || is_filesystem_loop_error(error)
-            }) && err.path().is_some_and(|path| {
-                fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
-            }) =>
-        {
-            Ok(None)
-        }
+        Err(err) if symlink_walk_error_path(&err).is_some() => Ok(None),
         Err(err) => Err(err.into()),
     }
+}
+
+/// Return the symlink path attached to an expected loop or missing-target
+/// traversal error. Callers that only enumerate reachable files prune it;
+/// artifact caching retains the symlink itself as an output root.
+pub(crate) fn symlink_walk_error_path(err: &WalkError) -> Option<&Path> {
+    let path = err.path()?;
+    let is_symlink =
+        || fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink());
+    if err.loop_ancestor().is_some() && is_symlink() {
+        return Some(path);
+    }
+    err.io_error()
+        .is_some_and(|error| {
+            error.kind() == std::io::ErrorKind::NotFound || is_filesystem_loop_error(error)
+        })
+        .then_some(path)
+        .filter(|_| is_symlink())
 }
 
 #[cfg(unix)]
@@ -945,7 +954,12 @@ pub(crate) async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<(
                         patterns.into_iter().any(|pattern| {
                             let pattern = resolve_task_path(&root, pattern);
                             glob_walk(&pattern, false)
-                                .map(|paths| paths.flatten().next().is_some())
+                                .map(|mut paths| {
+                                    paths.any(|entry| match entry {
+                                        Ok(_) => true,
+                                        Err(err) => symlink_walk_error_path(&err).is_some(),
+                                    })
+                                })
                                 .unwrap_or(false)
                         })
                     })
@@ -957,7 +971,7 @@ pub(crate) async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<(
                 } else {
                     path.to_path_buf()
                 };
-                full_path.exists()
+                fs::symlink_metadata(full_path).is_ok()
             };
             if !output_exists {
                 warn!(
