@@ -5,6 +5,7 @@ checkout="$PWD/bootstrap-checkout"
 dry_checkout="$PWD/bootstrap-dry-checkout"
 global_source_repo="$PWD/bootstrap-global-source"
 relative_global_source_repo="$PWD/bootstrap-relative-global-source"
+bare_global_checkout="$PWD/bootstrap-bare-global-checkout"
 
 mkdir -p "$source_repo"
 git -C "$source_repo" init -q -b main
@@ -64,6 +65,14 @@ git -C "$relative_global_source_repo" commit -qm initial
 # the checkout and remains the selected global config during re-execution.
 rm -f "$HOME/bootstrap-from-relative-global-task"
 assert_succeed "MISE_GLOBAL_CONFIG_FILE=relative-global/config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
+
+# A bare relative MISE_GLOBAL_CONFIG_FILE checks out into the current directory
+# rather than silently falling back to the default global config directory.
+mkdir "$bare_global_checkout"
+rm -f "$HOME/bootstrap-from-relative-global-task"
+assert_succeed "cd '$bare_global_checkout' && MISE_GLOBAL_CONFIG_FILE=config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert "git -C '$bare_global_checkout' remote get-url origin" "$relative_global_source_repo"
 assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 
 # The default checkout does not collide with the installer's bootstrap staging

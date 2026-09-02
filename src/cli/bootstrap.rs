@@ -1646,8 +1646,11 @@ impl Bootstrap {
         let (url, checkout) = if let Some(url) = self.from_git.as_deref() {
             let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
-                .and_then(Path::parent)
-                .filter(|parent| !parent.as_os_str().is_empty())
+                .map(|path| {
+                    path.parent()
+                        .filter(|parent| !parent.as_os_str().is_empty())
+                        .unwrap_or_else(|| Path::new("."))
+                })
                 .unwrap_or(*dirs::CONFIG)
                 .to_path_buf();
             (url, checkout)
