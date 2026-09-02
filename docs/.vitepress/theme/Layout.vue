@@ -7,59 +7,34 @@
           <img class="chef-logo chef-logo-dark" src="/logo-dark.svg" alt="" />
           <span class="lockup-word">mise-en-place</span>
         </div>
-        <h1>Your dev environment, prepped and ready</h1>
-        <p>One tool that manages dev tools, env vars, and tasks per project.</p>
+        <h1>
+          Every tool, env var, and task your project needs,
+          <em>in one file.</em>
+        </h1>
+        <p class="hero-lede">
+          mise reads a <code>mise.toml</code> checked into your repo, installs
+          the right versions of your dev tools, loads the project's environment,
+          and runs its tasks. Point it at a fresh machine and
+          <code>mise bootstrap</code> sets up the rest: packages, dotfiles,
+          services.
+        </p>
         <div class="hero-actions">
-          <a class="action-btn action-btn-brand" href="/getting-started"
-            >Getting Started</a
-          >
-          <a class="action-btn action-btn-alt" href="/demo">Demo</a>
-        </div>
-      </div>
-    </template>
-
-    <template #home-hero-info-after>
-      <div class="hero-right">
-        <div class="hero-terminal" aria-label="mise terminal example">
-          <div class="terminal-bar">
-            <span></span>
-            <span></span>
-            <span></span>
-            <strong>~/projects/orders · zsh</strong>
-          </div>
-          <div class="terminal-body">
-            <div>
-              <span class="prompt">$</span> mise use node@24 python@3.13
-            </div>
-            <div>
-              <span class="dim">mise</span> node@24.18.0
-              <span class="ok">✓ installed</span>
-            </div>
-            <div>
-              <span class="dim">mise</span> python@3.13.14
-              <span class="ok">✓ installed</span>
-            </div>
-            <div>
-              <span class="dim">mise</span> ./mise.toml tools: node@24.18.0,
-              python@3.13.14
-            </div>
-            <div><span class="prompt">$</span> node --version</div>
-            <div>v24.18.0</div>
-            <div><span class="prompt">$</span> mise run build</div>
-            <div><span class="key">[build]</span> $ tsc</div>
-          </div>
-        </div>
-        <div class="hero-install">
           <button class="install-command" type="button" @click="copyInstall">
             <code>curl https://mise.run | sh</code>
             <span class="install-copy" :class="{ copied }">{{
               copied ? "copied" : "copy"
             }}</span>
           </button>
-          <a class="install-alt" href="/installing-mise"
-            >More install methods</a
+          <a class="action-btn action-btn-brand" href="/getting-started"
+            >Getting started</a
           >
+          <a class="action-btn action-btn-alt" href="/demo">Watch the demo</a>
         </div>
+        <p class="hero-meta">
+          <span>Open source, MIT</span>
+          <span>macOS, Linux, Windows</span>
+          <span>One static binary, no dependencies</span>
+        </p>
       </div>
     </template>
 
@@ -150,54 +125,48 @@ async function copyText(text: string) {
 
 <style>
 /* ═══════════════════════════════════════════
-   INSTALL COMMAND
+   INSTALL COMMAND (hero)
    ═══════════════════════════════════════════ */
-.hero-install {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin-top: 0;
-}
-
 .install-command {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
+  gap: 16px;
+  height: 48px;
+  padding: 0 18px;
   background: var(--vp-c-bg-soft);
   border: 1px solid var(--vp-c-divider);
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.25s ease;
-  position: relative;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .install-command:hover {
   border-color: var(--vp-c-brand-1);
-  box-shadow: 0 4px 20px rgba(139, 34, 82, 0.1);
-  transform: translateY(-1px);
-}
-
-.dark .install-command:hover {
-  box-shadow: 0 4px 20px rgba(199, 91, 122, 0.1);
+  box-shadow: 0 8px 24px -16px rgba(139, 34, 82, 0.35);
 }
 
 .install-command code {
-  font-family: "JetBrains Mono", var(--vp-font-family-mono);
-  font-size: 0.95rem;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.9rem;
   color: var(--vp-c-text-1);
   background: none;
   padding: 0;
   letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
 .install-copy {
-  font-size: 1.1rem;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--vp-c-text-3);
-  transition: all 0.2s ease;
+  transition: color 0.2s ease;
   user-select: none;
-  min-width: 1.2em;
-  text-align: center;
+  min-width: 4.5em;
+  text-align: right;
 }
 
 .install-copy.copied {
@@ -208,25 +177,14 @@ async function copyText(text: string) {
   color: var(--vp-c-brand-1);
 }
 
-.install-alt {
-  margin-top: 10px;
-  font-size: 0.85rem;
-  font-family: "Roc Grotesk", sans-serif;
-  color: var(--vp-c-text-3);
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
+@media (max-width: 640px) {
+  .install-command {
+    width: 100%;
+    justify-content: space-between;
+  }
 
-.install-alt:hover {
-  color: var(--vp-c-brand-1);
-}
-
-/* ═══════════════════════════════════════════
-   RESPONSIVE
-   ═══════════════════════════════════════════ */
-@media (max-width: 768px) {
   .install-command code {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
   }
 }
 </style>
