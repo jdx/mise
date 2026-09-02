@@ -24,9 +24,12 @@ zsh_tasks="$(mise __complete_word__ --shell zsh --line 'mise run ')"
 assert_contains_text "$zsh_tasks" $'test\tRun the test task\ttest'
 assert_not_contains_text "$zsh_tasks" $'\001files'
 
+ln -s "$ROOT/test/data/plugins/dummy" "$MISE_DATA_DIR/plugins/node"
 zsh_plugins="$(mise __complete_word__ --shell zsh --line 'mise plugins uninstall ')"
 assert_contains_text "$zsh_plugins" $'dummy\t\tdummy'
 assert_contains_text "$zsh_plugins" $'node\t\tnode'
+node_candidates="$(awk -F $'\t' '$1 == "node" { count++ } END { print count + 0 }' <<<"$zsh_plugins")"
+[[ $node_candidates == 1 ]] || fail "node appeared $node_candidates times in plugin completion"
 
 naked_tasks="$(mise __complete_word__ --shell fish --line 'mise te')"
 assert_contains_text "$naked_tasks" $'test\tRun the test task'
