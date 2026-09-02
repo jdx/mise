@@ -9,10 +9,17 @@ runs:
   using: composite
   steps:
     - name: Set up mise for the mbx install
+      if: runner.os != 'Windows'
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        install: false
+        cache: false
+    - name: Set up mise for the mbx install on Windows
+      if: runner.os == 'Windows'
       uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
       env:
-        MISE_DATA_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-data', runner.tool_cache) || env.MISE_DATA_DIR }}
-        MISE_CACHE_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-cache', runner.tool_cache) || env.MISE_CACHE_DIR }}
+        MISE_DATA_DIR: ${{ format('{0}/mise-data', runner.tool_cache) }}
+        MISE_CACHE_DIR: ${{ format('{0}/mise-cache', runner.tool_cache) }}
       with:
         install: false
         cache: false
@@ -25,10 +32,12 @@ runs:
       shell: bash
       env:
         MBX_BACKEND: ${{ inputs.backend }}
-        MISE_DATA_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-data', runner.tool_cache) || env.MISE_DATA_DIR }}
-        MISE_CACHE_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-cache', runner.tool_cache) || env.MISE_CACHE_DIR }}
       run:
         | # zizmor: ignore[github-env] mise where returns the trusted tool install directory
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          export MISE_DATA_DIR="$RUNNER_TOOL_CACHE/mise-data"
+          export MISE_CACHE_DIR="$RUNNER_TOOL_CACHE/mise-cache"
+        fi
         mise install mr-boxington@1.4.1
         mise reshim -f
         mise where mr-boxington@1.4.1 >> "$GITHUB_PATH"
