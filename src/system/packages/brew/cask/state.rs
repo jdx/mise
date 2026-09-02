@@ -13,6 +13,9 @@ pub(super) fn installed_version(token: &str) -> Option<String> {
 }
 
 pub(super) fn installed_versions(token: &str) -> Vec<String> {
+    // Version discovery excludes mise's transaction directories. Cleanup is
+    // intentionally broader: remove_stale_versions removes those stale temp
+    // and backup directories after replace_caskroom completes.
     let dir = caskroom_token_dir(token);
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -938,24 +941,37 @@ pub(super) fn apply_cask_prune_plan_in(
             );
             continue;
         }
-        let mut journal = CaskTransactionJournal {
-            schema_version: 1,
-            token: &candidate.token,
-            version: &candidate.version,
-            completed: Vec::new(),
+        let remove = || -> Result<()> {
+            let mut journal = CaskTransactionJournal {
+                schema_version: 1,
+                token: &candidate.token,
+                version: &candidate.version,
+                completed: Vec::new(),
+            };
+            write_cask_journal_in(state_dir, &journal)?;
+            for (index, target) in candidate.receipt.targets.iter().enumerate() {
+                remove_artifact_target_elevating(&target.path)?;
+                record_cask_action_in(state_dir, &mut journal, &format!("prune_target[{index}]"))?;
+            }
+            file::remove_all(&candidate.version_dir)?;
+            record_cask_action_in(state_dir, &mut journal, "prune_caskroom")?;
+            if let Some(token_dir) = candidate.version_dir.parent()
+                && let Err(err) = file::remove_dir(token_dir)
+            {
+                debug!(
+                    "brew-cask:{}: kept non-empty Caskroom token directory: {err:#}",
+                    candidate.token
+                );
+            }
+            remove_cask_journals_in(state_dir, &candidate.token)
         };
-        write_cask_journal_in(state_dir, &journal)?;
-        for (index, target) in candidate.receipt.targets.iter().enumerate() {
-            remove_artifact_target_elevating(&target.path)?;
-            record_cask_action_in(state_dir, &mut journal, &format!("prune_target[{index}]"))?;
+        match remove() {
+            Ok(()) => removed += 1,
+            Err(err) => warn!(
+                "brew-cask:{}: failed to apply planned removal; continuing: {err:#}",
+                candidate.token
+            ),
         }
-        file::remove_all(&candidate.version_dir)?;
-        record_cask_action_in(state_dir, &mut journal, "prune_caskroom")?;
-        if let Some(token_dir) = candidate.version_dir.parent() {
-            file::remove_dir(token_dir)?;
-        }
-        remove_cask_journals_in(state_dir, &candidate.token)?;
-        removed += 1;
     }
     Ok(removed)
 }
@@ -1126,8 +1142,12 @@ pub(super) fn validate_cask_prune_candidate(candidate: &CaskPruneCandidate) -> R
 }
 
 pub(super) fn path_is_below(path: &Path, root: &Path) -> bool {
-    path.strip_prefix(root)
-        .is_ok_and(|relative| relative.components().next().is_some())
+    path.strip_prefix(root).is_ok_and(|relative| {
+        relative.components().next().is_some()
+            && !relative
+                .components()
+                .any(|component| component == Component::ParentDir)
+    })
 }
 
 pub(super) fn staged_target_matches(record: &CaskTargetRecord, staged: &Path) -> bool {

@@ -293,10 +293,16 @@ impl FlightTargetTransaction {
                 let remove = if entry.elevate {
                     remove_artifact_target_elevating(backup)
                 } else {
-                    remove_trusted_generic_target_from(
-                        backup,
-                        entry.backup_parent.as_ref().unwrap(),
-                    )
+                    entry
+                        .backup_parent
+                        .as_ref()
+                        .ok_or_else(|| {
+                            eyre!(
+                                "brew-cask: flight backup {} has no recorded parent",
+                                backup.display()
+                            )
+                        })
+                        .and_then(|parent| remove_trusted_generic_target_from(backup, parent))
                 };
                 if let Err(err) = remove {
                     first_error.get_or_insert(err);
@@ -524,15 +530,14 @@ pub(super) fn resolved_parent(path: &Path) -> Result<PathBuf> {
 }
 
 pub(super) fn validate_backup_parents(entry: &ArtifactLinkBackup) -> Result<()> {
-    if resolved_parent(&entry.target)? != entry.target_parent
-        || entry
-            .backup
-            .as_deref()
-            .zip(entry.backup_parent.as_ref())
-            .is_some_and(|(backup, expected)| {
-                !resolved_parent(backup).is_ok_and(|current| current == *expected)
-            })
-    {
+    let backup_parent_matches = match (&entry.backup, &entry.backup_parent) {
+        (Some(backup), Some(expected)) => {
+            resolved_parent(backup).is_ok_and(|current| current == *expected)
+        }
+        (None, None) => true,
+        _ => false,
+    };
+    if resolved_parent(&entry.target)? != entry.target_parent || !backup_parent_matches {
         bail!(
             "brew-cask: refusing to restore flight target through a changed parent: {}",
             entry.target.display()

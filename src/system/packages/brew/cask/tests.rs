@@ -2238,6 +2238,62 @@ fn invalid_flight_recovery_does_not_block_later_installs() -> Result<()> {
 }
 
 #[test]
+fn flight_recovery_rejects_backup_without_recorded_parent() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let target = tmp.path().join("target");
+    let backup = tmp.path().join("backup");
+    file::write(&backup, "original")?;
+    let recovery = flight_backup_recovery_path(&backup);
+    let record = FlightRecoveryRecord {
+        target: target.clone(),
+        backup: Some(backup.clone()),
+        target_parent: resolved_parent(&target)?,
+        backup_parent: None,
+        receipt_caskroom: None,
+        elevate: true,
+    };
+    write_durable_file(&recovery, &serde_json::to_vec_pretty(&record)?)?;
+
+    let err = recover_flight_backup(&recovery).unwrap_err().to_string();
+
+    assert!(err.contains("refusing to restore flight target through a changed parent"));
+    assert!(backup.is_file());
+    assert!(recovery.is_file());
+    Ok(())
+}
+
+#[test]
+fn flight_commit_reports_backup_without_recorded_parent() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let target = tmp.path().join("target");
+    let backup = tmp.path().join("backup");
+    file::write(&backup, "original")?;
+    let mut transaction = FlightTargetTransaction {
+        backups: vec![ArtifactLinkBackup {
+            target: target.clone(),
+            backup: Some(backup.clone()),
+            target_parent: resolved_parent(&target)?,
+            backup_parent: None,
+            elevate: false,
+        }],
+        receipt_caskroom: None,
+        installed: Vec::new(),
+        uninstall: BTreeMap::new(),
+        previous_symlinks: BTreeSet::new(),
+        copied_files: BTreeSet::new(),
+        previous_directories: BTreeSet::new(),
+        installed_directories: Vec::new(),
+        committed: false,
+    };
+
+    let err = transaction.commit().unwrap_err().to_string();
+
+    assert!(err.contains("has no recorded parent"));
+    assert!(backup.is_file());
+    Ok(())
+}
+
+#[test]
 #[cfg(unix)]
 fn stale_flight_recovery_temp_file_does_not_block_recovery() -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -3042,6 +3098,32 @@ fn rejects_structured_flight_step_controls() {
 }
 
 #[test]
+fn structured_flight_boole_report_their_actual_context() {
+    let cask = test_cask("example", "1.0.0");
+    let copy = serde_json::json!({
+        "type": "copy",
+        "source": {"path": "source"},
+        "target": {"path": "target"},
+        "recursive": "yes"
+    });
+    let err = parse_flight_step(&cask, "preflight_steps", &copy)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("preflight_steps recursive must be a boolean"));
+    assert!(!err.contains("terminate_process"));
+
+    let run = serde_json::json!({
+        "type": "run",
+        "command": {"base": "staged_path", "path": "tool"},
+        "sudo": "if_needed"
+    });
+    let err = parse_flight_step(&cask, "postflight_steps", &run)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("postflight_steps sudo must be a boolean"));
+}
+
+#[test]
 fn rejects_baseless_relative_run_command_paths() {
     let cask = test_cask("example", "1.0.0");
     for path in ["bin/tool", "../tool", "./tool"] {
@@ -3781,6 +3863,19 @@ fn rejects_generated_completions_with_no_shells() {
         .to_string();
 
     assert!(err.contains("requires at least one shell"));
+}
+
+#[test]
+fn rejects_generated_completions_with_unknown_options() {
+    let value = serde_json::json!({
+        "generate_completions_from_executable": ["op", {"shell": "bash"}]
+    });
+
+    let err = parse_generated_completion_artifact(&value)
+        .unwrap_err()
+        .to_string();
+
+    assert!(err.contains("unsupported generate_completions_from_executable field shell"));
 }
 
 #[test]
@@ -5459,6 +5554,30 @@ fn cask_prune_removes_only_receipt_owned_direct_artifacts() -> Result<()> {
 }
 
 #[test]
+fn cask_prune_keeps_nonempty_token_directory_and_continues() -> Result<()> {
+    let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
+    let tmp = tempfile::tempdir()?;
+    let _guard = BrewPrefixGuard::set(tmp.path());
+    let state_dir = tmp.path().join("state");
+    let staged_target = write_test_app_receipt(&test_cask("a-staged", "1.0.0"), "Staged.app")?;
+    let clean_target = write_test_app_receipt(&test_cask("b-clean", "1.0.0"), "Clean.app")?;
+    let staged_token_dir = caskroom_token_dir("a-staged");
+    file::create_dir_all(staged_token_dir.join(".mise-tmp-interrupted"))?;
+
+    let plan = cask_prune_plan_from_tokens(&BTreeSet::new(), &state_dir)?;
+    assert_eq!(plan.remove.len(), 2);
+
+    assert_eq!(apply_cask_prune_plan_in(&plan, false, &state_dir)?, 2);
+    assert!(!staged_target.exists());
+    assert!(!clean_target.exists());
+    assert!(staged_token_dir.join(".mise-tmp-interrupted").is_dir());
+    assert!(!caskroom_token_dir("b-clean").exists());
+    assert!(!cask_journal_pending_in(&state_dir, "a-staged"));
+    assert!(!cask_journal_pending_in(&state_dir, "b-clean"));
+    Ok(())
+}
+
+#[test]
 fn cask_prune_skips_configured_drifted_and_legacy_casks() -> Result<()> {
     let _lock = crate::test::lock_ignoring_poison(&ENV_LOCK);
     let tmp = tempfile::tempdir()?;
@@ -5620,6 +5739,17 @@ fn cask_prune_rechecks_homebrew_ownership_before_removal() -> Result<()> {
     assert!(target.exists());
     assert!(caskroom_token_dir("claimed").exists());
     Ok(())
+}
+
+#[test]
+fn prune_containment_rejects_parent_components() {
+    let root = Path::new("/Applications");
+    assert!(path_is_below(Path::new("/Applications/Example.app"), root));
+    assert!(!path_is_below(Path::new("/Applications"), root));
+    assert!(!path_is_below(
+        Path::new("/Applications/../etc/example"),
+        root
+    ));
 }
 
 #[test]
@@ -7225,5 +7355,39 @@ fn fetch_git_clone_and_stage_clones_and_restructures_only_path() -> Result<()> {
         std::fs::read_to_string(stage.join("font.ttf"))?,
         "branch content"
     );
+    Ok(())
+}
+
+#[test]
+fn git_only_path_must_be_a_contained_directory() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let checkout = tmp.path().join("checkout");
+    let nested = checkout.join("fonts/sample");
+    file::create_dir_all(&nested)?;
+    file::write(checkout.join("file"), "not a directory")?;
+    let cask = test_cask("font-test", "latest");
+
+    assert_eq!(
+        git_only_path_source(&cask, &checkout, Path::new("fonts/sample"))?,
+        nested.canonicalize()?
+    );
+    assert!(git_only_path_source(&cask, &checkout, Path::new("../outside")).is_err());
+    assert!(git_only_path_source(&cask, &checkout, Path::new("missing")).is_err());
+    assert!(git_only_path_source(&cask, &checkout, Path::new("file")).is_err());
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn git_only_path_rejects_symlink_escape() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let checkout = tmp.path().join("checkout");
+    let outside = tmp.path().join("outside");
+    file::create_dir_all(&checkout)?;
+    file::create_dir_all(&outside)?;
+    file::make_symlink(&outside, &checkout.join("escaped"))?;
+    let cask = test_cask("font-test", "latest");
+
+    assert!(git_only_path_source(&cask, &checkout, Path::new("escaped")).is_err());
     Ok(())
 }

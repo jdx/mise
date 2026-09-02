@@ -146,13 +146,11 @@ pub(super) async fn fetch_git_clone_and_stage(
         .clone(&cask.url, clone_opts)
         .wrap_err_with(|| format!("brew-cask:{}: failed to clone {}", cask.token, cask.url))?;
     if let Some(only_path) = &cask.url_specs.only_path {
-        let source = clone_dir.join(only_path);
-        if source.is_dir() {
-            for entry in std::fs::read_dir(&source)? {
-                let entry = entry?;
-                let dest = extract_dir.join(entry.file_name());
-                file::rename(entry.path(), &dest)?;
-            }
+        let source = git_only_path_source(cask, &clone_dir, Path::new(only_path))?;
+        for entry in std::fs::read_dir(&source)? {
+            let entry = entry?;
+            let dest = extract_dir.join(entry.file_name());
+            file::rename(entry.path(), &dest)?;
         }
     } else {
         for entry in std::fs::read_dir(&clone_dir)? {
@@ -166,6 +164,38 @@ pub(super) async fn fetch_git_clone_and_stage(
     }
     file::remove_all(&clone_dir)?;
     Ok(extract_dir)
+}
+
+pub(super) fn git_only_path_source(
+    cask: &Cask,
+    clone_dir: &Path,
+    only_path: &Path,
+) -> Result<PathBuf> {
+    if only_path.is_absolute()
+        || only_path
+            .components()
+            .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
+    {
+        bail!(
+            "brew-cask:{}: git only_path must stay within the checkout",
+            cask.token
+        );
+    }
+    let clone_root = clone_dir.canonicalize()?;
+    let source = clone_dir.join(only_path).canonicalize().wrap_err_with(|| {
+        format!(
+            "brew-cask:{}: git only_path does not exist: {}",
+            cask.token,
+            only_path.display()
+        )
+    })?;
+    if !source.starts_with(&clone_root) || !source.is_dir() {
+        bail!(
+            "brew-cask:{}: git only_path must name a directory within the checkout",
+            cask.token
+        );
+    }
+    Ok(source)
 }
 
 pub(super) async fn fetch_archive(cask: &Cask, pr: Option<&dyn SingleReport>) -> Result<PathBuf> {

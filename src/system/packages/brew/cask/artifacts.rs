@@ -414,6 +414,13 @@ pub(super) fn parse_generated_completion_artifact(
         bail!("brew-cask: generate_completions_from_executable requires an executable");
     }
     let options = values.last().and_then(Value::as_object);
+    if let Some(options) = options {
+        reject_unsupported_artifact_fields(
+            "generate_completions_from_executable",
+            options,
+            &["base_name", "shell_parameter_format", "shells"],
+        )?;
+    }
     let command_values = if options.is_some() {
         &values[..values.len() - 1]
     } else {
@@ -727,7 +734,7 @@ pub(super) fn parse_flight_step(cask: &Cask, kind: &str, value: &Value) -> Resul
                 command: parse_run_command(cask, kind, object.get("command"))?,
                 args,
                 env,
-                sudo: object.get("sudo").and_then(Value::as_bool).unwrap_or(false),
+                sudo: parse_optional_flight_bool(cask, kind, object, "sudo", false)?,
                 guards,
             })
         }
@@ -875,10 +882,7 @@ pub(super) fn parse_optional_flight_bool(
     match object.get(field) {
         None => Ok(default),
         Some(Value::Bool(value)) => Ok(*value),
-        Some(_) => bail!(
-            "brew-cask:{}: {kind} terminate_process {field} must be a boolean",
-            cask.token
-        ),
+        Some(_) => bail!("brew-cask:{}: {kind} {field} must be a boolean", cask.token),
     }
 }
 
