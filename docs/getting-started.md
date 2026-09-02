@@ -21,7 +21,7 @@ Verify the installation:
 
 ```shell
 ~/.local/bin/mise --version
-# mise 2024.x.x
+# mise 2026.x.x
 ```
 
 - `~/.local/bin` does not need to be in `PATH`. mise will automatically add its own directory to `PATH`

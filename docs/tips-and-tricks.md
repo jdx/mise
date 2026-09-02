@@ -328,7 +328,7 @@ and transitive dependency filtering behavior.
 
 ## [`mise up --bump`](/cli/upgrade.html)
 
-Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same semver range as before,
+Use `mise up --bump` to upgrade all software to the latest version and update `mise.toml` files. This keeps the same precision as before,
 so if you had `node = "24"` and node 26 is the latest, `mise up --bump node` will change `mise.toml` to `node = "26"`.
 
 ## cargo-binstall

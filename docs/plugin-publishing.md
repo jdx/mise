@@ -459,7 +459,7 @@ ssh -T git@github.com
 ```bash
 # 1. Prepare plugin
 cd my-backend-plugin
-echo "Updated backend methods" > metadata.lua
+# ... edit metadata.lua and hooks/*.lua ...
 
 # 2. Test locally
 mise plugin link my-plugin .

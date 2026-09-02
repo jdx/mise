@@ -287,7 +287,7 @@ Use tool names as they would appear in `mise.toml`. Users can supplement plugin 
 
 mise uses intelligent caching to minimize overhead:
 
-- **Version lists**: Cached daily to avoid repeated API calls
+- **Version lists**: Cached for 1 hour by default ([`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache)) to avoid repeated API calls
 - **Installation artifacts**: Cached downloads to speed up reinstalls
 - **Environment resolution**: Cached environment setups for faster shell prompts
 - **Plugin metadata**: Cached plugin information for quicker operations

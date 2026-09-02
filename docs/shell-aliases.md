@@ -105,7 +105,7 @@ docs = "cd {{config_root}}/docs"
 ## Limitations
 
 - **Not available in tasks**: Shell aliases are only active in interactive shells where `mise activate` is running. They are **not** available inside TOML task `run` blocks or file tasks, since tasks run in non-interactive subshells. Use the underlying command directly in tasks, or add wrapper scripts to your `PATH` via [`env._.path`](/environments/#env-path).
-- **Shell support**: Only bash, zsh, fish, and xonsh are supported. See the [shell feature compatibility matrix](/getting-started.html#shell-feature-compatibility) for details.
+- **Shell support**: Only bash, zsh, and fish are supported. See the [shell feature compatibility matrix](/getting-started.html#shell-feature-compatibility) for details.
 
 ## Comparison to Tool Aliases
 

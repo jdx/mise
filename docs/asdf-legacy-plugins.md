@@ -274,7 +274,7 @@ parse_version() {
 mise plugin add my-plugin /path/to/local/plugin
 
 # Test basic functionality
-mise list-all my-plugin
+mise ls-remote my-plugin
 mise install my-plugin@1.0.0
 mise which my-plugin
 ```

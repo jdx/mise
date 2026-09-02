@@ -18,7 +18,7 @@ node = 'github:company/our-custom-node'   # shorthand for https://github.com/com
 erlang = 'aqua:company/our-custom-erlang' # use an aqua registry entry
 ```
 
-This can also be used to install multiple tools from the same GitHub release:
+This can also be used to install multiple tools from the same GitHub repository:
 
 ```toml [~/.config/mise/config.toml]
 [tool_alias]

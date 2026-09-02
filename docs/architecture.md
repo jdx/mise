@@ -169,6 +169,7 @@ pub trait Shell: Display {
 ```
 
 **Supported Shells:** See [`mise activate`](cli/activate.md) documentation for the complete list
+
 **Shell Abstractions:** Environment variable setting, PATH modification, command execution
 
 ### Environment Management ([`src/env*.rs`](https://github.com/jdx/mise/tree/main/src/))
@@ -328,7 +329,7 @@ Describe "go" {
 
 **Implementation:**
 
-- **Crate**: Uses `insta` for snapshot testing with 11 snapshot files
+- **Crate**: Uses `insta` for snapshot testing
 - **Format**: Stores expected outputs as `.snap` files
 - **Coverage**: Complex outputs like directory listings, configuration parsing, environment diffs
 
@@ -380,10 +381,10 @@ test/
 cargo test
 
 # Run all E2E tests
-./e2e/run_all_tests
+mise run test:e2e
 
 # Run specific E2E test
-./e2e/run_test test_install
+mise run test:e2e '^test_install$'
 
 # Run with coverage
 ./xtasks/test/coverage

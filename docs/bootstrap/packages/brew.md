@@ -177,8 +177,8 @@ gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
-generic prefix artifacts (`artifact`), simple macOS installer packages (`pkg`
-artifacts), script-based cask installers, and shell completions
+generic prefix artifacts (`artifact`), font artifacts (`font`), simple macOS
+installer packages (`pkg` artifacts), script-based cask installers, and shell completions
 (`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
@@ -408,8 +408,9 @@ operation.
 ## Limitations
 
 - **Cask artifact coverage is intentionally narrow.** On macOS, `brew-cask`
-  supports app bundles, binary artifacts, font artifacts, and simple pkg
-  installers from dmg and common archive formats. On Linux, it supports
+  supports app bundles, binary artifacts, generated command wrappers, generic
+  prefix artifacts, font artifacts, simple pkg installers, script-based
+  installers, and shell completions from dmg and common archive formats. On Linux, it supports
   font-only casks without lifecycle hooks or structured `preflight_steps` or
   `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
   IDs, and pkg installers with custom choices fail explicitly.

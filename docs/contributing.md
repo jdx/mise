@@ -275,18 +275,18 @@ cargo test module_name
 cargo test test_name -- --nocapture
 ```
 
-#### Running Single E2E Tests
+#### Running Focused E2E Tests
 
 ```bash
-# Run a specific E2E test by name
-./e2e/run_test test_name
+# Run a specific E2E test with an anchored filename pattern
+mise run test:e2e '^test_name$'
 
 # Run E2E tests matching a pattern
 mise run test:e2e pattern
 
 # Examples:
-./e2e/run_test test_use                    # Run specific test
-./e2e/run_test test_config_set            # Run config-related test
+mise run test:e2e '^test_use$'             # Run one specific test
+mise run test:e2e '^test_config_set$'       # Run one config-related test
 mise run test:e2e task                     # Run all tests matching "task"
 ```
 
@@ -641,8 +641,8 @@ root of the project and run `mise run render` to update the codebase.
 
 ## Adding Tools
 
-Adding tools to mise involves adding entries to the
-[registry/](https://github.com/jdx/mise/blob/main/registry/) file. This
+Adding tools to mise involves adding a TOML file to the
+[registry/](https://github.com/jdx/mise/blob/main/registry/) directory. This
 allows users to install tools using short names like `mise use ripgrep` instead
 of the full backend specification.
 
@@ -728,7 +728,7 @@ a registry shorthand for it.
 
 ### Registry Format
 
-The `registry/` file uses this format:
+Each `registry/<tool>.toml` file uses this format:
 
 ```toml
 # Tool name "your-tool" (becomes the short name for `mise use`)
@@ -842,17 +842,19 @@ Recent tool additions:
 - **DuckDB**: Simple github backend ([#4248](https://github.com/jdx/mise/pull/4248))
 
   ```toml
-  [tools.duckdb]
-  backends = ["github:duckdb/duckdb"]
-  test = ["duckdb --version", "{{version}}"]
+  # registry/duckdb.toml
+  version_order = "semver"
+  backends = ["aqua:duckdb/duckdb"]
+  test = { cmd = "duckdb --version", expected = "{{version}}" }
   ```
 
 - **Biome**: Multiple backends ([#4283](https://github.com/jdx/mise/pull/4283))
 
   ```toml
-  [tools.biome]
-  backends = ["aqua:biomejs/biome", "github:biomejs/biome"]
-  test = ["biome --version", "Version: {{version}}"]
+  # registry/biome.toml
+  version_order = "semver"
+  backends = ["aqua:biomejs/biome", "npm:@biomejs/biome"]
+  test = { cmd = "biome --version", expected = "Version: {{version}}" }
   ```
 
 ## Adding Backends
@@ -891,7 +893,7 @@ across different installation systems.
 
 ### Backend Types
 
-- **Core Backends** (`src/backend/core/`) - Built-in language runtimes like
+- **Core Tools** (`src/plugins/core/`) - Built-in language runtimes like
   Node.js, Python, Ruby
 - **Package Manager Backends** (`src/backend/`) - npm, pipx, cargo, gem, go
   modules
@@ -963,7 +965,7 @@ Look at existing backends for patterns:
 
 - `src/backend/github.rs` - Simple GitHub release installer
 - `src/backend/npm.rs` - Package manager integration
-- `src/backend/core/node.rs` - Full language runtime implementation
+- `src/plugins/core/node.rs` - Full language runtime implementation
 
 For detailed architecture information, see
 [Backend Architecture](dev-tools/backend_architecture.md).

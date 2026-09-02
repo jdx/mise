@@ -426,7 +426,8 @@ to the task, so `mise run task -- -- --help` forwards `-- --help` to the task.
 Connects the task directly to the shell's stdin/stdout/stderr. Interactive tasks acquire an exclusive lock,
 ensuring sole access to standard I/O — while an interactive task is running, all other tasks (both interactive
 and non-interactive) are blocked. Non-interactive tasks can still run in parallel with each other. This is more
-targeted than the broader `raw` setting, which forces single-threaded execution globally (by setting `jobs = 1`).
+targeted than [`raw`](#raw), which takes its exclusive lock per command, and than `mise run --raw`, which goes further
+and forces single-threaded execution globally (by setting `jobs = 1`).
 
 ### `sources`
 
@@ -1515,6 +1516,14 @@ remain available.
 Entries are evaluated in order, and when more than one include defines a task with the same name the **last** entry in the list wins.
 This applies uniformly to directory, toml-file, and `git::` includes, so to override a task coming from a `git::` include with a local one, list the local directory after the `git::` entry (see the example below).
 
+```toml
+[task_config]
+includes = [
+    "git::https://github.com/myorg/shared-tasks.git//tasks", # remote task…
+    ".mise/tasks",                                           # …is overridden by the local one with the same name
+]
+```
+
 An inline `[tasks.<name>]` command takes precedence over a same-named task from
 an included TOML file when it comes from the config that selected the include
 or a higher-precedence config. An inline block without `run`, `run_windows`, or
@@ -1529,16 +1538,8 @@ definition with its own command still replaces the lower task. All metadata-only
 definitions above the selected command-bearing base contribute in precedence
 order, while definitions below it do not contribute metadata.
 
-```toml
-[task_config]
-includes = [
-    "git::https://github.com/myorg/shared-tasks.git//tasks", # remote task…
-    ".mise/tasks",                                           # …is overridden by the local one with the same name
-]
-```
-
 Included task toml files have a different format than `mise.toml`: they are simply a list of tasks.
-The file uses the same format as the `[tasks]` section of `mise.toml` but without the `[task]` prefix:
+The file uses the same format as the `[tasks]` section of `mise.toml` but without the `[tasks]` prefix:
 
 ::: code-group
 
@@ -1643,9 +1644,15 @@ A list of environment variables to redact from the output.
 
 ```toml
 redactions = ["API_KEY", "PASSWORD"]
+
+[env]
+API_KEY = "s3cr3t"
+
+[tasks.show-key]
+run = 'echo "key: $API_KEY"'
 ```
 
-Running the above task will output `echo [redacted]` instead.
+Running `mise run show-key` will output `key: [redacted]` instead of the value of `API_KEY`.
 
 You can also specify these as a glob pattern, e.g.: `redactions = ["SECRETS_*"]`.
 

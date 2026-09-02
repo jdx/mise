@@ -81,8 +81,7 @@ These shell-specific installers will:
 
 - Install mise using the same logic as the main installer
 - Automatically detect your shell's configuration file
-- Add the activation line if it's not already present
-- Skip adding activation if it's already configured (safe to run multiple times)
+- Add the activation line if it's not already present (safe to run multiple times)
 
 Options:
 
@@ -431,6 +430,7 @@ bit off startup time by using a pure Python import: add the code below to a conf
 `~/.config/xonsh/mise.py` and `import mise` in `~/.config/xonsh/rc.xsh`:
 
 ```python
+import subprocess
 from pathlib import Path
 from xonsh.built_ins import XSH
 

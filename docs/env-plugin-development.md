@@ -429,7 +429,7 @@ See [Plugin Publishing](/plugin-publishing.html) for detailed instructions.
 
 ## Examples
 
-- [mise-env-sample](https://github.com/jdx/mise-env-plugin-template) - Simple example showing basic usage
+- [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) - Simple example showing basic usage
 - The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only. Add your environment plugin there (or share it with the community) so others can learn from more examples
 
 ## Migration from Tool Plugins

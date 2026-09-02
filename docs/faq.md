@@ -16,7 +16,7 @@ If you really want to use a `mise.toml` or `.tool-versions`, here are three ways
 
 ## What is the difference between "nodejs" and "node" (or "golang" and "go")?
 
-These are aliased. For example, `mise use nodejs@14.0` is the same as `mise use node@14.0`. This
+These are aliased. For example, `mise install nodejs@14.0` is the same as `mise install node@14.0`. This
 means they cannot be different plugins.
 
 This is for convenience, so you don't need to remember which one is the "official" name. If

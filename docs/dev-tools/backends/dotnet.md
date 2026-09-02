@@ -3,7 +3,7 @@
 The code for this is inside the mise repository at [`./src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).
 
 ::: tip Important
-The dotnet backend requires the .NET runtime to be installed. You can install it with mise:
+The dotnet backend requires the .NET SDK to be installed. You can install it with mise:
 
 ```sh
 # Install the latest version
@@ -14,7 +14,7 @@ mise use dotnet@8
 mise use dotnet@9
 ```
 
-This installs the .NET runtime, which dotnet tools require.
+This installs the .NET SDK, which dotnet tools require.
 :::
 
 ## Usage
@@ -34,6 +34,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 [tools]
 "dotnet:GitVersion.Tool" = "5.12.0"
 ```
+
+Omitting the version installs the latest version:
 
 ```sh
 $ mise use dotnet:GitVersion.Tool

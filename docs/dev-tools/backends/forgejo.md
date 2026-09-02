@@ -12,7 +12,7 @@ The following installs the latest version of a tool from Forgejo releases
 and sets it as the active version on PATH:
 
 ```sh
-$ mise use -g forgejo:forgejo/runner[api_url=https://code.forgejo.org/api/v1,bin=forgejo-runner,bin=forgejo-runner]
+$ mise use -g forgejo:forgejo/runner[api_url=https://code.forgejo.org/api/v1,bin=forgejo-runner]
 $ forgejo-runner -v
 forgejo-runner version v12.4.0
 ```

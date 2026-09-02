@@ -63,7 +63,7 @@ with you for some reason, this will let it.
 
 Check the version of mise with `mise --version` and make sure it is the latest;
 use `mise self-update`
-to update it. `mise cache clean` wipes the internal cache, and `mise implode` removes
+to update it. `mise cache clear` wipes the internal cache, and `mise implode` removes
 everything except config.
 
 Lastly, `mise doctor` shows diagnostic information and warnings about any issues
@@ -73,7 +73,7 @@ detected with your setup. If you submit a bug report, please include the output 
 
 This likely means that mise isn't first in PATH, whether via shims or `mise activate`. You can verify
 this with `which -a`. For example, if node@20.0.0 is being used but mise specifies
-node@26.0.0, first make sure that mise has this version installed and active by running `mise ls node`.
+node@24.0.0, first make sure that mise has this version installed and active by running `mise ls node`.
 It should not say missing, and it should show the correct "Requested" version:
 
 ```bash
@@ -121,8 +121,8 @@ mise can fetch new versions of tools.
 ## Windows problems
 
 ::: warning
-Very basic Windows support is currently available. However, because Windows can't run asdf
-plugins, tools must use the core and vfox backends only—which means only a handful of tools are
+Windows support is available, but asdf plugins can't run on Windows, so tools must use another
+backend such as core, vfox, aqua, github, or http—which means some registry tools are not
 available on Windows.
 :::
 
