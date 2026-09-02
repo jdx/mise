@@ -8,6 +8,11 @@ use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPack
 use crate::cmd::CmdLineRunner;
 use crate::result::Result;
 
+struct ResolvedForeignPackage {
+    status: PackageStatus,
+    installed_name: Option<String>,
+}
+
 /// Arch User Repository packages via yay or paru.
 pub(crate) struct AurManager {}
 
@@ -38,18 +43,22 @@ fn install_args(pkgs: &[PackageRequest], opts: &InstallOpts) -> Vec<String> {
     args
 }
 
-fn parse_foreign_packages(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
+fn parse_foreign_packages(
+    output: &str,
+    requests: &[PackageRequest],
+) -> (HashMap<String, String>, Vec<ResolvedForeignPackage>) {
     let installed = output
         .lines()
         .filter_map(|line| line.split_once(' '))
+        .map(|(name, version)| (name.to_string(), version.to_string()))
         .collect::<HashMap<_, _>>();
-    requests
+    let resolved = requests
         .iter()
         .map(|request| {
             let state = match installed.get(request.name.as_str()) {
                 Some(version) => match &request.version {
                     Some(requested)
-                        if *version != requested
+                        if version != requested
                             && !version.starts_with(&format!("{requested}-")) =>
                     {
                         PackageState::VersionMismatch {
@@ -62,12 +71,49 @@ fn parse_foreign_packages(output: &str, requests: &[PackageRequest]) -> Vec<Pack
                 },
                 None => PackageState::Missing,
             };
-            PackageStatus {
-                request: request.clone(),
-                state,
+            ResolvedForeignPackage {
+                installed_name: installed
+                    .contains_key(request.name.as_str())
+                    .then(|| request.name.clone()),
+                status: PackageStatus {
+                    request: request.clone(),
+                    state,
+                },
             }
         })
-        .collect()
+        .collect();
+    (installed, resolved)
+}
+
+fn apply_foreign_provider(
+    package: &mut ResolvedForeignPackage,
+    installed: &HashMap<String, String>,
+    provider: String,
+    state: PackageState,
+) {
+    if installed.contains_key(&provider) {
+        package.installed_name = Some(provider);
+        package.status.state = state;
+    }
+}
+
+async fn resolve_foreign_packages(
+    requests: &[PackageRequest],
+) -> Result<Vec<ResolvedForeignPackage>> {
+    let output = foreign_packages().await?;
+    let (installed, mut resolved) = parse_foreign_packages(&output, requests);
+    for package in resolved
+        .iter_mut()
+        .filter(|package| matches!(package.status.state, PackageState::Missing))
+    {
+        let Some((provider, state)) =
+            super::pacman::resolve_installed_provider(&package.status.request).await?
+        else {
+            continue;
+        };
+        apply_foreign_provider(package, &installed, provider, state);
+    }
+    Ok(resolved)
 }
 
 async fn foreign_packages() -> Result<String> {
@@ -116,8 +162,11 @@ impl SystemPackageManager for AurManager {
         if pkgs.is_empty() {
             return Ok(vec![]);
         }
-        let output = foreign_packages().await?;
-        Ok(parse_foreign_packages(&output, pkgs))
+        Ok(resolve_foreign_packages(pkgs)
+            .await?
+            .into_iter()
+            .map(|package| package.status)
+            .collect())
     }
 
     fn supports_version_pins(&self) -> bool {
@@ -151,8 +200,22 @@ impl SystemPackageManager for AurManager {
     }
 
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        let pkgs = resolve_foreign_packages(pkgs)
+            .await?
+            .into_iter()
+            .filter_map(|package| {
+                package.installed_name.map(|name| PackageRequest {
+                    name,
+                    version: None,
+                    tap_url: None,
+                })
+            })
+            .collect::<Vec<_>>();
+        if pkgs.is_empty() {
+            return Ok(());
+        }
         self.install(
-            pkgs,
+            &pkgs,
             &InstallOpts {
                 dry_run: opts.dry_run,
                 update: true,
@@ -224,13 +287,45 @@ mod tests {
         let requests = vec![req("aur-package", None), req("native-name-collision", None)];
         // pacman -Qm omits packages available from a configured sync database,
         // even if a same-named native package is installed.
-        let statuses = parse_foreign_packages("aur-package 1.2.3-1\n", &requests);
+        let (_, statuses) = parse_foreign_packages("aur-package 1.2.3-1\n", &requests);
         assert_eq!(
-            statuses[0].state,
+            statuses[0].status.state,
             PackageState::Installed {
                 version: "1.2.3-1".to_string()
             }
         );
-        assert_eq!(statuses[1].state, PackageState::Missing);
+        assert_eq!(statuses[1].status.state, PackageState::Missing);
+    }
+
+    #[test]
+    fn test_provider_must_itself_be_foreign() {
+        let request = req("virtual-capability", None);
+        let (installed, mut statuses) =
+            parse_foreign_packages("aur-provider 2.0-1\n", std::slice::from_ref(&request));
+        apply_foreign_provider(
+            &mut statuses[0],
+            &installed,
+            "native-provider".to_string(),
+            PackageState::Installed {
+                version: "1.0-1".to_string(),
+            },
+        );
+        assert_eq!(statuses[0].status.state, PackageState::Missing);
+
+        apply_foreign_provider(
+            &mut statuses[0],
+            &installed,
+            "aur-provider".to_string(),
+            PackageState::Installed {
+                version: "2.0-1".to_string(),
+            },
+        );
+        assert_eq!(statuses[0].installed_name.as_deref(), Some("aur-provider"));
+        assert_eq!(
+            statuses[0].status.state,
+            PackageState::Installed {
+                version: "2.0-1".to_string()
+            }
+        );
     }
 }

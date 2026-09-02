@@ -175,6 +175,43 @@ async fn pacman_deptest(names: &[String]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+pub(super) async fn resolve_installed_provider(
+    request: &PackageRequest,
+) -> Result<Option<(String, PackageState)>> {
+    let requirement = deptest_requirement(request);
+    let deptest = pacman_deptest(&[requirement]).await?;
+    let unsatisfied = parse_pacman_deptest(&deptest);
+    let constraint_satisfied = unsatisfied.is_empty();
+    if !constraint_satisfied {
+        if request.version.is_none() {
+            return Ok(None);
+        }
+        let bare_deptest = pacman_deptest(std::slice::from_ref(&request.name)).await?;
+        let bare_missing = parse_pacman_deptest(&bare_deptest);
+        if !bare_missing.is_empty() {
+            return Ok(None);
+        }
+    }
+
+    let output = pacman_query(std::slice::from_ref(&request.name)).await?;
+    let Some((provider, version)) = parse_pacman_package(&output) else {
+        bail!(
+            "pacman -Q returned no package for satisfied requirement '{}'",
+            request.name
+        );
+    };
+    let state = if constraint_satisfied {
+        PackageState::Installed {
+            version: version.to_string(),
+        }
+    } else {
+        PackageState::VersionMismatch {
+            installed: version.to_string(),
+        }
+    };
+    Ok(Some((provider.to_string(), state)))
+}
+
 #[async_trait(?Send)]
 impl SystemPackageManager for PacmanManager {
     fn name(&self) -> &str {
