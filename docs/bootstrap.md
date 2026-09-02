@@ -27,6 +27,23 @@ unless `--update` is passed, in which case mise runs a fast-forward-only pull
 before applying the bootstrap configuration. During `--dry-run`, a missing
 checkout is reported but not cloned.
 
+If the repository is the global mise configuration itself, use `--from-git`
+instead:
+
+```sh
+mise -E work bootstrap --from-git git@github.com:example/mise-config.git --yes
+```
+
+This clones the repository into `$MISE_CONFIG_DIR` (normally
+`~/.config/mise`). Files such as `config.toml`, `config.work.toml`, `conf.d/`,
+and `tasks/` are therefore loaded as global configuration during the first
+bootstrap and remain active for future mise invocations. If
+`$MISE_GLOBAL_CONFIG_FILE` selects an individual global config file, the repo
+is cloned into that file's parent directory instead and that file is loaded.
+As with `--from`, an existing non-empty destination must be a git checkout
+whose `origin` exactly matches the requested URL; pass `--update` to
+fast-forward it before bootstrap.
+
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
 formulae, dotfile repositories, shell rc files, editor config, macOS
