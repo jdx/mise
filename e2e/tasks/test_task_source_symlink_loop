@@ -30,7 +30,7 @@ EOF
 # Recursive source expansion must skip ancestor symlink loops while retaining
 # ordinary files, both for artifact-cache inputs and task_source_files().
 assert "mise run -q cached" "cached"
-assert_contains "mise run -q render-sources" "tree/input.txt"
+assert "mise run -q render-sources" "tree/input.txt"
 
 # Artifact-cache output enumeration must likewise prune loops without aborting
 # task preparation.
