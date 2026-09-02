@@ -46,7 +46,7 @@ jobs:
     uses: ./.github/workflows/docs-impl.yml
     with:
       trusted: false
-      mbx-backend: github
+      mbx-backend: server
 
   docs:
     name: docs

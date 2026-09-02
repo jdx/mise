@@ -31,7 +31,7 @@ jobs:
     uses: ./.github/workflows/test-vfox-impl.yml
     with:
       trusted: false
-      mbx-backend: github
+      mbx-backend: server
 
   test-vfox:
     name: test-vfox
