@@ -44,12 +44,14 @@ runs:
         mise reshim -f
         mise where mr-boxington@1.5.0 >> "$GITHUB_PATH"
         {
-          if [[ "$MBX_BACKEND" == server && -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+          if [[ "$MBX_BACKEND" == server ]]; then
             echo "MBX_REMOTE_URL=https://cache.jdx.dev"
             echo "MBX_REMOTE_NAMESPACE=jdx/mise"
-            echo "MBX_REMOTE_OIDC_AUDIENCE=https://cache.jdx.dev"
-          elif [[ "$MBX_BACKEND" == server ]]; then
-            echo "::notice::GitHub OIDC is unavailable; using an ephemeral local mbx store"
+            if [[ -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+              echo "MBX_REMOTE_OIDC_AUDIENCE=https://cache.jdx.dev"
+            else
+              echo "::notice::GitHub OIDC is unavailable; using public read-only cache access" >&2
+            fi
           fi
           if [[ "$RUNNER_OS" == Linux ]]; then
             echo "MBX_CACHE_LINKS=1"
