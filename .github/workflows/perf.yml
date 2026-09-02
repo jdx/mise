@@ -34,6 +34,7 @@ jobs:
     env:
       # Persistent appliance-local store; no remote backend is configured.
       MBX_CACHE_DIR: /var/cache/mbx
+      MBX_REMOTE_URL: ""
     name: Measure
     # Pinned to one runner class on purpose. Absolute instruction counts shift
     # between machine types by more than a real regression does, so a series

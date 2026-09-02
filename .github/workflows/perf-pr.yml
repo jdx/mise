@@ -74,6 +74,7 @@ jobs:
     env:
       # Persistent appliance-local store; no remote backend is configured.
       MBX_CACHE_DIR: /var/cache/mbx
+      MBX_REMOTE_URL: ""
     name: Compare instruction counts
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
@@ -84,7 +85,7 @@ jobs:
     runs-on: [self-hosted, jdx-perf-v1]
     container:
       image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
-      options: --cpuset-cpus 0-7 --mount type=bind,src=/var/cache/jdx-perf/mbx,dst=/var/cache/mbx
+      options: --cpuset-cpus 0-7 --mount type=bind,src=/var/cache/jdx-perf/mbx-pr,dst=/var/cache/mbx
     timeout-minutes: 40
     permissions:
       # Read only. This job builds and runs code from the pull request, so it
