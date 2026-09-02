@@ -40,7 +40,7 @@ jobs:
     uses: ./.github/workflows/test-impl.yml
     with:
       trusted: false
-      mbx-backend: server
+      mbx-backend: github
 
   test-ci:
     name: test-ci

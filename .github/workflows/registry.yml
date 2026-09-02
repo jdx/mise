@@ -30,7 +30,7 @@ jobs:
     uses: ./.github/workflows/registry-impl.yml
     with:
       trusted: false
-      mbx-backend: server
+      mbx-backend: github
 
   registry-ci:
     name: registry-ci
