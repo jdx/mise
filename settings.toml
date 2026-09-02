@@ -69,8 +69,7 @@ explicitly.
 Do not use precompiled binaries for all languages. Useful if running on a Linux distribution
 like Alpine that does not use glibc and therefore likely won't be able to run precompiled binaries.
 
-Note that this needs to be setup for each language. File a ticket if you notice a language that is
-not
+This needs to be set up for each language. File a ticket if you notice a language that is not
 working with this config.
 """
 env = "MISE_ALL_COMPILE"
@@ -2314,14 +2313,16 @@ description = "Integrate with uv to manage project venvs when uv.lock is present
 docs = """
 Controls how mise handles uv project venvs when a uv.lock file is present.
 
-The legacy `true` value (will be deprecated in a future release) is treated like "create|source", with one difference:
-When using this, mise also exports `UV_PYTHON` to force uv to use the python version managed by mise.
+The legacy `true` value is deprecated: it warns since mise 2026.7.0 and will be removed in
+mise 2027.7.0. It is treated like "create|source", with one difference: mise also exports
+`UV_PYTHON` to force uv to use the python version managed by mise. Prefer "source" or
+"create|source".
 """
 enum = [
   { value = false, description = "disable uv venv integration" },
   { value = "source", description = "only source an existing `.venv`" },
   { value = "create|source", description = "create the venv if missing and source it" },
-  { value = true, description = "(create|source) with UV_PYTHON export (legacy)" },
+  { value = true, description = "(create|source) with UV_PYTHON export (deprecated)" },
 ]
 env = "MISE_PYTHON_UV_VENV_AUTO"
 rust_type = "PythonUvVenvAuto"
