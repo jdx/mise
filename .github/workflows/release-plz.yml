@@ -23,7 +23,7 @@ jobs:
     if: github.repository == 'jdx/mise'
     timeout-minutes: 80
     # Release builds must never restore or save persistent caches.
-    runs-on: namespace-profile-endev-linux-amd64
+    runs-on: namespace-profile-endev-linux-amd64;overrides.cache-tag=cache
     permissions:
       pull-requests: write
       contents: write

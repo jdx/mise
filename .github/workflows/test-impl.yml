@@ -67,7 +67,7 @@ jobs:
           fi
 
   build-ubuntu:
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 60
     steps:
       - name: Assert OIDC is unavailable to untrusted CI
@@ -135,7 +135,7 @@ jobs:
 
   unit:
     name: unit-macos
-    runs-on: ${{ !inputs.trusted && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
+    runs-on: ${{ !inputs.trusted && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
     timeout-minutes: 90
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -182,7 +182,7 @@ jobs:
         if: always()
 
   lint:
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
     timeout-minutes: 80
     needs: [build-ubuntu]
     steps:
@@ -262,7 +262,7 @@ jobs:
     # The release PR runs the full suite against the packaged release tarball.
     # Keep that stronger signal instead of also testing the debug artifact.
     if: ${{ needs.classify-changes.outputs.full-ci == 'true' && (github.event_name != 'pull_request' || github.head_ref != 'release' || github.base_ref != 'main') }}
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     needs: [build-ubuntu, classify-changes]
     timeout-minutes: 125
     steps:
@@ -384,7 +384,7 @@ jobs:
   bootstrap-linux-host:
     permissions:
       contents: read
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 20
     needs: [build-ubuntu, classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -458,7 +458,7 @@ jobs:
 
   test-ci:
     permissions: {}
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 1
     needs:
       - classify-changes

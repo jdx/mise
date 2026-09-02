@@ -27,7 +27,7 @@ env:
 jobs:
   docs:
     if: github.repository == 'jdx/mise'
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     steps:
       - name: Assert OIDC is unavailable to untrusted docs builds
         if: ${{ !inputs.trusted }}

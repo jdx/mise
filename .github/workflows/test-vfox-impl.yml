@@ -27,7 +27,7 @@ env:
 
 jobs:
   "test-vfox":
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     steps:
       - name: Assert OIDC is unavailable to untrusted CI
         if: ${{ !inputs.trusted }}

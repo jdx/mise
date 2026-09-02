@@ -27,7 +27,7 @@ jobs:
   build-tarball-linux:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge' }}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-xlarge;overrides.cache-tag=cache' }}
     # PGO and cross-built release tarballs can exceed 90 minutes on
     # loaded runners, especially once archive generation is included.
     timeout-minutes: 150
@@ -94,7 +94,7 @@ jobs:
   build-tarball-macos:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     name: build-tarball-${{matrix.name}}
-    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'macos-14' || 'namespace-profile-endev-macos-arm64' }}
+    runs-on: ${{ github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || (github.event.pull_request.user.login != 'jdx' && github.event.pull_request.user.login != 'mise-en-dev')) && 'macos-14' || 'namespace-profile-endev-macos-arm64;overrides.cache-tag=cache' }}
     timeout-minutes: 300
     env:
       MINIO_AWS_ACCESS_KEY_ID: ${{ secrets.MINIO_AWS_ACCESS_KEY_ID }}
