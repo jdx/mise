@@ -14,10 +14,12 @@ and otherwise uses `paru`. The helper runs as the current user because AUR
 packages are built with `makepkg`; the helper requests elevation from pacman
 when it installs the finished package.
 
-Package state is checked read-only through pacman's local database. Installs use
-the helper's AUR-only mode with `--noconfirm` and `--needed`, so a repository
-package with the same name is not selected instead. `mise bootstrap packages
-apply --update` additionally asks the helper to refresh repository metadata.
+Package state is checked read-only through pacman's local database with its
+foreign-package filter. A same-named package from a configured repository does
+not satisfy an `aur:` declaration. Installs use the helper's AUR-only mode with
+`--noconfirm` and `--needed`, so a repository package with the same name is not
+selected instead. `mise bootstrap packages apply --update` additionally asks
+the helper to refresh repository metadata.
 
 AUR helpers build the current PKGBUILD rather than resolving historical package
 versions, so version pins are status-only. Use `"latest"` for entries mise can

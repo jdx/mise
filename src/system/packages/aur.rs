@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+use std::process::Stdio;
+
 use async_trait::async_trait;
 use eyre::bail;
 
-use super::{InstallOpts, PackageRequest, PackageStatus, SystemPackageManager};
+use super::{InstallOpts, PackageRequest, PackageState, PackageStatus, SystemPackageManager};
 use crate::cmd::CmdLineRunner;
 use crate::result::Result;
 
@@ -35,6 +38,58 @@ fn install_args(pkgs: &[PackageRequest], opts: &InstallOpts) -> Vec<String> {
     args
 }
 
+fn parse_foreign_packages(output: &str, requests: &[PackageRequest]) -> Vec<PackageStatus> {
+    let installed = output
+        .lines()
+        .filter_map(|line| line.split_once(' '))
+        .collect::<HashMap<_, _>>();
+    requests
+        .iter()
+        .map(|request| {
+            let state = match installed.get(request.name.as_str()) {
+                Some(version) => match &request.version {
+                    Some(requested)
+                        if *version != requested
+                            && !version.starts_with(&format!("{requested}-")) =>
+                    {
+                        PackageState::VersionMismatch {
+                            installed: version.to_string(),
+                        }
+                    }
+                    _ => PackageState::Installed {
+                        version: version.to_string(),
+                    },
+                },
+                None => PackageState::Missing,
+            };
+            PackageStatus {
+                request: request.clone(),
+                state,
+            }
+        })
+        .collect()
+}
+
+async fn foreign_packages() -> Result<String> {
+    let args = ["-Qm"];
+    debug!("$ pacman {}", args.join(" "));
+    let output = tokio::process::Command::new("pacman")
+        .args(args)
+        .env("LC_ALL", "C")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .await?;
+    if !output.status.success() {
+        bail!(
+            "pacman -Qm failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 #[async_trait(?Send)]
 impl SystemPackageManager for AurManager {
     fn name(&self) -> &str {
@@ -58,7 +113,11 @@ impl SystemPackageManager for AurManager {
     }
 
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
-        super::pacman::PacmanManager::new().installed(pkgs).await
+        if pkgs.is_empty() {
+            return Ok(vec![]);
+        }
+        let output = foreign_packages().await?;
+        Ok(parse_foreign_packages(&output, pkgs))
     }
 
     fn supports_version_pins(&self) -> bool {
@@ -157,5 +216,20 @@ mod tests {
                 "google-chrome"
             ]
         );
+    }
+
+    #[test]
+    fn test_installed_state_only_uses_foreign_query_results() {
+        let requests = vec![req("aur-package", None), req("native-name-collision", None)];
+        // pacman -Qm omits packages available from a configured sync database,
+        // even if a same-named native package is installed.
+        let statuses = parse_foreign_packages("aur-package 1.2.3-1\n", &requests);
+        assert_eq!(
+            statuses[0].state,
+            PackageState::Installed {
+                version: "1.2.3-1".to_string()
+            }
+        );
+        assert_eq!(statuses[1].state, PackageState::Missing);
     }
 }
