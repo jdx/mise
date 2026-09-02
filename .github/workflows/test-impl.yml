@@ -118,7 +118,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
         with:
-          backend: ${{ inputs.mbx-backend }}
+          backend: github
       - shell: pwsh
         run: |
           mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
@@ -413,7 +413,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
         with:
-          backend: ${{ inputs.mbx-backend }}
+          backend: github
       - name: check unused code
         run: mbx check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
         env:

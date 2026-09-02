@@ -8,6 +8,21 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Mount the local mbx store on the Namespace cache volume
+      if: inputs.backend == 'local'
+      uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1.6.1
+      with:
+        path: ${{ runner.os == 'macOS' && '~/Library/Caches/mbx' || '~/.cache/mbx' }}
+    - name: Install mbx for local caching
+      if: inputs.backend == 'local'
+      shell: bash
+      run: |
+        mise install mr-boxington
+        echo "$(mise where mr-boxington)" >> "$GITHUB_PATH"
+        echo "MBX_REMOTE_URL=" >> "$GITHUB_ENV"
+        if [[ "$RUNNER_OS" == Linux ]]; then
+          echo "MBX_CACHE_LINKS=1" >> "$GITHUB_ENV"
+        fi
     - if: inputs.backend != 'local'
       uses: jdx/mr-boxington-action@adc5c234c02592f7edd008bf81d5bc0e9584dc03 # v1.2.0
       with:
