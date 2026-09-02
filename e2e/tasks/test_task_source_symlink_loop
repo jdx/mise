@@ -2,6 +2,7 @@
 
 mkdir tree
 printf 'input\n' >tree/input.txt
+printf 'cache input\n' >cache-input.txt
 ln -s . tree/a
 ln -s . tree/b
 
@@ -18,9 +19,19 @@ cache = { enabled = true }
 [tasks.render-sources]
 run = "echo {{ task_source_files() | join(sep=' ') }}"
 sources = ["tree/**/*"]
+
+[tasks.cached-output]
+run = "echo cached output"
+sources = ["cache-input.txt"]
+outputs = ["tree/**/*"]
+cache = { enabled = true }
 EOF
 
 # Recursive source expansion must skip ancestor symlink loops while retaining
 # ordinary files, both for artifact-cache inputs and task_source_files().
 assert "mise run -q cached" "cached"
 assert_contains "mise run -q render-sources" "tree/input.txt"
+
+# Artifact-cache output enumeration must likewise prune loops without aborting
+# task preparation.
+assert "mise run -q cached-output" "cached output"

@@ -1277,7 +1277,11 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
             for expanded in expand_enumeration_patterns(&output)? {
                 ensure_safe_relative(Path::new(&expanded))?;
                 for entry in glob_walk(&root.join(expanded), false)? {
-                    let path = entry?.into_path();
+                    let path = match entry {
+                        Ok(entry) => entry.into_path(),
+                        Err(err) if err.loop_ancestor().is_some() => continue,
+                        Err(err) => return Err(err.into()),
+                    };
                     glob_matched = true;
                     let rel = path.strip_prefix(root)?.to_path_buf();
                     ensure_safe_relative(&rel)?;
