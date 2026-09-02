@@ -507,126 +507,6 @@ h1, h2, h3, h4, h5, h6,
   letter-spacing: 0.03em;
 }
 
-/* ═══ Hero section — "The Chef's Counter" ═══ */
-/* VitePress pulls the hero up under the nav with a negative margin
-   (nav height + layout-top banner), so padding-top must include that
-   offset or the hero content hides behind the navbar. */
-.VPHero {
-  padding-top: calc(
-    var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 76px
-  ) !important;
-  padding-bottom: 64px !important;
-  position: relative;
-  z-index: 1;
-  /* single static tint for depth — deliberately no animation/orbs/grain */
-  background: radial-gradient(
-    1000px 500px at 68% 12%,
-    rgba(139, 34, 82, 0.08),
-    transparent 70%
-  );
-}
-
-.dark .VPHero {
-  background: radial-gradient(
-    1000px 500px at 68% 12%,
-    rgba(199, 91, 122, 0.07),
-    transparent 70%
-  );
-}
-
-/* Two-column hero layout */
-.VPHero .container {
-  max-width: 1040px !important;
-  margin: 0 auto !important;
-}
-
-.VPHero .main {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 0 60px;
-}
-
-/* Hide the default VitePress hero name and actions */
-.VPHero .name {
-  display: none !important;
-}
-
-.VPHero .actions {
-  display: none !important;
-}
-
-.VPHero .tagline {
-  grid-column: 1;
-  grid-row: 2;
-  font-family: "Cormorant Garamond", Georgia, serif !important;
-  font-size: 1.75rem !important;
-  font-weight: 500;
-  font-style: italic;
-  letter-spacing: 0.01em;
-  color: var(--vp-c-text-2);
-  margin-top: -4px !important;
-  text-align: center;
-}
-
-/* Right column wrapper */
-.hero-right {
-  grid-column: 2;
-  grid-row: 1 / 3;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 28px;
-}
-
-/* Custom action buttons in right column */
-.hero-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-}
-
-.action-btn {
-  font-family: "Roc Grotesk", sans-serif;
-  font-weight: 500;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 10px 24px;
-  border-radius: 6px;
-  text-decoration: none;
-  transition: all 0.25s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 40px;
-  line-height: 1;
-}
-
-.action-btn-brand {
-  background: var(--vp-c-brand-1);
-  color: #fff;
-}
-
-.action-btn-brand:hover {
-  background: var(--vp-c-brand-2);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(139, 34, 82, 0.25);
-}
-
-.action-btn-alt {
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
-  border: 1px solid var(--vp-c-divider);
-}
-
-.action-btn-alt:hover {
-  border-color: var(--vp-c-brand-1);
-  color: var(--vp-c-brand-1);
-  transform: translateY(-2px);
-}
-
 /* Landing page feature card text */
 .VPFeature .details {
   font-size: 1rem;
@@ -1052,38 +932,6 @@ div[class*="language-"] .copy:hover {
   letter-spacing: 0.25rem;
 }
 
-/* Responsive improvements */
-@media (max-width: 768px) {
-  .VPHero .main {
-    grid-template-columns: 1fr !important;
-  }
-
-  .VPHero .tagline {
-    grid-column: 1;
-    grid-row: auto;
-    text-align: center;
-    font-size: 1.15rem !important;
-  }
-
-  .hero-right {
-    grid-column: 1;
-    grid-row: auto;
-    align-items: center;
-    margin-top: 24px;
-  }
-
-  .hero-actions {
-    justify-content: center;
-  }
-
-  .VPHero {
-    padding-top: calc(
-      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 48px
-    ) !important;
-    padding-bottom: 40px !important;
-  }
-}
-
 /* Loading animation for async content */
 @keyframes pulse {
   0%,
@@ -1129,7 +977,43 @@ div[class*="language-"] .copy:hover {
   border: 1px solid var(--vp-c-danger-2);
 }
 
-/* ═══ Landing page ═══ */
+
+/* ═══ Landing page ═══
+   A centered editorial hero, then a "card" showing one mise.toml driving
+   three outputs. The three pillars — tools, env, tasks — each carry one
+   accent (burgundy, gold, sage) that repeats down the page. Flat surfaces,
+   hairline rules, no motion beyond hover. */
+
+:root {
+  --pillar-tools: var(--vp-c-brand-1);
+  --pillar-env: #9a7245;
+  --pillar-tasks: #6b7f4e;
+  --pillar-boot: #a8503d;
+}
+
+.dark {
+  --pillar-env: #d4a76a;
+  --pillar-tasks: #8fa86e;
+  --pillar-boot: #d4826c;
+}
+
+.pillar-tools {
+  --pillar: var(--pillar-tools);
+}
+
+.pillar-env {
+  --pillar: var(--pillar-env);
+}
+
+.pillar-tasks {
+  --pillar: var(--pillar-tasks);
+}
+
+.pillar-boot {
+  --pillar: var(--pillar-boot);
+}
+
+/* ─── Hero ─── */
 /* .heading wraps .name; hide it too or it occupies an empty grid row */
 .VPHero .heading,
 .VPHero .name,
@@ -1138,15 +1022,25 @@ div[class*="language-"] .copy:hover {
   display: none !important;
 }
 
+/* VitePress pulls the hero up under the nav with a negative margin
+   (nav height + layout-top banner), so padding-top must include that
+   offset or the hero content hides behind the navbar. */
+.VPHero {
+  position: relative;
+  z-index: 1;
+  padding-top: calc(
+    var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 72px
+  ) !important;
+  padding-bottom: 56px !important;
+}
+
 .VPHero .container {
   max-width: 1120px !important;
+  margin: 0 auto !important;
 }
 
 .VPHero .main {
-  display: grid !important;
-  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 1.05fr);
-  gap: 56px;
-  align-items: center;
+  display: block !important;
 }
 
 .VPHero .text {
@@ -1159,33 +1053,12 @@ div[class*="language-"] .copy:hover {
 }
 
 .hero-copy {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-}
-
-.landing-kicker {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem !important;
-  line-height: 1.3 !important;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
-}
-
-.landing-kicker::before {
-  content: "";
-  display: inline-block;
-  width: 24px;
-  height: 1px;
-  margin-right: 10px;
-  vertical-align: middle;
-  background: currentColor;
-}
-
-/* centered CTA — no leading dash */
-.landing-cta .landing-kicker::before {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 860px;
+  margin: 0 auto;
+  text-align: center;
 }
 
 /* Big brand lockup — same composition as the navbar brand, scaled up.
@@ -1193,18 +1066,17 @@ div[class*="language-"] .copy:hover {
 .hero-lockup {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 16px;
 }
 
 .hero-lockup .chef-logo {
   width: auto;
-  height: clamp(64px, 9vw, 96px);
-  filter: drop-shadow(0 12px 34px rgba(139, 34, 82, 0.16));
+  height: clamp(56px, 8vw, 80px);
 }
 
 .lockup-word {
   font-family: "Roc Grotesk", sans-serif;
-  font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
   font-weight: 400;
   letter-spacing: -0.02em;
   color: var(--vp-c-text-1);
@@ -1224,131 +1096,110 @@ div[class*="language-"] .copy:hover {
 }
 
 .hero-copy h1 {
-  margin: 22px 0 0;
+  margin: 36px 0 0;
   font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(2.9rem, 5vw, 4rem);
-  font-style: italic;
+  font-size: clamp(2.9rem, 6.2vw, 5rem);
   font-weight: 300;
-  line-height: 1.05;
-  letter-spacing: 0;
-  color: var(--vp-c-brand-1);
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--vp-c-text-1);
   text-wrap: balance;
 }
 
-.hero-copy p {
-  max-width: min(42ch, 100%);
-  margin: 22px 0 0;
-  color: var(--vp-c-text-2);
-  font-size: 1.1rem;
-  line-height: 1.65;
-  overflow-wrap: break-word;
-}
-
-.hero-right {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-}
-
-.hero-terminal {
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  background: var(--vp-c-bg-soft);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 22px 48px -28px rgba(0, 0, 0, 0.5);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.82rem;
-}
-
-.terminal-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--vp-c-divider);
-  background: var(--vp-c-bg-mute);
-}
-
-.terminal-bar span {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-}
-
-.terminal-bar span:nth-child(1) {
-  background: var(--vp-c-danger-1);
-}
-
-.terminal-bar span:nth-child(2) {
-  background: var(--vp-c-warning-1);
-}
-
-.terminal-bar span:nth-child(3) {
-  background: var(--vp-c-success-1);
-}
-
-.terminal-bar strong {
-  margin-left: auto;
-  margin-right: auto;
-  color: var(--vp-c-text-3);
-  font-size: 0.68rem;
-  font-weight: 400;
-  letter-spacing: 0.08em;
-}
-
-.terminal-body {
-  padding: 18px 20px;
-  color: var(--vp-c-text-1);
-  line-height: 1.75;
-  white-space: nowrap;
-  overflow: auto;
-}
-
-.terminal-body .prompt {
+.hero-copy h1 em {
+  font-style: italic;
   color: var(--vp-c-brand-1);
 }
 
-.terminal-body .ok {
-  color: var(--vp-c-success-1);
+.hero-lede {
+  max-width: 58ch;
+  margin: 26px 0 0;
+  font-size: 1.15rem;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
+  text-wrap: pretty;
 }
 
-.terminal-body .key {
-  color: var(--vp-c-warning-1);
+.hero-lede code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.88em;
 }
 
-.terminal-body .dim {
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 34px;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 8px;
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  line-height: 1;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.action-btn-brand {
+  background: var(--vp-c-brand-1);
+  color: #fff;
+}
+
+.action-btn-brand:hover {
+  background: var(--vp-c-brand-2);
+}
+
+.action-btn-alt {
+  border: 1px solid var(--vp-c-divider);
+  background: transparent;
+  color: var(--vp-c-text-1);
+}
+
+.action-btn-alt:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 26px 0 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--vp-c-text-3);
 }
 
-.hero-install {
-  align-items: stretch;
+.hero-meta span + span::before {
+  content: "·";
+  margin: 0 12px;
 }
 
-.hero-install .install-command {
-  width: 100%;
-  justify-content: space-between;
-  border-radius: 8px;
-  font-size: 0.88rem;
-}
-
-.hero-install .install-copy {
-  font-size: 0.74rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.hero-install .install-alt {
-  align-self: flex-start;
-}
-
+/* ─── Page frame ─── */
 .VPHome .vp-doc {
   max-width: none;
-  padding: 0 24px 80px;
+  padding: 0 24px;
 }
 
 .landing-page {
@@ -1356,177 +1207,418 @@ div[class*="language-"] .copy:hover {
   margin: 0 auto;
 }
 
-.landing-section {
-  margin-top: 76px;
+/* vp-doc list/link/heading defaults don't fit a composed page */
+.landing-page ul,
+.landing-page ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.landing-metaphor {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
-  gap: 64px;
-  align-items: center;
-  padding-top: 72px;
-  border-top: 1px solid var(--vp-c-divider);
+.landing-page li + li {
+  margin-top: 0;
 }
 
-.landing-section h2 {
-  margin: 12px 0 0;
-  /* reset vp-doc h2 defaults (top border + padding) on landing headings */
-  border-top: 0;
-  padding-top: 0;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(2.5rem, 5vw, 4rem);
-  font-style: italic;
-  font-weight: 300;
-  line-height: 1;
-  letter-spacing: 0;
+.landing-page h2,
+.landing-page h3 {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.landing-page a::after {
+  content: none !important;
+}
+
+.landing-page p a {
   color: var(--vp-c-brand-1);
-  text-wrap: balance;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--vp-c-brand-1) 40%, transparent);
+  text-underline-offset: 3px;
 }
 
-.landing-special h2,
-.landing-cta h2 {
-  text-wrap: balance;
+.landing-page p a:hover {
+  text-decoration-color: var(--vp-c-brand-1);
 }
 
-.landing-section p {
-  color: var(--vp-c-text-2);
-}
-
-.landing-definition {
-  margin-top: 24px;
-  padding: 22px;
-  border-left: 2px solid var(--vp-c-brand-1);
-  border-radius: 0 8px 8px 0;
-  background: var(--vp-c-bg-soft);
-}
-
-.definition-word {
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: 1.7rem;
-  font-style: italic;
-  color: var(--vp-c-text-1);
-}
-
-.definition-word span {
-  margin-left: 8px;
+/* ─── Terminal transcript (shared) ─── */
+.terminal-lines {
   font-family: var(--vp-font-family-mono);
-  font-size: 0.8rem;
+  font-size: 0.84rem;
+  line-height: 1.8;
+  color: var(--vp-c-text-1);
+  white-space: nowrap;
+  overflow: auto;
+}
+
+.terminal-lines .prompt {
+  color: var(--vp-c-brand-1);
+}
+
+.terminal-lines .ok {
+  color: var(--vp-c-success-1);
+}
+
+.terminal-lines .key {
+  color: var(--vp-c-warning-1);
+}
+
+.terminal-lines .dim {
   color: var(--vp-c-text-3);
 }
 
-/* Syntax-highlighted mise.toml example — wrap the VitePress code block
-   in the brand-accent panel and let Shiki color the tokens. */
-.landing-config .language-toml {
-  margin: 0;
-  border: 1px solid var(--vp-c-divider);
-  border-left: 2px solid var(--vp-c-brand-1);
-  border-radius: 0 8px 8px 0;
-  background: var(--vp-c-bg-soft);
-}
-
-.landing-config .language-toml pre {
-  margin: 0;
-  padding: 22px;
-  overflow: auto;
-  background: transparent;
-}
-
-.landing-config .language-toml code {
-  padding: 0;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.88rem;
-  line-height: 1.8;
-}
-
-/* The lang label just repeats "toml"; the copy button is enough */
-.landing-config .language-toml > .lang {
-  display: none;
-}
-
-.landing-section-heading {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 34px;
-}
-
-.landing-small-button,
-.landing-links a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 38px;
-  padding: 0 16px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 6px;
-  color: var(--vp-c-text-1);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  text-decoration: none;
-}
-
-.landing-feature-grid {
+/* ─── The card: mise.toml → three outputs ─── */
+.hero-card {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
 }
 
-.landing-feature-card {
+.card-file {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 28px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  background: var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
-  text-decoration: none !important;
-  transition:
-    border-color 0.2s ease,
-    transform 0.2s ease,
-    box-shadow 0.2s ease;
+  border-right: 1px solid var(--vp-c-divider);
 }
 
-.card-cmd {
-  margin: 0 0 14px;
+.card-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-mute);
   font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--vp-c-text-3);
 }
 
-.landing-feature-card:hover {
-  border-color: var(--vp-c-brand-1);
-  transform: translateY(-2px);
-  box-shadow: 0 18px 44px -32px rgba(139, 34, 82, 0.45);
-}
-
-.landing-feature-card h3 {
-  margin: 0 0 10px;
-  font-family: "Roc Grotesk", sans-serif;
-  font-size: 2rem;
+.card-bar strong {
   font-weight: 500;
-  line-height: 1.05;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  color: var(--vp-c-text-1);
 }
 
-.landing-feature-card p {
+.card-toml {
+  flex: 1;
+  padding: 20px 0;
+  overflow: auto;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.86rem;
+  line-height: 1.9;
+  white-space: pre;
+  color: var(--vp-c-text-2);
+}
+
+.card-toml .row {
+  padding: 0 20px 0 18px;
+  border-left: 2px solid transparent;
+}
+
+.card-toml .row-blank {
+  height: 0.9em;
+}
+
+.card-toml .row-tools {
+  border-left-color: var(--pillar-tools);
+}
+
+.card-toml .row-env {
+  border-left-color: var(--pillar-env);
+}
+
+.card-toml .row-tasks {
+  border-left-color: var(--pillar-tasks);
+}
+
+.card-toml .row-boot {
+  border-left-color: var(--pillar-boot);
+}
+
+.card-toml .tk-section {
+  font-weight: 600;
+}
+
+.card-toml .row-tools .tk-section {
+  color: var(--pillar-tools);
+}
+
+.card-toml .row-env .tk-section {
+  color: var(--pillar-env);
+}
+
+.card-toml .row-tasks .tk-section {
+  color: var(--pillar-tasks);
+}
+
+.card-toml .row-boot .tk-section {
+  color: var(--pillar-boot);
+}
+
+.card-toml .tk-key {
+  color: var(--vp-c-text-1);
+}
+
+.card-toml .tk-str {
+  color: var(--vp-c-text-2);
+}
+
+.card-outputs {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.card-output {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.card-output:last-child {
+  border-bottom: 0;
+}
+
+.card-output-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.pillar-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--pillar);
+}
+
+.landing-page .card-output-head code {
+  margin-left: auto;
+  padding: 0 !important;
+  background: transparent;
+  font-size: 0.78rem !important;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--vp-c-text-1);
+}
+
+.card-output .terminal-lines {
+  margin-top: 8px;
+  font-size: 0.82rem;
+}
+
+/* ─── Sections ─── */
+.landing-section {
+  margin-top: 96px;
+  padding-top: 28px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.landing-page .landing-kicker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0;
-  font-size: 0.95rem;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  line-height: 1.3;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.landing-kicker span {
+  color: var(--vp-c-brand-1);
+}
+
+.landing-page .landing-section h2,
+.landing-page .landing-cta h2 {
+  margin: 18px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(2.4rem, 4.6vw, 3.6rem);
+  font-weight: 300;
+  line-height: 1.02;
+  letter-spacing: -0.01em;
+  color: var(--vp-c-text-1);
+  text-wrap: balance;
+}
+
+.landing-page h2 em {
+  font-style: italic;
+  color: var(--vp-c-brand-1);
+}
+
+.landing-page .landing-lede {
+  margin: 22px 0 0;
+  font-size: 1.1rem;
+  line-height: 1.65;
+  color: var(--vp-c-text-2);
+  text-wrap: pretty;
+}
+
+.landing-page .landing-note {
+  margin: 16px 0 0;
+  font-size: 0.92rem;
   line-height: 1.6;
+  color: var(--vp-c-text-3);
+}
+
+/* 01 · Why: before/after ledger */
+.landing-why-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.95fr);
+  gap: 48px;
+  align-items: start;
+}
+
+.landing-ledger {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 26px;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+}
+
+.ledger-col {
+  min-width: 0;
+  padding: 20px 22px 22px;
+}
+
+.ledger-before {
+  border-right: 1px solid var(--vp-c-divider);
+}
+
+.landing-page .ledger-head {
+  margin: 0 0 6px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.66rem;
+  line-height: 1.3;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.landing-page .ledger-col li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--vp-c-divider);
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--vp-c-text-2);
+}
+
+.ledger-col li span {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.72rem;
+  text-align: right;
+  color: var(--vp-c-text-3);
+}
+
+.landing-page .ledger-after li {
+  color: var(--vp-c-text-1);
+}
+
+.ledger-after li strong {
+  font-weight: 500;
+}
+
+.ledger-pillars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.ledger-pillars span {
+  padding: 3px 9px;
+  border: 1px solid color-mix(in srgb, var(--pillar) 45%, transparent);
+  border-radius: 999px;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pillar);
+}
+
+/* 02 · Stations: three ruled columns */
+.stations-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0 32px;
+  margin-top: 40px;
+}
+
+.station {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 20px;
+  border-top: 2px solid var(--pillar);
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+}
+
+.landing-page .station-cmd {
+  margin: 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  color: var(--pillar);
+}
+
+.landing-page .station h3 {
+  margin: 12px 0 8px;
+  font-size: 1.9rem;
+  line-height: 1.1;
+  color: var(--vp-c-text-1);
+  transition: color 0.2s ease;
+}
+
+.station:hover h3 {
+  color: var(--pillar);
+}
+
+.landing-page .station p:not(.station-cmd) {
+  margin: 0;
+  font-size: 0.97rem;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
 }
 
 .card-link {
   display: inline-block;
-  /* push to the card bottom so links align across the grid */
   margin-top: auto;
   padding-top: 20px;
   font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   letter-spacing: 0.1em;
-  color: var(--vp-c-brand-1);
+  text-transform: uppercase;
+  color: var(--pillar, var(--vp-c-brand-1));
 }
 
 .card-link::after {
@@ -1536,123 +1628,338 @@ div[class*="language-"] .copy:hover {
   transition: transform 0.2s ease;
 }
 
-.landing-feature-card:hover .card-link::after {
+a:hover > .card-link::after,
+a:hover > div + .card-link::after {
   transform: translateX(3px);
 }
 
-.landing-tools {
+/* 03 · Day to day */
+.landing-switch-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(360px, 1.1fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.landing-page .landing-checklist {
+  margin-top: 26px;
+}
+
+.landing-page .landing-checklist li {
+  display: flex;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--vp-c-divider);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--vp-c-text-1);
+}
+
+.landing-checklist li::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 0.55em;
+  border-radius: 50%;
+  background: var(--vp-c-brand-1);
+}
+
+.landing-terminal {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-mute);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--vp-c-text-3);
+}
+
+.landing-terminal .terminal-lines {
+  padding: 18px 20px;
+}
+
+/* 04 · New machine: bootstrap config beside the pitch */
+.landing-machine-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.1fr) minmax(0, 0.9fr);
+  gap: 56px;
+  align-items: center;
+}
+
+.landing-config-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 10px;
+  background: var(--vp-c-bg-soft);
+  box-shadow: 0 32px 64px -48px rgba(0, 0, 0, 0.45);
+}
+
+.landing-config-card .card-toml {
+  padding: 18px 0;
+}
+
+.landing-inline-cmd {
+  margin-top: 24px;
+  padding: 12px 16px;
+  overflow: auto;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.84rem;
+  white-space: nowrap;
+  color: var(--vp-c-text-1);
+}
+
+.landing-page .landing-inline-cmd code {
+  padding: 0 !important;
+  background: transparent;
+  color: inherit;
+  font-size: inherit !important;
+}
+
+/* The pantry: full-bleed strip */
+.landing-pantry {
   width: 100vw;
-  margin: 76px calc(50% - 50vw) 0;
-  padding: 28px 24px;
+  margin: 96px calc(50% - 50vw) 0;
+  padding: 44px 24px;
   border-top: 1px solid var(--vp-c-divider);
   border-bottom: 1px solid var(--vp-c-divider);
   background: var(--vp-c-bg-soft);
 }
 
-.landing-tools p {
-  margin: 0 0 14px;
-  text-align: center;
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--vp-c-text-3);
+.landing-pantry-inner {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 28px 56px;
+  align-items: start;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.landing-page .pantry-stat {
+  margin: 12px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 3.4rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--vp-c-text-1);
+}
+
+.pantry-stat small {
+  display: block;
+  margin-top: 8px;
+  font-family: "Roc Grotesk", sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--vp-c-text-2);
 }
 
 .landing-tools-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 32px;
-  justify-content: center;
-  max-width: 1120px;
-  margin: 0 auto;
+  gap: 8px;
 }
 
 .landing-tools-list a {
-  white-space: nowrap;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-style: italic;
-  font-size: 1.75rem;
-  font-weight: 300;
-  color: var(--vp-c-text-2);
-  text-decoration: none;
-}
-
-.landing-tools-list a:hover {
-  color: var(--vp-c-brand-1);
-}
-
-.landing-special {
-  display: block;
-  margin: 48px auto 0;
-  padding: 28px;
-  border: 1px solid rgba(107, 127, 78, 0.35);
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(107, 127, 78, 0.12), transparent 44%),
-    var(--vp-c-bg-soft);
-  color: var(--vp-c-text-1);
-  text-decoration: none !important;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease,
-    transform 0.2s ease;
-}
-
-.landing-special:hover {
-  border-color: var(--vp-c-brand-1);
-  transform: translateY(-2px);
-  box-shadow: 0 18px 44px -32px rgba(107, 127, 78, 0.55);
-}
-
-.dark .landing-special {
-  background:
-    linear-gradient(135deg, rgba(143, 168, 110, 0.14), transparent 48%),
-    var(--vp-c-bg-soft);
-  border-color: rgba(143, 168, 110, 0.35);
-}
-
-.landing-special h2 {
-  margin: 12px 0 0;
-  /* reset vp-doc h2 defaults (top border + padding) inside the card */
-  border-top: 0;
-  padding-top: 0;
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-size: clamp(2.2rem, 4vw, 3.4rem);
-  font-style: italic;
-  font-weight: 300;
-  line-height: 1;
-  letter-spacing: 0;
-  color: var(--vp-c-brand-1);
-}
-
-.landing-special p:not(.landing-kicker) {
-  max-width: 58ch;
-  margin: 16px 0 0;
-  color: var(--vp-c-text-2);
-}
-
-.landing-recipe-grid {
-  display: grid;
-  position: relative;
-  grid-template-columns: 260px minmax(0, 1fr);
-  overflow: hidden;
+  padding: 6px 12px;
   border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-}
-
-.landing-mini-install {
-  display: flex;
-  align-items: center;
-  min-height: 48px;
-  padding: 0 16px;
-  overflow: auto;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--vp-c-bg);
   color: var(--vp-c-text-1);
   font-family: var(--vp-font-family-mono);
-  font-size: 0.88rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  text-decoration: none;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.landing-tools-list a:hover {
+  border-color: var(--vp-c-brand-1);
+  color: var(--vp-c-brand-1);
+}
+
+.landing-tools-list a.more {
+  border-style: dashed;
+  background: transparent;
+  color: var(--vp-c-text-2);
+}
+
+.landing-page .pantry-backends {
+  grid-column: 2;
+  margin: 0;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.74rem;
+  line-height: 1.8;
+  letter-spacing: 0.04em;
+  color: var(--vp-c-text-3);
+}
+
+.landing-page .pantry-backends a {
+  color: var(--vp-c-text-2);
+  text-decoration: underline;
+  text-decoration-color: var(--vp-c-divider);
+  text-underline-offset: 3px;
+}
+
+.landing-page .pantry-backends a:hover {
+  color: var(--vp-c-brand-1);
+  text-decoration-color: currentColor;
+}
+
+/* Chef's special: promo strip */
+.landing-special {
+  --pillar: var(--pillar-tasks);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 56px;
+  padding: 24px 28px;
+  border: 1px solid color-mix(in srgb, var(--pillar-tasks) 40%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pillar-tasks) 7%, var(--vp-c-bg-soft));
+  color: var(--vp-c-text-1);
+  text-decoration: none !important;
+  transition: border-color 0.2s ease;
+}
+
+.landing-special:hover {
+  border-color: var(--pillar-tasks);
+}
+
+.landing-special .landing-kicker span {
+  color: var(--pillar-tasks);
+}
+
+.landing-page .landing-special h2 {
+  margin: 8px 0 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: clamp(1.6rem, 2.8vw, 2.2rem);
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.1;
+  color: var(--vp-c-text-1);
+  text-wrap: balance;
+}
+
+.landing-page .landing-special p:not(.landing-kicker) {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+  color: var(--vp-c-text-2);
+}
+
+.landing-special .card-link {
+  flex: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 04 · Quickstart: a ruled recipe */
+.landing-page .recipe {
+  margin-top: 40px;
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+.recipe-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 24px 56px;
+  align-items: center;
+  padding: 30px 0;
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.recipe-num {
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vp-c-brand-1);
+}
+
+.landing-page .recipe-text h3 {
+  margin: 8px 0 6px;
+  font-size: 1.6rem;
+  line-height: 1.2;
+  color: var(--vp-c-text-1);
+}
+
+.landing-page .recipe-text p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--vp-c-text-2);
+}
+
+.recipe-code {
+  min-width: 0;
+  padding: 16px 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-soft);
+}
+
+/* CTA band */
+.landing-cta {
+  width: 100vw;
+  margin: 96px calc(50% - 50vw) 0;
+  padding: 88px 24px 96px;
+  background: #4e1626;
+  color: #fff;
+  text-align: center;
+}
+
+.dark .landing-cta {
+  background: #2f1019;
+}
+
+.landing-page .landing-cta .landing-kicker {
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.landing-cta .landing-kicker span,
+.landing-page .landing-cta h2 em {
+  color: var(--mise-accent-gold);
+}
+
+.landing-page .landing-cta h2 {
+  font-size: clamp(2.6rem, 5.5vw, 4.4rem);
+  color: #fff;
+}
+
+.landing-mini-install {
+  display: inline-flex;
+  align-items: center;
+  min-height: 52px;
+  max-width: 100%;
+  margin-top: 32px;
+  padding: 0 22px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.92rem;
+  color: #fff;
 }
 
 /* strip VitePress's inline-code pill so it doesn't box-in-a-box
@@ -1665,153 +1972,84 @@ div[class*="language-"] .copy:hover {
   font-size: inherit !important;
 }
 
-.landing-quickstart {
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 48px;
-}
-
-.recipe-steps {
-  /* distribute the four labels over the full panel height */
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  border-right: 1px solid var(--vp-c-divider);
-  background: var(--vp-c-bg-soft);
-}
-
-.recipe-tab-input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.recipe-step {
-  display: flex;
-  flex: 1;
-  gap: 12px;
-  align-items: center;
-  margin: 0;
-  padding: 14px 18px;
-  border-left: 2px solid transparent;
-  color: var(--vp-c-text-2);
-  cursor: pointer;
-  transition:
-    background-color 0.2s ease,
-    color 0.2s ease;
-}
-
-.recipe-step:hover {
-  background: color-mix(in srgb, var(--vp-c-brand-1) 8%, transparent);
-  color: var(--vp-c-text-1);
-}
-
-#recipe-tab-1:checked ~ .recipe-steps .recipe-step-1,
-#recipe-tab-2:checked ~ .recipe-steps .recipe-step-2,
-#recipe-tab-3:checked ~ .recipe-steps .recipe-step-3,
-#recipe-tab-4:checked ~ .recipe-steps .recipe-step-4 {
-  border-left: 2px solid var(--vp-c-brand-1);
-  background: var(--vp-c-bg);
-  color: var(--vp-c-text-1);
-}
-
-.recipe-steps span {
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.72rem;
-  color: var(--vp-c-text-3);
-}
-
-.recipe-panel {
-  display: none;
-  height: 100%;
-}
-
-#recipe-tab-1:checked ~ .landing-code .recipe-panel-1,
-#recipe-tab-2:checked ~ .landing-code .recipe-panel-2,
-#recipe-tab-3:checked ~ .landing-code .recipe-panel-3,
-#recipe-tab-4:checked ~ .landing-code .recipe-panel-4 {
-  display: block;
-}
-
-/* Quickstart transcripts reuse the hero terminal's palette
-   (.terminal-body .prompt/.dim/.ok/.key) for one coherent look. */
-.landing-code .terminal-body {
-  box-sizing: border-box;
-  height: 100%;
-  min-height: 280px;
-  padding: 24px;
-  background: var(--vp-code-block-bg);
-  font-family: var(--vp-font-family-mono);
-  font-size: 0.88rem;
-  line-height: 1.8;
-}
-
-.landing-cta {
-  padding: 64px 28px;
-  border: 1px solid var(--vp-c-divider);
-  border-radius: 8px;
-  background:
-    radial-gradient(600px 260px at 50% 0%, rgba(139, 34, 82, 0.14), transparent),
-    var(--vp-c-bg-soft);
-  text-align: center;
-}
-
-.landing-cta h2 {
-  color: var(--vp-c-text-1);
-  font-family: "Roc Grotesk", sans-serif;
-  font-style: normal;
-  /* reset vp-doc h2 defaults (top border + margin) inside the card */
-  margin: 12px 0 24px;
-  border-top: 0;
-  padding-top: 0;
-}
-
-.landing-cta h2 em {
-  color: var(--vp-c-brand-1);
-}
-
-.landing-cta .landing-mini-install {
-  max-width: 460px;
-  margin: 0 auto;
-  justify-content: center;
-}
-
 .landing-links {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   justify-content: center;
-  margin-top: 22px;
+  margin-top: 20px;
 }
 
-@media (max-width: 960px) {
-  .VPHero .main,
-  .landing-metaphor,
-  .landing-quickstart,
-  .landing-recipe-grid {
-    grid-template-columns: 1fr !important;
-  }
+.landing-links a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  color: #fff;
+  font-family: var(--vp-font-family-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition:
+    background-color 0.2s ease,
+    border-color 0.2s ease;
+}
 
-  .landing-feature-grid {
+.landing-links a:hover {
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 960px) {
+  .hero-card,
+  .landing-why-grid,
+  .landing-switch-grid,
+  .landing-pantry-inner,
+  .recipe-row {
     grid-template-columns: 1fr;
   }
 
-  .recipe-steps {
+  .card-file {
     border-right: 0;
     border-bottom: 1px solid var(--vp-c-divider);
   }
 
-  .landing-section-heading {
-    display: block;
+  .stations-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 36px 32px;
+  }
+
+  .landing-machine-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* pitch first, config second on narrow screens */
+  .landing-machine-grid > .landing-config-card {
+    order: 2;
+  }
+
+  .landing-page .pantry-backends {
+    grid-column: auto;
+  }
+
+  .landing-special {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 18px;
   }
 }
 
 @media (max-width: 640px) {
   .VPHero {
     padding-top: calc(
-      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 42px
+      var(--vp-nav-height) + var(--vp-layout-top-height, 0px) + 40px
     ) !important;
-    padding-bottom: 48px !important;
+    padding-bottom: 40px !important;
   }
 
   .VPHero .container {
@@ -1820,45 +2058,56 @@ div[class*="language-"] .copy:hover {
   }
 
   .hero-copy h1 {
-    font-size: 2.4rem;
+    font-size: 2.5rem;
   }
 
-  .landing-section h2 {
-    font-size: 2.2rem;
-  }
-
-  .hero-lockup .chef-logo {
-    height: 52px;
-  }
-
-  .lockup-word {
-    font-size: 1.5rem;
-  }
-
-  /* panels hold 3-5 lines; don't reserve desktop height on phones */
-  .landing-code .terminal-body {
-    min-height: 180px;
-  }
-
-  .hero-copy p {
+  .hero-lede {
     font-size: 1rem;
-    max-width: 30ch;
   }
 
-  .terminal-body {
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .hero-meta span + span::before {
+    margin: 0 8px;
+  }
+
+  .landing-section,
+  .landing-pantry,
+  .landing-cta {
+    margin-top: 64px;
+  }
+
+  .landing-page .landing-section h2 {
+    font-size: 2.1rem;
+  }
+
+  .landing-ledger,
+  .stations-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ledger-before {
+    border-right: 0;
+    border-bottom: 1px solid var(--vp-c-divider);
+  }
+
+  .landing-pantry {
+    padding: 36px 24px;
+  }
+
+  .landing-page .pantry-stat {
+    font-size: 2.6rem;
+  }
+
+  .terminal-lines {
     font-size: 0.76rem;
   }
 
-  .landing-section {
-    margin-top: 54px;
-  }
-
-  .landing-special {
-    margin-top: 40px;
-    padding: 22px;
-  }
-
-  .landing-metaphor {
-    padding-top: 48px;
+  .landing-cta {
+    padding: 64px 24px 72px;
   }
 }

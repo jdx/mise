@@ -253,11 +253,13 @@ zstd = "0.13"
 [target.'cfg(unix)'.dependencies]
 exec = "0.3"
 nix = { version = "0.31", features = ["dir", "fs", "signal", "term", "user"] }
-self_update = { version = "0.44", optional = true, default-features = false, features = [
+self_update = { version = "1", optional = true, default-features = false, features = [
   "archive-tar",
-  "compression-flate2",
+  "compression-tar-gz",
   "signatures",
   "reqwest",
+  "github",
+  "progress-bar",
 ] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -265,11 +267,13 @@ landlock = "0.4"
 seccompiler = "0.5"
 
 [target.'cfg(windows)'.dependencies]
-self_update = { version = "0.44", optional = true, default-features = false, features = [
+self_update = { version = "1", optional = true, default-features = false, features = [
   "archive-zip",
   "compression-zip-deflate",
   "signatures",
   "reqwest",
+  "github",
+  "progress-bar",
 ] }
 zipsign-api = "0.2"
 winapi = { version = "0.3", features = ["consoleapi", "minwindef"] }
@@ -313,7 +317,7 @@ native-tls = [
   "ubi/native-tls",
   "vfox/native-tls",
   "xx/native-tls",
-  "self_update?/default-tls",
+  "self_update?/native-tls",
 ]
 rustls = [
   "gix/blocking-http-transport-reqwest-rust-tls",

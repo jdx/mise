@@ -53,3 +53,24 @@ export UNSET_TOOLS_ENV=parent
 MISE_ENV_CACHE=true mise env -s bash >/dev/null
 assert_contains "MISE_ENV_CACHE=true mise env -s bash" "unset UNSET_ENV"
 assert_contains "MISE_ENV_CACHE=true mise env -s bash" "unset UNSET_TOOLS_ENV"
+
+# Clearing the old managed value and applying an explicit removal should emit
+# only one unset, even when a runtime override makes both phases remove it.
+cat >mise.toml <<'EOF'
+[env]
+UNSET_ENV = "managed"
+EOF
+unset UNSET_ENV
+unset_count=$(
+  env -u __MISE_DIFF bash --noprofile --norc <<'BASH'
+set -euo pipefail
+eval "$(mise hook-env -s bash --force)"
+export UNSET_ENV=runtime-override
+cat >mise.toml <<'EOF'
+[env]
+UNSET_ENV = false
+EOF
+mise hook-env -s bash --force | grep -c '^unset UNSET_ENV$'
+BASH
+)
+assert "printf '%s' '$unset_count'" "1"

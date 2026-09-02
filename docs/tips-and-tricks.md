@@ -103,6 +103,7 @@ one:
 "~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }
 
 [dotfiles]                             # dotfiles: symlink/copy/template
+"~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
 "~/.gitconfig" = { mode = "symlink" }
 "~/.config/nvim" = { mode = "symlink" }
 
