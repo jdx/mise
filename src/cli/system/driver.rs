@@ -6,7 +6,7 @@ use eyre::{Result, bail};
 
 use crate::config::Settings;
 use crate::system::ManagerPackages;
-use crate::system::packages::{InstallOpts, PackageState, PackageStatus};
+use crate::system::packages::{InstallOpts, PackageDesiredState, PackageState, PackageStatus};
 use crate::ui::prompt;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -110,8 +110,21 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         if let Some(reason) = unavailable_package_reason(d, &statuses) {
             bail!("{reason}");
         }
+        let remove_targets = if action == Action::Install {
+            statuses
+                .iter()
+                .filter(|status| {
+                    status.request.desired == PackageDesiredState::Absent
+                        && !matches!(status.state, PackageState::Missing)
+                        && !status.state.is_unavailable()
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![]
+        };
         let mut targets: Vec<_> = statuses
             .iter()
+            .filter(|status| status.request.desired == PackageDesiredState::Present)
             .filter(|s| match action {
                 Action::Install => !s.state.is_installed() && !s.state.is_unavailable(),
                 // upgrade acts on whatever is present (the manager no-ops
@@ -124,6 +137,7 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
             .collect();
         let missing = statuses
             .iter()
+            .filter(|status| status.request.desired == PackageDesiredState::Present)
             .filter(|status| matches!(status.state, PackageState::Missing))
             .count();
         if action == Action::Upgrade && missing > 0 {
@@ -151,10 +165,46 @@ pub(crate) async fn run(mgrs: Vec<ManagerPackages>, action: Action, d: &DriverOp
         }
         let installed = statuses
             .iter()
+            .filter(|status| status.request.desired == PackageDesiredState::Present)
             .filter(|status| status.state.is_installed())
             .count();
         if action == Action::Install && installed > 0 {
             info!("{name}: {installed} package(s) already installed");
+        }
+        let already_absent = statuses
+            .iter()
+            .filter(|status| status.request.desired == PackageDesiredState::Absent)
+            .filter(|status| matches!(status.state, PackageState::Missing))
+            .count();
+        if action == Action::Install && already_absent > 0 {
+            info!("{name}: {already_absent} package(s) already absent");
+        }
+        if !remove_targets.is_empty() {
+            if !mp.manager.supports_remove() {
+                bail!("{name} does not support declarative package removal");
+            }
+            let remove = remove_targets
+                .iter()
+                .map(|status| status.request.clone())
+                .collect::<Vec<_>>();
+            let list = remove
+                .iter()
+                .map(|request| request.to_string())
+                .collect::<Vec<_>>();
+            if !d.dry_run && !d.yes && console::user_attended_stderr() {
+                let msg = format!("{name}: remove {}?", list.join(", "));
+                if !prompt::confirm(msg)?.is_yes() {
+                    info!("{name}: removal skipped");
+                } else {
+                    mp.manager.remove(&remove, &opts).await?;
+                    info!("{name}: removed {}", list.join(", "));
+                }
+            } else {
+                mp.manager.remove(&remove, &opts).await?;
+                if !d.dry_run {
+                    info!("{name}: removed {}", list.join(", "));
+                }
+            }
         }
         if targets.is_empty() {
             continue;
@@ -256,6 +306,7 @@ mod tests {
                 name: "example".to_string(),
                 version: None,
                 tap_url: None,
+                desired: PackageDesiredState::Present,
             },
             state: PackageState::Unavailable {
                 reason: "unsupported on this platform".to_string(),

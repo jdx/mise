@@ -25,7 +25,7 @@ use crate::system::files::{FileMode, FileRequest, FileState};
 use crate::system::hooks::{self, BootstrapHookPhase};
 use crate::system::launchd::LaunchdState;
 use crate::system::login_shell::LoginShellState;
-use crate::system::packages::PackageState;
+use crate::system::packages::{PackageDesiredState, PackageState};
 use crate::system::repos::RepoState;
 use crate::system::resources::{ResourceAction, ResourceId};
 use crate::system::systemd::SystemdState;
@@ -2937,23 +2937,36 @@ impl BootstrapStatus {
             let mut json_pkgs = vec![];
             for s in statuses {
                 let auto_updates = s.state.auto_updates();
-                let (installed_version, state, reason, missing) = match &s.state {
-                    PackageState::Installed { version } => {
+                let desired_absent = s.request.desired == PackageDesiredState::Absent;
+                let (installed_version, state, reason, missing) = match (&s.state, desired_absent) {
+                    (PackageState::Missing, true) => {
+                        ("".to_string(), "absent", None::<&str>, false)
+                    }
+                    (PackageState::Installed { version }, true)
+                    | (PackageState::NeedsRepair { installed: version }, true)
+                    | (PackageState::VersionMismatch { installed: version }, true) => {
+                        (version.clone(), "unexpectedly installed", None, true)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, true) => {
+                        (version.clone(), "unexpectedly installed", None, true)
+                    }
+                    (PackageState::Installed { version }, false) => {
                         (version.clone(), "installed", None::<&str>, false)
                     }
                     #[cfg(unix)]
-                    PackageState::InstalledAutoUpdates { version } => {
+                    (PackageState::InstalledAutoUpdates { version }, false) => {
                         (version.clone(), "installed", None::<&str>, false)
                     }
-                    PackageState::Missing => ("".to_string(), "missing", None, true),
-                    PackageState::NeedsRepair { installed } => {
+                    (PackageState::Missing, false) => ("".to_string(), "missing", None, true),
+                    (PackageState::NeedsRepair { installed }, false) => {
                         (installed.clone(), "needs repair", None, true)
                     }
-                    PackageState::VersionMismatch { installed } => {
+                    (PackageState::VersionMismatch { installed }, false) => {
                         (installed.clone(), "version mismatch", None, true)
                     }
                     #[cfg(unix)]
-                    PackageState::Unavailable { reason } => {
+                    (PackageState::Unavailable { reason }, _) => {
                         ("".to_string(), "skipped", Some(reason.as_str()), false)
                     }
                 };
@@ -2974,6 +2987,7 @@ impl BootstrapStatus {
                 let mut package = json!({
                     "package": s.request.name,
                     "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
+                    "desired_state": if desired_absent { "absent" } else { "present" },
                     "state": state.replace(' ', "_"),
                     "installed_version": installed_version,
                 });

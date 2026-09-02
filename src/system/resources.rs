@@ -373,11 +373,16 @@ pub(crate) async fn plan(
         }
 
         let supports_version_pins = manager.supports_version_pins();
+        let supports_remove = manager.supports_remove();
         for status in manager.installed(&manager_packages.requests).await? {
             let id = ResourceId::new("package", format!("{manager_name}:{}", status.request.name));
             let desired = desired_package(&status.request);
-            let (current, action) =
-                package_resource_state(status.state, &status.request, supports_version_pins);
+            let (current, action) = package_resource_state(
+                status.state,
+                &status.request,
+                supports_version_pins,
+                supports_remove,
+            );
             plan.insert(ResourcePlan::new(id, current, desired, action))?;
         }
     }
@@ -648,6 +653,9 @@ fn add_account_dependencies(
 }
 
 fn desired_package(request: &super::packages::PackageRequest) -> String {
+    if request.desired == super::packages::PackageDesiredState::Absent {
+        return "absent".to_string();
+    }
     request
         .version
         .as_ref()
@@ -659,7 +667,36 @@ fn package_resource_state(
     state: PackageState,
     request: &PackageRequest,
     supports_version_pins: bool,
+    supports_remove: bool,
 ) -> (String, ResourceAction) {
+    if request.desired == super::packages::PackageDesiredState::Absent {
+        return match state {
+            PackageState::Missing => ("absent".to_string(), ResourceAction::Noop),
+            #[cfg(unix)]
+            PackageState::Unavailable { reason } => {
+                (format!("skipped ({reason})"), ResourceAction::Unknown)
+            }
+            PackageState::Installed { version }
+            | PackageState::NeedsRepair { installed: version }
+            | PackageState::VersionMismatch { installed: version } => (
+                format!("installed ({version})"),
+                if supports_remove {
+                    ResourceAction::Remove
+                } else {
+                    ResourceAction::Unknown
+                },
+            ),
+            #[cfg(unix)]
+            PackageState::InstalledAutoUpdates { version } => (
+                format!("installed ({version})"),
+                if supports_remove {
+                    ResourceAction::Remove
+                } else {
+                    ResourceAction::Unknown
+                },
+            ),
+        };
+    }
     let unsupported_pin = request.version.is_some() && !supports_version_pins;
     match state {
         PackageState::Installed { version } => {
@@ -739,6 +776,7 @@ mod tests {
             name: "example".to_string(),
             version: version.map(str::to_string),
             tap_url: None,
+            desired: crate::system::packages::PackageDesiredState::Present,
         }
     }
 
@@ -828,7 +866,7 @@ mod tests {
                 installed: "1.0.0".to_string(),
             },
         ] {
-            let (current, action) = package_resource_state(state, &request, false);
+            let (current, action) = package_resource_state(state, &request, false, false);
             assert_eq!(action, ResourceAction::Unknown);
             assert!(current.contains("cannot install pinned versions"));
         }
@@ -843,6 +881,7 @@ mod tests {
             },
             &request,
             false,
+            false,
         );
 
         assert_eq!(action, ResourceAction::Update);
@@ -851,16 +890,46 @@ mod tests {
     #[test]
     fn managers_with_pin_support_plan_missing_and_mismatched_packages() {
         let request = package_request(Some("1.2.3"));
-        let (_, missing_action) = package_resource_state(PackageState::Missing, &request, true);
+        let (_, missing_action) =
+            package_resource_state(PackageState::Missing, &request, true, false);
         let (_, mismatch_action) = package_resource_state(
             PackageState::VersionMismatch {
                 installed: "1.0.0".to_string(),
             },
             &request,
             true,
+            false,
         );
 
         assert_eq!(missing_action, ResourceAction::Create);
         assert_eq!(mismatch_action, ResourceAction::Update);
+    }
+
+    #[test]
+    fn absent_package_plans_removal_only_when_supported() {
+        let mut request = package_request(None);
+        request.desired = crate::system::packages::PackageDesiredState::Absent;
+        let (_, absent_action) =
+            package_resource_state(PackageState::Missing, &request, false, true);
+        let (_, remove_action) = package_resource_state(
+            PackageState::Installed {
+                version: "1.0.0".to_string(),
+            },
+            &request,
+            false,
+            true,
+        );
+        let (_, unsupported_action) = package_resource_state(
+            PackageState::Installed {
+                version: "1.0.0".to_string(),
+            },
+            &request,
+            false,
+            false,
+        );
+
+        assert_eq!(absent_action, ResourceAction::Noop);
+        assert_eq!(remove_action, ResourceAction::Remove);
+        assert_eq!(unsupported_action, ResourceAction::Unknown);
     }
 }

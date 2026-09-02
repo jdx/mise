@@ -154,6 +154,16 @@ pub(crate) struct PackageOptionsTomlConfig {
     /// Adopt an identical existing cask artifact instead of replacing it.
     #[serde(default)]
     pub adopt: Option<bool>,
+    #[serde(default)]
+    pub state: PackageDesiredStateTomlConfig,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum PackageDesiredStateTomlConfig {
+    #[default]
+    Present,
+    Absent,
 }
 
 impl PackageTomlConfig {
@@ -168,6 +178,16 @@ impl PackageTomlConfig {
         match self {
             Self::Options(options) => options.adopt,
             Self::Version(_) => None,
+        }
+    }
+
+    fn desired(&self) -> packages::PackageDesiredState {
+        match self {
+            Self::Version(_) => packages::PackageDesiredState::Present,
+            Self::Options(options) => match options.state {
+                PackageDesiredStateTomlConfig::Present => packages::PackageDesiredState::Present,
+                PackageDesiredStateTomlConfig::Absent => packages::PackageDesiredState::Absent,
+            },
         }
     }
 
@@ -358,6 +378,7 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
                 name: rest.to_string(),
                 version: None,
                 tap_url: None,
+                desired: packages::PackageDesiredState::Present,
             },
         ));
     }
@@ -368,6 +389,7 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
                 name: name.to_string(),
                 version: (version != "latest").then(|| version.to_string()),
                 tap_url: None,
+                desired: packages::PackageDesiredState::Present,
             },
         )),
         Some(_) => {
@@ -379,6 +401,7 @@ pub(crate) fn parse_use_spec(spec: &str) -> eyre::Result<(String, PackageRequest
                 name: rest.to_string(),
                 version: None,
                 tap_url: None,
+                desired: packages::PackageDesiredState::Present,
             },
         )),
     }
@@ -632,6 +655,7 @@ fn package_requests_from_config_files(
                     name,
                     version,
                     tap_url,
+                    desired: package.desired(),
                 });
             }
             Err(err) => warn!("[bootstrap.packages]: {err}"),
@@ -1498,6 +1522,7 @@ pub(crate) fn packages_from_specs_with_config(
             name,
             version: None,
             tap_url,
+            desired: packages::PackageDesiredState::Present,
         };
         if !requests.contains(&request) {
             requests.push(request);
@@ -1705,6 +1730,30 @@ mod tests {
                 ("ffmpeg", None),
             ]
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn package_table_form_parses_absent_state() -> Result<()> {
+        let (_dir, config_files) = config_map_from_toml(&[(
+            "mise.toml",
+            r#"
+                [bootstrap.packages]
+                "pacman:libreoffice-fresh" = { state = "absent" }
+            "#,
+        )])?;
+        let pacman = packages_from_config_files(&config_files)
+            .into_iter()
+            .find(|packages| packages.manager.name() == "pacman")
+            .unwrap();
+
+        assert_eq!(pacman.requests.len(), 1);
+        assert_eq!(
+            pacman.requests[0].desired,
+            packages::PackageDesiredState::Absent
+        );
+        assert_eq!(pacman.requests[0].version, None);
         Ok(())
     }
 

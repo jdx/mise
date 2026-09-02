@@ -35,6 +35,16 @@ pub(crate) struct PackageRequest {
     /// and casks: `[bootstrap.brew.taps]` can attach a git URL to
     /// `owner/tap/name`.
     pub tap_url: Option<String>,
+    /// Desired declarative state. Explicit CLI package requests are always
+    /// present; table-form config entries may request removal.
+    pub desired: PackageDesiredState,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub(crate) enum PackageDesiredState {
+    #[default]
+    Present,
+    Absent,
 }
 
 impl std::fmt::Display for PackageRequest {
@@ -178,6 +188,18 @@ pub(crate) trait SystemPackageManager: Send + Sync {
 
     /// Install the given packages (already filtered to missing, mismatched, or repairable).
     async fn install(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()>;
+
+    /// Remove packages declared with `state = "absent"`.
+    async fn remove(&self, _pkgs: &[PackageRequest], _opts: &InstallOpts) -> Result<()> {
+        eyre::bail!(
+            "{} does not support declarative package removal",
+            self.name()
+        )
+    }
+
+    fn supports_remove(&self) -> bool {
+        false
+    }
 
     /// Install with manager-specific declarative options. Managers without
     /// additional package options use the ordinary install path unchanged.

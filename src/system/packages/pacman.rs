@@ -95,6 +95,16 @@ fn deptest_requirement(req: &PackageRequest) -> String {
     }
 }
 
+fn remove_args(pkgs: &[PackageRequest]) -> Vec<String> {
+    let mut args = vec![
+        "-R".to_string(),
+        "--noconfirm".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(pkgs.iter().map(|p| p.name.clone()));
+    args
+}
+
 fn apply_provider_query<'a>(
     status: &mut PackageStatus,
     output: &'a str,
@@ -281,6 +291,19 @@ impl SystemPackageManager for PacmanManager {
         sudo::run("pacman", &args, &[])
     }
 
+    fn supports_remove(&self) -> bool {
+        true
+    }
+
+    async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        let args = remove_args(pkgs);
+        if opts.dry_run {
+            miseprintln!("{}", sudo::argv("pacman", &args).join(" "));
+            return Ok(());
+        }
+        sudo::run("pacman", &args, &[])
+    }
+
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         let names = pkgs.iter().map(|pkg| pkg.name.clone()).collect::<Vec<_>>();
         let stdout = pacman_query(&names).await?;
@@ -330,6 +353,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
+            desired: crate::system::packages::PackageDesiredState::Present,
         }
     }
 
@@ -384,6 +408,14 @@ mod tests {
             PackageState::Installed {
                 version: "9.7.1_1-1".to_string()
             }
+        );
+    }
+
+    #[test]
+    fn test_remove_args_remove_exact_packages_without_cascading() {
+        assert_eq!(
+            remove_args(&[req("omarchy", None), req("omarchy-settings", None)]),
+            ["-R", "--noconfirm", "--", "omarchy", "omarchy-settings"]
         );
     }
 

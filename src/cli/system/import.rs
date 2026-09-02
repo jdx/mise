@@ -264,6 +264,7 @@ mod tests {
             version: "1.0.0".to_string(),
             os: vec!["macos".to_string()],
             adopt: None,
+            state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
         assert_eq!(
             imported_package_value(None, Some(&inherited)).to_string(),
@@ -274,6 +275,7 @@ mod tests {
             version: "1.0.0".to_string(),
             os: vec![],
             adopt: Some(true),
+            state: crate::system::PackageDesiredStateTomlConfig::Present,
         });
         assert_eq!(
             imported_package_value(None, Some(&adopted)).to_string(),

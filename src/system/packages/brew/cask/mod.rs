@@ -520,6 +520,7 @@ impl BrewCaskManager {
                     name: name.clone(),
                     version: None,
                     tap_url: None,
+                    desired: super::super::PackageDesiredState::Present,
                 })
                 .collect::<Vec<_>>();
             super::BrewManager::new()
@@ -531,6 +532,7 @@ impl BrewCaskManager {
                 name: dependency.clone(),
                 version: None,
                 tap_url: None,
+                desired: super::super::PackageDesiredState::Present,
             };
             Box::pin(self.install_one_with_ancestors(
                 &request,
