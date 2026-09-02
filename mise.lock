@@ -167,13 +167,11 @@ provenance = "github-attestations"
 checksum = "sha256:2d68e3e995c336486647034eb8b99c3cfa68894e385a44200af2bc14bc4064cf"
 url = "https://github.com/jdx/aube/releases/download/v2.2.0/aube-v2.2.0-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/aube/releases/assets/529724125"
-provenance = "github-attestations"
 
 [tools.aube."platforms.windows-x64-baseline"]
 checksum = "sha256:2d68e3e995c336486647034eb8b99c3cfa68894e385a44200af2bc14bc4064cf"
 url = "https://github.com/jdx/aube/releases/download/v2.2.0/aube-v2.2.0-x86_64-pc-windows-msvc.zip"
 url_api = "https://api.github.com/repos/jdx/aube/releases/assets/529724125"
-provenance = "github-attestations"
 
 [[tools.bun]]
 version = "1.4.0"
