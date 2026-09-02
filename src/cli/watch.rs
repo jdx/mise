@@ -532,7 +532,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     Runs the "build" task and reruns it whenever one of its sources changes.
     The task's "sources" determine which files are watched.
 
-    $ <bold>mise watch build --glob src/**/*.rs</bold>
+    $ <bold>mise watch build --glob 'src/**/*.rs'</bold>
     Runs the "build" task, watching the files matched by the glob instead of
     the task's "sources".
 

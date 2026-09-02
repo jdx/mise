@@ -1637,9 +1637,9 @@ Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap`
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 """#
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
-        flag "-l --localize" help="Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
+        flag "-l --localize" help="Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)" {
             long_help #"""
-Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
 
 This is necessary if users may use a different version of mise outside the project.
 """#
@@ -1748,9 +1748,9 @@ Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap`
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 """#
         after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise\u{1b}[22m\n    $ \u{1b}[1m./bin/mise install\u{1b}[22m                                    \u{1b}[2m# downloads mise to .mise if not already installed\u{1b}[22m\n\n    \u{1b}[2m# add a launcher for contributors who clone the project on Windows\u{1b}[22m\n    $ \u{1b}[1mmise generate install-script --write ./bin/mise --windows\u{1b}[22m  \u{1b}[2m# also writes bin/mise.cmd\u{1b}[22m\n    $ \u{1b}[1m.\\bin\\mise.cmd install\u{1b}[22m\n"
-        flag "-l --localize" help="Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project" {
+        flag "-l --localize" help="Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)" {
             long_help #"""
-Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
 
 This is necessary if users may use a different version of mise outside the project.
 """#
@@ -2091,8 +2091,10 @@ cmd install help="Install a tool version" effect=write {
     long_help #"""
 Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`.
-Installing alone does not activate the tool, so it will not be on PATH.
+Installs a tool version under the mise data directory, by default
+`~/.local/share/mise/installs/<TOOL>/<VERSION>`.
+Installing alone does not add the tool to your config, so a tool that is not
+already configured will not be on PATH.
 To install and activate in one command, use `mise use`, which also writes the version to
 `mise.toml` in the current directory so the tool is active inside it.
 To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
@@ -3091,7 +3093,7 @@ The name of the script becomes the name of the task.
     EOF
     $ mise run build
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Run the \"lint\" task, defined either in mise.toml or as a standalone script.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Force the \"build\" task to run even if its sources are up-to-date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Run the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run multiple tasks, each with its own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Run the \"lint\" task, defined either in mise.toml or as a standalone script.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Force the \"build\" task to run even if its sources are up to date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Run the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run multiple tasks, each with its own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
     flag --affected help="Run matching tasks only for projects affected by Git changes"
     flag --affected-base help=#"""
 Git base revision for --affected
@@ -3245,7 +3247,7 @@ By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
 """#
     after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise search jq\u{1b}[22m\n    Tool  Description\n    jq    Command-line JSON processor. https://github.com/jqlang/jq\n    jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp\n    jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq\n    gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq\n\n    $ \u{1b}[1mmise search --interactive\u{1b}[22m\n    Tool\n    Search a tool\n    ❯ jq    Command-line JSON processor. https://github.com/jqlang/jq\n      jqp   A TUI playground to experiment with jq. https://github.com/noahgorstein/jqp\n      jiq   jid on jq - interactive JSON query tool using jq expressions. https://github.com/fiatjaf/jiq\n      gojq  Pure Go implementation of jq. https://github.com/itchyny/gojq\n    /jq \n    esc clear filter • enter confirm\n"
-    flag "-i --interactive" help="Pick a tool from an interactive search menu" {
+    flag "-i --interactive" help="Show an interactive search menu" {
         conflicts "--match-type" "--no-header"
     }
     flag "-m --match-type" help="Match type: equal, contains, or fuzzy" default=fuzzy {
@@ -3766,7 +3768,7 @@ The name of the script becomes the name of the task.
     EOF
     $ mise run build
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Run the \"lint\" task, defined either in mise.toml or as a standalone script.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Force the \"build\" task to run even if its sources are up-to-date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Run the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run multiple tasks, each with its own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Run the \"lint\" task, defined either in mise.toml or as a standalone script.\n    $ \u{1b}[1mmise run lint\u{1b}[22m\n\n    # Force the \"build\" task to run even if its sources are up to date.\n    $ \u{1b}[1mmise run --force build\u{1b}[22m\n\n    # Run \"test\" with stdin/stdout/stderr all connected to the current terminal.\n    # This forces `--jobs=1` to prevent interleaving of output.\n    $ \u{1b}[1mmise run --raw test\u{1b}[22m\n\n    # Run the \"lint\", \"test\", and \"check\" tasks in parallel.\n    $ \u{1b}[1mmise run lint ::: test ::: check\u{1b}[22m\n\n    # Run multiple tasks, each with its own arguments.\n    $ \u{1b}[1mmise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2\u{1b}[22m\n"
         flag --affected help="Run matching tasks only for projects affected by Git changes"
         flag --affected-base help=#"""
 Git base revision for --affected
@@ -4412,7 +4414,7 @@ watchexec must be installed; `mise use -g watchexec@latest` installs it.
 For more advanced process management (daemon management, auto-restart, readiness checks,
 cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise watch build\u{1b}[22m\n    Runs the \"build\" task and reruns it whenever one of its sources changes.\n    The task's \"sources\" determine which files are watched.\n\n    $ \u{1b}[1mmise watch build --glob src/**/*.rs\u{1b}[22m\n    Runs the \"build\" task, watching the files matched by the glob instead of\n    the task's \"sources\".\n\n    $ \u{1b}[1mmise watch build --clear\u{1b}[22m\n    Extra arguments are passed to watchexec. See `watchexec --help` for details.\n\n    $ \u{1b}[1mmise watch serve --watch src --exts rs --restart\u{1b}[22m\n    Starts an API server, watching \"*.rs\" files in \"./src\", and restarts the server when they change.\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    $ \u{1b}[1mmise watch build\u{1b}[22m\n    Runs the \"build\" task and reruns it whenever one of its sources changes.\n    The task's \"sources\" determine which files are watched.\n\n    $ \u{1b}[1mmise watch build --glob 'src/**/*.rs'\u{1b}[22m\n    Runs the \"build\" task, watching the files matched by the glob instead of\n    the task's \"sources\".\n\n    $ \u{1b}[1mmise watch build --clear\u{1b}[22m\n    Extra arguments are passed to watchexec. See `watchexec --help` for details.\n\n    $ \u{1b}[1mmise watch serve --watch src --exts rs --restart\u{1b}[22m\n    Starts an API server, watching \"*.rs\" files in \"./src\", and restarts the server when they change.\n"
     flag "-t --task-flag" help="Tasks to run" var=#true hide=#true {
         arg <TASK_FLAG>
     }
@@ -5088,7 +5090,7 @@ Display the installation path for a tool
 
 The tool must be installed for this to work.
 """#
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Show the latest installed node 20.x\n    # Errors if no matching version is installed\n    $ \u{1b}[1mmise where node@20\u{1b}[22m\n    /home/jdx/.local/share/mise/installs/node/20.0.0\n\n    # Show the install directory of the currently active node\n    # Errors if node is not requested by any config file\n    $ \u{1b}[1mmise where node\u{1b}[22m\n    /home/jdx/.local/share/mise/installs/node/20.0.0\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # Show the latest installed node 20.x\n    # Errors if no matching version is installed\n    $ \u{1b}[1mmise where node@20\u{1b}[22m\n    /home/jdx/.local/share/mise/installs/node/20.0.0\n\n    # Show the install directory of the active node, or of the latest\n    # installed version if no config requests node\n    # Errors if no matching version is installed\n    $ \u{1b}[1mmise where node\u{1b}[22m\n    /home/jdx/.local/share/mise/installs/node/20.0.0\n"
     flag "-h --help" help="Print help" action=help builtin=#true
     arg <TOOL@VERSION> help=#"""
 Tool to look up

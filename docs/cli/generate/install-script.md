@@ -13,7 +13,7 @@ Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap`
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 
 ## Flags
-- **`-l --localize`** — Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+- **`-l --localize`** — Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
 
   This is necessary if users may use a different version of mise outside the project.
 - **`-V --version <VERSION>`** — Specify mise version to fetch

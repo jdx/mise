@@ -15,7 +15,7 @@ use xx::regex;
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct InstallScript {
-    /// Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+    /// Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
     ///
     /// This is necessary if users may use a different version of mise outside the project.
     #[usage(long, short, verbatim_doc_comment)]

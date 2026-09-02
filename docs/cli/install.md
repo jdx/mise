@@ -8,8 +8,10 @@
 
 Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`.
-Installing alone does not activate the tool, so it will not be on PATH.
+Installs a tool version under the mise data directory, by default
+`~/.local/share/mise/installs/<TOOL>/<VERSION>`.
+Installing alone does not add the tool to your config, so a tool that is not
+already configured will not be on PATH.
 To install and activate in one command, use `mise use`, which also writes the version to
 `mise.toml` in the current directory so the tool is active inside it.
 To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.

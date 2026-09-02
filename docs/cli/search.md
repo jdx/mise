@@ -16,7 +16,7 @@ non-fuzzy matches, use the `--match-type` flag.
 - **`[NAME]`** — The tool to search for
 
 ## Flags
-- **`-i --interactive`** — Pick a tool from an interactive search menu
+- **`-i --interactive`** — Show an interactive search menu
 - **`-m --match-type <MATCH_TYPE>`** — Match type: equal, contains, or fuzzy
 
   **Choices:** `equal`, `contains`, `fuzzy`

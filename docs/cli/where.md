@@ -26,8 +26,9 @@ Examples:
 $ mise where node@20
 /home/jdx/.local/share/mise/installs/node/20.0.0
 
-# Show the install directory of the currently active node
-# Errors if node is not requested by any config file
+# Show the install directory of the active node, or of the latest
+# installed version if no config requests node
+# Errors if no matching version is installed
 $ mise where node
 /home/jdx/.local/share/mise/installs/node/20.0.0
 ```

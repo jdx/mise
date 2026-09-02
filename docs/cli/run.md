@@ -128,7 +128,7 @@ Examples:
 # Run the "lint" task, defined either in mise.toml or as a standalone script.
 $ mise run lint
 
-# Force the "build" task to run even if its sources are up-to-date.
+# Force the "build" task to run even if its sources are up to date.
 $ mise run --force build
 
 # Run "test" with stdin/stdout/stderr all connected to the current terminal.

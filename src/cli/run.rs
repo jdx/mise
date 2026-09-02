@@ -1487,7 +1487,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     # Run the "lint" task, defined either in mise.toml or as a standalone script.
     $ <bold>mise run lint</bold>
 
-    # Force the "build" task to run even if its sources are up-to-date.
+    # Force the "build" task to run even if its sources are up to date.
     $ <bold>mise run --force build</bold>
 
     # Run "test" with stdin/stdout/stderr all connected to the current terminal.

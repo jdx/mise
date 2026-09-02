@@ -68,8 +68,9 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     $ <bold>mise where node@20</bold>
     /home/jdx/.local/share/mise/installs/node/20.0.0
 
-    # Show the install directory of the currently active node
-    # Errors if node is not requested by any config file
+    # Show the install directory of the active node, or of the latest
+    # installed version if no config requests node
+    # Errors if no matching version is installed
     $ <bold>mise where node</bold>
     /home/jdx/.local/share/mise/installs/node/20.0.0
 "#

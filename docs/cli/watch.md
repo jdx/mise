@@ -488,7 +488,7 @@ $ mise watch build
 Runs the "build" task and reruns it whenever one of its sources changes.
 The task's "sources" determine which files are watched.
 
-$ mise watch build --glob src/**/*.rs
+$ mise watch build --glob 'src/**/*.rs'
 Runs the "build" task, watching the files matched by the glob instead of
 the task's "sources".
 

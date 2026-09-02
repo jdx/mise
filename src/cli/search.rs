@@ -33,7 +33,7 @@ pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
 
-    /// Pick a tool from an interactive search menu
+    /// Show an interactive search menu
     #[usage(long, short, conflicts = &["match_type", "no_header"])]
     interactive: bool,
 
