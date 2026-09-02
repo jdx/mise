@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 
 use async_trait::async_trait;
@@ -102,12 +102,14 @@ async fn resolve_foreign_packages(
 ) -> Result<Vec<ResolvedForeignPackage>> {
     let output = foreign_packages().await?;
     let (installed, mut resolved) = parse_foreign_packages(&output, requests);
+    let foreign_names = installed.keys().cloned().collect::<HashSet<_>>();
     for package in resolved
         .iter_mut()
         .filter(|package| matches!(package.status.state, PackageState::Missing))
     {
         let Some((provider, state)) =
-            super::pacman::resolve_installed_provider(&package.status.request).await?
+            super::pacman::resolve_installed_provider(&package.status.request, &foreign_names)
+                .await?
         else {
             continue;
         };

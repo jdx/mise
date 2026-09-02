@@ -76,11 +76,17 @@ fn package_state(req: &PackageRequest, version: &str) -> PackageState {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct PacmanProvide {
+    name: String,
+    version: Option<String>,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct PacmanPackageMetadata {
     name: String,
     version: String,
-    provides: HashSet<String>,
+    provides: HashSet<PacmanProvide>,
 }
 
 fn parse_pacman_info(output: &str) -> Vec<PacmanPackageMetadata> {
@@ -119,31 +125,60 @@ fn parse_pacman_info(output: &str) -> Vec<PacmanPackageMetadata> {
     packages
 }
 
-fn parse_provides(value: &str) -> impl Iterator<Item = String> + '_ {
+fn parse_provides(value: &str) -> impl Iterator<Item = PacmanProvide> + '_ {
     value
         .split_whitespace()
         .filter(|provide| *provide != "None")
         .map(|provide| {
-            provide
-                .split(['<', '=', '>'])
-                .next()
-                .unwrap_or(provide)
-                .to_string()
+            let (name, version) = provide
+                .split_once('=')
+                .map(|(name, version)| (name, Some(version.to_string())))
+                .unwrap_or_else(|| (provide.split(['<', '>']).next().unwrap_or(provide), None));
+            PacmanProvide {
+                name: name.to_string(),
+                version,
+            }
         })
 }
 
 fn find_provider<'a>(
     packages: &'a [PacmanPackageMetadata],
-    requested: &str,
+    request: &PackageRequest,
+    constraint_satisfied: bool,
+    eligible: impl Fn(&PacmanPackageMetadata) -> bool,
 ) -> Option<&'a PacmanPackageMetadata> {
     packages
         .iter()
-        .find(|package| package.name == requested)
+        .filter(|package| eligible(package))
+        .find(|package| {
+            package.name == request.name
+                && (!constraint_satisfied
+                    || request
+                        .version
+                        .as_ref()
+                        .is_none_or(|version| version_matches(version, &package.version)))
+        })
         .or_else(|| {
             packages
                 .iter()
-                .find(|package| package.provides.contains(requested))
+                .filter(|package| eligible(package))
+                .find(|package| {
+                    package.provides.iter().any(|provide| {
+                        provide.name == request.name
+                            && (!constraint_satisfied
+                                || request.version.as_ref().is_none_or(|version| {
+                                    provide
+                                        .version
+                                        .as_ref()
+                                        .is_some_and(|provided| version_matches(version, provided))
+                                }))
+                    })
+                })
         })
+}
+
+fn version_matches(requested: &str, installed: &str) -> bool {
+    installed == requested || installed.starts_with(&format!("{requested}-"))
 }
 
 fn parse_pacman_deptest(output: &str) -> HashSet<&str> {
@@ -166,12 +201,13 @@ fn apply_provider_query<'a>(
     packages: &'a [PacmanPackageMetadata],
     constraint_satisfied: bool,
 ) -> Result<&'a PacmanPackageMetadata> {
-    let provider = find_provider(packages, &status.request.name).ok_or_else(|| {
-        eyre::eyre!(
-            "pacman -Qi returned no provider for satisfied requirement '{}'",
-            status.request.name
-        )
-    })?;
+    let provider = find_provider(packages, &status.request, constraint_satisfied, |_| true)
+        .ok_or_else(|| {
+            eyre::eyre!(
+                "pacman -Qi returned no provider for satisfied requirement '{}'",
+                status.request.name
+            )
+        })?;
     // The provider's package version is display metadata; pacman -T evaluates
     // the requested version against the version declared in Provides.
     status.state = if constraint_satisfied {
@@ -263,6 +299,7 @@ async fn pacman_deptest(names: &[String]) -> Result<String> {
 
 pub(super) async fn resolve_installed_provider(
     request: &PackageRequest,
+    eligible_names: &HashSet<String>,
 ) -> Result<Option<(String, PackageState)>> {
     let requirement = deptest_requirement(request);
     let deptest = pacman_deptest(&[requirement]).await?;
@@ -281,12 +318,11 @@ pub(super) async fn resolve_installed_provider(
 
     let info = pacman_info().await?;
     let packages = parse_pacman_info(&info);
-    let provider = find_provider(&packages, &request.name).ok_or_else(|| {
-        eyre::eyre!(
-            "pacman -Qi returned no provider for satisfied requirement '{}'",
-            request.name
-        )
-    })?;
+    let Some(provider) = find_provider(&packages, request, constraint_satisfied, |package| {
+        eligible_names.contains(&package.name)
+    }) else {
+        return Ok(None);
+    };
     let state = if constraint_satisfied {
         PackageState::Installed {
             version: provider.version.clone(),
@@ -509,8 +545,18 @@ mod tests {
         let provider = apply_provider_query(&mut status, &packages, true).unwrap();
 
         assert_eq!(provider.name, "percona-server-clients");
-        assert!(provider.provides.contains("mariadb-clients"));
-        assert!(provider.provides.contains("mysql-clients"));
+        assert!(
+            provider
+                .provides
+                .iter()
+                .any(|provide| provide.name == "mariadb-clients")
+        );
+        assert!(
+            provider
+                .provides
+                .iter()
+                .any(|provide| provide.name == "mysql-clients")
+        );
         assert_eq!(
             status.state,
             PackageState::Installed {
@@ -531,7 +577,54 @@ mod tests {
              Provides        : None\n",
         );
 
-        assert_eq!(find_provider(&packages, "foo").unwrap().name, "foo");
+        assert_eq!(
+            find_provider(&packages, &req("foo", None), true, |_| true)
+                .unwrap()
+                .name,
+            "foo"
+        );
+    }
+
+    #[test]
+    fn test_find_provider_matches_virtual_version() {
+        let packages = parse_pacman_info(
+            "Name            : foo-one\n\
+             Version         : 10.0-1\n\
+             Provides        : foo=1\n\
+             \n\
+             Name            : foo-two\n\
+             Version         : 20.0-1\n\
+             Provides        : foo=2\n",
+        );
+
+        assert_eq!(
+            find_provider(&packages, &req("foo", Some("2")), true, |_| true)
+                .unwrap()
+                .name,
+            "foo-two"
+        );
+    }
+
+    #[test]
+    fn test_find_provider_filters_ineligible_exact_match() {
+        let packages = parse_pacman_info(
+            "Name            : foo\n\
+             Version         : 1.0-1\n\
+             Provides        : None\n\
+             \n\
+             Name            : aur-foo\n\
+             Version         : 2.0-1\n\
+             Provides        : foo\n",
+        );
+
+        assert_eq!(
+            find_provider(&packages, &req("foo", None), true, |package| {
+                package.name == "aur-foo"
+            })
+            .unwrap()
+            .name,
+            "aur-foo"
+        );
     }
 
     #[test]
