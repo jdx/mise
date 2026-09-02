@@ -126,7 +126,15 @@ impl HookEnv {
             return Ok(());
         }
         time!("should_exit_early false");
-        miseprint!("{}", hook_env::clear_old_env(&*shell))?;
+        let old_patches = hook_env::clear_old_env_patches(&*shell);
+        let cleared_keys: BTreeSet<&str> = old_patches
+            .iter()
+            .filter_map(|patch| match patch {
+                EnvDiffOperation::Remove(key) => Some(key.as_str()),
+                _ => None,
+            })
+            .collect();
+        miseprint!("{}", hook_env::build_env_commands(&*shell, &old_patches))?;
 
         // Use env_with_path_and_split which handles caching internally
         let (mut mise_env, env_remove, user_paths, tool_paths, env_watch_files) =
@@ -144,17 +152,22 @@ impl HookEnv {
                 diff.old.insert(key, value.clone());
             }
         }
-        let mut patches = diff.to_patches();
+        let mut diff_patches = diff.to_patches();
 
         // For fish shell, filter out PATH operations from diff patches because
         // fish's PATH handling conflicts with setting PATH multiple times
         if shell.to_string() == "fish" {
-            patches.retain(|p| match p {
+            diff_patches.retain(|p| match p {
                 EnvDiffOperation::Add(k, _)
                 | EnvDiffOperation::Change(k, _)
                 | EnvDiffOperation::Remove(k) => k != &*PATH_KEY,
             });
         }
+        diff_patches.retain(|patch| match patch {
+            EnvDiffOperation::Remove(key) => !cleared_keys.contains(key.as_str()),
+            _ => true,
+        });
+        let mut patches = diff_patches;
 
         // Combine paths for __MISE_DIFF tracking (all mise-managed paths)
         let all_paths: Vec<PathBuf> = user_paths

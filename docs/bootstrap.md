@@ -201,6 +201,7 @@ action = "allow"
 "~/src/dotfiles" = { url = "git@github.com:jdx/dotfiles.git", ref = "main" }
 
 [dotfiles]
+"~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
 "~/.gitconfig" = { mode = "symlink" }
 "~/.config/nvim" = { mode = "symlink" }
 

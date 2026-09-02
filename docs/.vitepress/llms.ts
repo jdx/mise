@@ -35,15 +35,24 @@ function pageUrl(link: string): string {
 
 /** Strip the markdown that would only add noise for a reader of this index. */
 function plain(md: string): string {
+  // Code spans are set aside before the emphasis and tag passes and restored
+  // afterwards, so an identifier inside one keeps its punctuation:
+  // `[bootstrap.mise_shell_activate]` would otherwise be read as emphasis and
+  // come out as [bootstrap.miseshellactivate].
+  const spans: string[] = [];
   return (
     md
       .replace(/!\[[^\]]*\]\([^)]*\)/g, "") // images
       // links -> text. The label may itself contain brackets, as it does for
       // links to TOML sections: [`[bootstrap.packages]`](/bootstrap/packages/)
       .replace(/\[((?:[^[\]]|\[[^[\]]*\])*)\]\([^)]*\)/g, "$1")
-      .replace(/`([^`]*)`/g, "$1")
-      .replace(/[*_]{1,3}([^*_]+)[*_]{1,3}/g, "$1")
+      .replace(/`([^`]*)`/g, (_, span: string) => `\0${spans.push(span) - 1}\0`)
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, "$1")
+      // Unlike `*`, `_` only opens emphasis at a word boundary, so snake_case
+      // outside a code span survives too.
+      .replace(/(^|[^\w])_{1,3}([^_]+)_{1,3}(?!\w)/g, "$1$2")
       .replace(/<[^>]+>/g, "")
+      .replace(/\0(\d+)\0/g, (_, i: string) => spans[Number(i)])
       .replace(/\s+/g, " ")
       .trim()
   );

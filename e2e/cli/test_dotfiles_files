@@ -278,6 +278,20 @@ assert "ls ~/.local/mybin/unmanaged" "$HOME/.local/mybin/unmanaged"
 assert "readlink ~/.local/mybin/user-link" "/nonexistent-elsewhere"
 assert "readlink ~/.local/mybin/my-alias" "$PWD/dotfiles/bin/two"
 assert_succeed "mise dotfiles status --missing"
+
+# a removed directory whose links sat at two depths: the walk up from the
+# deeper link empties and removes the parent before the shallower link's
+# turn comes, and the second visit must not trip on the directory being gone
+mkdir -p dotfiles/bin/pkg/refs
+echo "four" >dotfiles/bin/pkg/four
+echo "five" >dotfiles/bin/pkg/refs/five
+assert_succeed "mise dotfiles apply --yes"
+assert "readlink ~/.local/mybin/pkg/refs/five" "$PWD/dotfiles/bin/pkg/refs/five"
+rm -r dotfiles/bin/pkg
+assert_succeed "mise dotfiles apply --yes"
+assert_directory_not_exists "$HOME/.local/mybin/pkg"
+assert "readlink ~/.local/mybin/one" "$PWD/dotfiles/bin/one"
+assert_succeed "mise dotfiles status --missing"
 rm ~/.local/mybin/user-link ~/.local/mybin/my-alias
 
 # copy entries pick up source changes on reapply

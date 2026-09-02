@@ -15,7 +15,8 @@ dotfiles.root = "~/.dotfiles"
 dotfiles.default_mode = "symlink"
 
 [dotfiles]
-"~/.zshrc" = {}                                                       # ~/.dotfiles/.zshrc
+"~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
+"~/.zshrc" = { mode = "symlink" }                                     # ~/.dotfiles/.zshrc
 "~/.gitconfig" = "dotfiles/gitconfig"                                # explicit source
 "~/.config/alacritty.toml" = { mode = "copy" }                       # ~/.dotfiles/.config/alacritty.toml
 "~/.config/starship.toml" = { source = "dotfiles/starship.toml", mode = "copy" }
@@ -51,7 +52,7 @@ with `--mode`:
 
 ```toml
 [dotfiles]
-"~/.zshrc" = {}
+"~/.zshrc" = { mode = "symlink" }
 "~/.ssh/config" = { source = "ssh/config", mode = "copy" }
 ```
 
