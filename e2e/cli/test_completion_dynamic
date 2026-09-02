@@ -24,6 +24,10 @@ zsh_tasks="$(mise __complete_word__ --shell zsh --line 'mise run ')"
 assert_contains_text "$zsh_tasks" $'test\tRun the test task\ttest'
 assert_not_contains_text "$zsh_tasks" $'\001files'
 
+zsh_plugins="$(mise __complete_word__ --shell zsh --line 'mise plugins uninstall ')"
+assert_contains_text "$zsh_plugins" $'dummy\t\tdummy'
+assert_contains_text "$zsh_plugins" $'node\t\tnode'
+
 naked_tasks="$(mise __complete_word__ --shell fish --line 'mise te')"
 assert_contains_text "$naked_tasks" $'test\tRun the test task'
 

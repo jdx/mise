@@ -57,7 +57,9 @@ impl PluginsLs {
             for p in CORE_PLUGINS.keys() {
                 miseprintln!("{p}");
             }
-            return Ok(());
+            if !self.user {
+                return Ok(());
+            }
         }
 
         if self.all {
