@@ -89,7 +89,6 @@ jobs:
 
       - name: Measure and record
         run: |
-          mbx build --release
           taskset -c 0-3 mise run perf:record
       - name: Package measurement note
         if: github.ref == 'refs/heads/main'

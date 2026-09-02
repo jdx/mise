@@ -142,7 +142,6 @@ jobs:
       # `tak push` in this workflow and there should never be one.
       - name: Measure this pull request
         run: |
-          mbx build --release
           taskset -c 0-3 mise run perf:record
 
       - name: Find the base commit
