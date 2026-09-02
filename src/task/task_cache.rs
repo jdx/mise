@@ -8,14 +8,13 @@ use crate::task::task_cache_store::{
     compose_task_cache_stores,
 };
 use crate::task::task_source_checker::{
-    TaskCacheInputs, build_output_matcher, expand_enumeration_patterns, is_output,
+    TaskCacheInputs, build_output_matcher, expand_enumeration_patterns, glob_walk, is_output,
     output_glob_patterns, task_cache_inputs, task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
 use bytesize::ByteSize;
 use eyre::{Context, Report, Result, bail, eyre};
-use glob::glob;
 use ignore::overrides::Override;
 use jdx_tar::{Builder, EntryType, Header};
 use mise_cache_core::RemoteCacheConfig;
@@ -1277,8 +1276,8 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
             let mut glob_matched = false;
             for expanded in expand_enumeration_patterns(&output)? {
                 ensure_safe_relative(Path::new(&expanded))?;
-                for entry in glob(root.join(expanded).to_str().unwrap_or_default())? {
-                    let path = entry?;
+                for entry in glob_walk(&root.join(expanded), false)? {
+                    let path = entry?.into_path();
                     glob_matched = true;
                     let rel = path.strip_prefix(root)?.to_path_buf();
                     ensure_safe_relative(&rel)?;

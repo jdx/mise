@@ -277,13 +277,9 @@ impl TaskScriptParser {
                                 } else {
                                     expanded_pattern
                                 };
-                                let expanded = match glob::glob_with(
-                                    &rooted_pattern,
-                                    glob::MatchOptions {
-                                        case_sensitive: false,
-                                        require_literal_separator: false,
-                                        require_literal_leading_dot: false,
-                                    },
+                                let expanded = match crate::task::task_source_checker::glob_walk(
+                                    Path::new(&rooted_pattern),
+                                    true,
                                 ) {
                                     Ok(expanded) => expanded,
                                     Err(error) => {
@@ -301,7 +297,8 @@ impl TaskScriptParser {
                                 for path in expanded {
                                     source_found = true;
                                     match path {
-                                        Ok(path) => {
+                                        Ok(entry) => {
+                                            let path = entry.into_path();
                                             if !crate::task::task_source_checker::is_source(
                                                 &matcher, &path,
                                             ) {
@@ -334,10 +331,12 @@ impl TaskScriptParser {
                                             resolved.push(source);
                                         }
                                         Err(error) => {
-                                            let source = error.path().display();
+                                            let source = error
+                                                .path()
+                                                .map(|path| path.display().to_string())
+                                                .unwrap_or_else(|| "<unknown>".to_string());
                                             warn!(
-                                                "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {:#?}",
-                                                error.error()
+                                                "tera::render::resolve_task_sources omitting '{source}' from resolved task sources due to: {error:#?}"
                                             );
                                         }
                                     }

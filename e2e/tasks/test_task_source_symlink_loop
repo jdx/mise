@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+mkdir tree
+printf 'input\n' >tree/input.txt
+ln -s . tree/a
+ln -s . tree/b
+
+cat <<'EOF' >mise.toml
+[settings]
+experimental = true
+
+[tasks.cached]
+run = "echo cached"
+sources = ["tree/**/*"]
+outputs = []
+cache = { enabled = true }
+
+[tasks.render-sources]
+run = "echo {{ task_source_files() | join(sep=' ') }}"
+sources = ["tree/**/*"]
+EOF
+
+# Recursive source expansion must skip ancestor symlink loops while retaining
+# ordinary files, both for artifact-cache inputs and task_source_files().
+assert "mise run -q cached" "cached"
+assert_contains "mise run -q render-sources" "tree/input.txt"

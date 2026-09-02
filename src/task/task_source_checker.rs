@@ -8,7 +8,7 @@ use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
-use glob::glob;
+use globwalk::{GlobWalker, GlobWalkerBuilder};
 use ignore::overrides::{Override, OverrideBuilder};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -462,6 +462,73 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Build a glob iterator that follows valid directory symlinks but detects
+/// ancestor loops instead of recursively expanding them forever.
+///
+/// `globwalk` recursively searches its base directory, so non-globstar
+/// patterns are capped at their component depth to preserve `glob`'s
+/// component-by-component expansion semantics.
+pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWalker> {
+    fn has_metacharacters(component: &str) -> bool {
+        let mut escaped = false;
+        for ch in component.chars() {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' && !cfg!(windows) {
+                escaped = true;
+            } else if matches!(ch, '*' | '?' | '[') {
+                return true;
+            }
+        }
+        false
+    }
+
+    let mut base = PathBuf::new();
+    let mut glob_pattern = PathBuf::new();
+    let mut globbing = false;
+    let mut recursive = false;
+    let mut pattern_depth = 0;
+
+    for component in pattern.components() {
+        let text = component.as_os_str().to_string_lossy();
+        if !globbing && has_metacharacters(&text) {
+            globbing = true;
+        }
+        if globbing {
+            recursive |= text == "**";
+            pattern_depth += 1;
+            glob_pattern.push(component);
+        } else {
+            base.push(component);
+        }
+    }
+
+    // `task_source_files` also resolves statically named sources through this
+    // helper. Walk the parent in that case because globwalk intentionally does
+    // not yield its traversal root.
+    if !globbing && let Some(file_name) = base.file_name().map(|name| name.to_os_string()) {
+        base.pop();
+        glob_pattern.push(file_name);
+        pattern_depth = 1;
+    }
+
+    let Some(mut glob_pattern) = pattern_from_path(&glob_pattern) else {
+        bail!("glob pattern is not valid UTF-8: {}", pattern.display());
+    };
+    if glob_pattern.starts_with('!') {
+        glob_pattern.insert(0, '\\');
+    }
+
+    let mut builder = GlobWalkerBuilder::new(&base, glob_pattern)
+        .follow_links(true)
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+        .case_insensitive(case_insensitive);
+    if !recursive {
+        builder = builder.max_depth(pattern_depth);
+    }
+    Ok(builder.build()?)
+}
+
 /// Build an ordered matcher for task output patterns.
 ///
 /// Output entries use the same syntax as sources: `!` excludes, `\!` escapes
@@ -829,7 +896,7 @@ pub(crate) async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<(
                     .map(|patterns| {
                         patterns.into_iter().any(|pattern| {
                             let pattern = resolve_task_path(&root, pattern);
-                            glob(pattern.to_str().unwrap_or_default())
+                            glob_walk(&pattern, false)
                                 .map(|paths| paths.flatten().next().is_some())
                                 .unwrap_or(false)
                         })
@@ -1062,11 +1129,11 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
         let mut glob_matched = false;
         for expanded in expand_enumeration_patterns(pattern_str)? {
             let full = resolve_task_path(root, expanded);
-            for entry in glob(full.to_str().unwrap_or_default())? {
+            for entry in glob_walk(&full, false)? {
                 // Propagate glob resolution errors (OS errors during directory
                 // reads) rather than silently skipping them — a partial result
                 // could produce the same hash as a complete one.
-                let path = entry?;
+                let path = entry?.into_path();
                 glob_matched = true;
                 let metadata = match path.metadata() {
                     Ok(metadata) => metadata,
@@ -1123,8 +1190,8 @@ fn get_file_metadatas(
     for pattern in patterns {
         for expanded in expand_enumeration_patterns(pattern)? {
             let pattern = resolve_task_path(root, expanded);
-            let files = glob(pattern.to_str().unwrap())?;
-            for file in files.flatten() {
+            let files = glob_walk(&pattern, false)?;
+            for file in files.flatten().map(|entry| entry.into_path()) {
                 if let Ok(metadata) = file.metadata() {
                     metadatas.insert(file, metadata);
                 }
@@ -1288,7 +1355,9 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
                 candidates.extend(
-                    glob(expanded.to_str().unwrap_or_default())?.collect::<Result<Vec<_>, _>>()?,
+                    glob_walk(&expanded, false)?
+                        .map(|entry| entry.map(|entry| entry.into_path()))
+                        .collect::<Result<Vec<_>, _>>()?,
                 );
             }
             candidates
@@ -1337,6 +1406,73 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_walk_skips_symlink_loops() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir(&tree)?;
+        fs::write(tree.join("input.txt"), "input")?;
+        symlink(".", tree.join("a"))?;
+        symlink(".", tree.join("b"))?;
+
+        let pattern = tree.join("**/*");
+        let entries = glob_walk(&pattern, false)?.collect_vec();
+        let paths = entries
+            .iter()
+            .filter_map(|entry| entry.as_ref().ok())
+            .map(|entry| entry.path())
+            .collect_vec();
+
+        assert!(paths.contains(&tree.join("input.txt").as_path()));
+        assert_eq!(entries.iter().filter(|entry| entry.is_err()).count(), 2);
+        assert!(
+            entries.len() < 10,
+            "loop expansion was not bounded: {entries:?}"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_walk_follows_non_looping_directory_symlinks() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        let actual = temp.path().join("actual");
+        fs::create_dir(&tree)?;
+        fs::create_dir(&actual)?;
+        fs::write(actual.join("input.txt"), "input")?;
+        symlink("../actual", tree.join("linked"))?;
+
+        let paths = glob_walk(&tree.join("**/*"), false)?
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert!(paths.contains(&tree.join("linked/input.txt")));
+        Ok(())
+    }
+
+    #[test]
+    fn glob_walk_preserves_non_recursive_depth_and_order() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir_all(tree.join("nested"))?;
+        fs::write(tree.join("b.txt"), "b")?;
+        fs::write(tree.join("a.txt"), "a")?;
+        fs::write(tree.join("nested/deep.txt"), "deep")?;
+
+        let paths = glob_walk(&tree.join("*.txt"), false)?
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(paths, [tree.join("a.txt"), tree.join("b.txt")]);
+        Ok(())
+    }
 
     fn matches(sources: &[&str], path: &str) -> bool {
         let sources: Vec<String> = sources.iter().map(|s| s.to_string()).collect();

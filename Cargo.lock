@@ -6369,6 +6369,7 @@ dependencies = [
  "gix",
  "glob",
  "globset",
+ "globwalk",
  "heck",
  "hex",
  "homedir",
