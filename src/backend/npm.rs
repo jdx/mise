@@ -41,6 +41,7 @@ const AUBE_PROGRAM: &str = if cfg!(windows) { "aube.exe" } else { "aube" };
 const BUN_MIN_RELEASE_AGE_VERSION: &str = "1.3.0";
 const NPM_IGNORE_SCRIPTS_ARG: &str = "--ignore-scripts=true";
 const PNPM_MIN_RELEASE_AGE_VERSION: &str = "10.16.0";
+const PNPM_GLOBAL_DIR_ENV_VERSION: &str = "12.0.0";
 
 #[derive(Debug)]
 pub(crate) struct NPMBackend {
@@ -477,16 +478,20 @@ impl Backend for NPMBackend {
             NpmPackageManager::Pnpm => {
                 let bin_dir = tv.install_path().join("bin");
                 crate::file::create_dir_all(&bin_dir)?;
+                let pnpm_version = crate::backend::semver_version_from_toolsets_or_path(
+                    self,
+                    &ctx.config,
+                    &ctx.ts,
+                    "pnpm",
+                )
+                .await;
+                let use_global_dir_env = Self::pnpm_uses_global_dir_env(pnpm_version.as_deref());
                 let mut cmd = CmdLineRunner::new(
                     self.spawn_program(&ctx.config, Some(&ctx.ts), "pnpm").await,
                 )
                 .arg("add")
                 .arg("--global")
                 .arg(&package)
-                .arg("--global-dir")
-                .arg(tv.install_path())
-                .arg("--global-bin-dir")
-                .arg(&bin_dir)
                 .args(install_before_args)
                 .with_pr(ctx.pr.as_ref())
                 .envs(ctx.ts.env_with_path_without_tools(&ctx.config).await?)
@@ -500,7 +505,20 @@ impl Backend for NPMBackend {
                 )?
                 // required to avoid pnpm error "global bin dir isn't in PATH"
                 // https://github.com/pnpm/pnpm/issues/9333
-                .prepend_path(vec![bin_dir])?;
+                .prepend_path(vec![bin_dir.clone()])?;
+                if use_global_dir_env {
+                    // pnpm 12's replacement Rust CLI does not accept both path settings
+                    // as flags, but reads them from PNPM_CONFIG_* environment variables.
+                    cmd = cmd
+                        .env("PNPM_CONFIG_GLOBAL_DIR", tv.install_path())
+                        .env("PNPM_CONFIG_GLOBAL_BIN_DIR", &bin_dir);
+                } else {
+                    cmd = cmd
+                        .arg("--global-dir")
+                        .arg(tv.install_path())
+                        .arg("--global-bin-dir")
+                        .arg(&bin_dir);
+                }
                 if let Some(args) = options.pnpm_args() {
                     cmd = cmd.args(shell_words::split(args)?);
                 }
@@ -720,6 +738,12 @@ impl NPMBackend {
     fn build_pnpm_release_age_args(seconds: u64) -> Vec<OsString> {
         let minutes = seconds.div_ceil(60);
         vec![format!("--config.minimumReleaseAge={minutes}").into()]
+    }
+
+    fn pnpm_uses_global_dir_env(version: Option<&str>) -> bool {
+        version.is_some_and(|version| {
+            semver_is_at_least(version, PNPM_GLOBAL_DIR_ENV_VERSION).unwrap_or(false)
+        })
     }
 
     async fn warn_if_package_manager_may_not_support_release_age(
@@ -1948,6 +1972,14 @@ mod tests {
     fn test_build_pnpm_release_age_args_rounds_up_to_minutes() {
         let args = NPMBackend::build_pnpm_release_age_args(1);
         assert_eq!(args, vec![OsString::from("--config.minimumReleaseAge=1")]);
+    }
+
+    #[test]
+    fn test_pnpm_global_dir_transport_version_boundary() {
+        assert!(!NPMBackend::pnpm_uses_global_dir_env(Some("11.25.0")));
+        assert!(NPMBackend::pnpm_uses_global_dir_env(Some("12.0.0-rc.1")));
+        assert!(NPMBackend::pnpm_uses_global_dir_env(Some("12.0.0")));
+        assert!(!NPMBackend::pnpm_uses_global_dir_env(None));
     }
 
     #[test]
