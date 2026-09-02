@@ -27,7 +27,7 @@ lockfile = true
 ## How It Works
 
 1. **Lockfile Creation and Updates**: With `lockfile = true`, running `mise install` or `mise use` creates or updates `mise.lock` with the exact versions installed. When `lockfile` is unset, these commands update an existing lockfile without creating one
-2. **Version Resolution**: If a `mise.lock` exists, mise will prefer locked versions over version ranges in `mise.toml`
+2. **Version Resolution**: If a `mise.lock` exists, mise prefers locked versions over version ranges in `mise.toml`
 3. **Checksum Verification**: For supported backends, mise stores and verifies checksums of downloaded tools
 
 `mise lock` resolves both config-level tools and tools declared in individual tasks. It reads task
@@ -38,7 +38,7 @@ the config that owns the task.
 
 ## File Format
 
-`mise.lock` is a TOML file with a platform-based format that organizes asset information by platform:
+`mise.lock` is a TOML file that organizes asset information by platform:
 
 ```toml
 # Example mise.lock
@@ -147,7 +147,7 @@ For example, with `MISE_ENV=test`:
 MISE_ENV=test mise lock  # creates mise.lock AND mise.test.lock
 ```
 
-Tools from `mise.toml` go to `mise.lock`, tools from `mise.test.toml` go to `mise.test.lock`.
+Tools from `mise.toml` go to `mise.lock`, and tools from `mise.test.toml` go to `mise.test.lock`.
 
 **Resolution**: When `MISE_ENV=test`, mise reads `mise.test.lock` for tools defined in `mise.test.toml` and `mise.lock` for tools in `mise.toml`. Environment-specific lockfiles are strictly scoped to their corresponding config — they only contain tools defined in that config.
 
@@ -195,7 +195,7 @@ mise lock --local node python  # update specific tools in mise.local.lock
 
 When `monorepo_root = true`, mise can use a single lockfile at the monorepo root. Set `[monorepo] lockfile = true` to opt into root lockfile variants such as `mise.lock`, `mise.ci.lock`, and `mise.local.lock`.
 
-Existing subproject lockfiles are migrated into the root lockfile on the next lock-aware command. Unset keeps per-subproject lockfiles during the rollout. Monorepos using `mise*.lock` files start warning in mise `2026.12.0`, and unset defaults to root lockfiles in mise `2027.6.0`. Older mise versions do not understand this layout for subproject-owned tools, so projects that need mixed-version compatibility can pin the old behavior:
+Existing subproject lockfiles are migrated into the root lockfile on the next lock-aware command. Leaving the setting unset keeps per-subproject lockfiles during the rollout. Monorepos using `mise*.lock` files start warning in mise `2026.12.0`, and the unset default switches to root lockfiles in mise `2027.6.0`. Older mise versions do not understand this layout for subproject-owned tools, so projects that need mixed-version compatibility can pin the old behavior:
 
 ```toml
 [monorepo]
@@ -206,7 +206,7 @@ See [Monorepo Tasks](/tasks/monorepo.html#lockfiles) for details.
 
 ## Strict Lockfile Mode
 
-The `locked` setting enforces that all tools have pre-resolved URLs in the lockfile before installation. This prevents API calls to GitHub, aqua registry, etc., ensuring fully reproducible installations.
+The `locked` setting enforces that all tools have pre-resolved URLs in the lockfile before installation. This prevents API calls to GitHub, the aqua registry, and so on, ensuring fully reproducible installations.
 
 ```sh
 # Enable strict mode
@@ -252,7 +252,7 @@ respective lockfiles. Tools inherited from global or parent config roots keep
 their own policy. A config-root policy remains enforced even when its scope is
 excluded from `locked_scopes`.
 
-When enabled, `mise install` will fail if a tool doesn't have a URL for the current platform in the lockfile. To fix this, first populate the lockfile with URLs:
+When enabled, `mise install` fails if a tool has no URL for the current platform in the lockfile. To fix this, populate the lockfile with URLs first:
 
 ```sh
 mise lock                    # generate URLs for all platforms
@@ -493,15 +493,15 @@ mise use node@$(jq -r '.engines.node' package.json)
 
 ## Provenance and Security
 
-When `mise lock` generates a lockfile, it records a verified provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool when one is available. For the **current platform**, mise downloads the artifact and performs full cryptographic verification at lock time -- ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. This applies to both the aqua and github backends. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
+When `mise lock` generates a lockfile, it records a verified provenance type (e.g., `slsa`, `cosign`, `minisign`, `github-attestations`) for each tool when one is available. For the **current platform**, mise downloads the artifact and performs full cryptographic verification at lock time — ensuring the provenance entry in the lockfile is backed by actual verification, not just registry metadata. This applies to both the aqua and github backends. For cross-platform entries, provenance is detected from registry metadata without verification (since the artifact may not be runnable on the current machine).
 
-By default, when `mise install` sees a lockfile with both a checksum and a verified provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries) which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
+By default, when `mise install` sees a lockfile with both a checksum and a verified provenance entry, it trusts the lockfile and skips re-verification. This avoids redundant API calls (e.g., GitHub attestation queries), which can cause rate limit issues in CI. Since the current platform's provenance was already verified during `mise lock`, this is safe.
 
 If GitHub Artifact Attestations are enabled but the GitHub API confirms none exist for a checksum-backed artifact, mise may record `github_attestations = "unavailable"`. This is a negative cache entry, not provenance: it only skips the redundant GitHub attestation probe on later installs from that lockfile. Other verification paths such as SLSA, Cosign, Minisign, and checksum verification still run as usual.
 
 GitHub's docs show binary attestations generated from an existing artifact path with [`actions/attest`](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations#generating-build-provenance-for-binaries), and the REST API lists attestations by [subject digest](https://docs.github.com/en/rest/orgs/attestations#list-attestations). That means an attestation can appear after the release asset was uploaded. A later `mise lock` run or `MISE_LOCKED_VERIFY_PROVENANCE=1 mise install` can discover attestations added after the lockfile recorded them as unavailable.
 
-For additional security, you can force provenance re-verification at install time on every install:
+For additional security, you can force provenance re-verification on every install:
 
 ```toml
 [settings]
@@ -521,11 +521,11 @@ This is also automatically enabled in [paranoid mode](/paranoid.html):
 paranoid = true
 ```
 
-When enabled, every `mise install` will cryptographically verify provenance regardless of what the lockfile contains, ensuring the artifact was built by a trusted CI pipeline.
+When enabled, every `mise install` cryptographically verifies provenance regardless of what the lockfile contains, ensuring the artifact was built by a trusted CI pipeline.
 
 ## Minimum Release Age
 
-In addition to lockfiles, mise uses the [`minimum_release_age`](/configuration/settings.html#minimum_release_age) setting to limit supply chain risk by only installing versions that have been available for a minimum amount of time. It defaults to `24h`:
+In addition to lockfiles, mise uses the [`minimum_release_age`](/configuration/settings.html#minimum_release_age) setting to limit supply chain risk by installing only versions that have been available for a minimum amount of time. It defaults to `24h`:
 
 ```toml
 [settings]

@@ -90,7 +90,7 @@ mise exec python@3 -- python
 # >>> ...
 ```
 
-or run node 26:
+Or run node 26:
 
 ```sh
 mise exec node@26 -- node -v
@@ -118,7 +118,7 @@ You can set a shell alias in your shell's rc file like `alias x="mise x --"` to 
 There are two approaches:
 
 - [`mise activate`](/cli/activate) — updates your `PATH` and environment every time your prompt runs. Recommended for interactive shells.
-- [Shims](dev-tools/shims.md) — symlinks that intercept commands and load the right environment. Better for CI/CD, IDEs, and scripts. Note that [shims don't support all features of `mise activate`](/dev-tools/shims.html#shims-vs-path).
+- [Shims](dev-tools/shims.md) — symlinks that intercept commands and load the right environment. Better for CI/CD, IDEs, and scripts. [Shims don't support all features of `mise activate`](/dev-tools/shims.html#shims-vs-path).
 
 You can also skip both and call `mise exec` or `mise run` directly.
 See [this guide](dev-tools/shims.md) for more information.
@@ -168,7 +168,7 @@ Add the following to your PowerShell profile (`$PROFILE`):
 (&mise activate pwsh) | Out-String | Invoke-Expression
 ```
 
-In case you need to open your PowerShell profile:
+If you need to open your PowerShell profile:
 
 ```powershell
 # create profile if it doesn't already exist
@@ -345,7 +345,7 @@ See [`mise trust`](/cli/trust) for more details.
 
 ## 5. Setting environment variables {#environment-variables}
 
-Define environment variables in `mise.toml` — they'll be loaded whenever mise is activated or when using `mise exec`:
+Define environment variables in `mise.toml` — they're loaded whenever mise is activated or when you use `mise exec`:
 
 ```toml [mise.toml]
 [env]
@@ -382,7 +382,7 @@ See [tasks](/tasks/) for more on defining and running tasks.
 
 ## 7. Next steps {#next-steps}
 
-Follow the [walkthrough](/walkthrough) for more examples on how to use mise.
+Follow the [walkthrough](/walkthrough) for more examples of how to use mise.
 
 ### Set up autocompletion {#autocompletion}
 
@@ -391,5 +391,5 @@ See [autocompletion](/installing-mise.html#autocompletion) to learn how to set u
 ### GitHub API rate limiting {#github-api-rate-limiting}
 
 ::: warning
-Many tools in mise require the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, see [GitHub Tokens](/dev-tools/github-tokens.html) for how to configure authentication.
+Many tools in mise use the GitHub API. Unauthenticated requests are often rate limited — if you see 4xx errors, see [GitHub Tokens](/dev-tools/github-tokens.html) to configure authentication.
 :::

@@ -6,14 +6,13 @@ page is organized by symptom instead.
 ## `mise activate` doesn't work in `~/.profile`, `~/.bash_profile`, `~/.zprofile`
 
 `mise activate` should only be used in `rc` files. These are the interactive ones used when
-a real user is using the terminal. (As opposed to being executed by an IDE or something). The prompt
-isn't displayed in non-interactive environments so PATH won't be modified.
+a real user is at the terminal, as opposed to a shell executed by an IDE or a script. The prompt
+isn't displayed in non-interactive environments, so PATH won't be modified.
 
-For non-interactive setups, consider using shims instead which will route calls to the correct
+For non-interactive setups, consider using shims instead, which route calls to the correct
 directory by looking at `PWD` every time they're executed. You can also call `mise exec` instead of
-expecting things to be directly on PATH. You can also run `mise env` in a non-interactive shell,
-however that
-will only set up the global tools. It won't modify the environment variables when entering into a
+expecting things to be directly on PATH. Running `mise env` in a non-interactive shell also works,
+but it only sets up the global tools; it won't update the environment variables when you enter a
 different project.
 
 ::: warning
@@ -21,15 +20,14 @@ different project.
 See [shims vs path](/dev-tools/shims.html#shims-vs-path) for more info.
 :::
 
-Also see the [shebang](/tips-and-tricks#shebang) example for a way to make scripts call mise to get
-the runtime.
-That is another way to use mise without activation.
+Also see the [shebang](/tips-and-tricks#shebang) example for a way to have scripts call mise to get
+the tool they need, another way to use mise without activation.
 
 ## Slow shell prompts {#slow-shell-prompts}
 
-`mise activate` runs a hook on every prompt to check if tools or env vars need updating. This typically takes only a few milliseconds, but if your prompts feel sluggish you can profile it with `MISE_TIMINGS`:
+`mise activate` runs a hook on every prompt to check if tools or env vars need updating. This typically takes only a few milliseconds, but if your prompts feel sluggish you can profile it with `MISE_TIMINGS`.
 
-First deactivate mise so the prompt hook doesn't interfere with your measurement, then run `hook-env` manually with timings:
+First, deactivate mise so the prompt hook doesn't interfere with your measurement, then run `hook-env` manually with timings:
 
 ```sh
 mise deactivate
@@ -47,38 +45,36 @@ Replace `bash` with your shell. Common causes of slow prompts:
 - Large numbers of tools or plugins
 - Network-dependent operations in env directives
 
-Note that [`mise activate --shims`](/dev-tools/shims) moves the cost from every prompt to every tool invocation, which may or may not be faster depending on your workflow. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path) for tradeoffs.
+[`mise activate --shims`](/dev-tools/shims) moves the cost from every prompt to every tool invocation, which may or may not be faster depending on your workflow. See [Shims vs PATH](/dev-tools/shims.html#shims-vs-path) for tradeoffs.
 
 ## mise is failing or not working right
 
-First try setting `MISE_DEBUG=1` or `MISE_TRACE=1` and see if that gives you more information.
+First, try setting `MISE_DEBUG=1` or `MISE_TRACE=1` to see if that gives you more information.
 You can also set `MISE_LOG_FILE_LEVEL=debug MISE_LOG_FILE=/path/to/logfile` to write logs to a file.
 
-If something is happening with the activate hook, you can try disabling it and
+If the problem involves the activate hook, try disabling it and
 calling `eval "$(mise hook-env)"` manually.
-It can also be helpful to use `mise env` which will just output environment variables that would be
-set.
-Also consider using [shims](/dev-tools/shims.md) which can be more compatible.
+`mise env`, which only prints the environment variables that would be set, can also help.
+Also consider using [shims](/dev-tools/shims.md), which can be more compatible.
 
-If runtime installation isn't working right, try using the `--raw` flag which will install things in
-series and connect stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
-with you for some reason this will make it work.
+If tool installation isn't working right, try the `--raw` flag, which installs tools in
+series and connects stdin/stdout/stderr directly to the terminal. If a plugin is trying to interact
+with you for some reason, this will let it.
 
-Of course check the version of mise with `mise --version` and make sure it is the latest.
-Use `mise self-update`
-to update it. `mise cache clean` can be used to wipe the internal cache and `mise implode` can be
-used
-to remove everything except config.
+Check the version of mise with `mise --version` and make sure it is the latest;
+use `mise self-update`
+to update it. `mise cache clean` wipes the internal cache, and `mise implode` removes
+everything except config.
 
-Lastly, there is `mise doctor` which will show diagnostic information and any warnings about issues
+Lastly, `mise doctor` shows diagnostic information and warnings about any issues
 detected with your setup. If you submit a bug report, please include the output of `mise doctor`.
 
 ## The wrong version of a tool is being used
 
-Likely this means that mise isn't first in PATH—using shims or `mise activate`. You can verify if
-this is the case by calling `which -a`, for example, if node@20.0.0 is being used but mise specifies
+This likely means that mise isn't first in PATH, whether via shims or `mise activate`. You can verify
+this with `which -a`. For example, if node@20.0.0 is being used but mise specifies
 node@26.0.0, first make sure that mise has this version installed and active by running `mise ls node`.
-It should not say missing and have the correct "Requested" version:
+It should not say missing, and it should show the correct "Requested" version:
 
 ```bash
 $ mise ls node
@@ -88,27 +84,27 @@ node    24.0.0  ~/.mise/config.toml  24.0.0
 
 If `node -v` isn't showing the right version, make sure mise is activated by running `mise doctor`.
 It should not have a "problem" listed about mise not being activated. Lastly, run `which -a node`.
-If the directory listed is not a mise directory, then mise is not first in PATH. Whichever node is
-being run first needs to have its directory set before mise is. Typically this means setting PATH for
+If the first directory listed is not a mise directory, then mise is not first in PATH: the node that
+runs first has its directory earlier in PATH than mise's. Typically, the fix is to set PATH for
 mise shims at the end of bashrc/zshrc.
 
-If using `mise activate`, you have another option of enabling `MISE_ACTIVATE_AGGRESSIVE=1` which will
-have mise always prepend its tools to be first in PATH. If you're using something that also modifies
-paths dynamically like `mise activate` does, this may not work because the other tool may be modifying
+If you use `mise activate`, another option is to set `MISE_ACTIVATE_AGGRESSIVE=1`, which makes
+mise always prepend its tools so they are first in PATH. If something else also modifies
+PATH dynamically, as `mise activate` does, this may not work because the other tool may modify
 PATH after mise does.
 
 If nothing else, you can run things with [`mise x --`](/cli/exec) to ensure that the correct version is being used.
 
 ## New version of a tool is not available
 
-There are 2 places that versions are cached so a brand new release might not appear right away.
+Versions are cached in two places, so a brand new release might not appear right away.
 
-The first is that the mise CLI caches versions for. The cache can be cleared with `mise cache clear`.
+The first is the mise CLI's own version cache, which can be cleared with `mise cache clear`.
 
-The second uses the <https://mise-versions.jdx.dev> host as a centralized
-place to list all of the versions of most plugins. This is intended to speed up mise and also
-get around GitHub rate limits when querying for new versions. Check that repo for your plugin to
-see if it has an updated version. This service can be disabled by
+The second is the <https://mise-versions.jdx.dev> host, a centralized
+place that lists all versions of most tools. It speeds up mise and
+avoids GitHub rate limits when querying for new versions. Check that site for your tool to
+see if it has the updated version. This service can be disabled by
 setting `MISE_USE_VERSIONS_HOST=0`.
 
 mise also uses the versions host as a shared cache for public GitHub release metadata and
@@ -117,22 +113,22 @@ GitHub artifact attestations. This means normal installs of public `github:` and
 that do not have a token configured. If the versions host does not have the requested
 metadata yet, mise falls back to GitHub's API.
 
-mise-versions itself also struggles with rate limits but you can help it to fetch more frequently by authenticating
-with its [GitHub app](https://github.com/apps/mise-versions). It does not require any permissions since it simply
+mise-versions itself also struggles with rate limits, but you can help it fetch more frequently by authenticating
+with its [GitHub app](https://github.com/apps/mise-versions). The app requires no permissions since it only
 fetches public repository information. The more people do this, the quicker
-mise will be able to fetch new versions of tools.
+mise can fetch new versions of tools.
 
 ## Windows problems
 
 ::: warning
-Very basic support for windows is currently available, however because Windows can't support asdf
-plugins, they must use core and vfox only—which means only a handful of tools are available on
-Windows.
+Very basic Windows support is currently available. However, because Windows can't run asdf
+plugins, tools must use the core and vfox backends only—which means only a handful of tools are
+available on Windows.
 :::
 
 ### Path limits
 
-If you have many tools defined in your `mise.toml` hierarchy, then it is possible that `mise x` will produce a `Path` environment variable that is too long for certain tools to handle, most notably, `cmd.exe`. This will affect `mise` tools that invoke `cmd.exe` (like `npm install`).
+If you have many tools defined in your `mise.toml` hierarchy, `mise x` may produce a `Path` environment variable that is too long for certain tools to handle, most notably `cmd.exe`. This affects `mise` tools that invoke `cmd.exe` (like `npm install`).
 
 The limit is **8191 characters**, and `cmd.exe` does not truncate a longer `Path` — it [ignores the variable entirely](https://learn.microsoft.com/en-us/troubleshoot/windows-client/shell-experience/command-line-string-limitation). So the symptom is not that one tool goes missing: everything that was found through `Path` stops resolving at once and reports `is not recognized`. Programs in `C:\Windows\System32` keep working, because `cmd.exe` finds those without consulting `Path` — which is what makes the failure look arbitrary, and why the test below matters.
 
@@ -141,7 +137,7 @@ You have a few options:
 1. Set the `MISE_INSTALLS_DIR` environment variable to a shorter location, e.g. `C:\.mise-installs`.
 1. Use `powershell.exe` or `pwsh.exe` instead of `cmd.exe`, since they can handle a longer `Path`.
 1. Re-organise the `mise.toml` files in your monorepo, to specify only the tools they need.
-1. [Shims](/dev-tools/shims.html) keep your **shell's** `Path` from growing with your toolset — `mise activate --shims` adds one directory rather than one per tool. Be aware of what this does not cover: running a tool through a shim still builds an environment containing every active tool's directory, so a mise-managed tool that itself invokes `cmd.exe` (like `npm`) sees the same long `Path` either way. Shims also [do not support all the features](/dev-tools/shims.html#shims-vs-path) of `mise activate`.
+1. Use [shims](/dev-tools/shims.html) to keep your **shell's** `Path` from growing with your toolset — `mise activate --shims` adds one directory rather than one per tool. Be aware of what this does not cover: running a tool through a shim still builds an environment containing every active tool's directory, so a mise-managed tool that itself invokes `cmd.exe` (like `npm`) sees the same long `Path` either way. Shims also [do not support all the features](/dev-tools/shims.html#shims-vs-path) of `mise activate`.
 
 You can run the following command to test whether you have hit the `cmd.exe` `Path` limitation:
 
@@ -157,7 +153,7 @@ mise ERROR command failed: exit code 1
 mise ERROR Run with --verbose or MISE_VERBOSE=1 for more information
 ```
 
-Two things to get right about that test. Pick a program that is **not** in `C:\Windows\System32` and not in the directory you run the test from: `cmd.exe` searches the current directory before `Path`, and finds system-directory programs without consulting `Path` at all, so a probe in either place succeeds however long `Path` is. That is exactly why `where.exe` tells you nothing. Then check that your chosen program runs normally first (`git --version` in your shell), since a program you simply do not have produces the same `is not recognized` that the limit does.
+Two things to get right about that test. First, pick a program that is **not** in `C:\Windows\System32` and not in the directory you run the test from: `cmd.exe` searches the current directory before `Path`, and finds system-directory programs without consulting `Path` at all, so a probe in either place succeeds however long `Path` is. That is exactly why `where.exe` tells you nothing. Second, check that your chosen program runs normally (`git --version` in your shell), since a program you do not have produces the same `is not recognized` that the limit does.
 
 Duplicate `Path` entries are less of a factor than they used to be: on reactivation mise now drops the stale install directories it finds on the inherited `Path` before adding the current toolset's (v2026.5.18), and it collapses exact duplicates in the environments it computes (`mise x`, `mise run`, `mise env`, `mise doctor`) as of v2026.7.18. That lowers what mise contributes, but it does not raise the ceiling — enough distinct tools will still reach 8191.
 
@@ -168,8 +164,8 @@ script next to each `<tool>.cmd` shim (so Git Bash / Cygwin can resolve the
 tool). WSL's default Windows-PATH interop exposes the shims directory at
 `/mnt/c/...`, where every file is treated as executable, so running a shimmed
 tool inside WSL executes that script natively. mise guards the generated script:
-when it detects WSL it drops the shims directory from `PATH` and runs a native
-Linux tool if one is installed, otherwise it fails with a plain `<tool>: not
+when it detects WSL, it drops the shims directory from `PATH` and runs a native
+Linux tool if one is installed; otherwise it fails with a plain `<tool>: not
 found` rather than recursing endlessly or erroring with `mise: not found`.
 
 The default `exe` mode is not affected: it writes only native `<tool>.exe`
@@ -258,16 +254,16 @@ collapses to the Git Bash `/c/...` form.
 
 ## mise isn't working when calling from tmux or another shell initialization script
 
-`mise activate` will not update PATH until the shell prompt is displayed. So if you need to access a
-tool provided by mise before the prompt is displayed you can either
-[add the shims to your PATH](/dev-tools/shims.html#how-to-add-mise-shims-to-path) e.g.
+`mise activate` does not update PATH until the shell prompt is displayed. If you need a
+tool provided by mise before then, you can either
+[add the shims to your PATH](/dev-tools/shims.html#how-to-add-mise-shims-to-path), e.g.
 
 ```bash
 export PATH="$HOME/.local/share/mise/shims:$PATH"
 python --version # will work after adding shims to PATH
 ```
 
-Or you can manually call `hook-env`:
+or call `hook-env` manually:
 
 ```bash
 eval "$(mise activate bash)"
@@ -280,7 +276,7 @@ For more information, see [What does `mise activate` do?](/faq#what-does-mise-ac
 ## Is mise secure?
 
 Providing a secure supply chain is incredibly important. mise already provides a more secure
-experience when compared to asdf. Security-oriented evaluations and contributions are welcome.
+experience than asdf. Security-oriented evaluations and contributions are welcome.
 We also urge users to look after the plugins they use, and urge plugin authors to look after
 the users they serve.
 
@@ -295,8 +291,8 @@ HTTP status client error (403 Forbidden) for url
 403 API rate limit exceeded for
 ```
 
-This can happen if the tool is hosted on GitHub, and you've hit the API rate limit. This is especially
-common running mise in a CI environment like GitHub Actions.
+This can happen if the tool is hosted on GitHub and you've hit the API rate limit, which is especially
+common when running mise in a CI environment like GitHub Actions.
 
 By default, mise uses <https://mise-versions.jdx.dev> to avoid most public GitHub API calls
 for release metadata and artifact attestation checks. If you still see this error, it usually
@@ -358,8 +354,8 @@ won't produce visible output when redactions are active.
 ## `mise activate` in CI / non-interactive shells
 
 `mise activate` hooks into the shell prompt to update PATH, so historically it didn't work
-in non-interactive shells. With the addition of `chpwd` support, it does work in more
-situations now, but we still recommend these approaches for CI and scripts:
+in non-interactive shells. With `chpwd` support it now works in more
+situations, but we still recommend these approaches for CI and scripts:
 
 ```bash
 # Option 1: Use shims (recommended for CI)
@@ -380,7 +376,7 @@ See also the [CI/CD section](/tips-and-tricks.html#ci-cd) in Tips & Tricks.
 
 When you run a command that is not found, mise can install the tool that provides it (the [`not_found_auto_install`](/configuration/settings.html#not_found_auto_install) feature). It maps the command back to a tool using the `bins` metadata in mise's registry, which means a tool that is configured but has never been installed is handled too — not only a missing version of a tool you already have.
 
-If nothing happens, it is usually one of these:
+If nothing happens, the cause is usually one of these:
 
 - **The tool is configured by a raw backend spec.** `"cargo:some-crate" = "1.0.0"` or `"ubi:owner/repo" = "1.0.0"` is not a registry entry, so it carries no bin metadata and nothing connects the command you typed to it.
 - **The tool is not configured at all.** The handler only installs tools your config already asks for in the current directory; it will not pick a tool for a command you have never declared.
@@ -389,5 +385,5 @@ If nothing happens, it is usually one of these:
 **Workarounds:**
 
 - Where a registry entry exists, refer to the tool by its registry name (`ripgrep`) rather than by a raw backend spec (`ubi:BurntSushi/ripgrep`), so the handler can map the command to it.
-- Otherwise install it explicitly instead of on demand: `mise install`, or [`mise x|exec`](/cli/exec) to install and then run something in one step. Both materialise the whole configured toolset, so the backend does not matter. [`mise r|run`](/cli/run) does the same, but only as part of running a task.
+- Otherwise, install it explicitly instead of on demand: `mise install`, or [`mise x|exec`](/cli/exec) to install and then run something in one step. Both materialise the whole configured toolset, so the backend does not matter. [`mise r|run`](/cli/run) does the same, but only as part of running a task.
 - Installing once by hand is enough to make the handler work from then on: with a version present, mise can also discover the mapping from the installed executables.

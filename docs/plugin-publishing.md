@@ -1,6 +1,6 @@
 # Plugin Publishing
 
-This guide shows how to publish and distribute your plugins, whether they are backend plugins or tool plugins. Publishing makes your plugins available to other users and ensures they can be easily installed and maintained.
+This guide shows how to publish and distribute backend plugins and tool plugins. Publishing makes your plugins available to other users and keeps them easy to install and maintain.
 
 ## Publishing Checklist
 
@@ -132,7 +132,7 @@ Use semantic versioning (SemVer) for your plugin releases:
 
 ### Version Management
 
-Update version in `metadata.lua`:
+Update the version in `metadata.lua`:
 
 ```lua
 PLUGIN = {
@@ -308,7 +308,7 @@ mise plugin install my-plugin https://username:token@github.com/username/private
 
 ### 3. Archive Distribution
 
-You can also distribute as archives:
+You can also distribute plugins as archives:
 
 ```bash
 # Create release archive
@@ -342,8 +342,8 @@ git push origin v1.3.0
 
 Maintain backward compatibility when possible:
 
-- Keep existing plugin interface unchanged
-- Add new features as optional
+- Keep the existing plugin interface unchanged
+- Make new features optional
 - Deprecate old features gradually
 - Document breaking changes clearly
 
@@ -386,7 +386,7 @@ Keep users informed about updates:
 - Keep README.md concise but complete
 - Include usage examples
 - Document configuration options
-- Provide troubleshooting guide
+- Provide a troubleshooting guide
 
 ### 2. Testing
 

@@ -1,10 +1,10 @@
 # Forgejo Backend
 
-You may install Codeberg and other Forgejo compatible release assets directly using the `forgejo` backend. This backend downloads release assets from Forgejo repositories and is ideal for tools that distribute pre-built binaries through Forgejo releases.
+You can install release assets from Codeberg and other Forgejo-compatible instances directly using the `forgejo` backend. It downloads release assets from Forgejo repositories and is ideal for tools that distribute pre-built binaries through Forgejo releases.
 
-By default, the Forgejo backend uses the public Codeberg instance at [https://codeberg.org](https://codeberg.org). For other or self-hosted Forgejo instances, you can specify a custom API URL using the `api_url` tool option.
+By default, the Forgejo backend uses the public Codeberg instance at [https://codeberg.org](https://codeberg.org). For other Forgejo instances, including self-hosted ones, specify a custom API URL with the `api_url` tool option.
 
-The code for this is inside of the mise repository at [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
+The code for this is inside the mise repository at [`src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
 
 ## Usage
 
@@ -125,7 +125,7 @@ go in `[tools]` in `mise.toml`.
 
 ### Asset Autodetection
 
-When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. The system scores assets based on:
+When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. It scores assets on:
 
 - **OS compatibility** (linux, macos, windows)
 - **Architecture compatibility** (x64, arm64, x86, arm)
@@ -133,7 +133,7 @@ When no `asset_pattern` is specified, mise automatically selects the best asset 
 - **Archive format preference** (tar.gz, zip, etc.)
 - **Build type** (avoids debug/test builds)
 
-For most tools, you can simply install without specifying patterns:
+For most tools, you can install without specifying a pattern:
 
 ```sh
 mise install forgejo:user/repo
@@ -215,10 +215,10 @@ When `version_prefix` is configured, mise will:
 **Examples:**
 
 - With `version_prefix = "release-"`:
-  - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
+  - User specifies `1.0.0` → mise searches for the `release-1.0.0` tag
   - Available versions show as `1.0.0` (prefix stripped)
 - With `version_prefix = ""` (empty string):
-  - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
+  - User specifies `1.0.0` → mise searches for the `1.0.0` tag (no prefix)
   - Useful for repositories that don't use any prefix
 
 ### `prerelease`
@@ -300,7 +300,7 @@ Number of directory components to strip when extracting archives:
 ```
 
 ::: info
-If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `mytool-14.1.0-x86_64-unknown-linux-musl/mytool`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+If `strip_components` is not set, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `mytool-14.1.0-x86_64-unknown-linux-musl/mytool`). The autodetection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -319,7 +319,7 @@ When downloading single binaries (not archives), mise automatically removes OS/a
 
 ### `rename_exe`
 
-Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name that you want to rename:
+Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name:
 
 ```toml
 [tools."forgejo:user/repo"]
@@ -329,12 +329,12 @@ rename_exe = "tool"  # Rename the extracted binary to tool
 ```
 
 ::: tip
-Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
+Use `rename_exe` for archives whose binary has a different name than you want. Use `bin` for single-binary downloads (non-archives).
 :::
 
 ### `no_app`
 
-Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
 
 ```toml
 [tools."forgejo:user/repo"]
@@ -346,8 +346,8 @@ When `no_app = true`:
 
 - Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
 - Standalone archives are preferred
-- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
-- Only affects autodetection; explicit `asset_pattern` values are used as-is
+- The option is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- Only autodetection is affected; explicit `asset_pattern` values are used as-is
 
 ### `bin_path`
 
@@ -361,8 +361,8 @@ version = "latest"
 bin_path = "tool-{{ version }}/bin" # expands to tool-1.0.0/bin
 ```
 
-Both take keyword arguments that remap the value mise would emit (`linux`, `macos`,
-`windows` for `os()`; `x64`, `arm64` for `arch()`), for when upstream names the directory
+Both functions take keyword arguments that remap the value mise would emit (`linux`, `macos`,
+`windows` for `os()`; `x64`, `arm64` for `arch()`), for cases where upstream names the directory
 differently:
 
 ```toml
@@ -387,7 +387,7 @@ aliases — `{{ arch(x64="x86_64", arm64="aarch64") }}` is how you get those nam
 2. If `bin_path` is not set, look for a `bin/` directory in the install path
 3. If the install path root contains an executable file, use the install path root
 4. If no `bin/` directory exists, search subdirectories for `bin/` directories
-5. If no `bin/` directories are found, searches immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that entire subdirectory is considered a binary path.
+5. If no `bin/` directories are found, search immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that subdirectory is treated as a binary path.
 6. If no executables are found, use the root of the extracted directory
 
 ### `filter_bins`
@@ -407,7 +407,7 @@ When enabled:
 
 ### `api_url`
 
-For other Forgejo compatible or self-hosted instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
+For other Forgejo-compatible or self-hosted instances, specify the API URL. mise uses it to list releases and look up release assets, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
 
 ```toml
 [tools]

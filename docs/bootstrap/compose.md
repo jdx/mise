@@ -41,7 +41,7 @@ depends_on = ["package:apt:docker.io", "service:docker"]
 
 `project_dir` is required and must be absolute. Relative entries in `files`
 and `env_files` resolve from it. With no `files`, Compose performs its normal
-project-directory discovery. Mise passes multiple files and environment files
+project-directory discovery. mise passes multiple files and environment files
 in declaration order, so later entries retain Compose's override semantics.
 
 ## Lifecycle and convergence
@@ -105,7 +105,7 @@ exists, healthy.
 
 ## Engines and privileges
 
-Mise uses `docker compose` when available and falls back to a standalone Docker
+mise uses `docker compose` when available and falls back to a standalone Docker
 Compose v2 `docker-compose` command. Legacy Compose v1 is not supported because
 it lacks the structured inspection and lifecycle flags required for safe
 convergence. `command` and `engine_command` accept argv arrays for Podman,
@@ -120,7 +120,7 @@ engine_command = ["podman"]
 
 The engine command is used only to inspect container config-hash labels. Set
 `sudo = true` when the project belongs to the system Docker daemon and the
-bootstrap user does not have socket access. Mise authenticates before capturing
+bootstrap user does not have socket access. mise authenticates before capturing
 status output, never hides an interactive sudo prompt, and honors the existing
 `system_packages.sudo` policy.
 

@@ -19,7 +19,7 @@ mise reads encrypted secret files and makes values available as environment vari
 _.file = ".env.json"
 ```
 
-mise will automatically decrypt the file if it is sops-encrypted.
+mise automatically decrypts the file if it is sops-encrypted.
 
 ## Encrypt with sops
 
@@ -50,7 +50,7 @@ sops encrypt -i --age "<public key>" .env.json
 ```
 
 :::: tip
-The `-i` overwrites the file. The encrypted file is safe to commit. Set `SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` or `MISE_SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` to decrypt/edit with sops.
+The `-i` flag overwrites the file. The encrypted file is safe to commit. Set `SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` or `MISE_SOPS_AGE_KEY_FILE=~/.config/mise/age.txt` to decrypt/edit with sops.
 ::::
 
 Age key files use the standard SOPS/age format: put one identity on each line.
@@ -70,7 +70,7 @@ Now `mise env` exposes the values.
 
 mise supports both mise-specific environment variables and standard SOPS ones:
 
-**Mise-specific variables (highest priority):**
+**mise-specific variables (highest priority):**
 
 - `MISE_SOPS_AGE_KEY` - Age private key content directly
 - `MISE_SOPS_AGE_KEY_FILE` - Path to age private key file

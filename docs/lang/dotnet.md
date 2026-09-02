@@ -2,7 +2,7 @@
 
 The core .NET plugin installs .NET SDKs using Microsoft's official install script. All SDK versions are
 installed side-by-side under a shared `DOTNET_ROOT` directory, matching .NET's native multi-version model.
-This means `dotnet --list-sdks` will see every version you've installed through mise.
+This means `dotnet --list-sdks` shows every version you've installed through mise.
 
 Unlike most tools, the SDKs don't live inside `~/.local/share/mise/installs` because they share a
 common root. mise symlinks the install path to `DOTNET_ROOT` and sets environment variables so the
@@ -80,7 +80,7 @@ version.
 
 ## Runtime-only Installs
 
-By default, mise installs the full .NET SDK. If you only need to _run_ .NET applications without building them and without the added overhead of the SDK, you can install just the runtime using the `runtime` inline option:
+By default, mise installs the full .NET SDK. If you only need to _run_ .NET applications, without building them or the overhead of the SDK, install just the runtime with the `runtime` inline option:
 
 ```sh
 mise use dotnet[runtime=dotnet]@8.0.14

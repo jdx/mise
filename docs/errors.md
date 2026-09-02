@@ -61,7 +61,7 @@ with stdin/stdout connected to your terminal.
 
 The requested version is known to mise but not installed on disk. Run
 `mise install` (or `mise install <tool>@<version>`) to install it. `mise ls <tool>`
-shows which versions are installed vs. merely requested by config files.
+shows which versions are installed and which are merely requested by config files.
 
 ## `[<config file>] <tool>@<version>: <error>` (failed to resolve version)
 
@@ -129,7 +129,7 @@ standalone installer) or through the package manager you installed it with.
 ## `no tasks <name> found`
 
 No [task](/tasks/) with that name is defined in the current config hierarchy. Run
-`mise tasks ls` to see available tasks — note that tasks are loaded from config files in
+`mise tasks ls` to see available tasks. Tasks are loaded from config files in
 the current directory and its parents, so a task defined in another project directory
 won't be visible.
 

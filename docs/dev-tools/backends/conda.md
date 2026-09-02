@@ -7,7 +7,7 @@ This backend fetches pre-built packages from the anaconda.org API and extracts t
 making it a lightweight way to install conda packages as standalone CLI tools.
 
 Commands from the selected package run inside that package's isolated conda prefix. mise sets
-`CONDA_PREFIX`, adds the prefix's executable directories for the command process, and applies
+`CONDA_PREFIX`, makes the prefix's executable directories available to the command process, and applies
 `etc/conda/activate.d` scripts before starting it. This lets a command use its packaged runtime
 dependencies without adding dependency commands to your interactive shell's `PATH`.
 
@@ -69,7 +69,7 @@ The conda backend automatically selects the appropriate package for your platfor
 | macOS ARM64 | osx-arm64     |
 | Windows x64 | win-64        |
 
-If a platform-specific package is not available, the backend will fall back to `noarch` packages.
+If a platform-specific package is not available, the backend falls back to `noarch` packages.
 
 ## Settings
 

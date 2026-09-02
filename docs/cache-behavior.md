@@ -1,11 +1,11 @@
 # Cache Behavior
 
-mise makes use of caching in many places in order to be efficient. The details about how long to keep
-cache for should eventually all be configurable. There may be gaps in the current behavior where
-things are hardcoded, but I'm happy to add more settings to cover whatever config is needed.
+mise uses caching in many places to be efficient. How long each cache is kept should eventually
+be fully configurable. There may be gaps in the current behavior where things are hardcoded, but
+I'm happy to add more settings to cover whatever config is needed.
 
-Below I explain the behavior it uses around caching. If you're seeing behavior where things don't appear
-to be updating, this is a good place to start.
+Below I explain mise's caching behavior. If things don't appear to be updating, this is a good place
+to start.
 
 ## Tool Cache
 
@@ -14,17 +14,17 @@ the list of versions available for that tool (`mise ls-remote <TOOL>`), the idio
 the list of aliases, the bin directories within each tool installation, and the result of
 running `exec-env` after the tool was installed.
 
-Remote versions are updated daily by default. The file is zlib messagepack, if you want to view it you can
-run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)).
+Remote versions are updated daily by default. The file is zlib-compressed MessagePack; to view it,
+run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)):
 
 ```sh
 cat ~/$MISE_CACHE_DIR/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
-Note that the caching of `exec-env` may be problematic if the script isn't simply exporting
-static values. The vast majority of `exec-env` scripts only export static values.
+Caching `exec-env` may be problematic if the script does more than export static values, but
+the vast majority of `exec-env` scripts only export static values.
 
-Caching `exec-env` massively improved the performance of mise since it requires calling bash
+Caching `exec-env` massively improved mise's performance, since running it requires calling bash
 every time mise is initialized.
 
 ## Environment Caching
@@ -62,5 +62,5 @@ _.source = { path = "dynamic.sh", cacheable = false }
 
 ## Cache auto-pruning
 
-mise will automatically delete old files in its cache directory (configured with [`cache_prune_age`](https://mise.jdx.dev/configuration/settings.html#cache_prune_age)). Much of
-the contents are also ignored by mise if they are >24 hours old or a few days. For this reason, it's likely wasteful to store this directory in CI jobs.
+mise automatically deletes old files in its cache directory (configured with [`cache_prune_age`](https://mise.jdx.dev/configuration/settings.html#cache_prune_age)). mise also
+ignores much of the contents once they are more than 24 hours (or, for some entries, a few days) old. For this reason, storing this directory in CI jobs is likely wasteful.

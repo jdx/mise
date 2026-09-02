@@ -2,7 +2,7 @@
 
 You may install tools directly from HTTP URLs using the `http` backend. This backend downloads files from any HTTP/HTTPS URL and is ideal for tools that distribute pre-built binaries or archives through direct download links.
 
-The code for this is inside of the mise repository at [`./src/backend/http.rs`](https://github.com/jdx/mise/blob/main/src/backend/http.rs).
+The code for this is inside the mise repository at [`./src/backend/http.rs`](https://github.com/jdx/mise/blob/main/src/backend/http.rs).
 
 ## Usage
 
@@ -89,8 +89,8 @@ You can use either `macos` or `darwin`, and `x64` or `amd64` for platform keys. 
 
 OS/architecture values use mise's conventions: `linux`, `macos`, `windows` for operating systems and `x64`, `arm64` for architectures. For platform-specific URLs, use the appropriate platform key (e.g., `macos-x64`, `linux-arm64`) and specify the full URL for each platform.
 
-If you mess up and use something like `darwin-aarch64` mise will try to figure out what
-you meant and do the right thing anyhow.
+If you slip and use something like `darwin-aarch64`, mise will try to figure out what
+you meant and do the right thing anyway.
 :::
 
 ### `checksum`
@@ -134,8 +134,8 @@ resolves checksums for every target platform — including platforms other than
 the one you are running on — **without downloading the artifacts**. This lets a
 single machine produce a complete, cross-platform lockfile.
 
-`checksum_url` is a template (supports <code v-pre>{{ version }}</code>, <code v-pre>{{ os() }}</code>, <code v-pre>{{ arch() }}</code>
-and is platform-specific via `platforms.<key>.checksum_url`). It may point at any
+`checksum_url` is a template (it supports <code v-pre>{{ version }}</code>, <code v-pre>{{ os() }}</code>, and <code v-pre>{{ arch() }}</code>,
+and can be set per platform via `platforms.<key>.checksum_url`). It may point at any
 of:
 
 - an **individual checksum file** (e.g. `<artifact>.sha256`), which may contain
@@ -239,7 +239,7 @@ strip_components = 1
 ```
 
 ::: info
-If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+If `strip_components` is not set, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -254,7 +254,7 @@ bin = "docker-compose"  # Rename from docker-compose-linux-x86_64 to docker-comp
 ```
 
 ::: info
-When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
+When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose`. Use the `bin` option only when you need a specific custom name.
 :::
 
 ### `rename_exe`
@@ -268,7 +268,7 @@ url = "https://nexus.tremolo.io/repository/openunison-cli/openunison-cli-v{{vers
 rename_exe = "kubectl-openunison-cli"  # Rename extracted binary for kubectl plugin
 ```
 
-This works by searching for the first executable in the extracted directory (or `bin_path` if specified) and renaming it to the specified name.
+mise searches for the first executable in the extracted directory (or in `bin_path` if specified) and renames it to the given name.
 
 To rename **multiple** binaries from one archive, use the table form — each key is a source name (an exact file name or a glob) and each value is the new name:
 
@@ -323,7 +323,7 @@ windows-x64 = {
 
 ### `version_list_url`
 
-Fetch available versions from a remote URL. This enables `mise ls-remote` to list available versions for HTTP-based tools:
+Fetch available versions from a remote URL. This lets `mise ls-remote` list versions for HTTP-based tools:
 
 ```toml
 [tools."http:my-tool"]
@@ -332,7 +332,7 @@ url = "https://example.com/releases/my-tool-v{{version}}.tar.gz"
 version_list_url = "https://example.com/releases/versions.txt"
 ```
 
-The version list URL can return data in multiple formats:
+The version list URL can return data in any of these formats:
 
 - **Plain text**: A single version number (e.g., `2.0.53`)
 - **Line-separated**: One version per line
@@ -414,11 +414,11 @@ version_json_path = ".releases[].info.version"
 version_json_path = ".releases[?channel=stable].version"
 ```
 
-The filter syntax `[?field=value]` allows filtering JSON arrays before extraction. This is useful for APIs that return multiple release channels (stable, beta, dev) and you only want specific ones.
+The filter syntax `[?field=value]` filters JSON arrays before extraction. This is useful for APIs that return multiple release channels (stable, beta, dev) when you only want one of them.
 
 ### `version_expr`
 
-Extract versions using an [expr-lang](https://expr-lang.org/) expression. This provides the most flexibility for complex version extraction logic:
+Extract versions using an [expr-lang](https://expr-lang.org/) expression. This is the most flexible option for complex version extraction:
 
 ```toml
 [tools."http:my-tool"]
@@ -493,7 +493,7 @@ bin_path = "my-tool-{{version}}/bin" # expands to my-tool-1.0.0/bin
 
 ## Caching Behavior
 
-The HTTP backend implements an intelligent caching system to optimize disk usage and installation speed:
+The HTTP backend caches downloads to save disk space and speed up installation:
 
 ### Cache Location
 
@@ -511,7 +511,7 @@ is self-contained and does not link to the installing user's home directory.
 
 ### Cache Key Generation
 
-Cache keys are generated based on the file content to ensure identical downloads are shared across tools:
+Cache keys are derived from the file content so that identical downloads are shared across tools:
 
 1. **Blake3 hash of file content**: When no checksum is provided, mise calculates a Blake3 hash of the downloaded file
 2. **Extraction options**: `strip_components` is included in the cache key since it affects the extracted structure

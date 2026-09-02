@@ -1,6 +1,6 @@
 # Cookbook
 
-Here we are sharing a few mise setups that other people have found useful.
+Here are a few mise setups that other people have found useful.
 
 - [C++](cpp.md)
 - [Docker](docker.md)
@@ -14,4 +14,4 @@ Finally, here is how to create [presets](presets.md) and some [shell tricks](she
 
 ## Contributing
 
-If you would like to share your setup, please share it in this [cookbook thread](https://github.com/jdx/mise/discussions/3645).
+If you would like to share your setup, post it in this [cookbook thread](https://github.com/jdx/mise/discussions/3645).

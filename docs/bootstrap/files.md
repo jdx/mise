@@ -41,7 +41,7 @@ by default. A template can consume a declared
 included in plans, dry-run descriptions, status output, or privileged helper
 output.
 
-Mise compares content, type, mode, owner, and group before applying changes.
+mise compares content, type, mode, owner, and group before applying changes.
 Writes use a temporary file in the target directory followed by an atomic
 rename. Changes are attempted as the current user first. If the filesystem
 rejects an operation with a permission error, mise retries that operation and

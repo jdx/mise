@@ -37,14 +37,14 @@ docker run -it --rm debian-mise
 
 For toolbox containers or bastion hosts where tools should be pre-installed for all users,
 use `mise install --system` to install tools into `/usr/local/share/mise/installs`.
-Each user's mise will automatically find these system-level tools without any configuration.
+Each user's mise finds these system-level tools automatically without any configuration.
 
 `--system` shares the install location between users; it does not put binaries on `PATH`
 for use without mise. If you want tools other users can run with no mise involved, see
 [How do I install tools other users can run without mise?](/faq.html#how-do-i-install-tools-other-users-can-run-without-mise)
 
-The following example also shows installing using `extrepo` on Debian/Ubuntu image.
-With this approach you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
+The following example also shows installing mise with `extrepo` on a Debian/Ubuntu image.
+With this approach, you cannot specify `MISE_VERSION` or `MISE_INSTALL_PATH`.
 
 ```Dockerfile [Dockerfile]
 # syntax=docker/dockerfile:1
@@ -102,7 +102,7 @@ take priority over system versions.
 
 In minimal Docker images (scratch, busybox, distroless) where no dynamic linker
 files exist, mise may not detect whether the system uses musl or glibc. Set `libc`
-or `MISE_LIBC` to force the detection:
+or `MISE_LIBC` to override the detection:
 
 ```Dockerfile
 ENV MISE_LIBC=musl
@@ -110,13 +110,13 @@ RUN mise install
 ```
 
 Valid values are `musl`, `glibc`, and `gnu` (case-insensitive, with `gnu` treated
-as glibc). Invalid values are silently ignored and mise falls back to runtime
+as glibc). Invalid values are silently ignored, and mise falls back to runtime
 detection. When the mise binary is compiled for musl (the default for Linux
-releases), it will also fall back to musl automatically when no linker is detected.
+releases), it also falls back to musl automatically when no linker is detected.
 
 ## Task to run mise in a Docker container
 
-This can be useful if you need to reproduce an issue you're having with mise in a clean environment.
+This is useful for reproducing a mise issue in a clean environment.
 
 ```toml [mise.toml]
 [tasks.docker]

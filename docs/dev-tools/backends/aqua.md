@@ -1,13 +1,13 @@
 # Aqua Backend
 
-[Aqua](https://aquaproj.github.io/) tools may be used natively in mise. aqua is the ideal backend
-to use for new tools since they don't require plugins, they work on windows, they offer security
-features in addition to checksums. aqua installs also show more progress bars, which is nice.
+[Aqua](https://aquaproj.github.io/) tools can be used natively in mise. aqua is the ideal backend
+for new tools: it does not require plugins, it works on Windows, and it offers security features
+beyond checksums. aqua installs also show more progress bars, which is nice.
 
-You do not need to separately install aqua. The aqua CLI is not used in mise at all. What is used is
-the [aqua registry](https://github.com/aquaproj/aqua-registry) that gets compiled into the mise binary on release.
-Here's an example package entry: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/pkgs/hashicorp/terraform/registry.yaml).
-mise has a reimplementation of aqua that knows how to work with these files to install tools.
+You do not need to install aqua separately. mise does not use the aqua CLI at all; it uses the
+[aqua registry](https://github.com/aquaproj/aqua-registry), which is compiled into the mise binary on release.
+Here is an example package entry: [`aqua:hashicorp/terraform`](https://github.com/aquaproj/aqua-registry/blob/main/pkgs/hashicorp/terraform/registry.yaml).
+mise has its own reimplementation of aqua that reads these files to install tools.
 
 By default, the bundled snapshot is used. The opt-in
 [`registry_floating`](/configuration/settings.html#registry_floating) setting checks the current
@@ -15,18 +15,18 @@ official aqua registry first while retaining the bundled snapshot as a fallback.
 mise's shorthand registry; see [Floating registries](/registry.html#floating-registries) for the
 tradeoffs and cache behavior.
 
-As of this writing, aqua is relatively new to mise and because a lot of tools are being converted from
-asdf to aqua, there may be some configuration in aqua tools that need to be tightened up. I put some
-common issues below and would strongly recommend contributing changes back to the aqua registry if you
-notice problems. The maintainer is super responsive and great to work with.
+As of this writing, aqua is relatively new to mise, and because many tools are being converted from
+asdf to aqua, some aqua tool configurations may need tightening up. Common issues are listed below;
+if you notice problems, I strongly recommend contributing fixes back to the aqua registry. The
+maintainer is very responsive and great to work with.
 
 If all else fails, you can disable aqua entirely with [`MISE_DISABLE_BACKENDS=aqua`](/configuration/settings.html#disable_backends).
 
-Currently aqua tools don't support setting environment variables or doing more than simply downloading
-binaries though (and I'm not sure this functionality would ever get added), so some tools will likely
-always require plugins like asdf/vfox.
+Currently, aqua tools cannot set environment variables or do more than download binaries (and I'm
+not sure this functionality will ever be added), so some tools will likely always require asdf or
+vfox plugins.
 
-The code for this is inside the mise repository at [`./src/backend/aqua.rs`](https://github.com/jdx/mise/blob/main/src/backend/aqua.rs).
+The code for this backend is in the mise repository at [`./src/backend/aqua.rs`](https://github.com/jdx/mise/blob/main/src/backend/aqua.rs).
 
 ## Custom Registry
 
@@ -90,14 +90,14 @@ $ rg --version
 ripgrep 14.1.1
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+The version is set in `~/.config/mise/config.toml` with the following format:
 
 ```toml
 [tools]
 "aqua:BurntSushi/ripgrep" = "latest"
 ```
 
-Some tools will default to use aqua if they're specified in [registry/](https://github.com/jdx/mise/blob/main/registry/)
+Some tools default to aqua because they are configured in [registry/](https://github.com/jdx/mise/blob/main/registry/)
 to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 
 ## Tool Options
@@ -107,8 +107,8 @@ to use the aqua backend. To see these tools, run `mise registry | grep aqua:`.
 Some tools bundle extra executables that you may not want exposed on PATH. For example, `aws-cli` bundles
 Python, which can conflict with your intended Python version.
 
-Setting `symlink_bins = true` creates a filtered `.mise-bins` directory and exposes only the binaries mise
-intends to expose for that Aqua package, instead of every discovered executable from the install.
+Setting `symlink_bins = true` creates a filtered `.mise-bins` directory and exposes only the binaries
+intended for that aqua package, instead of every executable discovered in the install.
 
 ```toml
 [tools]
@@ -145,7 +145,7 @@ By default, releases flagged `prerelease: true` on GitHub are excluded from `mis
 "aqua:owner/tool" = { version = "latest", prerelease = true }
 ```
 
-When set, pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`, `latest` resolves against the full list including pre-releases, and fuzzy version queries match pre-release tags. Has no effect when a package uses the `github_tag` version source (git tags don't carry a prerelease flag). Draft releases are always excluded. See the [github backend docs](/dev-tools/backends/github.html#prerelease) for more detail.
+When set, pre-release tags (e.g. `v1.0.0-rc1`, `v0.1.2-dev.86`) appear in `mise ls-remote`, `latest` resolves against the full list including pre-releases, and fuzzy version queries match pre-release tags. The option has no effect when a package uses the `github_tag` version source (git tags don't carry a prerelease flag). Draft releases are always excluded. See the [github backend docs](/dev-tools/backends/github.html#prerelease) for more detail.
 
 ## Settings
 
@@ -156,7 +156,7 @@ import Settings from '/components/settings.vue';
 
 ## Security Verification
 
-Aqua backend supports multiple security verification methods to ensure the integrity and authenticity of downloaded tools. mise provides **native Rust implementation** for all verification methods, eliminating the need for external CLI tools like `cosign`, `slsa-verifier`, or `gh`.
+The aqua backend supports multiple verification methods to ensure the integrity and authenticity of downloaded tools. mise provides a **native Rust implementation** of every method, so no external CLI tools such as `cosign`, `slsa-verifier`, or `gh` are needed.
 
 ### GitHub Artifact Attestations
 
@@ -164,8 +164,8 @@ GitHub Artifact Attestations provide cryptographic proof that artifacts were bui
 
 **Requirements:**
 
-- The tool must have `github_artifact_attestations` configuration in the aqua registry for attestations to be verified
-- No external tools required - verification is handled natively by mise
+- The tool must have a `github_artifact_attestations` entry in the aqua registry for attestations to be verified
+- No external tools are required - verification is handled natively by mise
 
 **Configuration:**
 
@@ -209,7 +209,7 @@ export MISE_AQUA_SLSA=true
 
 ### Other Security Methods
 
-Aqua also supports:
+aqua also supports:
 
 - **Minisign verification**: Uses minisign for signature verification
 - **Checksum verification**: Verifies SHA256/SHA512/SHA1/MD5 checksums (always enabled)
@@ -257,28 +257,28 @@ export MISE_AQUA_MINISIGN=false
 
 ## Common aqua issues
 
-Here's some common issues I've seen when working with aqua tools.
+Here are some common issues I've seen when working with aqua tools.
 
 ### Supported env missing
 
-The aqua registry defines supported envs for each tool of the os/arch. I've noticed some of these
-are simply missing os/arch combos that are in fact supported—possibly because it was added after
-the registry was created for that tool.
+The aqua registry defines the supported os/arch envs for each tool. I've noticed that some of these
+are missing os/arch combos that are in fact supported—possibly because support was added after
+the tool's registry entry was created.
 
-The fix is simple, just edit the `supported_envs` section of `registry.yaml` for the tool in question.
+The fix is simple: edit the `supported_envs` section of `registry.yaml` for the tool in question.
 
 ### Using `version_filter` instead of `version_prefix`
 
-This is a weird one that causes weird issues in mise. In general in mise we like versions like
-`1.2.3` with no decoration like `v1.2.3` or `cli-v1.2.3`. This consistency not only makes `mise.toml`
-cleaner but, it also helps make things like `mise up` function right because it's able to parse it as
-semver without dealing with a bunch of edge-cases.
+This is a weird one that causes odd issues in mise. In general, mise prefers versions like `1.2.3`
+without decoration such as `v1.2.3` or `cli-v1.2.3`. This consistency not only keeps `mise.toml`
+cleaner, it also helps commands like `mise up` work correctly, because the version can be parsed as
+semver without a bunch of edge cases.
 
-Really if you notice aqua tools are giving you versions that aren't simple triplets, it's worth fixing.
+If you notice aqua tools giving you versions that aren't simple triplets, it's worth fixing.
 
-One common thing I've seen is registries using a `version_filter` expression like `Version startsWith "Version startsWith "atlascli/""`.
+One common issue I've seen is registries using a `version_filter` expression like `Version startsWith "atlascli/"`.
 
-This ultimately causes the version to be `atlascli/1.2.3` which is not what we want. The fix is to use
-`version_prefix` instead of `version_filter` and just put the prefix in the `version_prefix` field.
-In this example, it would be `atlascli/`. mise will automatically strip this out and add it back in,
-which it can't do with `version_filter`.
+This causes the version to be `atlascli/1.2.3`, which is not what we want. The fix is to use
+`version_prefix` instead of `version_filter` and put the prefix (`atlascli/` in this example) in the
+`version_prefix` field. mise automatically strips the prefix and adds it back when needed, which it
+can't do with `version_filter`.

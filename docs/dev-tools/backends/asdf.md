@@ -8,16 +8,16 @@ If you are writing a private/custom plugin (not for registry submission), prefer
 
 `asdf` is the original backend for mise.
 
-It relies on asdf plugins for each tool. asdf plugins are more risky to use because they're typically written by a single developer unrelated to the tool vendor. They also generally do not function on Windows because they're written
-in bash which is often not available on Windows and the scripts generally are not written to be cross-platform.
+It relies on asdf plugins for each tool. asdf plugins are riskier to use because they're typically written by a single developer unrelated to the tool vendor. They also generally do not work on Windows because they're written
+in bash, which is often not available on Windows, and the scripts are generally not written to be cross-platform.
 
-asdf plugins are not used for tools inside the [registry](https://github.com/jdx/mise/blob/main/registry/) whenever possible. Sometimes it is not possible to use more secure backends like aqua/github because tools have complex install setups or need to export env vars.
+Tools in the [registry](https://github.com/jdx/mise/blob/main/registry/) avoid asdf plugins whenever possible. Sometimes more secure backends like aqua/github cannot be used because a tool has a complex install setup or needs to export env vars.
 
-All of these are hosted in the mise-plugins org to secure the supply chain so you do not need to rely on plugins maintained by anyone except me.
+All asdf plugins in the registry are hosted in the mise-plugins org to secure the supply chain, so you do not need to rely on plugins maintained by anyone except me.
 
-Because of the extra complexity of asdf tools and security concerns we are actively moving tools in
-the registry away from asdf where possible to backends like aqua and github which don't require plugins.
-That said, not all tools can function with github/aqua if they have a unique installation process or
+Because of the extra complexity of asdf tools and the security concerns, we are actively moving tools in
+the registry away from asdf where possible to backends like aqua and github, which don't require plugins.
+That said, not all tools can work with github/aqua: some have a unique installation process or
 need to set env vars other than `PATH`.
 
 ## Feature Comparison: asdf vs vfox

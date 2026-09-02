@@ -1,19 +1,19 @@
 # Ubi Backend <Badge type="danger" text="deprecated" />
 
 ::: warning
-The ubi backend is **deprecated**. Please use the [GitHub backend](/dev-tools/backends/github) instead.
+The ubi backend is **deprecated**. Use the [GitHub backend](/dev-tools/backends/github) instead.
 
-The GitHub backend offers several advantages over ubi including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files. The [`matching`](/dev-tools/backends/github.html#matching) and [`matching_regex`](/dev-tools/backends/github.html#matching_regex) options carry over. One behavioral difference is worth noting: ubi applies the substring `matching` only as a tiebreaker among assets that already match your OS/arch, and skips it when a single asset matches the platform. The GitHub backend applies `matching` as a pre-filter before autodetection, so for multi-binary releases you get the binary your filter names, or a clear error naming the filter if it isn't published for your platform.
+The GitHub backend offers several advantages over ubi, including provenance verification, download progress reports, and fewer dependencies. To migrate, replace `ubi:owner/repo` with `github:owner/repo` in your configuration files. The [`matching`](/dev-tools/backends/github.html#matching) and [`matching_regex`](/dev-tools/backends/github.html#matching_regex) options carry over. One behavioral difference is worth noting: ubi applies the substring `matching` only as a tiebreaker among assets that already match your OS/arch, and skips it when a single asset matches the platform. The GitHub backend applies `matching` as a pre-filter before autodetection, so for multi-binary releases you get the binary your filter names, or a clear error naming the filter if it isn't published for your platform.
 
 One migration gotcha: ubi folds `matching` into the install path, so you can install several binaries from one repo via separate `matching` values on the same `ubi:owner/repo` string. The GitHub backend keeps the install path keyed by tool name + version only, so two `github:owner/repo` entries with different `matching` values resolve to the **same** directory and the second overwrites the first. If you rely on that ubi pattern, give each binary its own [`tool_alias`](/dev-tools/backends/github.html#multiple-assets-from-the-same-release) on GitHub so each gets its own install directory.
 :::
 
-You may install GitHub Releases and URL packages directly using [ubi](https://github.com/houseabsolute/ubi) backend. ubi is directly compiled into
-the mise codebase so it does not need to be installed separately to be used.
+You may install GitHub releases and URL packages directly using the [ubi](https://github.com/houseabsolute/ubi) backend. ubi is compiled into
+mise, so it does not need to be installed separately.
 
-ubi doesn't require plugins or even any configuration for each tool. What it does is try to deduce what
-the proper binary/tarball is from GitHub releases and downloads the right one. As long as the vendor
-uses a somewhat standard labeling scheme for their releases, ubi should be able to figure it out.
+ubi doesn't require plugins or any per-tool configuration. It deduces the proper binary or tarball
+from the GitHub release assets and downloads the right one. As long as the vendor uses a reasonably
+standard naming scheme for their releases, ubi should be able to figure it out.
 
 The code for this is inside of the mise repository at [`./src/backend/ubi.rs`](https://github.com/jdx/mise/blob/main/src/backend/ubi.rs).
 
@@ -57,7 +57,7 @@ use the `exe` option to specify the executable name:
 
 The `rename_exe` option allows you to specify the name of the executable once it has been extracted.
 
-use the `rename_exe` option to specify the target executable name:
+Use the `rename_exe` option to specify the target executable name:
 
 ```toml
 [tools]
@@ -67,9 +67,8 @@ use the `rename_exe` option to specify the target executable name:
 ### `matching`
 
 Set a string to match against the release filename when there are multiple files for your
-OS/arch, i.e. "gnu", "musl", or "msvc". Note that this is only used when there is more than one
-matching release filename for your OS/arch. If only one release asset matches your OS/arch,
-then this will be ignored.
+OS/arch, e.g. "gnu", "musl", or "msvc". This is only used when more than one release filename
+matches your OS/arch; if only one release asset matches, the option is ignored.
 
 ```toml
 [tools]
@@ -78,9 +77,8 @@ then this will be ignored.
 
 ### `matching_regex`
 
-Set a regular expression string that will be matched against release filenames before matching
-against OS/arch. If the pattern yields a single match, that release will be selected. If no matches
-are found, this will result in an error.
+Set a regular expression to match against release filenames before matching against OS/arch. If
+the pattern yields a single match, that file is selected. If nothing matches, ubi reports an error.
 
 ```toml
 [tools]
@@ -89,8 +87,8 @@ are found, this will result in an error.
 
 ### `provider`
 
-Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
-Ensure the `provider` is set to the correct type if you use `api_url` as the type probably cannot be derived correctly
+Set the provider used to fetch assets and release information: either `github` or `gitlab` (default `github`).
+Set `provider` explicitly when you use `api_url`, since the type probably cannot be derived correctly
 from the URL.
 
 ```toml
@@ -113,7 +111,7 @@ Set the URL for the provider's API. This is useful when using a self-hosted inst
 
 ### `extract_all`
 
-Set to `true` to extract all files in the tarball instead of just the "bin". Not compatible with `exe` nor `rename_exe`.
+Set to `true` to extract all files in the tarball instead of only the binary. Not compatible with `exe` or `rename_exe`.
 
 ```toml
 [tools]
@@ -122,8 +120,8 @@ Set to `true` to extract all files in the tarball instead of just the "bin". Not
 
 ### `bin_path`
 
-The directory in the tarball where the binary(s) are located. This is useful when the binary is not in the root of the tarball.
-This only makes sense when `extract_all` is set to `true`.
+The directory in the tarball containing the binaries. This is useful when the binary is not at the root of the tarball,
+and it only makes sense when `extract_all` is set to `true`.
 
 ```toml
 [tools]
@@ -143,10 +141,9 @@ This only makes sense when `extract_all` is set to `true`.
 
 ### `tag_regex`
 
-Set a regex to filter out tags that don't match the regex. This is useful when a vendor has a bunch of
-releases for unrelated CLIs in the same repo. For example, `cargo-bins/cargo-binstall` has a bunch of
-releases for unrelated CLIs that are not `cargo-binstall`. This option can be used to filter out those
-releases.
+Set a regex to filter out tags that don't match it. This is useful when a vendor publishes releases
+for unrelated CLIs in the same repo. For example, `cargo-bins/cargo-binstall` has many releases for
+CLIs other than `cargo-binstall`; this option filters those releases out.
 
 ```toml
 [tools]
@@ -169,8 +166,8 @@ authenticate with the API.
 
 ### `ubi` resolver can't find os/arch
 
-Sometimes vendors use strange formats for their releases that ubi can't figure out, possibly for a
-specific os/arch combination. For example this recently happened in [this ticket](https://github.com/houseabsolute/ubi/issues/79) because a vendor used
+Sometimes vendors name their releases in ways ubi can't figure out, possibly only for a specific
+OS/arch combination. For example, in [this ticket](https://github.com/houseabsolute/ubi/issues/79) a vendor used
 "mac" instead of the more common "macos" or "darwin" tags.
 
 Try using ubi by itself to see if the issue is related to mise or ubi:
@@ -182,8 +179,8 @@ ubi -p jdx/mise
 
 ### `ubi` picks the wrong tarball
 
-Another issue is that a GitHub release may have a bunch of tarballs, some that don't contain the CLI
-you want, you can use the `matching` field in order to specify a string to match against the release.
+A GitHub release may have many tarballs, some of which don't contain the CLI you want. Use the
+`matching` field to specify a string to match against the release filenames.
 
 ```sh
 mise use ubi:tamasfe/taplo[matching=full]
@@ -193,9 +190,9 @@ ubi -p tamasfe/taplo -m full
 
 ### `ubi` can't find the binary in the tarball
 
-ubi assumes that the repo name is the same as the binary name, however that is often not the case.
-For example, BurntSushi/ripgrep gives us a binary named `rg` not `ripgrep`. In this case, you can
-specify the binary name with the `exe` field:
+ubi assumes the repo name is the same as the binary name, but that is often not the case.
+For example, BurntSushi/ripgrep provides a binary named `rg`, not `ripgrep`. In this case, specify
+the binary name with the `exe` field:
 
 ```sh
 mise use ubi:BurntSushi/ripgrep[exe=rg]
@@ -205,15 +202,14 @@ ubi -p BurntSushi/ripgrep -e rg
 
 ### `ubi` uses weird versions
 
-This issue is actually with mise and not with ubi. mise needs to be able to list the available versions
-of the tools so that "latest" points to whatever is the actual latest release of the CLI. What sometimes
-happens is vendors will have GitHub releases for unrelated things. For example, `cargo-bins/cargo-binstall`
-is the repo for cargo-binstall, however it has a bunch of releases for unrelated CLIs that are not
-cargo-binstall. We need to filter these out and that can be specified with the `tag_regex` tool option:
+This issue is with mise, not ubi. mise needs to list the available versions of a tool so that "latest"
+points to the actual latest release of the CLI. Sometimes vendors publish GitHub releases for unrelated
+things. For example, `cargo-bins/cargo-binstall` is the repo for cargo-binstall, but it also has many
+releases for unrelated CLIs. Filter these out with the `tag_regex` tool option:
 
 ```sh
 mise use 'ubi:cargo-bins/cargo-binstall[tag_regex=^\d+\.]'
 ```
 
 Now when running `mise ls-remote ubi:cargo-bins/cargo-binstall[tag_regex=^\d+\.]` you should only see
-versions starting with a number. Note that this command is cached so you likely will need to run `mise cache clear` first.
+versions starting with a number. This command's output is cached, so you will likely need to run `mise cache clear` first.

@@ -71,9 +71,9 @@ my-plugin = "./plugins/my-plugin"
 
 Absolute paths and `~/...` are supported. Explicit relative paths beginning with
 `./` or `../` are resolved from the config root of the file containing the
-declaration. Mise symlinks the directory just like `mise plugins link`, so local
+declaration. mise symlinks the directory just like `mise plugins link`, so local
 edits are reflected immediately. Existing plugin installations are not replaced
-automatically; use `mise plugins install --force my-plugin` when changing an
+automatically; use `mise plugins install --force my-plugin` to switch an
 existing installation to a local source.
 
 ## Using Plugins (Advanced)
@@ -160,9 +160,9 @@ vfox-npm = "https://github.com/jdx/vfox-npm"
 
 ## Finding Plugins
 
-While mise doesn't have a centralized registry for community plugins, you can find them:
+mise doesn't have a centralized registry for community plugins, but you can find them in a few places:
 
-- **GitHub**: Search for repositories with "vfox-" prefix
+- **GitHub**: Search for repositories with the "vfox-" prefix
 - **Community**: Check mise community discussions and Discord
 - **Company internal**: Your organization may have private plugins
 
@@ -186,7 +186,7 @@ mise exec vfox-npm:prettier -- --check .
 ```
 
 ::: info
-This is just an example plugin for testing. mise already has built-in npm support that you should use instead: `mise install npm:prettier@latest`
+This is only an example plugin for testing. mise has built-in npm support, which you should use instead: `mise install npm:prettier@latest`
 :::
 
 ## Backend Plugins (Advanced)
@@ -218,7 +218,7 @@ When using plugins, be aware that:
 - **Plugins execute arbitrary code** during installation and use
 - **Only install plugins from trusted sources**
 - **Review plugin code** before installation when possible
-- **Use version pinning** to avoid unexpected updates like [`mise.lock`](/dev-tools/mise-lock.md)
+- **Use version pinning**, such as [`mise.lock`](/dev-tools/mise-lock.md), to avoid unexpected updates
 :::
 
 ## Troubleshooting

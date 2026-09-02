@@ -49,7 +49,7 @@ name-based and can include or exclude plugin managers just like built-ins.
 
 Plugins may implement `PackageUninstall` to support the explicit destructive
 command `mise bootstrap packages prune --manager <plugin>`. mise removes only
-packages it observed transition from missing to installed during a plugin
+packages it observed transitioning from missing to installed during a plugin
 install; packages that were already present are never claimed. Prune also keeps
 packages referenced by the current config or trusted, loadable tracked configs.
 Removing a config entry alone does not uninstall host-managed state.

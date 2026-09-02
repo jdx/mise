@@ -1,8 +1,8 @@
 # GitLab Backend
 
-You may install GitLab release assets directly using the `gitlab` backend. This backend downloads release assets from GitLab repositories and is ideal for tools that distribute pre-built binaries through GitLab releases.
+The `gitlab` backend installs release assets directly from GitLab repositories. It is ideal for tools that distribute pre-built binaries through GitLab releases.
 
-The code for this is inside of the mise repository at [`./src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
+The code for this backend is in the mise repository at [`./src/backend/github.rs`](https://github.com/jdx/mise/blob/main/src/backend/github.rs).
 
 ## Usage
 
@@ -15,7 +15,7 @@ $ gitlab-runner --version
 gitlab-runner 16.8.0
 ```
 
-The version will be set in `~/.config/mise/config.toml` with the following format:
+The version is set in `~/.config/mise/config.toml` with the following format:
 
 ```toml
 [tools]
@@ -82,7 +82,7 @@ mise can read tokens from [glab](https://gitlab.com/gitlab-org/cli) config as a 
 
 1. `$GLAB_CONFIG_DIR/config.yml`
 2. `~/.config/glab-cli/config.yml` — glab's legacy location on every platform, which glab still
-   prefers when the file is there
+   prefers when the file exists
 3. `$XDG_CONFIG_HOME/glab-cli/config.yml`
 4. `~/Library/Application Support/glab-cli/config.yml` (macOS)
 5. `%LOCALAPPDATA%\glab-cli\config.yml` (Windows — glab resolves `XDG_CONFIG_HOME` to
@@ -123,7 +123,7 @@ go in `[tools]` in `mise.toml`.
 
 ### Asset Autodetection
 
-When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. The system scores assets based on:
+When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. It scores assets on:
 
 - **OS compatibility** (linux, macos, windows)
 - **Architecture compatibility** (x64, arm64, x86, arm)
@@ -131,7 +131,7 @@ When no `asset_pattern` is specified, mise automatically selects the best asset 
 - **Archive format preference** (tar.gz, zip, etc.)
 - **Build type** (avoids debug/test builds)
 
-For most tools, you can simply install without specifying patterns:
+For most tools, you can install without specifying a pattern:
 
 ```sh
 mise install gitlab:user/repo
@@ -222,7 +222,7 @@ When `version_prefix` is configured, mise will:
 
 ### Platform-specific Asset Patterns
 
-For different asset patterns per platform:
+To use different asset patterns per platform:
 
 ```toml
 [tools."gitlab:gitlab-org/gitlab-runner"]
@@ -295,12 +295,12 @@ Number of directory components to strip when extracting archives:
 ```
 
 ::: info
-If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+If `strip_components` is not set, mise automatically applies `strip_components = 1` when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). Auto-detection places the binary directly in the install path where mise expects it.
 :::
 
 ### `bin`
 
-Rename the downloaded binary to a specific name. This is useful when downloading single binaries that have platform-specific names:
+Rename the downloaded binary to a specific name. This is useful for single-binary downloads with platform-specific names:
 
 ```toml
 [tools."gitlab:myorg/mytool"]
@@ -310,12 +310,12 @@ bin = "mytool"  # Rename from mytool-linux-x86_64 to mytool
 ```
 
 ::: info
-When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `mytool-linux-x86_64` becomes `mytool` automatically. Use the `bin` option only when you need a specific custom name.
+When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `mytool-linux-x86_64` becomes `mytool`. Use the `bin` option only when you need a specific custom name.
 :::
 
 ### `rename_exe`
 
-Rename the executable after extraction from an archive. This is useful when the archive contains a binary with a platform-specific name that you want to rename:
+Rename the executable after extracting it from an archive. This is useful when the archive contains a binary with a platform-specific name:
 
 ```toml
 [tools."gitlab:myorg/mytool"]
@@ -325,12 +325,12 @@ rename_exe = "mytool"  # Rename the extracted binary to mytool
 ```
 
 ::: tip
-Use `rename_exe` for archives where the binary inside has a different name than desired. Use `bin` for single binary downloads (non-archives).
+Use `rename_exe` for archives whose binary has a different name than you want. Use `bin` for single-binary downloads (non-archives).
 :::
 
 ### `no_app`
 
-Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries instead. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
+Skip macOS .app bundle assets during autodetection and prefer standalone CLI binaries. This is useful when a repository provides both a macOS .app bundle (often an Xcode extension or GUI application) and a standalone command-line tool:
 
 ```toml
 [tools."gitlab:myorg/mytool"]
@@ -342,8 +342,8 @@ When `no_app = true`:
 
 - Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
 - Standalone archives are preferred
-- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
-- Only affects autodetection; explicit `asset_pattern` values are used as-is
+- The option is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- Only autodetection is affected; explicit `asset_pattern` values are used as-is
 
 ### `bin_path`
 
@@ -383,7 +383,7 @@ aliases — `{{ arch(x64="x86_64", arm64="aarch64") }}` is how you get those nam
 2. If `bin_path` is not set, look for a `bin/` directory in the install path
 3. If the install path root contains an executable file, use the install path root
 4. If no `bin/` directory exists, search subdirectories for `bin/` directories
-5. If no `bin/` directories are found, searches immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that entire subdirectory is considered a binary path.
+5. If no `bin/` directories are found, search immediate subdirectories for executable files. If an executable is found directly within a subdirectory, that subdirectory is treated as a binary path.
 6. If no executables are found, use the root of the extracted directory
 
 ### `filter_bins`
@@ -403,7 +403,7 @@ When enabled:
 
 ### `api_url`
 
-For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or when using custom/private instances:
+For self-hosted GitLab instances, specify the API URL. mise uses this URL for release listing and release asset lookup, and may also use it to download assets when browser download URLs are not reachable or the instance is custom or private:
 
 ```toml
 [tools]
@@ -412,7 +412,7 @@ For self-hosted GitLab instances, specify the API URL. mise uses this URL for re
 
 ## Private GitLab repositories
 
-If you want to install a tool from a private repository on `gitlab.com`, set the `MISE_GITLAB_TOKEN` environment variable for authentication:
+To install a tool from a private repository on `gitlab.com`, set the `MISE_GITLAB_TOKEN` environment variable for authentication:
 
 ```sh
 export MISE_GITLAB_TOKEN="your-token"
@@ -420,7 +420,7 @@ export MISE_GITLAB_TOKEN="your-token"
 
 ## Self-hosted GitLab
 
-If you are using a self-hosted GitLab instance, set the `api_url` tool option and optionally the `MISE_GITLAB_ENTERPRISE_TOKEN` environment variable for authentication:
+For a self-hosted GitLab instance, set the `api_url` tool option and, optionally, the `MISE_GITLAB_ENTERPRISE_TOKEN` environment variable for authentication:
 
 ```sh
 export MISE_GITLAB_ENTERPRISE_TOKEN="your-token"

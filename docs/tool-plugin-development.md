@@ -11,14 +11,14 @@ Tool plugins use a hook-based architecture to manage individual tools. They are 
 Tool plugins use traditional hook functions to manage a single tool. They provide:
 
 - **Standard vfox Compatibility**: Works with both mise and vfox
-- **Complex Installation Logic**: Handle source compilation, custom builds, and complex setups
-- **Environment Configuration**: Set up complex environment variables beyond just PATH
-- **Legacy File Support**: Parse version files from other tools (`.nvmrc`, `.tool-version`, etc.)
+- **Complex Installation Logic**: Handles source compilation, custom builds, and complex setups
+- **Environment Configuration**: Sets up complex environment variables beyond PATH
+- **Legacy File Support**: Parses version files from other tools (`.nvmrc`, `.tool-version`, etc.)
 - **Cross-Platform Support**: Works on Windows, macOS, and Linux
 
 ## Plugin Architecture
 
-Tool plugins are implemented in Lua (version 5.1 at the moment). They use a hook-based architecture with specific functions for different lifecycle events:
+Tool plugins are implemented in Lua (currently version 5.1). They use a hook-based architecture with specific functions for different lifecycle events:
 
 ```mermaid
 graph TD
@@ -49,7 +49,7 @@ graph TD
 
 ### Required Hooks
 
-These hooks must be implemented for a functional plugin:
+A functional plugin must implement these hooks:
 
 #### Available Hook
 
@@ -82,7 +82,7 @@ end
 
 ##### Rolling Releases
 
-For tools that have rolling releases like "nightly" or "stable" where the version string stays the same but the content changes, you can mark versions as rolling and provide a checksum for update detection:
+For tools with rolling releases such as "nightly" or "stable", where the version string stays the same but the content changes, mark the version as rolling and provide a checksum so mise can detect updates:
 
 ```lua
 function PLUGIN:Available(ctx)
@@ -110,8 +110,8 @@ end
 
 When `rolling = true` is set:
 
-- `mise upgrade` will check if the checksum has changed to detect updates
-- `mise upgrade --bump` will preserve the version name (e.g., "nightly") instead of converting it to a semver
+- `mise upgrade` checks whether the checksum has changed to detect updates
+- `mise upgrade --bump` preserves the version name (e.g., "nightly") instead of converting it to a semver version
 
 The checksum should be the SHA256 hash of the release asset for the user's platform. See the [vfox-neovim plugin](https://github.com/mise-plugins/vfox-neovim) for a complete example.
 
@@ -215,7 +215,7 @@ end
 
 #### PreUse Hook
 
-Modifies version before use:
+Modifies the version before use:
 
 ```lua
 -- hooks/pre_use.lua
@@ -331,7 +331,7 @@ PLUGIN = {
 
 Add `depends` to the `PLUGIN` table when install hooks need other mise-managed tools on `PATH`. Use tool names as they would appear in `mise.toml`, for example `depends = { "go", "make" }`. Omit it if hooks do not shell out to other tools.
 
-This is separate from `depends` in `[tools]`, which only makes one configured tool wait for another configured tool in the install graph. vfox `metadata.lua` `depends` is plugin metadata; when matching tools are configured, mise uses it to order current install jobs and to build the hook environment.
+This is separate from `depends` in `[tools]`, which only makes one configured tool wait for another in the install graph. The `depends` field in vfox `metadata.lua` is plugin metadata; when matching tools are configured, mise uses it to order the current install jobs and to build the hook environment.
 
 #### System Dependencies
 
@@ -382,7 +382,7 @@ Optional fields:
 - **`optional`** — a short reason string. Missing optional dependencies never prompt or fail; they surface as a single informational line, letting users build without features they don't need (e.g. Erlang's `wxWidgets` GUI).
 - **`packages`** — a map of package-manager name (`brew`, `brew-cask`, `apt`, `dnf`, `pacman`, `apk`, `flatpak`, `flatpak-user`, `mas`) to the package that provides the capability. A value is either a single package name (`apt = "bison"`) or a list of candidates (`apt = { "libaio1t64", "libaio1" }`) when the same capability is packaged under different names across distro releases. Order candidates newest-name-first: mise picks the first one the manager actually has, and falls back to the first listed if it cannot tell. Only managers that can be queried for package availability (currently `apt`) do this selection; the others always use the first candidate, so a single name remains the right choice for them.
 
-**Never probe the host from `metadata.lua`.** Its top level runs every time mise loads the plugin's metadata, so a shell-out there (checking which package name exists, reading the distro version) costs that on many mise invocations, and its result gets cached alongside the metadata — freezing a machine-specific answer that goes stale when the user upgrades their OS. Declare candidates instead and let mise resolve them, which it does lazily: only for a dependency that actually failed its check, at the point it is about to install packages anyway.
+**Never probe the host from `metadata.lua`.** Its top level runs every time mise loads the plugin's metadata, so a shell-out there (checking which package name exists, reading the distro version) is paid on many mise invocations, and its result is cached alongside the metadata — freezing a machine-specific answer that goes stale when the user upgrades their OS. Declare candidates instead and let mise resolve them, which it does lazily: only for a dependency that actually failed its check, at the point it is about to install packages anyway.
 
 **Detection is the source of truth.** A check that passes is satisfied no matter how the capability was installed — Homebrew, apt, nix, MacPorts, or from source all pass without ceremony, and mise never asks _how_ it got there. The `packages` map is only consulted to _offer_ installing the missing subset; it is a remediation hint, not a declaration that the tool must come from that package manager.
 
@@ -415,7 +415,7 @@ return M
 
 ## Real-World Example: vfox-nodejs
 
-Here's a complete example based on the vfox-nodejs plugin that demonstrates all the concepts:
+Here is a complete example, based on the vfox-nodejs plugin, that demonstrates all of these concepts:
 
 ### Available Hook Example
 
@@ -703,7 +703,7 @@ end
 
 ### Platform Detection
 
-Handle different operating systems properly using the RUNTIME object:
+Handle different operating systems using the `RUNTIME` object:
 
 ```lua
 -- lib/platform.lua
@@ -724,7 +724,7 @@ end
 return M
 ```
 
-**Note:** The `RUNTIME` object is automatically available in all plugin hooks and provides:
+The `RUNTIME` object is available in all plugin hooks and provides:
 
 - `RUNTIME.osType`: Operating system type ("windows", "linux", "darwin")
 - `RUNTIME.archType`: Architecture ("amd64", "arm64", "x86", etc.)
@@ -780,7 +780,7 @@ end
 
 ### Conditional Installation
 
-Different installation logic based on platform or version:
+Use different installation logic depending on the platform or version:
 
 ```lua
 function PLUGIN:PreInstall(ctx)
@@ -836,7 +836,7 @@ end
 
 ### Environment Configuration
 
-Complex environment variable setup:
+A more complex environment variable setup:
 
 ```lua
 function PLUGIN:EnvKeys(ctx)
@@ -892,5 +892,5 @@ end
 - [Start with the plugin template](https://github.com/jdx/mise-tool-plugin-template)
 - [Learn about Backend Plugin Development](backend-plugin-development.md)
 - [Explore available Lua modules](plugin-lua-modules.md)
-- [Publishing your plugin](plugin-publishing.md)
+- [Publish your plugin](plugin-publishing.md)
 - [View the vfox-nodejs plugin source](https://github.com/version-fox/vfox-nodejs)

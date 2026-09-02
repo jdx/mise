@@ -1,14 +1,14 @@
 # Tool Stubs
 
-Tool stubs allow you to create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly within executable scripts. They are also a good way to have some tools in mise lazy-load since the tools are only fetched when called and not when calling something like `mise install`.
+Tool stubs let you create executable files with embedded TOML configuration for tool execution. They provide a convenient way to define tool versions, backends, and execution parameters directly within executable scripts. They are also a good way to lazy-load some tools, since a stubbed tool is fetched only when it is called, not when you run something like `mise install`.
 
 This feature is inspired by [dotslash](https://github.com/facebook/dotslash), which pioneered the concept of executable files with embedded configuration for portable tool execution.
 
 ## Overview
 
-A tool stub is an executable file that begins with a shebang line pointing to `mise tool-stub` and contains TOML configuration specifying which tool to execute and how to execute it. When the stub is run, mise automatically installs the specified tool version (if needed) and executes it with the provided arguments.
+A tool stub is an executable file that begins with a shebang line pointing to `mise tool-stub` and contains TOML configuration specifying which tool to execute and how to execute it. When the stub runs, mise installs the specified tool version (if needed) and executes it with the provided arguments.
 
-Tool stubs can use any mise backend but because they default to http—and http backend tools have things like urls and don't require a version—the http stubs look a bit different than non-http stubs.
+Tool stubs can use any mise backend, but because they default to the http backend—whose tools have URLs and don't require a version—http stubs look a bit different from non-http stubs.
 
 For a machine-wide catalogue of ordinary tools, prefer
 [`lazy = true` in `[tools]`](/dev-tools/shims.html#lazy-tools). Standalone tool
@@ -16,7 +16,7 @@ stub scripts remain useful when the executable file itself should carry a
 portable, self-contained tool definition.
 
 ::: tip
-Tool stubs are particularly useful for adding less-commonly used tools to your mise setup. Since tools are only installed when their stub is first executed, you can define many tools without the overhead of installing them all upfront. This is perfect for specialized tools, testing utilities, or project-specific binaries that you might not use every day.
+Tool stubs are particularly useful for adding less commonly used tools to your mise setup. Since a tool is installed only when its stub is first executed, you can define many tools without the overhead of installing them all up front. This is ideal for specialized tools, testing utilities, or project-specific binaries that you don't use every day.
 :::
 
 ## Tool (non-http) Stubs
@@ -31,16 +31,16 @@ bin = "python"
 ```
 
 ::: info Why use `env -S`?
-The `-S` flag tells `env` to split the command line on spaces, allowing multiple arguments to be passed to the interpreter. This is necessary because shebangs on Unix systems traditionally only support a single argument after the interpreter path. Using `env -S mise tool-stub` allows the shebang to work correctly by splitting it into `env` → `mise` → `tool-stub`.
+The `-S` flag tells `env` to split the command line on spaces, so multiple arguments can be passed to the interpreter. This is necessary because shebangs on Unix systems traditionally support only a single argument after the interpreter path. `env -S mise tool-stub` makes the shebang work by splitting it into `env` → `mise` → `tool-stub`.
 :::
 
 ## Configuration Fields
 
-Tool stub configuration is essentially a subset of what can be done in `mise.toml` [tools] sections, with the addition of a `tool` field to specify which tool to use. All the same options available for tool configuration in `mise.toml` are supported in tool stubs.
+Tool stub configuration is essentially a subset of a `mise.toml` `[tools]` section, with the addition of a `tool` field to specify which tool to use. All the options available for tool configuration in `mise.toml` are also supported in tool stubs.
 
 ### Optional Fields
 
-- `tool` - Explicit tool name or backend specification (e.g., "python", "github:cli/cli"). This is the only field unique to tool stubs - it specifies which tool entry from the configuration to use. If omitted and a `url` field is present, defaults to the HTTP backend.
+- `tool` - Explicit tool name or backend specification (e.g., "python", "github:cli/cli"). This is the only field unique to tool stubs; it specifies which tool to use. If it is omitted and a `url` field is present, the stub defaults to the HTTP backend.
 - `version` - The version of the tool to use
 - `bin` - The binary name to execute within the tool (defaults to the stub filename)
 
@@ -82,19 +82,19 @@ url = "https://example.com/tool-windows.zip"
 bin = "tool.exe"  # Platform-specific binary for Windows
 ```
 
-The tool stub generator automatically detects when platforms have different binary paths and will generate platform-specific `bin` fields when needed, or use a global `bin` field when all platforms have the same binary structure.
+The tool stub generator detects when platforms have different binary paths and generates platform-specific `bin` fields when needed, or a single global `bin` field when all platforms share the same binary structure.
 
 ::: tip
-tool stubs default to the HTTP backend if no `tool` field is specified and a `url` field is present.
+Tool stubs default to the HTTP backend if no `tool` field is specified and a `url` field is present.
 See the [HTTP backend documentation](/dev-tools/backends/http) for full details on configuring HTTP-based tools.
 :::
 
 ## Generating Tool Stubs (http)
 
-While you can manually create tool stubs with TOML configuration, mise provides a [`mise generate tool-stub`](/cli/generate/tool-stub) command to automatically create stubs for HTTP-based tools.
+While you can create tool stubs manually, mise provides a [`mise generate tool-stub`](/cli/generate/tool-stub) command that generates stubs for HTTP-based tools.
 
 ::: tip Incremental Building
-When using platform-specific URLs, the tool stub generator will append new platforms to existing stub files rather than overwriting them. This allows you to incrementally build cross-platform tool stubs by running the command multiple times with different platforms.
+When using platform-specific URLs, the tool stub generator appends new platforms to existing stub files rather than overwriting them. This lets you build cross-platform tool stubs incrementally by running the command multiple times with different platforms.
 :::
 
 ### Basic Generation
@@ -107,7 +107,7 @@ mise generate tool-stub ./bin/gh --url "https://github.com/cli/cli/releases/down
 
 This will:
 
-- Download the archive to detect checksums (for security)
+- Download the archive to compute checksums (for security)
 - Extract it to auto-detect the binary path
 - Generate an executable stub with complete TOML configuration
 
@@ -149,22 +149,22 @@ mise generate tool-stub ./bin/rg \
   --platform-url https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-pc-windows-msvc.zip
 ```
 
-The generator will preserve existing configuration and merge new platforms into the `[platforms]` table. If you specify a platform that already exists, its URL will be updated.
+The generator preserves existing configuration and merges new platforms into the `[platforms]` table. If you specify a platform that already exists, its URL is updated.
 
 ### Generation Options
 
-- `--version VERSION` - Specify tool version (defaults to "latest").
-- `--bin PATH` - Override auto-detected binary path
-- `--platform-url PLATFORM:URL` - Add platform-specific URL (can be used multiple times)
-- `--platform-url URL` - Add platform-specific URL with auto-detected platform from URL filename
-- `--platform-bin PLATFORM:PATH` - Set platform-specific binary path
+- `--version VERSION` - Specify the tool version (defaults to "latest")
+- `--bin PATH` - Override the auto-detected binary path
+- `--platform-url PLATFORM:URL` - Add a platform-specific URL (can be repeated)
+- `--platform-url URL` - Add a platform-specific URL, auto-detecting the platform from the URL filename
+- `--platform-bin PLATFORM:PATH` - Set a platform-specific binary path
 - `--checksum-algorithm ALGORITHM` - Generate `blake3` (default) or `sha256` checksums
 - `--skip-download` - Skip downloading for faster generation (no checksums or binary detection)
 - `--lock` - Resolve and embed lockfile data (pinned version + platform URLs/checksums) into an existing stub
 
 `--checksum-algorithm` cannot be combined with `--lock` or `--skip-download`, because those modes do not calculate checksums.
 
-For consumers such as Bazel that require SHA256 checksums, select it when generating the stub:
+For consumers such as Bazel that require SHA256 checksums, select that algorithm when generating the stub:
 
 ```bash
 mise generate tool-stub ./bin/tool \
@@ -187,7 +187,7 @@ The generator automatically detects and extracts various archive formats:
 
 ### Generated Stub Example
 
-Running the generation command produces an executable stub like:
+Running the generation command produces an executable stub like this:
 
 ```bash
 #!/usr/bin/env -S mise tool-stub
@@ -259,8 +259,8 @@ checksum = "sha256:def456..."
 ```
 
 The `[lock]` section is generated by `mise generate tool-stub --lock` and provides
-reproducible downloads with checksum verification. The tool/version fields are still
-used for backend resolution, while lock data provides the download shortcuts.
+reproducible downloads with checksum verification. The `tool` and `version` fields are still
+used for backend resolution, while the lock data provides download shortcuts.
 
 ::: tip
 Locking is especially useful for avoiding GitHub API rate limits when users don't have a `GITHUB_TOKEN` set. With locked stubs, tools can be installed without any API calls at runtime.
@@ -325,7 +325,7 @@ beside the stub. Run the stub by name and Windows picks it up through `PATHEXT`:
 The launcher is generated whenever the stub could run on Windows — either it lists a
 `[platforms.windows-*]` entry, or it names no platforms at all. A stub that ships only for, say,
 Linux and macOS does not get one, and neither does a stub whose own name already ends in `.cmd`,
-`.bat` or `.exe`. It is written on every platform, not just Windows, so a stub generated on Linux
+`.bat` or `.exe`. The launcher is written on every platform, not just Windows, so a stub generated on Linux
 and committed to a repository still works for someone who clones it on Windows.
 
 If a stub later stops shipping for Windows, regenerating it removes the launcher, so it cannot keep
@@ -337,7 +337,7 @@ way [shims](/dev-tools/shims) place both an extension-less script and a native l
 
 ### Via mise Command
 
-Execute using the [`mise tool-stub`](/cli/tool-stub) command—useful for testing if something isn't working right:
+Run the stub through the [`mise tool-stub`](/cli/tool-stub) command—useful for debugging when something isn't working:
 
 ```bash
 mise tool-stub ./bin/my-tool --version
@@ -345,10 +345,10 @@ mise tool-stub ./bin/my-tool --version
 
 ## Caching
 
-Tool stubs implement intelligent caching which reduces the overhead mise has when running stubs:
+Tool stubs cache lookups to reduce the overhead mise adds when running them:
 
-- Binary paths are cached based on stub file path and modification time
-- Cache is automatically invalidated when the stub file changes
+- Binary paths are cached based on the stub file path and modification time
+- The cache is invalidated automatically when the stub file changes
 - Missing binaries trigger cache cleanup automatically
 
 Cached stubs have ~4ms of overhead.
@@ -366,7 +366,7 @@ again (unless something else needs them).
 
 ## Alternative: Creating Simple Stubs with `mise x`
 
-For basic use cases, you can quickly create simple tool stubs using the [`mise x`](/cli/exec) command as an alternative to writing TOML configuration manually:
+For basic use cases, you can create simple stubs with the [`mise x`](/cli/exec) command instead of writing TOML configuration:
 
 ```bash
 # Create bin directory
@@ -387,4 +387,4 @@ EOF
 chmod +x ./bin/python
 ```
 
-This approach is ideal for simple tool execution without the need for custom options, environment variables, or platform-specific settings. For more complex configurations, use the full TOML configuration format described above.
+This approach is ideal for simple tool execution that needs no custom options, environment variables, or platform-specific settings. For more complex configurations, use the TOML format described above.

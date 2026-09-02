@@ -22,7 +22,7 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
   `mise bootstrap packages apply --update`.
 - `mise bootstrap packages upgrade` runs `pacman -Sy` and then upgrades only the
   configured packages. Requests satisfied through `Provides` are skipped to
-  avoid replacing the installed provider. Note that Arch officially supports
+  avoid replacing the installed provider. Arch officially supports
   only full-system upgrades (`pacman -Syu`) — upgrading individual packages is a
   [partial upgrade](https://wiki.archlinux.org/title/System_maintenance#Partial_upgrades_are_unsupported),
   so prefer running `pacman -Syu` yourself on a rolling-release system.

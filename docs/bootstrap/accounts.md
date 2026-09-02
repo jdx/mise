@@ -1,7 +1,7 @@
 # Linux users and groups
 
 `[bootstrap.groups]` and `[bootstrap.users]` declaratively manage local Linux
-accounts. Mise applies groups before users and applies accounts before privileged
+accounts. mise applies groups before users and applies accounts before privileged
 files, so a managed file can safely refer to an account created in the same
 configuration.
 
@@ -43,7 +43,7 @@ User fields are convergent when specified and unmanaged when omitted:
 - `move_home = true` moves an existing home when changing `home`; without it,
   only the passwd entry changes.
 
-Names are passed as typed process arguments, never through a shell. Mise uses
+Names are passed as typed process arguments, never through a shell. mise uses
 the standard shadow-utils commands (`groupadd`, `groupmod`, `groupdel`,
 `useradd`, `usermod`, and `userdel`) inside its narrowly scoped elevated helper.
 The feature is Linux-only.
@@ -70,7 +70,7 @@ state = "absent"
 ```
 
 User homes are preserved by default. Set `remove_home = true` only when the
-account's home and mail spool should also be deleted. Mise refuses to remove
+account's home and mail spool should also be deleted. mise refuses to remove
 UID 0, GID 0, or the user running mise. It also leaves the operating system's
 normal safeguards in place; for example, `groupdel` rejects a group that is
 still another user's primary group.

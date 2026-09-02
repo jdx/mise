@@ -21,12 +21,12 @@ mise use -g zig@mach-latest    # install latest Mach nominated zig
 
 See available stable versions with `mise ls-remote zig`.
 
-Note that [Mach](https://machengine.org/) versions
-won't show in `mise ls-remote zig` due to workaround for
+[Mach](https://machengine.org/) versions
+don't appear in `mise ls-remote zig` because of a workaround for a
 [version ordering bug](https://github.com/jdx/mise/discussions/5232).
-Despite of that, you still can install Mach versions listed in
+You can still install the Mach versions listed in the
 [Mach version index](https://machengine.org/zig/index.json). The following
-command will list available Mach versions:
+command lists available Mach versions:
 
 ```sh
 curl https://machengine.org/zig/index.json | yq 'keys'
@@ -51,8 +51,8 @@ mise use -g zls@0.14   # install zls 0.14.x
 mise use -g zls@latest # install latest zls release
 ```
 
-Note that a tagged release of `zig` should be used with
-the same tagged release of `zls`. Currently there is no Mach version of `zls`.
+A tagged release of `zig` should be used with
+the same tagged release of `zls`. There is currently no Mach version of `zls`.
 
 ## Tool Options
 

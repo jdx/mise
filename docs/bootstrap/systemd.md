@@ -61,10 +61,9 @@ A timer must set at least one of `on_boot_sec`, `on_unit_active_sec`,
 separate service entry for the unit triggered by the timer.
 
 Each unit is written to `~/.config/systemd/user/dev.mise.<name>.service` or
-`~/.config/systemd/user/dev.mise.<name>.timer` and
-managed with `systemctl --user`. Unit names may contain letters, numbers, `.`,
-`_`, `-`, and `@`. mise owns only the unit files it creates with the
-`dev.mise.` prefix.
+`~/.config/systemd/user/dev.mise.<name>.timer` and managed with
+`systemctl --user`. Unit names may contain letters, numbers, `.`, `_`, `-`, and
+`@`. mise owns only the unit files it creates with the `dev.mise.` prefix.
 
 ## Supported keys
 
@@ -120,7 +119,7 @@ unit running.
 - **Declarative and additive** — unit names merge across the
   [config hierarchy](/configuration.html) (global → project). A more local
   config replaces the full declaration for the same unit name. When an entry
-  changes between a service and timer, mise stops, disables, and removes the
+  changes between a service and a timer, mise stops, disables, and removes the
   stale sibling unit.
 - **Linux-only** — on other platforms the section is inert:
   `mise bootstrap linux systemd-units status` lists entries as skipped and
