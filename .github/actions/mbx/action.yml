@@ -40,9 +40,9 @@ runs:
           export MISE_DATA_DIR="$RUNNER_TOOL_CACHE/mise-data"
           export MISE_CACHE_DIR="$RUNNER_TOOL_CACHE/mise-cache"
         fi
-        mise install mr-boxington@1.4.1
+        mise install mr-boxington@1.5.0
         mise reshim -f
-        mise where mr-boxington@1.4.1 >> "$GITHUB_PATH"
+        mise where mr-boxington@1.5.0 >> "$GITHUB_PATH"
         {
           if [[ "$MBX_BACKEND" == server ]]; then
             echo "MBX_REMOTE_URL=https://cache.mise.jdx.dev"
