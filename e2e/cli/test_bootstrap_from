@@ -3,6 +3,9 @@
 source_repo="$PWD/bootstrap-source"
 checkout="$PWD/bootstrap-checkout"
 dry_checkout="$PWD/bootstrap-dry-checkout"
+global_source_repo="$PWD/bootstrap-global-source"
+relative_global_source_repo="$PWD/bootstrap-relative-global-source"
+bare_global_checkout="$PWD/bootstrap-bare-global-checkout"
 
 mkdir -p "$source_repo"
 git -C "$source_repo" init -q -b main
@@ -22,6 +25,55 @@ EOF
 echo work-v1 >"$source_repo/profile"
 git -C "$source_repo" add .
 git -C "$source_repo" commit -qm initial
+
+mkdir -p "$global_source_repo"
+git -C "$global_source_repo" init -q -b main
+git -C "$global_source_repo" config user.email test@example.com
+git -C "$global_source_repo" config user.name "mise test"
+cat <<'EOF' >"$global_source_repo/config.work.toml"
+[dotfiles]
+"~/.bootstrap-from-global" = "global-profile"
+
+[tasks.bootstrap]
+run = 'printf global > "$HOME/bootstrap-from-global-task"'
+EOF
+echo global >"$global_source_repo/global-profile"
+git -C "$global_source_repo" add .
+git -C "$global_source_repo" commit -qm initial
+
+# --from-git checks out a global config repository directly into the mise
+# config directory, so its config participates in the first bootstrap and
+# remains the global config for later invocations.
+assert_succeed "mise -E work bootstrap --from-git '$global_source_repo' --yes --only dotfiles,task"
+assert "git -C '$MISE_CONFIG_DIR' remote get-url origin" "$global_source_repo"
+assert "cat ~/.bootstrap-from-global" "global"
+assert "cat ~/bootstrap-from-global-task" "global"
+assert_contains "mise -E work config ls" "~/.config/mise/config.work.toml"
+
+mkdir -p "$relative_global_source_repo"
+git -C "$relative_global_source_repo" init -q -b main
+git -C "$relative_global_source_repo" config user.email test@example.com
+git -C "$relative_global_source_repo" config user.name "mise test"
+cat <<'EOF' >"$relative_global_source_repo/config.toml"
+[tasks.bootstrap]
+run = 'printf relative-global > "$HOME/bootstrap-from-relative-global-task"'
+EOF
+git -C "$relative_global_source_repo" add .
+git -C "$relative_global_source_repo" commit -qm initial
+
+# A relative MISE_GLOBAL_CONFIG_FILE is resolved before the child changes into
+# the checkout and remains the selected global config during re-execution.
+rm -f "$HOME/bootstrap-from-relative-global-task"
+assert_succeed "MISE_GLOBAL_CONFIG_FILE=relative-global/config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
+
+# A bare relative MISE_GLOBAL_CONFIG_FILE checks out into the current directory
+# rather than silently falling back to the default global config directory.
+mkdir "$bare_global_checkout"
+rm -f "$HOME/bootstrap-from-relative-global-task"
+assert_succeed "cd '$bare_global_checkout' && MISE_GLOBAL_CONFIG_FILE=config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert "git -C '$bare_global_checkout' remote get-url origin" "$relative_global_source_repo"
+assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 
 # The default checkout does not collide with the installer's bootstrap staging
 # directory, which may already contain versioned mise binaries.

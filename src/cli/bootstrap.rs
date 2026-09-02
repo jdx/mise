@@ -93,6 +93,10 @@ pub(crate) struct Bootstrap {
     #[usage(long, value_name = "GIT_URL")]
     from: Option<String>,
 
+    /// Clone a git repository into the global mise config directory and bootstrap
+    #[usage(long, value_name = "GIT_URL", conflicts = "from")]
+    from_git: Option<String>,
+
     /// Directory used for the repository cloned by --from
     #[usage(long, value_name = "DIR", requires = "from")]
     from_dir: Option<PathBuf>,
@@ -1141,9 +1145,14 @@ impl Bootstrap {
     }
 
     pub(crate) async fn run(self) -> Result<()> {
-        if self.from.is_some() {
+        if self.from.is_some() || self.from_git.is_some() {
             if self.command.is_some() {
-                bail!("--from cannot be used with a bootstrap subcommand");
+                let flag = if self.from_git.is_some() {
+                    "--from-git"
+                } else {
+                    "--from"
+                };
+                bail!("{flag} cannot be used with a bootstrap subcommand");
             }
             return self.run_from();
         }
@@ -1634,11 +1643,25 @@ impl Bootstrap {
     }
 
     fn run_from(&self) -> Result<()> {
-        let url = self.from.as_deref().expect("--from was provided");
-        let checkout = self
-            .from_dir
-            .clone()
-            .unwrap_or_else(|| dirs::DATA.join("bootstrap-repo"));
+        let (url, checkout) = if let Some(url) = self.from_git.as_deref() {
+            let checkout = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .map(|path| {
+                    path.parent()
+                        .filter(|parent| !parent.as_os_str().is_empty())
+                        .unwrap_or_else(|| Path::new("."))
+                })
+                .unwrap_or(*dirs::CONFIG)
+                .to_path_buf();
+            (url, checkout)
+        } else {
+            (
+                self.from.as_deref().expect("--from was provided"),
+                self.from_dir
+                    .clone()
+                    .unwrap_or_else(|| dirs::DATA.join("bootstrap-repo")),
+            )
+        };
 
         let checkout_is_empty = checkout.is_dir() && checkout.read_dir()?.next().is_none();
         if checkout.exists() && !checkout_is_empty {
@@ -1678,6 +1701,13 @@ impl Bootstrap {
             &checkout,
             &crate::env::ARGS.read().unwrap(),
         ));
+        if self.from_git.is_some()
+            && let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .and_then(Path::file_name)
+        {
+            command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+        }
 
         let mut trusted = std::env::split_paths(
             &std::env::var_os("MISE_TRUSTED_CONFIG_PATHS").unwrap_or_default(),
@@ -1777,10 +1807,11 @@ fn bootstrap_from_child_args(checkout: &Path, args: &[String]) -> Vec<OsString> 
     let mut args = args.iter().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--from" | "--from-dir" | "--cd" | "-C" => {
+            "--from" | "--from-git" | "--from-dir" | "--cd" | "-C" => {
                 args.next();
             }
             _ if arg.starts_with("--from=")
+                || arg.starts_with("--from-git=")
                 || arg.starts_with("--from-dir=")
                 || arg.starts_with("--cd=")
                 || arg.starts_with("-C") && arg.len() > 2 => {}
@@ -4268,6 +4299,7 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
 
     $ <bold>mise bootstrap</bold>                    # packages + repos + dotfiles + tools + bootstrap task
     $ <bold>mise -E work bootstrap --from git@github.com:example/dotfiles.git --yes</bold>
+    $ <bold>mise bootstrap --from-git git@github.com:example/mise-config.git --yes</bold>
     $ <bold>mise bootstrap --force-dotfiles</bold>   # replace conflicting dotfile targets
     $ <bold>mise bootstrap --skip tools,task</bold>  # skip tool installation and the bootstrap task
     $ <bold>mise bootstrap --only tools</bold>       # run just tool installation
@@ -4336,7 +4368,7 @@ mod tests {
             "-C",
             "/old",
             "bootstrap",
-            "--from=git@example.com:dotfiles.git",
+            "--from-git=git@example.com:dotfiles.git",
             "--from-dir",
             "/old-checkout",
             "--yes",
@@ -4378,6 +4410,33 @@ mod tests {
             bootstrap_from_child_args(Path::new("/new-checkout"), &args),
             ["--cd", "/new-checkout", "-E", "--cd", "bootstrap", "--yes",].map(OsString::from)
         );
+    }
+
+    #[test]
+    fn bootstrap_from_git_conflicts_with_project_checkout_options() {
+        for args in [
+            [
+                "mise",
+                "bootstrap",
+                "--from",
+                "project.git",
+                "--from-git",
+                "global.git",
+            ]
+            .as_slice(),
+            [
+                "mise",
+                "bootstrap",
+                "--from-git",
+                "global.git",
+                "--from-dir",
+                "checkout",
+            ]
+            .as_slice(),
+        ] {
+            let argv = args.iter().map(OsStr::new).collect::<Vec<_>>();
+            assert!(Cli::parse_from_argv(&argv).is_err(), "{args:?}");
+        }
     }
 
     #[test]
