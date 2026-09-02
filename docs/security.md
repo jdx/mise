@@ -100,8 +100,8 @@ time.
 minimum_release_age = "7d"  # only install versions released more than 7 days ago
 ```
 
-Supports relative durations (`7d`, `6mo`, `1y`) and absolute dates (`2024-06-01`). For most
-backends, this only affects fuzzy version resolution, such as `node@20` or `latest`.
+The setting supports relative durations (`7d`, `6mo`, `1y`) and absolute dates (`2024-06-01`). For most
+backends, it only affects fuzzy version resolution, such as `node@20` or `latest`.
 Explicitly pinned versions like `node@22.5.0` bypass the filter.
 During ordinary toolset resolution, already-installed fuzzy matches remain eligible:
 `minimum_release_age` limits remote version selection and does not make an installed version
@@ -118,7 +118,7 @@ Versions without timestamps are included by default. Backends without transitive
 may still select an older top-level tool version, but they do not constrain dependencies fetched by
 the tool's installer/compiler.
 
-For `npm:` and `pipx:` transitive dependency support details, refer to the
+For details on `npm:` and `pipx:` transitive dependency support, see the
 [npm backend docs](/dev-tools/backends/npm.html) and
 [pipx backend docs](/dev-tools/backends/pipx.html).
 
@@ -148,8 +148,8 @@ minimum_release_age_excludes = ["trivy", "npm:*"]
 Exclusions can match backend wildcards like `npm:*`, tool shorthands like `trivy`, or full backend
 IDs like `npm:prettier`. Matching tools skip the global setting and built-in default. Per-tool
 `minimum_release_age` options and the CLI flag still apply even when a tool matches the exclusion
-list. Exclusions from multiple configuration files are merged and deduplicated, allowing project
-configuration to add exclusions without repeating exclusions from the global configuration.
+list. Exclusions from multiple config files are merged and deduplicated, so project
+configuration can add exclusions without repeating those from the global configuration.
 
 See [`minimum_release_age`](/configuration/settings.html#minimum_release_age) for the setting
 reference.

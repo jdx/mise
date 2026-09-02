@@ -1,6 +1,6 @@
 # Backend Architecture
 
-Understanding how mise's backend system works can help you choose the right backend for your tools and troubleshoot issues when they arise. Most users don't need to explicitly choose backends since the [mise registry](../registry.md) defines smart defaults, but understanding the system helps when you need specific tools or want to optimize performance.
+Understanding how mise's backend system works can help you choose the right backend for your tools and troubleshoot issues when they arise. Most users don't need to choose backends explicitly because the [mise registry](../registry.md) defines sensible defaults, but understanding the system helps when you need specific tools or want to optimize performance.
 
 ## What are Backends?
 
@@ -39,12 +39,12 @@ Built directly into mise, written in Rust for performance and reliability:
 - **Drawbacks**: Require much more maintenance; new core tool contributions are likely to be rejected unless they're for very popular tools like Node.js, Python, or Go
 
 ::: info
-Core tools like Node.js and Java are implemented as backends even though they represent single tools. This consistent backend architecture allows mise to handle all tools uniformly, whether they're complex ecosystems or individual tools.
+Core tools like Node.js and Java are implemented as backends even though they represent single tools. This consistency lets mise handle all tools uniformly, whether they're complex ecosystems or individual tools.
 :::
 
 ### Language Package Managers
 
-Leverage existing language ecosystems:
+These backends use existing language ecosystems:
 
 - **npm** - npm packages (`npm:prettier`, `npm:typescript`)
 - **pipx** - Python packages (`pipx:black`, `pipx:poetry`)
@@ -80,9 +80,9 @@ Zero-configuration installer that works with any GitHub/GitLab repository follow
 
 Support for external plugin ecosystems:
 
-- **Tool Plugins** - Hook-based plugins for single tools (`my-tool`) - a superset of vfox plugins functionality
+- **Tool Plugins** - Hook-based plugins for single tools (`my-tool`) - a superset of vfox plugin functionality
 - **asdf Plugins** - Legacy plugin ecosystem (`asdf:postgres`, `asdf:redis`) - generally Linux/macOS only
-- **Backend Plugins** - Enhanced plugins using the `plugin:tool` format (`my-plugin:some-tool`) - enables private/custom tools with backend methods
+- **Backend Plugins** - Enhanced plugins using the `plugin:tool` format (`my-plugin:some-tool`) - enable private/custom tools with backend methods
 
 ## How Backend Selection Works
 
@@ -94,7 +94,7 @@ When you specify a tool, mise determines the backend using this priority:
 4. **Core tools**: `mise use node` → uses built-in core backend
 5. **Fallback**: If not found, suggests available backends
 
-The [mise registry](../registry.md) defines a priority order for which backend to use for each tool, so typically end-users don't need to know which backend to choose unless they want tools not available in the registry or want to override the default selection.
+The [mise registry](../registry.md) defines a priority order of backends for each tool, so end users typically don't need to choose a backend unless they want a tool that isn't in the registry or want to override the default selection.
 
 ### Environment Variable Overrides
 
@@ -139,7 +139,7 @@ terraform = "aqua:hashicorp/terraform"  # Use aqua backend
 - You want the fastest performance
 - You're using major programming languages
 
-Core tools should generally always be used when available, as they provide the best performance and integration with mise.
+Use core tools whenever they're available; they provide the best performance and integration with mise.
 
 ### Use **Language Package Managers** when
 
@@ -153,7 +153,7 @@ Core tools should generally always be used when available, as they provide the b
 - You want comprehensive security features (checksums, signatures)
 - You need Windows support
 - The tool is already available in the [aqua registry](https://github.com/aquaproj/aqua-registry)
-- You're willing to contribute tools to the aqua registry for tools not yet available
+- You're willing to contribute tools that aren't yet in the aqua registry
 
 ### Use **github** when
 
@@ -170,32 +170,32 @@ The `ubi` backend still works but is deprecated in favor of `github`. Replace `u
 ### Use **Backend Plugins** when
 
 - You need to manage multiple tools with one plugin
-- Want enhanced backend methods for better performance
-- Need the `plugin:tool` format for flexibility
-- Working with custom or private tools
-- Want modern plugin architecture with backend methods
+- You want enhanced backend methods for better performance
+- You need the `plugin:tool` format for flexibility
+- You're working with custom or private tools
+- You want a modern plugin architecture with backend methods
 
 ### Use **Tool Plugins** when
 
-- Creating traditional single-tool plugins
-- Need fine-grained control over installation hooks
-- Want to use the vfox hook system
-- Tool requires complex installation logic or build processes
-- Tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
-- You need cross-platform support including Windows
+- You're creating traditional single-tool plugins
+- You need fine-grained control over installation hooks
+- You want to use the vfox hook system
+- The tool requires complex installation logic or build processes
+- The tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
+- You need cross-platform support, including Windows
 
 ### Use **asdf Plugins** when
 
-- Tool requires compilation from source
-- Need complex installation logic or build processes
-- Tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
+- The tool requires compilation from source
+- You need complex installation logic or build processes
+- The tool requires environment variable setup (like `JAVA_HOME`, `GOROOT`, etc.)
 - No other backend supports the tool
-- Migrating from existing asdf setup
-- Working on Linux/macOS (no Windows support)
+- You're migrating from an existing asdf setup
+- You're working on Linux/macOS (no Windows support)
 
 ## Backend Dependencies
 
-Some backends have dependencies on others:
+Some backends depend on other tools:
 
 ```mermaid
 graph TD

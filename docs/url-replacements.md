@@ -45,9 +45,9 @@ the pattern anywhere in the full URL string (including protocol, hostname, path,
 Examples:
 
 - `github.com` -> `mirror.example.com` replaces GitHub hostnames
-- `https://github.com` -> `https://mirror.example.com` with protocol excludes e.g. 'api.github.com'
-- `https://github.com` -> `https://proxy.example.com/github-mirror` replaces GitHub with corporate proxy
-- `http://example.net` -> `https://example.net` replaces protocol from HTTP to HTTPS
+- `https://github.com` -> `https://mirror.example.com` includes the protocol, so it excludes hosts like 'api.github.com'
+- `https://github.com` -> `https://proxy.example.com/github-mirror` replaces GitHub with a corporate proxy
+- `http://example.net` -> `https://example.net` changes the protocol from HTTP to HTTPS
 
 See [Security Considerations](#security-considerations) for important warnings about credential handling.
 
@@ -80,8 +80,8 @@ url_replacements = {
 }
 ```
 
-Transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
-to `https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`
+This transforms `https://github.com/owner/repo/releases/download/v1.0.0/file.tar.gz`
+to `https://hub.example.com/artifactory/github/owner/repo/v1.0.0/file.tar.gz`.
 
 #### 3. Subdomain to Path Conversion
 
@@ -93,7 +93,7 @@ url_replacements = {
 }
 ```
 
-Converts subdomain-based URLs to path-based URLs on a unified CDN.
+This converts subdomain-based URLs to path-based URLs on a unified CDN.
 
 #### 4. Multiple Replacement Patterns (processed in order)
 
@@ -108,7 +108,7 @@ url_replacements = {
 }
 ```
 
-First regex catches Microsoft repositories specifically, second catches all other GitHub URLs,
+The first regex catches Microsoft repositories specifically, the second catches all other GitHub URLs,
 and the simple replacement handles HashiCorp.
 
 ## Use Cases
@@ -120,7 +120,7 @@ and the simple replacement handles HashiCorp.
 
 ## Regex Syntax
 
-mise uses Rust regex engine which supports:
+mise uses the Rust regex engine, which supports:
 
 - `^` and `$` for anchors (start/end of string)
 - `(.+)` for capture groups (use `$1`, `$2`, etc. in replacement)
@@ -129,7 +129,7 @@ mise uses Rust regex engine which supports:
 - `*`, `+`, `?` for quantifiers
 - `|` for alternation
 
-You can check on regex101.com if your regex works (see [example](https://regex101.com/r/rmcIE1/1)).
+You can test your regex on regex101.com (see [example](https://regex101.com/r/rmcIE1/1)).
 Full regex syntax documentation: <https://docs.rs/regex/latest/regex/#syntax>
 
 ## Precedence and Matching

@@ -367,7 +367,7 @@ secrets there.** Use `docker run -e`, secret mounts, or orchestrator
 secrets at runtime. Use `[oci].env` only for values that are safe to
 live in the image.
 
-mise emits a warning listing the count of `[env]` vars it baked in.
+mise emits a warning with the number of `[env]` vars it baked in.
 :::
 
 ## Supported backends
@@ -380,8 +380,8 @@ per-version install directory, so they work as per-tool layers:
 
 **Not supported in v1:** `asdf` and `vfox` plugins (including third-party
 vfox plugins). Their install scripts can write outside the per-version
-directory, breaking the one-layer-per-tool invariant. Using them errors
-out with a clear message.
+directory, breaking the one-layer-per-tool invariant. Using them fails
+with a clear error message.
 
 ## Registry base-image support
 
@@ -413,13 +413,13 @@ SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) mise oci build
 
 ## Cross-platform builds
 
-OCI images are linux-targeted. Building on macOS or Windows produces an
+OCI images are Linux-targeted. Building on macOS or Windows produces an
 image whose `os` field is `linux`, but any embedded binaries (mise and
 every tool layer) are still host-native — they will fail with
 `Exec format error` when executed inside the container.
 
-For a working image, run `mise oci build` on a linux host (or inside a
-linux container — `docker run -v $PWD:/src -w /src debian mise oci build`
+For a working image, run `mise oci build` on a Linux host (or inside a
+Linux container — `docker run -v $PWD:/src -w /src debian mise oci build`
 works). mise prints a warning when this mismatch is detected.
 
 ### Multi-arch images
@@ -445,7 +445,7 @@ previously single-arch tag is upgraded to an index without losing the
 existing platform. Layer reuse works through indexes — the cache
 resolves to the entry matching the build platform.
 
-Note the index update is read-modify-write (the Distribution API has no
+The index update is read-modify-write (the Distribution API has no
 conditional writes), so concurrent pushes to the same tag from
 different runners can race — sequence them as above.
 
@@ -453,7 +453,7 @@ different runners can race — sequence them as above.
 
 - `asdf` / `vfox` backends are rejected (see above).
 - Cross-platform builds produce broken images (binaries are host-native);
-  run the build on a linux host.
+  run the build on a Linux host.
 - Alpine / musl base images will break most tools.
 - `mise oci run` needs a container engine (podman or docker) — mise has
   no built-in container runtime. Pushing needs no external tools.

@@ -1,6 +1,6 @@
 # Sandboxing
 
-Mise supports lightweight process sandboxing for `mise exec` and `mise run`, inspired by [zerobox](https://github.com/afshinm/zerobox). Sandboxing restricts filesystem, network, and environment variable access with granular controls. No Docker required, minimal overhead.
+mise supports lightweight process sandboxing for `mise exec` and `mise run`, inspired by [zerobox](https://github.com/afshinm/zerobox). Sandboxing restricts filesystem, network, and environment variable access with granular controls. No Docker required, minimal overhead.
 
 ## Quick Start
 
@@ -119,7 +119,7 @@ Filesystem sandboxing uses [Landlock](https://landlock.io/) (available since Lin
 
 If Landlock is unavailable or cannot apply filesystem restrictions, the command fails.
 
-**Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux in v1. On Linux, `--allow-net` falls back to allowing all network access. This works on macOS via Seatbelt.
+**Limitation**: Per-host network filtering (`--allow-net=<host>`) is not supported on Linux in v1. On Linux, `--allow-net` falls back to allowing all network access. Per-host filtering works on macOS via Seatbelt.
 
 **Limitation**: An allow-list entry has to exist when the sandbox is built. Landlock binds each rule to an open descriptor, so a path that has not been created yet cannot be named by one, and mise warns that the rule was dropped. The task can still reach that path if another rule covers it — an allowed ancestor directory, for instance — but nothing else grants access on the dropped rule's behalf. To let a task create something, allow a directory that already exists and contains it.
 
@@ -135,7 +135,7 @@ Landlock cannot restrict creation to a single name, so allowing the containing d
 
 ### macOS
 
-Uses Apple's `sandbox-exec` (Seatbelt) with a generated profile. Supports all features including per-host network filtering.
+Sandboxing uses Apple's `sandbox-exec` (Seatbelt) with a generated profile and supports all features, including per-host network filtering.
 
 When reads are restricted, Seatbelt requires data access to the root directory for process startup.
 Sandboxed processes can enumerate names directly under `/`, but cannot read unallowed entries or

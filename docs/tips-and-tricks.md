@@ -4,11 +4,11 @@ An assortment of helpful tips for using `mise`.
 
 ## macOS Rosetta
 
-If you have a need to run tools as x86_64 on Apple Silicon, this can be done with mise however you'll currently
-need to use the x86_64 version of mise itself. A common reason for doing this is to support compiling node <=14.
+If you need to run tools as x86_64 on Apple Silicon, mise can do this, but you'll currently
+need to use the x86_64 version of mise itself. A common reason is to compile node <=14.
 
 You can do this either with the [`MISE_ARCH`](https://mise.jdx.dev/configuration/settings.html#arch)
-setting or by using a dedicated rosetta mise bin as described below:
+setting or with a dedicated Rosetta mise binary, as described below.
 
 First, you'll need a copy of mise that's built for x86_64:
 
@@ -30,8 +30,8 @@ mise-x64 use -g node@20
 
 ## Shebang
 
-You can specify a tool and its version in a shebang without needing to first
-set up a `mise.toml`/`.tool-versions` config:
+You can specify a tool and its version in a shebang without first setting up
+a `mise.toml`/`.tool-versions` config:
 
 ```typescript
 #!/usr/bin/env -S mise x node@20 -- node
@@ -53,8 +53,8 @@ chmod +x setup-mise.sh
 ```
 
 ::: tip
-This file contains checksums so it's more secure to commit it into your project rather than
-calling `curl https://mise.run` dynamically—though of course this means it will only fetch
+This file contains checksums, so committing it to your project is more secure than
+calling `curl https://mise.run` dynamically—though this means it will only fetch
 the version of mise that was current when the script was created.
 :::
 
@@ -75,7 +75,7 @@ The generated task stubs behave like small project commands, while `bin/mise`
 downloads and runs the pinned mise binary for the project.
 
 If contributors work on Windows, add `--windows`. Windows cannot execute a shebang script, so
-`mise generate install-script --write ./bin/mise --windows` writes `bin/mise.cmd` alongside it and they
+`mise generate install-script --write ./bin/mise --windows` writes `bin/mise.cmd` alongside it, and Windows contributors
 run `.\bin\mise.cmd`. The launcher downloads the standalone `mise.exe` for the release and checks it
 against a checksum embedded when the script was generated, so it needs nothing beyond what Windows
 already ships.
@@ -147,12 +147,12 @@ records ownership without replacing `/Applications` bundles — replacing an
 [brew casks / TCC](/bootstrap/packages/brew.html#macos-privacy-security-tcc).
 
 After writing macOS defaults, relaunch Dock/Finder (or use a `post-defaults`
-hook) or prefs can look unset until restart — see
+hook); otherwise preferences can look unset until the next restart — see
 [macOS Defaults](/bootstrap/macos-defaults.html#app-restarts).
 
 Everything is declarative and idempotent: re-running skips whatever is
 already in its desired state, `mise bootstrap packages status --missing` and
-`mise bootstrap dotfiles status --missing` make CI checks, and nothing is ever
+`mise bootstrap dotfiles status --missing` work as CI checks, and nothing is ever
 applied implicitly. The exceptions are `[bootstrap.hooks]` and `[tasks.bootstrap]`,
 which are imperative commands run during `mise bootstrap` and may have side
 effects; treat hook commands as non-idempotent unless they are written to
@@ -165,7 +165,7 @@ converge safely. See
 
 ## Installation via zsh zinit
 
-[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for ZSH. This snippet installs mise and its shell completion:
+[Zinit](https://github.com/zdharma-continuum/zinit) is a plugin manager for zsh. This snippet installs mise and its shell completion:
 
 ```sh
 zinit as="command" lucid from="gh-r" for \
@@ -178,7 +178,7 @@ zinit as="command" lucid from="gh-r" for \
 
 ## CI/CD
 
-Using mise in CI/CD is a great way to synchronize tool versions for dev/build.
+Using mise in CI/CD is a great way to keep tool versions in sync between development and builds.
 
 ### GitHub Actions
 
@@ -207,7 +207,7 @@ jobs:
 
 ## `mise set`
 
-Instead of manually editing `mise.toml` to add env vars, you can use [`mise set`](/cli/set.html) instead:
+Instead of manually editing `mise.toml` to add env vars, you can use [`mise set`](/cli/set.html):
 
 ```sh
 mise set NODE_ENV=production
@@ -235,14 +235,14 @@ See [Templates](/templates.html) for more details on Tera functions and filters.
 
 ## [`mise run`](/cli/run.html) shorthand
 
-As long as the task name doesn't conflict with a mise-provided command you can skip the `run` part:
+As long as the task name doesn't conflict with a mise-provided command, you can skip the `run` part:
 
 ```sh
 mise test
 ```
 
 ::: warning
-Don't do this inside of scripts because mise may add a command in a future version and could conflict with your task.
+Don't do this inside scripts: mise may add a command in a future version that conflicts with your task.
 :::
 
 ## Watch tasks while editing
@@ -333,8 +333,8 @@ so if you had `node = "24"` and node 26 is the latest, `mise up --bump node` wil
 
 ## cargo-binstall
 
-cargo-binstall is sort of like ubi but specific to rust tools. It fetches binaries for cargo releases. mise will use this automatically for `cargo:` tools if it is installed
-so if you use `cargo:` you should add this to make `mise i` go much faster.
+cargo-binstall is similar to ubi but specific to Rust tools: it fetches prebuilt binaries for cargo releases. mise uses it automatically for `cargo:` tools when it is installed,
+so if you use `cargo:` tools, add it to make `mise i` much faster.
 
 ```sh
 mise use -g cargo-binstall
@@ -342,13 +342,13 @@ mise use -g cargo-binstall
 
 ## [`mise cache clear`](/cli/cache.html)
 
-mise caches things for obvious reasons but sometimes you want it to use fresh data (maybe it's not noticing a new release). Run `mise cache clear` to remove the cache which
-basically just run `rm -rf ~/.cache/mise/*`.
+mise caches things for obvious reasons, but sometimes you want it to use fresh data (maybe it's not noticing a new release). Run `mise cache clear` to remove the cache, which
+is essentially `rm -rf ~/.cache/mise/*`.
 
 ## [`mise en`](/cli/en.html)
 
-`mise en` is a great alternative to `mise activate` if you don't want to always be using mise for some reason. It sets up the mise environment in your current directory
-but doesn't keep running and updating the env vars after that.
+`mise en` is a great alternative to `mise activate` if you don't want mise running all the time. It sets up the mise environment in your current directory
+but doesn't keep updating the env vars after that.
 
 ## Auto-install when entering a project
 
@@ -361,7 +361,7 @@ enter = "mise i -q"
 
 ## [`mise tool [TOOL]`](/cli/tool.html)
 
-Get information about what backend a tool is using and other information with `mise tool [TOOL]`:
+See which backend a tool uses, along with other information, with `mise tool [TOOL]`:
 
 ```sh
 ❯ mise tool ripgrep
@@ -388,12 +388,12 @@ Path                                    Tools
 ~/src/mise/mise.local.toml              (none)
 ```
 
-This is helpful figuring out which order the config files are loaded in to figure out which one is overriding.
+This helps you see the order in which config files are loaded and which one is overriding the others.
 
 ## `mise.lock`
 
-When lockfiles are enabled, mise will update `mise.lock` with full versions and tarball checksums (if supported by the backend).
-These can be updated with [`mise up`](/cli/upgrade.html). You need to manually create the lockfile, then mise will add the tools to it:
+When lockfiles are enabled, mise updates `mise.lock` with full versions and tarball checksums (if the backend supports them).
+These can be updated with [`mise up`](/cli/upgrade.html). You need to create the lockfile manually; mise will then add tools to it:
 
 ```sh
 touch mise.lock
@@ -402,9 +402,9 @@ mise i
 
 The lockfile uses a consolidated format with `[tools.name.assets]` sections to organize asset information under each tool. Asset information includes checksums, file sizes, and optional download URLs. Legacy lockfiles with separate `[tools.name.checksums]` and `[tools.name.sizes]` sections are automatically migrated to the new format.
 
-Note that at least currently mise needs to actually install the tool to get the tarball checksum (otherwise it would need to download the tarball just
-to get the checksum of it since normally that gets deleted). So you may need to run something like `mise uninstall --all` first in order to have it
-reinstall everything. It will store the full versions even if it doesn't know the checksum though so it'll still lock the version just not have a checksum
+Currently, mise needs to actually install the tool to get the tarball checksum (otherwise it would have to download the tarball just
+to compute the checksum, since the tarball is normally deleted). So you may need to run something like `mise uninstall --all` first to have it
+reinstall everything. mise stores the full version even when it doesn't know the checksum, so the version is still locked—just without a checksum
 to go with it.
 
 ## Lockfile URL Tracking (Avoiding Rate Limits)
@@ -412,7 +412,7 @@ to go with it.
 When you use a lockfile (`mise.lock`), mise stores the exact download URLs for each tool asset. This means that after the initial install, future `mise install` runs will use the URLs from the lockfile instead of making API calls to GitHub (or other providers). This has several benefits:
 
 - **Avoids GitHub API rate limits**: No need to make repeated API calls for every install, which can quickly exhaust your rate limit, especially in CI or large teams.
-- **No need for GITHUB_TOKEN**: Since the URLs are already known, you don’t need to set up a `GITHUB_TOKEN` for simple installs. See [GitHub Tokens](/dev-tools/github-tokens.html) for more on token configuration.
+- **No need for GITHUB_TOKEN**: Since the URLs are already known, you don't need to set up a `GITHUB_TOKEN` for simple installs. See [GitHub Tokens](/dev-tools/github-tokens.html) for more on token configuration.
 - **Faster installs**: Skipping API lookups speeds up repeated installs.
 
 This is especially useful in CI/CD or when working in environments with strict network or authentication requirements.

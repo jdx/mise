@@ -71,7 +71,7 @@ mise includes built-in providers for common package managers:
 | `dart`     | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/`         | `dart pub get`                       |
 | `flutter`  | `pubspec.yaml`, `pubspec.lock`                         | `.dart_tool/`         | `flutter pub get`                    |
 
-Built-in providers are only active when explicitly configured in `mise.toml` and their lockfile exists.
+Built-in providers are active only when they are explicitly configured in `mise.toml` and their lockfile exists.
 
 ## Monorepos
 
@@ -131,8 +131,8 @@ mise deps add -D npm:vitest        # dev dependency
 mise deps remove npm:lodash
 ```
 
-The ecosystem prefix tells mise which package manager to use. Currently supported
-ecosystems for add/remove: `npm`, `yarn`, `pnpm`, `bun`, `deno`, `aube`, `dart`, `flutter`.
+The ecosystem prefix tells mise which package manager to use. The ecosystems currently
+supported for add/remove are `npm`, `yarn`, `pnpm`, `bun`, `deno`, `aube`, `dart`, `flutter`.
 
 ## Custom Providers
 
@@ -212,7 +212,7 @@ unchanged with a warning; use `${NAME:-}` to explicitly default it to an empty s
 
 ## Freshness Checking
 
-mise uses blake3 hashing to determine if sources or the effective provider command have
+mise uses blake3 hashing to determine whether sources or the effective provider command have
 changed since the last successful run. Hashes are stored in
 `$MISE_STATE_DIR/deps/<hash>.toml`, keyed by project root (so nothing is written inside
 the project directory). Command hashes include the run command, shell, provider `env`,
@@ -221,11 +221,11 @@ and working directory; raw command and environment values are not stored in stat
 1. Compute blake3 hashes of all source files
 2. Compute a blake3 hash of the effective provider command
 3. Compare against stored hashes from the last successful run
-4. If a source or the effective command was added, removed, or changed, the provider is stale
+4. Mark the provider stale if a source or the effective command was added, removed, or changed
 
 This means:
 
-- If you modify `package-lock.json`, `node_modules/` will be considered stale
+- If you modify `package-lock.json`, `node_modules/` is considered stale
 - If `node_modules/` doesn't exist, the provider is always stale
 - If sources don't exist, the provider is considered fresh (nothing to do)
 - On first run (no stored state), the provider is always considered stale
@@ -233,12 +233,12 @@ This means:
 
 ## Auto-Install
 
-When `auto = true` is set on a provider, it will automatically run before:
+When `auto = true` is set on a provider, it runs automatically before:
 
 - `mise run` (task execution)
 - `mise x` (exec command)
 
-This ensures dependencies are always up-to-date before running tasks or commands.
+This ensures dependencies are always up to date before running tasks or commands.
 
 To skip auto-install for a single invocation:
 
@@ -249,13 +249,13 @@ mise x --no-deps -- npm test
 
 ## Staleness Warnings
 
-When using `mise activate`, mise will warn you if any auto-enabled providers have stale dependencies:
+When using `mise activate`, mise warns you if any auto-enabled providers have stale dependencies:
 
 ```
 mise WARN deps: npm may need update, run `mise deps`
 ```
 
-This can be disabled with:
+Disable this with:
 
 ```toml
 [settings]
@@ -294,7 +294,7 @@ mise deps remove npm:lodash
 ## Dependencies
 
 Providers can declare dependencies on other providers using the `depends` field. A provider
-will wait for all its dependencies to complete successfully before running.
+waits for all of its dependencies to complete successfully before running.
 
 ```toml
 [deps.uv]
@@ -308,9 +308,9 @@ sources = ["requirements.yml"]
 outputs = [".galaxy-installed"]
 ```
 
-In this example, `ansible-galaxy` will wait for `uv` to finish before starting.
+In this example, `ansible-galaxy` waits for `uv` to finish before starting.
 
-Providers without `depends` run in parallel as before. If a dependency fails, all providers
+Providers without `depends` run in parallel. If a dependency fails, all providers
 that depend on it are skipped. Circular dependencies are detected and the affected providers
 are skipped with a warning.
 
@@ -318,7 +318,7 @@ are skipped with a warning.
 
 Deps providers run in parallel, respecting the `jobs` setting for concurrency limits.
 This speeds up installation when multiple providers need to run (e.g., both npm and pip).
-Providers with `depends` will wait for their dependencies to complete before starting,
+Providers with `depends` wait for their dependencies to complete before starting,
 while independent providers run concurrently.
 
 ```toml
@@ -351,5 +351,5 @@ outputs = ["src/generated/"]
 run = "npm run codegen"
 ```
 
-Running `mise deps` will install npm and poetry dependencies in parallel, then run prisma
-and frontend-codegen (also in parallel, since they only depend on npm, not each other).
+Running `mise deps` installs npm and poetry dependencies in parallel, then runs prisma
+and frontend-codegen (also in parallel, since they depend only on npm, not on each other).

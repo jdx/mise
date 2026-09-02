@@ -42,7 +42,7 @@ overrides. See the
 [brew cask documentation](/bootstrap/packages/brew.html#casks).
 
 Host packages are intentionally separate from [`[tools]`](/configuration.html):
-they are not version-pinned per-project, do not get shims, and are managed
+they are not version-pinned per project, do not get shims, and are managed
 outside the project by the platform's package manager — or, for `brew` and
 `brew-cask`, by mise's built-in Homebrew installers, which don't require
 Homebrew itself. Use them for shared libraries, build dependencies, and host
@@ -98,15 +98,14 @@ declarative sections work the same way:
   hooks or structured flight steps on Linux;
   `flatpak` and `flatpak-user` work on Linux when the `flatpak` CLI is on
   `PATH`; `mas` works on macOS when the `mas` CLI is on `PATH`. Status commands
-  still list
-  unavailable managers so nothing is silently invisible.
+  still list unavailable managers so nothing is silently hidden.
 - **Manual installation only** — mise never installs system packages
-  implicitly. `mise install` will print a one-time hint when packages are
+  implicitly. `mise install` prints a one-time hint when packages are
   missing, but only `mise bootstrap packages apply` ever installs anything.
 - **Unknown managers are ignored with a warning** and a package-plugin install
   hint, so configs using managers from newer mise versions still parse.
 
-For current-user login shell setup, use `[bootstrap.user].login_shell`:
+To set the current user's login shell, use `[bootstrap.user].login_shell`:
 
 ```toml
 [bootstrap.user]
@@ -155,7 +154,7 @@ mise bootstrap packages upgrade --manager mas
 ```
 
 `mise bootstrap packages use` is `mise use` for system packages: it writes
-`"manager:package" = "version"` entries to mise.toml (the local file by
+`"manager:package" = "version"` entries to `mise.toml` (the local file by
 default, the global one with `-g`) and installs whatever is missing. Entries
 for managers that aren't available on the current machine are written without
 installing — that's how a shared config picks up `apt:` lines authored on a
@@ -165,8 +164,8 @@ Mac.
 formulae: it reads the active Homebrew `opt` links and writes requested
 formulae to `[bootstrap.packages]` as `"brew:<formula>" = "latest"`. By
 default it imports only formulae whose keg receipt says they were installed
-on request; pass `--all` to include dependency formulae too. Imported formulae
-are kept by future prune runs because they are now declared in config.
+on request; pass `--all` to include dependency formulae too. Future prune runs
+keep imported formulae because they are now declared in config.
 
 `mise bootstrap packages prune --manager brew` removes linked brew formulae
 that are no longer needed by the current config or by trusted, loadable tracked
@@ -182,8 +181,8 @@ wrapper artifacts, casks with lifecycle actions, changed or shared targets,
 and incomplete transactions. Skips include a reason, and `zap` metadata is
 never applied.
 
-For a package-plugin manager, prune considers only packages mise observed
-transition from missing to installed during `PackageInstall`. Existing or
+For a package-plugin manager, prune considers only packages that mise observed
+transitioning from missing to installed during `PackageInstall`. Existing or
 manually installed packages are never adopted. The plugin must implement
 `PackageUninstall`; dry runs print the approved removal batch without invoking
 the hook, and mise verifies removals with `PackageInstalled` before updating its
@@ -194,18 +193,18 @@ configured packages that are already installed to the newest available
 version — apk, apt, and dnf also honor a version pinned in config (pacman, brew,
 brew-cask, flatpak, flatpak-user, and mas [can't install pins](/bootstrap/packages/pacman.html), so
 pinned entries are skipped with a warning). Packages that aren't installed
-yet are skipped — that's `mise bootstrap packages apply`'s job. For brew
+yet are skipped — that's `mise bootstrap packages apply`'s job. For brew,
 this pours the formula's current bottle and replaces the old keg; for
-brew-cask this installs the current cask artifact; for flatpak and flatpak-user
+brew-cask, this installs the current cask artifact; for flatpak and flatpak-user,
 this updates the configured applications and runtimes in their respective
-scopes; for mas this runs `mas upgrade`.
+scopes; for mas, this runs `mas upgrade`.
 
 `mise doctor` also reports configured system packages and warns when any are
 missing.
 
 ## Choosing which managers run
 
-By default mise acts on every configured manager that is available on the
+By default, mise acts on every configured manager that is available on the
 current machine. Since availability implies the OS (`apt` only exists on
 Debian-family systems, `brew` wherever a bottle exists), this usually does the right
 thing without configuration.
@@ -236,10 +235,10 @@ sudo path is used when `[bootstrap.user].login_shell` needs to add a shell to
   prompt
 - non-interactive without passwordless sudo: mise errors and prints the exact
   command to run manually — it never hangs waiting for a password
-- the full command line is logged before it runs
+- in every case, the full command line is logged before it runs
 
 Set [`system_packages.sudo = false`](/configuration/settings.html) to forbid
-elevation entirely; mise will print the command for you to run yourself
+elevation entirely; mise prints the command for you to run yourself
 instead. The `brew` manager never needs sudo except once to create
 `/opt/homebrew` (see [brew](/bootstrap/packages/brew.html)).
 Package plugins never use mise's sudo path and must never elevate themselves.
@@ -258,4 +257,4 @@ named `bootstrap` afterwards, if one is defined) — one command to set up a
 fresh machine or container.
 
 `mise bootstrap packages status --missing` exits 1 when packages are missing, which makes
-a convenient CI check without installing anything.
+for a convenient CI check without installing anything.

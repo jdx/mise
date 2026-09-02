@@ -47,15 +47,15 @@ of development for the project.
 
 ## Advisory Board
 
-The advisory board helps make important decisions about the project such as:
+The advisory board helps make important decisions about the project, such as:
 
-- What features should be on the roadmap
-- When should functionality move from experimental to stable
-- If/when/how features should be deprecated
+- Which features should be on the roadmap
+- When functionality should move from experimental to stable
+- If, when, and how features should be deprecated
 
 <VPTeamMembers :members="board" />
 
 ## Contributors
 
-mise is an open source project which welcomes [contributions](https://github.com/jdx/mise/graphs/contributors).
-We're grateful for those that have volunteered their work for the project.
+mise is an open source project that welcomes [contributions](https://github.com/jdx/mise/graphs/contributors).
+We're grateful to everyone who has volunteered their work for the project.

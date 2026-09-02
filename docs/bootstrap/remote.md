@@ -36,10 +36,10 @@ more than one layer. Top-level `exclude` patterns are unioned across every
 loaded config layer and applied to every host, so a nearer project can add
 secret patterns even when the inventory entry comes from global config.
 This shared set also applies to ad-hoc `--host` targets; inventory host-level
-excludes are additive. Only selected inventory entries are validated. Mise
+excludes are additive. Only selected inventory entries are validated. mise
 applies command-line overrides and validates the entire selected set before it
 opens any SSH connection, so a stale unselected entry does not block an
-unrelated target while a selected invalid entry cannot cause a partial run.
+unrelated target, and a selected invalid entry cannot cause a partial run.
 
 Remote inventory is orchestration metadata. A `mise bootstrap` process running
 inside the staged project does not recursively execute its
@@ -99,7 +99,7 @@ OpenSSH's existing host-key verification is never weakened automatically.
 `.git`, `target`, and `node_modules` are excluded from source archives by
 default. Add repeatable `exclude` config entries or `--exclude` flags for
 generated files and local secrets. Use `--keep-staging` only for debugging; it
-prints the retained path instead of deleting it.
+prints the retained path instead of deleting the directory.
 
 Symbolic links are archived as links by default. Use repeatable, source-relative
 `copy_link` entries or `--copy-link <PATH>` flags to replace only named links
@@ -129,14 +129,14 @@ remote host must provide the exact interpreter path and the same libc family.
 For glibc binaries, mise extracts the highest required `GLIBC_*` symbol version
 from the ELF and verifies that the remote loader provides at least that ABI
 before upload. For musl binaries, mise compares the local and remote loader
-versions and requires the remote loader to be at least as new. Mise then runs
+versions and requires the remote loader to be at least as new. mise then runs
 `mise version` remotely as the final authority for all other binary and host
 requirements.
 
 When the local executable cannot run on the target, mise automatically resolves
 the raw executable for the same mise version from the official GitHub release.
 This covers Linux x64, arm64, and armv7 on both glibc and musl, plus macOS x64
-and arm64. Mise downloads `SHASUMS256.txt` and its minisign signature, verifies
+and arm64. mise downloads `SHASUMS256.txt` and its minisign signature, verifies
 the manifest with mise's embedded release key, then verifies the selected
 artifact's SHA-256 checksum before upload. The verified artifact is cached for
 the duration of the command, so targets with the same platform share one
@@ -160,7 +160,7 @@ Three explicit escape hatches cover other environments:
 - `bootstrap_command` / `--bootstrap-command` runs an explicit remote shell
   command in a login shell, then opens a fresh login shell to locate `mise`
   from the post-install profile, inherited `PATH`, or common user install
-  directories. Mise snapshots a content fingerprint and the reported version
+  directories. mise snapshots a content fingerprint and the reported version
   of each discoverable executable before installation and prefers a newly added
   or identity-changed path afterward, so an older executable earlier on `PATH`
   cannot shadow the installed one. Ambiguous
@@ -190,7 +190,7 @@ host = "builder.example.com"
 bootstrap_command = "nix profile install nixpkgs#mise"
 ```
 
-Mise verifies every uploaded or selected remote command by running
+mise verifies every uploaded or selected remote command by running
 `mise version` before bootstrap.
 
 ### Leaving mise installed on the host
@@ -230,7 +230,7 @@ target name. Like the other command-line provisioning options, it replaces a
 What gets installed is the same executable the default strategy would have
 staged — the local binary or the checksum-verified official release artifact —
 and it is what runs the bootstrap, so the host converges with the mise version
-that orchestrated it. Mise writes a temporary file beside the target and renames
+that orchestrated it. mise writes a temporary file beside the target and renames
 it into place, so replacing a mise that is currently running cannot truncate it.
 When the target already holds a byte-identical executable, nothing is uploaded.
 A dry run never writes to the host: `--dry-run` reports the path it would
@@ -254,7 +254,7 @@ so the directory's permissions are the real boundary. The staging directory used
 without `install_mise` is created by `mktemp -d` and is private to the SSH
 account.
 
-Installing mise does not put it on the host's `PATH`. Mise warns when the
+Installing mise does not put it on the host's `PATH`. mise warns when the
 install directory is missing from the login `PATH`, and the bootstrap project
 can declare [`[bootstrap.mise_shell_activate]`](/bootstrap/shell.html) so the
 same run writes activation or shims into the host's shell startup files.

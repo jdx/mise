@@ -1,21 +1,20 @@
 # Go Backend
 
-You may install packages directly via [go install](https://go.dev/doc/install) even if there
-isn't an asdf plugin for it.
+You can install packages directly via [go install](https://go.dev/doc/install) even if there
+isn't an asdf plugin for them.
 
-The code for this is inside of the mise repository at [`./src/backend/go.rs`](https://github.com/jdx/mise/blob/main/src/backend/go.rs).
+The code for this is inside the mise repository at [`./src/backend/go.rs`](https://github.com/jdx/mise/blob/main/src/backend/go.rs).
 
 ## Dependencies
 
-This relies on having `go` installed. Which you can install via mise:
+This relies on having `go` installed, which you can do via mise:
 
 ```sh
 mise use -g go
 ```
 
 ::: tip
-Any method of installing `go` is fine if you want to install go some other way.
-mise will use whatever `go` is on PATH.
+Any method of installing `go` is fine; mise uses whatever `go` is on PATH.
 :::
 
 ## Usage
@@ -62,7 +61,7 @@ to the tool install directory after applying `install_env`.
 
 ### `tags`
 
-Specify go build tags (passed as `go install -tags`):
+Specify Go build tags (passed as `go install -tags`):
 
 ```toml
 [tools]

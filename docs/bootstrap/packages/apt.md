@@ -20,12 +20,12 @@ System packages for Debian-family Linux (Debian, Ubuntu, Mint, ...).
   configuration prompts.
 - `mise bootstrap packages upgrade` runs `apt-get update` and then
   `apt-get install --only-upgrade` for the configured packages, so nothing
-  not already installed gets pulled in.
+  that is not already installed gets pulled in.
 
 ## Metadata refresh
 
 If `/var/lib/apt/lists` contains no package lists (fresh containers), mise
-runs `apt-get update` automatically before installing. Otherwise it does not
+runs `apt-get update` automatically before installing. Otherwise, it does not
 touch apt metadata — if an install fails with "Unable to locate package",
 refresh explicitly:
 

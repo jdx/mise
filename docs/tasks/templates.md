@@ -1,6 +1,6 @@
 # Task Templates
 
-Task templates allow you to define reusable task definitions that can be extended by multiple tasks. This is particularly useful in monorepos or projects with similar task patterns across different components.
+Task templates let you define reusable task definitions that multiple tasks can extend. They are particularly useful in monorepos or projects with similar task patterns across components.
 
 ## Defining Templates
 
@@ -49,8 +49,8 @@ When a task extends a template, fields are merged according to these rules:
 | Field                                             | Behavior                                                    |
 | ------------------------------------------------- | ----------------------------------------------------------- |
 | `run`, `run_windows`                              | Local overrides completely                                  |
-| `tools`                                           | Deep merge (local tools added/override template)            |
-| `env`                                             | Deep merge (local env added/override template)              |
+| `tools`                                           | Deep merge (local tools add to or override the template's)  |
+| `env`                                             | Deep merge (local env adds to or overrides the template's)  |
 | `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                     |
 | `dir`                                             | Local overrides; defaults to config_root if not in template |
 | `sources`, `outputs`, `cache`                     | Local overrides completely                                  |
@@ -98,7 +98,7 @@ depends = ["build"]  # Completely replaces template depends
 
 ## Tera Templating
 
-Templates support Tera templating, rendered with the **using project's context**:
+Templates support Tera templating, rendered in the **context of the project that uses them**:
 
 ```toml
 [task_templates."python:build"]
@@ -110,7 +110,7 @@ env = { PROJECT = "{{ config_root | basename }}" }
 
 Available variables (same as regular tasks):
 
-- <code v-pre>{{ config_root }}</code> - The project using the template (NOT where template is defined)
+- <code v-pre>{{ config_root }}</code> - The project using the template (NOT where the template is defined)
 - <code v-pre>{{ env.VAR }}</code> - Environment variables
 - <code v-pre>{{ cwd }}</code> - Current working directory
 - <code v-pre>{{ vars.* }}</code> - User-defined variables from config

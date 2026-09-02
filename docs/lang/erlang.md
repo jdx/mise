@@ -2,8 +2,8 @@
 
 `mise` can be used to install and manage multiple versions of [erlang](https://www.erlang.org/) on the same system.
 
-> The following are instructions for using the erlang core plugin.
-> This is used when there isn't a git plugin installed named "erlang".
+> The following are instructions for using the erlang mise core plugin. It is used when no
+> git plugin named "erlang" is installed.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/erlang.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/erlang.rs).
@@ -21,7 +21,7 @@ See available versions with `mise ls-remote erlang`.
 ## kerl
 
 The plugin uses [kerl](https://github.com/kerl/kerl) under the hood to build erlang.
-See kerl's docs for information on configuring kerl.
+See kerl's docs for information on configuring it.
 
 On GitHub Actions Linux runners, `ImageOS=ubuntu24`, `ImageOS=ubuntu22`, and
 `ImageOS=ubuntu20` map to their corresponding precompiled Erlang build targets. In the
@@ -29,7 +29,7 @@ default `erlang.compile` mode, unsupported values record the Erlang/OTP source a
 as the platform's locked input so installs can reproduce the kerl fallback.
 
 The builds published by [Bob](https://github.com/hexpm/bob#erlang-builds) target Ubuntu,
-but may also run on another glibc-based Linux distribution with compatible system
+but may also run on other glibc-based Linux distributions with compatible system
 libraries. Set `erlang.precompiled_os` to opt in to one of Bob's Ubuntu targets:
 
 ```toml

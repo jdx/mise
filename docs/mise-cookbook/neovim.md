@@ -7,11 +7,11 @@ Here are some tips for an improved mise workflow with [Neovim](https://github.co
 ### Run commands
 
 Use [Treesitter](https://github.com/nvim-treesitter/nvim-treesitter) to enable syntax highlighting for the code in the run commands of your mise files.
-See the example here on the left side of the image:
+See the left side of the image for an example:
 
 ![run cmd syntax highlighting demo](./run-cmd-syntax-hl.png)
 
-In your neovim config, create a `after/queries/toml/injections.scm` file with these queries:
+In your Neovim config, create an `after/queries/toml/injections.scm` file with these queries:
 
 ```query
 ; extends
@@ -58,9 +58,9 @@ In your neovim config, create a `after/queries/toml/injections.scm` file with th
 )
 ```
 
-To only apply the highlighting on mise files instead of all toml files, the `is-mise?` predicate is used.
-If you don't care for this distinction, the lines containing `(#is-mise?)` can be removed.
-Otherwise, make sure to also create the predicate somewhere in your neovim config.
+The `is-mise?` predicate restricts the highlighting to mise files instead of all TOML files.
+If you don't need this distinction, remove the lines containing `(#is-mise?)`.
+Otherwise, make sure to also define the predicate somewhere in your Neovim config.
 
 For example, using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 
@@ -77,16 +77,16 @@ For example, using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 },
 ```
 
-This will consider any `toml` file containing `mise` in its name as a mise file.
+This treats any `toml` file with `mise` in its name as a mise file.
 
 ### MISE and USAGE comments in file tasks
 
-You can also use Treesitter to enable syntax highlighting for `"#MISE` and `#USAGE` comments in file based tasks.
-See the example here on the left side of the image:
+You can also use Treesitter to enable syntax highlighting for `#MISE` and `#USAGE` comments in file tasks.
+See the left side of the image for an example:
 
 ![USAGE spec syntax highlighting demo](./usage-spec-syntax-hl.png)
 
-In your neovim config, create a `after/queries/bash/injections.scm` file with these queries:
+In your Neovim config, create an `after/queries/bash/injections.scm` file with these queries:
 
 ```query
 ; extends
@@ -160,11 +160,11 @@ In your neovim config, create a `after/queries/bash/injections.scm` file with th
 
 ```
 
-The same queries work as is for all languages that use `#` as a comment delimiter.
-Due to TS injections being per language, you need to put the same queries to the language specific query files.
-For example, put them to `after/queries/python/injections.scm` to enable them for `Python` in addition to `bash`.
+The same queries work as-is for all languages that use `#` as a comment delimiter.
+Because Treesitter injections are per language, you need to add the same queries to each language's query file.
+For example, put them in `after/queries/python/injections.scm` to enable them for `Python` in addition to `bash`.
 
-For languages that use `//` as a comment delimiter, you need to modify the queries a bit:
+For languages that use `//` as a comment delimiter, adjust the queries slightly:
 
 ```query
 ((comment) @injection.content
@@ -220,4 +220,4 @@ Again using [`lazy.nvim`](https://github.com/folke/lazy.nvim):
 },
 ```
 
-This will only work if the [TS injection queries](#run-commands) are also set up.
+This only works if the [TS injection queries](#run-commands) are also set up.

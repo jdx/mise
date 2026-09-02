@@ -2,9 +2,9 @@
 
 `mise` can be used to install and manage multiple versions of [go](https://golang.org/) on the same system.
 
-> The following are instructions for using the go mise core plugin. This is used when there isn't a
-> git plugin installed named "go". If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang)
-> then use `mise plugins install go GIT_URL`.
+> The following are instructions for using the go mise core plugin. It is used when no
+> git plugin named "go" is installed. If you want to use [asdf-golang](https://github.com/kennyp/asdf-golang) instead,
+> run `mise plugins install go GIT_URL`.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/go.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/go.rs).
@@ -30,7 +30,7 @@ mise use -g go@prefix:1.20
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
 However, it can also read go-specific version files named `.go-version`.
 
-See [idiomatic version files](/configuration.html#idiomatic-version-files)
+See [idiomatic version files](/configuration.html#idiomatic-version-files).
 
 ## Default packages
 

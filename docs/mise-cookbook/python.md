@@ -4,7 +4,7 @@ Here are some tips on managing [Python](/lang/python.html) projects with mise.
 
 ## A Python Project with virtualenv
 
-Here is an example python project with a `requirements.txt` file.
+Here is an example Python project with a `requirements.txt` file.
 
 ```toml [mise.toml]
 min_version = "2024.9.5"
@@ -49,7 +49,7 @@ echo "Virtual Environment: $VIRTUAL_ENV"
 
 If you are using a `uv` project initialized with `uv init .`, here is how you can use it with mise.
 
-Here is how the `uv` project will look like:
+Here is what the `uv` project looks like:
 
 ```shell [uv-project]
 .
@@ -63,9 +63,9 @@ cat .python-version
 # 3.12
 ```
 
-If you run `uv run main.py` in the `uv` project, `uv` will automatically create a virtual environment for you using the python version specified in the `.python-version` file. This will also create a `uv.lock` file.
+If you run `uv run main.py` in the `uv` project, `uv` automatically creates a virtual environment for you using the Python version specified in the `.python-version` file. It also creates a `uv.lock` file.
 
-`mise` will detect the python version in `.python-version`, however, it won't use the virtual env created by `uv` by default. So, using `which python` will show a global python installation from `mise`.
+`mise` detects the Python version in `.python-version`, but by default it does not use the virtual environment created by `uv`. So `which python` shows a global Python installation from `mise`.
 
 ```shell
 mise i
@@ -73,12 +73,12 @@ which python
 # ~/.local/share/mise/installs/python/3.12.4/bin/python
 ```
 
-If you want `mise` to use the virtual environment created by `uv`, you can set the [`python.uv_venv_auto`](/lang/python.html#python.uv_venv_auto) setting in your `mise.toml` file.
-Use `"source"` to only source an existing `.venv`, or `"create|source"` to create it if missing and then source it.
+To make `mise` use the virtual environment created by `uv`, set the [`python.uv_venv_auto`](/lang/python.html#python.uv_venv_auto) setting in your `mise.toml` file.
+Use `"source"` to source only an existing `.venv`, or `"create|source"` to create it if missing and then source it.
 If you prefer `mise deps` to create the venv, keep it at `"source"`, enable `[deps.uv]`, and run `mise deps`.
 
 ::: tip
-`mise` locates the uv project by walking up for a `uv.lock` file — that lockfile is how `mise` knows the project uses uv. A `uv.lock` must therefore be present: if none is found (for example a fresh project that hasn't been `uv sync`'d yet), the setting does nothing. Run `uv sync` (or `uv lock`) to generate one.
+`mise` locates the uv project by walking up the directory tree for a `uv.lock` file — that lockfile is how `mise` knows the project uses uv. A `uv.lock` must therefore be present: if none is found (for example, in a fresh project that hasn't been `uv sync`'d yet), the setting does nothing. Run `uv sync` (or `uv lock`) to generate one.
 :::
 
 ```toml [mise.toml]
@@ -88,7 +88,7 @@ python.uv_venv_auto = "source"
 # python.uv_venv_auto = "create|source"
 ```
 
-Using `which python` will now show the python version from the virtual environment created by `uv`.
+`which python` now shows the Python version from the virtual environment created by `uv`.
 
 ```shell
 which python
@@ -104,12 +104,12 @@ _.python.venv = { path = ".venv" }
 
 ### Syncing python versions installed by mise and uv
 
-You can use [mise sync python --uv](/cli/sync/python.html#uv) to sync the python version installed by `mise` with the python version specified in the `.python-version` file in the `uv` project.
+Use [mise sync python --uv](/cli/sync/python.html#uv) to sync the Python version installed by `mise` with the version specified in the `uv` project's `.python-version` file.
 
 ### uv scripts
 
-You can take advantage of `uv run` in [`shebang`](/tasks/toml-tasks.html#shell-shebang) in toml or file tasks.
-Note that using `--script` is required if the filename does not end in `.py`.
+You can use `uv run` in a [`shebang`](/tasks/toml-tasks.html#shell-shebang) in toml or file tasks.
+The `--script` flag is required if the filename does not end in `.py`.
 
 Here is an example toml task:
 

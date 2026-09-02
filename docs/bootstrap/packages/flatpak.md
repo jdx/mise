@@ -37,8 +37,8 @@ mise bootstrap packages upgrade --manager flatpak
 mise bootstrap packages upgrade --manager flatpak-user
 ```
 
-mise always passes an explicit scope to Flatpak so status, installation, and
-upgrades operate on the same installation. `flatpak` passes `--system`, while
+mise always passes an explicit scope to Flatpak so status, apply, and
+upgrade operate on the same installation. `flatpak` passes `--system`, while
 `flatpak-user` passes `--user`. Flatpak resolves the configured ID from the
 remotes configured for that scope.
 

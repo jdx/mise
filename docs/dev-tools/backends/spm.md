@@ -2,13 +2,13 @@
 
 You may install executables managed by [Swift Package Manager](https://www.swift.org/documentation/package-manager) directly from GitHub or GitLab releases.
 
-The code for this is inside of the mise repository at [`./src/backend/spm.rs`](https://github.com/jdx/mise/blob/main/src/backend/spm.rs).
+The code for this backend is in the mise repository at [`./src/backend/spm.rs`](https://github.com/jdx/mise/blob/main/src/backend/spm.rs).
 
-When a release publishes a SwiftPM artifact bundle (`*.artifactbundle.zip`), mise will use the prebuilt executable from the bundle when it matches the current Swift target triple. If no matching bundle is available, mise falls back to building the package from source unless artifact bundles are explicitly required.
+When a release publishes a SwiftPM artifact bundle (`*.artifactbundle.zip`), mise uses the prebuilt executable from the bundle when it matches the current Swift target triple. If no matching bundle is available, mise falls back to building the package from source unless artifact bundles are explicitly required.
 
 ## Dependencies
 
-This relies on having `swift` installed. You can either install it [manually](https://www.swift.org/install) or [with mise](/lang/swift).
+This backend relies on `swift` being installed. You can install it [manually](https://www.swift.org/install) or [with mise](/lang/swift).
 
 > [!NOTE]
 > If you have Xcode installed and selected in your system via `xcode-select`, Swift is already available through the toolchain embedded in the Xcode installation.
@@ -84,9 +84,9 @@ the download, extract, and symlink steps are handled by mise directly.
 
 ### `provider`
 
-Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (default is `github`).
-Ensure the `provider` is set to the correct type if you use shorthand notation and `api_url` for self-hosted repositories
-as the type probably cannot be derived correctly from the URL.
+Set the provider type to use for fetching assets and release information. Either `github` or `gitlab` (the default is `github`).
+If you use shorthand notation with `api_url` for a self-hosted repository, set `provider` explicitly,
+since the type usually cannot be derived from the URL.
 
 ```toml
 [tools]
@@ -156,7 +156,7 @@ products and running `swift build --product`. The command uses mise's default in
 inherits [`install_env`](#install_env) plus the `PATH` for the Swift dependency. `PREFIX` and
 `MISE_TOOL_INSTALL_PATH` are both set to the tool's installation directory.
 
-This option only applies to source installs and cannot be combined with `filter_bins`. Mise never
+This option only applies to source installs and cannot be combined with `filter_bins`. mise never
 automatically runs a package's Makefile or other installation scripts; the command must be
 configured explicitly.
 
@@ -178,7 +178,7 @@ otherwise.
 ### `spm.artifactbundle_only`
 
 Set `spm.artifactbundle_only = true` to require SwiftPM artifact bundles for all `spm:` installs.
-This mirrors `cargo.binstall_only`: mise will fail if no matching artifact bundle is available
+This mirrors `cargo.binstall_only`: mise fails if no matching artifact bundle is available
 instead of compiling from source.
 
 ```toml

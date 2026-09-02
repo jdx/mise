@@ -1,10 +1,10 @@
 # Rust
 
-Rust/cargo can be installed which uses rustup under the hood. mise will install rustup if it is not already
-installed and install the requested toolchain, components, and targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
-variables for the home directories and falls back to their standard location (`~/.rustup` and `~/.cargo`) if they are
-not set. You can change this by setting the `MISE_RUSTUP_HOME` and `MISE_CARGO_HOME` environment variables if you'd like
-to isolate mise's rustup/cargo from your other rustup/cargo installations.
+mise can install Rust/cargo using rustup under the hood. It installs rustup if it is not already installed, then
+installs the requested toolchain, components, and targets. By default, mise respects the `RUSTUP_HOME` and `CARGO_HOME` environment
+variables for the home directories and falls back to their standard locations (`~/.rustup` and `~/.cargo`) if they are
+not set. To isolate mise's rustup/cargo from your other rustup/cargo installations, set the `MISE_RUSTUP_HOME` and
+`MISE_CARGO_HOME` environment variables instead.
 
 These variables can also be set in mise configuration. They are applied to Rust operations in the same mise invocation:
 
@@ -21,20 +21,20 @@ package-manager installation of rustup. The original `PATH` must contain a direc
 `rustc` proxies, as provided by package managers such as Homebrew, APT, and pacman. An explicit Rust or Cargo home
 continues to use mise's managed rustup initialization instead of an external proxy directory.
 
-Unlike most tools, these won't exist inside of `~/.local/share/mise/installs` because they are managed by rustup.
+Unlike most tools, Rust toolchains are not stored in `~/.local/share/mise/installs` because rustup manages them.
 mise keeps a symlink there for install tracking, sets the `RUSTUP_TOOLCHAIN` environment variable to the requested
 version, and asks rustup to install any configured components or targets when you run `mise install`.
 
 ## Usage
 
-Use the latest stable version of rust:
+Use the latest stable version of Rust:
 
 ```sh
 mise use -g rust
 cargo build
 ```
 
-Use the latest beta version of rust:
+Use the latest beta version of Rust:
 
 ```sh
 mise use -g rust@beta
@@ -61,7 +61,7 @@ mise use -g rust@nightly-2026-08-13
 An explicitly dated nightly is an exact pin. Commands using `--bump`, such as `mise upgrade --bump rust`, can replace
 that pin with the current nightly.
 
-Use a specific version of rust:
+Use a specific version of Rust:
 
 ```sh
 mise use -g rust@1.82
@@ -84,9 +84,9 @@ rust = { version = "latest", install_env = { RUSTUP_DIST_SERVER = "https://stati
 
 ### `components`
 
-The `components` option allows you to specify which components to install. Multiple components can be
-specified as an array or by separating them with a comma. The set of available components may vary with different releases and
-toolchains. Please consult the Rust documentation for the most up-to-date list of components.
+The `components` option specifies which components to install. Multiple components can be
+given as an array or as a comma-separated string. The set of available components varies between releases and
+toolchains; consult the Rust documentation for the current list.
 
 ```toml
 [tools]
@@ -97,12 +97,12 @@ If the Rust toolchain is already installed, `mise install` will still add any mi
 
 ### `profile`
 
-The `profile` option allows you to specify the type of release to install. The following values
+The `profile` option specifies the rustup profile to install. The following values
 are supported:
 
 - `minimal`: Includes as few components as possible to get a working compiler (`rustc`, `rust-std`, and `cargo`)
 - `default`: Includes all of the components in the minimal profile, and adds `rust-docs`, `rustfmt`, and `clippy`
-- `complete`: Includes all the components available through `rustup`. This should never be used, as it includes every component ever included in the metadata and thus will almost always fail.
+- `complete`: Includes all the components available through `rustup`. Avoid this profile: it includes every component ever included in the metadata and will almost always fail.
 
 If not set, it defaults to the profile configured in `rustup`. You can check your current default by running `rustup show profile`.
 
@@ -113,8 +113,8 @@ If not set, it defaults to the profile configured in `rustup`. You can check you
 
 ### `targets`
 
-The `targets` option allows you to specify a list of platforms to install for cross-compilation. Multiple targets can
-be specified as an array or by separating them with a comma.
+The `targets` option specifies platforms to install for cross-compilation. Multiple targets can
+be given as an array or as a comma-separated string.
 
 ```toml
 [tools]

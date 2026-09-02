@@ -8,7 +8,7 @@ This backend is experimental. Enable it with:
 mise settings experimental=true
 ```
 
-Or set `MISE_EXPERIMENTAL=1` for a single shell/session.
+Or set `MISE_EXPERIMENTAL=1` for a single shell session.
 
 ## Usage
 
@@ -35,10 +35,10 @@ mise lock
 mise install --locked
 ```
 
-When `--locked` is enabled, mise requires a lockfile URL for the current platform and will fail instead of doing a live pantry resolution if the lockfile is missing or incomplete.
+With `--locked`, mise requires a lockfile URL for the current platform and fails instead of performing a live pantry resolution if the lockfile is missing or incomplete.
 
 ## Notes
 
 - This backend currently supports platforms that pkgx publishes bottles for.
 - Version requirements are resolved from pkgx pantry metadata using npm-style semver ranges.
-- Runtime environment from pantry manifests is applied through generated wrappers.
+- The runtime environment from pantry manifests is applied through generated wrappers.

@@ -29,7 +29,7 @@ go in `[tools]` in `mise.toml`.
 
 ### Asset Autodetection
 
-When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. The system scores assets based on:
+When no `asset_pattern` is specified, mise automatically selects the best asset for your platform. It scores assets based on:
 
 - **OS compatibility** (linux, macos, windows)
 - **Architecture compatibility** (x64, arm64, x86, arm)
@@ -37,7 +37,7 @@ When no `asset_pattern` is specified, mise automatically selects the best asset 
 - **Archive format preference** (tar.gz, zip, etc.)
 - **Build type** (avoids debug/test builds)
 
-For most tools, you can simply install without specifying patterns:
+For most tools, you can install without specifying a pattern:
 
 ```sh
 mise install github:user/repo
@@ -149,10 +149,10 @@ When `version_prefix` is configured, mise will:
 **Examples:**
 
 - With `version_prefix = "release-"`:
-  - User specifies `1.0.0` → mise searches for `release-1.0.0` tag
+  - User specifies `1.0.0` → mise searches for the `release-1.0.0` tag
   - Available versions show as `1.0.0` (prefix stripped)
 - With `version_prefix = ""` (empty string):
-  - User specifies `1.0.0` → mise searches for `1.0.0` tag (no prefix)
+  - User specifies `1.0.0` → mise searches for the `1.0.0` tag (no prefix)
   - Useful for repositories that don't use any prefix
 
 ### Platform-specific Asset Patterns
@@ -185,7 +185,7 @@ OS/arch. This is the right choice when the per-platform asset names can't be tem
 portably (e.g. Rust target-triples like `oxlint-aarch64-apple-darwin.tar.gz`).
 
 The example below installs both `oxlint` and `oxfmt` from the single
-`oxc-project/oxc` release. Note that each `matching` value must be specific enough to
+`oxc-project/oxc` release. Each `matching` value must be specific enough to
 select **only** the intended binary — if one binary's name were a substring of the
 other's, use [`matching_regex`](#matching_regex) with an anchor (e.g. `"^oxlint-"`)
 instead (see the [`matching`](#matching) caveat).
@@ -279,7 +279,7 @@ Number of directory components to strip when extracting archives:
 ```
 
 ::: info
-If `strip_components` is not explicitly set, mise will automatically detect when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
+If `strip_components` is not explicitly set, mise automatically detects when to apply `strip_components = 1`. This happens when the extracted archive contains exactly one directory at the root level and no files. This is common with tools like ripgrep that package their binaries in a versioned directory (e.g., `ripgrep-14.1.0-x86_64-unknown-linux-musl/rg`). The auto-detection ensures the binary is placed directly in the install path where mise expects it.
 :::
 
 ### `bin`
@@ -293,7 +293,7 @@ bin = "docker-compose"  # Rename the downloaded binary to docker-compose
 ```
 
 ::: info
-When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose` automatically. Use the `bin` option only when you need a specific custom name.
+When downloading single binaries (not archives), mise automatically removes OS/arch suffixes from the filename. For example, `docker-compose-linux-x86_64` becomes `docker-compose`. Use the `bin` option only when you need a specific custom name.
 :::
 
 ### `rename_exe`
@@ -337,8 +337,8 @@ When `no_app = true`:
 
 - Assets containing `.app.` (e.g., `Tool.app.zip`, `Tool.for.Xcode.app.zip`) are penalized during autodetection
 - Standalone archives (e.g., `tool.zip`, `tool-macos.tar.gz`) are preferred
-- This is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
-- Only affects autodetection; explicit `asset_pattern` values are used as-is
+- The option is mainly useful for macOS asset selection; non-macOS `.app.` assets are already penalized by platform matching
+- The option only affects autodetection; explicit `asset_pattern` values are used as-is
 
 ::: info
 Without this option, mise's autodetection might select .app bundles on macOS, which can be problematic if the bundle contains a GUI application or Xcode extension rather than a standalone CLI tool.
@@ -382,7 +382,7 @@ aliases — `{{ arch(x64="x86_64", arm64="aarch64") }}` is how you get those nam
 2. If `bin_path` is not set, look for a `bin/` directory in the install path
 3. If the install path root contains an executable file, use the install path root
 4. If no `bin/` directory exists, search subdirectories for `bin/` directories
-5. If no `bin/` directories are found, searches immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that entire subdirectory is considered a binary path.
+5. If no `bin/` directories are found, search immediate subdirectories for any executable files. If an executable is found directly within a subdirectory, that subdirectory is used as the binary path.
 6. If no executables are found, use the root of the extracted directory
 
 ### `filter_bins`
@@ -442,7 +442,7 @@ When set:
 - `latest` resolves to the newest version across stable **and** pre-releases, rather than taking the GitHub `/releases/latest` shortcut (which returns whichever release the repo owner has marked as "Latest" — usually the newest non-prerelease, but it can be any release they've pinned via the API).
 - Fuzzy version queries (e.g. `1.2`) match pre-release tags under that prefix.
 
-Useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. Has no effect on GitLab.
+This is useful for repositories whose active releases are all pre-releases (e.g. internal tools shipping continuous dev builds), or when you need to track a project's release candidates. Draft releases are always excluded. The option has no effect on GitLab.
 
 ## Self-hosted GitHub
 

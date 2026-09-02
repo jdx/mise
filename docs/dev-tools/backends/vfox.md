@@ -1,15 +1,15 @@
 # Vfox Backend
 
 ::: tip
-Vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
+vfox is the recommended plugin system for mise. It provides cross-platform support, built-in modules, and a modern hook-based architecture.
 :::
 
-[Vfox](https://github.com/version-fox/vfox) plugins may be used in mise to install tools.
+Plugins for [vfox](https://github.com/version-fox/vfox) can be used in mise to install tools.
 
 ## Why vfox?
 
 - **Cross-platform** — plugins work on Windows, macOS, and Linux without platform-specific code
-- **Built-in modules** — HTTP, JSON, HTML parsing, archive extraction, semver comparison, and logging are all available out of the box, no external dependencies needed
+- **Built-in modules** — HTTP, JSON, HTML parsing, archive extraction, semver comparison, and logging are all available out of the box, with no external dependencies needed
 - **Security** — [tool plugins](../../tool-plugin-development.md) support attestation verification (GitHub artifact attestations, cosign signatures, SLSA provenance) for downloaded artifacts. When a tool plugin's `PreInstall` hook returns an `attestation` table, mise verifies it during install and records the result in `mise.lock`, protecting against downgrade attacks on subsequent installs. Backend plugins do not currently support attestation
 - **Modern architecture** — structured hooks with typed contexts, backend plugins for multi-tool management, rolling version checksums, and lock file support
 
@@ -17,7 +17,7 @@ The code for this is inside the mise repository at [`./src/backend/vfox.rs`](htt
 
 ## Dependencies
 
-No extra system packages are required to _run_ the vfox backend. Vfox Lua code is executed by the interpreter built into mise.
+No extra system packages are required to _run_ the vfox backend. vfox Lua code is executed by the interpreter built into mise.
 
 ## Usage
 
@@ -39,7 +39,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 ## Default plugin backend
 
 On Windows, mise uses vfox plugins by default.
-If you'd like to use plugins by default even on Linux/macOS, set the following settings:
+To use vfox plugins by default on Linux/macOS as well, run the following:
 
 ```sh
 mise settings add disable_backends asdf
@@ -65,12 +65,12 @@ scala                         vfox:mise-plugins/vfox-scala
 terraform                     aqua:hashicorp/terraform vfox:mise-plugins/vfox-terraform
 ```
 
-And they will be installed when running commands such as `mise use -g cmake` without needing to
+They are installed when you run commands such as `mise use -g cmake`, without needing to
 specify `vfox:cmake`.
 
 ## Plugins
 
-In addition to the standard vfox plugins, mise supports modern plugins that can manage multiple tools using the `plugin:tool` format. These plugins are perfect for:
+In addition to the standard vfox plugins, mise supports modern plugins that can manage multiple tools using the `plugin:tool` format. These plugins are well suited to:
 
 - Installing tools from private repositories
 - Package managers (npm, pip, etc.)
@@ -154,7 +154,7 @@ use these variables directly.
 Plugin authors should declare intrinsic install requirements with `PLUGIN.depends` in
 `metadata.lua`. Users can supplement those declarations with the
 [`depends` tool option](/dev-tools/#tool-dependencies). Matching configured tools from both
-sources share one install dependency context: they are ordered before the dependent and their
+sources share one install dependency context: they are ordered before the dependent tool, and their
 paths and `tools = true` values are available to install hooks launched through `os.execute` or
 `cmd.exec`.
 

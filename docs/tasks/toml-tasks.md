@@ -71,13 +71,13 @@ run = './scripts/test-e2e.sh {{vars.e2e_args}} $VERBOSE_ARGS'
 
 ## Adding tasks
 
-You can edit the `mise.toml` file directly or using [`mise tasks add`](/cli/tasks/add)
+You can edit the `mise.toml` file directly or use [`mise tasks add`](/cli/tasks/add). For example:
 
 ```shell
 mise tasks add pre-commit --depends "test" --depends "render" -- echo pre-commit
 ```
 
-will add the following to `mise.toml`:
+adds the following to `mise.toml`:
 
 ```shell
 [tasks.pre-commit]
@@ -91,14 +91,14 @@ For an exhaustive list, see [task configuration](/tasks/task-configuration).
 
 ### Run command
 
-Provide the script to run. Can be a single command or an array of commands:
+Provide the script to run. This can be a single command or an array of commands:
 
 ```mise-toml
 [tasks.test]
 run = 'cargo test'
 ```
 
-Commands are run in series. If a command fails, the task will stop and the remaining commands will not run.
+Commands are run in series. If a command fails, the task stops and the remaining commands do not run.
 
 ```mise-toml
 [tasks.test]
@@ -108,7 +108,7 @@ run = [
 ]
 ```
 
-You can specify an alternate command to run on Windows by using the `run_windows` key:
+You can specify an alternate command to run on Windows with the `run_windows` key:
 
 ```mise-toml
 [tasks.test]
@@ -119,7 +119,7 @@ run_windows = 'cargo test --features windows'
 ### Specifying which directory to use
 
 The [`dir`](/tasks/task-configuration.html#dir) property determines the `cwd` in which the task is executed. You can use the directory
-from where the task was run with <span v-pre>`dir = "{{cwd}}"`</span>:
+the task was run from with <span v-pre>`dir = "{{cwd}}"`</span>:
 
 ```mise-toml
 [tasks.test]
@@ -127,11 +127,11 @@ run = 'cargo test'
 dir = "{{cwd}}"
 ```
 
-Also, `MISE_ORIGINAL_CWD` is set to the original working directory and will be passed to the task.
+`MISE_ORIGINAL_CWD` is also set to the original working directory and passed to the task.
 
 ### Adding a description and alias
 
-You can add a description to a task and alias for a task.
+You can add a description and an alias to a task.
 
 ```mise-toml
 [tasks.build]
@@ -140,8 +140,8 @@ run = "cargo build"
 alias = 'b' # `mise run b`
 ```
 
-- This alias can be used to run the task
-- The description will be displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html) with no arguments.
+- The alias can be used to run the task.
+- The description is displayed when running [`mise tasks ls`](/cli/tasks/ls.html) or [`mise run`](/cli/run.html) with no arguments.
 
 ```shell
 ❯ mise run
@@ -153,7 +153,7 @@ Tasks
 
 ### Dependencies
 
-You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task will not run.
+You can specify dependencies for a task. Dependencies are run before the task itself. If a dependency fails, the task does not run.
 
 ```mise-toml
 [tasks.build]
@@ -163,7 +163,7 @@ run = 'cargo build'
 depends = ['build']
 ```
 
-There are other ways to specify dependencies, see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post)
+There are other ways to specify dependencies; see [wait_for](/tasks/task-configuration.html#wait-for) and [depends_post](/tasks/task-configuration.html#depends-post).
 
 ### Environment variables
 
@@ -182,7 +182,7 @@ cargo clippy
 
 ### Sources / Outputs
 
-If you want to skip executing a task if certain files haven't changed (up-to-date), you should specify `sources` and `outputs`:
+To skip a task when certain files haven't changed (that is, when it is up to date), specify `sources` and `outputs`:
 
 ```mise-toml
 [tasks.build]
@@ -192,13 +192,13 @@ sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't ch
 outputs = ['target/debug/mycli']
 ```
 
-You can use `sources` alone if with [`mise watch`](/cli/watch.html) to run the task when the sources change.
+You can use `sources` alone with [`mise watch`](/cli/watch.html) to run the task when the sources change.
 You can use the [`task_source_files()`](../templates.md#task-source-files) function to get the resolved paths of a task's `sources` from within
 its [template](../templates.md).
 
 ### Confirmation
 
-A message to show before running the task. The user will be prompted to confirm before the task is run.
+A message to show before running the task. The user is prompted to confirm before the task runs.
 
 ```mise-toml
 [tasks.release]
@@ -209,8 +209,8 @@ file = 'scripts/release.sh'
 
 ## Specifying a shell or an interpreter {#shell-shebang}
 
-Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means that the script
-will exit if any command fails. You can disable this by running `set +e` in the script.
+Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means the script
+exits if any command fails. You can disable this by running `set +e` in the script.
 
 ```mise-toml
 [tasks.echo]
@@ -256,7 +256,7 @@ $ mise run greet world
 hello world
 ```
 
-By using a `shebang` (or `shell`), you can run tasks in different languages (e.g., Python, Node.js, Ruby, etc.):
+By using a `shebang` (or `shell`), you can run tasks in other languages (e.g., Python, Node.js, or Ruby):
 
 ::: code-group
 
@@ -365,8 +365,8 @@ puts 'Hello, ruby!'
 
 ::: details What's a shebang? What's the difference between `#!/usr/bin/env` and `#!/usr/bin/env -S`
 
-A shebang is the character sequence `#!` at the beginning of a script file that tells the system which program should be used to interpret/execute the script.
-The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html) comes from GNU Coreutils. `mise` does not use `env` but will behave similarly.
+A shebang is the character sequence `#!` at the beginning of a script file that tells the system which program should interpret the script.
+The [env command](https://manpages.ubuntu.com/manpages/jammy/man1/env.1.html) comes from GNU Coreutils. `mise` does not use `env` but behaves similarly.
 
 For example, `#!/usr/bin/env python` will run the script with the Python interpreter found in the `PATH`.
 
@@ -374,7 +374,7 @@ The `-S` flag allows passing multiple arguments to the interpreter.
 It treats the rest of the line as a single argument string to be split.
 
 This is useful when you need to specify interpreter flags or options.
-Example: `#!/usr/bin/env -S python -u` will run Python with unbuffered output.
+For example, `#!/usr/bin/env -S python -u` runs Python with unbuffered output.
 
 :::
 
@@ -390,7 +390,7 @@ file = 'scripts/release.sh' # execute an external script
 
 ### Remote tasks
 
-Task files can be fetched remotely with multiple protocols:
+Task files can be fetched remotely using several protocols:
 
 #### HTTP
 
@@ -399,7 +399,7 @@ Task files can be fetched remotely with multiple protocols:
 file = "https://example.com/build.sh"
 ```
 
-Please note that the file will be downloaded and executed. Make sure you trust the source.
+The file is downloaded and executed, so make sure you trust the source.
 
 #### Git <Badge type="warning" text="experimental" />
 
@@ -417,11 +417,11 @@ file = "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0"
 
 :::
 
-Url format must follow these patterns `git::<protocol>://<url>//<path>?<ref>`
+The URL must follow the pattern `git::<protocol>://<url>//<path>?<ref>`.
 
 Required fields:
 
-- `protocol`: The git repository URL.
+- `protocol`: The git protocol, such as `ssh` or `https`.
 - `url`: The git repository URL.
 - `path`: The path to the file in the repository.
 
@@ -431,7 +431,7 @@ Optional fields:
 
 #### Cache
 
-Each task file is cached in the `MISE_CACHE_DIR` directory. If the file is updated, it will not be re-downloaded unless the cache is cleared.
+Each task file is cached in the `MISE_CACHE_DIR` directory. If the remote file is updated, it is not re-downloaded until the cache is cleared.
 
 :::tip
 You can reset the cache by running `mise cache clear`.
@@ -445,19 +445,19 @@ You can use the `MISE_TASK_REMOTE_NO_CACHE` environment variable to disable cach
 For comprehensive information about task arguments, see the dedicated [Task Arguments](/tasks/task-arguments) page.
 :::
 
-By default, arguments are passed to the last script in the `run` array. So if a task was defined as:
+By default, arguments are passed to the last script in the `run` array. So if a task is defined as:
 
 ```mise-toml
 [tasks.test]
 run = ['cargo test', './scripts/test-e2e.sh']
 ```
 
-Then running `mise run test foo bar` will pass `foo bar` to `./scripts/test-e2e.sh` but not to
+Then running `mise run test foo bar` passes `foo bar` to `./scripts/test-e2e.sh` but not to
 `cargo test`.
 
 ### Recommended: Using the Usage Field
 
-The recommended way to define arguments is using the `usage` field:
+The recommended way to define arguments is the `usage` field:
 
 ```mise-toml
 [tasks.test]
@@ -481,10 +481,10 @@ Using Tera template functions (`arg()`, `option()`, `flag()`) in run scripts is 
 **Why it's being removed:**
 
 - Template functions return empty strings during spec collection (two-pass parsing issue)
-- Complex and unpredictable shell escaping rules
-- Doesn't work consistently between TOML/file tasks
+- Shell escaping rules are complex and unpredictable
+- Behavior is inconsistent between TOML and file tasks
 
-**Please migrate to using the `usage` field instead.** See the [migration guide](/tasks/task-arguments#tera-templates).
+**Migrate to the `usage` field instead.** See the [migration guide](/tasks/task-arguments#tera-templates).
 :::
 
 <details>
@@ -500,8 +500,8 @@ run = [
 ]
 ```
 
-Then running `mise run test foo bar` will pass `foo bar` to `cargo test`.
-`mise run test --e2e-args baz` will pass `baz` to `./scripts/test-e2e.sh`.
+Then running `mise run test foo bar` passes `foo bar` to `cargo test`.
+`mise run test --e2e-args baz` passes `baz` to `./scripts/test-e2e.sh`.
 
 #### Positional Arguments
 
@@ -568,6 +568,6 @@ fi
 
 - `name`: The name of the flag. This is used for help/error messages.
 
-The value will be `true` if the flag is passed, and `false` otherwise.
+The value is `true` if the flag is passed and `false` otherwise.
 
 </details>

@@ -1,39 +1,39 @@
 # pipx Backend
 
 pipx is a tool for running Python CLIs in isolated virtualenvs. This is necessary for Python CLIs
-because it prevents conflicting dependencies between CLIs or between a CLI and Python projects. In essence,
+because it prevents dependency conflicts between CLIs, or between a CLI and your Python projects. In short,
 this backend lets you add Python CLIs to mise.
 
-To be clear, pipx is not pip and it's not used to manage Python dependencies generally.
-mise is a tool manager, not a dependency manager like pip, uv, or poetry. You can, however, use mise to install said package
-managers. You'd want to use the pipx backend to install a CLI like "black", not a library like "NumPy" or "requests".
+To be clear, pipx is not pip, and it is not used to manage Python dependencies in general.
+mise is a tool manager, not a dependency manager like pip, uv, or poetry (though you can use mise to install those package
+managers). Use the pipx backend to install a CLI like "black", not a library like "NumPy" or "requests".
 
-Somewhat confusingly, the pipx backend will actually default to using [`uvx`](https://docs.astral.sh/uv/guides/tools/) (the equivalent of pipx for uv)
-if uv is installed. This should just mean that it installs much faster, but see below to disable or configure
-since occasionally tools don't work with uvx.
+Somewhat confusingly, the pipx backend defaults to [`uvx`](https://docs.astral.sh/uv/guides/tools/) (uv's equivalent of pipx)
+if uv is installed. This mostly means that tools install much faster, but occasionally a tool doesn't work with uvx;
+see below for how to disable or configure this.
 
 The pipx backend supports the following sources:
 
 - PyPI
 - Git
 - GitHub
-- Http
+- HTTP
 
-The code for this is inside of the mise repository at [`./src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
+The code for this is inside the mise repository at [`./src/backend/pipx.rs`](https://github.com/jdx/mise/blob/main/src/backend/pipx.rs).
 
 ## Dependencies
 
-This relies on having `uv` (recommended) or `pipx` installed.
+This backend requires `uv` (recommended) or `pipx` to be installed.
 
-If you have `uv` installed, mise will use `uv tool install` under the hood and you don't need to install `pipx` to run the commands containing "pipx:".
+If you have `uv` installed, mise uses `uv tool install` under the hood, and you don't need `pipx` installed to run commands containing "pipx:".
 
 mise forwards [`minimum_release_age`](/configuration/settings.html#minimum_release_age)
 to transitive Python dependency resolution during install. The uv install path uses uv's
 `--exclude-newer` flag and requires `uv >= 0.2.22`. The `pipx` fallback passes pip's
 `--uploaded-prior-to` flag.
 
-In case you need `pipx` for other reasons, you can install it with or without mise.
-Here is how to install `pipx` with mise:
+If you need `pipx` for other reasons, you can install it with or without mise.
+To install it with mise:
 
 ```sh
 mise use -g python
@@ -62,20 +62,20 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Python upgrades
 
-If the python version used by a pipx package changes, (by mise or system python), you may need to
-reinstall the package. This can be done with:
+If the Python version used by a pipx package changes (whether managed by mise or the system), you may need to
+reinstall the package:
 
 ```sh
 mise install -f pipx:psf/black
 ```
 
-Or you can reinstall all pipx packages with:
+Or reinstall all pipx packages:
 
 ```sh
 mise install -f "pipx:*"
 ```
 
-mise _should_ do this automatically when using `mise up python`.
+mise _should_ do this automatically when you run `mise up python`.
 
 ### Supported Pipx Syntax
 
@@ -87,7 +87,7 @@ mise _should_ do this automatically when using `mise up python`.
 | GitHub shorthand for specific version | `pipx:psf/black@24.3.0`                                |
 | Git syntax for latest version         | `pipx:git+https://github.com/psf/black.git`            |
 | Git syntax for a branch               | `pipx:git+https://github.com/psf/black.git@main`       |
-| Https with zipfile                    | `pipx:https://github.com/psf/black/archive/18.9b0.zip` |
+| HTTPS with zipfile                    | `pipx:https://github.com/psf/black/archive/18.9b0.zip` |
 
 For GitHub URLs, `latest` resolves to the latest published GitHub Release and falls
 back to default-branch HEAD when there are no releases. For other Git URLs, `latest`
@@ -113,8 +113,8 @@ go in `[tools]` in `mise.toml`.
 ### `registry_url`
 
 Set the package registry URL mise uses to resolve versions for this tool. The URL must contain a
-`{}` placeholder for the package name. This overrides the `pipx.registry_url` setting only
-for this tool; installation registry arguments remain configured separately through `uvx_args` or
+`{}` placeholder for the package name. This overrides the `pipx.registry_url` setting for this
+tool only; registry arguments for installation are still configured separately through `uvx_args` or
 `pipx_args`.
 
 ```toml

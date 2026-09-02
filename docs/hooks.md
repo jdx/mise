@@ -1,8 +1,8 @@
 # Hooks
 
-You can have mise automatically execute scripts during a `mise activate` session. You cannot use these
-without the `mise activate` shell hook installed in your shell—except the `preinstall` and `postinstall` hooks.
-The configuration goes into `mise.toml`.
+mise can automatically execute scripts during a `mise activate` session. Except for the `preinstall`
+and `postinstall` hooks, these require the `mise activate` shell hook to be installed in your shell.
+Hooks are configured in `mise.toml`.
 
 When the same hook type is defined in multiple loaded config files, mise runs every matching hook
 rather than overriding hooks from lower-precedence files. Hooks run from the highest-precedence
@@ -13,7 +13,7 @@ precedence. Put order-dependent hooks in one array when they need to run in alph
 
 ## CD hook
 
-This hook is run anytime the directory is changed.
+This hook runs whenever the directory changes.
 
 ```toml
 [hooks]
@@ -22,7 +22,7 @@ cd = "echo 'I changed directories'"
 
 ## Enter hook
 
-This hook is run when the project is entered. Changing directories while in the project will not trigger this hook again.
+This hook runs when the project is entered. Changing directories within the project does not trigger it again.
 
 ```toml
 [hooks]
@@ -31,7 +31,7 @@ enter = "echo 'I entered the project'"
 
 ## Leave hook
 
-This hook is run when the project is left. Changing directories while in the project will not trigger this hook.
+This hook runs when the project is left. Changing directories within the project does not trigger it.
 
 ```toml
 [hooks]
@@ -40,7 +40,7 @@ leave = "echo 'I left the project'"
 
 ## Preinstall/postinstall hook
 
-These hooks are run before and after tools are installed (respectively). Unlike other hooks, these hooks do not require `mise activate`.
+These hooks run before and after tools are installed, respectively. Unlike other hooks, they do not require `mise activate`.
 They run with the project root as their working directory, even when `mise install` is invoked from
 a subdirectory. The invocation directory remains available in `MISE_ORIGINAL_CWD`.
 
@@ -131,7 +131,7 @@ task-backed hook types retain normal task tool installation behavior.
 
 ## Watch files hook
 
-While using `mise activate` you can have mise watch files for changes and execute a script or task when a file changes.
+While using `mise activate`, mise can watch files for changes and execute a script or task when one changes.
 
 ```toml
 [[watch_files]]
@@ -161,7 +161,7 @@ task = "sync-deps"
 
 Each `[[watch_files]]` entry should have either `run` or `task`, but not both.
 
-This hook will have the following environment variables set:
+This hook has the following environment variables set:
 
 - `MISE_WATCH_FILES_MODIFIED`: A colon-separated list of the files that have been modified. Colons are escaped with a backslash.
 
@@ -249,13 +249,13 @@ Use `run` when the hook should execute as an inline command in a subprocess. `pr
 if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
 
 ::: warning
-I feel this should be obvious but in case it's not, this isn't going to do any sort of cleanup
-when you _leave_ the directory like using `[env]` does in `mise.toml`. You're literally just
-executing shell code when you enter the directory which mise has no way to track at all.
-I don't think there is a solution to this problem and it's likely the reason direnv has never
+I feel this should be obvious, but in case it's not: this won't do any sort of cleanup
+when you _leave_ the directory the way `[env]` in `mise.toml` does. You're literally just
+executing shell code when you enter the directory, which mise has no way to track at all.
+I don't think there is a solution to this problem, and it's likely the reason direnv has never
 implemented something similar.
 
-I think in most situations this is probably fine, though worth keeping in mind.
+In most situations this is probably fine, though it's worth keeping in mind.
 
 :::
 

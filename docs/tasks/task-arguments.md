@@ -1,6 +1,6 @@
 # Task Arguments
 
-Task arguments allow you to pass parameters to tasks, making them more flexible and reusable. There are three ways to define task arguments in mise, but only two are recommended for current use.
+Task arguments let you pass parameters to tasks, making them more flexible and reusable. There are three ways to define task arguments in mise, but only two are recommended.
 
 ## Recommended Methods
 
@@ -76,14 +76,14 @@ echo "Deploying to {{ usage.environment }} in {{ usage.region }}"
 '''
 ```
 
-The `usage` map uses **snake_case argument/flag names as keys** (just like the
+The `usage` map uses **snake_case argument/flag names as keys** (like the
 `usage_` environment variables). Names with `-` are converted to `_`, so a flag
 like `--dry-run` becomes available as <span v-pre>`{{ usage.dry_run }}`</span>
 and `$usage_dry_run`. Variadic arguments/flags are exposed as arrays and can be
 used with Tera's `for` loops and filters like `length`. The `usage` map is
 **separate from** the deprecated Tera template functions (`arg()`, `option()`,
-`flag()`) described later on this page—you should not mix the two approaches in
-the same task.
+`flag()`) described later on this page. Do not mix the two approaches in the
+same task.
 
 <span v-pre>`{{usage.*}}`</span> templates can also be used in `depends`, `depends_post`, and
 `wait_for` to forward arguments to dependency tasks. See
@@ -133,7 +133,7 @@ fi
 ```
 
 ::: tip Syntax Options
-Use `#MISE` (uppercase, recommended) or `#USAGE` for defining arguments in file tasks. `# [MISE]` or `# [USAGE]` are also accepted as workarounds for formatters.
+Use `#MISE` (uppercase, recommended) or `#USAGE` to define arguments in file tasks. `# [MISE]` and `# [USAGE]` are also accepted as workarounds for formatters.
 :::
 
 #### Mounting Generated Specs
@@ -184,7 +184,7 @@ arg "<files>" var=#true var_min=1 var_max=3    // Between 1 and 3 files
 ```
 
 ::: tip Handling Variadic Args with Spaces in Bash
-Variadic arguments are passed as a shell-escaped string. To properly handle arguments containing spaces as a bash array, wrap the variable in parentheses:
+Variadic arguments are passed as a shell-escaped string. To handle arguments containing spaces as a bash array, wrap the variable in parentheses:
 
 ```bash
 # Convert to bash array:
@@ -249,7 +249,7 @@ arg "<args>..." double_dash="preserve"
 
 ### Flags (`flag`)
 
-Flags can be defined as booleans or as accepting values.
+Flags can be boolean or accept values.
 
 #### Boolean Flags
 
@@ -333,7 +333,7 @@ complete "plugin" run="mise plugins ls"       // Complete with command output
 complete "plugin" run="mycli plugins list" descriptions=#true
 ```
 
-Output format (split on `:` for value and description):
+Output format (split on `:` into value and description):
 
 ```
 nodejs:JavaScript runtime
@@ -343,7 +343,7 @@ ruby:Ruby language
 
 ### Long Help Text
 
-For detailed help text, use multi-line format:
+For detailed help text, use the multi-line format:
 
 ```mise-toml
 [tasks.complex]
@@ -469,7 +469,7 @@ fi
 
 ## Bash Variable Expansion for Usage Variables {#bash-variable-expansion}
 
-When accessing usage-defined variables in bash scripts, use parameter expansion syntax to help [shellcheck](https://www.shellcheck.net/) understand these variables and provide default values for boolean flags.
+When accessing usage-defined variables in bash scripts, use parameter expansion syntax to help [shellcheck](https://www.shellcheck.net/) understand these variables and to provide default values for boolean flags.
 
 ### Common Patterns
 
@@ -485,7 +485,7 @@ When accessing usage-defined variables in bash scripts, use parameter expansion 
 
 #### Args and Flags with Defaults
 
-Use `${usage_var?}` since usage guarantees they'll be set:
+Use `${usage_var?}`, since usage guarantees they are set:
 
 ```bash
 # --profile has default="debug" in usage spec
@@ -521,7 +521,7 @@ Use `${usage_var:+value}` to pass flags only when set:
 mycli deploy ${usage_verbose:+--verbose}
 ```
 
-These expansions help [shellcheck](https://www.shellcheck.net/) understand your script and prevent warnings about potentially unset variables while maintaining proper error handling.
+These expansions help [shellcheck](https://www.shellcheck.net/) understand your script and prevent warnings about potentially unset variables, while preserving proper error handling.
 
 ## Deprecated Method
 
@@ -532,14 +532,14 @@ The Tera template method for defining task arguments is **deprecated** and will 
 
 **Why it's being removed:**
 
-- **Two-pass parsing issues**: Template functions return empty strings during spec collection, causing unexpected behavior when trying to use them as normal template values
+- **Two-pass parsing issues**: Template functions return empty strings during spec collection, causing unexpected behavior when they are used as normal template values
 - **Complex escaping rules**: Shell escaping rules are confusing and error-prone
-- **Inconsistent behavior**: Doesn't work the same way between TOML and file tasks
+- **Inconsistent behavior**: Behaves differently in TOML and file tasks
 - **Poor user experience**: Mixes argument definitions with script logic
 
-**Migration required:** Please migrate to the [usage field](#usage-field) method before 2026.11.0.
+**Migration required:** Migrate to the [usage field](#usage-field) method before 2026.11.0.
 
-**Opt-out setting:** If you want to disable the two-pass parsing behavior immediately (before removal), you can set:
+**Opt-out setting:** To disable the two-pass parsing behavior now, before removal, set:
 
 ```toml
 # ~/.config/mise/config.toml
@@ -549,7 +549,7 @@ task.disable_spec_from_run_scripts = true
 
 Or via environment variable: `MISE_TASK_DISABLE_SPEC_FROM_RUN_SCRIPTS=1`
 
-When enabled, mise will only use the `usage` field for spec generation, ignoring any `arg()`, `option()`, or `flag()` functions in run scripts. See [Settings](/configuration/settings) for more details.
+When enabled, mise uses only the `usage` field for spec generation and ignores any `arg()`, `option()`, or `flag()` functions in run scripts. See [Settings](/configuration/settings) for more details.
 :::
 
 <details>
@@ -589,7 +589,7 @@ run = [
    run = 'cmd {{arg(name="file")}}' # May or may not be properly escaped
    ```
 
-3. **No help generation**: Doesn't generate proper `--help` output
+3. **No help generation**: Does not generate proper `--help` output
 
 </details>
 

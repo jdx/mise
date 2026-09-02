@@ -26,7 +26,7 @@ mode = "0600"
 
 The short declaration maps a logical name directly to an environment variable.
 The table form also accepts `description` and `allow_empty = true`; empty values
-are rejected by default. Mise resolves only the inputs referenced by selected
+are rejected by default. mise resolves only the inputs referenced by selected
 file templates; an unused declaration does not block unrelated files. Referenced
 inputs are resolved and every template is rendered before any full-bootstrap
 mutation starts, so a missing input cannot leave a partially rendered file or
@@ -57,6 +57,6 @@ names, and `available`, `missing`, `empty`, or `invalid_unicode`; it never print
 values. Add `--json` for machine-readable output or `--missing` to exit 1 when
 an input is unavailable.
 
-Mise redacts resolved values from its output. Plans, dry runs, status output,
+mise redacts resolved values from its output. Plans, dry runs, status output,
 and privileged-helper output contain no rendered file content. There is no
 command to reveal a bootstrap secret.

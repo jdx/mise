@@ -6,13 +6,12 @@ outline: [1, 3]
 
 ## Contribution Expectations
 
-mise has a specific scope and design taste. Before opening a PR, unless it is
-something obvious, start a
-[discussion](https://github.com/jdx/mise/discussions) or mention what you plan
-to do in [Discord](https://discord.gg/UBa7pJUN7Z). The important part is to
-settle the direction before much implementation or review happens. PRs are
-often either rejected or need to change significantly after submission, so make
-sure the idea fits before you invest too much time.
+mise has a specific scope and design taste. Unless the change is obvious,
+start a [discussion](https://github.com/jdx/mise/discussions) or mention what
+you plan to do in [Discord](https://discord.gg/UBa7pJUN7Z) before opening a PR.
+The important part is to settle the direction before much implementation or
+review happens. PRs are often rejected or need to change significantly after
+submission, so make sure the idea fits before you invest too much time.
 
 Before I review a PR, CI must be passing, the PR title must follow
 [Conventional Commits](#conventional-commits), and all automated AI review
@@ -74,7 +73,7 @@ Install an empty `.disable-self-update` file at any one of:
 
 ### Ship update instructions
 
-Installing a TOML file with platform-specific instructions also disables self-update, and mise prints its message when `mise self-update` is run and when a newer release is detected. Install it at any one of:
+Installing a TOML file with platform-specific instructions also disables self-update; mise prints the file's message when `mise self-update` runs and when it detects a newer release. Install it at any one of:
 
 - `lib/mise-self-update-instructions.toml`
 - `lib/mise/mise-self-update-instructions.toml`
@@ -102,8 +101,8 @@ Setting `MISE_SELF_UPDATE_INSTRUCTIONS` to a file path overrides the search.
 
 ## Testing
 
-mise has a comprehensive test suite with multiple types of tests to ensure
-reliability and functionality across different platforms and scenarios.
+mise has a comprehensive test suite with several types of tests that check
+reliability and functionality across platforms and scenarios.
 
 ### Unit Tests
 
@@ -330,8 +329,8 @@ cargo insta test --accept --unreferenced delete
 
 ### Prerequisites
 
-- [Rust](https://www.rust-lang.org/) (latest stable, we don't use mise to
-  manage rust)
+- [Rust](https://www.rust-lang.org/) (latest stable; we don't use mise to
+  manage Rust)
 - mise
 
 ### Getting Started
@@ -350,7 +349,7 @@ mise run build
 
 ### Development Shim
 
-Create a development shim to easily run mise during development:
+Create a development shim to run mise easily during development:
 
 ```bash
 # Create ~/.local/bin/@mise
@@ -380,7 +379,7 @@ mise/
 
 ## Available Development Tasks
 
-Use `mise tasks` to see all available development tasks:
+Use `mise tasks` to see all available development tasks.
 
 ### Common Tasks
 
@@ -409,8 +408,8 @@ Use `mise tasks` to see all available development tasks:
 
 ## Setup
 
-Shouldn't require anything special I'm aware of, but `mise run build` is a good
-sanity check to run and make sure it's all working.
+Nothing special should be required, but `mise run build` is a good sanity
+check that everything is working.
 
 ## Pre-commit Hooks & Code Quality
 
@@ -486,7 +485,7 @@ exec cargo run -q --all-features --manifest-path ~/src/mise/Cargo.toml -- "$@"
 Don't forget to change the manifest path to the correct path for your setup.
 :::
 
-Then if that is in PATH just use `@mise` to run mise by compiling it on the fly.
+If that directory is on PATH, `@mise` runs mise, compiling it on the fly.
 
 ```sh
 @mise --help
@@ -519,7 +518,7 @@ mise uses several tools to validate dependencies and code quality:
 - **cargo-msrv**: Verifies minimum supported Rust version compatibility
 - **cargo-machete**: Detects unused dependencies in Cargo.toml
 
-These checks run automatically in CI and can be run locally:
+These checks run automatically in CI; run them locally with:
 
 ```bash
 # Run checks (tools are automatically available via mise.toml)
@@ -612,11 +611,11 @@ development:
 - Run `mise run render` and `mise run lint-fix` before opening a PR
 - Generated docs, completions, and snapshots should be committed with the
   change that requires them
-- PRs with formatting or lint failures should be fixed by the contributor
+- The contributor is responsible for fixing formatting or lint failures
 
 ### PR Title Validation
 
-- **semantic-pr-lint**: Validates PR titles follow conventional commit format
+- **semantic-pr-lint**: Validates that PR titles follow the conventional commit format
 - PR titles must match: `<type>[optional scope]: <description>`
 - Example: `feat(cli): add new command for listing plugins`
 
@@ -669,7 +668,7 @@ of the full backend specification.
    test = { cmd = "your-tool --version", expected = "{{version}}" }
    ```
 
-3. **Test the tool** works properly with `mise test-tool your-tool`
+3. **Test the tool** with `mise test-tool your-tool` to confirm it works
 
 ### Guidelines and Requirements
 
@@ -681,9 +680,9 @@ When adding a new tool, the following requirements apply:
   in the registry workflow.
 - **Tools may be rejected if they are not notable** - The tool should be
   reasonably popular and well-maintained. Notability is decided by maintainer
-  review (not CI). There are no specific guidelines for this and
-  a lot of factors are taken into account. @jdx won't explain why a given tool wasn't
-  accepted. Include a brief popularity summary (stars, downloads, recent release date) in
+  review (not CI). There are no specific guidelines for this; many factors are
+  taken into account. @jdx won't explain why a given tool wasn't accepted.
+  Include a brief popularity summary (stars, downloads, recent release date) in
   the PR description so the policy can be applied without re-doing the research.
 
 #### Backend acceptance tiers
@@ -709,16 +708,17 @@ user's PATH. The tool still needs to be popular and well-maintained.
 
 **Tier 3 — very high bar, rarely accepted:** `npm`, `pipx`, `gem`, `cargo`, `go`, `dotnet`.
 
-These all depend on a separately-installed runtime or toolchain being present on
+These all depend on a separately installed runtime or toolchain being present on
 the user's PATH (`node`, `python`, `ruby`, `cargo`, `go`, `dotnet`), which is
-fragile — `npm`/`pipx`/`gem` in particular silently bind tools to whichever
+fragile. `npm`/`pipx`/`gem` in particular silently bind tools to whichever
 `node`/`python`/`ruby` happened to be on PATH at install time, which breaks when
-versions change or the runtime isn't installed. Accepted only when no aqua/github
-option exists and the tool is widely used. Discuss with @jdx before submitting.
+versions change or the runtime isn't installed. These backends are accepted only
+when no aqua/github option exists and the tool is widely used. Discuss with @jdx
+before submitting.
 
 **Not accepted:** `asdf`, `vfox`, `ubi`.
 
-- **New `asdf` plugins** — supply-chain security. Use [aqua](/dev-tools/backends/aqua.html) or [github](/dev-tools/backends/github.html) instead.
+- **New `asdf` plugins** — rejected for supply-chain security reasons. Use [aqua](/dev-tools/backends/aqua.html) or [github](/dev-tools/backends/github.html) instead.
 - **New `vfox` plugins** — same reason. Use aqua/github instead.
 - **`ubi`** is deprecated and is not accepted for new registry entries.
 
@@ -811,8 +811,8 @@ mise settings add idiomatic_version_file_enable_tools your-tool
 
 ### Backend Priority
 
-List backends in order of preference. Users will get the first available
-backend, but can override with explicit syntax like `mise use aqua:owner/repo`.
+List backends in order of preference. Users get the first available backend
+but can override it with explicit syntax such as `mise use aqua:owner/repo`.
 Only include `npm` as a fallback for a tool that already has a non-npm primary
 backend when the npm package works with lifecycle scripts disabled.
 
@@ -824,7 +824,7 @@ All tools must include a test to verify proper installation:
 test = { cmd = "command-to-run", expected = "expected-output-pattern" }
 ```
 
-The test command should be reliable and the output pattern should use
+The test command should be reliable, and the output pattern should use
 <code v-pre>{{version}}</code> to match any version number.
 
 If `test.cmd` needs extra mise-managed tools on PATH, declare them with
@@ -867,15 +867,17 @@ see [Adding Tools](#adding-tools) instead.
 
 :::warning Core Backend Acceptance Policy
 **New backends are unlikely to be accepted into mise core.** They require
-a lot of maintenance so it's generally better to use the [backend plugin system](backend-plugin-development.md) to add backends without core changes. A new backend would only be accepted for a major package manager
+a lot of maintenance, so it's generally better to use the
+[backend plugin system](backend-plugin-development.md) to add backends without
+core changes. A new backend would be accepted only for a major package manager
 or tool that would greatly enhance mise's capabilities.
 
 If you need a custom backend:
 
 1. **Discuss with jdx first** in [Discord](https://discord.gg/UBa7pJUN7Z) or by
    creating a [discussion](https://github.com/jdx/mise/discussions)
-2. **Consider if existing backends** (github, aqua, npm, pipx, etc.) can meet your
-   needs
+2. **Consider whether existing backends** (github, aqua, npm, pipx, etc.) can meet
+   your needs
 3. **Create a plugin** - use the [plugin system](tool-plugin-development.md) to create plugins for private/custom tools without core changes. Start with the [mise-tool-plugin-template](https://github.com/jdx/mise-tool-plugin-template) for a quick setup
 
 Most tool installation needs can be met by existing backends, especially
@@ -968,11 +970,11 @@ For detailed architecture information, see
 
 ## Testing packaging
 
-This is only necessary to test if actually changing the packaging setup.
+This is only necessary when changing the packaging setup.
 
 ### Ubuntu (apt)
 
-This is for arm64, but you can change the arch to amd64 if you want.
+This example is for arm64; change the arch to amd64 if needed.
 
 ```sh
 docker run -ti --rm ubuntu

@@ -45,7 +45,7 @@ Create a [personal access token](https://github.com/settings/tokens/new?descript
 export MISE_GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
 ```
 
-Or, if you already have `GITHUB_TOKEN` set (common in GitHub Actions), mise will use it automatically.
+Or, if you already have `GITHUB_TOKEN` set (common in GitHub Actions), mise uses it automatically.
 
 ## Token File (`github_tokens.toml`)
 
@@ -71,7 +71,7 @@ No additional settings are required — mise auto-discovers the file if it exist
 
 ## gh CLI Integration
 
-If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its `hosts.yml` config file. This is enabled by default and kicks in when no token environment variable is set.
+If you use the [GitHub CLI](https://cli.github.com/) (`gh`), mise can read tokens directly from its `hosts.yml` config file. This is enabled by default and is used when no token environment variable is set.
 
 mise looks for `hosts.yml` in these locations (first match wins):
 

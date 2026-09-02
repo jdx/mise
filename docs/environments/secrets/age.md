@@ -1,8 +1,8 @@
 # Direct age Encryption <Badge type="warning" text="experimental" />
 
-Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. The age tool is not required—mise has support built-in.
+Encrypt individual environment variable values directly in `mise.toml` using [age](https://github.com/FiloSottile/age) encryption. The age tool is not required—support is built into mise.
 
-This is a simple method of storing encrypted environment variables directly in `mise.toml`. You can use it simply by running `mise set --age-encrypt <key>=<value>`. By default, mise will use your ssh key (`~/.ssh/id_ed25519` or `~/.ssh/id_rsa`) if it exists.
+This is a simple way to store encrypted environment variables directly in `mise.toml`. Run `mise set --age-encrypt <key>=<value>` to use it. By default, mise uses your SSH key (`~/.ssh/id_ed25519` or `~/.ssh/id_rsa`) if one exists.
 
 - **Inline storage**: values live alongside other env vars in `mise.toml`
 - **Multiple recipients**: x25519 age keys and SSH recipients
@@ -16,7 +16,7 @@ This is a simple method of storing encrypted environment variables directly in `
 mise settings set experimental=true
 ```
 
-2. [optional] Generate an age key (if you want to create a new age key and don't want to use your ssh key):
+2. (Optional) Generate an age key if you don't want to use your SSH key:
 
 ```bash
 age-keygen -o ~/.config/mise/age.txt
@@ -31,7 +31,7 @@ mise set --age-encrypt --prompt DB_PASSWORD
 ```
 
 ::: warning
-It's recommended to use `--prompt` to avoid accidentally exposing the value to your shell history. You don't have to though, you can use `mise set --age-encrypt DB_PASSWORD="password123"`.
+Use `--prompt` to avoid accidentally exposing the value in your shell history. It is optional, though: you can also run `mise set --age-encrypt DB_PASSWORD="password123"`.
 :::
 
 4. Values are stored encrypted in `mise.toml` as an age directive:
@@ -55,7 +55,7 @@ mise env  # Variables are decrypted automatically
 - `--age-key-file <PATH>` — use recipients derived from an age identity file
 - `--prompt` — prompt for the value to avoid accidentally exposing it to your shell history
 
-If no recipients are provided explicitly, mise will try defaults (see below).
+If no recipients are provided explicitly, mise tries the defaults (see below).
 
 ## Storage format
 
@@ -111,5 +111,5 @@ import Settings from '/components/settings.vue';
 
 ## Notes
 
-- Feature is experimental; flags and behavior may change.
-- `mise set KEY` will print the decrypted value
+- This feature is experimental; flags and behavior may change.
+- `mise set KEY` prints the decrypted value.

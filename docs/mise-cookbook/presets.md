@@ -1,10 +1,10 @@
 # Presets
 
-You can create your own presets by leveraging [mise tasks](../tasks/index.md) to reduce boilerplate and make it easier to set up new projects.
+You can create your own presets with [mise tasks](../tasks/index.md) to reduce boilerplate and make setting up new projects easier.
 
 ## Example python preset
 
-Here is an example of how to create your python preset that creates a `mise.toml` file to work with `python` and `pdm`
+Here is an example of a Python preset that creates a `mise.toml` file for working with `python` and `pdm`:
 
 ```shell [~/.config/mise/tasks/preset/python]
 #!/usr/bin/env bash

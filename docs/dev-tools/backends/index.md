@@ -1,14 +1,14 @@
 # Backends
 
-Backends are package managers or ecosystems that mise uses to install [tools](/dev-tools/index.html) and [plugins](/plugins.html). Each backend can install and manage multiple tools from its ecosystem. For example, the `npm` backend can install many different tools like `npm:prettier`, or the `pipx` backend can install tools like `pipx:black`. This allows mise to support a wide variety of tools and languages by leveraging different package managers and their ecosystems.
+Backends are package managers or ecosystems that mise uses to install [tools](/dev-tools/index.html) and [plugins](/plugins.html). Each backend can install and manage multiple tools from its ecosystem. For example, the `npm` backend can install tools like `npm:prettier`, and the `pipx` backend can install tools like `pipx:black`. This lets mise support a wide variety of tools and languages by leveraging existing package managers and their ecosystems.
 
-When you run the [`mise use`](/cli/use.html) command, mise will determine the appropriate backend to use based on the tool you are trying to manage. The backend will then handle the installation, configuration, and any other necessary steps to ensure the tool is ready to use.
+When you run [`mise use`](/cli/use.html), mise determines the appropriate backend based on the tool you are managing. The backend then handles installation, configuration, and any other steps needed to make the tool ready to use.
 
 For more details on how backends fit into mise's overall design, see the [backend architecture documentation](/dev-tools/backend_architecture.html).
 
 Below is a list of the available backends in mise:
 
-- [asdf](/dev-tools/backends/asdf) (provide tools through [plugins](/plugins.html))
+- [asdf](/dev-tools/backends/asdf) (provides tools through [plugins](/plugins.html))
 - [aqua](/dev-tools/backends/aqua)
 - [cargo](/dev-tools/backends/cargo)
 - [conda](/dev-tools/backends/conda)
@@ -25,5 +25,5 @@ Below is a list of the available backends in mise:
 - [s3](/dev-tools/backends/s3)
 - [spm](/dev-tools/backends/spm)
 - [ubi](/dev-tools/backends/ubi)
-- [vfox](/dev-tools/backends/vfox) (provide tools through [plugins](/plugins.html))
-- [custom backends](/backend-plugin-development) (build your own backend with a plugin which itself provides many tools)
+- [vfox](/dev-tools/backends/vfox) (provides tools through [plugins](/plugins.html))
+- [custom backends](/backend-plugin-development) (build your own backend with a plugin that itself provides many tools)

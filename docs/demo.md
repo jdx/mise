@@ -3,14 +3,14 @@
 The following demo shows:
 
 - how to use `mise exec` to run a command with a specific version of a tool
-- how you can use `mise` to install many other tools such as `jq`, `terraform`, or `go`.
-- how to use `mise` to manage multiple versions of `node` on the same system.
+- how to use `mise` to install many other tools, such as `jq`, `terraform`, or `go`
+- how to use `mise` to manage multiple versions of `node` on the same system
 
 <video style="max-width: 100%; height: auto;" controls="controls" src="./tapes/demo.mp4" />
 
 ## Transcript
 
-`mise exec <tool> -- <command>` allows you to run any tools with mise
+`mise exec <tool> -- <command>` lets you run any tool with mise.
 
 ```shell
 mise exec node@26 -- node -v
@@ -18,7 +18,7 @@ mise exec node@26 -- node -v
 # v26.x.x
 ```
 
-node is only available in the mise environment, not globally
+`node` is only available in the mise environment, not globally.
 
 ```shell
 node -v
@@ -27,7 +27,7 @@ node -v
 
 ---
 
-Here is another example where we run terraform with `mise exec`
+Here is another example where we run terraform with `mise exec`.
 
 ```shell
 mise exec terraform -- terraform -v
@@ -37,9 +37,9 @@ mise exec terraform -- terraform -v
 
 ---
 
-`mise exec` is great for running one-off commands, however it can be convenient to activate mise. When activated, mise will automatically update your `PATH` to include the tools you have installed, making them available directly.
+`mise exec` is great for running one-off commands, but it can be more convenient to activate mise. When activated, mise automatically updates your `PATH` to include the tools you have installed, making them available directly.
 
-We will start by installing node@lts and make it the global default
+We start by installing node@lts and making it the global default.
 
 ```shell
 mise use --global node@lts
@@ -56,11 +56,11 @@ which node
 # /root/.local/share/mise/installs/node/lts/bin/node
 ```
 
-Note that we get back the path to the real node here, not a shim.
+We get back the path to the real node here, not a shim.
 
 ---
 
-We can also install other tools with mise. For example, we will install terraform, jq, and go
+We can also install other tools with mise. For example, let's install terraform, jq, and go.
 
 ```shell
 mise use -g terraform jq go
@@ -96,7 +96,7 @@ mise ls
 
 ---
 
-Let's enter a project directory where we will set up node@26
+Let's enter a project directory where we will set up node@26.
 
 ```shell
 cd myproj
@@ -112,7 +112,7 @@ pnpm -v
 # 10.7.0
 ```
 
-As expected, `node -v` is now v26.x
+As expected, `node -v` is now v26.x.
 
 ```shell
 cat mise.toml
@@ -121,7 +121,7 @@ cat mise.toml
 # pnpm = "10"
 ```
 
-We will leave this directory. The node version will revert to the global LTS version
+When we leave this directory, the node version reverts to the global LTS version.
 
 ```shell
 cd ..

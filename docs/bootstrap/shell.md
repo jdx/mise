@@ -15,7 +15,7 @@ bashrc = "activate"
 fish = "activate"
 ```
 
-Use compact table form when you want a shape that can accept future options:
+Use the inline table form when you want a shape that can accept future options:
 
 ```toml
 [bootstrap.mise_shell_activate]
