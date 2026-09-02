@@ -104,7 +104,7 @@ jobs:
         if: always()
 
   build-windows:
-    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64;overrides.cache-tag=cache' }}
     defaults:
       run:
         shell: pwsh
@@ -402,7 +402,7 @@ jobs:
         run: scripts/test-bootstrap-linux-host.sh target/debug/mise
 
   windows-unit:
-    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64;overrides.cache-tag=cache' }}
     defaults:
       run:
         shell: pwsh
@@ -438,7 +438,7 @@ jobs:
   windows-e2e:
     permissions:
       contents: read
-    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64;overrides.cache-tag=cache' }}
     defaults:
       run:
         shell: pwsh

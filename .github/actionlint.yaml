@@ -19,7 +19,7 @@ self-hosted-runner:
     # with perf-pr.yml, which builds pull-request code.
     - namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-perf-main
     - namespace-profile-endev-linux-amd64-large;overrides.cache-tag=mise-release-rust-linux
-    - namespace-profile-endev-windows-amd64
+    - namespace-profile-endev-windows-amd64;overrides.cache-tag=cache
     - buildjet-32vcpu-ubuntu-2204-arm
     - buildjet-16vcpu-ubuntu-2204-arm
     - buildjet-8vcpu-ubuntu-2204-arm

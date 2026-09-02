@@ -223,7 +223,7 @@ jobs:
   build-tarball-windows:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     name: build-tarball-windows-${{matrix.arch}}
-    runs-on: namespace-profile-endev-windows-amd64
+    runs-on: namespace-profile-endev-windows-amd64;overrides.cache-tag=cache
     defaults:
       run:
         shell: pwsh
