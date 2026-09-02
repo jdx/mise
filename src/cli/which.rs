@@ -8,13 +8,13 @@ use crate::toolset::{Toolset, ToolsetBuilder};
 use eyre::{Result, bail};
 use itertools::Itertools;
 
-/// Shows the path that a tool's bin points to.
+/// Show the path a tool's executable resolves to
 ///
 /// Use this to figure out what version of a tool is currently active.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Which {
-    /// The bin to look up
+    /// The executable to look up
     #[usage(required_unless = "complete")]
     pub bin_name: Option<String>,
 

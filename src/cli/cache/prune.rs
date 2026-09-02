@@ -8,7 +8,7 @@ use eyre::Result;
 use heck::ToKebabCase;
 use std::time::Duration;
 
-/// Removes stale mise cache files
+/// Remove stale cache files
 ///
 /// By default, this command will remove files that have not been accessed in 30 days.
 /// Change this with the MISE_CACHE_PRUNE_AGE environment variable.
@@ -23,7 +23,7 @@ pub(super) struct CachePrune {
     #[usage(long, short, action = usage_rs::ArgAction::Count)]
     verbose: u8,
 
-    /// Just show what would be pruned
+    /// Show what would be pruned without deleting anything
     #[usage(long)]
     dry_run: bool,
 }

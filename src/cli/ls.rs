@@ -23,11 +23,8 @@ use crate::ui::table::MiseTable;
 
 /// List installed and active tool versions
 ///
-/// This command lists tools that mise "knows about".
-/// These may be tools that are currently installed, or those
-/// that are in a config file (active) but may or may not be installed.
-///
-/// It's a useful command to get the current state of your tools.
+/// Lists the tools mise knows about: versions that are installed, and versions requested
+/// by a config file (active) whether or not they are installed.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "list", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Ls {

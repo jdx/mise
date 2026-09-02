@@ -11,9 +11,10 @@ use crate::toolset::{ToolRequest, ToolSource, ToolVersion, ToolsetBuilder};
 use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::{config, dirs, exit, file};
 
-/// Removes installed tool versions
+/// Remove installed tool versions
 ///
-/// This only removes the installed version, it does not modify mise.toml.
+/// This only removes the installed version; it does not modify mise.toml.
+/// Use `mise unuse` to remove a tool from mise.toml and uninstall it.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Uninstall {
@@ -180,13 +181,13 @@ impl Uninstall {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # will uninstall specific version
+    # uninstall a specific version
     $ <bold>mise uninstall node@18.0.0</bold>
 
-    # will uninstall the current node version (if only one version is installed)
+    # uninstall the current node version (if only one version is installed)
     $ <bold>mise uninstall node</bold>
 
-    # will uninstall all installed versions of node
-    $ <bold>mise uninstall --all node@18.0.0</bold> # will uninstall all node versions
+    # uninstall every installed version of node
+    $ <bold>mise uninstall --all node</bold>
 "#
 );

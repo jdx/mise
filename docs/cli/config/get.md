@@ -5,10 +5,10 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/config/get.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/get.rs)
 
-Display the value of a setting in a mise.toml file
+Display a value from a mise.toml file
 
 ## Arguments
-- **`[KEY]`** — The path of the config to display
+- **`[KEY]`** — Dotted key path to display, e.g. `tools.python`; omit to print the whole file
 
 ## Flags
 - **`-f --file <FILE>`** — The path to the mise.toml file to read

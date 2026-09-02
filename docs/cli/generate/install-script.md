@@ -13,11 +13,11 @@ Renamed from `mise generate bootstrap`, which read as a form of `mise bootstrap`
 setup). The old name still works but is deprecated and will be removed in mise 2027.9.0.
 
 ## Flags
-- **`-l --localize`** — Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+- **`-l --localize`** — Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project-local directory (`.mise` by default, set with `--localized-dir`)
 
   This is necessary if users may use a different version of mise outside the project.
 - **`-V --version <VERSION>`** — Specify mise version to fetch
-- **`-w --write [WRITE]`** — instead of outputting the script to stdout, write to a file and make it executable
+- **`-w --write [WRITE]`** — Write the script to a file and make it executable instead of printing it to stdout
 - **`--localized-dir <LOCALIZED_DIR>`** — Directory to put localized data into
 
   **Default:** `.mise`

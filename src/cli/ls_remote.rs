@@ -25,9 +25,9 @@ struct VersionOutputAll {
     prerelease: Option<bool>,
 }
 
-/// List runtime versions available for install.
+/// List tool versions available to install
 ///
-/// Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
+/// Results may be cached; run `mise cache clear` to fetch fresh results.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, aliases = ["list-all", "list-remote"]
 )]

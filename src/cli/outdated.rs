@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 use tabled::settings::Remove;
 use tabled::settings::location::ByColumnName;
 
-/// Shows outdated tool versions
+/// Show outdated tool versions
 ///
 /// See `mise upgrade` to upgrade these versions.
 #[derive(Debug, usage_rs::Args)]
@@ -22,12 +22,10 @@ pub(crate) struct Outdated {
     #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     pub tool: Vec<ToolArg>,
 
-    /// Compares against the latest versions available, not what matches the current config
+    /// Compare against the latest versions available, not just those matching the current config
     ///
-    /// For example, if you have `node = "20"` in your config by default `mise outdated` will only
-    /// show other 20.x versions, not 21.x or 22.x versions.
-    ///
-    /// Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+    /// For example, with `node = "20"` in your config, `mise outdated` normally only reports newer
+    /// 20.x versions. With this flag it reports the newest version overall, such as 22.x.
     #[usage(long, short = 'b', verbatim_doc_comment)]
     pub bump: bool,
 

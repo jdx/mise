@@ -15,10 +15,10 @@ use std::cmp::PartialEq;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 
-/// Run task(s) and watch for changes to rerun it
+/// Run task(s) and rerun them when files change
 ///
-/// This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
-/// It must be installed for this command to work, but you can install it with `mise use -g watchexec@latest`.
+/// Uses `watchexec` to watch for file changes and rerun the given task(s).
+/// watchexec must be installed; `mise use -g watchexec@latest` installs it.
 ///
 /// For more advanced process management (daemon management, auto-restart, readiness checks,
 /// cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 pub(crate) struct Watch {
     /// Tasks to run
     /// Can specify multiple tasks by separating with `:::`
-    /// e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+    /// e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
     /// Defaults to `default`
     #[usage(verbatim_doc_comment)]
     task: Option<String>,
@@ -529,18 +529,18 @@ static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
     $ <bold>mise watch build</bold>
-    Runs the "build" tasks. Will re-run the tasks when any of its sources change.
-    Uses "sources" from the tasks definition to determine which files to watch.
+    Runs the "build" task and reruns it whenever one of its sources changes.
+    The task's "sources" determine which files are watched.
 
-    $ <bold>mise watch build --glob src/**/*.rs</bold>
-    Runs the "build" tasks but specify the files to watch with a glob pattern.
-    This overrides the "sources" from the tasks definition.
+    $ <bold>mise watch build --glob 'src/**/*.rs'</bold>
+    Runs the "build" task, watching the files matched by the glob instead of
+    the task's "sources".
 
     $ <bold>mise watch build --clear</bold>
     Extra arguments are passed to watchexec. See `watchexec --help` for details.
 
     $ <bold>mise watch serve --watch src --exts rs --restart</bold>
-    Starts an api server, watching for changes to "*.rs" files in "./src" and kills/restarts the server when they change.
+    Starts an API server, watching "*.rs" files in "./src", and restarts the server when they change.
 "#
 );
 

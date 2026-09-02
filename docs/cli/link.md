@@ -6,9 +6,9 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/link.rs)
 
-Symlinks a tool version into mise
+Symlink a tool version into mise
 
-Use this for adding installs either custom compiled outside mise or built with a different tool.
+Use this to register an install that was compiled by hand or built with another tool.
 
 ## Arguments
 - **`<TOOL@VERSION>`** — Tool name and version to create a symlink for

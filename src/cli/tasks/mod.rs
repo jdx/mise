@@ -17,7 +17,7 @@ pub(crate) struct Tasks {
     #[usage(subcommand)]
     command: Option<Commands>,
 
-    /// Task name to get info of
+    /// Task name to show info for
     task: Option<String>,
 
     #[usage(flatten)]

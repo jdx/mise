@@ -9,7 +9,7 @@ use crate::config::Config;
 use crate::toolset::{ToolSource, ToolVersionOptions, ToolsetBuilder};
 use crate::ui::table;
 
-/// Gets information about a tool
+/// Show information about a tool
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Tool {

@@ -13,9 +13,10 @@ use eyre::{Result, bail};
 use itertools::Itertools;
 use serde_json::json;
 
-/// List available tasks to execute
-/// These may be included from the config file or from the project's .mise/tasks directory
-/// mise will merge all tasks from all parent directories into this list.
+/// List available tasks
+///
+/// Tasks come from config files and from task directories such as `.mise/tasks`.
+/// Tasks from all parent directories are merged into this list.
 ///
 /// So if you have global tasks in `~/.config/mise/tasks/*` and project-specific tasks in
 /// ~/myproject/.mise/tasks/*, then they'll both be available but the project-specific

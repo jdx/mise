@@ -24,13 +24,15 @@ use std::path::PathBuf;
 
 /// Install a tool version
 ///
-/// Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
-/// Installing alone will not activate the tools so they won't be in PATH.
-/// To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
-/// in the current directory to activate this tool when inside the directory.
-/// Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
+/// Installs a tool version under the mise data directory, by default
+/// `~/.local/share/mise/installs/<TOOL>/<VERSION>`.
+/// Installing alone does not add the tool to your config, so a tool that is not
+/// already configured will not be on PATH.
+/// To install and activate in one command, use `mise use`, which also writes the version to
+/// `mise.toml` in the current directory so the tool is active inside it.
+/// To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 ///
-/// Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
+/// Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
 #[derive(Debug, Default, usage_rs::Args)]
 #[usage(visible_alias = "i", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Install {
@@ -46,7 +48,7 @@ pub(crate) struct Install {
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    /// [default: 4]
+    /// Defaults to the `jobs` setting
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
@@ -92,8 +94,8 @@ pub(crate) struct Install {
     #[usage(long, env = "MISE_MONOREPO", verbatim_doc_comment)]
     monorepo: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal
-    /// Implies --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
+    /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
 
@@ -704,10 +706,10 @@ fn extend_toolset(toolset: &mut Toolset, additional: &[ToolRequest]) {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    $ <bold>mise install node@20.0.0</bold>  # install specific node version
-    $ <bold>mise install node@20</bold>      # install fuzzy node version
-    $ <bold>mise install node</bold>         # install version specified in mise.toml
-    $ <bold>mise install</bold>              # installs everything specified in mise.toml
+    $ <bold>mise install node@20.0.0</bold>  # install a specific node version
+    $ <bold>mise install node@20</bold>      # install the latest node 20.x
+    $ <bold>mise install node</bold>         # install the version specified in mise.toml
+    $ <bold>mise install</bold>              # install everything specified in mise.toml
     $ <bold>mise install --include-lazy</bold> # also install tools configured for lazy installation
     $ <bold>mise install --include-task-tools</bold> # also install tools required by tasks
 "#

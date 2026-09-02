@@ -21,8 +21,8 @@ pub(super) struct PluginsLs {
     #[usage(short, long, hide = true, verbatim_doc_comment)]
     pub all: bool,
 
-    /// The built-in plugins only
-    /// Normally these are not shown
+    /// Only show built-in (core) plugins
+    /// These are hidden by default
     #[usage(short, long, verbatim_doc_comment, conflicts = "all", hide = true)]
     pub core: bool,
 

@@ -8,7 +8,7 @@ use crate::backend::unalias_backend;
 use crate::file::{make_symlink, remove_all};
 use crate::{dirs, file};
 
-/// Symlinks a plugin into mise
+/// Symlink a plugin into mise
 ///
 /// This is used for developing a plugin.
 #[derive(Debug, usage_rs::Args)]

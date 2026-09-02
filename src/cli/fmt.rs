@@ -5,17 +5,17 @@ use eyre::bail;
 use std::io::{self, Read, Write};
 use taplo::formatter::Options;
 
-/// Formats mise.toml
+/// Format mise.toml
 ///
 /// Sorts keys and cleans up whitespace in mise.toml
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Fmt {
-    /// Format all files from the current directory
+    /// Format every config file mise currently loads, not just those in the current directory
     #[usage(short, long)]
     pub all: bool,
 
-    /// Check if the configs are formatted, no formatting is done
+    /// Check whether the configs are formatted without rewriting them; exits 1 if any are not
     #[usage(short, long)]
     pub check: bool,
 

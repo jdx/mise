@@ -5,7 +5,7 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/outdated.rs`](https://github.com/jdx/mise/blob/main/src/cli/outdated.rs)
 
-Shows outdated tool versions
+Show outdated tool versions
 
 See `mise upgrade` to upgrade these versions.
 
@@ -15,12 +15,10 @@ See `mise upgrade` to upgrade these versions.
   If not specified, all tools in global and local configs will be shown
 
 ## Flags
-- **`-b --bump`** — Compares against the latest versions available, not what matches the current config
+- **`-b --bump`** — Compare against the latest versions available, not just those matching the current config
 
-  For example, if you have `node = "20"` in your config by default `mise outdated` will only
-  show other 20.x versions, not 21.x or 22.x versions.
-
-  Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+  For example, with `node = "20"` in your config, `mise outdated` normally only reports newer
+  20.x versions. With this flag it reports the newest version overall, such as 22.x.
 - **`-J --json`** — Output in JSON format
 - **`--inactive`** — Show outdated tools including installed-but-inactive tools not present in the current config
 

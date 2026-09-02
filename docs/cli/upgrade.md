@@ -6,13 +6,13 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/upgrade.rs`](https://github.com/jdx/mise/blob/main/src/cli/upgrade.rs)
 
-Upgrades outdated tools
+Upgrade outdated tools
 
-By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
-upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
-and bump the version in mise.toml.
+By default, this keeps the range specified in mise.toml: with node@20 set, it upgrades to
+the latest 20.x.x available. Use `--bump` to upgrade to the latest version overall and
+rewrite the version in mise.toml.
 
-This will update mise.lock if it is enabled, see <https://mise.jdx.dev/configuration/settings.html#lockfile>
+This also updates mise.lock if lockfiles are enabled, see <https://mise.jdx.dev/configuration/settings.html#lockfile>
 
 ## Arguments
 - **`[INSTALLED_TOOL@VERSION]…`** — Tool(s) to upgrade
@@ -20,20 +20,20 @@ This will update mise.lock if it is enabled, see <https://mise.jdx.dev/configura
   If not specified, all current tools will be upgraded
 
 ## Flags
-- **`-b --bump`** — Upgrades to the latest version available, bumping the version in mise.toml
+- **`-b --bump`** — Upgrade to the latest version available, bumping the version in mise.toml
 
   For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
   this will install 22.1.0 and set `node = "22.1.0"` in your config.
 
   It keeps the same precision as what was there before, so if you instead had `node = "20"`, it
   would change your config to `node = "22"`.
-- **`-i --interactive`** — Display multiselect menu to choose which tools to upgrade
+- **`-i --interactive`** — Choose which tools to upgrade from a multiselect menu
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
-  [default: 4]
+  Defaults to the `jobs` setting
 
   **Environment Variable:** `MISE_JOBS`
-- **`-n --dry-run`** — Just print what would be done, don't actually do it
+- **`-n --dry-run`** — Print what would be done without doing it
 - **`-x --exclude <INSTALLED_TOOL>`** — Tool(s) to exclude from upgrading
   e.g.: go python
 - **`--dry-run-code`** — Like --dry-run but exits with code 1 if there are outdated tools
@@ -62,7 +62,7 @@ This will update mise.lock if it is enabled, see <https://mise.jdx.dev/configura
 
   Use this to bypass `upgrade.prune_after`, or to override
   `upgrade.auto_prune = false` for a single run.
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`-h --help`** — Print help
 
 Deprecation:

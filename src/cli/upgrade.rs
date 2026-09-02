@@ -31,13 +31,13 @@ use jiff::{Span, Timestamp, civil::date};
 
 const MAX_OUT_OF_RANGE_UPDATES: usize = 5;
 
-/// Upgrades outdated tools
+/// Upgrade outdated tools
 ///
-/// By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
-/// upgrade to the latest 20.x.x version available. See the `--bump` flag to use the latest version
-/// and bump the version in mise.toml.
+/// By default, this keeps the range specified in mise.toml: with node@20 set, it upgrades to
+/// the latest 20.x.x available. Use `--bump` to upgrade to the latest version overall and
+/// rewrite the version in mise.toml.
 ///
-/// This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
+/// This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "up", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Upgrade {
@@ -47,7 +47,7 @@ pub(crate) struct Upgrade {
     #[usage(value_name = "INSTALLED_TOOL@VERSION", verbatim_doc_comment)]
     tool: Vec<ToolArg>,
 
-    /// Upgrades to the latest version available, bumping the version in mise.toml
+    /// Upgrade to the latest version available, bumping the version in mise.toml
     ///
     /// For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
     /// this will install 22.1.0 and set `node = "22.1.0"` in your config.
@@ -57,13 +57,13 @@ pub(crate) struct Upgrade {
     #[usage(long, short = 'b', verbatim_doc_comment)]
     bump: bool,
 
-    /// Display multiselect menu to choose which tools to upgrade
+    /// Choose which tools to upgrade from a multiselect menu
     #[usage(long, short, verbatim_doc_comment, conflicts = "tool")]
     interactive: bool,
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    /// [default: 4]
+    /// Defaults to the `jobs` setting
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
@@ -71,7 +71,7 @@ pub(crate) struct Upgrade {
     #[usage(short = 'l', hide = true)]
     legacy_bump: bool,
 
-    /// Just print what would be done, don't actually do it
+    /// Print what would be done without doing it
     #[usage(long, short = 'n', verbatim_doc_comment)]
     dry_run: bool,
 
@@ -127,8 +127,8 @@ pub(crate) struct Upgrade {
     #[usage(long, verbatim_doc_comment, overrides = "no_prune")]
     prune: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal
-    /// Implies --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
+    /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
 }

@@ -6,7 +6,7 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/plugins/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/uninstall.rs)
 
-Removes a plugin
+Remove a plugin
 
 ## Arguments
 - **`[PLUGIN]…`** — Plugin(s) to remove

@@ -5,6 +5,8 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
+
 ## Flags
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured systemd user service is not in its desired state

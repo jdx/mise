@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::{collections::BTreeSet, sync::Arc};
 use tokio::task::JoinSet;
 
-/// Test a tool installs and executes
+/// Test that a tool installs and runs
 #[derive(Debug, Clone, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct TestTool {
@@ -31,11 +31,11 @@ pub(crate) struct TestTool {
     /// Test all tools specified in config files
     #[usage(long, conflicts = "tools", conflicts = "all")]
     pub all_config: bool,
-    /// Also test tools not defined in registry/, guessing how to test it
+    /// Also test tools not defined in registry/, guessing how to test them
     #[usage(long)]
     pub include_non_defined: bool,
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal
-    /// Implies --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
+    /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     pub raw: bool,
 }

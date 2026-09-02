@@ -6,9 +6,9 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/ls_remote.rs`](https://github.com/jdx/mise/blob/main/src/cli/ls_remote.rs)
 
-List runtime versions available for install.
+List tool versions available to install
 
-Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
+Results may be cached; run `mise cache clear` to fetch fresh results.
 
 ## Arguments
 - **`[TOOL@VERSION]`** — Tool to get versions for

@@ -39,6 +39,7 @@ pub(crate) struct Doctor {
     errors: Vec<String>,
     #[usage(skip)]
     warnings: Vec<String>,
+    /// Output in JSON format
     #[usage(long, short = 'J')]
     json: bool,
 }

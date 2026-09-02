@@ -5,13 +5,12 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/reshim.rs`](https://github.com/jdx/mise/blob/main/src/cli/reshim.rs)
 
-Creates new shims based on bin paths from currently installed tools.
+Create shims for the executables of currently installed tools
 
-This creates new shims in the configured user shim directory for CLIs that have been added.
-With `--system`, it rebuilds the configured system shim farm instead.
-mise will try to do this automatically for commands like `npm i -g` but there are
-other ways to install things (like using yarn or pnpm for node) that mise does
-not know about and so it will be necessary to call this explicitly.
+This creates shims in the user shim directory for executables that have been added since
+the last reshim. With `--system`, it rebuilds the system shim farm instead.
+mise runs this automatically after commands like `npm i -g`, but other ways of installing
+executables (such as yarn or pnpm for node) are not detected, so call this explicitly then.
 
 If you think mise should automatically call this for a particular command, please
 open an issue on the mise repo. You can also set up a shell function to reshim
@@ -28,7 +27,7 @@ Note that this creates shims for _all_ installed tools, not just the ones that a
 currently active in mise.toml.
 
 ## Flags
-- **`-f --force`** — Rebuilds all mise-owned shims
+- **`-f --force`** — Rebuild all mise-owned shims
 - **`--system`** — Rebuild the system shim farm
 - **`-h --help`** — Print help
 

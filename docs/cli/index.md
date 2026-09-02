@@ -41,7 +41,6 @@
 - **`--no-hooks`** — Do not execute hooks from config files
 
   Can also use `MISE_NO_HOOKS=1`
-- **`--output <OUTPUT>`**
 - **`-h --help`** — Print help
 
 ## Subcommands

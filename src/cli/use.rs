@@ -21,10 +21,10 @@ use crate::toolset::{
 use crate::ui::ctrlc;
 use crate::{config, env, exit, file};
 
-/// Installs a tool and adds the version to mise.toml.
+/// Install a tool and add it to mise.toml
 ///
-/// This will install the tool version if it is not already installed.
-/// By default, this will use a `mise.toml` file in the current directory.
+/// Installs the tool version if it is not already installed, then writes it to a config file.
+/// By default, this is `mise.toml` in the current directory.
 /// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 /// the lowest precedence file (`mise.toml`) will be used.
 /// See https://mise.jdx.dev/configuration.html#target-file-for-write-operations
@@ -34,12 +34,10 @@ use crate::{config, env, exit, file};
 ///   - If `--path` is set, it will use the config file at the given path.
 ///   - If `--env` is set, it will use `mise.<env>.toml`.
 ///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
 ///   - Otherwise just "mise.toml" or global config if cwd is home directory.
 ///
 /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-///
-/// Use the `--global` flag to use the global config file instead.
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     verbatim_doc_comment,
@@ -65,7 +63,7 @@ pub(crate) struct Use {
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    /// [default: 4]
+    /// Defaults to the `jobs` setting
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
@@ -91,8 +89,8 @@ pub(crate) struct Use {
 
     /// Save fuzzy version to config file
     ///
-    /// e.g.: `mise use --fuzzy node@20` will save 20 as the version
-    /// this is the default behavior unless `MISE_PIN=1`
+    /// e.g.: `mise use --fuzzy node@20` will save `20` as the version.
+    /// This is the default behavior unless `MISE_PIN=1`
     #[usage(long, verbatim_doc_comment, overrides = "pin")]
     fuzzy: bool,
 
@@ -114,7 +112,7 @@ pub(crate) struct Use {
     #[usage(long, verbatim_doc_comment, overrides = "fuzzy")]
     pin: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
     /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
@@ -132,12 +130,12 @@ struct UseTool {
 
     /// Tool to add to config file
     ///
-    /// e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
-    /// If no version is specified, it will default to @latest
+    /// e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
+    /// If no version is specified, it defaults to @latest
     ///
     /// Tool options can be set with this syntax:
     ///
-    ///     mise use ubi:BurntSushi/ripgrep[exe=rg]
+    ///     mise use "cargo:ripgrep[features=pcre2]"
     #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: ToolArg,
 }

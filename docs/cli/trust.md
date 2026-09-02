@@ -5,7 +5,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/trust.rs`](https://github.com/jdx/mise/blob/main/src/cli/trust.rs)
 
-Marks a config file as trusted
+Mark a config file as trusted
 
 This means mise is allowed to parse the file when it needs to read config
 that may execute code or affect the environment. Without trust, mise may

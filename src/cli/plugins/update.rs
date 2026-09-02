@@ -11,9 +11,9 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 
 use super::{PluginTaskNames, PluginTaskResult, join_plugin_tasks, spawn_plugin_task};
 
-/// Updates a plugin to the latest version
+/// Update a plugin to the latest version
 ///
-/// note: this updates the plugin itself, not the runtime versions
+/// Note: this updates the plugin itself, not the tool versions it manages
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_aliases = ["up", "upgrade"], after_long_help = AFTER_LONG_HELP)]
 pub(super) struct Update {
@@ -23,7 +23,7 @@ pub(super) struct Update {
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    /// Default: 4
+    /// Defaults to the `jobs` setting
     #[usage(long, short, verbatim_doc_comment)]
     jobs: Option<usize>,
 }

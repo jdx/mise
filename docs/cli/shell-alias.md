@@ -5,7 +5,7 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/shell_alias/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/mod.rs)
 
-Manage shell aliases.
+Manage shell aliases
 
 ## Flags
 - **`--no-header`** — Don't show table header

@@ -3,11 +3,11 @@ use std::path::PathBuf;
 
 use crate::env;
 
-/// Starts a new shell with the mise environment built from the current configuration
+/// Start a new shell with the mise environment built from the current configuration
 ///
-/// This is an alternative to `mise activate` that allows you to explicitly start a mise session.
-/// It will have the tools and environment variables in the configs loaded.
-/// Note that changing directories will not update the mise environment.
+/// This is an alternative to `mise activate` for starting a mise session explicitly.
+/// The new shell has the tools and environment variables from the config loaded.
+/// Unlike an activated shell, changing directories does not update the environment.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct En {

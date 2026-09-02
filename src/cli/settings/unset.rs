@@ -4,9 +4,9 @@ use toml_edit::DocumentMut;
 use crate::config::settings::SettingsFile;
 use crate::{config, file};
 
-/// Clears a setting
+/// Clear a setting
 ///
-/// This modifies the contents of ~/.config/mise/config.toml
+/// This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_aliases = ["rm", "remove", "delete", "del"], after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct SettingsUnset {

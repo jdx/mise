@@ -5,6 +5,8 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Show whether macOS defaults match `[bootstrap.macos.defaults]`
+
 ## Flags
 - **`-J --json`** — Output in JSON format
 - **`--missing`** — Exit with code 1 if any configured defaults are not in their desired state
