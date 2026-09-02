@@ -85,6 +85,7 @@ jobs:
     runs-on: [self-hosted, jdx-perf-v1]
     container:
       image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
+      # Anonymous by design; perf-runner#10 prunes it after this container stops.
       options: --cpuset-cpus 0-7 --mount type=volume,dst=/var/cache/mbx
     timeout-minutes: 40
     permissions:
