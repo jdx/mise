@@ -1019,18 +1019,22 @@ deprecated no-op so existing task configurations continue to run. Enabled values
 warning; disabled values are silent.
 
 Use [mbx](https://mr-boxington.jdx.dev/getting-started) for Rust action caching instead. Install it
-globally with `mise use -g mr-boxington`, or add it to the project tools, then put `mbx` in front of
-the Cargo subcommand:
+globally with `mise use -g mr-boxington`, or add it to the project tools. To keep existing task commands unchanged,
+configure mise's [`cargo` command wrapper](/dev-tools/shims.html#command-wrappers):
 
 ```mise-toml
 [tools]
 mr-boxington = "latest"
 
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+
 [tasks.build]
-run = "mbx build"
+run = "cargo build"
 ```
 
-Remove `rust_cache` after changing the command. The compatibility field is scheduled for removal in
+Run `mise reshim` after adding the wrapper, then remove `rust_cache`. The compatibility field is scheduled for removal in
 mise 2027.8.14.
 
 ### `shell`
@@ -1416,7 +1420,9 @@ command_inputs = ["node --version"]
 
 This deprecated compatibility setting no longer enables Rust action caching. An effective enabled
 value warns once while tasks continue normally. Remove it and run Rust build commands through
-[mbx](https://mr-boxington.jdx.dev/getting-started) instead.
+[mbx](https://mr-boxington.jdx.dev/getting-started) instead. The
+[`wrappers.cargo` configuration](/lang/rust.html#share-cargo-builds-with-mr-boxington) lets existing tasks keep
+invoking `cargo` without modification.
 
 ```toml
 [task_config]
