@@ -10,6 +10,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -30,7 +31,7 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/mbx
         with:
-          backend: github
+          backend: server
       - name: Warm the Unix cache
         if: runner.os != 'Windows'
         run: mbx build --all-features --ignore-rust-version
