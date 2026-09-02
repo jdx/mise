@@ -30,7 +30,7 @@ hero:
         <div class="row row-boot"><span class="tk-key">"apt:build-essential"</span><span class="tk-op"> = </span><span class="tk-str">"latest"</span></div>
         <div class="row row-blank"></div>
         <div class="row row-boot"><span class="tk-section">[dotfiles]</span></div>
-        <div class="row row-boot"><span class="tk-key">"~/.zshrc"</span><span class="tk-op"> = {}</span></div>
+        <div class="row row-boot"><span class="tk-key">"~/.zshrc"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"dotfiles/zshrc"</span><span class="tk-op"> }</span></div>
       </div>
     </div>
     <div class="card-outputs">
@@ -210,8 +210,8 @@ hero:
           <div class="row row-boot"><span class="tk-key">"~/src/notes"</span><span class="tk-op"> = { </span><span class="tk-key">url</span><span class="tk-op"> = </span><span class="tk-str">"git@github.com:me/notes.git"</span><span class="tk-op"> }</span></div>
           <div class="row row-blank"></div>
           <div class="row row-boot"><span class="tk-section">[dotfiles]</span></div>
-          <div class="row row-boot"><span class="tk-key">"~/.gitconfig"</span><span class="tk-op"> = {}</span></div>
-          <div class="row row-boot"><span class="tk-key">"~/.config/nvim"</span><span class="tk-op"> = {}</span></div>
+          <div class="row row-boot"><span class="tk-key">"~/.gitconfig"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"dotfiles/gitconfig"</span><span class="tk-op">, </span><span class="tk-key">mode</span><span class="tk-op"> = </span><span class="tk-str">"template"</span><span class="tk-op"> }</span></div>
+          <div class="row row-boot"><span class="tk-key">"~/.config/nvim"</span><span class="tk-op"> = { </span><span class="tk-key">source</span><span class="tk-op"> = </span><span class="tk-str">"dotfiles/nvim"</span><span class="tk-op">, </span><span class="tk-key">mode</span><span class="tk-op"> = </span><span class="tk-str">"symlink"</span><span class="tk-op"> }</span></div>
           <div class="row row-blank"></div>
           <div class="row row-boot"><span class="tk-section">[bootstrap.macos.dock]</span></div>
           <div class="row row-boot"><span class="tk-key">autohide</span><span class="tk-op"> = </span><span class="tk-str">true</span></div>
@@ -225,9 +225,11 @@ hero:
         <p class="landing-lede">
           <code>mise bootstrap</code> sets up a new computer from the same
           file: OS packages, git repos, dotfiles, shell activation, macOS
-          defaults, and services, then your tools. It converges, so running it
-          again only does what's missing. It's what you'd otherwise assemble
-          from a Brewfile, chezmoi, and an Ansible playbook.
+          defaults, and services, then your tools. Run it again and mise skips
+          anything that's already set up. mise has its own Homebrew
+          implementation, so it installs formulae and casks without requiring
+          Homebrew. It replaces what you'd otherwise assemble from a Brewfile,
+          chezmoi, and an Ansible playbook.
         </p>
         <ul class="landing-checklist">
           <li>Packages through brew, apt, dnf, pacman, apk, and mas</li>
