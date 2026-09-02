@@ -1698,6 +1698,13 @@ impl Bootstrap {
             &checkout,
             &crate::env::ARGS.read().unwrap(),
         ));
+        if self.from_git.is_some()
+            && let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+                .as_deref()
+                .and_then(Path::file_name)
+        {
+            command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+        }
 
         let mut trusted = std::env::split_paths(
             &std::env::var_os("MISE_TRUSTED_CONFIG_PATHS").unwrap_or_default(),
