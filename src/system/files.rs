@@ -2612,7 +2612,7 @@ fn prune_stale_links(req: &FileRequest) -> Result<()> {
     {
         let mut dir = dir;
         while dir != req.target && dir.starts_with(&req.target) && !needed.contains(dir) {
-            if dir.read_dir()?.next().is_some() {
+            if !dir.is_dir() || dir.read_dir()?.next().is_some() {
                 break;
             }
             file::remove_dir(dir)?;
