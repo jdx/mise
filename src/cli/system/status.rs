@@ -37,7 +37,22 @@ impl SystemStatus {
                 if self.json {
                     json_out.insert(
                         name.to_string(),
-                        json!({ "available": false, "reason": reason }),
+                        json!({
+                            "available": false,
+                            "reason": reason,
+                            "packages": mp.requests.iter().map(|req| {
+                                json!({
+                                    "package": req.name,
+                                    "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
+                                    "desired_state": match req.desired {
+                                        PackageDesiredState::Present => "present",
+                                        PackageDesiredState::Absent => "absent",
+                                    },
+                                    "state": "skipped",
+                                    "installed_version": "",
+                                })
+                            }).collect::<Vec<_>>(),
+                        }),
                     );
                 } else {
                     for req in &mp.requests {

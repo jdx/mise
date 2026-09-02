@@ -95,14 +95,28 @@ fn deptest_requirement(req: &PackageRequest) -> String {
     }
 }
 
-fn remove_args(pkgs: &[PackageRequest]) -> Vec<String> {
+fn remove_args(names: &[String]) -> Vec<String> {
     let mut args = vec![
         "-R".to_string(),
         "--noconfirm".to_string(),
         "--".to_string(),
     ];
-    args.extend(pkgs.iter().map(|p| p.name.clone()));
+    args.extend(names.iter().cloned());
     args
+}
+
+async fn concrete_remove_names(pkgs: &[PackageRequest]) -> Result<Vec<String>> {
+    let mut names = Vec::with_capacity(pkgs.len());
+    for pkg in pkgs {
+        let output = pacman_query(std::slice::from_ref(&pkg.name)).await?;
+        let Some((name, _)) = parse_pacman_package(&output) else {
+            bail!("pacman -Q returned no installed package for '{}'", pkg.name);
+        };
+        if !names.iter().any(|existing| existing == name) {
+            names.push(name.to_string());
+        }
+    }
+    Ok(names)
 }
 
 fn apply_provider_query<'a>(
@@ -296,7 +310,11 @@ impl SystemPackageManager for PacmanManager {
     }
 
     async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
-        let args = remove_args(pkgs);
+        // A request may name a virtual capability satisfied through Provides.
+        // Resolve each target through the local database immediately before
+        // removal so pacman receives the concrete installed package identity.
+        let names = concrete_remove_names(pkgs).await?;
+        let args = remove_args(&names);
         if opts.dry_run {
             miseprintln!("{}", sudo::argv("pacman", &args).join(" "));
             return Ok(());
@@ -414,7 +432,7 @@ mod tests {
     #[test]
     fn test_remove_args_remove_exact_packages_without_cascading() {
         assert_eq!(
-            remove_args(&[req("omarchy", None), req("omarchy-settings", None)]),
+            remove_args(&["omarchy".to_string(), "omarchy-settings".to_string()]),
             ["-R", "--noconfirm", "--", "omarchy", "omarchy-settings"]
         );
     }

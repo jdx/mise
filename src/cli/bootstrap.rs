@@ -2926,6 +2926,10 @@ impl BootstrapStatus {
                             json!({
                                 "package": req.name,
                                 "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
+                                "desired_state": match req.desired {
+                                    PackageDesiredState::Present => "present",
+                                    PackageDesiredState::Absent => "absent",
+                                },
                                 "state": "skipped",
                             })
                         }).collect::<Vec<_>>(),

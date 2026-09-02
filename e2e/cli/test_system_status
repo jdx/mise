@@ -3,7 +3,7 @@
 cat <<EOF >mise.toml
 [bootstrap.packages]
 "apt:bc" = "latest"
-"apk:bc" = "latest"
+"apk:bc" = { state = "absent" }
 "brew:jq" = "latest"
 "dnf:bc" = "latest"
 "mas:497799835" = "latest"
@@ -17,6 +17,7 @@ assert_contains "mise bootstrap packages status" "bc"
 assert_contains "mise bootstrap packages status" "497799835"
 assert_contains "mise bootstrap packages status --json" '"apt"'
 assert_contains "mise bootstrap packages status --json" '"apk"'
+assert_contains "mise bootstrap packages status --json" '"desired_state": "absent"'
 assert_contains "mise bootstrap packages status --json" '"mas"'
 if ! command -v apk >/dev/null; then
   assert_fail_contains "mise bootstrap packages apply --manager apk --dry-run --yes" "apk is not available"
