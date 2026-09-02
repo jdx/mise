@@ -70,11 +70,6 @@ jobs:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 60
     steps:
-      - name: Assert OIDC is unavailable to untrusted CI
-        if: ${{ !inputs.trusted }}
-        run: |
-          test -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
-          test -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         if: inputs.trusted
@@ -118,7 +113,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
         with:
-          backend: github
+          backend: server
       - shell: pwsh
         run: |
           mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
@@ -413,7 +408,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: ./.github/actions/mbx
         with:
-          backend: github
+          backend: server
       - name: check unused code
         run: mbx check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
         env:

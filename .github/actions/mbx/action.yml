@@ -1,10 +1,10 @@
 name: Set up mbx
-description: Install mbx with a local Namespace, remote server, or ephemeral store
+description: Install mbx with a local Namespace store or the GitHub Actions cache server
 
 inputs:
   backend:
-    description: Store selected by the structurally trusted caller
-    default: github
+    description: Use local on Namespace runners and server on GitHub-hosted runners
+    default: server
 runs:
   using: composite
   steps:
@@ -44,10 +44,12 @@ runs:
         mise reshim -f
         mise where mr-boxington@1.5.0 >> "$GITHUB_PATH"
         {
-          if [[ "$MBX_BACKEND" == server ]]; then
-            echo "MBX_REMOTE_URL=https://cache.mise.jdx.dev"
+          if [[ "$MBX_BACKEND" == server && -n "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" ]]; then
+            echo "MBX_REMOTE_URL=https://cache.jdx.dev"
             echo "MBX_REMOTE_NAMESPACE=jdx/mise"
-            echo "MBX_REMOTE_OIDC_AUDIENCE=https://cache.mise.jdx.dev"
+            echo "MBX_REMOTE_OIDC_AUDIENCE=https://cache.jdx.dev"
+          elif [[ "$MBX_BACKEND" == server ]]; then
+            echo "::notice::GitHub OIDC is unavailable; using an ephemeral local mbx store"
           fi
           if [[ "$RUNNER_OS" == Linux ]]; then
             echo "MBX_CACHE_LINKS=1"
