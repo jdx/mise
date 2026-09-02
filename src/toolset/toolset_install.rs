@@ -42,7 +42,11 @@ impl Toolset {
                     match tv.request.lazy_bins() {
                         Ok(Some(bins)) if bins.iter().any(|bin| bin == bin_name) => Some(Ok(tv)),
                         Ok(_) => None,
-                        Err(err) => Some(Err(err)),
+                        // Missing metadata for one lazy declaration says nothing
+                        // about whether another declaration provides this command.
+                        // ensure_lazy_shims reports that declaration's error while
+                        // still materializing the valid providers' shims.
+                        Err(_) => None,
                     }
                 } else if tv.ba().matches_bin_name(bin_name)
                     || tv

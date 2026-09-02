@@ -102,6 +102,13 @@ installed, normal `mise activate` places the real tool path ahead of the shim
 farms, so later calls have no shim dispatch overhead. `mise activate --shims`
 remains project-aware and dispatches every call through mise by design.
 
+Tasks and `mise x` work the same way. `mise run` does not preinstall lazy tools.
+Instead, whenever the toolset has a lazy declaration, the environment mise
+builds for a task (and for `mise x` and `mise env`) places the shim farms behind
+the tool paths if they are not already on PATH, and any missing bootstrap shims
+are created first. The task installs the tool the first time it runs one of its
+commands. `mise x -- <command>` installs the provider of a lazy command directly.
+
 ::: tip
 [`mise activate --shims`](/cli/activate.html#shims) is a shorthand for adding the shims directory to PATH.
 :::

@@ -291,6 +291,15 @@ impl Toolset {
             .collect()
     }
 
+    /// Whether any configured tool is declared `lazy = true`. Such a tool installs the
+    /// first time one of its bootstrap shims runs, so environments mise builds for this
+    /// toolset have to make those shims reachable behind the real tool paths.
+    pub(crate) fn has_lazy_declarations(&self) -> bool {
+        self.list_current_requests()
+            .iter()
+            .any(|request| request.options().lazy == Some(true))
+    }
+
     pub(crate) fn list_versions_by_plugin(&self) -> Vec<(Arc<dyn Backend>, &ToolVersionList)> {
         self.versions
             .iter()

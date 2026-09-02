@@ -2078,6 +2078,7 @@ impl TaskExecutor {
     ) -> Result<PreparedTaskContext> {
         let mut tools = self.tool.clone();
         tools.extend(task.tool_args()?);
+        let task_tool_args_env = crate::shims::task_tool_args_env(&tools)?;
         let ts_build_start = std::time::Instant::now();
 
         // Remote tasks need tools from the full config hierarchy rather than a
@@ -2099,7 +2100,7 @@ impl TaskExecutor {
 
         let env_render_start = std::time::Instant::now();
         // extra_vars contains resolved vars from the task's config hierarchy.
-        let (mut env, task_env, extra_vars, env_remove) = if let Some(task_cf) = task_cf {
+        let (mut env, task_env, extra_vars, mut env_remove) = if let Some(task_cf) = task_cf {
             let (env, task_env, extra_vars, env_remove) = self
                 .context_builder
                 .resolve_task_env_with_config(config, task, task_cf, &toolset)
@@ -2207,6 +2208,17 @@ impl TaskExecutor {
                 "MISE_CONFIG_ROOT",
                 task_env_path(config_root),
             );
+        }
+        if let Some(task_tool_args) = task_tool_args_env {
+            Self::insert_env_excluded_from_nested_mise_diff(
+                &mut env,
+                &mut nested_mise_diff_exclude_keys,
+                crate::shims::TASK_TOOL_ARGS_ENV,
+                task_tool_args,
+            );
+        } else {
+            env.remove(crate::shims::TASK_TOOL_ARGS_ENV);
+            env_remove.insert(crate::shims::TASK_TOOL_ARGS_ENV.to_string());
         }
         if Settings::get().env_cache {
             let key = CachedEnv::ensure_encryption_key();

@@ -4,12 +4,12 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     sync::atomic::Ordering,
 };
 
 use crate::backend::Backend;
-use crate::cli::args::BackendArg;
+use crate::cli::args::{BackendArg, ToolArg};
 use crate::cli::exec::Exec;
 use crate::config::{CommandWrapper, Config, Settings, load_command_wrappers};
 use crate::file::display_path;
@@ -32,6 +32,69 @@ const GENERATED_WINDOWS_CMD_SHIM_HEADER: &str = "@echo off\r\nrem mise generated
 #[cfg(any(windows, test))]
 const GENERATED_WINDOWS_BASH_SHIM_HEADER: &str = "#!/bin/bash\n# mise generated shim\n";
 const SHIM_SCRIPT_INSPECTION_LIMIT: u64 = 16 * 1024;
+
+pub(crate) const TASK_TOOL_ARGS_ENV: &str = "__MISE_TASK_TOOL_ARGS";
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct TaskToolArg {
+    backend: String,
+    version: Option<String>,
+    options: crate::toolset::ToolVersionOptions,
+}
+
+/// Preserve runtime-only task tool requests for a shim process. A task's `tools`
+/// entries are not part of the config that a shim reloads, so without this context
+/// a bootstrap shim cannot find a lazy provider declared only on the task.
+pub(crate) fn task_tool_args_env(tools: &[ToolArg]) -> Result<Option<String>> {
+    let tools = tools
+        .iter()
+        .map(|tool| TaskToolArg {
+            backend: tool.ba.short.clone(),
+            version: tool.version.clone(),
+            options: tool
+                .tvr
+                .as_ref()
+                .map(|request| request.options())
+                .unwrap_or_default(),
+        })
+        .collect_vec();
+    if tools.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(serde_json::to_string(&tools)?))
+    }
+}
+
+fn task_tool_args_from_env() -> Result<Vec<ToolArg>> {
+    let Ok(serialized) = env::var(TASK_TOOL_ARGS_ENV) else {
+        return Ok(vec![]);
+    };
+    serde_json::from_str::<Vec<TaskToolArg>>(&serialized)?
+        .into_iter()
+        .map(|tool| {
+            let input = tool.version.as_ref().map_or_else(
+                || tool.backend.clone(),
+                |version| format!("{}@{version}", tool.backend),
+            );
+            let mut arg: ToolArg = input.parse()?;
+            if !tool.options.is_empty() {
+                Arc::make_mut(&mut arg.ba).set_opts(Some(tool.options));
+            }
+            arg.tvr = arg
+                .version
+                .as_ref()
+                .map(|version| {
+                    crate::toolset::ToolRequest::new(
+                        arg.ba.clone(),
+                        version,
+                        crate::toolset::ToolSource::Argument,
+                    )
+                })
+                .transpose()?;
+            Ok(arg)
+        })
+        .collect()
+}
 
 // executes as if it was a shim if the command is not "mise", e.g.: "node"
 pub(crate) async fn handle_shim() -> Result<()> {
@@ -147,7 +210,9 @@ async fn which_shim(
     } else {
         ResolveOptions::default()
     };
+    let task_tools = task_tool_args_from_env()?;
     let mut ts = ToolsetBuilder::new()
+        .with_args(&task_tools)
         .with_resolve_options(resolve_options)
         .build(config)
         .await?;
@@ -298,6 +363,70 @@ pub(crate) enum ShimScope {
     Both,
 }
 
+/// The shim farms that serve as the lazy-install fallback boundary on PATH: the user
+/// farm, plus the system farm when it exists as separate storage.
+pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
+    let user_shims = dirs::shims();
+    let system_shims = dirs::system_shims();
+    let mut dirs = vec![user_shims];
+    if system_shims.is_dir() && !file::storage_paths_eq(&dirs[0], &system_shims) {
+        dirs.push(system_shims);
+    }
+    dirs
+}
+
+/// Add bootstrap shims for missing lazy declarations without pruning either farm.
+///
+/// A `lazy = true` entry written by hand has no shim until something rebuilds the farm.
+/// An interactive shell still recovers, because its not-found handler installs the
+/// tool, but a task or `mise x` child has no such handler and fails with "command not
+/// found" (discussion #12678). `missing` is the toolset's already-computed missing
+/// version list, so the common case costs only a few file existence checks.
+pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
+    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+    let mut shims_by_dir = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    let mut lazy_bins_error = None;
+    for tv in missing {
+        if tv.request.options().lazy != Some(true) {
+            continue;
+        }
+        let bins = match tv.request.lazy_bins() {
+            Ok(Some(bins)) => bins,
+            Ok(None) => continue,
+            Err(err) => {
+                // One malformed lazy declaration must not prevent bootstrap shims
+                // from being written for every other declaration in the toolset.
+                lazy_bins_error.get_or_insert(err);
+                continue;
+            }
+        };
+        let shims_dir = if shim_scope_contains_request(ShimScope::System, &tv.request) {
+            dirs::system_shims()
+        } else {
+            dirs::shims()
+        };
+        shims_by_dir.entry(shims_dir).or_default().extend(
+            bins.iter()
+                .flat_map(|bin| platform_shim_names(&mise_bin, bin)),
+        );
+    }
+    for (shims_dir, shims) in shims_by_dir {
+        file::create_dir_all(&shims_dir)?;
+        let _lock = LockFile::new(&shims_dir).lock();
+        for shim in shims {
+            let path = shims_dir.join(&shim);
+            if !path.exists() {
+                add_shim(&mise_bin, &path, &shim)?;
+            }
+        }
+    }
+    if let Some(err) = lazy_bins_error {
+        Err(err)
+    } else {
+        Ok(())
+    }
+}
+
 pub(crate) async fn reshim_for(
     config: &Arc<Config>,
     ts: &Toolset,
@@ -354,7 +483,7 @@ pub(crate) async fn reshim_for(
 
     let dedicated = is_dedicated_shims_dir(&shims_dir);
     let (desired, shims_to_stage, known_owned, prune_entries) = if full_rebuild {
-        let desired = get_desired_shims(config, &mise_bin, ts, scope).await?;
+        let desired = get_desired_shims(config, &mise_bin, ts, scope, force).await?;
         let shims_to_stage = desired.iter().cloned().collect();
         if dedicated {
             (desired, shims_to_stage, HashSet::new(), HashSet::new())
@@ -364,7 +493,7 @@ pub(crate) async fn reshim_for(
             (desired, shims_to_stage, actual.owned, prune_entries)
         }
     } else {
-        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope).await?;
+        let diffs = get_shim_diffs(config, &mise_bin, ts, &shims_dir, scope, false).await?;
         (
             diffs.desired,
             diffs.missing,
@@ -1218,11 +1347,12 @@ pub(crate) async fn get_shim_diffs(
     toolset: &Toolset,
     shims_dir: &Path,
     scope: ShimScope,
+    strict_lazy_bins: bool,
 ) -> Result<ShimDiffs> {
     let mise_bin = mise_bin.as_ref();
     let (actual_shims, desired_shims) = tokio::join!(
         get_actual_shims(mise_bin, shims_dir),
-        get_desired_shims(config, mise_bin, toolset, scope)
+        get_desired_shims(config, mise_bin, toolset, scope, strict_lazy_bins)
     );
     let (actual_shims, desired_shims) = (actual_shims?, desired_shims?);
     let (missing, extra) = calculate_shim_diffs(
@@ -1378,6 +1508,7 @@ async fn get_desired_shims(
     mise_bin: &Path,
     toolset: &Toolset,
     scope: ShimScope,
+    strict_lazy_bins: bool,
 ) -> Result<HashSet<String>> {
     let _mise_bin = mise_bin; // used on Windows only
     let mut shims = HashSet::new();
@@ -1400,11 +1531,14 @@ async fn get_desired_shims(
         if !shim_scope_contains_request(scope, request) {
             continue;
         }
-        if let Some(bins) = request.lazy_bins()? {
-            shims.extend(
+        match request.lazy_bins() {
+            Ok(Some(bins)) => shims.extend(
                 bins.into_iter()
                     .flat_map(|bin| platform_shim_names(_mise_bin, &bin)),
-            );
+            ),
+            Ok(None) => {}
+            Err(err) if strict_lazy_bins => return Err(err),
+            Err(err) => warn!("Skipping invalid lazy shim declaration: {err:#}"),
         }
     }
     Ok(shims)
