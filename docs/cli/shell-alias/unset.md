@@ -6,7 +6,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/shell_alias/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell_alias/unset.rs)
 
-Removes a shell alias
+Remove a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 

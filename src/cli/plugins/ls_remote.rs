@@ -7,15 +7,13 @@ use crate::toolset::install_state;
 
 /// List all available remote plugins
 #[derive(Debug, usage_rs::Args)]
-#[usage(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, verbatim_doc_comment)]
+#[usage(visible_aliases = ["list-remote", "list-all"], long_about = LONG_ABOUT, after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct PluginsLsRemote {
-    /// Show the git url for each plugin
-    /// e.g.: https://github.com/mise-plugins/mise-poetry.git
+    /// Show the git url for each plugin, e.g. https://github.com/mise-plugins/mise-poetry.git
     #[usage(short, long)]
     pub urls: bool,
 
-    /// Only show the name of each plugin
-    /// by default it will show a "*" next to installed plugins
+    /// Only show the name of each plugin, without the "*" marking installed plugins
     #[usage(long)]
     pub only_names: bool,
 }
@@ -53,12 +51,13 @@ impl PluginsLsRemote {
     }
 }
 
-const LONG_ABOUT: &str = r#"
-List all available remote plugins
+const LONG_ABOUT: &str = r#"List all available remote plugins
 
-The full list is here: https://github.com/jdx/mise/blob/main/registry/
+These are the shorthand names from the registry: https://github.com/jdx/mise/blob/main/registry/"#;
 
-Examples:
+static AFTER_LONG_HELP: &str = color_print::cstr!(
+    r#"<bold><underline>Examples:</underline></bold>
 
-    $ mise plugins ls-remote
-"#;
+    $ <bold>mise plugins ls-remote</bold>
+"#
+);

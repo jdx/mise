@@ -793,6 +793,7 @@ enum BootstrapPluginsCommands {
     Status(BootstrapPluginsStatus),
 }
 
+/// Install package manager plugins declared in `[bootstrap.plugins]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapPluginsApply {
     /// Print what would happen without installing plugins
@@ -800,6 +801,7 @@ struct BootstrapPluginsApply {
     dry_run: bool,
 }
 
+/// Show whether declared package manager plugins are installed
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapPluginsStatus {
     /// Exit with code 1 if a declared plugin is missing
@@ -836,6 +838,7 @@ enum BootstrapReposCommands {
     Update(BootstrapReposUpdate),
 }
 
+/// Clone and converge git repos from `[bootstrap.repos]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposApply {
     /// Print the commands that would run without running them
@@ -851,6 +854,7 @@ struct BootstrapReposApply {
     skip_dirty: bool,
 }
 
+/// Pull the latest changes into configured git repos
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposUpdate {
     /// Update only matching configured or expanded paths
@@ -870,6 +874,7 @@ struct BootstrapReposUpdate {
     skip_dirty: bool,
 }
 
+/// Run a command in each configured git repo
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposExec {
     /// Run only in matching configured or expanded paths
@@ -889,6 +894,7 @@ struct BootstrapReposExec {
     command: Vec<String>,
 }
 
+/// Show the state of git repos from `[bootstrap.repos]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapReposStatus {
     /// Output in JSON format
@@ -943,6 +949,7 @@ enum BootstrapMacosDefaultsCommands {
     Status(BootstrapMacosDefaultsStatus),
 }
 
+/// Write macOS defaults from `[bootstrap.macos.defaults]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapMacosDefaultsApply {
     /// Print the commands that would run without running them
@@ -954,6 +961,7 @@ struct BootstrapMacosDefaultsApply {
     yes: bool,
 }
 
+/// Show whether macOS defaults match `[bootstrap.macos.defaults]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapMacosDefaultsStatus {
     /// Output in JSON format
@@ -979,6 +987,7 @@ enum BootstrapLaunchdCommands {
     Status(BootstrapLaunchdStatus),
 }
 
+/// Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapLaunchdApply {
     /// Print the commands that would run without running them
@@ -990,6 +999,7 @@ struct BootstrapLaunchdApply {
     yes: bool,
 }
 
+/// Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapLaunchdStatus {
     /// Output in JSON format
@@ -1015,6 +1025,7 @@ enum BootstrapSystemdCommands {
     Status(BootstrapSystemdStatus),
 }
 
+/// Install and start systemd user services from `[bootstrap.linux.systemd.units]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapSystemdApply {
     /// Print the commands that would run without running them
@@ -1026,6 +1037,7 @@ struct BootstrapSystemdApply {
     yes: bool,
 }
 
+/// Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapSystemdStatus {
     /// Output in JSON format
@@ -1051,6 +1063,7 @@ enum BootstrapShellCommands {
     Status(BootstrapShellStatus),
 }
 
+/// Configure shell activation from `[bootstrap.mise_shell_activate]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapShellApply {
     /// Print the actions that would run without writing anything
@@ -1062,6 +1075,7 @@ struct BootstrapShellApply {
     yes: bool,
 }
 
+/// Show whether shell activation matches `[bootstrap.mise_shell_activate]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapShellStatus {
     /// Output in JSON format
@@ -1087,6 +1101,7 @@ enum BootstrapUserCommands {
     Status(BootstrapUserStatus),
 }
 
+/// Apply current-user settings from `[bootstrap.user]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapUserApply {
     /// Print the commands that would run without running them
@@ -1098,6 +1113,7 @@ struct BootstrapUserApply {
     yes: bool,
 }
 
+/// Show whether current-user settings match `[bootstrap.user]`
 #[derive(Debug, usage_rs::Args)]
 struct BootstrapUserStatus {
     /// Output in JSON format

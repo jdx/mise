@@ -5,10 +5,10 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/activate.rs`](https://github.com/jdx/mise/blob/main/src/cli/activate.rs)
 
-Initializes mise in the current shell session
+Initialize mise in the current shell session
 
-This should go into your shell's rc file or login shell.
-Otherwise, it will only take effect in the current session.
+Add this to your shell's rc or profile file so it runs in every new shell.
+Otherwise, it only takes effect in the current session.
 (e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
 
 Typically, this can be added with something like the following:
@@ -37,6 +37,7 @@ Customize status output with `status` settings.
 
   This can be helpful for debugging mise. If you run `eval "$(mise activate --no-hook-env)"`, then you can call `mise hook-env` manually which will output the env vars to stdout without actually modifying the environment. That way you can do things like `mise hook-env --trace` to get more information or just see the values that hook-env is outputting.
 - **`--shims`** — Use shims instead of modifying PATH
+
   Effectively the same as:
 
   ```

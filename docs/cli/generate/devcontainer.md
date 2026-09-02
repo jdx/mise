@@ -11,7 +11,7 @@ Generate a devcontainer to execute mise
 - **`-i --image <IMAGE>`** — The image to use for the devcontainer
 - **`-m --mount-mise-data`** — Bind the mise-data-volume to the devcontainer
 - **`-n --name <NAME>`** — The name of the devcontainer
-- **`-w --write`** — write to .devcontainer/devcontainer.json
+- **`-w --write`** — Write to .devcontainer/devcontainer.json
 - **`-h --help`** — Print help
 
 Examples:

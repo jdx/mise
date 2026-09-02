@@ -6,10 +6,10 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs)
 
-Installs a tool and adds the version to mise.toml.
+Install a tool and add it to mise.toml
 
-This will install the tool version if it is not already installed.
-By default, this will use a `mise.toml` file in the current directory.
+Installs the tool version if it is not already installed, then writes it to a config file.
+By default, this is `mise.toml` in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
 See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
@@ -19,23 +19,21 @@ In the following order:
 - If `--path` is set, it will use the config file at the given path.
 - If `--env` is set, it will use `mise.<env>.toml`.
 - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
 - Otherwise just "mise.toml" or global config if cwd is home directory.
 
 Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
-Use the `--global` flag to use the global config file instead.
-
 ## Arguments
 - **`<TOOL@VERSION>`** — Tool to add to config file
 
-  e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
-  If no version is specified, it will default to @latest
+  e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
+  If no version is specified, it defaults to @latest
 
   Tool options can be set with this syntax:
 
   ```
-  mise use ubi:BurntSushi/ripgrep[exe=rg]
+  mise use "cargo:ripgrep[features=pcre2]"
   ```
 
 ## Flags
@@ -44,7 +42,7 @@ Use the `--global` flag to use the global config file instead.
 - **`-g --global`** — Use the global config file (`~/.config/mise/config.toml`) instead of the local one
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
-  [default: 4]
+  Defaults to the `jobs` setting
 
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Perform a dry run, showing what would be installed and modified without making changes
@@ -56,8 +54,8 @@ Use the `--global` flag to use the global config file instead.
   This is useful for scripts to check if tools need to be added or removed.
 - **`--fuzzy`** — Save fuzzy version to config file
 
-  e.g.: `mise use --fuzzy node@20` will save 20 as the version
-  this is the default behavior unless `MISE_PIN=1`
+  e.g.: `mise use --fuzzy node@20` will save `20` as the version.
+  This is the default behavior unless `MISE_PIN=1`
 - **`--minimum-release-age <MINIMUM_RELEASE_AGE>`** — Only install versions released before this date or older than this duration
 
   Supports absolute dates like "2024-06-01" and relative durations like "90d" or "1y".
@@ -70,7 +68,7 @@ Use the `--global` flag to use the global config file instead.
 
   Consider using mise.lock as a better alternative to pinning in mise.toml:
   <https://mise.jdx.dev/configuration/settings.html#lockfile>
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies `--jobs=1`
+- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`--remove <TOOL>`** — Remove the tool(s) from config file
 - **`-h --help`** — Print help
 - **`--postinstall <COMMAND>`** — Command to run after installing this tool

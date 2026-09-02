@@ -9,7 +9,7 @@
 Manage tasks
 
 ## Arguments
-- **`[TASK]`** — Task name to get info of
+- **`[TASK]`** — Task name to show info for
 
 ## Flags
 - **`-g --global`** — Only show global tasks

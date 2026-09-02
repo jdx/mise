@@ -37,7 +37,7 @@ pub(crate) struct Registry {
     #[usage(long, short = 'J')]
     json: bool,
 
-    /// Include security features for each tool's backends in JSON output.
+    /// Include security features for each tool's backends in JSON output
     ///
     /// Requires --json. Security info is de-duplicated across
     /// all of a tool's backends. This can add noticeable time for large

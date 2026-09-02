@@ -5,9 +5,9 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/implode.rs`](https://github.com/jdx/mise/blob/main/src/cli/implode.rs)
 
-Removes mise CLI and all related data
+Remove the mise CLI and all related data
 
-Skips config directory by default.
+The config directory is kept unless `--config` is passed.
 
 ## Flags
 - **`-n --dry-run`** — List directories that would be removed without actually removing them

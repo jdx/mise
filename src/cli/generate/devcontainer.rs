@@ -23,7 +23,7 @@ pub(super) struct Devcontainer {
     #[usage(long, short, verbatim_doc_comment)]
     name: Option<String>,
 
-    /// write to .devcontainer/devcontainer.json
+    /// Write to .devcontainer/devcontainer.json
     #[usage(long, short)]
     write: bool,
 }

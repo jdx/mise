@@ -8,9 +8,9 @@ use crate::{config::Config, config::Settings};
 
 use super::reconcile;
 
-/// Symlinks all tool versions from an external tool into mise
+/// Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 ///
-/// For example, use this to import all Homebrew node installs into mise
+/// Use this to make versions installed by another version manager available to mise.
 ///
 /// This won't overwrite managed installs, runtime aliases, or links from other providers.
 #[derive(Debug, usage_rs::Args)]

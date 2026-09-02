@@ -8,7 +8,7 @@ use crate::env;
 use crate::shell::{EXAMPLE_SHELL, require_shell};
 use crate::toolset::{InstallOptions, ToolSource, ToolsetBuilder, tool_env_var_name};
 
-/// Sets a tool version for the current session.
+/// Set a tool version for the current shell session
 ///
 /// Only works in a session where mise is already activated.
 ///
@@ -23,16 +23,16 @@ pub(crate) struct Shell {
 
     /// Number of jobs to run in parallel
     /// Values below 1 are treated as 1
-    /// [default: 4]
+    /// Defaults to the `jobs` setting
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     jobs: Option<usize>,
 
-    /// Removes a previously set version
+    /// Remove a previously set version
     #[usage(long, short)]
     unset: bool,
 
-    /// Connect backend install command stdin/stdout/stderr directly to the terminal
-    /// Implies --jobs=1
+    /// Connect backend install command stdin/stdout/stderr directly to the terminal.
+    /// Implies `--jobs=1`
     #[usage(long, overrides = "jobs")]
     raw: bool,
 }

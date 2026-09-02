@@ -32,10 +32,9 @@ use tokio::sync::Mutex;
 
 /// Run task(s)
 ///
-/// This command will run a task, or multiple tasks in parallel.
-/// Tasks may have dependencies on other tasks or on source files.
-/// If source is configured on a task, it will only run if the source
-/// files have changed.
+/// Runs one task, or several tasks in parallel.
+/// Tasks may depend on other tasks and on source files.
+/// If a task has `sources` configured, it only runs when those files have changed.
 ///
 /// Tasks can be defined in mise.toml or as standalone scripts.
 /// In mise.toml, tasks take this form:
@@ -48,7 +47,7 @@ use tokio::sync::Mutex;
 /// Alternatively, tasks can be defined as standalone scripts.
 /// These must be located in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks` or
 /// `.config/mise/tasks`.
-/// The name of the script will be the name of the tasks.
+/// The name of the script becomes the name of the task.
 ///
 ///     $ cat .mise/tasks/build<<EOF
 ///     #!/usr/bin/env bash
@@ -129,8 +128,7 @@ pub(crate) struct Run {
 
     /// Number of tasks to run in parallel
     /// Values below 1 are treated as 1
-    /// [default: 4]
-    /// Configure with `jobs` config or `MISE_JOBS` env var
+    /// Defaults to the `jobs` setting or the `MISE_JOBS` env var
     #[usage(long, short, env = "MISE_JOBS", verbatim_doc_comment)]
     pub jobs: Option<usize>,
 
@@ -138,7 +136,7 @@ pub(crate) struct Run {
     #[usage(long, short = 'n', verbatim_doc_comment)]
     pub dry_run: bool,
 
-    /// Change how tasks information is output when running tasks
+    /// How task output is displayed
     ///
     /// - `prefix` - Print stdout/stderr by line, prefixed with the task's label
     /// - `interleave` - Print directly to stdout/stderr instead of by line
@@ -229,9 +227,9 @@ pub(crate) struct Run {
     #[usage(long)]
     pub no_deps: bool,
 
-    /// Hides elapsed time after each task completes
+    /// Hide the elapsed time printed after each task completes
     ///
-    /// Default to always hide with `MISE_TASK_TIMINGS=0`
+    /// Set `MISE_TASK_TIMINGS=0` to hide it by default
     #[usage(long, alias = "no-timing", verbatim_doc_comment)]
     pub no_timings: bool,
 
@@ -284,9 +282,9 @@ pub(crate) struct Run {
     #[usage(long, verbatim_doc_comment)]
     pub timeout: Option<String>,
 
-    /// Shows elapsed time after each task completes
+    /// Show the elapsed time after each task completes
     ///
-    /// Default to always show with `MISE_TASK_TIMINGS=1`
+    /// Set `MISE_TASK_TIMINGS=1` to show it by default
     #[usage(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
 
@@ -1486,21 +1484,20 @@ fn render_usage_help(spec: &usage::Spec, args: &[String]) -> String {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # Runs the "lint" tasks. This needs to either be defined in mise.toml
-    # or as a standalone script. See the project README for more information.
+    # Run the "lint" task, defined either in mise.toml or as a standalone script.
     $ <bold>mise run lint</bold>
 
-    # Forces the "build" tasks to run even if its sources are up-to-date.
+    # Force the "build" task to run even if its sources are up-to-date.
     $ <bold>mise run --force build</bold>
 
     # Run "test" with stdin/stdout/stderr all connected to the current terminal.
     # This forces `--jobs=1` to prevent interleaving of output.
     $ <bold>mise run --raw test</bold>
 
-    # Runs the "lint", "test", and "check" tasks in parallel.
+    # Run the "lint", "test", and "check" tasks in parallel.
     $ <bold>mise run lint ::: test ::: check</bold>
 
-    # Execute multiple tasks each with their own arguments.
+    # Run multiple tasks, each with its own arguments.
     $ <bold>mise run cmd1 arg1 arg2 ::: cmd2 arg1 arg2</bold>
 "#
 );

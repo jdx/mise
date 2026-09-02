@@ -9,14 +9,14 @@ use crate::toolset::{InstallOptions, Toolset, ToolsetBuilder};
 use crate::wildcard::wildcard_match;
 use indexmap::IndexSet;
 
-/// Exports env vars to activate mise a single time
+/// Export env vars to activate mise a single time
 ///
-/// Use this if you don't want to permanently install mise. It's not necessary to
-/// use this if you have `mise activate` in your shell rc file.
+/// Use this to load the environment into one shell without adding `mise activate` to
+/// your shell rc file. It is not needed in shells where mise is already activated.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "e", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Env {
-    /// Tool(s) to use
+    /// Tool(s) to include in addition to those in config, e.g. node@20
     #[usage(value_name = "TOOL@VERSION")]
     tool: Vec<ToolArg>,
 

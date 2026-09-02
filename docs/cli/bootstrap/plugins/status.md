@@ -5,6 +5,8 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Show whether declared package manager plugins are installed
+
 ## Flags
 - **`--missing`** — Exit with code 1 if a declared plugin is missing
 - **`-h --help`** — Print help

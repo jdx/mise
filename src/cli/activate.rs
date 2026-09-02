@@ -11,10 +11,10 @@ use crate::toolset::env_cache::CachedEnv;
 use crate::{dirs, env};
 use eyre::Result;
 
-/// Initializes mise in the current shell session
+/// Initialize mise in the current shell session
 ///
-/// This should go into your shell's rc file or login shell.
-/// Otherwise, it will only take effect in the current session.
+/// Add this to your shell's rc or profile file so it runs in every new shell.
+/// Otherwise, it only takes effect in the current session.
 /// (e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
 ///
 /// Typically, this can be added with something like the following:
@@ -52,6 +52,7 @@ pub(crate) struct Activate {
     no_hook_env: bool,
 
     /// Use shims instead of modifying PATH
+    ///
     /// Effectively the same as:
     ///
     ///     PATH="$HOME/.local/share/mise/shims:$PATH"

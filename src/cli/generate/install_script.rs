@@ -15,7 +15,7 @@ use xx::regex;
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct InstallScript {
-    /// Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+    /// Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
     ///
     /// This is necessary if users may use a different version of mise outside the project.
     #[usage(long, short, verbatim_doc_comment)]
@@ -23,7 +23,7 @@ pub(super) struct InstallScript {
     /// Specify mise version to fetch
     #[usage(long, short = 'V', verbatim_doc_comment)]
     version: Option<String>,
-    /// instead of outputting the script to stdout, write to a file and make it executable
+    /// Write the script to a file and make it executable instead of printing it to stdout
     #[usage(long, short, verbatim_doc_comment, num_args=0..=1, default_missing = "./bin/mise")]
     write: Option<PathBuf>,
     /// Directory to put localized data into

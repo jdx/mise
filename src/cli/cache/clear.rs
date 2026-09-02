@@ -8,7 +8,7 @@ use heck::ToKebabCase;
 use itertools::Itertools;
 use walkdir::WalkDir;
 
-/// Deletes all cache files in mise
+/// Delete all cache files
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_alias = "c", alias = "clean")]
 pub(super) struct CacheClear {

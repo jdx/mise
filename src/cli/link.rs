@@ -10,9 +10,9 @@ use crate::toolset::{ToolRequest, ToolVersion, install_state};
 use crate::{backend, config, file};
 use crate::{cli::args::ToolArg, config::Config};
 
-/// Symlinks a tool version into mise
+/// Symlink a tool version into mise
 ///
-/// Use this for adding installs either custom compiled outside mise or built with a different tool.
+/// Use this to register an install that was compiled by hand or built with another tool.
 #[derive(Debug, usage_rs::Args)]
 #[usage(visible_alias = "ln", verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Link {

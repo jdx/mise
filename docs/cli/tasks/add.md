@@ -11,8 +11,8 @@ Adds a task to the local mise.toml file.
 See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 
 ## Arguments
-- **`<TASK>`** — Tasks name to add
-- **`[-- RUN]…`**
+- **`<TASK>`** — Name of the task to add
+- **`[-- RUN]…`** — Command to run, given after `--`
 
 ## Flags
 - **`-a --alias <ALIAS>`** — Other names for the task
@@ -23,11 +23,11 @@ See <https://mise.jdx.dev/configuration.html#target-file-for-write-operations>
 - **`-q --quiet`** — Do not print the command before running
 - **`-r --raw`** — Directly connect stdin/stdout/stderr
 - **`-s --sources <SOURCES>`** — Glob patterns of files this task uses as input
-- **`-w --wait-for <WAIT_FOR>`** — Wait for these tasks to complete if they are to run
+- **`-w --wait-for <WAIT_FOR>`** — Wait for these tasks to finish if they are also being run
 - **`--depends-post <DEPENDS_POST>`** — Dependencies to run after the task runs
 - **`--description <DESCRIPTION>`** — Description of the task
-- **`--outputs <OUTPUTS>`** — Glob patterns of files this task creates, to skip if they are not modified
-- **`--run-windows <RUN_WINDOWS>`** — Command to run on windows
+- **`--outputs <OUTPUTS>`** — Glob patterns of files this task creates, used to skip it when they are up to date
+- **`--run-windows <RUN_WINDOWS>`** — Command to run on Windows
 - **`--shell <SHELL>`** — Run the task in a specific shell
 - **`--silent`** — Do not print the command or its output
 - **`-h --help`** — Print help

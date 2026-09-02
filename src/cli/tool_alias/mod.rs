@@ -10,7 +10,7 @@ mod unset;
 #[derive(Debug, usage_rs::Args)]
 #[usage(
     name = "tool-alias",
-    about = "Manage tool version aliases.",
+    about = "Manage tool version aliases",
     alias = "alias",
     alias = "aliases"
 )]

@@ -153,7 +153,7 @@ Shorthand for `mise tasks run <TASK>`."#
     /// Answer yes to all confirmation prompts
     #[usage(short = 'y', long, global = true)]
     pub yes: bool,
-    /// Sets log level to debug
+    /// Set the log level to debug
     #[usage(long, global = true, hide = true, overrides = &["quiet", "trace", "verbose", "silent", "log_level"])]
     pub debug: bool,
     #[usage(long, global = true, hide = true, value_name = "LEVEL", value_enum, overrides = &["quiet", "trace", "verbose", "silent", "debug"])]
@@ -173,12 +173,13 @@ Shorthand for `mise tasks run <TASK>`."#
     /// Can also use `MISE_NO_HOOKS=1`
     #[usage(long)]
     pub no_hooks: bool,
-    /// Hides elapsed time after each task completes
+    /// Hide the elapsed time printed after each task completes
     ///
-    /// Default to always hide with `MISE_TASK_TIMINGS=0`
+    /// Set `MISE_TASK_TIMINGS=0` to hide it by default
     #[usage(long, alias = "no-timing", hide = true, verbatim_doc_comment)]
     pub no_timings: bool,
-    #[usage(long)]
+    /// How task output is displayed when running a task (same as `mise run --output`)
+    #[usage(long, hide = true)]
     pub output: Option<TaskOutput>,
     /// Read/write directly to stdin/stdout/stderr instead of by line
     #[usage(long, global = true)]
@@ -193,12 +194,12 @@ Shorthand for `mise tasks run <TASK>`."#
     /// Suppress all task output and mise non-error messages
     #[usage(long, global = true, overrides = &["quiet", "trace", "verbose", "debug", "log_level"])]
     pub silent: bool,
-    /// Shows elapsed time after each task completes
+    /// Show the elapsed time after each task completes
     ///
-    /// Default to always show with `MISE_TASK_TIMINGS=1`
+    /// Set `MISE_TASK_TIMINGS=1` to show it by default
     #[usage(long, alias = "timing", verbatim_doc_comment, hide = true)]
     pub timings: bool,
-    /// Sets log level to trace
+    /// Set the log level to trace
     #[usage(long, global = true, hide = true, overrides = &["quiet", "silent", "verbose", "debug", "log_level"])]
     pub trace: bool,
 }
@@ -1076,7 +1077,9 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
     }
 }
 
-const LONG_ABOUT: &str = "mise prepares your development environment before each command runs. https://github.com/jdx/mise";
+const LONG_ABOUT: &str = "mise installs the dev tools your projects need, sets their environment variables, and runs their tasks.
+
+Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev";
 
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>

@@ -8,15 +8,15 @@
 
 List all available remote plugins
 
-The full list is here: <https://github.com/jdx/mise/blob/main/registry/>
+These are the shorthand names from the registry: <https://github.com/jdx/mise/blob/main/registry/>
+
+## Flags
+- **`-u --urls`** — Show the git url for each plugin, e.g. <https://github.com/mise-plugins/mise-poetry.git>
+- **`--only-names`** — Only show the name of each plugin, without the "*" marking installed plugins
+- **`-h --help`** — Print help
 
 Examples:
 
 ```
 mise plugins ls-remote
 ```
-
-## Flags
-- **`-u --urls`** — Show the git url for each plugin e.g.: <https://github.com/mise-plugins/mise-poetry.git>
-- **`--only-names`** — Only show the name of each plugin by default it will show a "*" next to installed plugins
-- **`-h --help`** — Print help

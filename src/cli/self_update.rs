@@ -220,7 +220,7 @@ fn reexec(args: &[String], original_cwd: Option<&std::path::Path>) -> Result<()>
     Err(crate::request_exit(status.code().unwrap_or(1)))
 }
 
-/// Updates mise itself.
+/// Update mise itself
 ///
 /// Uses the GitHub Releases API to find the latest release and binary.
 /// By default, this will also update any installed plugins.

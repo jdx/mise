@@ -11,11 +11,10 @@ use crate::toolset::ToolsetBuilder;
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Where {
-    /// Tool(s) to look up
+    /// Tool to look up
     /// e.g.: ruby@3
-    /// if "@<PREFIX>" is specified, it will show the latest installed version
-    /// that matches the prefix
-    /// otherwise, it will show the current, active installed version
+    /// With "@<PREFIX>", shows the latest installed version matching the prefix.
+    /// Otherwise, shows the current, active installed version.
     #[usage(value_name = "TOOL@VERSION", verbatim_doc_comment)]
     tool: ToolArg,
 
@@ -64,13 +63,13 @@ impl Where {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # Show the latest installed version of node
-    # If it is is not installed, errors
+    # Show the latest installed node 20.x
+    # Errors if no matching version is installed
     $ <bold>mise where node@20</bold>
     /home/jdx/.local/share/mise/installs/node/20.0.0
 
-    # Show the current, active install directory of node
-    # Errors if node is not referenced in any .tool-version file
+    # Show the install directory of the currently active node
+    # Errors if node is not requested by any config file
     $ <bold>mise where node</bold>
     /home/jdx/.local/share/mise/installs/node/20.0.0
 "#

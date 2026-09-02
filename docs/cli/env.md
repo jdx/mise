@@ -6,13 +6,13 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/env.rs`](https://github.com/jdx/mise/blob/main/src/cli/env.rs)
 
-Exports env vars to activate mise a single time
+Export env vars to activate mise a single time
 
-Use this if you don't want to permanently install mise. It's not necessary to
-use this if you have `mise activate` in your shell rc file.
+Use this to load the environment into one shell without adding `mise activate` to
+your shell rc file. It is not needed in shells where mise is already activated.
 
 ## Arguments
-- **`[TOOL@VERSION]…`** — Tool(s) to use
+- **`[TOOL@VERSION]…`** — Tool(s) to include in addition to those in config, e.g. node@20
 
 ## Flags
 - **`-D --dotenv`** — Output in dotenv format

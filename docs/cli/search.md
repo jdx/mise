@@ -7,7 +7,7 @@
 
 Search for tools in the registry
 
-This command searches a tool in the registry.
+Searches the registry for tools matching NAME.
 
 By default, it will show all tools that fuzzy match the search term. For
 non-fuzzy matches, use the `--match-type` flag.
@@ -16,7 +16,7 @@ non-fuzzy matches, use the `--match-type` flag.
 - **`[NAME]`** — The tool to search for
 
 ## Flags
-- **`-i --interactive`** — Show interactive search
+- **`-i --interactive`** — Pick a tool from an interactive search menu
 - **`-m --match-type <MATCH_TYPE>`** — Match type: equal, contains, or fuzzy
 
   **Choices:** `equal`, `contains`, `fuzzy`

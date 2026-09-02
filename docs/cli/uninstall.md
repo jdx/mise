@@ -5,9 +5,10 @@
 - **Effect:** destructive — may delete or irreversibly overwrite
 - **Source code:** [`src/cli/uninstall.rs`](https://github.com/jdx/mise/blob/main/src/cli/uninstall.rs)
 
-Removes installed tool versions
+Remove installed tool versions
 
-This only removes the installed version, it does not modify mise.toml.
+This only removes the installed version; it does not modify mise.toml.
+Use `mise unuse` to remove a tool from mise.toml and uninstall it.
 
 ## Arguments
 - **`[INSTALLED_TOOL@VERSION]…`** — Tool(s) to remove
@@ -23,12 +24,12 @@ This only removes the installed version, it does not modify mise.toml.
 Examples:
 
 ```
-# will uninstall specific version
+# uninstall a specific version
 $ mise uninstall node@18.0.0
 
-# will uninstall the current node version (if only one version is installed)
+# uninstall the current node version (if only one version is installed)
 $ mise uninstall node
 
-# will uninstall all installed versions of node
-$ mise uninstall --all node@18.0.0 # will uninstall all node versions
+# uninstall every installed version of node
+$ mise uninstall --all node
 ```

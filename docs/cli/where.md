@@ -10,11 +10,10 @@ Display the installation path for a tool
 The tool must be installed for this to work.
 
 ## Arguments
-- **`<TOOL@VERSION>`** — Tool(s) to look up
+- **`<TOOL@VERSION>`** — Tool to look up
   e.g.: ruby@3
-  if "@&lt;PREFIX>" is specified, it will show the latest installed version
-  that matches the prefix
-  otherwise, it will show the current, active installed version
+  With "@&lt;PREFIX>", shows the latest installed version matching the prefix.
+  Otherwise, shows the current, active installed version.
 
 ## Flags
 - **`-h --help`** — Print help
@@ -22,13 +21,13 @@ The tool must be installed for this to work.
 Examples:
 
 ```
-# Show the latest installed version of node
-# If it is is not installed, errors
+# Show the latest installed node 20.x
+# Errors if no matching version is installed
 $ mise where node@20
 /home/jdx/.local/share/mise/installs/node/20.0.0
 
-# Show the current, active install directory of node
-# Errors if node is not referenced in any .tool-version file
+# Show the install directory of the currently active node
+# Errors if node is not requested by any config file
 $ mise where node
 /home/jdx/.local/share/mise/installs/node/20.0.0
 ```

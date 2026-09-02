@@ -18,7 +18,7 @@ For example, `poetry` is shorthand for `asdf:mise-plugins/mise-poetry`.
 - **`-b --backend <BACKEND>`** — Show only tools for this backend
 - **`--hide-aliased`** — Hide aliased tools
 - **`-J --json`** — Output in JSON format
-- **`--security`** — Include security features for each tool's backends in JSON output.
+- **`--security`** — Include security features for each tool's backends in JSON output
 
   Requires --json. Security info is de-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
 - **`-h --help`** — Print help

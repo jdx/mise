@@ -6,7 +6,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/cache/clear.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/clear.rs)
 
-Deletes all cache files in mise
+Delete all cache files
 
 ## Arguments
 - **`[TOOL]…`** — Tool(s) to clear cache for e.g.: node, python

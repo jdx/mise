@@ -5,7 +5,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/self_update.rs`](https://github.com/jdx/mise/blob/main/src/cli/self_update.rs)
 
-Updates mise itself.
+Update mise itself
 
 Uses the GitHub Releases API to find the latest release and binary.
 By default, this will also update any installed plugins.

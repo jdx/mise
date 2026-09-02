@@ -14,8 +14,8 @@ when you push changes to your repository.
 - **`-t --task <TASK>`** — The task to run when the workflow is triggered
 
   **Default:** `ci`
-- **`-w --write`** — write to .github/workflows/$name.yml
-- **`--name <NAME>`** — the name of the workflow to generate
+- **`-w --write`** — Write to .github/workflows/$name.yml
+- **`--name <NAME>`** — The name of the workflow to generate
 
   **Default:** `ci`
 - **`-h --help`** — Print help

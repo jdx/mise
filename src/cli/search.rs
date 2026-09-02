@@ -23,7 +23,7 @@ pub(crate) enum MatchType {
 
 /// Search for tools in the registry
 ///
-/// This command searches a tool in the registry.
+/// Searches the registry for tools matching NAME.
 ///
 /// By default, it will show all tools that fuzzy match the search term. For
 /// non-fuzzy matches, use the `--match-type` flag.
@@ -33,7 +33,7 @@ pub(crate) struct Search {
     /// The tool to search for
     name: Option<String>,
 
-    /// Show interactive search
+    /// Pick a tool from an interactive search menu
     #[usage(long, short, conflicts = &["match_type", "no_header"])]
     interactive: bool,
 

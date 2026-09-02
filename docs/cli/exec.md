@@ -7,23 +7,24 @@
 
 Execute a command with tool(s) set
 
-use this to avoid modifying the shell session or running ad-hoc commands with mise tools set.
+Use this to run a command with mise's tools and environment without modifying the shell
+session, or to run ad-hoc commands with tools that are not in the config.
 
-Tools will be loaded from mise.toml, though they can be overridden with &lt;RUNTIME> args
-Note that only the plugin specified will be overridden, so if a `mise.toml` file
-includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
+Tools are loaded from mise.toml and can be overridden with &lt;TOOL@VERSION> args. Only the
+tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
+`mise exec python@3.11`, node@20 is still loaded.
 
-The "--" separates runtimes from the commands to pass along to the subprocess.
+The "--" separates tools from the command to pass along to the subprocess.
 
 ## Arguments
-- **`[TOOL@VERSION]…`** — Tool(s) to start e.g.: node@20 python@3.10
+- **`[TOOL@VERSION]…`** — Tool(s) to load e.g.: node@20 python@3.10
 - **`[-- COMMAND]…`** — Command string to execute (same as --command)
 
 ## Flags
 - **`-c --command <COMMAND>`** — Command string to execute
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
-  [default: 4]
+  Defaults to the `jobs` setting
 
   **Environment Variable:** `MISE_JOBS`
 - **`--allow-env <VAR>`** — Allow specific env var through (implies --deny-env for everything else)
@@ -39,7 +40,7 @@ The "--" separates runtimes from the commands to pass along to the subprocess.
 - **`--deny-write`** — Block all filesystem writes
 - **`--fresh-env`** — Bypass the environment cache and recompute the environment
 - **`--no-deps`** — Skip automatic dependency preparation
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`-h --help`** — Print help
 
 Examples:

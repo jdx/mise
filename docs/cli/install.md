@@ -8,13 +8,13 @@
 
 Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
-Installing alone will not activate the tools so they won't be in PATH.
-To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
-in the current directory to activate this tool when inside the directory.
-Alternatively, run `mise exec <TOOL>@<VERSION> -- <COMMAND>` to execute a tool without creating config files.
+Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`.
+Installing alone does not activate the tool, so it will not be on PATH.
+To install and activate in one command, use `mise use`, which also writes the version to
+`mise.toml` in the current directory so the tool is active inside it.
+To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> -- <COMMAND>`.
 
-Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
+Tools are installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`.
 
 ## Arguments
 - **`[TOOL@VERSION]…`** — Tool(s) to install e.g.: node@20
@@ -24,7 +24,7 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
   With no tools specified, reinstall all configured tools
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
-  [default: 4]
+  Defaults to the `jobs` setting
 
   **Environment Variable:** `MISE_JOBS`
 - **`-n --dry-run`** — Show what would be installed without actually installing
@@ -50,7 +50,7 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
   [monorepo].config_roots in the monorepo root config.
 
   **Environment Variable:** `MISE_MONOREPO`
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`--shared <SHARED>`** — Install tool(s) to a shared directory
 
   Installs to the specified directory instead of the default install location.
@@ -64,10 +64,10 @@ Tools will be installed in parallel. To disable, set `--jobs=1` or `MISE_JOBS=1`
 Examples:
 
 ```
-mise install node@20.0.0  # install specific node version
-mise install node@20      # install fuzzy node version
-mise install node         # install version specified in mise.toml
-mise install              # installs everything specified in mise.toml
+mise install node@20.0.0  # install a specific node version
+mise install node@20      # install the latest node 20.x
+mise install node         # install the version specified in mise.toml
+mise install              # install everything specified in mise.toml
 mise install --include-lazy # also install tools configured for lazy installation
 mise install --include-task-tools # also install tools required by tasks
 ```

@@ -12,11 +12,11 @@ pub(crate) struct Token {
 
 #[derive(Debug, usage_rs::Subcommands)]
 enum Commands {
-    /// Forgejo token
+    /// Show the Forgejo token mise will use
     Forgejo(forgejo::Forgejo),
-    /// GitHub token
+    /// Show the GitHub token mise will use
     Github(github::Github),
-    /// GitLab token
+    /// Show the GitLab token mise will use
     Gitlab(gitlab::Gitlab),
 }
 
