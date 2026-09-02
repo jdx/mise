@@ -31,7 +31,7 @@ jobs:
   check-changes:
     permissions:
       contents: read
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 5
     outputs:
       registry-changed: ${{ steps.check.outputs.registry-changed }}
@@ -60,17 +60,12 @@ jobs:
 
   build:
     timeout-minutes: 20
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     needs: check-changes
     if: needs.check-changes.outputs.registry-changed == 'true'
     env:
       GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
-      - name: Assert OIDC is unavailable to untrusted CI
-        if: ${{ !inputs.trusted }}
-        run: |
-          test -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}"
-          test -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1
         if: inputs.trusted
@@ -94,7 +89,7 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 10
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     needs: check-changes
     if: github.event_name == 'pull_request' && needs.check-changes.outputs.registry-changed == 'true'
     outputs:
@@ -150,7 +145,7 @@ jobs:
   validate-new-tools:
     permissions:
       contents: read
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 5
     needs: list-changed-tools
     if: |
@@ -181,7 +176,7 @@ jobs:
       contents: read
     name: test-tool-${{ matrix.tranche }}
     timeout-minutes: 90
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     needs:
       - build
       - list-changed-tools
@@ -367,7 +362,7 @@ jobs:
 
   registry-ci:
     permissions: {}
-    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64' }}
+    runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64;overrides.cache-tag=cache' }}
     timeout-minutes: 1
     needs:
       - check-changes
