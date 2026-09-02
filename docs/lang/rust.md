@@ -68,6 +68,35 @@ mise use -g rust@1.82
 cargo build
 ```
 
+## Share Cargo builds with Mr Boxington
+
+[Mr Boxington](https://mr-boxington.jdx.dev/) (`mbx`) gives every checkout on a machine one shared,
+self-pruning compilation cache. A crate compiled in one worktree can be reused in another, and concurrent Cargo
+commands share a CPU and memory budget instead of oversubscribing the machine. It can also share cached artifacts
+with teammates and CI runners through a cache server, S3, or GitHub Actions.
+
+Install `mbx` and configure mise's [`cargo` command wrapper](/dev-tools/shims.html#command-wrappers) to use it:
+
+```toml [mise.toml]
+[tools]
+rust = "latest"
+mr-boxington = "latest"
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+```
+
+Run `mise reshim` after adding the wrapper. Existing commands and mise tasks can keep invoking `cargo` normally:
+
+```toml [mise.toml]
+[tasks.build]
+run = "cargo build"
+```
+
+Within the mise environment, the wrapper transparently routes those commands through `mbx`. This also avoids
+rewriting every task as `mbx build`, and keeps the same tasks usable if the wrapper is later removed.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `rust` backend—these

@@ -20,6 +20,23 @@ mise use -g node@26
 
 See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
 
+## Run projects with aube
+
+[aube](https://aube.jdx.dev/) is a fast Node.js package manager with strong supply-chain security defaults. It reads
+and writes existing `package-lock.json`, `pnpm-lock.yaml`, and `yarn.lock` files in place, so a project can try it
+without a lockfile migration. Its `aubr` command installs stale dependencies automatically before running a package
+script and skips the install when dependencies are already current.
+
+Install it with mise, then run an existing package script:
+
+```sh
+mise use aube
+aubr test
+```
+
+See [aube's security overview](https://aube.jdx.dev/security) for its release-cooling, trust-policy, malicious-package,
+and lifecycle-script protections.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `node` backend.
