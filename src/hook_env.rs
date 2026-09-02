@@ -617,7 +617,7 @@ fn get_mise_env_vars_hashed() -> String {
     hash_to_str(&env_vars)
 }
 
-pub(crate) fn clear_old_env(shell: &dyn Shell) -> String {
+pub(crate) fn clear_old_env_patches(shell: &dyn Shell) -> EnvDiffPatches {
     let mut patches = env::__MISE_DIFF.reverse().to_patches();
 
     // For fish shell, filter out PATH operations from the reversed diff because
@@ -636,7 +636,11 @@ pub(crate) fn clear_old_env(shell: &dyn Shell) -> String {
         let new_path = compute_deactivated_path();
         patches.push(EnvDiffOperation::Change(PATH_KEY.to_string(), new_path));
     }
-    build_env_commands(shell, &patches)
+    patches
+}
+
+pub(crate) fn clear_old_env(shell: &dyn Shell) -> String {
+    build_env_commands(shell, &clear_old_env_patches(shell))
 }
 
 /// Clear all aliases from the previous session. Called only during deactivation.
