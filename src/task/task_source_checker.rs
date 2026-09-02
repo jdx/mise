@@ -467,7 +467,9 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
 ///
 /// `globwalk` recursively searches its base directory, so non-globstar
 /// patterns are capped at their component depth to preserve `glob`'s
-/// component-by-component expansion semantics.
+/// component-by-component expansion semantics. Literal prefixes that do not
+/// exist yet are moved into the pattern so they produce zero matches instead
+/// of a traversal error.
 pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWalker> {
     fn has_metacharacters(component: &str) -> bool {
         let mut escaped = false;
@@ -510,6 +512,17 @@ pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWa
         base.pop();
         glob_pattern.push(file_name);
         pattern_depth = 1;
+    }
+
+    while !base.as_os_str().is_empty() && !base.exists() {
+        let Some(file_name) = base.file_name().map(|name| name.to_os_string()) else {
+            break;
+        };
+        base.pop();
+        let mut prefixed_pattern = PathBuf::from(file_name);
+        prefixed_pattern.push(glob_pattern);
+        glob_pattern = prefixed_pattern;
+        pattern_depth += 1;
     }
 
     let Some(mut glob_pattern) = pattern_from_path(&glob_pattern) else {
@@ -1490,6 +1503,15 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()?;
 
         assert_eq!(paths, [tree.join("a.txt"), tree.join("b.txt")]);
+        Ok(())
+    }
+
+    #[test]
+    fn glob_walk_treats_missing_literal_prefix_as_no_matches() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let entries = glob_walk(&temp.path().join("missing/**/*.txt"), false)?.collect_vec();
+
+        assert!(entries.is_empty());
         Ok(())
     }
 

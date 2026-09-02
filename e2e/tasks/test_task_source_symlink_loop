@@ -40,6 +40,12 @@ outputs = ["tree/**/*"]
 run = "touch tree/input.txt && echo mtime output"
 sources = ["mtime-input.txt"]
 outputs = ["tree/**/*"]
+
+[tasks.missing-output]
+run = "mkdir -p generated && touch generated/output.txt && echo generated output"
+sources = ["cache-input.txt"]
+outputs = ["generated/**/*"]
+cache = { enabled = true }
 EOF
 
 # Recursive source expansion must skip ancestor symlink loops while retaining
@@ -61,3 +67,7 @@ assert_empty "mise run -q hash-output"
 printf 'changed\n' >mtime-input.txt
 assert "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=false mise run -q mtime-output" "mtime output"
 assert_empty "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=false mise run -q mtime-output"
+
+# A not-yet-created literal output prefix is zero matches during cache
+# preparation, not a traversal failure.
+assert "mise run -q missing-output" "generated output"
