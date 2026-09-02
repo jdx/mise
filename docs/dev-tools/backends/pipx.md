@@ -1,7 +1,7 @@
 # pipx Backend
 
-pipx is a tool for running Python CLIs in isolated virtualenvs. This is necessary for Python CLIs
-because it prevents dependency conflicts between CLIs, or between a CLI and your Python projects. In short,
+pipx is a tool for running Python CLIs in isolated virtualenvs. This isolation helps prevent dependency
+conflicts between CLIs, or between a CLI and your Python projects. In short,
 this backend lets you add Python CLIs to mise.
 
 To be clear, pipx is not pip, and it is not used to manage Python dependencies in general.
