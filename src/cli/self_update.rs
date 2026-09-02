@@ -4,7 +4,7 @@ use console::style;
 #[cfg(windows)]
 use indoc::formatdoc;
 use self_update::backends::github::Update;
-use self_update::{Status, cargo_crate_version};
+use self_update::{VersionStatus, cargo_crate_version};
 
 use crate::cli::version::{ARCH, OS};
 use crate::config::Settings;
@@ -405,7 +405,7 @@ impl SelfUpdate {
         Self::ensure_temp_dir_can_replace_binary()?;
         let status = self.do_update()?;
 
-        if status.updated() {
+        if status.is_updated() {
             let version = status.version().to_string();
             let styled_version = style(&version).bright().yellow();
             miseprintln!("Updated mise to {styled_version}");
@@ -467,13 +467,13 @@ impl SelfUpdate {
         bail!("{msg}");
     }
 
-    fn do_update(&self) -> Result<Status> {
+    fn do_update(&self) -> Result<VersionStatus> {
         // Use block_in_place to allow self_update's blocking HTTP calls
         // to work within mise's async runtime
         tokio::task::block_in_place(|| self.do_update_blocking())
     }
 
-    fn do_update_blocking(&self) -> Result<Status> {
+    fn do_update_blocking(&self) -> Result<VersionStatus> {
         let mut update = Update::configure();
         if let Some((token, _)) = crate::github::resolve_token("github.com") {
             update.auth_token(&token);
@@ -494,7 +494,15 @@ impl SelfUpdate {
             .version
             .clone()
             .map_or_else(
-                || -> Result<String> { Ok(update.build()?.get_latest_release()?.version) },
+                || -> Result<String> {
+                    Ok(update
+                        .build()?
+                        .get_latest_release()?
+                        .latest()
+                        .ok_or_else(|| eyre::eyre!("no GitHub releases found for jdx/mise"))?
+                        .version()
+                        .to_string())
+                },
                 Ok,
             )
             .map(|v| format!("v{v}"))?;
@@ -502,15 +510,15 @@ impl SelfUpdate {
         // Check if already up to date (unless --force is specified)
         let current_version = format!("v{}", cargo_crate_version!());
         if !self.force && v == current_version {
-            return Ok(Status::UpToDate(current_version));
+            return Ok(VersionStatus::UpToDate(current_version));
         }
 
         let target = format!("{}-{}", *OS, *ARCH);
         #[cfg(target_env = "musl")]
         let target = format!("{target}-musl");
-        // Always set target_version_tag to ensure we download the correct release
+        // Always set release_tag to ensure we download the correct release
         // (fixes semver mismatch across year boundaries, e.g. 2025.x -> 2026.x)
-        update.target_version_tag(&v);
+        update.release_tag(&v);
         #[cfg(windows)]
         let target = format!("mise-{v}-{target}.zip");
         #[cfg(not(windows))]
@@ -525,7 +533,7 @@ impl SelfUpdate {
 
         // Verify macOS binary signature after update
         #[cfg(target_os = "macos")]
-        if status.updated() {
+        if status.is_updated() {
             Self::verify_macos_signature(&env::MISE_BIN)?;
         }
 
