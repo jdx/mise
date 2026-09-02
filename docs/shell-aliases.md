@@ -14,7 +14,7 @@ gs = "git status"
 gc = "git commit"
 ```
 
-When you enter a directory with this configuration, these aliases will be automatically set in your shell. When you leave the directory (and the new directory doesn't have the same aliases), they will be unset.
+When you enter a directory with this configuration, these aliases are automatically set in your shell. When you leave the directory (and the new directory doesn't define the same aliases), they are unset.
 
 ## Supported Shells
 
@@ -31,8 +31,8 @@ Other shells (nushell, elvish, xonsh, powershell) do not currently support shell
 Shell aliases work similarly to environment variables managed by mise:
 
 1. **Set on entry**: When you `cd` into a directory with `[shell_alias]` config, the aliases are set
-2. **Updated on change**: If an alias value changes in your config, it will be updated
-3. **Unset on exit**: When you leave the directory (or the alias is removed from config), it will be unset
+2. **Updated on change**: If an alias value changes in your config, the alias is updated
+3. **Unset on exit**: When you leave the directory (or the alias is removed from config), the alias is unset
 
 ```bash
 $ cd ~/myproject
@@ -105,11 +105,11 @@ docs = "cd {{config_root}}/docs"
 ## Limitations
 
 - **Not available in tasks**: Shell aliases are only active in interactive shells where `mise activate` is running. They are **not** available inside TOML task `run` blocks or file tasks, since tasks run in non-interactive subshells. Use the underlying command directly in tasks, or add wrapper scripts to your `PATH` via [`env._.path`](/environments/#env-path).
-- **Shell support**: Only bash, zsh, fish, and xonsh are supported. See the [shell feature compatibility matrix](/getting-started.html#shell-feature-compatibility) for details.
+- **Shell support**: Only bash, zsh, and fish are supported. See the [shell feature compatibility matrix](/getting-started.html#shell-feature-compatibility) for details.
 
 ## Comparison to Tool Aliases
 
-mise has two different alias features that serve different purposes:
+mise has two alias features that serve different purposes:
 
 | Feature           | Purpose                                                | Config Key      |
 | ----------------- | ------------------------------------------------------ | --------------- |

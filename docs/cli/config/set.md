@@ -5,10 +5,10 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/config/set.rs`](https://github.com/jdx/mise/blob/main/src/cli/config/set.rs)
 
-Set the value of a setting in a mise.toml file
+Set a value in a mise.toml file
 
 ## Arguments
-- **`<KEY>`** — The path of the config to display
+- **`<KEY>`** — Dotted key path to set, e.g. `tools.python`
 - **`[VALUE]`** — The value to set the key to (optional if provided as KEY=VALUE)
 
 ## Flags
@@ -23,7 +23,7 @@ Set the value of a setting in a mise.toml file
 - **`--system`** — Edit the system config file.
 - **`--append`** — Append the value without duplicating an existing entry.
 - **`--remove`** — Remove the value from an existing collection.
-- **`-t --type <TYPE>`**
+- **`-t --type <TYPE>`** — TOML type to store the value as; inferred from the value by default
 
   **Choices:** `infer`, `string`, `integer`, `float`, `bool`, `list`, `set`
 

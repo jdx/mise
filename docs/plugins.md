@@ -1,20 +1,20 @@
 # Plugins
 
-Plugins in mise are a way to extend `mise` with new functionality like extra tools or environment variable management.
+Plugins extend mise with new functionality, such as extra tools or environment variable management.
 
-Historically it was the only way to add new tools (as the only backend was [asdf](/dev-tools/backends/asdf.html)).
+Historically, plugins were the only way to add new tools, since the only backend was [asdf](/dev-tools/backends/asdf.html).
 
-The way that backend works is every tool has its own plugin which needs to be manually installed. However, now with [core tools](/core-tools.html)
+With that backend, every tool has its own plugin, which must be installed manually. Now, with [core tools](/core-tools.html)
 and backends like [aqua](/dev-tools/backends/aqua.html)/[github](/dev-tools/backends/github.html), plugins are no longer necessary to run most tools in mise.
 
-Tool plugins should be avoided for security reasons. New tools will not be accepted into mise built with asdf/plugins unless they are very popular and
+Tool plugins should be avoided for security reasons. New tools built with asdf/plugins will not be accepted into mise unless they are very popular and
 aqua/github is not an option for some reason.
 
-The only exception is if the tool needs to set env vars or has a complex installation process, as plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
+The exception is a tool that needs to set env vars or has a complex installation process: plugins can provide functionality like [setting env vars globally](/environments/#plugin-provided-env-directives) without relying on a tool being installed. They can also provide [aliases for versions](/dev-tools/aliases.html#aliased-versions).
 
-If you want to integrate a new tool into mise, you should either try to get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/aqua.html)
-or see if it can be installed with [github](https://mise.jdx.dev/dev-tools/backends/github.html).
-Aqua is definitely preferred to github as it has better UX and more features like slsa verification and the ability to use different logic for older versions.
+To integrate a new tool into mise, either get it into the [aqua registry](https://mise.jdx.dev/dev-tools/backends/aqua.html)
+or check whether it can be installed with [github](https://mise.jdx.dev/dev-tools/backends/github.html).
+Aqua is preferred over github: it has better UX and more features, such as SLSA verification and the ability to use different logic for older versions.
 
 You can manage all installed plugins in `mise` with [`mise plugins`](/cli/plugins.html).
 
@@ -102,7 +102,7 @@ For end-user documentation on installing and using both backend and tool plugins
 ## asdf (Legacy) Plugins
 
 mise can use asdf's plugin ecosystem under the hood for backward compatibility. These plugins contain shell scripts like
-`bin/install` (for installing) and `bin/list-all` (for listing all of the available versions).
+`bin/install` (for installing) and `bin/list-all` (for listing all available versions).
 
 asdf plugins have limitations compared to modern backends and should only be used when necessary. They only work on Linux/macOS and are slower than native backends.
 
@@ -113,13 +113,13 @@ See [asdf (Legacy) Plugins](asdf-legacy-plugins.md) for comprehensive documentat
 <https://github.com/mise-plugins> is a GitHub organization for community-developed plugins.
 See [SECURITY.md](https://github.com/jdx/mise/blob/main/SECURITY.md) for more details on how plugins here are treated differently.
 
-If you'd like your plugin to be hosted here please let me know (GH discussion or discord is fine)
+If you'd like your plugin to be hosted here, let me know (a GH discussion or Discord message is fine)
 and I'd be happy to host it for you.
 
 ## Tool Options
 
-mise has support for "tool options" which is configuration specified in `mise.toml` to change behavior
-of tools. One example of this is virtualenv on python runtimes:
+mise supports "tool options": configuration specified in `mise.toml` that changes the behavior
+of tools. One example is virtualenv for Python:
 
 ```toml
 [tools]
@@ -141,7 +141,7 @@ Currently, this only supports simple strings, but we can make it compatible with
 
 ## Templates
 
-Plugin custom repository values can be templates, see [Templates](/templates) for details.
+Plugin custom repository values can be templates; see [Templates](/templates) for details.
 
 ```toml
 [plugins]

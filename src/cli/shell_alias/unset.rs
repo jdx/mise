@@ -3,7 +3,7 @@ use eyre::Result;
 use crate::config::Config;
 use crate::config::config_file::ConfigFile;
 
-/// Removes a shell alias
+/// Remove a shell alias
 ///
 /// This modifies the contents of ~/.config/mise/config.toml
 #[derive(Debug, usage_rs::Args)]

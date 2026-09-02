@@ -5,6 +5,8 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
+
 ## Flags
 - **`-n --dry-run`** — Print the commands that would run without running them
 - **`-y --yes`** — Skip the confirmation prompt

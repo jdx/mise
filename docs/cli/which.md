@@ -5,12 +5,12 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/which.rs`](https://github.com/jdx/mise/blob/main/src/cli/which.rs)
 
-Shows the path that a tool's bin points to.
+Show the path a tool's executable resolves to
 
 Use this to figure out what version of a tool is currently active.
 
 ## Arguments
-- **`[BIN_NAME]`** — The bin to look up
+- **`[BIN_NAME]`** — The executable to look up
 
 ## Flags
 - **`-t --tool <TOOL@VERSION>`** — Use a specific tool@version

@@ -1,6 +1,6 @@
 # Plugin Lua Modules
 
-mise plugins have access to a comprehensive set of built-in Lua modules that provide common functionality. These modules are available in both backend plugins and tool plugins, making it easy to perform common operations like HTTP requests, JSON parsing, file operations, and more.
+mise plugins have access to a comprehensive set of built-in Lua modules. These modules are available in both backend plugins and tool plugins, making it easy to perform common operations like HTTP requests, JSON parsing, and file operations.
 
 ## Available Modules
 
@@ -19,7 +19,7 @@ mise plugins have access to a comprehensive set of built-in Lua modules that pro
 
 ## HTTP Module
 
-The HTTP module provides functionality for making web requests and downloading files.
+The HTTP module makes web requests and downloads files.
 
 ### Basic HTTP Requests
 
@@ -127,7 +127,7 @@ HTTP responses contain the following fields:
 
 ## JSON Module
 
-The JSON module provides encoding and decoding functionality.
+The JSON module encodes and decodes JSON.
 
 ### Basic Usage
 
@@ -168,7 +168,7 @@ end
 
 ## Strings Module
 
-The strings module provides various string manipulation utilities.
+The strings module provides string manipulation utilities.
 
 ### String Operations
 
@@ -226,7 +226,7 @@ local version = normalize_version("v1.2.3-beta.1")  -- "1.2.3"
 
 ## Semver Module
 
-The semver module provides semantic version comparison and sorting functionality. This is useful for sorting version lists returned by `Available()` hooks.
+The semver module compares and sorts semantic versions. It is useful for sorting the version lists returned by `Available()` hooks.
 
 ### Version Comparison
 
@@ -335,7 +335,7 @@ end)
 
 ## HTML Module
 
-The HTML module provides HTML parsing capabilities.
+The HTML module parses HTML documents.
 
 ### Basic HTML Parsing
 
@@ -424,7 +424,7 @@ end
 
 ## Archiver Module
 
-The archiver module provides functionality for extracting compressed archives.
+The archiver module extracts compressed archives.
 
 ### Supported Formats
 
@@ -582,7 +582,7 @@ env.setenv("PATH", table.concat(paths, separator))
 
 ## Command Module
 
-The cmd module provides shell command execution.
+The cmd module executes shell commands.
 
 ### Basic Command Execution
 
@@ -624,14 +624,14 @@ local result = cmd.exec("npm install package-name", {cwd = "/path/to/project"})
 The options table supports the following keys:
 
 - **`cwd`** (string): Set the working directory for the command
-- **`env`** (table): Set environment variables for the command execution. These are merged on top of the inherited environment (see below).
+- **`env`** (table): Set environment variables for the command. These are merged on top of the inherited environment (see below).
 - **`timeout`** (number): Set a timeout for command execution (future feature)
 
 ### Environment Inheritance in Env Module Hooks
 
 When `cmd.exec()` is called from environment module hooks (`MiseEnv`, `MisePath`), the command automatically inherits the mise-constructed environment instead of the process environment. This includes environment variables set by preceding directives and `_.path` entries accumulated so far.
 
-When the module directive has `tools = true`, the inherited environment also includes tool installation bin paths. This means mise-managed tools are directly callable:
+When the module directive has `tools = true`, the inherited environment also includes the bin paths of installed tools, so mise-managed tools can be called directly:
 
 ```toml
 [env]
@@ -810,7 +810,7 @@ end
 
 ## Log Module
 
-The log module provides structured logging that routes through Rust's `log` crate, respecting `MISE_DEBUG` and `MISE_TRACE` environment variables.
+The log module provides structured logging that routes through Rust's `log` crate and respects the `MISE_DEBUG` and `MISE_TRACE` environment variables.
 
 ### Log Levels
 
@@ -896,7 +896,7 @@ end
 
 ### Caching
 
-Implement caching for expensive operations:
+Cache expensive operations:
 
 ```lua
 local cache = {}

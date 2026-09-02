@@ -9,7 +9,7 @@ For shell command aliases (like `alias ll='ls -la'`), see [Shell Aliases](/shell
 
 ## Aliased Backends
 
-Tools can be aliased so that something like `node` which normally maps to `core:node` can be changed
+Tools can be aliased so that a tool like `node`, which normally maps to `core:node`, points
 to a different backend instead.
 
 ```toml [~/.config/mise/config.toml]
@@ -18,7 +18,7 @@ node = 'github:company/our-custom-node'   # shorthand for https://github.com/com
 erlang = 'aqua:company/our-custom-erlang' # use an aqua registry entry
 ```
 
-This can also be used to install multiple tools from the same GitHub release:
+This can also be used to install multiple tools from the same GitHub repository:
 
 ```toml [~/.config/mise/config.toml]
 [tool_alias]
@@ -35,12 +35,12 @@ two distinct binaries from different releases in the same GitHub repository.
 
 ## Aliased Versions
 
-mise supports aliasing the versions of runtimes. One use-case for this is to define a stable name
+mise supports aliasing tool versions. One use case for this is to define a stable name
 that points to a specific version, so you can reference it symbolically in
-`mise.toml`/`.tool-versions`. For example, you may want `lts-iron` to map to Node.js 20 so you can
+`mise.toml` or `.tool-versions`. For example, you may want `lts-iron` to map to Node.js 20 so you can
 set it with `node = "lts-iron"`.
 
-User aliases can be created by adding a `tool_alias.<TOOL>.versions` section to
+Create user aliases by adding a `tool_alias.<TOOL>.versions` section to
 `~/.config/mise/config.toml`:
 
 ```toml
@@ -55,7 +55,7 @@ Then reference the alias when pinning the tool:
 node = "lts-iron"
 ```
 
-Plugins can also provide aliases via a `bin/list-aliases` script. Here is an example showing node.js
+Plugins can also provide aliases via a `bin/list-aliases` script. Here is an example showing Node.js
 versions:
 
 ```bash
@@ -71,7 +71,7 @@ that other plugins can use.)
 
 ## Templates
 
-Alias values can be templates, see [Templates](/templates) for details.
+Alias values can be templates; see [Templates](/templates) for details.
 
 ```toml
 [tool_alias.node.versions]

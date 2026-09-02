@@ -1384,7 +1384,7 @@ div[class*="language-"] .copy:hover {
   text-wrap: balance;
 }
 
-.landing-aube h2,
+.landing-special h2,
 .landing-cta h2 {
   text-wrap: balance;
 }
@@ -1582,7 +1582,7 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-brand-1);
 }
 
-.landing-aube {
+.landing-special {
   display: block;
   margin: 48px auto 0;
   padding: 28px;
@@ -1599,20 +1599,20 @@ div[class*="language-"] .copy:hover {
     transform 0.2s ease;
 }
 
-.landing-aube:hover {
+.landing-special:hover {
   border-color: var(--vp-c-brand-1);
   transform: translateY(-2px);
   box-shadow: 0 18px 44px -32px rgba(107, 127, 78, 0.55);
 }
 
-.dark .landing-aube {
+.dark .landing-special {
   background:
     linear-gradient(135deg, rgba(143, 168, 110, 0.14), transparent 48%),
     var(--vp-c-bg-soft);
   border-color: rgba(143, 168, 110, 0.35);
 }
 
-.landing-aube h2 {
+.landing-special h2 {
   margin: 12px 0 0;
   /* reset vp-doc h2 defaults (top border + padding) inside the card */
   border-top: 0;
@@ -1626,7 +1626,7 @@ div[class*="language-"] .copy:hover {
   color: var(--vp-c-brand-1);
 }
 
-.landing-aube p:not(.landing-kicker) {
+.landing-special p:not(.landing-kicker) {
   max-width: 58ch;
   margin: 16px 0 0;
   color: var(--vp-c-text-2);
@@ -1853,7 +1853,7 @@ div[class*="language-"] .copy:hover {
     margin-top: 54px;
   }
 
-  .landing-aube {
+  .landing-special {
     margin-top: 40px;
     padding: 22px;
   }

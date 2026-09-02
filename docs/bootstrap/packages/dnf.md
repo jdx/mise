@@ -1,6 +1,6 @@
 # dnf
 
-System packages for RedHat-family Linux (Fedora, RHEL, CentOS Stream, Rocky,
+System packages for Red Hat-family Linux (Fedora, RHEL, CentOS Stream, Rocky,
 Alma, ...).
 
 ```toml
@@ -25,5 +25,5 @@ Alma, ...).
 
 ::: info
 Only `dnf` is supported — not legacy `yum`-only systems. On RHEL/CentOS 8+
-and all current Fedora releases `dnf` is the default.
+and all current Fedora releases, `dnf` is the default.
 :::

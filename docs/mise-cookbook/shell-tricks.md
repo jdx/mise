@@ -1,10 +1,10 @@
 # Shell tricks
 
-A collection of shell utilities leveraging mise.
+A collection of shell utilities that build on mise.
 
 ## Prompt colouring
 
-In ZSH to set the prompt colour whenever mise updates the environment (e.g. on cd into a project, or due to modification of the .mise\*.toml):
+In zsh, to change the prompt colour whenever mise updates the environment (e.g. on `cd` into a project, or after a `.mise*.toml` file is modified):
 
 ```shell
 # activate mise like normal
@@ -33,7 +33,7 @@ function _prompt {
 add-zsh-hook precmd _prompt
 ```
 
-Now, when mise makes any updates to the environment the prompt will go blue.
+Now, whenever mise updates the environment, the prompt turns blue.
 
 ## Current configuration environment in powerline-go prompt
 
@@ -41,17 +41,17 @@ Now, when mise makes any updates to the environment the prompt will go blue.
 `shell-var` segment can be used to display the value of an environment
 variable in the prompt.
 The current mise [configuration environment](/configuration/environments),
-`MISE_ENV` is a good candidate for this.
+`MISE_ENV`, is a good candidate for this.
 
-Mostly, it is as one would expect: include `shell-var` in `-modules`,
-and `-shell-var MISE_ENV -shell-var-no-warn-empty` in arguments,
-and make sure `MISE_ENV` is exported so `powerline-go` can "see" it.
+Mostly, it works as you would expect: include `shell-var` in `-modules`,
+pass `-shell-var MISE_ENV -shell-var-no-warn-empty` in the arguments,
+and make sure `MISE_ENV` is exported so `powerline-go` can see it.
 
 A gotcha as of February 2025 is that the `shell-var` module does not
 tolerate _unset_ (as opposed to empty) environment variables.
 To work around this, set `MISE_ENV` to an empty value early in the shell
 startup scripts, and avoid manually `unset`ing it.
-For example for bash, typically in `~/.bashrc`:
+For example, for bash, typically in `~/.bashrc`:
 
 ```bash
 export MISE_ENV=
@@ -59,7 +59,7 @@ export MISE_ENV=
 
 ## Inspect what changed after mise hook
 
-Using record-query you can inspect the `__MISE_DIFF` and `__MISE_SESSION` variables to see what's changing in your environment due to the mise hook.
+Using record-query, you can inspect the `__MISE_DIFF` and `__MISE_SESSION` variables to see what the mise hook changes in your environment.
 
 ```toml [~/.config/mise/config.toml]
 [tools]

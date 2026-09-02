@@ -71,10 +71,10 @@ retaining a second copy of the application.
 
 ### Overriding the application directory
 
-By default `app` artifacts are installed into `/Applications`, matching
+By default, `app` artifacts are installed into `/Applications`, matching
 Homebrew. Set the `MISE_BREW_CASK_OPT_APPDIR` environment variable to install
-them somewhere else — for example a user-writable `~/Applications` that does not
-require elevation:
+them somewhere else — for example, a user-writable `~/Applications` that does
+not require elevation:
 
 ```sh
 MISE_BREW_CASK_OPT_APPDIR="$HOME/Applications" mise bootstrap packages apply brew-cask:firefox
@@ -89,6 +89,7 @@ relocated into the override directory, preserving any subdirectories the cask
 requests; targets that a cask anchors under `$HOMEBREW_PREFIX/Applications` are
 left in the Homebrew prefix and are never relocated. This mirrors Homebrew's own
 `--appdir` install option.
+
 To adopt an app that is already installed at the cask's destination, use the
 table form with `adopt = true`:
 
@@ -111,7 +112,7 @@ adopt = true
 
 As with Homebrew's `brew install --cask --adopt`, mise downloads and verifies
 the current cask artifact, then adopts the existing app only when its content
-is identical. A different existing app is left untouched and the install
+is identical. If the existing app differs, it is left untouched and the install
 fails, except for casks declaring `auto_updates: true`: matching Homebrew,
 those adopt the existing app as-is because it may already have updated itself.
 Adopted apps are tracked by the mise receipt without keeping a duplicate app
@@ -135,7 +136,7 @@ Replacing an app bundle under `/Applications` (or your configured appdir) is
 the same class of operation as `brew reinstall --cask`: macOS may revoke
 Privacy & Security grants for that app (Accessibility, Screen Recording, Full
 Disk Access, Automation, and similar). mise does not manage TCC; after a
-replace you may need to re-grant permissions in System Settings.
+replacement you may need to re-grant permissions in System Settings.
 
 When migrating an unmanaged app bundle that has no Homebrew `.metadata`, prefer
 adoption so mise records ownership without swapping the live bundle:
@@ -168,7 +169,7 @@ installed into `$XDG_DATA_HOME/fonts`, which defaults to `~/.local/share/fonts`:
 ```
 
 Other Linux casks are reported as unavailable and skipped when they come from
-`[bootstrap.packages]`, allowing macOS and Linux to share a package list. An
+`[bootstrap.packages]`, so macOS and Linux can share a package list. An
 explicit request such as `mise bootstrap packages apply brew-cask:firefox`
 still fails with a clear unsupported-platform error. You can also mark macOS
 casks explicitly with `{ os = "macos" }`. This boundary will expand as mise
@@ -176,8 +177,8 @@ gains portable implementations for more cask artifact types.
 
 `brew-cask` currently supports app-bundle casks (`app` artifacts), binary and
 generated command-wrapper casks (`binary` and `command_wrapper` artifacts),
-generic prefix artifacts (`artifact`), simple macOS installer packages (`pkg`
-artifacts), script-based cask installers, and shell completions
+generic prefix artifacts (`artifact`), font artifacts (`font`), simple macOS
+installer packages (`pkg` artifacts), script-based cask installers, and shell completions
 (`bash_completion`, `fish_completion`, `zsh_completion`, and
 `generate_completions_from_executable`) from dmg and common archive formats.
 Binary artifacts and generated wrappers are staged in the Caskroom and linked
@@ -197,12 +198,11 @@ Homebrew-compatible name/full matching, retries, notices, and failure policy.
 Structured `copy` and `symlink` steps support Homebrew path bases, templates,
 guards, source globs, replacement, and sudo behavior. External paths created by
 lifecycle steps are recorded in the mise receipt and restored if the install
-transaction fails. Cask formula and cask dependencies are installed first, and
-declared cask conflicts fail before mutation.
-Casks that require custom installer
-choices, services, unsupported hook DSL, unsupported structured lifecycle
-steps, or other cask artifact types fail with a clear unsupported artifact
-error instead of delegating to Homebrew.
+transaction fails. A cask's formula and cask dependencies are installed first,
+and declared cask conflicts fail before anything is modified. Casks that
+require custom installer choices, services, unsupported hook DSL, unsupported
+structured lifecycle steps, or other cask artifact types fail with a clear
+unsupported artifact error instead of delegating to Homebrew.
 
 Direct cask pours remain mise-owned. Their completed state is recorded in
 `.mise-cask.toml`; mise does not synthesize Homebrew's private `.metadata`
@@ -212,9 +212,9 @@ Status reports it as installed and uses that Caskroom directory name for the
 `Current` version; apply leaves it unchanged, and upgrade skips its lifecycle.
 mise does not create `.mise-cask.toml`, adopt the cask, or change its metadata,
 app targets, prefix binaries, or completion links; use Homebrew to upgrade,
-reinstall, or remove it.
-Homebrew metadata with no version or multiple versions fails with Homebrew
-repair guidance instead of guessing which installation is valid.
+reinstall, or remove it. If the Homebrew metadata has no version or multiple
+versions, mise fails with Homebrew repair guidance instead of guessing which
+installation is valid.
 
 For mise-owned casks, status treats a cask as installed when its receipt and
 recorded targets are still present. App and font content fingerprints are kept
@@ -228,8 +228,8 @@ reported as unhealthy so the next apply can reconcile them. Version upgrades
 and an explicit remove + apply still replace the app when you want a fresh
 pour.
 
-This exists because shared-library packages — postgres, ffmpeg, imagemagick,
-php — fundamentally can't be served by mise's per-project backends like
+The `brew` manager exists because shared-library packages — postgres, ffmpeg,
+imagemagick, php — fundamentally can't be served by mise's per-project backends like
 `aqua:` or `github:`: their bottles are built against fixed install paths and
 a shared dependency tree. Installing them at Homebrew's canonical prefix is
 what makes them work.
@@ -242,17 +242,17 @@ what makes them work.
 | Linux x86_64                | `/home/linuxbrew/.linuxbrew` |
 | Linux arm64                 | `/home/linuxbrew/.linuxbrew` |
 
-Intel macs are not supported — the `brew` manager reports itself unavailable
+Intel Macs are not supported — the `brew` manager reports itself unavailable
 there. On Linux, formulae without a bottle for your architecture (arm64
 Linux bottles exist for most but not all of homebrew/core) are built from
 source instead.
 
 ## The prefix
 
-If the prefix doesn't exist, mise creates it with the standard layout — the
-only time the brew manager uses sudo, mirroring what Homebrew's own installer
-does (`mkdir` + `chown` to your user). After that, installs are plain file
-operations as your user; nothing runs as root.
+If the prefix doesn't exist, mise creates it with the standard layout. This is
+the only time the brew manager uses sudo, mirroring what Homebrew's own
+installer does (`mkdir` + `chown` to your user). After that, installs are plain
+file operations as your user; nothing runs as root.
 
 ## Coexistence with a real Homebrew
 
@@ -267,7 +267,7 @@ For non-keg-only formulae, mise maintains Homebrew's
 `<prefix>/var/homebrew/linked/<name>` record alongside the `opt` record. For a
 configured formula, if either record is missing, `mise bootstrap packages
 apply` restores it without repouring the keg or replacing its public links.
-Older mise installs are recognised as linked only when their existing public
+Older mise installs are recognized as linked only when their existing public
 links match the keg's layout. Dependency-closure migration is not performed.
 
 mise reads the Homebrew prefix directly, whether formulae were poured by mise
@@ -361,7 +361,7 @@ For each formula in the dependency closure (dependencies first):
    `include`, `share`, etc. are symlinked into the prefix. The Homebrew
    linked-keg record is created for non-keg-only formulae.
    [keg-only](https://docs.brew.sh/FAQ#what-does-keg-only-mean) formulae get
-   the `opt` link but are not linked into the prefix, same as brew.
+   the `opt` link but are not linked into the prefix, just as with brew.
 
 ## Source formulae
 
@@ -386,7 +386,7 @@ still without Homebrew:
    `poured_from_bottle: false` — exactly how brew marks its own source
    builds.
 
-The shim implements the commonly-used subset of the formula DSL
+The shim implements the commonly used subset of the formula DSL
 (configure/cmake/meson-style builds, resources, patches, the standard path
 and environment helpers). Formulae that use parts of the DSL the shim
 doesn't cover — language-specific helpers like `virtualenv_install_with_resources`,
@@ -408,8 +408,9 @@ operation.
 ## Limitations
 
 - **Cask artifact coverage is intentionally narrow.** On macOS, `brew-cask`
-  supports app bundles, binary artifacts, font artifacts, and simple pkg
-  installers from dmg and common archive formats. On Linux, it supports
+  supports app bundles, binary artifacts, generated command wrappers, generic
+  prefix artifacts, font artifacts, simple pkg installers, script-based
+  installers, and shell completions from dmg and common archive formats. On Linux, it supports
   font-only casks without lifecycle hooks or structured `preflight_steps` or
   `postflight_steps`. Other artifact types, pkg installers without `pkgutil`
   IDs, and pkg installers with custom choices fail explicitly.
@@ -419,7 +420,7 @@ operation.
   artifacts and casks with lifecycle actions are skipped until their uninstall
   semantics are supported.
 - **Source builds cover the common formula shapes.** mise's formula shim
-  implements the widely-used subset of the DSL (see
+  implements the widely used subset of the DSL (see
   [Source formulae](#source-formulae)); formulae that reach beyond it fail
   with a clear error naming the unsupported feature.
 - **Use canonical formula names.** `postgresql@17` is a formula name, not a

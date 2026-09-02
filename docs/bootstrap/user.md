@@ -17,8 +17,8 @@ runs:
 chsh -s /bin/zsh
 ```
 
-Top-level `mise bootstrap` also includes a final follow-up reminder to start a
-new login session when it changes or would change the login shell.
+Top-level `mise bootstrap` also ends with a reminder to start a new login
+session when it changes, or would change, the login shell.
 
 ## Semantics
 
@@ -30,9 +30,9 @@ new login session when it changes or would change the login shell.
 - **Manual application only** — mise never changes your login shell
   implicitly. Only `mise bootstrap user apply` and
   [`mise bootstrap`](/bootstrap.html) apply it.
-- **Listed shell** — the shell must appear in `/etc/shells` before `chsh`
-  accepts it on many platforms. mise adds the configured path to that file
-  when it is missing.
+- **Listed shell** — on many platforms, the shell must appear in `/etc/shells`
+  before `chsh` accepts it. mise adds the configured path to that file when it
+  is missing.
 - **Unix-only** — on non-Unix platforms, or when `chsh` is not available,
   `mise bootstrap user status` reports the entry as skipped and bootstrap
   ignores it.
@@ -40,9 +40,9 @@ new login session when it changes or would change the login shell.
   warning. Use the full path, such as `/bin/zsh` or `/opt/homebrew/bin/fish`.
 
 `/etc/shells` is usually root-owned. If the file is not writable, mise uses
-the same non-interactive sudo behavior as system packages: it can prompt in an
-interactive terminal, uses passwordless sudo in non-interactive contexts, and
-honors `system_packages.sudo = false`.
+the same sudo behavior as system packages: it can prompt in an interactive
+terminal, uses passwordless sudo in non-interactive contexts, and honors
+`system_packages.sudo = false`.
 
 When `mise` itself is started under `sudo`, login shell status and `chsh`
 target `SUDO_USER` rather than root. Plain root sessions, such as containers,

@@ -7,10 +7,10 @@ use crate::config::Config;
 use crate::ui::table;
 
 /// List tool version aliases
-/// Shows the aliases that can be specified.
-/// These can come from user config or from plugins in `bin/list-aliases`.
 ///
-/// For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
+/// Aliases can be defined in user config or provided by plugins via `bin/list-aliases`.
+///
+/// In user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 ///
 ///     [tool_alias.node.versions]
 ///     lts = "22.0.0"

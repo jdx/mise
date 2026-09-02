@@ -44,7 +44,7 @@ on_change = "reload_or_restart"
 ```
 
 Notification names are validated before any bootstrap mutation, so a typo
-cannot leave a host partially provisioned. Mise runs one `daemon-reload`,
+cannot leave a host partially provisioned. mise runs one `daemon-reload`,
 re-inspects all affected units, and validates every action before changing any
 service. A missing unit is retried only when the changed notification source is
 that unit's managed file in a systemd system-unit search directory (including
@@ -72,7 +72,7 @@ enabled = false
 masked = true
 ```
 
-Mise does not guess when a unit is missing, systemd is unavailable, or a unit
+mise does not guess when a unit is missing, systemd is unavailable, or a unit
 cannot be enabled (for example, a static unit). Status and plans report the
 resource as `unknown`; apply fails closed instead of running an unsafe command.
 
@@ -83,5 +83,5 @@ mise bootstrap services apply --dry-run
 mise bootstrap services apply --yes
 ```
 
-System service management is Linux-only and requires root privileges. Mise
+System service management is Linux-only and requires root privileges. mise
 prompts through sudo only when a change is required.

@@ -8,9 +8,9 @@ use crate::ui::prompt;
 use crate::{dirs, env, file};
 use std::collections::BTreeSet;
 
-/// Removes mise CLI and all related data
+/// Remove the mise CLI and all related data
 ///
-/// Skips config directory by default.
+/// The config directory is kept unless `--config` is passed.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment)]
 pub(crate) struct Implode {

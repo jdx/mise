@@ -4,7 +4,9 @@ mise \- Dev tools, env vars, and tasks in one CLI
 .SH SYNOPSIS
 \fBmise\fR [OPTIONS] [<TASK>] [<TASK_ARGS>] ... [<TASK_ARGS_LAST>] ... [COMMAND]
 .SH DESCRIPTION
-mise prepares your development environment before each command runs. https://github.com/jdx/mise
+mise installs the dev tools your projects need, sets their environment variables, and runs their tasks.
+.PP
+Tools, env vars, and tasks are declared in mise.toml. `mise use <TOOL>` adds a tool to the project in the current directory, `mise install` installs everything the config asks for, and `mise run <TASK>` runs a task. Docs: https://mise.jdx.dev
 .PP
 .SH OPTIONS
 .TP
@@ -52,7 +54,7 @@ Show extra output (use \-vv for even more)
 Answer yes to all confirmation prompts
 .TP
 \fB\-\-debug\fR
-Sets log level to debug
+Set the log level to debug
 .TP
 \fB\-\-log\-level\fR \fI<LEVEL>\fR
 .TP
@@ -72,11 +74,12 @@ Do not execute hooks from config files
 Can also use `MISE_NO_HOOKS=1`
 .TP
 \fB\-\-no\-timings\fR
-Hides elapsed time after each task completes
+Hide the elapsed time printed after each task completes
 
-Default to always hide with `MISE_TASK_TIMINGS=0`
+Set `MISE_TASK_TIMINGS=0` to hide it by default
 .TP
 \fB\-\-output\fR \fI<OUTPUT>\fR
+How task output is displayed when running a task (same as `mise run \-\-output`)
 .TP
 \fB\-\-raw\fR
 Read/write directly to stdin/stdout/stderr instead of by line
@@ -92,12 +95,12 @@ Can also be enabled via MISE_LOCKED=1 or settings.locked=true
 Suppress all task output and mise non\-error messages
 .TP
 \fB\-\-timings\fR
-Shows elapsed time after each task completes
+Show the elapsed time after each task completes
 
-Default to always show with `MISE_TASK_TIMINGS=1`
+Set `MISE_TASK_TIMINGS=1` to show it by default
 .TP
 \fB\-\-trace\fR
-Sets log level to trace
+Set the log level to trace
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -113,10 +116,10 @@ Task arguments
 .SH COMMANDS
 .TP
 \fBactivate\fR
-Initializes mise in the current shell session
+Initialize mise in the current shell session
 .TP
 \fBtool\-alias\fR
-Manage tool version aliases.
+Manage tool version aliases
 .RS
 \fIAliases: \fRalias, aliases
 .RE
@@ -137,7 +140,7 @@ Add/update an alias for a tool/backend
 .RE
 .TP
 \fBtool\-alias unset\fR
-Clears an alias for a tool/backend
+Clear an alias for a tool/backend
 .RS
 \fIAliases: \fRrm, remove, delete, del
 .RE
@@ -233,8 +236,10 @@ Manage systemd user services from `[bootstrap.linux.systemd.units]`
 .RE
 .TP
 \fBbootstrap linux systemd\-units apply\fR
+Install and start systemd user services from `[bootstrap.linux.systemd.units]`
 .TP
 \fBbootstrap linux systemd\-units status\fR
+Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
 .TP
 \fBbootstrap macos\fR
 Manage macOS bootstrap config from `[bootstrap.macos]`
@@ -243,8 +248,10 @@ Manage macOS bootstrap config from `[bootstrap.macos]`
 Manage macOS defaults from `[bootstrap.macos.defaults]`
 .TP
 \fBbootstrap macos defaults apply\fR
+Write macOS defaults from `[bootstrap.macos.defaults]`
 .TP
 \fBbootstrap macos defaults status\fR
+Show whether macOS defaults match `[bootstrap.macos.defaults]`
 .TP
 \fBbootstrap macos launchd\-agents\fR
 Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
@@ -253,8 +260,10 @@ Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 .RE
 .TP
 \fBbootstrap macos launchd\-agents apply\fR
+Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
 .TP
 \fBbootstrap macos launchd\-agents status\fR
+Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
 .TP
 \fBbootstrap mise\-shell\-activate\fR
 Manage mise shell activation from `[bootstrap.mise_shell_activate]`
@@ -263,8 +272,10 @@ Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 .RE
 .TP
 \fBbootstrap mise\-shell\-activate apply\fR
+Configure shell activation from `[bootstrap.mise_shell_activate]`
 .TP
 \fBbootstrap mise\-shell\-activate status\fR
+Show whether shell activation matches `[bootstrap.mise_shell_activate]`
 .TP
 \fBbootstrap packages\fR
 Manage bootstrap system packages from `[bootstrap.packages]`
@@ -318,8 +329,10 @@ Show the changes declarative bootstrap resources would make
 Manage package manager plugins declared in `[bootstrap.plugins]`
 .TP
 \fBbootstrap plugins apply\fR
+Install package manager plugins declared in `[bootstrap.plugins]`
 .TP
 \fBbootstrap plugins status\fR
+Show whether declared package manager plugins are installed
 .TP
 \fBbootstrap remote\fR
 Bootstrap one or more machines over OpenSSH
@@ -328,12 +341,16 @@ Bootstrap one or more machines over OpenSSH
 Manage git repo checkouts from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos apply\fR
+Clone and converge git repos from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos exec\fR
+Run a command in each configured git repo
 .TP
 \fBbootstrap repos status\fR
+Show the state of git repos from `[bootstrap.repos]`
 .TP
 \fBbootstrap repos update\fR
+Pull the latest changes into configured git repos
 .TP
 \fBbootstrap secrets\fR
 Inspect bootstrap secret inputs without revealing their values
@@ -360,14 +377,16 @@ Show the aggregate bootstrap status
 Manage current\-user bootstrap settings from `[bootstrap.user]`
 .TP
 \fBbootstrap user apply\fR
+Apply current\-user settings from `[bootstrap.user]`
 .TP
 \fBbootstrap user status\fR
+Show whether current\-user settings match `[bootstrap.user]`
 .TP
 \fBcache\fR
 Manage the mise cache
 .TP
 \fBcache clear\fR
-Deletes all cache files in mise
+Delete all cache files
 .RS
 \fIAliases: \fRc, clean
 .RE
@@ -379,7 +398,7 @@ Show the cache directory path
 .RE
 .TP
 \fBcache prune\fR
-Removes stale mise cache files
+Remove stale cache files
 .RS
 \fIAliases: \fRp
 .RE
@@ -400,7 +419,7 @@ Manage config files
 .RE
 .TP
 \fBconfig get\fR
-Display the value of a setting in a mise.toml file
+Display a value from a mise.toml file
 .TP
 \fBconfig ls\fR
 List config files currently in use
@@ -409,7 +428,7 @@ List config files currently in use
 .RE
 .TP
 \fBconfig set\fR
-Set the value of a setting in a mise.toml file
+Set a value in a mise.toml file
 .TP
 \fBdeactivate\fR
 Disable mise for current shell session
@@ -427,10 +446,10 @@ Print the current PATH entries mise is providing
 .RE
 .TP
 \fBen\fR
-Starts a new shell with the mise environment built from the current configuration
+Start a new shell with the mise environment built from the current configuration
 .TP
 \fBenv\fR
-Exports env vars to activate mise a single time
+Export env vars to activate mise a single time
 .RS
 \fIAliases: \fRe
 .RE
@@ -442,7 +461,7 @@ Execute a command with tool(s) set
 .RE
 .TP
 \fBfmt\fR
-Formats mise.toml
+Format mise.toml
 .TP
 \fBgenerate\fR
 Generate files for various tools/services
@@ -472,13 +491,13 @@ Generate a script to download+execute mise
 Generate documentation for tasks in a project
 .TP
 \fBgenerate task\-stubs\fR
-Generates shims to run mise tasks
+Generate shims to run mise tasks
 .TP
 \fBgenerate tool\-stub\fR
 Generate a tool stub for HTTP\-based tools
 .TP
 \fBimplode\fR
-Removes mise CLI and all related data
+Remove the mise CLI and all related data
 .TP
 \fBedit\fR
 Edit mise.toml interactively
@@ -493,10 +512,10 @@ Install a tool version
 Install a tool version to a specific path
 .TP
 \fBlatest\fR
-Gets the latest available version for a plugin
+Get the latest available version of a tool
 .TP
 \fBlink\fR
-Symlinks a tool version into mise
+Symlink a tool version into mise
 .RS
 \fIAliases: \fRln
 .RE
@@ -511,7 +530,7 @@ List installed and active tool versions
 .RE
 .TP
 \fBls\-remote\fR
-List runtime versions available for install.
+List tool versions available to install
 .RS
 \fIAliases: \fRlist\-all, list\-remote
 .RE
@@ -532,7 +551,7 @@ Run Model Context Protocol (MCP) server
 [experimental] Build an OCI image from the current mise.toml and run a command in it
 .TP
 \fBoutdated\fR
-Shows outdated tool versions
+Show outdated tool versions
 .TP
 \fBpatrons\fR
 Show the individuals supporting mise as Patron\-tier members
@@ -550,7 +569,7 @@ Install a plugin
 .RE
 .TP
 \fBplugins link\fR
-Symlinks a plugin into mise
+Symlink a plugin into mise
 .RS
 \fIAliases: \fRln
 .RE
@@ -562,19 +581,19 @@ List installed plugins
 .RE
 .TP
 \fBplugins ls\-remote\fR
-
+List all available remote plugins
 .RS
 \fIAliases: \fRlist\-remote, list\-all
 .RE
 .TP
 \fBplugins uninstall\fR
-Removes a plugin
+Remove a plugin
 .RS
 \fIAliases: \fRremove, rm
 .RE
 .TP
 \fBplugins update\fR
-Updates a plugin to the latest version
+Update a plugin to the latest version
 .RS
 \fIAliases: \fRup, upgrade
 .RE
@@ -601,7 +620,7 @@ Delete unused versions of tools
 List available tools to install
 .TP
 \fBreshim\fR
-Creates new shims based on bin paths from currently installed tools.
+Create shims for the executables of currently installed tools
 .TP
 \fBrun\fR
 Run task(s)
@@ -613,7 +632,7 @@ Run task(s)
 Search for tools in the registry
 .TP
 \fBself\-update\fR
-Updates mise itself.
+Update mise itself
 .TP
 \fBset\fR
 Set environment variables in mise.toml
@@ -625,7 +644,7 @@ Set environment variables in mise.toml
 Manage settings
 .TP
 \fBsettings add\fR
-Adds a setting to the configuration file
+Append a value to an array setting
 .TP
 \fBsettings get\fR
 Show a current setting
@@ -643,19 +662,19 @@ Add/update a setting
 .RE
 .TP
 \fBsettings unset\fR
-Clears a setting
+Clear a setting
 .RS
 \fIAliases: \fRrm, remove, delete, del
 .RE
 .TP
 \fBshell\fR
-Sets a tool version for the current session.
+Set a tool version for the current shell session
 .RS
 \fIAliases: \fRsh
 .RE
 .TP
 \fBshell\-alias\fR
-Manage shell aliases.
+Manage shell aliases
 .TP
 \fBshell\-alias get\fR
 Show the command for a shell alias
@@ -673,7 +692,7 @@ Add/update a shell alias
 .RE
 .TP
 \fBshell\-alias unset\fR
-Removes a shell alias
+Remove a shell alias
 .RS
 \fIAliases: \fRrm, remove, delete, del
 .RE
@@ -685,13 +704,13 @@ Show the companies sponsoring mise and the jdx.dev open source tools
 Synchronize tools from other version managers with mise
 .TP
 \fBsync node\fR
-Symlinks all tool versions from an external tool into mise
+Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 .TP
 \fBsync python\fR
-Symlinks all tool versions from an external tool into mise
+Symlink python versions installed by pyenv or uv into mise
 .TP
 \fBsync ruby\fR
-Symlinks all ruby tool versions from an external tool into mise
+Symlink ruby versions installed by Homebrew into mise
 .TP
 \fBtasks\fR
 Manage tasks
@@ -715,7 +734,7 @@ Edit a task with $EDITOR
 Get information about a task
 .TP
 \fBtasks ls\fR
-List available tasks to execute
+List available tasks
 .TP
 \fBtasks run\fR
 Run task(s)
@@ -727,7 +746,7 @@ Run task(s)
 Validate tasks for common errors and issues
 .TP
 \fBtest\-tool\fR
-Test a tool installs and executes
+Test that a tool installs and runs
 .TP
 \fBtoken\fR
 Display git provider tokens mise will use
@@ -742,37 +761,37 @@ Display the GitHub token mise will use for a given host
 Display the GitLab token mise will use for a given host
 .TP
 \fBtool\fR
-Gets information about a tool
+Show information about a tool
 .TP
 \fBtool\-stub\fR
 Execute a tool stub
 .TP
 \fBtrust\fR
-Marks a config file as trusted
+Mark a config file as trusted
 .TP
 \fBuninstall\fR
-Removes installed tool versions
+Remove installed tool versions
 .TP
 \fBunset\fR
-Remove environment variable(s) from the config file.
+Remove environment variable(s) from the config file
 .TP
 \fBuntrust\fR
 Remove explicit trust for a config
 .TP
 \fBunuse\fR
-Removes installed tool versions from mise.toml
+Remove tool versions from mise.toml and uninstall them
 .RS
 \fIAliases: \fRrm, remove
 .RE
 .TP
 \fBupgrade\fR
-Upgrades outdated tools
+Upgrade outdated tools
 .RS
 \fIAliases: \fRup
 .RE
 .TP
 \fBuse\fR
-Installs a tool and adds the version to mise.toml.
+Install a tool and add it to mise.toml
 .RS
 \fIAliases: \fRu
 .RE
@@ -784,7 +803,7 @@ Display the version of mise
 .RE
 .TP
 \fBwatch\fR
-Run task(s) and watch for changes to rerun it
+Run task(s) and rerun them when files change
 .RS
 \fIAliases: \fRw
 .RE
@@ -793,12 +812,12 @@ Run task(s) and watch for changes to rerun it
 Display the installation path for a tool
 .TP
 \fBwhich\fR
-Shows the path that a tool's bin points to.
+Show the path a tool's executable resolves to
 .SH "MISE ACTIVATE"
-Initializes mise in the current shell session
+Initialize mise in the current shell session
 
-This should go into your shell's rc file or login shell.
-Otherwise, it will only take effect in the current session.
+Add this to your shell's rc or profile file so it runs in every new shell.
+Otherwise, it only takes effect in the current session.
 (e.g. ~/.zshrc, ~/.zprofile, ~/.zshenv, ~/.bashrc, ~/.bash_profile, ~/.profile, ~/.config/fish/config.fish, or $PROFILE for powershell)
 
 Typically, this can be added with something like the following:
@@ -830,6 +849,7 @@ This can be helpful for debugging mise. If you run `eval "$(mise activate \-\-no
 .TP
 \fB\-\-shims\fR
 Use shims instead of modifying PATH
+
 Effectively the same as:
 
     PATH="$HOME/.local/share/mise/shims:$PATH"
@@ -848,7 +868,7 @@ Print help
 \fB<SHELL_TYPE>\fR
 Shell type to generate the script for
 .SH "MISE TOOL-ALIAS"
-Manage tool version aliases.
+Manage tool version aliases
 .PP
 \fBUsage:\fR mise tool\-alias [OPTIONS] [COMMAND]
 .PP
@@ -885,10 +905,10 @@ The tool to show the alias for
 The alias to show
 .SH "MISE TOOL-ALIAS LS"
 List tool version aliases
-Shows the aliases that can be specified.
-These can come from user config or from plugins in `bin/list\-aliases`.
 
-For user config, aliases are defined like the following in `~/.config/mise/config.toml`:
+Aliases can be defined in user config or provided by plugins via `bin/list\-aliases`.
+
+In user config, aliases are defined like the following in `~/.config/mise/config.toml`:
 
     [tool_alias.node.versions]
     lts = "22.0.0"
@@ -932,7 +952,7 @@ The alias to set
 \fB<VALUE>\fR
 The value to set the alias to
 .SH "MISE TOOL-ALIAS UNSET"
-Clears an alias for a tool/backend
+Clear an alias for a tool/backend
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
@@ -1460,6 +1480,8 @@ Manage systemd user services from `[bootstrap.linux.systemd.units]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS APPLY"
+Install and start systemd user services from `[bootstrap.linux.systemd.units]`
+.PP
 \fBUsage:\fR mise bootstrap linux systemd\-units apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1474,6 +1496,8 @@ Skip the confirmation prompt
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP LINUX SYSTEMD-UNITS STATUS"
+Show the state of systemd user services from `[bootstrap.linux.systemd.units]`
+.PP
 \fBUsage:\fR mise bootstrap linux systemd\-units status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1508,6 +1532,8 @@ Manage macOS defaults from `[bootstrap.macos.defaults]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MACOS DEFAULTS APPLY"
+Write macOS defaults from `[bootstrap.macos.defaults]`
+.PP
 \fBUsage:\fR mise bootstrap macos defaults apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1522,6 +1548,8 @@ Skip the confirmation prompt
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MACOS DEFAULTS STATUS"
+Show whether macOS defaults match `[bootstrap.macos.defaults]`
+.PP
 \fBUsage:\fR mise bootstrap macos defaults status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1546,6 +1574,8 @@ Manage macOS LaunchAgents from `[bootstrap.macos.launchd.agents]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS APPLY"
+Install and load LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.PP
 \fBUsage:\fR mise bootstrap macos launchd\-agents apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1560,6 +1590,8 @@ Skip the confirmation prompt
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MACOS LAUNCHD-AGENTS STATUS"
+Show the state of LaunchAgents from `[bootstrap.macos.launchd.agents]`
+.PP
 \fBUsage:\fR mise bootstrap macos launchd\-agents status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1584,6 +1616,8 @@ Manage mise shell activation from `[bootstrap.mise_shell_activate]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE APPLY"
+Configure shell activation from `[bootstrap.mise_shell_activate]`
+.PP
 \fBUsage:\fR mise bootstrap mise\-shell\-activate apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1598,6 +1632,8 @@ Skip the confirmation prompt
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP MISE-SHELL-ACTIVATE STATUS"
+Show whether shell activation matches `[bootstrap.mise_shell_activate]`
+.PP
 \fBUsage:\fR mise bootstrap mise\-shell\-activate status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1904,6 +1940,8 @@ Manage package manager plugins declared in `[bootstrap.plugins]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP PLUGINS APPLY"
+Install package manager plugins declared in `[bootstrap.plugins]`
+.PP
 \fBUsage:\fR mise bootstrap plugins apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -1915,6 +1953,8 @@ Print what would happen without installing plugins
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP PLUGINS STATUS"
+Show whether declared package manager plugins are installed
+.PP
 \fBUsage:\fR mise bootstrap plugins status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -2034,6 +2074,8 @@ Manage git repo checkouts from `[bootstrap.repos]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP REPOS APPLY"
+Clone and converge git repos from `[bootstrap.repos]`
+.PP
 \fBUsage:\fR mise bootstrap repos apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -2051,6 +2093,8 @@ Skip repos with local changes instead of failing
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP REPOS EXEC"
+Run a command in each configured git repo
+.PP
 \fBUsage:\fR mise bootstrap repos exec [OPTIONS] [<PATH>] ... <COMMAND> ...
 .PP
 \fBOptions:\fR
@@ -2073,6 +2117,8 @@ Run only in matching configured or expanded paths
 \fB<COMMAND>\fR
 Command and arguments to run in each repo
 .SH "MISE BOOTSTRAP REPOS STATUS"
+Show the state of git repos from `[bootstrap.repos]`
+.PP
 \fBUsage:\fR mise bootstrap repos status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -2087,6 +2133,8 @@ Exit with code 1 if any configured repo is not in its desired state
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP REPOS UPDATE"
+Pull the latest changes into configured git repos
+.PP
 \fBUsage:\fR mise bootstrap repos update [OPTIONS] [<PATH>] ...
 .PP
 \fBOptions:\fR
@@ -2206,6 +2254,8 @@ Manage current\-user bootstrap settings from `[bootstrap.user]`
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP USER APPLY"
+Apply current\-user settings from `[bootstrap.user]`
+.PP
 \fBUsage:\fR mise bootstrap user apply [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -2220,6 +2270,8 @@ Skip the confirmation prompt
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE BOOTSTRAP USER STATUS"
+Show whether current\-user settings match `[bootstrap.user]`
+.PP
 \fBUsage:\fR mise bootstrap user status [OPTIONS]
 .PP
 \fBOptions:\fR
@@ -2246,7 +2298,7 @@ Run `mise cache` with no args to view the current cache directory.
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE CACHE CLEAR"
-Deletes all cache files in mise
+Delete all cache files
 .PP
 \fBUsage:\fR mise cache clear [OPTIONS] [<TOOL>] ...
 .PP
@@ -2277,7 +2329,7 @@ Show the cache directory path
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE CACHE PRUNE"
-Removes stale mise cache files
+Remove stale cache files
 
 By default, this command will remove files that have not been accessed in 30 days.
 Change this with the MISE_CACHE_PRUNE_AGE environment variable.
@@ -2291,7 +2343,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 Show pruned files
 .TP
 \fB\-\-dry\-run\fR
-Just show what would be pruned
+Show what would be pruned without deleting anything
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -2376,7 +2428,7 @@ List all tracked config files
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE CONFIG GET"
-Display the value of a setting in a mise.toml file
+Display a value from a mise.toml file
 .PP
 \fBUsage:\fR mise config get [OPTIONS] [<KEY>]
 .PP
@@ -2402,7 +2454,7 @@ Print help
 .PP
 .TP
 \fB<KEY>\fR
-The path of the config to display
+Dotted key path to display, e.g. `tools.python`; omit to print the whole file
 .SH "MISE CONFIG LS"
 List config files currently in use
 .PP
@@ -2423,7 +2475,7 @@ List all tracked config files
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE CONFIG SET"
-Set the value of a setting in a mise.toml file
+Set a value in a mise.toml file
 .PP
 \fBUsage:\fR mise config set [OPTIONS] <KEY> [<VALUE>]
 .PP
@@ -2450,6 +2502,7 @@ Append the value without duplicating an existing entry.
 Remove the value from an existing collection.
 .TP
 \fB\-t, \-\-type\fR \fI<TYPE>\fR
+TOML type to store the value as; inferred from the value by default
 .RS
 \fIDefault: \fRinfer
 .RE
@@ -2460,7 +2513,7 @@ Print help
 .PP
 .TP
 \fB<KEY>\fR
-The path of the config to display
+Dotted key path to set, e.g. `tools.python`
 .TP
 \fB<VALUE>\fR
 The value to set the key to (optional if provided as KEY=VALUE)
@@ -2485,6 +2538,7 @@ Check mise installation for possible problems
 .PP
 .TP
 \fB\-J, \-\-json\fR
+Output in JSON format
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -2502,11 +2556,11 @@ Print all entries including those not provided by mise
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE EN"
-Starts a new shell with the mise environment built from the current configuration
+Start a new shell with the mise environment built from the current configuration
 
-This is an alternative to `mise activate` that allows you to explicitly start a mise session.
-It will have the tools and environment variables in the configs loaded.
-Note that changing directories will not update the mise environment.
+This is an alternative to `mise activate` for starting a mise session explicitly.
+The new shell has the tools and environment variables from the config loaded.
+Unlike an activated shell, changing directories does not update the environment.
 .PP
 \fBUsage:\fR mise en [OPTIONS] [<DIR>]
 .PP
@@ -2529,10 +2583,10 @@ Directory to start the shell in
 \fIDefault: \fR.
 .RE
 .SH "MISE ENV"
-Exports env vars to activate mise a single time
+Export env vars to activate mise a single time
 
-Use this if you don't want to permanently install mise. It's not necessary to
-use this if you have `mise activate` in your shell rc file.
+Use this to load the environment into one shell without adding `mise activate` to
+your shell rc file. It is not needed in shells where mise is already activated.
 .PP
 \fBUsage:\fR mise env [OPTIONS] [<TOOL@VERSION>] ...
 .PP
@@ -2563,17 +2617,18 @@ Print help
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool(s) to use
+Tool(s) to include in addition to those in config, e.g. node@20
 .SH "MISE EXEC"
 Execute a command with tool(s) set
 
-use this to avoid modifying the shell session or running ad\-hoc commands with mise tools set.
+Use this to run a command with mise's tools and environment without modifying the shell
+session, or to run ad\-hoc commands with tools that are not in the config.
 
-Tools will be loaded from mise.toml, though they can be overridden with <RUNTIME> args
-Note that only the plugin specified will be overridden, so if a `mise.toml` file
-includes "node 20" but you run `mise exec python@3.11`; it will still load node@20.
+Tools are loaded from mise.toml and can be overridden with <TOOL@VERSION> args. Only the
+tools you name are overridden: if `mise.toml` includes `node = "20"` and you run
+`mise exec python@3.11`, node@20 is still loaded.
 
-The "\-\-" separates runtimes from the commands to pass along to the subprocess.
+The "\-\-" separates tools from the command to pass along to the subprocess.
 .PP
 \fBUsage:\fR mise exec [OPTIONS] [<TOOL@VERSION>] ... [<COMMAND>] ...
 .PP
@@ -2586,7 +2641,7 @@ Command string to execute
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
-[default: 4]
+Defaults to the `jobs` setting
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
@@ -2627,7 +2682,7 @@ Bypass the environment cache and recompute the environment
 Skip automatic dependency preparation
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -2635,12 +2690,12 @@ Print help
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool(s) to start e.g.: node@20 python@3.10
+Tool(s) to load e.g.: node@20 python@3.10
 .TP
 \fB<COMMAND>\fR
 Command string to execute (same as \-\-command)
 .SH "MISE FMT"
-Formats mise.toml
+Format mise.toml
 
 Sorts keys and cleans up whitespace in mise.toml
 .PP
@@ -2650,10 +2705,10 @@ Sorts keys and cleans up whitespace in mise.toml
 .PP
 .TP
 \fB\-a, \-\-all\fR
-Format all files from the current directory
+Format every config file mise currently loads, not just those in the current directory
 .TP
 \fB\-c, \-\-check\fR
-Check if the configs are formatted, no formatting is done
+Check whether the configs are formatted without rewriting them; exits 1 if any are not
 .TP
 \fB\-s, \-\-stdin\fR
 Read config from stdin and write its formatted version into stdout
@@ -2712,7 +2767,7 @@ Bind the mise\-data\-volume to the devcontainer
 The name of the devcontainer
 .TP
 \fB\-w, \-\-write\fR
-write to .devcontainer/devcontainer.json
+Write to .devcontainer/devcontainer.json
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -2738,7 +2793,7 @@ The task to run when the pre\-commit hook is triggered
 .RE
 .TP
 \fB\-w, \-\-write\fR
-write to .git/hooks/pre\-commit and make it executable
+Write to .git/hooks/pre\-commit and make it executable
 .TP
 \fB\-\-hook\fR \fI<HOOK>\fR
 Which hook to generate (saves to .git/hooks/$hook)
@@ -2775,10 +2830,10 @@ The task to run when the workflow is triggered
 .RE
 .TP
 \fB\-w, \-\-write\fR
-write to .github/workflows/$name.yml
+Write to .github/workflows/$name.yml
 .TP
 \fB\-\-name\fR \fI<NAME>\fR
-the name of the workflow to generate
+The name of the workflow to generate
 .RS
 \fIDefault: \fRci
 .RE
@@ -2799,7 +2854,7 @@ setup). The old name still works but is deprecated and will be removed in mise 2
 .PP
 .TP
 \fB\-l, \-\-localize\fR
-Sandboxes mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a `.mise` directory in the project
+Sandbox mise internal directories like MISE_DATA_DIR and MISE_CACHE_DIR into a project\-local directory (`.mise` by default, set with `\-\-localized\-dir`)
 
 This is necessary if users may use a different version of mise outside the project.
 .TP
@@ -2807,7 +2862,7 @@ This is necessary if users may use a different version of mise outside the proje
 Specify mise version to fetch
 .TP
 \fB\-w, \-\-write\fR \fI<WRITE>\fR
-instead of outputting the script to stdout, write to a file and make it executable
+Write the script to a file and make it executable instead of printing it to stdout
 .TP
 \fB\-\-localized\-dir\fR \fI<LOCALIZED_DIR>\fR
 Directory to put localized data into
@@ -2836,7 +2891,7 @@ Generate documentation for tasks in a project
 .PP
 .TP
 \fB\-i, \-\-inject\fR
-inserts the documentation into an existing file
+Insert the documentation into an existing file
 
 This will look for a special comment, `<!\-\- mise\-tasks \-\->`, and replace it with the generated documentation.
 It will replace everything between the comment and the next comment, `<!\-\- /mise\-tasks \-\->` so it can be
@@ -2844,18 +2899,19 @@ run multiple times on the same file to update the documentation.
 The file must already contain both comments; mise errors instead of modifying the file if they are missing.
 .TP
 \fB\-I, \-\-index\fR
-write only an index of tasks, intended for use with `\-\-multi`
+Write only an index of tasks, intended for use with `\-\-multi`
 .TP
 \fB\-m, \-\-multi\fR
-render each task as a separate document, requires `\-\-output` to be a directory
+Render each task as a separate document; requires `\-\-output` to be a directory
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
-writes the generated docs to a file/directory
+Write the generated docs to a file or directory
 .TP
 \fB\-r, \-\-root\fR \fI<ROOT>\fR
-root directory to search for tasks
+Root directory to search for tasks
 .TP
 \fB\-s, \-\-style\fR \fI<STYLE>\fR
+Documentation style: `simple` lists tasks, `detailed` documents each task's usage
 .RS
 \fIDefault: \fRsimple
 .RE
@@ -2863,7 +2919,7 @@ root directory to search for tasks
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE GENERATE TASK-STUBS"
-Generates shims to run mise tasks
+Generate shims to run mise tasks
 
 By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install\-script`
 so contributors to a project can execute mise tasks without installing mise into their system.
@@ -3002,9 +3058,9 @@ Print help
 \fB<OUTPUT>\fR
 Output file path for the tool stub
 .SH "MISE IMPLODE"
-Removes mise CLI and all related data
+Remove the mise CLI and all related data
 
-Skips config directory by default.
+The config directory is kept unless `\-\-config` is passed.
 .PP
 \fBUsage:\fR mise implode [OPTIONS]
 .PP
@@ -3046,13 +3102,15 @@ Path to the config file to create
 .SH "MISE INSTALL"
 Install a tool version
 
-Installs a tool version to `~/.local/share/mise/installs/<TOOL>/<VERSION>`
-Installing alone will not activate the tools so they won't be in PATH.
-To install and/or activate in one command, use `mise use` which will create a `mise.toml` file
-in the current directory to activate this tool when inside the directory.
-Alternatively, run `mise exec <TOOL>@<VERSION> \-\- <COMMAND>` to execute a tool without creating config files.
+Installs a tool version under the mise data directory, by default
+`~/.local/share/mise/installs/<TOOL>/<VERSION>`.
+Installing alone does not add the tool to your config, so a tool that is not
+already configured will not be on PATH.
+To install and activate in one command, use `mise use`, which also writes the version to
+`mise.toml` in the current directory so the tool is active inside it.
+To run a tool once without touching any config, use `mise exec <TOOL>@<VERSION> \-\- <COMMAND>`.
 
-Tools will be installed in parallel. To disable, set `\-\-jobs=1` or `MISE_JOBS=1`
+Tools are installed in parallel. To disable, set `\-\-jobs=1` or `MISE_JOBS=1`.
 .PP
 \fBUsage:\fR mise install [OPTIONS] [<TOOL@VERSION>] ...
 .PP
@@ -3066,7 +3124,7 @@ With no tools specified, reinstall all configured tools
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
-[default: 4]
+Defaults to the `jobs` setting
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
@@ -3110,7 +3168,7 @@ Uses the active MISE_ENV and requires monorepo_root = true plus explicit
 .RE
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
 \fB\-\-shared\fR \fI<SHARED>\fR
 Install tool(s) to a shared directory
@@ -3152,7 +3210,7 @@ Tool to install e.g.: node@20
 \fB<PATH>\fR
 Path to install the tool into
 .SH "MISE LATEST"
-Gets the latest available version for a plugin
+Get the latest available version of a tool
 
 Supports prefixes such as `node@20` to get the latest version of node 20.
 .PP
@@ -3181,9 +3239,9 @@ Tool to get the latest version of
 \fB<ASDF_VERSION>\fR
 The version prefix to use when querying the latest version same as the first argument after the "@" used for asdf compatibility
 .SH "MISE LINK"
-Symlinks a tool version into mise
+Symlink a tool version into mise
 
-Use this for adding installs either custom compiled outside mise or built with a different tool.
+Use this to register an install that was compiled by hand or built with another tool.
 .PP
 \fBUsage:\fR mise link [OPTIONS] <TOOL@VERSION> <PATH>
 .PP
@@ -3292,11 +3350,8 @@ If not specified, all configured and task\-specific tools will be updated
 .SH "MISE LS"
 List installed and active tool versions
 
-This command lists tools that mise "knows about".
-These may be tools that are currently installed, or those
-that are in a config file (active) but may or may not be installed.
-
-It's a useful command to get the current state of your tools.
+Lists the tools mise knows about: versions that are installed, and versions requested
+by a config file (active) whether or not they are installed.
 .PP
 \fBUsage:\fR mise ls [OPTIONS] [<INSTALLED_TOOL>] ...
 .PP
@@ -3358,9 +3413,9 @@ Print help
 \fB<INSTALLED_TOOL>\fR
 Only show tool versions from [TOOL]
 .SH "MISE LS-REMOTE"
-List runtime versions available for install.
+List tool versions available to install
 
-Note that the results may be cached, run `mise cache clean` to clear the cache and get fresh results.
+Results may be cached; run `mise cache clear` to fetch fresh results.
 .PP
 \fBUsage:\fR mise ls\-remote [OPTIONS] [<TOOL@VERSION>] [<PREFIX>]
 .PP
@@ -3649,7 +3704,7 @@ Print help
 \fB<CMD>\fR
 Command and arguments to run inside the container (after `\-\-`)
 .SH "MISE OUTDATED"
-Shows outdated tool versions
+Show outdated tool versions
 
 See `mise upgrade` to upgrade these versions.
 .PP
@@ -3659,12 +3714,10 @@ See `mise upgrade` to upgrade these versions.
 .PP
 .TP
 \fB\-b, \-\-bump\fR
-Compares against the latest versions available, not what matches the current config
+Compare against the latest versions available, not just those matching the current config
 
-For example, if you have `node = "20"` in your config by default `mise outdated` will only
-show other 20.x versions, not 21.x or 22.x versions.
-
-Using this flag, if there are 21.x or newer versions it will display those instead of 20.x.
+For example, with `node = "20"` in your config, `mise outdated` normally only reports newer
+20.x versions. With this flag it reports the newest version overall, such as 22.x.
 .TP
 \fB\-J, \-\-json\fR
 Output in JSON format
@@ -3729,13 +3782,13 @@ Manage plugins
 .PP
 .TP
 \fB\-a, \-\-all\fR
-list all available remote plugins
+List all available remote plugins
 
-same as `mise plugins ls\-remote`
+Same as `mise plugins ls\-remote`
 .TP
 \fB\-c, \-\-core\fR
-The built\-in plugins only
-Normally these are not shown
+Only show built\-in (core) plugins
+These are hidden by default
 .TP
 \fB\-u, \-\-urls\fR
 Show the git url for each plugin
@@ -3756,10 +3809,9 @@ Print help
 .SH "MISE PLUGINS INSTALL"
 Install a plugin
 
-note that mise can automatically install plugins when you install a tool
-e.g.: `mise install cmake@3.30` will autoinstall the cmake plugin
-
-This behavior can be modified in ~/.config/mise/config.toml
+Note that mise installs plugins automatically when you install a tool that needs one,
+e.g.: `mise install cmake@3.30` installs the cmake plugin first. This command is only
+needed to install a plugin ahead of time or from a custom git URL.
 .PP
 \fBUsage:\fR mise plugins install [OPTIONS] [<NEW_PLUGIN>] [<GIT_URL>] [<REST>] ...
 .PP
@@ -3794,7 +3846,7 @@ Can specify multiple plugins: `mise plugins install cmake poetry`
 \fB<GIT_URL>\fR
 The git url of the plugin
 .SH "MISE PLUGINS LINK"
-Symlinks a plugin into mise
+Symlink a plugin into mise
 
 This is used for developing a plugin.
 .PP
@@ -3833,8 +3885,8 @@ List all available remote plugins
 Same as `mise plugins ls\-remote`
 .TP
 \fB\-c, \-\-core\fR
-The built\-in plugins only
-Normally these are not shown
+Only show built\-in (core) plugins
+These are hidden by default
 .TP
 \fB\-o, \-\-outdated\fR
 Show plugins with available updates
@@ -3854,14 +3906,9 @@ List installed plugins
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE PLUGINS LS-REMOTE"
-
 List all available remote plugins
 
-The full list is here: https://github.com/jdx/mise/blob/main/registry/
-
-Examples:
-
-    $ mise plugins ls\-remote
+These are the shorthand names from the registry: https://github.com/jdx/mise/blob/main/registry/
 .PP
 \fBUsage:\fR mise plugins ls\-remote [OPTIONS]
 .PP
@@ -3869,15 +3916,15 @@ Examples:
 .PP
 .TP
 \fB\-u, \-\-urls\fR
-Show the git url for each plugin e.g.: https://github.com/mise\-plugins/mise\-poetry.git
+Show the git url for each plugin, e.g. https://github.com/mise\-plugins/mise\-poetry.git
 .TP
 \fB\-\-only\-names\fR
-Only show the name of each plugin by default it will show a "*" next to installed plugins
+Only show the name of each plugin, without the "*" marking installed plugins
 .TP
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE PLUGINS UNINSTALL"
-Removes a plugin
+Remove a plugin
 .PP
 \fBUsage:\fR mise plugins uninstall [OPTIONS] [<PLUGIN>] ...
 .PP
@@ -3898,9 +3945,9 @@ Print help
 \fB<PLUGIN>\fR
 Plugin(s) to remove
 .SH "MISE PLUGINS UPDATE"
-Updates a plugin to the latest version
+Update a plugin to the latest version
 
-note: this updates the plugin itself, not the runtime versions
+Note: this updates the plugin itself, not the tool versions it manages
 .PP
 \fBUsage:\fR mise plugins update [OPTIONS] [<PLUGIN>] ...
 .PP
@@ -3910,7 +3957,7 @@ note: this updates the plugin itself, not the runtime versions
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
-Default: 4
+Defaults to the `jobs` setting
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -4120,7 +4167,7 @@ Hide aliased tools
 Output in JSON format
 .TP
 \fB\-\-security\fR
-Include security features for each tool's backends in JSON output.
+Include security features for each tool's backends in JSON output
 
 Requires \-\-json. Security info is de\-duplicated across all of a tool's backends. This can add noticeable time for large listings since each backend's security info is resolved individually.
 .TP
@@ -4132,13 +4179,12 @@ Print help
 \fB<NAME>\fR
 Show only the specified tool's full name
 .SH "MISE RESHIM"
-Creates new shims based on bin paths from currently installed tools.
+Create shims for the executables of currently installed tools
 
-This creates new shims in the configured user shim directory for CLIs that have been added.
-With `\-\-system`, it rebuilds the configured system shim farm instead.
-mise will try to do this automatically for commands like `npm i \-g` but there are
-other ways to install things (like using yarn or pnpm for node) that mise does
-not know about and so it will be necessary to call this explicitly.
+This creates shims in the user shim directory for executables that have been added since
+the last reshim. With `\-\-system`, it rebuilds the system shim farm instead.
+mise runs this automatically after commands like `npm i \-g`, but other ways of installing
+executables (such as yarn or pnpm for node) are not detected, so call this explicitly then.
 
 If you think mise should automatically call this for a particular command, please
 open an issue on the mise repo. You can also set up a shell function to reshim
@@ -4158,7 +4204,7 @@ currently active in mise.toml.
 .PP
 .TP
 \fB\-f, \-\-force\fR
-Rebuilds all mise\-owned shims
+Rebuild all mise\-owned shims
 .TP
 \fB\-\-system\fR
 Rebuild the system shim farm
@@ -4168,10 +4214,9 @@ Print help
 .SH "MISE RUN"
 Run task(s)
 
-This command will run a task, or multiple tasks in parallel.
-Tasks may have dependencies on other tasks or on source files.
-If source is configured on a task, it will only run if the source
-files have changed.
+Runs one task, or several tasks in parallel.
+Tasks may depend on other tasks and on source files.
+If a task has `sources` configured, it only runs when those files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
 In mise.toml, tasks take this form:
@@ -4184,7 +4229,7 @@ In mise.toml, tasks take this form:
 Alternatively, tasks can be defined as standalone scripts.
 These must be located in `mise\-tasks`, `.mise\-tasks`, `.mise/tasks`, `mise/tasks` or
 `.config/mise/tasks`.
-The name of the script will be the name of the tasks.
+The name of the script becomes the name of the task.
 
     $ cat .mise/tasks/build<<EOF
     #!/usr/bin/env bash
@@ -4229,8 +4274,7 @@ Force the tasks to run even if outputs are up to date
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 Values below 1 are treated as 1
-[default: 4]
-Configure with `jobs` config or `MISE_JOBS` env var
+Defaults to the `jobs` setting or the `MISE_JOBS` env var
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
@@ -4239,7 +4283,7 @@ Configure with `jobs` config or `MISE_JOBS` env var
 Don't actually run the task(s), just print them in order of execution
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
-Change how tasks information is output when running tasks
+How task output is displayed
 
 \- `prefix` \- Print stdout/stderr by line, prefixed with the task's label
 \- `interleave` \- Print directly to stdout/stderr instead of by line
@@ -4320,9 +4364,9 @@ Do not use cache on remote tasks
 Skip automatic dependency preparation
 .TP
 \fB\-\-no\-timings\fR
-Hides elapsed time after each task completes
+Hide the elapsed time printed after each task completes
 
-Default to always hide with `MISE_TASK_TIMINGS=0`
+Set `MISE_TASK_TIMINGS=0` to hide it by default
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
@@ -4365,13 +4409,13 @@ Timeout for the task to complete
 e.g.: 30s, 5m
 .TP
 \fB\-\-timings\fR
-Shows elapsed time after each task completes
+Show the elapsed time after each task completes
 
-Default to always show with `MISE_TASK_TIMINGS=1`
+Set `MISE_TASK_TIMINGS=1` to show it by default
 .SH "MISE SEARCH"
 Search for tools in the registry
 
-This command searches a tool in the registry.
+Searches the registry for tools matching NAME.
 
 By default, it will show all tools that fuzzy match the search term. For
 non\-fuzzy matches, use the `\-\-match\-type` flag.
@@ -4382,7 +4426,7 @@ non\-fuzzy matches, use the `\-\-match\-type` flag.
 .PP
 .TP
 \fB\-i, \-\-interactive\fR
-Show interactive search
+Show an interactive search menu
 .TP
 \fB\-m, \-\-match\-type\fR \fI<MATCH_TYPE>\fR
 Match type: equal, contains, or fuzzy
@@ -4401,7 +4445,7 @@ Print help
 \fB<NAME>\fR
 The tool to search for
 .SH "MISE SELF-UPDATE"
-Updates mise itself.
+Update mise itself
 
 Uses the GitHub Releases API to find the latest release and binary.
 By default, this will also update any installed plugins.
@@ -4542,10 +4586,10 @@ Name of setting
 \fB<VALUE>\fR
 Setting value to set
 .SH "MISE SETTINGS ADD"
-Adds a setting to the configuration file
+Append a value to an array setting
 
-Used with an array setting, this will append the value to the array.
-This modifies the contents of ~/.config/mise/config.toml
+Adds the value to an array setting such as `disable_hints`, keeping existing entries.
+This modifies ~/.config/mise/config.toml by default, or the local config with `\-\-local`.
 .PP
 \fBUsage:\fR mise settings add [OPTIONS] <SETTING> [<VALUE>]
 .PP
@@ -4652,9 +4696,9 @@ The setting to set
 \fB<VALUE>\fR
 The value to set (optional if provided as KEY=VALUE)
 .SH "MISE SETTINGS UNSET"
-Clears a setting
+Clear a setting
 
-This modifies the contents of ~/.config/mise/config.toml
+This modifies ~/.config/mise/config.toml by default, or the local config with `\-\-local`.
 .PP
 \fBUsage:\fR mise settings unset [OPTIONS] <KEY>
 .PP
@@ -4672,7 +4716,7 @@ Print help
 \fB<KEY>\fR
 The setting to remove
 .SH "MISE SHELL"
-Sets a tool version for the current session.
+Set a tool version for the current shell session
 
 Only works in a session where mise is already activated.
 
@@ -4687,16 +4731,16 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
-[default: 4]
+Defaults to the `jobs` setting
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
 .TP
 \fB\-u, \-\-unset\fR
-Removes a previously set version
+Remove a previously set version
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -4706,7 +4750,7 @@ Print help
 \fB<TOOL@VERSION>\fR
 Tool(s) to use
 .SH "MISE SHELL-ALIAS"
-Manage shell aliases.
+Manage shell aliases
 .PP
 \fBUsage:\fR mise shell\-alias [OPTIONS] [COMMAND]
 .PP
@@ -4770,7 +4814,7 @@ The alias name
 \fB<COMMAND>\fR
 The command to run (optional if provided as ALIAS=COMMAND)
 .SH "MISE SHELL-ALIAS UNSET"
-Removes a shell alias
+Remove a shell alias
 
 This modifies the contents of ~/.config/mise/config.toml
 .PP
@@ -4807,9 +4851,9 @@ Synchronize tools from other version managers with mise
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE SYNC NODE"
-Symlinks all tool versions from an external tool into mise
+Symlink node versions installed by nvm, nodenv, or Homebrew into mise
 
-For example, use this to import all Homebrew node installs into mise
+Use this to make versions installed by another version manager available to mise.
 
 This won't overwrite managed installs, runtime aliases, or links from other providers.
 .PP
@@ -4830,9 +4874,9 @@ Get tool versions from nvm
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE SYNC PYTHON"
-Symlinks all tool versions from an external tool into mise
+Symlink python versions installed by pyenv or uv into mise
 
-For example, use this to import all pyenv installs into mise
+Use this to make versions installed by another version manager available to mise.
 
 This won't overwrite managed installs, runtime aliases, or links from other providers.
 .PP
@@ -4850,7 +4894,7 @@ Sync tool versions with uv (2\-way sync)
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE SYNC RUBY"
-Symlinks all ruby tool versions from an external tool into mise
+Symlink ruby versions installed by Homebrew into mise
 .PP
 \fBUsage:\fR mise sync ruby [OPTIONS]
 .PP
@@ -4912,7 +4956,7 @@ Print help
 .PP
 .TP
 \fB<TASK>\fR
-Task name to get info of
+Task name to show info for
 .SH "MISE TASKS ADD"
 Create a new task
 
@@ -4949,7 +4993,7 @@ Directly connect stdin/stdout/stderr
 Glob patterns of files this task uses as input
 .TP
 \fB\-w, \-\-wait\-for\fR \fI<WAIT_FOR>\fR
-Wait for these tasks to complete if they are to run
+Wait for these tasks to finish if they are also being run
 .TP
 \fB\-\-depends\-post\fR \fI<DEPENDS_POST>\fR
 Dependencies to run after the task runs
@@ -4958,10 +5002,10 @@ Dependencies to run after the task runs
 Description of the task
 .TP
 \fB\-\-outputs\fR \fI<OUTPUTS>\fR
-Glob patterns of files this task creates, to skip if they are not modified
+Glob patterns of files this task creates, used to skip it when they are up to date
 .TP
 \fB\-\-run\-windows\fR \fI<RUN_WINDOWS>\fR
-Command to run on windows
+Command to run on Windows
 .TP
 \fB\-\-shell\fR \fI<SHELL>\fR
 Run the task in a specific shell
@@ -4975,7 +5019,10 @@ Print help
 .PP
 .TP
 \fB<TASK>\fR
-Tasks name to add
+Name of the task to add
+.TP
+\fB<RUN>\fR
+Command to run, given after `\-\-`
 .SH "MISE TASKS DEPS"
 Display a tree visualization of a dependency graph
 
@@ -5066,9 +5113,10 @@ Print help
 \fB<TASK>\fR
 Name of the task to get information about
 .SH "MISE TASKS LS"
-List available tasks to execute
-These may be included from the config file or from the project's .mise/tasks directory
-mise will merge all tasks from all parent directories into this list.
+List available tasks
+
+Tasks come from config files and from task directories such as `.mise/tasks`.
+Tasks from all parent directories are merged into this list.
 
 So if you have global tasks in `~/.config/mise/tasks/*` and project\-specific tasks in
 ~/myproject/.mise/tasks/*, then they'll both be available but the project\-specific
@@ -5120,10 +5168,9 @@ Print help
 .SH "MISE TASKS RUN"
 Run task(s)
 
-This command will run a task, or multiple tasks in parallel.
-Tasks may have dependencies on other tasks or on source files.
-If source is configured on a task, it will only run if the source
-files have changed.
+Runs one task, or several tasks in parallel.
+Tasks may depend on other tasks and on source files.
+If a task has `sources` configured, it only runs when those files have changed.
 
 Tasks can be defined in mise.toml or as standalone scripts.
 In mise.toml, tasks take this form:
@@ -5136,7 +5183,7 @@ In mise.toml, tasks take this form:
 Alternatively, tasks can be defined as standalone scripts.
 These must be located in `mise\-tasks`, `.mise\-tasks`, `.mise/tasks`, `mise/tasks` or
 `.config/mise/tasks`.
-The name of the script will be the name of the tasks.
+The name of the script becomes the name of the task.
 
     $ cat .mise/tasks/build<<EOF
     #!/usr/bin/env bash
@@ -5181,8 +5228,7 @@ Force the tasks to run even if outputs are up to date
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of tasks to run in parallel
 Values below 1 are treated as 1
-[default: 4]
-Configure with `jobs` config or `MISE_JOBS` env var
+Defaults to the `jobs` setting or the `MISE_JOBS` env var
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
@@ -5191,7 +5237,7 @@ Configure with `jobs` config or `MISE_JOBS` env var
 Don't actually run the task(s), just print them in order of execution
 .TP
 \fB\-o, \-\-output\fR \fI<OUTPUT>\fR
-Change how tasks information is output when running tasks
+How task output is displayed
 
 \- `prefix` \- Print stdout/stderr by line, prefixed with the task's label
 \- `interleave` \- Print directly to stdout/stderr instead of by line
@@ -5272,9 +5318,9 @@ Do not use cache on remote tasks
 Skip automatic dependency preparation
 .TP
 \fB\-\-no\-timings\fR
-Hides elapsed time after each task completes
+Hide the elapsed time printed after each task completes
 
-Default to always hide with `MISE_TASK_TIMINGS=0`
+Set `MISE_TASK_TIMINGS=0` to hide it by default
 .TP
 \fB\-\-skip\-deps\fR
 Run only the specified tasks skipping all dependencies
@@ -5317,9 +5363,9 @@ Timeout for the task to complete
 e.g.: 30s, 5m
 .TP
 \fB\-\-timings\fR
-Shows elapsed time after each task completes
+Show the elapsed time after each task completes
 
-Default to always show with `MISE_TASK_TIMINGS=1`
+Set `MISE_TASK_TIMINGS=1` to show it by default
 .SH "MISE TASKS VALIDATE"
 Validate tasks for common errors and issues
 .PP
@@ -5343,7 +5389,7 @@ Print help
 Tasks to validate
 If not specified, validates all tasks
 .SH "MISE TEST-TOOL"
-Test a tool installs and executes
+Test that a tool installs and runs
 .PP
 \fBUsage:\fR mise test\-tool [OPTIONS] [<TOOLS>] ...
 .PP
@@ -5365,10 +5411,10 @@ Values below 1 are treated as 1
 Test all tools specified in config files
 .TP
 \fB\-\-include\-non\-defined\fR
-Also test tools not defined in registry/, guessing how to test it
+Also test tools not defined in registry/, guessing how to test them
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -5469,7 +5515,7 @@ GitLab hostname
 \fIDefault: \fRgitlab.com
 .RE
 .SH "MISE TOOL"
-Gets information about a tool
+Show information about a tool
 .PP
 \fBUsage:\fR mise tool [OPTIONS] <TOOL>
 .PP
@@ -5510,11 +5556,16 @@ Tool name to get information about
 .SH "MISE TOOL-STUB"
 Execute a tool stub
 
-Tool stubs are executable files containing TOML configuration that specify which tool to run and how to run it. They provide a convenient way to create portable, self\-contained executables that automatically manage tool installation and execution.
+Tool stubs are executable files containing TOML configuration that specify
+which tool to run and how to run it. They provide a convenient way to create
+portable, self\-contained executables that automatically manage tool installation
+and execution.
 
 A tool stub consists of:
 
-\- A shebang line: #!/usr/bin/env \-S mise tool\-stub \- TOML configuration specifying the tool, version, and options \- Optional comments describing the tool's purpose
+\- A shebang line: #!/usr/bin/env \-S mise tool\-stub
+\- TOML configuration specifying the tool, version, and options
+\- Optional comments describing the tool's purpose
 
 Example stub file:
 
@@ -5527,7 +5578,8 @@ version = "20.0.0"
 bin = "node"
 ```
 
-The stub will automatically install the specified tool version if missing and execute it with any arguments passed to the stub.
+The stub will automatically install the specified tool version if missing
+and execute it with any arguments passed to the stub.
 
 For more information, see: https://mise.jdx.dev/dev\-tools/tool\-stubs.html
 .PP
@@ -5546,7 +5598,7 @@ Arguments to pass to the tool
 
 All arguments after the stub file path will be forwarded to the underlying tool. Use '\-\-' to separate mise arguments from tool arguments if needed.
 .SH "MISE TRUST"
-Marks a config file as trusted
+Mark a config file as trusted
 
 This means mise is allowed to parse the file when it needs to read config
 that may execute code or affect the environment. Without trust, mise may
@@ -5596,9 +5648,10 @@ Print help
 \fB<CONFIG_FILE>\fR
 The config file whose trust status to change
 .SH "MISE UNINSTALL"
-Removes installed tool versions
+Remove installed tool versions
 
-This only removes the installed version, it does not modify mise.toml.
+This only removes the installed version; it does not modify mise.toml.
+Use `mise unuse` to remove a tool from mise.toml and uninstall it.
 .PP
 \fBUsage:\fR mise uninstall [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
@@ -5624,7 +5677,7 @@ Print help
 \fB<INSTALLED_TOOL@VERSION>\fR
 Tool(s) to remove
 .SH "MISE UNSET"
-Remove environment variable(s) from the config file.
+Remove environment variable(s) from the config file
 
 By default, this command modifies `mise.toml` in the current directory.
 .PP
@@ -5667,7 +5720,7 @@ Print help
 \fB<CONFIG_FILE>\fR
 The config file to untrust
 .SH "MISE UNUSE"
-Removes installed tool versions from mise.toml
+Remove tool versions from mise.toml and uninstall them
 
 By default, this will use the `mise.toml` file that has the tool defined.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
@@ -5679,12 +5732,12 @@ In the following order:
   \- If `\-\-path` is set, it will use the config file at the given path.
   \- If `\-\-env` is set, it will use `mise.<env>.toml`.
   \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-  \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+  \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
   \- Otherwise just "mise.toml" or global config if cwd is home directory.
 
 Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 
-Will also prune the installed version if no other configurations are using it.
+The installed version is also removed unless another config still uses it or `\-\-no\-prune` is passed.
 .PP
 \fBUsage:\fR mise unuse [OPTIONS] <INSTALLED_TOOL@VERSION> ...
 .PP
@@ -5713,13 +5766,13 @@ Print help
 \fB<INSTALLED_TOOL@VERSION>\fR
 Tool(s) to remove
 .SH "MISE UPGRADE"
-Upgrades outdated tools
+Upgrade outdated tools
 
-By default, this keeps the range specified in mise.toml. So if you have node@20 set, it will
-upgrade to the latest 20.x.x version available. See the `\-\-bump` flag to use the latest version
-and bump the version in mise.toml.
+By default, this keeps the range specified in mise.toml: with node@20 set, it upgrades to
+the latest 20.x.x available. Use `\-\-bump` to upgrade to the latest version overall and
+rewrite the version in mise.toml.
 
-This will update mise.lock if it is enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
+This also updates mise.lock if lockfiles are enabled, see https://mise.jdx.dev/configuration/settings.html#lockfile
 .PP
 \fBUsage:\fR mise upgrade [OPTIONS] [<INSTALLED_TOOL@VERSION>] ...
 .PP
@@ -5727,7 +5780,7 @@ This will update mise.lock if it is enabled, see https://mise.jdx.dev/configurat
 .PP
 .TP
 \fB\-b, \-\-bump\fR
-Upgrades to the latest version available, bumping the version in mise.toml
+Upgrade to the latest version available, bumping the version in mise.toml
 
 For example, if you have `node = "20.0.0"` in your mise.toml but 22.1.0 is the latest available,
 this will install 22.1.0 and set `node = "22.1.0"` in your config.
@@ -5736,12 +5789,12 @@ It keeps the same precision as what was there before, so if you instead had `nod
 would change your config to `node = "22"`.
 .TP
 \fB\-i, \-\-interactive\fR
-Display multiselect menu to choose which tools to upgrade
+Choose which tools to upgrade from a multiselect menu
 .TP
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
-[default: 4]
+Defaults to the `jobs` setting
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
@@ -5750,7 +5803,7 @@ Values below 1 are treated as 1
 Deprecated shorthand for \-\-bump
 .TP
 \fB\-n, \-\-dry\-run\fR
-Just print what would be done, don't actually do it
+Print what would be done without doing it
 .TP
 \fB\-x, \-\-exclude\fR \fI<INSTALLED_TOOL>\fR
 Tool(s) to exclude from upgrading
@@ -5797,7 +5850,7 @@ Use this to bypass `upgrade.prune_after`, or to override
 `upgrade.auto_prune = false` for a single run.
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies \-\-jobs=1
+Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
 \fB\-h, \-\-help\fR
 Print help
@@ -5809,10 +5862,10 @@ Tool(s) to upgrade
 e.g.: node@20 python@3.10
 If not specified, all current tools will be upgraded
 .SH "MISE USE"
-Installs a tool and adds the version to mise.toml.
+Install a tool and add it to mise.toml
 
-This will install the tool version if it is not already installed.
-By default, this will use a `mise.toml` file in the current directory.
+Installs the tool version if it is not already installed, then writes it to a config file.
+By default, this is `mise.toml` in the current directory.
 If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
 the lowest precedence file (`mise.toml`) will be used.
 See https://mise.jdx.dev/configuration.html#target\-file\-for\-write\-operations
@@ -5822,12 +5875,10 @@ In the following order:
   \- If `\-\-path` is set, it will use the config file at the given path.
   \- If `\-\-env` is set, it will use `mise.<env>.toml`.
   \- If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-  \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+  \- If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
   \- Otherwise just "mise.toml" or global config if cwd is home directory.
 
 Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
-
-Use the `\-\-global` flag to use the global config file instead.
 .PP
 \fBUsage:\fR mise use [OPTIONS] [TOOL@VERSION]…
 .PP
@@ -5846,7 +5897,7 @@ Use the global config file (`~/.config/mise/config.toml`) instead of the local o
 \fB\-j, \-\-jobs\fR \fI<JOBS>\fR
 Number of jobs to run in parallel
 Values below 1 are treated as 1
-[default: 4]
+Defaults to the `jobs` setting
 .RS
 \fIEnvironment: \fR\fBMISE_JOBS\fR
 .RE
@@ -5867,8 +5918,8 @@ This is useful for scripts to check if tools need to be added or removed.
 \fB\-\-fuzzy\fR
 Save fuzzy version to config file
 
-e.g.: `mise use \-\-fuzzy node@20` will save 20 as the version
-this is the default behavior unless `MISE_PIN=1`
+e.g.: `mise use \-\-fuzzy node@20` will save `20` as the version.
+This is the default behavior unless `MISE_PIN=1`
 .TP
 \fB\-\-minimum\-release\-age\fR \fI<MINIMUM_RELEASE_AGE>\fR
 Only install versions released before this date or older than this duration
@@ -5887,7 +5938,7 @@ Consider using mise.lock as a better alternative to pinning in mise.toml:
 https://mise.jdx.dev/configuration/settings.html#lockfile
 .TP
 \fB\-\-raw\fR
-Connect backend install command stdin/stdout/stderr directly to the terminal Implies `\-\-jobs=1`
+Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `\-\-jobs=1`
 .TP
 \fB\-\-remove\fR \fI<TOOL>\fR
 Remove the tool(s) from config file
@@ -5903,12 +5954,12 @@ Command to run after installing this tool
 \fB<TOOL@VERSION>\fR
 Tool to add to config file
 
-e.g.: node@20, cargo:ripgrep@latest npm:prettier@3
-If no version is specified, it will default to @latest
+e.g.: node@20, cargo:ripgrep@latest, npm:prettier@3
+If no version is specified, it defaults to @latest
 
 Tool options can be set with this syntax:
 
-    mise use ubi:BurntSushi/ripgrep[exe=rg]
+    mise use "cargo:ripgrep[features=pcre2]"
 .SH "MISE VERSION"
 Display the version of mise
 
@@ -5927,10 +5978,10 @@ Print the version information in JSON format
 \fB\-h, \-\-help\fR
 Print help
 .SH "MISE WATCH"
-Run task(s) and watch for changes to rerun it
+Run task(s) and rerun them when files change
 
-This command uses the `watchexec` tool to watch for changes to files and rerun the specified task(s).
-It must be installed for this command to work, but you can install it with `mise use \-g watchexec@latest`.
+Uses `watchexec` to watch for file changes and rerun the given task(s).
+watchexec must be installed; `mise use \-g watchexec@latest` installs it.
 
 For more advanced process management (daemon management, auto\-restart, readiness checks,
 cron scheduling), see mise's sister project: https://pitchfork.jdx.dev
@@ -6479,7 +6530,7 @@ Print help
 \fB<TASK>\fR
 Tasks to run
 Can specify multiple tasks by separating with `:::`
-e.g.: `mise run task1 arg1 arg2 ::: task2 arg1 arg2`
+e.g.: `mise watch task1 arg1 arg2 ::: task2 arg1 arg2`
 Defaults to `default`
 .TP
 \fB<ARGS>\fR
@@ -6500,18 +6551,17 @@ Print help
 .PP
 .TP
 \fB<TOOL@VERSION>\fR
-Tool(s) to look up
+Tool to look up
 e.g.: ruby@3
-if "@<PREFIX>" is specified, it will show the latest installed version
-that matches the prefix
-otherwise, it will show the current, active installed version
+With "@<PREFIX>", shows the latest installed version matching the prefix.
+Otherwise, shows the current, active installed version.
 .TP
 \fB<ASDF_VERSION>\fR
 the version prefix to use when querying the latest version
 same as the first argument after the "@"
 used for asdf compatibility
 .SH "MISE WHICH"
-Shows the path that a tool's bin points to.
+Show the path a tool's executable resolves to
 
 Use this to figure out what version of a tool is currently active.
 .PP
@@ -6538,6 +6588,6 @@ Print help
 .PP
 .TP
 \fB<BIN_NAME>\fR
-The bin to look up
+The executable to look up
 .SH AUTHOR
 Jeff Dickey <@jdx>

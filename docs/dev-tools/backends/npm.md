@@ -1,13 +1,13 @@
 # npm Backend
 
-You may install packages directly from [npmjs.org](https://npmjs.org/) even if there
-isn't an asdf plugin for it.
+You can install packages directly from [npmjs.org](https://npmjs.org/) even if there
+isn't an asdf plugin for them.
 
-The code for this is inside of the mise repository at [`./src/backend/npm.rs`](https://github.com/jdx/mise/blob/main/src/backend/npm.rs).
+The code for this is inside the mise repository at [`./src/backend/npm.rs`](https://github.com/jdx/mise/blob/main/src/backend/npm.rs).
 
 ## Dependencies
 
-By default mise handles `npm:` tools without needing node or a package manager
+By default, mise handles `npm:` tools without needing node or a package manager
 CLI installed. Version resolution (`mise ls-remote`, resolving `latest`) queries
 the npm registry directly over HTTP, and packages are installed with mise's
 embedded [aube](https://github.com/jdx/aube) package manager. The registry,
@@ -27,8 +27,9 @@ auth token helper.
 
 You can also pick a specific installer with
 [`npm.package_manager`](/configuration/settings.html#npm-package-manager). The
-default `auto` uses the embedded aube; setting it to `aube_cli`, `bun`, `pnpm`,
-or `npm` shells out to that tool, which must then be installed. The standalone
+default `auto` uses the embedded aube (`aube` selects it explicitly); setting it
+to `aube_cli`, `bun`, `pnpm`, or `npm` shells out to that tool, which must then
+be installed. The standalone
 `aube_cli` mode uses mise's built-in HTTP client for version metadata when
 `npm.shell_out` remains at its default `false`, and invokes `aube` directly for
 installation; it does not rely on aube's `npm` compatibility shim.
@@ -75,7 +76,7 @@ it cannot start or complete. See
 [aube's security scanner documentation](https://aube.jdx.dev/package-manager/security-scanner.html)
 for the complete behavior and configuration.
 
-Mise installs each `npm:` tool in a synthetic project, so a bare scanner package
+mise installs each `npm:` tool in a synthetic project, so a bare scanner package
 name is not normally resolvable from that project's `node_modules`. Point the
 setting at an absolute module instead. For example, install the Socket scanner
 in a separate, stable directory and place this wrapper beside that directory's
@@ -100,7 +101,7 @@ sfw mise install npm:prettier@latest
 sfw mise use -g npm:prettier
 ```
 
-This works at the network layer. Mise's npm metadata client and embedded aube
+This works at the network layer. mise's npm metadata client and embedded aube
 installer both use aube-registry, which honors the `HTTP_PROXY`, `HTTPS_PROXY`,
 and `NO_PROXY` settings and explicitly loads the `NODE_EXTRA_CA_CERTS` bundle
 into its Rust TLS clients. Socket currently documents npm, yarn, and pnpm rather
@@ -199,8 +200,8 @@ lifecycle scripts. Use `allow_builds` for reviewed dependency builds:
 Set `allow_builds = true` to pass `--dangerously-allow-all-builds` when you explicitly accept that
 every dependency build script may run.
 
-[`pnpm approve-builds`](https://pnpm.io/cli/approve-builds) was added in v10.1.0, but it is not
-recommended to run `approve-builds` from postinstall. `pnpm approve-builds -g` worked for global
+[`pnpm approve-builds`](https://pnpm.io/cli/approve-builds) was added in v10.1.0, but running
+`approve-builds` from postinstall is not recommended. `pnpm approve-builds -g` worked for global
 packages in pnpm v10.4.0 through v10.x and was removed in v11.0.0; use
 `allow_builds = ["<pkg>"]` for global installs with pnpm v10.4.0+ or v11.x.
 
@@ -222,7 +223,7 @@ script trust:
 
 ### `npm`
 
-`npm` normally runs lifecycle scripts by default. mise passes
+`npm` runs lifecycle scripts by default. mise passes
 [`--ignore-scripts=true`](https://docs.npmjs.com/cli/v11/using-npm/config/#ignore-scripts) by
 default for npm-backed installs.
 

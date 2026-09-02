@@ -5,7 +5,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/generate/task_stubs.rs`](https://github.com/jdx/mise/blob/main/src/cli/generate/task_stubs.rs)
 
-Generates shims to run mise tasks
+Generate shims to run mise tasks
 
 By default, this will build shims like ./bin/&lt;task>. These can be paired with `mise generate install-script`
 so contributors to a project can execute mise tasks without installing mise into their system.

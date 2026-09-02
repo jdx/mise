@@ -87,14 +87,14 @@ pub(crate) struct Plugins {
     #[usage(subcommand)]
     command: Option<Commands>,
 
-    /// list all available remote plugins
+    /// List all available remote plugins
     ///
-    /// same as `mise plugins ls-remote`
+    /// Same as `mise plugins ls-remote`
     #[usage(short, long, hide = true)]
     pub all: bool,
 
-    /// The built-in plugins only
-    /// Normally these are not shown
+    /// Only show built-in (core) plugins
+    /// These are hidden by default
     #[usage(short, long, verbatim_doc_comment, conflicts = "all")]
     pub core: bool,
 

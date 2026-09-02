@@ -52,7 +52,7 @@
 </div>
 
 > [!TIP]
-> My latest project, [aube](https://aube.jdx.dev) just hit stable! It's the fastest Node.js package manager with strong security defaults and is compatible with npm/pnpm/yarn lockfiles!
+> Rust builds filling every checkout's `target/`? [Mr Boxington](https://mr-boxington.jdx.dev/) gives Cargo one shared, self-pruning cache across worktrees, local builds, and CI.
 
 ## What is it?
 

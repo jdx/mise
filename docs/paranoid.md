@@ -1,9 +1,8 @@
 # Paranoid
 
-Paranoid is an optional behavior that locks mise down more to make it harder
-for a bad actor to compromise your system. These are settings that I
-personally do not use on my own system because I find the behavior too
-restrictive for the benefits.
+Paranoid mode is an optional behavior that locks mise down further to make it
+harder for a bad actor to compromise your system. I do not use these settings
+on my own system because I find them too restrictive for the benefits.
 
 Paranoid mode can be enabled with either `MISE_PARANOID=1` or a global setting:
 
@@ -16,8 +15,8 @@ mode for itself.
 
 ## Config files
 
-Normally `mise` will make sure some config files are "trusted" before loading
-them. This can prompt you to confirm that you want to load the file, e.g.:
+Normally, `mise` makes sure some config files are "trusted" before loading
+them. It may prompt you to confirm that you want to load the file, e.g.:
 
 ```sh
 $ mise env
@@ -36,13 +35,13 @@ of prompting. Commands that directly need an untrusted config can fail with an
 untrusted-config error when mise cannot prompt. When mise detects that it is
 running in CI, configs are assumed to be trusted unless paranoid mode is enabled.
 
-Under paranoid, all config files must be trusted first, including formats that
-normally do not require trust. Automatic trust for execution commands is disabled.
-In normal mode, a config file only needs to be trusted a single time. In paranoid,
-the contents of the file are hashed to check if it changes.
-If you change your config file, you'll need to trust it again.
+Under paranoid mode, all config files must be trusted first, including formats
+that normally do not require trust, and automatic trust for execution commands is
+disabled. In normal mode, a config file only needs to be trusted once. In paranoid
+mode, the file's contents are hashed to detect changes, so if you change your
+config file, you'll need to trust it again.
 
-Note that global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check. This allows paranoid mode to be enabled in a global config without requiring a trust prompt for that file itself.
+Global and system config files (e.g., `~/.config/mise/config.toml`) are implicitly trusted and exempt from this check, so paranoid mode can be enabled in a global config without a trust prompt for that file itself.
 
 [Safe mode](/security.html#safe-mode) takes precedence when both modes are enabled.
 Safe mode disables project-defined code execution and environment injection while
@@ -74,8 +73,8 @@ an untrusted community plugin by short name.
 
 Normally, when a lockfile contains both a checksum and a provenance entry for a tool,
 `mise install` trusts the lockfile and skips provenance re-verification to avoid
-redundant API calls (e.g., to GitHub). This is safe when you trust the lockfile was
-generated correctly.
+redundant API calls (e.g., to GitHub). This is safe when you trust that the lockfile
+was generated correctly.
 
 In paranoid mode, `mise install` always re-verifies provenance (SLSA, cosign, minisign,
 GitHub artifact attestations) at install time, even when the lockfile already has a
@@ -94,5 +93,5 @@ configuration you do not control.
 
 ## More?
 
-If you have suggestions for more that could be added to paranoid, please let
-me know.
+If you have suggestions for more that could be added to paranoid mode, please
+let me know.

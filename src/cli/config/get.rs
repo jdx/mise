@@ -5,11 +5,11 @@ use crate::file::display_path;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Display the value of a setting in a mise.toml file
+/// Display a value from a mise.toml file
 #[derive(Debug, usage_rs::Args)]
 #[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ConfigGet {
-    /// The path of the config to display
+    /// Dotted key path to display, e.g. `tools.python`; omit to print the whole file
     pub key: Option<String>,
 
     /// The path to the mise.toml file to read

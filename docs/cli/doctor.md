@@ -9,7 +9,7 @@
 Check mise installation for possible problems
 
 ## Flags
-- **`-J --json`**
+- **`-J --json`** — Output in JSON format
 - **`-h --help`** — Print help
 
 ## Subcommands

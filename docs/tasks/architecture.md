@@ -4,7 +4,7 @@ Understanding how mise's task system works helps you write more efficient tasks 
 
 ## Task Dependency System
 
-mise uses a sophisticated dependency graph system to manage task execution order and parallelism. This ensures tasks run in the correct order while maximizing performance through parallel execution.
+mise uses a dependency graph to manage task execution order and parallelism. This ensures tasks run in the correct order while maximizing parallel execution.
 
 ### Dependency Graph Resolution
 
@@ -43,7 +43,7 @@ run = "npm test"
 
 #### `depends_post` - Cleanup Tasks
 
-Tasks that run after this task completes (whether successful or failed):
+Tasks that run after this task completes (whether it succeeded or failed):
 
 ```toml
 [tasks.deploy]
@@ -53,13 +53,13 @@ run = "kubectl apply -f deployment.yaml"
 ```
 
 Regular dependencies of cleanup tasks belong to the same post-phase subtree and do not start until
-the parent task has completed. Mise runs that subtree if the parent started, even when the parent
+the parent task has completed. mise runs that subtree if the parent started, even when the parent
 fails, but skips the entire subtree when a regular dependency fails before the parent can start. A
-task used as both a regular and post-dependency is a separate execution occurrence in each phase.
+task used as both a regular dependency and a post-dependency is executed separately in each phase.
 
 #### `wait_for` - Soft Dependencies
 
-Tasks that should run first if they're in the current execution, but don't fail if they're not available:
+Tasks that should run first if they're part of the current execution, but whose absence doesn't cause a failure:
 
 ```toml
 [tasks.integration-test]
@@ -132,8 +132,8 @@ When you run `mise run build`, mise:
 
 1. **Discovers all tasks** from all configuration sources
 2. **Resolves the task name** (handles aliases and partial matches)
-3. **Builds dependency graph** including all dependencies
-4. **Validates graph** (checks for circular dependencies)
+3. **Builds the dependency graph** including all dependencies
+4. **Validates the graph** (checks for circular dependencies)
 5. **Executes in dependency order** with parallelism
 
 ### Task Resolution Across Directories
@@ -147,7 +147,7 @@ project/
     └── mise.toml          # overrides: test, adds: bundle
 ```
 
-In `frontend/`, you have access to: `lint` (from parent), `test` (overridden), `build` (from parent), `bundle` (local).
+In `frontend/`, you have access to `lint` (from parent), `test` (overridden), `build` (from parent), and `bundle` (local).
 
 ## Advanced Dependency Features
 
@@ -217,7 +217,7 @@ outputs = ["dist/**/*"]
 run = "npm run build"
 ```
 
-mise will only run the task if:
+mise only runs the task if:
 
 - Source files are newer than output files
 - The task has never been run
@@ -280,6 +280,6 @@ Solution: Define the missing task or remove the dependency.
 
 - Check if tasks have unnecessary dependencies
 - Use `mise tasks deps` to verify the declared dependency graph (`depends`, `wait_for`, `depends_post`)
-- Consider increasing `--jobs` if you have CPU cores available
+- Consider increasing `--jobs` if you have spare CPU cores
 
 The task architecture is designed to scale from simple single-task projects to complex multi-service applications with intricate build dependencies.

@@ -3,7 +3,7 @@
 The code for this is inside the mise repository at [`./src/backend/dotnet.rs`](https://github.com/jdx/mise/blob/main/src/backend/dotnet.rs).
 
 ::: tip Important
-The dotnet backend requires having the .NET runtime installed. You can install it using mise:
+The dotnet backend requires the .NET SDK to be installed. You can install it with mise:
 
 ```sh
 # Install the latest version
@@ -14,12 +14,12 @@ mise use dotnet@8
 mise use dotnet@9
 ```
 
-This will install the .NET runtime, which is required for dotnet tools to work properly.
+This installs the .NET SDK, which dotnet tools require.
 :::
 
 ## Usage
 
-The following installs the latest version of [GitVersion.Tool](https://gitversion.net/) and
+The following installs a specific version of [GitVersion.Tool](https://gitversion.net/) and
 sets it as the active version on PATH:
 
 ```sh
@@ -34,6 +34,8 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 [tools]
 "dotnet:GitVersion.Tool" = "5.12.0"
 ```
+
+Omitting the version installs the latest version:
 
 ```sh
 $ mise use dotnet:GitVersion.Tool
@@ -87,4 +89,4 @@ By default, NuGet pre-release versions are excluded from `mise ls-remote` and fr
 "dotnet:GitVersion.Tool" = { version = "latest", prerelease = true }
 ```
 
-The legacy `dotnet.package_flags = ["prerelease"]` setting is deprecated. Prefer the per-tool `prerelease = true` option, or the global `prereleases` setting when every tool should include pre-release versions. Because `dotnet.package_flags` is global, remove it before relying on `prerelease = false` per-tool opt-outs.
+The legacy `dotnet.package_flags = ["prerelease"]` setting is deprecated. Prefer the per-tool `prerelease = true` option, or the global `prereleases` setting when every tool should include pre-release versions. Because `dotnet.package_flags` is global, remove it before relying on per-tool `prerelease = false` opt-outs.

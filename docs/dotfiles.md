@@ -253,11 +253,11 @@ filesystem, and recorded `symlink-each` state to determine what the entry owns:
   source.
 - `symlink-each` removes exact source-to-target links, including dangling links
   for deleted source files. Other links and files under the target survive.
-- file copies and rendered templates are removed only while their content still
+- File copies and rendered templates are removed only while their content still
   matches. Modified targets require `--force`.
-- directory copies are removed file by file. Unmanaged neighbors always
+- Directory copies are removed file by file. Unmanaged neighbors always
   survive, and directories are removed only when empty.
-- marker-delimited blocks are removed with their markers. Plain line edits have
+- Marker-delimited blocks are removed with their markers. Plain line edits have
   no ownership marker and require `--force`.
 
 Unapply is deliberately conservative because `copy` and `template` entries have

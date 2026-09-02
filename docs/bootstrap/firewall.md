@@ -59,7 +59,7 @@ it disables UFW globally. `absent` removes only mise-managed rules and
 metadata. Disabling and deleting are presented as destructive changes.
 
 `default_incoming` and `default_outgoing` accept `"allow"`, `"deny"`, or
-`"reject"`. Their defaults are incoming deny and outgoing allow.
+`"reject"`. By default, incoming traffic is denied and outgoing traffic is allowed.
 
 Each `[[bootstrap.linux.firewall.rules]]` supports:
 
@@ -103,11 +103,11 @@ destructive operation.
 When bootstrap runs over SSH and incoming policy is deny or reject, mise checks
 `SSH_CONNECTION` before making changes. At least one present incoming TCP allow
 or limit rule must cover the connected peer address, server address, and server
-port without an `interface` constraint. Otherwise apply fails before elevation.
+port without an `interface` constraint. Otherwise, apply fails before elevation.
 A deliberately out-of-band deployment can set `allow_lockout = true` as an
 explicit escape hatch.
 
-Rules are installed in declared order before deny policies for UFW. nftables
+For UFW, rules are installed in declared order before deny policies. nftables
 installs the complete ruleset atomically, and firewalld changes permanent
 policies before a single validated reload, so intermediate state cannot drop
 the active SSH connection. Non-exclusive UFW updates stage a uniquely tagged

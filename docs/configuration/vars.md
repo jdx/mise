@@ -39,8 +39,8 @@ process environment or a later config file. Values marked `redact = true` are hi
 output.
 
 See the [`env._` directive reference](/environments/#env-directives) for the available file, source,
-and plugin-provided directive forms. These directives populate `vars` instead of exporting the
-values as environment variables when used under `[vars]`.
+and plugin-provided directive forms. When used under `[vars]`, these directives populate `vars`
+instead of exporting the values as environment variables.
 
 ## Configuration hierarchy
 

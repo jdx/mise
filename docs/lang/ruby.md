@@ -2,9 +2,9 @@
 
 Like `rvm`, `rbenv`, or `asdf`, `mise` can manage multiple versions of [Ruby](https://www.ruby-lang.org/) on the same system.
 
-> The following are instructions for using the ruby mise core plugin. This is used when there isn't a
-> git plugin installed named "ruby". If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby)
-> then use `mise plugins install ruby GIT_URL`.
+> The following are instructions for using the ruby mise core plugin. It is used when no
+> git plugin named "ruby" is installed. If you want to use [asdf-ruby](https://github.com/asdf-vm/asdf-ruby) instead,
+> run `mise plugins install ruby GIT_URL`.
 
 The code for this is inside the mise repository at
 [`./src/plugins/core/ruby.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/ruby.rs).
@@ -70,7 +70,7 @@ version listings are left unfiltered.
 ### Precompiled build revisions
 
 Precompiled Ruby binaries are released from `jdx/ruby`. Sometimes the binary for a Ruby version is rebuilt without changing the Ruby version itself. Those rebuilds use build revision release tags like `3.3.11-1` or `3.3.11-2`.
-Mise uses these build revision tags for `jdx/ruby` precompiled binaries instead
+mise uses these build revision tags for `jdx/ruby` precompiled binaries instead
 of the floating base release tag.
 
 Rebuilds are for changes to the portable binary package, not changes to Ruby's
@@ -85,7 +85,7 @@ reasons such as:
 
 This list is not exhaustive.
 
-Mise still treats the Ruby version as `3.3.11`. Without a `mise.lock`, mise
+mise still treats the Ruby version as `3.3.11`. Without a `mise.lock`, mise
 uses the latest available precompiled build revision when resolving the install.
 That means reinstalling the same Ruby version later may pick up a newer rebuild
 if one was published.
@@ -127,7 +127,7 @@ To require precompiled binaries and never compile, see
 You can also use a custom source for precompiled binaries by setting `ruby.precompiled_url` to
 either a GitHub repo (e.g., `owner/repo`) or a full URL template.
 
-You can also install a specific ruby flavour. To get the latest version from a flavour, just use the
+You can also install a specific ruby flavour. To get the latest version of a flavour, use the
 flavour prefix.
 
 ```sh
@@ -185,7 +185,7 @@ ruby = { version = "latest", install_env = { RUBY_CONFIGURE_OPTS = "--disable-in
 ## `.ruby-version` and `Gemfile` support
 
 mise uses a `mise.toml` or `.tool-versions` file for auto-switching between software versions.
-However, it can also read ruby-specific version files `.ruby-version` or `Gemfile`
+However, it can also read the ruby-specific version files `.ruby-version` and `Gemfile`
 (if it specifies a ruby version).
 
 Create a `.ruby-version` file for the current version of ruby:
@@ -204,7 +204,7 @@ See [idiomatic version files](/configuration.html#idiomatic-version-files) for m
 
 ## Manually updating ruby-build
 
-ruby-build should update daily, however if you find versions do not yet exist you can force an
+ruby-build should update daily. However, if versions you expect are missing, you can force an
 update:
 
 ```bash
@@ -215,8 +215,8 @@ mise ls-remote ruby
 ## Settings
 
 `ruby-build` already has a
-[handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration),
-in additional to that mise has a few extra settings:
+[handful of settings](https://github.com/rbenv/ruby-build?tab=readme-ov-file#custom-build-configuration);
+in addition, mise has a few extra settings:
 
 To pass options to `ruby-build` itself, use `ruby.ruby_build_cli_opts`. For example, `--keep`
 preserves the source tree after installation; set `RUBY_BUILD_BUILD_PATH` to choose where it is
@@ -230,8 +230,8 @@ ruby_build_cli_opts = "--keep"
 RUBY_BUILD_BUILD_PATH = "{{ config_root }}/.ruby-build"
 ```
 
-Configure arguments such as `--enable-yjit` belong in `ruby.ruby_build_opts`. mise passes those
-after ruby-build's `--` separator:
+Arguments for Ruby's configure script, such as `--enable-yjit`, belong in `ruby.ruby_build_opts`.
+mise passes those after ruby-build's `--` separator:
 
 ```toml
 [settings.ruby]

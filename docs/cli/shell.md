@@ -6,7 +6,7 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/shell.rs`](https://github.com/jdx/mise/blob/main/src/cli/shell.rs)
 
-Sets a tool version for the current session.
+Set a tool version for the current shell session
 
 Only works in a session where mise is already activated.
 
@@ -19,11 +19,11 @@ such as `MISE_NODE_VERSION=20` which is "eval"ed as a shell function created by 
 ## Flags
 - **`-j --jobs <JOBS>`** — Number of jobs to run in parallel
   Values below 1 are treated as 1
-  [default: 4]
+  Defaults to the `jobs` setting
 
   **Environment Variable:** `MISE_JOBS`
-- **`-u --unset`** — Removes a previously set version
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+- **`-u --unset`** — Remove a previously set version
+- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`-h --help`** — Print help
 
 Examples:

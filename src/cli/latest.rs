@@ -7,7 +7,7 @@ use crate::install_before::resolve_cli_minimum_release_age;
 use crate::toolset::{ToolRequest, resolve_sub_base};
 use crate::ui::multi_progress_report::MultiProgressReport;
 
-/// Gets the latest available version for a plugin
+/// Get the latest available version of a tool
 ///
 /// Supports prefixes such as `node@20` to get the latest version of node 20.
 #[derive(Debug, usage_rs::Args)]

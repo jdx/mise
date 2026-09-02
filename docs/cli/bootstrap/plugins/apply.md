@@ -5,6 +5,8 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Install package manager plugins declared in `[bootstrap.plugins]`
+
 ## Flags
 - **`-n --dry-run`** — Print what would happen without installing plugins
 - **`-h --help`** — Print help

@@ -4,19 +4,19 @@ outline: [1, 3]
 
 # mise Architecture
 
-This document provides a comprehensive overview of mise's architecture, designed primarily for contributors and those interested in understanding how mise works internally.
+This document gives an overview of mise's architecture. It is aimed at contributors and anyone interested in how mise works internally.
 
 For practical development guidance, see the [Contributing Guide](contributing.md).
 
 ## System Overview
 
-mise is a Rust-based tool with a modular architecture centered around three core concepts:
+mise is a Rust-based tool with a modular architecture centered on three core concepts:
 
 1. **Tool Version Management** - Installing and managing different versions of [development tools](dev-tools/)
 2. **Environment Management** - Setting up [environment variables](environments/) and project contexts
 3. **Task Running** - Executing [project tasks](tasks/) with dependency management
 
-These three pillars work together to provide a unified development environment management experience.
+These three pillars work together to provide unified development environment management.
 
 ## Core Architecture Components
 
@@ -25,7 +25,7 @@ These three pillars work together to provide a unified development environment m
 The CLI layer provides the user interface and delegates to core functionality:
 
 - **Modular Commands**: Each command is a separate module ([`install.rs`](https://github.com/jdx/mise/blob/main/src/cli/install.rs), [`use.rs`](https://github.com/jdx/mise/blob/main/src/cli/use.rs), [`run.rs`](https://github.com/jdx/mise/blob/main/src/cli/run.rs), etc.)
-- **Argument Parsing**: Leverages [`clap`](https://docs.rs/clap) for robust CLI parsing and validation
+- **Argument Parsing**: Uses [`clap`](https://docs.rs/clap) for CLI parsing and validation
 - **Async Command Execution**: All commands support concurrent operations
 - **Unified Error Handling**: Consistent error reporting across all commands
 
@@ -39,7 +39,7 @@ The CLI layer provides the user interface and delegates to core functionality:
 
 ### Backend System ([`src/backend/`](https://github.com/jdx/mise/tree/main/src/backend/))
 
-The backend system is mise's core abstraction for tool management, implementing a trait-based architecture:
+The backend system is mise's core abstraction for tool management, built on a trait-based architecture:
 
 ```rust
 pub trait Backend: Debug + Send + Sync {
@@ -98,14 +98,14 @@ Coordinates tool resolution, installation, and environment setup:
 
 1. **Configuration Parsing**: Extract tool requirements from config files
 2. **Version Resolution**: Resolve version specifications (`latest`, `prefix:1.2`, `sub-1:latest`, etc.) to concrete versions
-3. **Backend Selection**: Choose appropriate backend for each tool
+3. **Backend Selection**: Choose the appropriate backend for each tool
 4. **Dependency Analysis**: Resolve tool dependencies (e.g., npm requires Node.js)
 5. **Installation Coordination**: Install missing tools in dependency order
 6. **Environment Configuration**: Set up PATH and environment variables
 
 ### Task System ([`src/task/`](https://github.com/jdx/mise/tree/main/src/task/))
 
-Sophisticated task execution with dependency graph management:
+Task execution with dependency graph management:
 
 **Architecture Components:**
 
@@ -122,7 +122,7 @@ Sophisticated task execution with dependency graph management:
 
 **Dependency Resolution:**
 
-- Uses directed acyclic graph (DAG) for dependency modeling
+- Uses a directed acyclic graph (DAG) to model dependencies
 - Supports multiple dependency types: `depends`, `depends_post`, `wait_for`
 - Parallel execution within dependency constraints
 - Circular dependency detection and prevention
@@ -169,6 +169,7 @@ pub trait Shell: Display {
 ```
 
 **Supported Shells:** See [`mise activate`](cli/activate.md) documentation for the complete list
+
 **Shell Abstractions:** Environment variable setting, PATH modification, command execution
 
 ### Environment Management ([`src/env*.rs`](https://github.com/jdx/mise/tree/main/src/))
@@ -177,7 +178,7 @@ Helpers for working with environment variables:
 
 - `EnvDiff` - Tracks and applies environment changes
 - `EnvDirective` - Configuration-based environment variable management
-- `PathEnv` - Intelligent PATH manipulation with precedence rules
+- `PathEnv` - PATH manipulation with precedence rules
 - Context-aware resolution with config layering
 
 For environment setup and configuration, see [Environment Documentation](environments/).
@@ -193,16 +194,16 @@ Generic caching backed by files, using msgpack serialization with zstd compressi
 
 ## Test Architecture
 
-mise employs a multi-layered testing strategy that combines different testing approaches for thorough validation across its complex feature set.
+mise uses a multi-layered testing strategy that combines several approaches for thorough validation across its feature set.
 
 **Testing Strategy Overview:**
 
 1. **Unit Tests** - Rust `#[test]` functions embedded in source files
 2. **End-to-End (E2E) Tests** - Bash-based integration tests with complete environment isolation
-3. **Snapshot Tests** - Using `insta` crate for complex output validation
+3. **Snapshot Tests** - `insta`-based tests for complex output validation
 
 ::: tip Testing Philosophy
-**Most tests in mise are end-to-end tests, and this is generally the preferred approach** for new functionality. E2E tests provide thorough validation of real-world usage scenarios and catch integration issues that unit tests might miss. However, **E2E tests can be challenging to run locally** due to environment dependencies and setup complexity. For development and CI purposes, it's often easier to run tests on GitHub Actions where the environment is consistent and properly configured.
+**Most tests in mise are end-to-end tests, and this is generally the preferred approach** for new functionality. E2E tests validate real-world usage and catch integration issues that unit tests might miss. However, **E2E tests can be challenging to run locally** because of environment dependencies and setup complexity. It is often easier to run them on GitHub Actions, where the environment is consistent and properly configured.
 
 See the [Contributing Guide](contributing.md#testing) for detailed testing setup and guidelines.
 :::
@@ -214,7 +215,7 @@ See the [Contributing Guide](contributing.md#testing) for detailed testing setup
 - **Location**: Embedded within source files using `mod tests` blocks
 - **Test Runner**: Standard Rust `cargo test`
 - **Dependencies**: `pretty_assertions`, `insta`, `test-log`, `ctor`
-- **Coverage**: ~50+ test modules covering all major functionality
+- **Coverage**: Over 50 test modules covering all major functionality
 
 ```rust
 mod tests {
@@ -283,7 +284,7 @@ setup_isolated_env() {
 
 **Rich Assertion Framework:**
 
-The [`assert.sh`](https://github.com/jdx/mise/blob/main/e2e/assert.sh) provides rich test utilities:
+[`assert.sh`](https://github.com/jdx/mise/blob/main/e2e/assert.sh) provides rich test utilities:
 
 ```bash
 # Basic assertions
@@ -328,7 +329,7 @@ Describe "go" {
 
 **Implementation:**
 
-- **Crate**: Uses `insta` for snapshot testing with 11 snapshot files
+- **Crate**: Uses `insta` for snapshot testing
 - **Format**: Stores expected outputs as `.snap` files
 - **Coverage**: Complex outputs like directory listings, configuration parsing, environment diffs
 
@@ -368,9 +369,9 @@ test/
 
 **Developer Experience Features:**
 
-- **Environment Safety**: Complete isolation prevents tests from affecting user's actual mise installation
+- **Environment Safety**: Complete isolation prevents tests from affecting the user's actual mise installation
 - **Parallel Execution**: E2E tests support parallel execution with proper isolation
-- **Rich Reporting**: Detailed test timing, environment preservation on failure for debugging
+- **Rich Reporting**: Detailed test timing and environment preservation on failure for debugging
 - **Cross-Platform Validation**: Automated testing on multiple operating systems
 
 **Running Tests:**
@@ -380,10 +381,10 @@ test/
 cargo test
 
 # Run all E2E tests
-./e2e/run_all_tests
+mise run test:e2e
 
 # Run specific E2E test
-./e2e/run_test test_install
+mise run test:e2e '^test_install$'
 
 # Run with coverage
 ./xtasks/test/coverage
@@ -394,7 +395,7 @@ cargo test
 
 For complete development setup and testing procedures, see the [Contributing Guide](contributing.md).
 
-This robust test architecture ensures mise's reliability across its complex feature set, including tool management, environment configuration, task execution, and multi-platform support.
+This test architecture ensures mise's reliability across tool management, environment configuration, task execution, and multi-platform support.
 
 ## Related Architecture Documentation
 

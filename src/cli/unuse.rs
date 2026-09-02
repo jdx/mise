@@ -10,7 +10,7 @@ use eyre::Result;
 use itertools::Itertools;
 use path_absolutize::Absolutize;
 
-/// Removes installed tool versions from mise.toml
+/// Remove tool versions from mise.toml and uninstall them
 ///
 /// By default, this will use the `mise.toml` file that has the tool defined.
 /// If multiple config files exist (e.g., both `mise.toml` and `mise.local.toml`),
@@ -22,12 +22,12 @@ use path_absolutize::Absolutize;
 ///   - If `--path` is set, it will use the config file at the given path.
 ///   - If `--env` is set, it will use `mise.<env>.toml`.
 ///   - If [`MISE_DEFAULT_CONFIG_FILENAME`](https://mise.jdx.dev/configuration.html#mise_default_config_filename) is set, it will use that instead.
-///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will the first from that list.
+///   - If `MISE_OVERRIDE_CONFIG_FILENAMES` is set, it will use the first from that list.
 ///   - Otherwise just "mise.toml" or global config if cwd is home directory.
 ///
 /// Use [`MISE_GLOBAL_CONFIG_FILE`](https://mise.jdx.dev/configuration.html#mise_global_config_file) to choose a different global config path.
 ///
-/// Will also prune the installed version if no other configurations are using it.
+/// The installed version is also removed unless another config still uses it or `--no-prune` is passed.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_aliases = ["rm", "remove"], after_long_help = AFTER_LONG_HELP)]
 pub(crate) struct Unuse {
@@ -188,16 +188,16 @@ impl Unuse {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # will uninstall specific version
+    # remove node@18.0.0 from mise.toml and uninstall it
     $ <bold>mise unuse node@18.0.0</bold>
 
-    # will uninstall specific version from global config
+    # remove it from the global config instead
     $ <bold>mise unuse -g node@18.0.0</bold>
 
-    # will uninstall specific version from .mise.local.toml
+    # remove node@20 from .mise.local.toml
     $ <bold>mise unuse --env local node@20</bold>
 
-    # will uninstall specific version from .mise.staging.toml
+    # remove node@20 from .mise.staging.toml
     $ <bold>mise unuse --env staging node@20</bold>
 "#
 );

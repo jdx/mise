@@ -5,7 +5,7 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/tool.rs`](https://github.com/jdx/mise/blob/main/src/cli/tool.rs)
 
-Gets information about a tool
+Show information about a tool
 
 ## Arguments
 - **`<TOOL>`** — Tool name to get information about

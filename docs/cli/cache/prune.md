@@ -6,7 +6,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/cache/prune.rs`](https://github.com/jdx/mise/blob/main/src/cli/cache/prune.rs)
 
-Removes stale mise cache files
+Remove stale cache files
 
 By default, this command will remove files that have not been accessed in 30 days.
 Change this with the MISE_CACHE_PRUNE_AGE environment variable.
@@ -16,5 +16,5 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 
 ## Flags
 - **`-v --verbose`** — Show pruned files
-- **`--dry-run`** — Just show what would be pruned
+- **`--dry-run`** — Show what would be pruned without deleting anything
 - **`-h --help`** — Print help

@@ -6,7 +6,7 @@ use crate::config::config_file::ConfigFile;
 use crate::config::config_file::mise_toml::MiseToml;
 use crate::config::{ConfigPathOptions, resolve_target_config_path};
 
-/// Remove environment variable(s) from the config file.
+/// Remove environment variable(s) from the config file
 ///
 /// By default, this command modifies `mise.toml` in the current directory.
 #[derive(Debug, usage_rs::Args)]

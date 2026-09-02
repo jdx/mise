@@ -1,11 +1,10 @@
 # Node
 
-Like `nvm`, (or `volta`, `fnm` or `asdf`...), `mise` can manage multiple versions of Node.js on the same system.
+Like `nvm` (or `volta`, `fnm`, or `asdf`), `mise` can manage multiple versions of Node.js on the same system.
 
-> The following are instructions for using the node mise core plugin. This is used when there isn't a
-> git plugin installed named "node".
-> If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs)
-> then run `mise plugins install node https://github.com/asdf-vm/asdf-nodejs`
+> The following are instructions for using the node mise core plugin. It is used when no
+> git plugin named "node" is installed. If you want to use [asdf-nodejs](https://github.com/asdf-vm/asdf-nodejs) instead,
+> run `mise plugins install node https://github.com/asdf-vm/asdf-nodejs`.
 
 The code for this is inside the mise repository at [`./src/plugins/core/node.rs`](https://github.com/jdx/mise/blob/main/src/plugins/core/node.rs).
 
@@ -18,7 +17,24 @@ default:
 mise use -g node@26
 ```
 
-See the [Node.JS Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
+See the [Node.js Cookbook](/mise-cookbook/nodejs.html) for common tasks and examples.
+
+## Run projects with aube
+
+[aube](https://aube.jdx.dev/) is a fast Node.js package manager with strong supply-chain security defaults. It reads
+and writes existing `package-lock.json`, `pnpm-lock.yaml`, and `yarn.lock` files in place, so a project can try it
+without a lockfile migration. Its `aubr` command installs stale dependencies automatically before running a package
+script and skips the install when dependencies are already current.
+
+Install it with mise, then run an existing package script:
+
+```sh
+mise use aube
+aubr test
+```
+
+See [aube's security overview](https://aube.jdx.dev/security) for its release-cooling, trust-policy, malicious-package,
+and lifecycle-script protections.
 
 ## Tool Options
 
@@ -68,7 +84,7 @@ always return the version specified in `mise.toml`.
 
 By default, mise uses a `mise.toml` file for auto-switching between software versions.
 
-It also supports `.tool-versions` file to specify versions for ASDF compatibility. Additionally, `.nvmrc`, `.node-version`, and the `devEngines` field in `package.json` are supported but require explicit enabling (see tip below).
+It also supports `.tool-versions` files for asdf compatibility. `.nvmrc`, `.node-version`, and the `devEngines` field in `package.json` are also supported but must be explicitly enabled (see the tip below).
 
 This makes it a drop-in replacement for `nvm`. See [idiomatic version files](/configuration.html#idiomatic-version-files) for more information.
 
@@ -118,7 +134,7 @@ node = { version = "22", postinstall = "npm install -g typescript" }
 
 :::
 
-mise-node can automatically install a default set of npm packages right after installing a node
+mise can automatically install a default set of npm packages right after installing a node
 version. To use this legacy feature, provide a `$HOME/.default-npm-packages` file that lists one
 package per line, for example:
 
@@ -128,11 +144,11 @@ request
 express
 ```
 
-You can specify a non-default location of this file by setting a `MISE_NODE_DEFAULT_PACKAGES_FILE` variable.
+You can specify a different location for this file with the `MISE_NODE_DEFAULT_PACKAGES_FILE` variable.
 
 ## "nodejs" -> "node" Alias
 
-You cannot install/use a plugin named "nodejs". If you attempt this, mise will just rename it to
+You cannot install/use a plugin named "nodejs". If you try, mise renames it to
 "node". See the [FAQ](/faq.html#what-is-the-difference-between-nodejs-and-node-or-golang-and-go)
 for an explanation.
 
@@ -148,19 +164,19 @@ mise use node@latest
 
 ## Unofficial Builds
 
-Nodejs.org offers a set of [unofficial builds](https://unofficial-builds.nodejs.org/) which are
-compatible with some platforms that are not supported by the official binaries. These are a nice alternative to
-compiling from source for these platforms.
+Nodejs.org offers a set of [unofficial builds](https://unofficial-builds.nodejs.org/) for
+some platforms that the official binaries do not support. These are a nice alternative to
+compiling from source on those platforms.
 
-To use, first set the mirror url to point to the unofficial builds:
+To use them, first point the mirror URL at the unofficial builds:
 
 ```sh
 mise settings node.mirror_url=https://unofficial-builds.nodejs.org/download/release/
 ```
 
-If your goal is to simply support an alternative arch/os like linux-loong64 or linux-armv6l, this is
+If you only need to support an alternative arch/OS like linux-loong64 or linux-armv6l, this is
 all that is required. Node also provides flavors such as musl or glibc-217 (an older glibc version
-than what the official binaries are built with).
+than the official binaries are built with).
 
 To use these, set `node.flavor`:
 

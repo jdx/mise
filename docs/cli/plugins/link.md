@@ -6,7 +6,7 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/plugins/link.rs`](https://github.com/jdx/mise/blob/main/src/cli/plugins/link.rs)
 
-Symlinks a plugin into mise
+Symlink a plugin into mise
 
 This is used for developing a plugin.
 

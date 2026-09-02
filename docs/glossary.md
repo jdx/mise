@@ -11,7 +11,7 @@ This glossary defines key terms and concepts used throughout the mise documentat
 : A package manager or ecosystem that mise uses to install and manage tools. Each backend knows how to fetch, install, and manage tools from its respective source. See [Backends](#backends) below and [Backend Architecture](/dev-tools/backend_architecture) for details.
 
 **Core Tools**
-: Built-in tool implementations written in Rust that ship with mise. These provide first-class support for popular languages like Node.js, Python, Ruby, Go, and others. See [Core tools](/core-tools) for the full list.
+: Built-in tool implementations written in Rust that ship with mise. These provide first-class support for popular languages such as Node.js, Python, Ruby, and Go. See [Core tools](/core-tools) for the full list.
 
 **mise.toml**
 : The primary configuration file for mise projects. Contains tool versions, environment variables, tasks, and hooks. See [Configuration](/configuration) for the full specification.
@@ -29,7 +29,7 @@ This glossary defines key terms and concepts used throughout the mise documentat
 : A development tool or runtime that mise can install and manage, such as `node`, `python`, `terraform`, or `jq`.
 
 **Tool Request**
-: A user's specification for a tool version, which may be fuzzy or use aliases. Examples: `node@18`, `python@latest`, `go@1.21`. These get resolved to concrete Tool Versions.
+: A user's specification for a tool version, which may be fuzzy or use aliases. Examples: `node@18`, `python@latest`, `go@1.21`. These are resolved to concrete Tool Versions.
 
 **Tool Version**
 : A concrete, resolved version of a tool. For example, `node@18` (tool request) might resolve to `node@18.19.0` (tool version).
@@ -42,7 +42,7 @@ This glossary defines key terms and concepts used throughout the mise documentat
 mise supports multiple backends for installing tools from different sources:
 
 **aqua**
-: Backend using the [aqua-proj](https://aquaproj.github.io/) registry. Supports SLSA provenance verification and provides access to thousands of tools. See [aqua backend](/dev-tools/backends/aqua).
+: Backend using the [aqua](https://aquaproj.github.io/) registry. Supports SLSA provenance verification and provides access to thousands of tools. See [aqua backend](/dev-tools/backends/aqua).
 
 **asdf**
 : Legacy backend compatible with [asdf](https://asdf-vm.com/) shell-script plugins. Linux and macOS only. Slower than native backends but provides access to the asdf plugin ecosystem. See [asdf backend](/dev-tools/backends/asdf).
@@ -81,7 +81,7 @@ mise supports multiple backends for installing tools from different sources:
 : Installs tools via Swift Package Manager. See [spm backend](/dev-tools/backends/spm).
 
 **ubi**
-: Universal Binary Installer for tools distributed as single binaries. See [ubi backend](/dev-tools/backends/ubi).
+: Universal Binary Installer for tools distributed as single binaries (deprecated; use the `github` or `aqua` backend instead). See [ubi backend](/dev-tools/backends/ubi).
 
 **vfox**
 : Backend compatible with [VersionFox](https://vfox.dev/) plugins. See [vfox backend](/dev-tools/backends/vfox).
@@ -103,13 +103,13 @@ mise supports multiple backends for installing tools from different sources:
 ## Configuration
 
 **config_root**
-: The canonical project root directory that mise uses when resolving relative paths in configuration files. Set via the `MISE_PROJECT_ROOT` environment variable or detected automatically.
+: The canonical project root directory that mise uses when resolving relative paths in configuration files. Detected automatically from the location of the configuration file and exposed to tasks and hooks as the `MISE_PROJECT_ROOT` environment variable.
 
 **Configuration Environments**
 : Environment-specific configuration files like `mise.dev.toml` or `mise.prod.toml`, activated via the `MISE_ENV` environment variable. See [Configuration Environments](/configuration/environments).
 
 **Configuration Hierarchy**
-: The system where mise.toml files at different levels (system, global, project) are merged together, with files closer to the current directory taking precedence over parent directories.
+: The system where mise.toml files at different levels (system, global, project) are merged, with files closer to the current directory taking precedence over those in parent directories.
 
 **Settings**
 : Global mise configuration options stored in `~/.config/mise/settings.toml` that define behavior across all projects. See [Settings](/configuration/settings).
@@ -135,7 +135,7 @@ mise supports multiple backends for installing tools from different sources:
 ## Hooks
 
 **Hooks**
-: Scripts that automatically execute during mise activation at specific events. An experimental feature. See [Hooks](/hooks).
+: Scripts that run automatically at specific events during mise activation. An experimental feature. See [Hooks](/hooks).
 
 **cd hook**
 : Runs whenever you change directories while mise is active.

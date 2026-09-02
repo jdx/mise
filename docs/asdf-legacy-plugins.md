@@ -164,7 +164,7 @@ make install PREFIX="$install_path"
 
 ### bin/exec-env
 
-Set environment variables when executing tools:
+Sets environment variables when the tool runs:
 
 ```bash
 #!/usr/bin/env bash
@@ -176,7 +176,7 @@ export PATH="$ASDF_INSTALL_PATH/bin:$PATH"
 
 ### bin/latest-stable
 
-Get the latest stable version:
+Gets the latest stable version:
 
 ```bash
 #!/usr/bin/env bash
@@ -187,7 +187,7 @@ curl -s https://api.github.com/repos/owner/repo/releases/latest |
 
 ### bin/list-legacy-filenames
 
-List legacy version file names:
+Lists legacy version file names:
 
 ```bash
 #!/usr/bin/env bash
@@ -197,7 +197,7 @@ echo ".tool-versions"
 
 ### bin/parse-legacy-file
 
-Parse legacy version files:
+Parses a legacy version file:
 
 ```bash
 #!/usr/bin/env bash
@@ -274,7 +274,7 @@ parse_version() {
 mise plugin add my-plugin /path/to/local/plugin
 
 # Test basic functionality
-mise list-all my-plugin
+mise ls-remote my-plugin
 mise install my-plugin@1.0.0
 mise which my-plugin
 ```

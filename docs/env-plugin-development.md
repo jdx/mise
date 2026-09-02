@@ -1,12 +1,12 @@
 # Environment Plugin Development
 
-Environment plugins are a special type of mise plugin that provide environment variables and PATH modifications without managing tool versions. They're ideal for integrating external services, managing secrets, and standardizing environment configuration across teams.
+Environment plugins are a special type of mise plugin that provides environment variables and PATH modifications without managing tool versions. They're ideal for integrating external services, managing secrets, and standardizing environment configuration across teams.
 
 Unlike [tool plugins](tool-plugin-development.md) and [backend plugins](backend-plugin-development.md), environment plugins:
 
 - Don't implement version management (`Available`, `PreInstall`, `PostInstall` hooks)
 - Only implement environment hooks (`MiseEnv`, `MisePath`)
-- Are configured via `env._.<plugin-name>` syntax
+- Are configured with the `env._.<plugin-name>` syntax
 - Can accept configuration options as TOML values
 - Execute on every environment activation
 
@@ -31,7 +31,7 @@ cd my-env-plugin
 
 ## Plugin Structure
 
-Environment plugins are implemented in Lua (version 5.1 at the moment). A minimal environment plugin has this structure:
+Environment plugins are implemented in Lua (currently version 5.1). A minimal environment plugin has this structure:
 
 ```
 my-env-plugin/
@@ -99,7 +99,7 @@ end
 When `cmd.exec()` is called from `MiseEnv` or `MisePath` hooks, it inherits the mise-constructed environment — including `_.path` entries and environment variables from preceding directives. If the module directive is configured with `tools = true` (e.g., `_.my-plugin = { tools = true }`), tool installation bin paths are also included, so mise-managed tools are directly callable (e.g., `cmd.exec("node --version")`).
 :::
 
-**Return value**: Either a simple array of env keys, or a table with caching metadata.
+**Return value**: Either a simple array of env keys or a table with caching metadata.
 
 Simple format - array of tables, each with:
 
@@ -130,7 +130,7 @@ function PLUGIN:MiseEnv(ctx)
 end
 ```
 
-When `cacheable = true`, mise will cache the environment variables and only re-execute the plugin when:
+When `cacheable = true`, mise caches the environment variables and only re-executes the plugin when:
 
 - Any file in `watch_files` changes
 - The mise configuration changes
@@ -149,7 +149,7 @@ env_cache = true
 
 ### hooks/mise_path.lua
 
-The `MisePath` hook returns directories to add to PATH (optional):
+The optional `MisePath` hook returns directories to add to PATH:
 
 ```lua
 function PLUGIN:MisePath(ctx)
@@ -338,11 +338,11 @@ end
 This is preferred over manual caching because:
 
 - mise handles cache invalidation automatically
-- Cache is encrypted with session-scoped keys
-- Integrates with `mise cache clear` and `mise cache prune`
-- Respects the `env_cache_ttl` setting
+- The cache is encrypted with session-scoped keys
+- It integrates with `mise cache clear` and `mise cache prune`
+- It respects the `env_cache_ttl` setting
 
-Note: Users must enable `env_cache = true` in their settings for caching to work.
+Users must enable `env_cache = true` in their settings for caching to work.
 
 ### 5. Support Multiple Environments
 
@@ -393,7 +393,7 @@ MISE_DEBUG=1 mise env
 
 ### Common Issues
 
-**Plugin not found**: Make sure you've installed/linked the plugin:
+**Plugin not found**: Make sure you've installed or linked the plugin:
 
 ```bash
 mise plugin ls
@@ -423,14 +423,14 @@ Once your environment plugin is ready:
 1. **Create a GitHub repository** for your plugin
 2. **Add a README** with usage instructions
 3. **Tag releases** following semantic versioning
-4. (Optional) share the repository URL so others can install it directly with `mise plugin install`.
+4. **Share the repository URL** (optional) so others can install it directly with `mise plugin install`
 
 See [Plugin Publishing](/plugin-publishing.html) for detailed instructions.
 
 ## Examples
 
-- [mise-env-sample](https://github.com/jdx/mise-env-plugin-template) - Simple example showing basic usage
-- The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only—add your environment plugin there (or share it with the community) so others can learn from more examples
+- [mise-env-plugin-template](https://github.com/jdx/mise-env-plugin-template) - Simple example showing basic usage
+- The [mise-plugins](https://github.com/mise-plugins) organization currently hosts tool plugins only. Add your environment plugin there (or share it with the community) so others can learn from more examples
 
 ## Migration from Tool Plugins
 

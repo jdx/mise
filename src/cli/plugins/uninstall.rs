@@ -6,7 +6,7 @@ use crate::ui::multi_progress_report::MultiProgressReport;
 use crate::ui::style;
 use crate::{backend, plugins};
 
-/// Removes a plugin
+/// Remove a plugin
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, visible_aliases = ["remove", "rm"], after_long_help = AFTER_LONG_HELP)]
 pub(super) struct PluginsUninstall {

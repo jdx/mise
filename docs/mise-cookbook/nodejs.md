@@ -4,19 +4,20 @@ Here are some tips on managing [Node.js](/lang/node.html) projects with mise.
 
 ## Getting started with Node.js
 
-To install Node.js, in a directory, you can use the following command:
+To install Node.js in a directory, run:
 
 ```shell
 mise use node
 ```
 
-This will install the latest version of Node.js and create a `mise.toml` file with the following content:
+This installs the latest version of Node.js and creates a `mise.toml` file with the following content:
 
 ```toml
+[tools]
 node = "latest"
 ```
 
-If you want to install Node.js globally instead (for example, node v26), you can use the following command:
+To install Node.js globally instead (for example, node v26), run:
 
 ```shell
 mise use -g node@26
@@ -24,7 +25,7 @@ mise use -g node@26
 
 ## Add node modules binaries to the PATH
 
-When installing Node.js packages specified in `package.json`, you typically need to use `npx` or the full path to the binary. For example:
+When you install Node.js packages listed in `package.json`, you typically need `npx` or the full path to run their binaries. For example:
 
 ```shell
 npm install --save eslint
@@ -32,7 +33,7 @@ eslint --version # doesn't work
 npx eslint --version # works
 ```
 
-Thanks to `mise`, you can add the node modules binaries to the `PATH`. This will make CLIs installed with npm available without `npx`.
+With `mise`, you can add the node modules binaries to the `PATH`, which makes CLIs installed with npm available without `npx`.
 
 ```toml [mise.toml]
 [env]

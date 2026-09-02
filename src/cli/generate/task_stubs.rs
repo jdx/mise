@@ -11,7 +11,7 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-/// Generates shims to run mise tasks
+/// Generate shims to run mise tasks
 ///
 /// By default, this will build shims like ./bin/<task>. These can be paired with `mise generate install-script`
 /// so contributors to a project can execute mise tasks without installing mise into their system.

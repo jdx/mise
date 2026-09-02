@@ -5,7 +5,7 @@
 - **Effect:** read-only
 - **Source code:** [`src/cli/latest.rs`](https://github.com/jdx/mise/blob/main/src/cli/latest.rs)
 
-Gets the latest available version for a plugin
+Get the latest available version of a tool
 
 Supports prefixes such as `node@20` to get the latest version of node 20.
 

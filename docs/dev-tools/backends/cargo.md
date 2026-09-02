@@ -1,7 +1,7 @@
 # Cargo Backend
 
-You may install packages directly from [Cargo Crates](https://crates.io/) even if there
-isn't an asdf plugin for it.
+You can install packages directly from [Cargo Crates](https://crates.io/) even if there
+isn't an asdf plugin for them.
 
 The code for this is inside the mise repository at [`./src/backend/cargo.rs`](https://github.com/jdx/mise/blob/main/src/backend/cargo.rs).
 
@@ -42,7 +42,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ### Using Git
 
-You can install any package from a Git repository using the `mise` command. This allows you to
+You can also install a package from a Git repository. This lets you
 install a particular tag, branch, or commit revision:
 
 ```sh
@@ -56,7 +56,7 @@ mise use cargo:https://github.com/username/demo@branch:<branch_name>
 mise use cargo:https://github.com/username/demo@rev:<commit_hash>
 ```
 
-This will execute a `cargo install` command with the corresponding Git options.
+This runs `cargo install` with the corresponding Git options.
 
 ## Settings
 
@@ -100,7 +100,7 @@ For options that do not skip `cargo-binstall`, mise disables cargo-binstall's co
 runs `cargo install` itself only when cargo-binstall exits with code 94 to report that no prebuilt
 artifact is available.
 
-Mise records the effective `features`, `default-features`, `bin`, `crate`, and `locked` values with
+mise records the effective `features`, `default-features`, `bin`, `crate`, and `locked` values with
 each installed Cargo version. Changing any of these options reinstalls the same version instead of
 reusing a binary built or selected with different options. Feature names are normalized, so changing
 their order or switching between a string and an array does not trigger an unnecessary reinstall.
@@ -171,8 +171,8 @@ This option does not cause mise to skip `cargo-binstall` when applicable. Git in
 
 ### `locked`
 
-Use Cargo.lock (passes `cargo install --locked`) when building CLI. This is the default behavior,
-pass `false` to disable:
+Use Cargo.lock (passes `cargo install --locked`) when building the CLI. This is the default;
+pass `false` to disable it:
 
 ```toml
 [tools]

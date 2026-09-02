@@ -4,7 +4,7 @@
 > Remote build caching is experimental. This document defines protocol version 1 for mise task
 > artifact caching.
 
-The protocol is a secure, content-addressed cache protocol for task executions and their outputs. It
+The protocol provides a secure, content-addressed cache for task executions and their outputs. It
 does not expose mise's local cache directories, manifests, or archive formats. Local storage is an
 implementation detail and may use archives or packs without changing the remote protocol.
 
@@ -294,7 +294,7 @@ ASCII magic `MISEPK01`. The remainder is a stream of frames in request order:
 | Size      | unsigned big-endian 64-bit byte length      |
 | Content   | exactly `size` bytes                        |
 
-The server omits missing and unauthorized blobs and emits duplicate requests once. Clients reject
+The server omits missing and unauthorized blobs and emits duplicate requests only once. Clients reject
 unrequested or duplicate frames, stream each frame to bounded temporary storage, verify its full
 digest, and only then admit it to local CAS. Clients fall back to ordinary single-blob reads when
 the capability is absent, a digest exceeds the advertised pack limit, or an expected blob is

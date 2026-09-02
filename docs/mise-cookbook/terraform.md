@@ -4,10 +4,9 @@ Here are some tips on managing Terraform projects with mise.
 
 ## Managing `terraform`/`opentofu` Projects
 
-It is often necessary to have your terraform configuration in a `terraform/` subdirectory.
-This necessitates the use of syntax like `terraform -chdir=terraform plan` to use appropriate
-terraform command. The following config allows you to invoke all of them from `mise`, leveraging
-`mise` tasks.
+Terraform configuration often lives in a `terraform/` subdirectory, which means running
+commands like `terraform -chdir=terraform plan`. The following config lets you invoke all of
+them through `mise` tasks instead.
 
 ```toml [mise.toml]
 [tools]

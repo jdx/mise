@@ -13,10 +13,10 @@ pub(super) struct GithubAction {
     /// The task to run when the workflow is triggered
     #[usage(long, short, default = "ci")]
     task: String,
-    /// write to .github/workflows/$name.yml
+    /// Write to .github/workflows/$name.yml
     #[usage(long, short)]
     write: bool,
-    /// the name of the workflow to generate
+    /// The name of the workflow to generate
     #[usage(long, default = "ci")]
     name: String,
 }

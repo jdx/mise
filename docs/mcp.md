@@ -1,18 +1,18 @@
 # Model Context Protocol (MCP)
 
-The Model Context Protocol (MCP) is a standard protocol that enables AI assistants to interact with development tools and access project context. Mise provides an MCP server that allows AI assistants to query information about your development environment.
+The Model Context Protocol (MCP) is a standard protocol that enables AI assistants to interact with development tools and access project context. mise provides an MCP server that allows AI assistants to query information about your development environment.
 
 ## Overview
 
-When you run `mise mcp`, it starts a server that AI assistants can connect to and query information about your mise-managed development environment. The server communicates over stdin/stdout using JSON-RPC protocol.
+When you run `mise mcp`, it starts a server that AI assistants can connect to for information about your mise-managed development environment. The server communicates over stdin/stdout using the JSON-RPC protocol.
 
 ::: warning
-The MCP feature is experimental and requires enabling experimental features with `MISE_EXPERIMENTAL=1`.
+The MCP server is experimental and requires enabling experimental features with `MISE_EXPERIMENTAL=1`.
 :::
 
 ## Usage
 
-The MCP server is typically launched by AI assistants automatically, but you can also run it manually for testing:
+AI assistants typically launch the MCP server automatically, but you can also run it manually for testing:
 
 ```bash
 # Enable experimental features
@@ -63,7 +63,7 @@ The following tools are available for AI assistants to call:
 
 ### `install_tool`
 
-Install a specific tool version (not yet implemented)
+Install a specific tool version (not yet implemented).
 
 ### `run_task`
 
@@ -83,7 +83,7 @@ Execute a mise task with optional arguments.
 }
 ```
 
-When the AI assistant calls this tool, it will execute the specified task and return the output, including stdout, stderr, and the exit status.
+When an AI assistant calls this tool, mise executes the specified task and returns the output, including stdout, stderr, and the exit status.
 
 ## Integration with AI Assistants
 
@@ -109,7 +109,7 @@ To use mise with Claude Desktop, add the following to your Claude configuration 
 }
 ```
 
-After adding this configuration and restarting Claude Desktop, the assistant will be able to:
+After adding this configuration and restarting Claude Desktop, the assistant can:
 
 - Query your installed tools and versions
 - List available tasks in your project
@@ -132,11 +132,11 @@ When integrated with an AI assistant, you can ask questions like:
 - "What environment variables are set by mise?"
 - "Show me the mise configuration for this project"
 
-The AI assistant will query the MCP server to provide accurate, up-to-date information about your development environment and can execute tasks on your behalf.
+The AI assistant queries the MCP server for accurate, up-to-date information about your development environment and can execute tasks on your behalf.
 
 ## Technical Details
 
-The MCP server implementation can be found in [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs). It implements the ServerHandler trait from the rmcp crate to handle:
+The MCP server is implemented in [`src/cli/mcp.rs`](https://github.com/jdx/mise/blob/main/src/cli/mcp.rs). It implements the ServerHandler trait from the rmcp crate to handle:
 
 - Resource listing and reading
 - Tool invocation (task execution)

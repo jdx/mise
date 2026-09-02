@@ -47,7 +47,7 @@ cat mise.toml
 mise unset NODE_ENV
 ```
 
-Additionally, the [mise env [--json] [--dotenv]](/cli/env.html) command can be used to export the environment variables in various formats (including `PATH` and environment variables set by tools or plugins).
+You can also use the [mise env [--json] [--dotenv]](/cli/env.html) command to export environment variables in various formats (including `PATH` and environment variables set by tools or plugins).
 
 ## Using environment variables
 
@@ -66,7 +66,7 @@ mise use node@26
 mise set MY_VAR=123
 cat mise.toml
 # [tools]
-# node = '24'
+# node = '26'
 # [env]
 # MY_VAR = '123'
 mise exec -- node --eval 'console.log(process.env.MY_VAR)'
@@ -86,7 +86,7 @@ echo $NODE_ENV
 # production
 ```
 
-If you are using [`shims`](/dev-tools/shims.html), the environment variables will be available when using the shim:
+If you use [`shims`](/dev-tools/shims.html), the environment variables are available when you run a shim:
 
 ```shell
 mise set NODE_ENV=production
@@ -106,7 +106,7 @@ mise en
 
 ## Environment in tasks
 
-It is also possible to define environment inside a task
+You can also define environment variables inside a task:
 
 ```toml [mise.toml]
 [tasks.print]
@@ -210,8 +210,8 @@ task.output = "prefix"
 :::
 
 ::: danger
-Because mise may output sensitive values that could show up in CI logs you'll need to configure your CI setup
-to know which values are sensitive.
+Because mise may output sensitive values that could show up in CI logs, you'll need to tell your CI setup
+which values are sensitive.
 
 For example, when using GitHub Actions, you should use `::add-mask::` to prevent secrets from appearing in logs:
 
@@ -222,7 +222,7 @@ for value in $(mise env --redacted --values); do
 done
 ```
 
-Note: If you're using [mise-action](https://github.com/jdx/mise-action), it will automatically redact values marked with `redact = true` or matching patterns in the `redactions` array.
+If you're using [mise-action](https://github.com/jdx/mise-action), it automatically redacts values marked with `redact = true` or matching patterns in the `redactions` array.
 :::
 
 ## Required Variables
@@ -254,14 +254,14 @@ AWS_REGION = {
 }
 ```
 
-When a required variable is missing, mise will show the help text in the error message to assist users.
+When a required variable is missing, mise shows the help text in the error message.
 
 ### Required Variable Behavior
 
 When a variable is marked as `required = true`, mise validates that it is defined through one of these sources:
 
-1. **Pre-existing environment** - Variable was set before running mise
-2. **Later config file** - Variable is defined in a config file processed after the one declaring it as required
+1. **Pre-existing environment** - The variable was set before mise ran
+2. **Later config file** - The variable is defined in a config file processed after the one that declares it as required
 
 ```toml
 # In mise.toml
@@ -277,8 +277,8 @@ DATABASE_URL = "postgres://prod.example.com/db"  # This satisfies the requiremen
 
 ### Validation Behavior
 
-- **Regular commands** (like `mise env`): Fail with clear error messages when required variables are missing
-- **Shell activation** (`hook-env`): Warns about missing required variables but continues execution to avoid breaking shell setup
+- **Regular commands** (like `mise env`): Fail with a clear error message when required variables are missing
+- **Shell activation** (`hook-env`): Warn about missing required variables but continue, to avoid breaking shell setup
 
 ```bash
 # This will fail if DATABASE_URL is not pre-defined or in a later config
@@ -315,13 +315,13 @@ ENABLE_BETA_FEATURES = { required = true }
 
 ## `config_root`
 
-`config_root` is the canonical project root directory that mise uses when resolving relative paths inside configuration files. Generally, when you use relative paths in mise you're referring to this directory.
+`config_root` is the canonical project root directory that mise uses when resolving relative paths inside config files. Generally, relative paths in mise refer to this directory.
 
 - When your config lives at nested paths like `.config/mise/config.toml` or `.mise/config.toml`, `config_root` points to the project directory that contains those files (for example, `/path/to/project`).
-- When your config lives at the project root (for example, `mise.toml`), `config_root` is simply the current directory.
+- When your config lives at the project root (for example, `mise.toml`), `config_root` is the current directory.
 - Relative paths in environment directives are resolved against `config_root` so they behave consistently regardless of where the config file itself lives.
 
-Here's some example config files and their `config_root`:
+Here are some example config files and their `config_root`:
 
 | Config File                                 | `config_root` |
 | ------------------------------------------- | ------------- |
@@ -345,10 +345,9 @@ _.source = "scripts/env.sh"          # == "{{config_root}}/scripts/env.sh"
 
 ## `env._` directives
 
-`env._.*` define special behavior for setting environment variables. (e.g.: reading env vars
-from a file). Since nested environment variables do not make sense,
-we make use of this fact by creating a key named "\_" which is a
-TOML table for the configuration of these directives.
+`env._.*` directives define special behavior for setting environment variables (for example,
+reading env vars from a file). Since nested environment variables do not make sense,
+mise uses a key named "\_" as a TOML table that holds the configuration for these directives.
 
 ::: warning
 The `value` and `values` keys in built-in `file`, `path`, and `source` directive objects under
@@ -362,7 +361,7 @@ The legacy `env.mise.*` spelling is deprecated. Use `env._.*` instead. It will b
 
 ### `env._.file`
 
-In `mise.toml`: `env._.file` can be used to specify a [dotenv](https://dotenv.org) file to load.
+In `mise.toml`, use `env._.file` to specify a [dotenv](https://dotenv.org) file to load.
 
 ::: warning
 Top-level `env_file`, `dotenv`, and `env_path` are deprecated. Use `env._.file` and
@@ -376,8 +375,8 @@ _.file = '.env'
 
 ::: info
 Only dotenv-format files use [dotenvy](https://crates.io/crates/dotenvy) under the hood. If you have
-problems with dotenv parsing, you will likely need to post an issue there, not to mise since there is
-not much mise can do about the way that crate works. JSON, YAML, and TOML files use separate parsers.
+problems with dotenv parsing, report them there rather than to mise, since there is not much mise can
+do about how that crate works. JSON, YAML, and TOML files use separate parsers.
 :::
 
 The `env._.file` directive supports:
@@ -494,7 +493,7 @@ This **must** be a script that runs in bash as if it were executed like this:
 source ./script.sh
 ```
 
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
+The shebang will be **ignored**. See [discussion #6734](https://github.com/jdx/mise/discussions/6734) (archived issue #1448)
 for a potential alternative that would work with binaries or other script languages.
 :::
 
@@ -627,7 +626,7 @@ _.source = ["./script_1.sh", "./script_2.sh"]
 
 ## Templates
 
-Environment variable values can be templates, see [Templates](/templates) for details.
+Environment variable values can be templates; see [Templates](/templates) for details.
 
 ```toml
 [env]
@@ -644,7 +643,7 @@ MY_PROJ_LIB = "{{config_root}}/lib"
 LD_LIBRARY_PATH = "/some/path:{{env.MY_PROJ_LIB}}"
 ```
 
-Of course the ordering matters when doing this.
+Ordering matters when doing this.
 
 ## Shell-style variable expansion
 

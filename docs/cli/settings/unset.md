@@ -6,9 +6,9 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/settings/unset.rs`](https://github.com/jdx/mise/blob/main/src/cli/settings/unset.rs)
 
-Clears a setting
+Clear a setting
 
-This modifies the contents of ~/.config/mise/config.toml
+This modifies ~/.config/mise/config.toml by default, or the local config with `--local`.
 
 ## Arguments
 - **`<KEY>`** — The setting to remove

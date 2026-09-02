@@ -8,11 +8,11 @@ use crate::toml::dedup_toml_array;
 use eyre::bail;
 use std::path::PathBuf;
 
-/// Set the value of a setting in a mise.toml file
+/// Set a value in a mise.toml file
 #[derive(Debug, usage_rs::Args)]
 #[usage(after_long_help = AFTER_LONG_HELP, verbatim_doc_comment)]
 pub(super) struct ConfigSet {
-    /// The path of the config to display
+    /// Dotted key path to set, e.g. `tools.python`
     pub key: String,
 
     /// The value to set the key to (optional if provided as KEY=VALUE)
@@ -42,6 +42,7 @@ pub(super) struct ConfigSet {
     #[usage(long, conflicts = "append")]
     pub remove: bool,
 
+    /// TOML type to store the value as; inferred from the value by default
     #[usage(value_enum, short, long, default = "infer")]
     pub type_: TomlValueTypes,
 }

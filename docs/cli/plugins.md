@@ -9,8 +9,8 @@
 Manage plugins
 
 ## Flags
-- **`-c --core`** — The built-in plugins only
-  Normally these are not shown
+- **`-c --core`** — Only show built-in (core) plugins
+  These are hidden by default
 - **`-u --urls`** — Show the git url for each plugin
   e.g.: <https://github.com/mise-plugins/vfox-cmake.git>
 - **`--user`** — List installed plugins

@@ -24,8 +24,8 @@ invocation, and the active `-E` environments are forwarded to it, so files such
 as `mise.home.toml` and `mise.work.toml` can select different profiles. Existing
 checkouts must have the requested URL as their `origin`. They are reused as-is
 unless `--update` is passed, in which case mise runs a fast-forward-only pull
-before applying the bootstrap configuration. A missing checkout is only
-reported, not cloned, during `--dry-run`.
+before applying the bootstrap configuration. During `--dry-run`, a missing
+checkout is reported but not cloned.
 
 Use bootstrap for things that are needed before a project or workstation is
 ready, but that do not belong in `[tools]`: native libraries, Homebrew
@@ -68,7 +68,7 @@ resources need aggregate behavior.
 
 ## How it runs
 
-`mise bootstrap` runs these steps in order:
+`mise bootstrap` runs the steps below in order.
 
 Before making changes, mise resolves any required
 [`[bootstrap.secrets]`](/bootstrap/secrets.html) used by the files phase. This
@@ -251,8 +251,9 @@ mise bootstrap --dry-run
 
 For a structured resource plan, use `mise bootstrap plan`. The provisioning
 planner reports accounts, system packages, privileged files and directories,
-system services, firewall policy and rules, and Compose projects in dependency order. Other declarative
-bootstrap parts will join the same graph as they adopt the resource model.
+system services, firewall policy and rules, and Compose projects in dependency
+order. Other declarative bootstrap parts will join the same graph as they adopt
+the resource model.
 
 ```sh
 mise bootstrap plan
@@ -282,8 +283,9 @@ dotfiles phase to replace conflicting whole-file dotfile targets.
 ## Inspecting state
 
 Use `mise bootstrap status` to inspect the declarative bootstrap state in one
-place. It reports every declarative part — packages, repos, dotfiles, shell
-activation, macOS defaults, LaunchAgents, systemd units, and login shell —
+place. It reports every declarative part — secrets, accounts, files and
+directories, services, firewall, Compose projects, packages, repos, dotfiles,
+shell activation, macOS defaults, LaunchAgents, systemd units, and login shell —
 plus `[tools]` and any system dependencies that installed tools require:
 
 ```sh
@@ -304,9 +306,9 @@ mise bootstrap user status
 ```
 
 `mise bootstrap status --missing` checks the whole declarative bootstrap
-surface in one command. The narrower `mise bootstrap packages status
---missing` and `mise bootstrap dotfiles status --missing` commands are useful when you
-only want to check one part without installing anything.
+surface in one command. The narrower `mise bootstrap packages status --missing`
+and `mise bootstrap dotfiles status --missing` commands are useful when you only
+want to check one part without installing anything.
 
 ## What goes where
 

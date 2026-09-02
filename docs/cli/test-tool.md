@@ -4,7 +4,7 @@
 - **Usage:** `mise test-tool [FLAGS] [TOOLS]…`
 - **Source code:** [`src/cli/test_tool.rs`](https://github.com/jdx/mise/blob/main/src/cli/test_tool.rs)
 
-Test a tool installs and executes
+Test that a tool installs and runs
 
 ## Arguments
 - **`[TOOLS]…`** — Tool(s) to test
@@ -17,8 +17,8 @@ Test a tool installs and executes
 
   **Environment Variable:** `MISE_TEST_TOOL_JOBS`
 - **`--all-config`** — Test all tools specified in config files
-- **`--include-non-defined`** — Also test tools not defined in registry/, guessing how to test it
-- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal Implies --jobs=1
+- **`--include-non-defined`** — Also test tools not defined in registry/, guessing how to test them
+- **`--raw`** — Connect backend install command stdin/stdout/stderr directly to the terminal. Implies `--jobs=1`
 - **`-h --help`** — Print help
 
 Examples:

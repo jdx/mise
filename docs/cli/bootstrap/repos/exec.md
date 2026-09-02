@@ -4,6 +4,8 @@
 - **Usage:** `mise bootstrap repos exec [-c --continue-on-error] [-n --dry-run] [PATH]… <-- COMMAND>…`
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Run a command in each configured git repo
+
 ## Arguments
 - **`[PATH]…`** — Run only in matching configured or expanded paths
 - **`<-- COMMAND>…`** — Command and arguments to run in each repo

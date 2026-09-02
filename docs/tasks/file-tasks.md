@@ -1,6 +1,6 @@
 # File Tasks
 
-In addition to defining tasks through the configuration, they can also be defined as standalone script files in one of the following directories:
+In addition to defining tasks in config files, you can define them as standalone script files in one of the following directories:
 
 - `mise-tasks/:task_name`
 - `.mise-tasks/:task_name`
@@ -20,7 +20,7 @@ cargo build
 ```
 
 ::: tip Important
-Ensure that the file is executable, otherwise mise will not be able to detect it.
+Make sure the file is executable; otherwise mise cannot detect it.
 
 ```shell
 chmod +x mise-tasks/build
@@ -30,15 +30,15 @@ On Windows there is no permission bit to set, and `chmod` is not the answer ther
 [Windows](#windows) for what makes a file task detectable instead.
 :::
 
-Having the code in a bash file and not TOML helps make it work
-better in editors since they can do syntax highlighting and linting more easily.
+Keeping the code in a bash file rather than TOML works better in editors,
+which can then apply syntax highlighting and linting more easily.
 
-They also still work great for non-mise users—though
-of course they'll need to find a different way to install their dev tools the tasks might use.
+File tasks also work for non-mise users—though
+they'll need another way to install any dev tools the tasks use.
 
 ## Task Configuration
 
-All configuration options can be found here [task configuration](/tasks/task-configuration)
+All configuration options are listed in [task configuration](/tasks/task-configuration).
 You can provide additional configuration for file tasks by adding `#MISE` comments at the top of the file.
 
 ```bash
@@ -81,21 +81,21 @@ avoids the surrounding braces entirely:
 #MISE tools.python="3.11"
 ```
 
-Mise provides file tasks with project context variables such as
+mise provides file tasks with project context variables such as
 `MISE_PROJECT_ROOT`, which identifies the project root regardless of the
 directory from which the task is invoked. See [Tasks](/tasks/#environment-variables-passed-to-tasks)
 for the complete list of variables.
 
 :::tip
-Beware of formatters changing `#MISE` to `# MISE`.
-It's intentionally ignored by mise to avoid unintentional configuration.
-To workaround this, use the alternative: `# [MISE]`.
+Beware of formatters that change `#MISE` to `# MISE`.
+mise intentionally ignores `# MISE` to avoid accidental configuration.
+To work around this, use the alternative form `# [MISE]`.
 :::
 
 ## Shebang
 
-The shebang line is optional, but if it is present, it will be used to determine the shell to run the script with.
-You can also use it to run the script with various programming languages.
+The shebang line is optional, but if present, mise uses it to determine which shell runs the script.
+You can also use it to run the script with other programming languages.
 
 ::: code-group
 
@@ -212,7 +212,7 @@ run = "./scripts/build.sh"
 run_windows = "pwsh -File ./scripts/windows-build.ps1"
 ```
 
-Spelled out rather than `./scripts/windows-build.ps1`, because
+The command is spelled out rather than written as `./scripts/windows-build.ps1` because
 [`windows_default_inline_shell_args`](/configuration/settings.html#windows_default_inline_shell_args)
 defaults to `cmd /c`, and cmd will not start a `.ps1` on its own.
 
@@ -222,16 +222,16 @@ and `build.cmd`.
 
 ## Editing tasks
 
-This script can be edited by running `mise tasks edit build` (using `$EDITOR`). If it doesn't exist it will be created.
-This is convenient for quickly editing or creating new scripts.
+Edit a file task by running `mise tasks edit build` (which opens it in `$EDITOR`). If the file doesn't exist, it is created.
+This is convenient for quickly editing or creating scripts.
 
 ## Task Grouping
 
-File tasks in `mise-tasks`, `.mise/tasks`, `mise/tasks`, or `.config/mise/tasks` can be grouped into
-sub-directories which will automatically apply prefixes to their names
+File tasks in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks`, or `.config/mise/tasks` can be grouped into
+subdirectories, which automatically prefix the task names
 when loaded.
 
-**Example**: With a folder structure like below:
+**Example**: Given the folder structure below:
 
 ```text
 mise-tasks
@@ -242,7 +242,7 @@ mise-tasks
     └── units
 ```
 
-Running `mise tasks` will give the below output:
+Running `mise tasks` gives the following output:
 
 ```shellsession
 $ mise tasks
@@ -259,8 +259,8 @@ test:units                    ./mise-tasks/test/units
 For comprehensive information about task arguments, see the dedicated [Task Arguments](/tasks/task-arguments) page.
 :::
 
-[usage](https://usage.jdx.dev) spec can be used within these files to provide argument parsing, autocompletion,
-documentation when running mise and can be exported to markdown. Essentially this turns tasks into
+A [usage](https://usage.jdx.dev) spec can be used within these files to provide argument parsing, autocompletion,
+and documentation when running mise, and it can be exported to markdown. This turns tasks into
 fully-fledged CLIs.
 
 :::tip
@@ -300,13 +300,13 @@ With mise's shell completions enabled, this example provides the following task 
 - `mise run -- build --profile <tab><tab>`
   will show `debug` and `release` as options.
 - The `--user` flag will also show completions generated by the output of `mycli users`.
-- Note: Use `--` to separate mise flags from task arguments: `mise run -- build --profile release <target>`
+- Use `--` to separate mise flags from task arguments: `mise run -- build --profile release <target>`
 
-(Note that cli and markdown help for tasks is not yet implemented in mise as of this writing but that is planned.)
+The same spec drives `mise run build --help`, which prints CLI help for the task, and [`mise generate task-docs`](/cli/generate/task-docs), which renders markdown documentation for your tasks.
 
 :::tip
 If you don't get any autocomplete suggestions, use the `-v` (verbose) flag to see what's going on.
-For example, if you use `mise run build -v` and have an invalid `usage` spec, you will see an error message such as `DEBUG failed to parse task file with usage`
+For example, if you run `mise run build -v` with an invalid `usage` spec, you will see an error message such as `DEBUG failed to parse task file with usage`.
 :::
 
 ### Environment variable backing
@@ -385,14 +385,14 @@ mise run greet <TAB>
 ## CWD
 
 mise sets the current working directory to the directory of `mise.toml` before running tasks.
-This can be overridden by setting <span v-pre>`dir="{{cwd}}"`</span> in the task header:
+Override this by setting <span v-pre>`dir="{{cwd}}"`</span> in the task header:
 
 ```bash
 #!/usr/bin/env bash
 #MISE dir="{{cwd}}"
 ```
 
-Also, the original working directory is available in the `MISE_ORIGINAL_CWD` environment variable:
+The original working directory is also available in the `MISE_ORIGINAL_CWD` environment variable:
 
 ```bash
 #!/usr/bin/env bash
@@ -401,10 +401,10 @@ cd "$MISE_ORIGINAL_CWD"
 
 ## Running tasks directly
 
-Tasks don't need to be configured as part of a config, you can just run them directly by passing the path to the script:
+Tasks don't need to be part of a config; you can run them directly by passing the path to the script:
 
 ```bash
 mise run ./path/to/script.sh
 ```
 
-Note that the path must start with `/` or `./` to be considered a file path. (On Windows it can be `C:\` or `.\`)
+The path must start with `/` or `./` to be treated as a file path (on Windows, `C:\` or `.\`).

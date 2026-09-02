@@ -4,21 +4,21 @@
 The [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) provides a ready-to-use starting point with LuaCATS type definitions, stylua formatting, and hk linting pre-configured.
 :::
 
-Backend plugins in mise use enhanced backend methods to manage multiple tools using the `plugin:tool` format. These plugins are perfect for package managers, tool families, and custom installations that need to manage multiple related tools.
+Backend plugins in mise use enhanced backend methods to manage multiple tools with the `plugin:tool` format. They are well suited to package managers, tool families, and custom installations that manage several related tools.
 
 ## What are Backend Plugins?
 
 Backend plugins extend the standard vfox plugin system with enhanced backend methods. They support:
 
-- **Multiple Tools**: One plugin can manage multiple tools. For example, `vfox-npm` is the plugin which could install different types of tools like `prettier`, `eslint`, and other npm packages
+- **Multiple Tools**: One plugin can manage multiple tools. For example, `vfox-npm` can install `prettier`, `eslint`, and other npm packages
 - **Cross-Platform Support**: Works on Windows, macOS, and Linux
-- **Flexible Architecture**: Modern plugin system with dedicated backend methods for enhanced functionality
+- **Flexible Architecture**: A modern plugin system with dedicated backend methods
 
 ## Plugin Architecture
 
-Backend plugins are generally a git repository but can also be a directory (via `mise link`).
+Backend plugins are generally a git repository but can also be a directory (via `mise plugin link`).
 
-Backend plugins are implemented in Lua (version 5.1 at the moment). They use three main backend methods implemented as individual files:
+Backend plugins are written in Lua (currently version 5.1). They use three main backend methods, each implemented in its own file:
 
 - `hooks/backend_list_versions.lua` - Lists available versions for a tool
 - `hooks/backend_install.lua` - Installs a specific version of a tool
@@ -45,7 +45,7 @@ end
 ```
 
 > [!WARNING]
-> **Version sorting**: The versions returned by `BackendListVersions` should be in ascending order (oldest to newest), sorted semantically (version `3.10.0` should not come before `3.2.0`). Mise does not apply any additional sorting to the versions returned by this method.
+> **Version sorting**: The versions returned by `BackendListVersions` should be in ascending order (oldest to newest), sorted semantically (version `3.10.0` should not come before `3.2.0`). mise does not apply any additional sorting to the versions returned by this method.
 
 ### BackendInstall
 
@@ -92,7 +92,7 @@ end
 
 ### Using the Template Repository
 
-Use the dedicated [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) for creating backend plugins:
+Use the dedicated [mise-backend-plugin-template](https://github.com/jdx/mise-backend-plugin-template) to create backend plugins:
 
 ```bash
 # Option 1: Use GitHub's template feature (recommended)
@@ -141,7 +141,7 @@ PLUGIN = {
 
 ## Real-World Example: vfox-npm
 
-Here's the complete implementation of the vfox-npm plugin that manages npm packages:
+Here's the complete implementation of the vfox-npm plugin, which manages npm packages:
 
 ### metadata.lua
 
@@ -201,7 +201,7 @@ end
 
 ## Usage Example
 
-The plugin name doesn't have to match the repository name. The backend prefix will match whatever name the backend plugin was installed as.
+The plugin name doesn't have to match the repository name. The backend prefix is whatever name the plugin was installed under.
 
 ```bash
 # Install the plugin
@@ -220,7 +220,7 @@ mise use vfox-npm:prettier@latest
 mise exec -- prettier --help
 ```
 
-> **Tip**: This naming flexibility could potentially be used to have a very complex plugin backend that would behave differently based on what it was named. For example, you could install the same plugin with different names to configure different behaviors or access different tool registries.
+> **Tip**: This naming flexibility lets a plugin behave differently depending on the name it was installed under. For example, you could install the same plugin under different names to configure different behaviors or access different tool registries.
 
 ## Context Variables
 
@@ -288,7 +288,7 @@ mise --debug install my-plugin:some-tool@1.0.0
 
 ### Error Handling
 
-Provide more meaningful error messages:
+Provide meaningful error messages:
 
 ```lua
 function PLUGIN:BackendListVersions(ctx)
@@ -314,10 +314,12 @@ function PLUGIN:BackendListVersions(ctx)
     end
 
     -- Return versions or error if none found
+    -- `npm view` already returns versions oldest-to-newest, which is the
+    -- order mise expects, so keep them as-is
     local versions = {}
     if type(npm_versions) == "table" then
-        for i = #npm_versions, 1, -1 do
-            table.insert(versions, npm_versions[i])
+        for _, v in ipairs(npm_versions) do
+            table.insert(versions, v)
         end
     end
 
@@ -331,7 +333,7 @@ end
 
 ### Regex Parsing
 
-Parse versions with regex:
+Parse versions with Lua patterns (Lua does not have regular expressions; `string.match`/`string.gsub` use Lua's own pattern syntax):
 
 ```lua
 local function parse_version(version_string)
@@ -368,7 +370,7 @@ end
 
 ### Conditional Installation
 
-Different installation logic based on tool or version:
+Use different installation logic depending on the tool or version:
 
 ```lua
 function PLUGIN:BackendInstall(ctx)
@@ -457,5 +459,5 @@ TODO: We need caching support for [Shared Lua modules](plugin-lua-modules.md).
 - [Start with the backend plugin template](https://github.com/jdx/mise-backend-plugin-template)
 - [Learn about Tool Plugin Development](tool-plugin-development.md)
 - [Explore available Lua modules](plugin-lua-modules.md)
-- [Publishing your plugin](plugin-publishing.md)
+- [Publish your plugin](plugin-publishing.md)
 - [View the vfox-npm plugin source](https://github.com/jdx/vfox-npm)

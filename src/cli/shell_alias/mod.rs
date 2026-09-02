@@ -6,7 +6,7 @@ mod set;
 mod unset;
 
 #[derive(Debug, usage_rs::Args)]
-#[usage(name = "shell-alias", about = "Manage shell aliases.")]
+#[usage(name = "shell-alias", about = "Manage shell aliases")]
 pub(crate) struct ShellAlias {
     #[usage(subcommand)]
     command: Option<Commands>,

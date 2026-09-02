@@ -1,18 +1,18 @@
 # Monorepo Tasks
 
-mise supports monorepo-style task organization with target path syntax. This feature allows you to manage tasks across multiple projects in a single repository, where each project can have its own `mise.toml` configuration with tools, environment variables, and tasks that may be different from where the task is called from.
+mise supports monorepo-style task organization with target path syntax. This lets you manage tasks across multiple projects in a single repository, where each project can have its own `mise.toml` with tools, environment variables, and tasks that differ from those of the directory the task is called from.
 
 ## Overview
 
-When `monorepo_root` is enabled in your root `mise.toml`, mise will automatically discover tasks in subdirectories and prefix them with their relative path from the monorepo root. This creates a unified task namespace across your entire repository.
+When `monorepo_root` is enabled in your root `mise.toml`, mise automatically discovers tasks in subdirectories and prefixes them with their relative path from the monorepo root. This creates a unified task namespace across your entire repository.
 
 ::: tip
-The directory containing a `mise.toml` file is called the **config_root**. In monorepo mode, each project can have its own config_root with its own configuration, separate from the monorepo root. Note that if you use one of the alternate paths in a subdirectory like `./projects/frontend/.mise/config.toml`, the config_root will be `./projects/frontend`–not `./projects/frontend/.mise`.
+The directory containing a `mise.toml` file is called the **config_root**. In monorepo mode, each project can have its own config_root with its own configuration, separate from the monorepo root. If you use one of the alternate paths in a subdirectory, such as `./projects/frontend/.mise/config.toml`, the config_root is `./projects/frontend`, not `./projects/frontend/.mise`.
 :::
 
 ### Benefits
 
-- **Consistent execution**: Run tasks from any location in the monorepo using the mise config that would be set if called from the task's directory
+- **Consistent execution**: Run tasks from anywhere in the monorepo using the mise config that would apply if they were called from the task's directory
 - **Clear task namespacing**: Tasks are prefixed with their location from the monorepo root
 - **Pattern-based execution**: Use wildcards to run tasks across multiple projects
 - **Tool and environment layering**: Subdirectory tasks use tools and environment variables from parent configs, but can also define their own in their config_root
@@ -45,7 +45,7 @@ myproject/
 │       └── mise.toml (with tasks: build, test)
 ```
 
-With this structure, tasks will be automatically namespaced:
+With this structure, tasks are automatically namespaced:
 
 - `//projects/frontend:build`
 - `//projects/frontend:test`
@@ -54,7 +54,7 @@ With this structure, tasks will be automatically namespaced:
 
 ## Task Path Syntax
 
-Monorepo tasks use special path syntax with `//` and `:` prefixes. You can run these tasks directly with `mise` or with `mise run`. With non-monorepo tasks, the guidance is to avoid using the direct syntax for scripts because it could conflict with future core mise commands. However, mise will never define commands with a `//` or `:` prefix, so this guidance does not apply to monorepo tasks.
+Monorepo tasks use special path syntax with `//` and `:` prefixes. You can run these tasks directly with `mise` or with `mise run`. For non-monorepo tasks, the guidance is to avoid the direct syntax in scripts because a task name could conflict with a future core mise command. mise will never define commands with a `//` or `:` prefix, however, so this guidance does not apply to monorepo tasks.
 
 ```bash
 # Direct syntax (preferred for monorepo tasks)
@@ -69,7 +69,7 @@ mise '//projects/frontend:*'
 
 ### Absolute Paths
 
-Use `//` prefix to specify the absolute path from the monorepo root:
+Use the `//` prefix to specify an absolute path from the monorepo root:
 
 ```bash
 # Run build task in frontend project
@@ -81,7 +81,7 @@ mise //projects/backend:test
 
 ### Current config_root Tasks
 
-Use `:` prefix to run tasks in the current config_root:
+Use the `:` prefix to run tasks in the current config_root:
 
 ```bash
 cd projects/frontend
@@ -131,7 +131,7 @@ For example, when declared by `//apps/frontend:test`, this pattern resolves to
 `//apps/frontend/...:groups:tests:*` and matches the current project and its
 descendants without matching sibling projects.
 
-The bare name syntax (without `:`) is supported primarily to ease migration from non-monorepo to monorepo configurations. When migrating, you won't need to update all your task dependencies immediately - they'll continue to work. However, using the `:` prefix makes it clear you're referencing a task in the current config_root.
+The bare-name syntax (without `:`) is supported primarily to ease migration from non-monorepo to monorepo configurations: existing task dependencies keep working, so you don't need to update them all at once. The `:` prefix, however, makes it clear that you're referencing a task in the current config_root.
 :::
 
 ### Wildcard Patterns
@@ -140,7 +140,7 @@ mise supports two types of wildcards for flexible task execution:
 
 #### Path Wildcards (`...`)
 
-Use ellipsis (`...`) to match any directory depth:
+Use an ellipsis (`...`) to match any directory depth:
 
 ```bash
 # Run 'test' task in ALL projects (any depth)
@@ -154,14 +154,14 @@ mise //projects/.../api:build  # Matches projects/*/api and projects/*/*/api
 ```
 
 ::: info
-Additional glob patterns may be added in a future version so `mise //projects/*:build`
+Additional glob patterns may be added in a future version, so `mise //projects/*:build`
 and `mise '//projects/**:build'` will likely be supported. We're using `...` because it matches
-how bazel and buck2 do it.
+how Bazel and Buck2 do it.
 :::
 
 #### Task Name Wildcards (`*`)
 
-Use asterisk (`*`) to match task names:
+Use an asterisk (`*`) to match task names:
 
 ```bash
 # Run ALL tasks in frontend project
@@ -191,11 +191,11 @@ mise //.../frontend:build
 
 ## Tool, Environment, and Vars Layering
 
-Subdirectory tasks automatically use tools and environment variables from parent config files in the hierarchy. However, each subdirectory can also define its own tools and environment variables in its config_root. This allows you to:
+Subdirectory tasks automatically use tools and environment variables from parent config files in the hierarchy. However, each subdirectory can also define its own tools and environment variables in its config_root. This lets you:
 
 1. Define common tools and environment at the monorepo root
 2. Override tools or environment in specific subdirectories
-3. Add additional tools or environment in subdirectories
+3. Add extra tools or environment in subdirectories
 
 `vars` follow the same hierarchy for task templating, so child config vars are available when
 running subdirectory tasks from the monorepo root.
@@ -268,7 +268,7 @@ mise install --monorepo node
 
 Monorepos can use one lockfile at the monorepo root. Tools from `packages/api/mise.toml` write to `<monorepo_root>/mise.lock`, while environment and local variants write to root files such as `mise.ci.lock` and `mise.local.lock`.
 
-This is rolling out as a tri-state setting. During the rollout window, unset keeps today's per-subproject lockfile behavior. Set `lockfile = true` to opt into root lockfiles now:
+This is rolling out as a tri-state setting. During the rollout window, leaving it unset keeps today's per-subproject lockfile behavior. Set `lockfile = true` to opt into root lockfiles now:
 
 ```toml
 [monorepo]
@@ -284,7 +284,7 @@ To keep lockfiles next to each subproject config after the default changes, pin 
 lockfile = false
 ```
 
-Unset monorepos that use `mise*.lock` files will start warning in mise `2026.12.0` and will default to root lockfiles in mise `2027.6.0`. Older mise versions do not understand unified monorepo lockfiles for subproject-owned tools. Teams that need mixed-version compatibility should use `lockfile = false` until everyone has upgraded.
+Monorepos that leave the setting unset and use `mise*.lock` files will start warning in mise `2026.12.0` and will default to root lockfiles in mise `2027.6.0`. Older mise versions do not understand unified monorepo lockfiles for subproject-owned tools. Teams that need mixed-version compatibility should use `lockfile = false` until everyone has upgraded.
 
 ## Config Roots
 
@@ -309,11 +309,11 @@ This tells mise exactly which directories contain project configurations. Benefi
 - **Glob support**: Use `*` for single-level patterns (e.g., `services/*` matches `services/api`, `services/worker`)
 
 ::: tip
-Single-level globs (`*`) are supported, but recursive globs (`**`) are not. This ensures predictable performance while still allowing flexible patterns.
+Single-level globs (`*`) are supported, but recursive globs (`**`) are not. This keeps performance predictable while still allowing flexible patterns.
 :::
 
 ::: warning Automatic Discovery Deprecated
-Automatic filesystem walking to discover monorepo subdirectories is deprecated. If you don't define `[monorepo].config_roots`, mise will still walk the filesystem but will emit a deprecation warning. Please migrate to explicit config roots.
+Automatic filesystem walking to discover monorepo subdirectories is deprecated. If you don't define `[monorepo].config_roots`, mise still walks the filesystem for task discovery but emits a deprecation warning; `mise install --monorepo` and `mise ls --monorepo` do not fall back and always require explicit config roots. Migrate to explicit config roots.
 :::
 
 ### Nested Monorepo Roots
@@ -341,8 +341,10 @@ Enable experimental features and mark the repository root:
 
 ```toml
 # /myproject/mise.toml
-experimental = true
 monorepo_root = true
+
+[settings]
+experimental = true
 ```
 
 Inspect the inferred projects with:
@@ -692,7 +694,7 @@ mise tasks '//projects/frontend:*'
 
 ### 1. Define Shared Tools and Environment at Root
 
-Place commonly-used tools and environment in the root `mise.toml` to avoid repetition:
+Place commonly used tools and environment in the root `mise.toml` to avoid repetition:
 
 ```toml
 # /myproject/mise.toml
@@ -781,18 +783,18 @@ The monorepo ecosystem offers many excellent tools, each with different strength
 
 **Bazel** (Google) and **Buck2** (Meta) are industrial-strength build systems designed for massive, multi-language monorepos at companies with thousands of engineers.
 
-- **Bazel** offers incredible features like distributed caching, remote execution, and hermetic builds with fine-grained dependency tracking.
+- **Bazel** offers distributed caching, remote execution, and hermetic builds with fine-grained dependency tracking.
 - **Buck2** is a modern rewrite with a clean architecture and impressive performance optimizations.
 
 Both are extremely powerful but come with significant complexity:
 
-- Hermetic builds require strict isolation and complete dependency control
-- Steep learning curve with specialized DSLs (Starlark, etc.)
-- Complex configuration requiring dedicated build engineers
-- Heavy investment in infrastructure for remote caching
-- Stricter constraints on how you structure your code
+- Hermetic builds that require strict isolation and complete dependency control
+- A steep learning curve with specialized DSLs (Starlark, etc.)
+- Complex configuration that requires dedicated build engineers
+- Heavy infrastructure investment for remote caching
+- Strict constraints on how you structure your code
 
-**mise's advantage:** Simplicity through non-hermetic builds. mise doesn't try to control your entire build environment in isolation - instead, it manages tools and tasks in a flexible, practical way. This "non-hermetic" approach means you can use mise without restructuring your entire codebase or learning a new language. You get powerful monorepo task management with simple TOML configuration - enough power for most teams without the enterprise-level complexity that hermetic builds require.
+**mise's advantage:** Simplicity through non-hermetic builds. mise doesn't try to control your entire build environment in isolation - instead, it manages tools and tasks in a flexible, practical way. This non-hermetic approach means you can adopt mise without restructuring your codebase or learning a new language. You get powerful monorepo task management with simple TOML configuration - enough for most teams, without the enterprise-level complexity that hermetic builds require.
 
 ### Other Notable Tools
 
@@ -813,7 +815,7 @@ mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
 | Tool version management | ❌             | ❌         | ⚠️            | ✅   |
 | Environment layering    | ❌             | ⚠️         | ❌            | ✅   |
 | Minimal setup           | ✅             | ⚠️         | ❌            | ✅   |
-| Task caching            | ❌             | ✅         | ✅            | ❌   |
+| Task caching            | ❌             | ✅         | ✅            | ✅   |
 
 **When to choose mise:**
 
@@ -828,15 +830,14 @@ mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
 - You're at Google/Meta scale with thousands of engineers → Bazel or Buck2 offer distributed build infrastructure
 - You need advanced task caching → Nx, Turborepo, or Bazel offer sophisticated caching systems
 
-The best tool is the one that fits your team's needs. mise's Monorepo Tasks is designed for teams who want powerful monorepo management without the complexity overhead, especially when working across multiple languages.
+The best tool is the one that fits your team's needs. mise's Monorepo Tasks is designed for teams that want powerful monorepo management without the complexity overhead, especially when working across multiple languages.
 
 ## Task Templates
 
-For monorepos with similar task patterns across projects, [task templates](/tasks/templates) allow you to define reusable task definitions at the monorepo root:
+For monorepos with similar task patterns across projects, [task templates](/tasks/templates) let you define reusable task definitions at the monorepo root:
 
 ```toml
 # Root mise.toml
-[settings]
 monorepo_root = true
 
 [task_templates."python:build"]

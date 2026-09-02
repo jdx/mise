@@ -18,7 +18,7 @@ pub(super) struct GitPreCommit {
     /// The task to run when the pre-commit hook is triggered
     #[usage(long, short, default = "pre-commit")]
     task: String,
-    /// write to .git/hooks/pre-commit and make it executable
+    /// Write to .git/hooks/pre-commit and make it executable
     #[usage(long, short)]
     write: bool,
     /// Which hook to generate (saves to .git/hooks/$hook)

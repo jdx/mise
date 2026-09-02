@@ -92,13 +92,13 @@ run = "pytest"
     </div>
   </div>
 
-  <a class="landing-aube" href="https://aube.jdx.dev/" aria-label="Try aube">
+  <a class="landing-special" href="https://mr-boxington.jdx.dev/" aria-label="Try Mr Boxington">
     <div>
       <p class="landing-kicker">Chef's Special</p>
-      <h2>aube: a fast Node.js package manager.</h2>
+      <h2>Mr Boxington: fix your target/.</h2>
       <p>
-        From the author of mise. aube works with your existing lockfile — no
-        migration needed.
+        Give every Cargo checkout one shared, self-pruning compilation cache —
+        locally and in CI.
       </p>
     </div>
   </a>

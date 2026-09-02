@@ -11,7 +11,7 @@ use crate::{
 
 use super::reconcile;
 
-/// Symlinks all ruby tool versions from an external tool into mise
+/// Symlink ruby versions installed by Homebrew into mise
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP)]
 pub(super) struct SyncRuby {

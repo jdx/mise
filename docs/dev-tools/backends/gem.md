@@ -4,8 +4,8 @@ mise can be used to install CLIs from RubyGems. The code for this is inside of t
 
 ## Dependencies
 
-This relies on having `gem` (provided with ruby) installed. You can install it with or without mise.
-Here is how to install `ruby` with mise:
+This backend relies on `gem` (provided with Ruby) being installed. You can install it with or without mise.
+To install `ruby` with mise:
 
 ```sh
 mise use -g ruby
@@ -29,7 +29,7 @@ The version will be set in `~/.config/mise/config.toml` with the following forma
 
 ## Ruby upgrades
 
-If the ruby version used by a gem package changes, (by mise or system ruby), you may need to
+If the Ruby version used by a gem package changes (whether managed by mise or the system), you may need to
 reinstall the gem. This can be done with:
 
 ```sh

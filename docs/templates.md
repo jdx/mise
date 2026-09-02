@@ -9,7 +9,7 @@ When rendered, the template engine (`tera`) replaces the variables with their va
 You can define and use templates in the following locations:
 
 - Most `mise.toml` configuration values
-  - The `mise.toml` file itself is not templated and must be valid toml
+  - The `mise.toml` file itself is not templated and must be valid TOML
 - `.tool-versions` files
 - `.miserc.toml` files (limited context — see [Template Support in .miserc.toml](#miserc-template-support))
 
@@ -33,14 +33,14 @@ You will find more examples in the [cookbook](./mise-cookbook/index.md).
 
 ## Template Rendering
 
-Mise uses [tera](https://keats.github.io/tera/) to provide the template feature.
-In the template, there are 3 kinds of delimiters:
+mise uses [tera](https://keats.github.io/tera/) to provide the template feature.
+Templates use three kinds of delimiters:
 
 - <span v-pre>`{{`</span> and <span v-pre>`}}`</span> for expressions
 - <span v-pre>`{%`</span> and <span v-pre>`%}`</span> for statements
 - <span v-pre>`{#`</span> and <span v-pre>`#}`</span> for comments
 
-Additionally, use `raw` block to skip rendering tera delimiters:
+Use a `raw` block to keep tera delimiters from being rendered:
 
 <div v-pre>
 
@@ -52,7 +52,7 @@ Additionally, use `raw` block to skip rendering tera delimiters:
 
 </div>
 
-This will become <span v-pre>`Hello {{name}}`</span>.
+This renders as <span v-pre>`Hello {{ name }}`</span>.
 
 Tera supports [literals](https://keats.github.io/tera/#literals), including:
 
@@ -60,11 +60,11 @@ Tera supports [literals](https://keats.github.io/tera/#literals), including:
 - integers
 - floats
 - strings: text delimited by `""`, `''` or <code>\`\`</code>
-- arrays: a comma-separated list of literals and/or ident surrounded by
+- arrays: a comma-separated list of literals and/or identifiers surrounded by
   `[` and `]` (trailing comma allowed)
 
-You can render a variable by using the <span v-pre>`{{ name }}`</span>.
-For complex attributes, use:
+Render a variable with <span v-pre>`{{ name }}`</span>.
+For nested attributes, use:
 
 - dot `.`, e.g. <span v-pre>`{{ product.name }}`</span>
 - square brackets `[]`, e.g. <span v-pre>`{{ product["name"] }}`</span>
@@ -89,7 +89,7 @@ Tera also supports powerful [expressions](https://keats.github.io/tera/#expressi
   - `or`
   - `not`
 - concatenation `~`, e.g. <code v-pre>{{ "hello " ~ 'world' ~ \`!\` }}</code>
-- in checking, e.g. <span v-pre>`{{ some_var in [1, 2, 3] }}`</span>
+- `in` membership checks, e.g. <span v-pre>`{{ some_var in [1, 2, 3] }}`</span>
 
 Tera also supports [control structures such as <span v-pre>`if`</span> and
 <span v-pre>`for`</span>](https://keats.github.io/tera/#control-structures).
@@ -150,11 +150,11 @@ itself.
 
 ### Tera Filters
 
-You can modify variables using [filters](https://keats.github.io/tera/#filters).
-You can filter a variable by a pipe symbol (`|`) and may have named arguments
-in parentheses. You can also chain multiple filters.
-e.g. <span v-pre>`{{ "Doctor Who" | lower | replace(from="doctor", to="Dr.") }}`</span>
-will output `Dr. who`.
+You can modify variables with [filters](https://keats.github.io/tera/#filters).
+Apply a filter with a pipe symbol (`|`); filters may take named arguments
+in parentheses, and multiple filters can be chained.
+For example, <span v-pre>`{{ "Doctor Who" | lower | replace(from="doctor", to="Dr.") }}`</span>
+outputs `Dr. who`.
 
 ### Tera Functions
 
@@ -163,7 +163,7 @@ additional features to templates.
 
 ### Tera Tests
 
-You can also uses [tests](https://keats.github.io/tera/#tests) to examine variables.
+You can also use [tests](https://keats.github.io/tera/#tests) to examine variables.
 
 ```
 {% if my_number is not odd %}
@@ -173,22 +173,22 @@ You can also uses [tests](https://keats.github.io/tera/#tests) to examine variab
 
 ## Mise Template Features
 
-Mise provides additional variables, functions, filters, and tests on top of tera features.
+mise provides additional variables, functions, filters, and tests on top of tera's.
 
 ### Variables
 
-Mise exposes several [variables](https://keats.github.io/tera/#variables).
-These variables offer key information about the current environment:
+mise exposes several [variables](https://keats.github.io/tera/#variables)
+with information about the current environment:
 
 - `env: HashMap<String, String>` – Accesses current environment variables as
   a key-value map.
 - `vars: HashMap<String, String>` – Accesses user-defined [configuration variables](/configuration/vars).
 - `cwd: PathBuf` – Points to the current working directory.
-- `config_root: PathBuf` – Locates the directory containing your `mise.toml` file, or in the case of something like `~/src/myproj/.config/mise.toml`, it will point to `~/src/myproj`.
-- `config_source: String` – The config file the template itself is written in, as an absolute path. Unlike `config_root` this is the file, not the project it belongs to, and it is **not** resolved through symlinks — pipe it through `canonicalize` when you want where the real file lives. Available in `mise.toml`, `.tool-versions`, `[env]` directives and `[settings.age]`; task file templates and `.miserc.toml` only carry `config_root`.
+- `config_root: PathBuf` – Points to the directory containing your `mise.toml` file; for a config such as `~/src/myproj/.config/mise.toml`, it points to `~/src/myproj`.
+- `config_source: String` – The config file the template itself is written in, as an absolute path. Unlike `config_root` this is the file, not the project it belongs to, and it is **not** resolved through symlinks — pipe it through `canonicalize` when you want the location of the real file. Available in `mise.toml`, `.tool-versions`, `[env]` directives and `[settings.age]`; task file templates and `.miserc.toml` only carry `config_root`.
 
-  A shared config symlinked into `conf.d` can add its own `bin` directory to the
-  path with it:
+  With it, a shared config symlinked into `conf.d` can add its own `bin` directory
+  to the path:
 
   ```toml
   [env]
@@ -198,13 +198,13 @@ These variables offer key information about the current environment:
   Leave `canonicalize` out to get the directory the file was reached through
   rather than the one it lives in.
 
-- `mise_bin: String` - Points to the path to the current mise executable
-- `mise_pid: String` - Points to the pid of the current mise process
-- `mise_env: Vec<String>` - The configuration environment as specified by `MISE_ENV`, `-E`, or `--env`. Will be undefined if the configuration environment is not set.
-- `xdg_cache_home: PathBuf` - Points to the directory of XDG cache home
-- `xdg_config_home: PathBuf` - Points to the directory of XDG config home
-- `xdg_data_home: PathBuf` - Points to the directory of XDG data home
-- `xdg_state_home: PathBuf` - Points to the directory of XDG state home
+- `mise_bin: String` - Points to the current mise executable
+- `mise_pid: String` - The PID of the current mise process
+- `mise_env: Vec<String>` - The configuration environment as specified by `MISE_ENV`, `-E`, or `--env`. Undefined if no configuration environment is set.
+- `xdg_cache_home: PathBuf` - Points to the XDG cache home directory
+- `xdg_config_home: PathBuf` - Points to the XDG config home directory
+- `xdg_data_home: PathBuf` - Points to the XDG data home directory
+- `xdg_state_home: PathBuf` - Points to the XDG state home directory
 - `tools: HashMap<String, ToolInfo | ToolInfo[]>` – Maps installed tool names to their info.
   Available in task templates and env directives with `tools = true`.
   - When a single version is installed:
@@ -256,16 +256,16 @@ Some functions:
 - `range(end, [start], [step_by])` - Returns an array of integers created
   using the arguments given.
   - `end: usize`: stop before `end`, mandatory
-  - `start: usize`: where to start from, defaults to `0`
-  - `step_by: usize`: with what number do we increment, defaults to `1`
+  - `start: usize`: the starting value, defaults to `0`
+  - `step_by: usize`: the increment, defaults to `1`
 - `now([timezone])` - In the default Tera v2 mode, returns the current datetime
   as a string. The timezone defaults to UTC and accepts IANA names such as
   `America/New_York`.
-  - Tip: use date filter to format date string.
+  - Tip: use the date filter to format the result,
     e.g. <span v-pre>`{{ now() | date(format="%Y") }}`</span> gets the current year.
   - With `tera_v1 = true`, the original `now([timestamp], [utc])` signature remains
     available instead.
-- `throw(message)` - Throws with the message.
+- `throw(message)` - Throws an error with the given message.
 - `get_random(start, end, [seed])` - Returns a random integer in a range.
   Providing `seed` makes the result reproducible.
 
@@ -274,17 +274,17 @@ The `before` and `after` tests compare dates and accept `other` and an optional
 
 <span v-pre>`{% if release_date is after(other="2026-01-01") %}...{% endif %}`</span>
 
-Tera offers more functions. Read more on [tera documentation](https://keats.github.io/tera/#functions).
+Tera offers more functions. Read more in the [tera documentation](https://keats.github.io/tera/#functions).
 
 #### Additional Mise Functions
 
-Mise offers a slew of useful functions in addition to tera's built-ins.
+mise offers many useful functions in addition to tera's built-ins.
 
 ##### General Functions
 
-These functions are available in all tasks, and will always behave the same way regardless
+These functions are available in all tasks and always behave the same way regardless
 of the task definition they are used in. In other words, their return values are consistent
-across task definition(s).
+across task definitions.
 
 - `exec(command) -> String` – Runs a shell command and returns its output as a string.
 - `get_env(name, [default]) -> String` – Returns the original process environment
@@ -292,13 +292,13 @@ across task definition(s).
   older Tera templates. Prefer the `env` variable in new templates when possible.
   The `default` value is used when the environment variable is not present; empty
   environment variables are returned as-is.
-- `arch() -> String` – Retrieves the system architecture, such as `x64` or `arm64`.
+- `arch() -> String` – Returns the system architecture, such as `x64` or `arm64`.
 - `os() -> String` – Returns the name of the operating system,
   e.g. linux, macos, windows.
 - `os_family() -> String` – Returns the operating system family, e.g. `unix`, `windows`.
-- `num_cpus() -> usize` – Gets the number of CPUs available on the system.
-- `choice(n, alphabet)` - Generate a string of `n` with random sample with replacement
-  of `alphabet`. For example, `choice(n=64, alphabet='0123456789abcdef')` will generate a random
+- `num_cpus() -> usize` – Returns the number of CPUs available on the system.
+- `choice(n, alphabet)` - Generates a string of `n` characters sampled with replacement
+  from `alphabet`. For example, `choice(n=64, alphabet='0123456789abcdef')` generates a random
   64-character lowercase hex string.
 - `read_file(path) -> String` – Reads the contents of a file at the given path and returns
   it as a string.
@@ -314,16 +314,15 @@ template functions. Keep commands passed to `exec()` free of side effects.
 
 These functions are task-specific and behave differently depending on the task they are used
 in. In other words, their return values **_may_** (but are not guaranteed to) be consistent
-across executions of any given _task_, and should be expected to be inconsistent across
-different task definition(s).
+across executions of a given _task_, and should be expected to differ across
+task definitions.
 
-For example, `task_source_files()` returns a different set of filepaths depending on the [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) of the task it's called from.
+For example, `task_source_files()` returns a different set of file paths depending on the [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources) of the task it's called from.
 
 - <span id="task-source-files">`task_source_files() -> Vec<String>`</span> – Returns the task's [`sources`](https://mise.jdx.dev/tasks/task-configuration.html#sources)
-  as an array of resolved file paths. This function processes glob patterns and Tera template strings
-  defined in the task's sources, expanding them into actual file paths. If a pattern doesn't match any
-  files, it will be omitted from the result. Returns an empty array if no sources are configured or if
-  no files match the patterns.
+  as an array of resolved file paths. Glob patterns and Tera template strings in the task's sources
+  are expanded into actual file paths. Patterns that match no files are omitted from the result.
+  Returns an empty array if no sources are configured or no files match.
 
   Pass `only_changed=true` to narrow the result to the sources written since mise last considered
   this task up to date. This is useful for linters and formatters that are much faster when given a
@@ -370,12 +369,11 @@ run = "eslint{% for file in task_source_files(only_changed=true) %} {{ file | qu
 The `exec` function supports the following options:
 
 - `command: String` – [required] The command to run.
-- `cache_key: String` – The cache key to store the result.
-  If the cache key is provided, the result will be cached and reused
-  for subsequent calls.
-- `cache_duration: String` – The duration to cache the result.
-  The duration is in seconds, minutes, hours, days, or weeks.
-  e.g. `cache_duration="1d"` will cache the result for 1 day.
+- `cache_key: String` – The cache key under which to store the result.
+  When provided, the result is cached and reused for subsequent calls.
+- `cache_duration: String` – How long to cache the result, in seconds,
+  minutes, hours, days, or weeks.
+  e.g. `cache_duration="1d"` caches the result for 1 day.
 
 ### Filters
 
@@ -389,10 +387,10 @@ Some filters:
 
 - `str | lower -> String` – Converts a string to lowercase.
 - `str | upper -> String` – Converts a string to uppercase.
-- `str | capitalize -> String` – Converts a string with all its characters lowercased
-  apart from the first char which is uppercased.
-- `str | replace(from, to) -> String` – Replaces a string with all instances of
-  `from` to `to`. e.g., <span v-pre>`{{ name | replace(from="Robert", to="Bob")}}`</span>
+- `str | capitalize -> String` – Lowercases a string except for its first character,
+  which is uppercased.
+- `str | replace(from, to) -> String` – Replaces all instances of `from` with `to`,
+  e.g., <span v-pre>`{{ name | replace(from="Robert", to="Bob")}}`</span>
 - `str | title -> String` – Capitalizes each word inside a sentence.
   e.g., <span v-pre>`{{ "foo bar" | title }}`</span> becomes `Foo Bar`.
 - `str | trim -> String` – Removes leading and trailing whitespace.
@@ -439,7 +437,7 @@ Some filters:
 - `str | default(value) -> String` – Returns the default value
   if the variable is not defined or is empty.
 
-Tera offers more filters. Read more on [tera documentation](https://keats.github.io/tera/#built-in-filters).
+Tera offers more filters. Read more in the [tera documentation](https://keats.github.io/tera/#built-in-filters).
 
 #### Hash
 
@@ -458,11 +456,8 @@ Tera offers more filters. Read more on [tera documentation](https://keats.github
 
 - `path | absolute -> String` – Converts the input path into
   an absolute path. Does not require the path to exist.
-- `path | canonicalize -> String` – Converts the input path into
-  absolute input path version. Throws if path doesn't exist.
-- `path | basename -> String` – Extracts the file name from a path,
-  e.g. `/foo/bar/baz.txt` becomes `baz.txt`.
-- `path | file_size -> String` – Returns the size of a file in bytes.
+- `path | canonicalize -> String` – Converts the input path into its
+  canonical absolute form. Throws if the path doesn't exist.
 - `path | dirname -> String` – Returns the directory path for a file,
   e.g. `/foo/bar/baz.txt` becomes `/foo/bar`.
 - `path | basename -> String` – Returns the base name of a file,
@@ -511,26 +506,26 @@ Some tests:
 - `string` - Returns `true` if the given variable is a string.
 - `number` - Returns `true` if the given variable is a number.
 - `starting_with` - Returns `true` if the given variable is a string and starts with
-  the arg given.
+  the given argument.
 - `ending_with` - Returns `true` if the given variable is a string and ends with
-  the arg given.
-- `containing` - Returns `true` if the given variable contains the arg given.
+  the given argument.
+- `containing` - Returns `true` if the given variable contains the given argument.
 - `matching` - Returns `true` if the given variable is a string and matches the regex
   in the argument.
 
-Tera offers more tests. Read more on [tera documentation](https://keats.github.io/tera/#built-in-tests).
+Tera offers more tests. Read more in the [tera documentation](https://keats.github.io/tera/#built-in-tests).
 
-Mise offers additional tests:
+mise offers additional tests:
 
-- `if path is dir` – Checks if the provided path is a directory.
-- `if path is file` – Checks if the path points to a file.
-- `if path is exists` – Checks if the path exists.
+- `if path is dir` – Checks whether the path is a directory.
+- `if path is file` – Checks whether the path is a file.
+- `if path is exists` – Checks whether the path exists.
 
 ## Template Support in .miserc.toml {#miserc-template-support}
 
-`.miserc.toml` files support Tera templates, but with a **limited context**. This is because
-`.miserc.toml` is loaded very early — before `mise.toml`, Settings, and the main config are
-parsed — so only information available at OS level can be used.
+`.miserc.toml` files support Tera templates, but with a **limited context**: `.miserc.toml`
+is loaded very early — before `mise.toml`, settings, and the main config are parsed — so
+only information available at the OS level can be used.
 
 ### Available context
 
@@ -544,7 +539,7 @@ parsed — so only information available at OS level can be used.
 ### Not available
 
 - `mise_env` – This is what `.miserc.toml` defines; it cannot reference itself
-- `exec()` – Requires Settings, which are not yet loaded
+- `exec()` – Requires settings, which are not yet loaded
 - `read_file()` – Not registered in the early-init context (needs per-file directory resolution that is not set up at this stage)
 - `mise_bin`, `mise_pid` – Not meaningful at this stage
 
@@ -580,8 +575,8 @@ ceiling_paths = ["{{ env.HOME }}/work"]
 </div>
 
 ::: tip
-If a template fails to render (e.g. due to an undefined variable), mise will log a warning
-and fall back to the raw content.
+If a template fails to render (e.g. due to an undefined variable), mise logs a warning
+and falls back to the raw content.
 :::
 
 ::: warning

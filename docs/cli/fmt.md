@@ -5,13 +5,13 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/fmt.rs`](https://github.com/jdx/mise/blob/main/src/cli/fmt.rs)
 
-Formats mise.toml
+Format mise.toml
 
 Sorts keys and cleans up whitespace in mise.toml
 
 ## Flags
-- **`-a --all`** — Format all files from the current directory
-- **`-c --check`** — Check if the configs are formatted, no formatting is done
+- **`-a --all`** — Format every config file mise currently loads, not just those in the current directory
+- **`-c --check`** — Check whether the configs are formatted without rewriting them; exits 1 if any are not
 - **`-s --stdin`** — Read config from stdin and write its formatted version into stdout
 - **`-h --help`** — Print help
 

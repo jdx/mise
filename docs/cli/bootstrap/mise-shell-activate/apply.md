@@ -5,6 +5,8 @@
 - **Effect:** modifies state
 - **Source code:** [`src/cli/bootstrap.rs`](https://github.com/jdx/mise/blob/main/src/cli/bootstrap.rs)
 
+Configure shell activation from `[bootstrap.mise_shell_activate]`
+
 ## Flags
 - **`-n --dry-run`** — Print the actions that would run without writing anything
 - **`-y --yes`** — Skip the confirmation prompt
