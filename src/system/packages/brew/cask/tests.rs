@@ -111,6 +111,7 @@ fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
         name: "acme/tools/root".to_string(),
         version: None,
         tap_url: Some("https://github.com/acme/custom-tools.git".to_string()),
+        desired: crate::system::packages::PackageDesiredState::Present,
     };
     extend_cask_dependency_closure(&mut closure, &mut pending, &root_request, root.clone());
     assert_eq!(pending.len(), 1);
@@ -139,6 +140,7 @@ fn cask_dependency_closure_collects_formulae_and_transitive_casks() {
     );
     let standard_tap_request = PackageRequest {
         tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
         ..root_request
     };
     assert_eq!(
@@ -173,6 +175,7 @@ fn cask_dependency_closure_keeps_duplicate_names_from_each_tap() {
             name: format!("{owner}/tools/shared"),
             version: None,
             tap_url: Some(tap_url.to_string()),
+            desired: crate::system::packages::PackageDesiredState::Present,
         };
         extend_cask_dependency_closure(&mut closure, &mut pending, &request, root);
     }
@@ -404,6 +407,7 @@ fn externally_managed_version_precedes_artifact_parsing() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
     };
 
     assert_eq!(
@@ -432,6 +436,7 @@ fn both_receipt_types_satisfy_installed_state_without_mutation() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
     };
 
     assert_eq!(
@@ -465,6 +470,7 @@ fn mise_owned_state_validates_artifacts_before_receipt() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
     };
 
     let error = package_state(&request, &cask).unwrap_err();
@@ -487,6 +493,7 @@ fn mise_owned_state_validates_platform_before_receipt() -> Result<()> {
         name: cask.token.clone(),
         version: None,
         tap_url: None,
+        desired: crate::system::packages::PackageDesiredState::Present,
     };
 
     assert!(matches!(

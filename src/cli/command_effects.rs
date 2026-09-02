@@ -97,7 +97,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap mise-shell-activate apply", Write),
     ("bootstrap mise-shell-activate status", Read),
     ("bootstrap packages", Read),
-    ("bootstrap packages apply", Write),
+    ("bootstrap packages apply", Destructive),
     ("bootstrap packages import", Write),
     // Uninstalls system packages that are no longer declared.
     ("bootstrap packages prune", Destructive),
@@ -380,6 +380,10 @@ mod tests {
         // Nested commands are reached too.
         assert_eq!(
             cmd("plugins").subcommands["uninstall"].effect,
+            Some(Destructive)
+        );
+        assert_eq!(
+            cmd("bootstrap").subcommands["packages"].subcommands["apply"].effect,
             Some(Destructive)
         );
         // Anything in UNCLASSIFIED must be left unset, not defaulted.

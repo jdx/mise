@@ -818,6 +818,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
+            desired: crate::system::packages::PackageDesiredState::Present,
         }
     }
 

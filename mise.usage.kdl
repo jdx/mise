@@ -772,7 +772,7 @@ edits require `--force`.
     }
     cmd packages subcommand_required=#true help="Manage bootstrap system packages from `[bootstrap.packages]`" effect=read {
         flag "-h --help" help="Print help" action=help builtin=#true
-        cmd apply help="Apply system packages from `[bootstrap.packages]`" effect=write {
+        cmd apply help="Apply system packages from `[bootstrap.packages]`" effect=destructive {
             alias i install
             long_help #"""
 Apply system packages from `[bootstrap.packages]`

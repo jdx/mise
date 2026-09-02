@@ -6,6 +6,7 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 [bootstrap.packages]
 "pacman:openssl" = "latest"
 "pacman:base-devel" = "latest"
+"pacman:libreoffice-fresh" = { state = "absent" }
 ```
 
 ## Behavior
@@ -17,6 +18,11 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
   elevated with sudo when necessary (see
   [sudo](/bootstrap/packages/#sudo)). `--needed` makes installs
   idempotent.
+- Packages declared with `state = "absent"` are removed with
+  `pacman -R --noconfirm`. Removal is based on pacman's installed package
+  database, so it works the same for official Arch packages and packages from
+  configured third-party repositories such as the Omarchy Package Repository.
+  mise does not cascade to dependents or remove orphaned dependencies.
 - If `/var/lib/pacman/sync` contains no databases (fresh containers), mise
   runs `pacman -Sy` automatically before installing. Force a refresh with
   `mise bootstrap packages apply --update`.

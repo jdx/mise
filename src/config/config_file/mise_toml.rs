@@ -832,17 +832,20 @@ impl MiseToml {
         version: &str,
     ) -> eyre::Result<()> {
         let packages = &mut self.bootstrap.get_or_insert_with(Default::default).packages;
-        let preserve_options = match packages.get_mut(spec) {
+        let (preserve_options, reset_absent) = match packages.get_mut(spec) {
             Some(PackageTomlConfig::Options(options)) => {
                 options.version = version.to_string();
-                true
+                let reset_absent =
+                    options.state == crate::system::PackageDesiredStateTomlConfig::Absent;
+                options.state = crate::system::PackageDesiredStateTomlConfig::Present;
+                (true, reset_absent)
             }
             _ => {
                 packages.insert(
                     spec.to_string(),
                     PackageTomlConfig::Version(version.to_string()),
                 );
-                false
+                (false, false)
             }
         };
         let mut doc = self.doc_mut()?;
@@ -863,10 +866,16 @@ impl MiseToml {
         if preserve_options && let Some(item) = packages.get_mut(spec) {
             if let Some(options) = item.as_value_mut().and_then(Value::as_inline_table_mut) {
                 options.insert("version", Value::from(version));
+                if reset_absent {
+                    options.insert("state", Value::from("present"));
+                }
                 return Ok(());
             }
             if item.as_table().is_some() {
                 insert_preserving_decor(item, "version", value(version));
+                if reset_absent {
+                    insert_preserving_decor(item, "state", value("present"));
+                }
                 return Ok(());
             }
         }
@@ -896,6 +905,7 @@ impl MiseToml {
         {
             let mut options = options.clone();
             options.version = version.to_string();
+            options.state = crate::system::PackageDesiredStateTomlConfig::Present;
             self.bootstrap
                 .get_or_insert_with(Default::default)
                 .packages
@@ -3660,6 +3670,7 @@ mod tests {
             [bootstrap.packages]
             "brew:ripgrep" = {{ version = "14.0.0", os = ["macos"] }} # keep me
             "apt:curl" = "8.5.0"
+            "pacman:libreoffice-fresh" = {{ state = "absent" }}
 
             [bootstrap.packages."brew:fd"]
             version = "10.0.0" # keep version comment
@@ -3671,6 +3682,8 @@ mod tests {
         cf.update_bootstrap_package("brew:ripgrep", "latest")
             .unwrap();
         cf.update_bootstrap_package("brew:fd", "latest").unwrap();
+        cf.update_bootstrap_package("pacman:libreoffice-fresh", "latest")
+            .unwrap();
         #[cfg(unix)]
         {
             let inherited = cf
@@ -3689,6 +3702,7 @@ mod tests {
                         version: "1.0.0".to_string(),
                         os: vec![],
                         adopt: None,
+                        state: crate::system::PackageDesiredStateTomlConfig::Present,
                     });
                 cf.update_bootstrap_package_with_fallback(
                     "brew:tree",
@@ -3711,6 +3725,12 @@ mod tests {
         assert!(
             dump.contains(r#"os = ["macos"] # keep selector comment"#),
             "nested package selectors should survive: {dump}"
+        );
+        assert!(
+            dump.contains(
+                r#""pacman:libreoffice-fresh" = { state = "present", version = "latest" }"#
+            ),
+            "using an absent package should make it present: {dump}"
         );
         #[cfg(unix)]
         assert!(
