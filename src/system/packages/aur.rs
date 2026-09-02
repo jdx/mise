@@ -127,13 +127,14 @@ async fn foreign_packages() -> Result<String> {
         .stderr(Stdio::piped())
         .output()
         .await?;
-    if !output.status.success() {
-        bail!(
-            "pacman -Qm failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let no_foreign_packages =
+        output.status.code() == Some(1) && stdout.trim().is_empty() && stderr.trim().is_empty();
+    if !output.status.success() && !no_foreign_packages {
+        bail!("pacman -Qm failed: {}", stderr.trim());
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(stdout.into_owned())
 }
 
 #[async_trait(?Send)]
