@@ -223,7 +223,10 @@ jobs:
   build-tarball-windows:
     if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
     name: build-tarball-windows-${{matrix.arch}}
-    runs-on: windows-latest
+    runs-on: namespace-profile-endev-windows-amd64
+    defaults:
+      run:
+        shell: pwsh
     # Matches the Linux tarball job. 60 was sized for a non-LTO build; the fat-LTO
     # link this job now does is the long pole and its cost varies a lot with
     # available memory — locally the same relink took ~20 minutes with RAM to spare

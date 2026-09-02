@@ -104,7 +104,10 @@ jobs:
         if: always()
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64' }}
+    defaults:
+      run:
+        shell: pwsh
     timeout-minutes: 60
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -399,7 +402,10 @@ jobs:
         run: scripts/test-bootstrap-linux-host.sh target/debug/mise
 
   windows-unit:
-    runs-on: windows-latest
+    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64' }}
+    defaults:
+      run:
+        shell: pwsh
     timeout-minutes: 40
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
@@ -432,7 +438,10 @@ jobs:
   windows-e2e:
     permissions:
       contents: read
-    runs-on: windows-latest
+    runs-on: ${{ !inputs.trusted && 'windows-latest' || 'namespace-profile-endev-windows-amd64' }}
+    defaults:
+      run:
+        shell: pwsh
     timeout-minutes: 100
     needs: [build-windows, classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
