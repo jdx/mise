@@ -227,7 +227,7 @@ This is convenient for quickly editing or creating scripts.
 
 ## Task Grouping
 
-File tasks in `mise-tasks`, `.mise/tasks`, `mise/tasks`, or `.config/mise/tasks` can be grouped into
+File tasks in `mise-tasks`, `.mise-tasks`, `.mise/tasks`, `mise/tasks`, or `.config/mise/tasks` can be grouped into
 subdirectories, which automatically prefix the task names
 when loaded.
 

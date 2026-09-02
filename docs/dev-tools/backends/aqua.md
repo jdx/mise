@@ -276,7 +276,7 @@ semver without a bunch of edge cases.
 
 If you notice aqua tools giving you versions that aren't simple triplets, it's worth fixing.
 
-One common issue I've seen is registries using a `version_filter` expression like `Version startsWith "Version startsWith "atlascli/""`.
+One common issue I've seen is registries using a `version_filter` expression like `Version startsWith "atlascli/"`.
 
 This causes the version to be `atlascli/1.2.3`, which is not what we want. The fix is to use
 `version_prefix` instead of `version_filter` and put the prefix (`atlascli/` in this example) in the

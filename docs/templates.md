@@ -52,7 +52,7 @@ Use a `raw` block to keep tera delimiters from being rendered:
 
 </div>
 
-This renders as <span v-pre>`Hello {{name}}`</span>.
+This renders as <span v-pre>`Hello {{ name }}`</span>.
 
 Tera supports [literals](https://keats.github.io/tera/#literals), including:
 

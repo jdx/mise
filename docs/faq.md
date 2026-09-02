@@ -16,7 +16,7 @@ If you really want to use a `mise.toml` or `.tool-versions`, here are three ways
 
 ## What is the difference between "nodejs" and "node" (or "golang" and "go")?
 
-These are aliased. For example, `mise use nodejs@14.0` is the same as `mise install node@14.0`. This
+These are aliased. For example, `mise use nodejs@14.0` is the same as `mise use node@14.0`. This
 means they cannot be different plugins.
 
 This is for convenience, so you don't need to remember which one is the "official" name. If
@@ -80,7 +80,7 @@ Because you'll need to use shims, you won't have environment variables from mise
 [`mise x`](/cli/exec) or [`mise run`](/cli/run).
 :::
 
-## How do I use mise with http proxies?
+## How do I use mise with HTTP proxies?
 
 Short answer: set the `http_proxy` and `https_proxy` environment variables. These should be
 lowercase.

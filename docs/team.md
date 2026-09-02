@@ -57,5 +57,5 @@ The advisory board helps make important decisions about the project, such as:
 
 ## Contributors
 
-mise is an open source project that welcomes [contributions](https://github.com/jdx/mise/graphs/contributors).
+mise is an open-source project that welcomes [contributions](https://github.com/jdx/mise/graphs/contributors).
 We're grateful to everyone who has volunteered their work for the project.

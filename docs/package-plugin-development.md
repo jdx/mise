@@ -49,7 +49,7 @@ Hooks are batch-oriented, but each hook receives the batch for its own phase:
   as packages reported missing or at a mismatched requested version.
 - `PackageUpgrade` receives the actionable requests reported as present,
   including packages that are already current, so the manager can no-op them.
-  Requests reported missing or unavailable, and unsupported version pins, are
+  Requests reported missing or unavailable and unsupported version pins are
   omitted.
 
 mise does not call an action hook when its action batch is empty.

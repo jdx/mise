@@ -353,7 +353,7 @@ You can also edit `mise.toml` directly instead of using `mise use` — the effec
 
 `mise install` installs tools but does not activate them—it downloads/builds/compiles the tool
 into `~/.local/share/mise/installs`, but you can't use it until you "set" the version
-in a `.mise-toml` or `.tool-versions` file.
+in a `mise.toml` or `.tool-versions` file.
 
 ::: tip
 If you're coming from `asdf`, there is no need to run `mise plugin add` first to install
@@ -383,8 +383,9 @@ with Python 3.12:
 mise x python@3.12 -- ./myscript.py
 ```
 
-Python is installed if it isn't already. `mise x` also reads local/global
-`.mise-toml`/`.tool-versions` files,
+With the default [`auto_install`](/configuration/settings.html#auto_install) and
+[`exec_auto_install`](/configuration/settings.html#exec_auto_install) settings, Python is installed
+if it isn't already. `mise x` also reads local/global `mise.toml`/`.tool-versions` files,
 so if you don't want to use `mise activate` or shims, you can use mise by prefixing
 commands with
 `mise x --`:

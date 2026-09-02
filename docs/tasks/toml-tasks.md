@@ -417,7 +417,7 @@ file = "git::https://github.com/myorg/example.git//myfile?ref=v1.0.0"
 
 :::
 
-The URL must follow the pattern `git::<protocol>://<url>//<path>?<ref>`.
+The URL must follow the pattern `git::<protocol>://<url>//<path>?ref=<ref>`.
 
 Required fields:
 

@@ -249,13 +249,9 @@ Use `run` when the hook should execute as an inline command in a subprocess. `pr
 if `shell` is set with `script`/`scripts` on those hooks, it is ignored.
 
 ::: warning
-I feel this should be obvious, but in case it's not: this won't do any sort of cleanup
-when you _leave_ the directory the way `[env]` in `mise.toml` does. You're literally just
-executing shell code when you enter the directory, which mise has no way to track at all.
-I don't think there is a solution to this problem, and it's likely the reason direnv has never
-implemented something similar.
-
-In most situations this is probably fine, though it's worth keeping in mind.
+Shell code runs only when entering the directory. Leaving the directory does not clean up
+its changes the way `[env]` in `mise.toml` does. Hooks execute shell code that mise does not
+track or undo.
 
 :::
 

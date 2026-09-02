@@ -46,19 +46,19 @@ Templates use colon (`:`) separators for namespacing, similar to task naming con
 
 When a task extends a template, fields are merged according to these rules:
 
-| Field                                             | Behavior                                                    |
-| ------------------------------------------------- | ----------------------------------------------------------- |
-| `run`, `run_windows`                              | Local overrides completely                                  |
-| `tools`                                           | Deep merge (local tools add to or override the template's)  |
-| `env`                                             | Deep merge (local env adds to or overrides the template's)  |
-| `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                     |
-| `dir`                                             | Local overrides; defaults to config_root if not in template |
-| `sources`, `outputs`, `cache`                     | Local overrides completely                                  |
-| `output`                                          | Local overrides template (if set)                           |
-| Sandbox deny fields                               | Compose with task-local settings                            |
-| Sandbox allow fields                              | Template and task-local values are combined                 |
-| `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                           |
-| `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)    |
+| Field                                             | Behavior                                                          |
+| ------------------------------------------------- | ----------------------------------------------------------------- |
+| `run`, `run_windows`                              | Local overrides completely                                        |
+| `tools`                                           | Deep merge (local tools add to or override the template's values) |
+| `env`                                             | Deep merge (local env adds to or overrides the template's values) |
+| `depends`, `depends_post`, `wait_for`             | Local overrides completely (not merged)                           |
+| `dir`                                             | Local overrides; defaults to config_root if not in template       |
+| `sources`, `outputs`, `cache`                     | Local overrides completely                                        |
+| `output`                                          | Local overrides template (if set)                                 |
+| Sandbox deny fields                               | Compose with task-local settings                                  |
+| Sandbox allow fields                              | Template and task-local values are combined                       |
+| `description`, `shell`, `timeout`, etc.           | Local overrides template (if set)                                 |
+| `quiet`, `hide`, `raw`, `interactive`, `raw_args` | Not supported on templates (set explicitly on each task)          |
 
 ### Example: Deep Merge for Tools
 

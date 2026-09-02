@@ -402,10 +402,12 @@ mise i
 
 The lockfile uses a consolidated format with `[tools.name.assets]` sections to organize asset information under each tool. Asset information includes checksums, file sizes, and optional download URLs. Legacy lockfiles with separate `[tools.name.checksums]` and `[tools.name.sizes]` sections are automatically migrated to the new format.
 
-Currently, mise needs to actually install the tool to get the tarball checksum (otherwise it would have to download the tarball just
-to compute the checksum, since the tarball is normally deleted). So you may need to run something like `mise uninstall --all` first to have it
-reinstall everything. mise stores the full version even when it doesn't know the checksum, so the version is still locked—just without a checksum
-to go with it.
+When a backend has no published checksum source, mise needs to install the tool to get the tarball
+checksum. Configured sources such as [`checksum_url`](/dev-tools/backends/http.html#checksum_url) let
+`mise lock` resolve the checksum without downloading the artifact. Otherwise, you may need to run
+something like `mise uninstall --all` first to have mise reinstall everything. mise stores the full
+version even when it doesn't know the checksum, so the version is still locked—just without a
+checksum to go with it.
 
 ## Lockfile URL Tracking (Avoiding Rate Limits)
 

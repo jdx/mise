@@ -9,7 +9,9 @@ CI pipelines can run arbitrary commands. Use this to install mise and then run `
 
 ```yaml
 script: |
-  curl https://mise.run | sh
+  MISE_VERSION=v2026.9.0
+  curl https://mise.run | MISE_VERSION="$MISE_VERSION" sh
+  mise version | grep -q "^${MISE_VERSION#v} "
   mise install
 ```
 
