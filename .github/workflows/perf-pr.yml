@@ -71,6 +71,10 @@ jobs:
           echo "pr_number=$PR_NUMBER" >&3
 
   measure:
+    env:
+      # Job-local appliance volume; no remote backend is configured.
+      MBX_CACHE_DIR: /var/cache/mbx
+      MBX_REMOTE_URL: ""
     name: Compare instruction counts
     needs: authorize
     if: needs.authorize.outputs.authorized == 'true'
@@ -81,7 +85,8 @@ jobs:
     runs-on: [self-hosted, jdx-perf-v1]
     container:
       image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
-      options: --cpuset-cpus 0-7
+      # Anonymous by design; perf-runner#10 prunes it after this container stops.
+      options: --cpuset-cpus 0-7 --mount type=volume,dst=/var/cache/mbx
     timeout-minutes: 40
     permissions:
       # Read only. This job builds and runs code from the pull request, so it
@@ -91,6 +96,8 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Initialize isolated build cache
+        run: sudo chown "$(id -u):$(id -g)" "$MBX_CACHE_DIR"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The branch commit, not the merge commit actions/checkout defaults to
@@ -104,8 +111,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Compile inside the pinned job container. Restoring target/ could relabel
-      # a binary built on another runner class as a jdx-perf-v1 measurement.
+      # Compile inside the pinned job container. mise's cache remains disabled:
+      # mbx uses the appliance-local content-addressed store mounted above.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false
@@ -122,6 +129,8 @@ jobs:
             uname -a
             lscpu
             mise --version
+            mbx --version
+            mbx cache dir
             rustc --version
             cargo --version
             valgrind --version
@@ -138,7 +147,6 @@ jobs:
       # `tak push` in this workflow and there should never be one.
       - name: Measure this pull request
         run: |
-          cargo build --release
           taskset -c 0-3 mise run perf:record
 
       - name: Find the base commit
