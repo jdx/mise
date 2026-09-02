@@ -9,7 +9,7 @@ use crate::task::task_cache_store::{
 };
 use crate::task::task_source_checker::{
     TaskCacheInputs, build_output_matcher, expand_enumeration_patterns, glob_walk, is_output,
-    output_glob_patterns, task_cache_inputs, task_cwd,
+    output_glob_patterns, prune_symlink_loop, task_cache_inputs, task_cwd,
 };
 use crate::task::{RunEntry, Task};
 use crate::toolset::Toolset;
@@ -1277,11 +1277,10 @@ fn resolve_output_roots(task: &Task, root: &Path, require_matches: bool) -> Resu
             for expanded in expand_enumeration_patterns(&output)? {
                 ensure_safe_relative(Path::new(&expanded))?;
                 for entry in glob_walk(&root.join(expanded), false)? {
-                    let path = match entry {
-                        Ok(entry) => entry.into_path(),
-                        Err(err) if err.loop_ancestor().is_some() => continue,
-                        Err(err) => return Err(err.into()),
+                    let Some(entry) = prune_symlink_loop(entry)? else {
+                        continue;
                     };
+                    let path = entry.into_path();
                     glob_matched = true;
                     let rel = path.strip_prefix(root)?.to_path_buf();
                     ensure_safe_relative(&rel)?;

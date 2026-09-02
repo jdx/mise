@@ -3,12 +3,17 @@
 mkdir tree
 printf 'input\n' >tree/input.txt
 printf 'cache input\n' >cache-input.txt
+printf 'hash input\n' >hash-input.txt
+printf 'mtime input\n' >mtime-input.txt
 ln -s . tree/a
 ln -s . tree/b
 
 cat <<'EOF' >mise.toml
 [settings]
 experimental = true
+
+[settings.task]
+source_freshness_hash_contents = true
 
 [tasks.cached]
 run = "echo cached"
@@ -25,6 +30,16 @@ run = "echo cached output"
 sources = ["cache-input.txt"]
 outputs = ["tree/**/*"]
 cache = { enabled = true }
+
+[tasks.hash-output]
+run = "touch tree/input.txt && echo hash output"
+sources = ["hash-input.txt"]
+outputs = ["tree/**/*"]
+
+[tasks.mtime-output]
+run = "touch tree/input.txt && echo mtime output"
+sources = ["mtime-input.txt"]
+outputs = ["tree/**/*"]
 EOF
 
 # Recursive source expansion must skip ancestor symlink loops while retaining
@@ -35,3 +50,14 @@ assert "mise run -q render-sources" "tree/input.txt"
 # Artifact-cache output enumeration must likewise prune loops without aborting
 # task preparation.
 assert "mise run -q cached-output" "cached output"
+
+# Content-based output hashing must prune loop errors and retain a usable
+# freshness baseline.
+assert "mise run -q hash-output" "hash output"
+assert_empty "mise run -q hash-output"
+
+# Mtime-based freshness uses a separate traversal path and must also prune the
+# same loops.
+printf 'changed\n' >mtime-input.txt
+assert "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=false mise run -q mtime-output" "mtime output"
+assert_empty "MISE_TASK_SOURCE_FRESHNESS_HASH_CONTENTS=false mise run -q mtime-output"

@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, Error as WalkError, WalkDir};
 
 /// Remove mise's automatic output before rerunning a task so an earlier
 /// success cannot make a failed attempt look fresh.
@@ -527,6 +527,18 @@ pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWa
         builder = builder.max_depth(pattern_depth);
     }
     Ok(builder.build()?)
+}
+
+/// Return a successful walk entry, pruning the expected error emitted when a
+/// followed directory symlink points back to one of its ancestors.
+pub(crate) fn prune_symlink_loop(
+    entry: std::result::Result<DirEntry, WalkError>,
+) -> Result<Option<DirEntry>> {
+    match entry {
+        Ok(entry) => Ok(Some(entry)),
+        Err(err) if err.loop_ancestor().is_some() => Ok(None),
+        Err(err) => Err(err.into()),
+    }
 }
 
 /// Build an ordered matcher for task output patterns.
@@ -1068,7 +1080,9 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
     ) -> Result<bool> {
         let mut found_any = false;
         for entry in WalkDir::new(dir).follow_links(true).into_iter() {
-            let entry = entry?;
+            let Some(entry) = prune_symlink_loop(entry)? else {
+                continue;
+            };
             let path = entry.path();
             if path == dir {
                 continue; // skip the root directory itself
@@ -1133,7 +1147,10 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
                 // Propagate glob resolution errors (OS errors during directory
                 // reads) rather than silently skipping them — a partial result
                 // could produce the same hash as a complete one.
-                let path = entry?.into_path();
+                let Some(entry) = prune_symlink_loop(entry)? else {
+                    continue;
+                };
+                let path = entry.into_path();
                 glob_matched = true;
                 let metadata = match path.metadata() {
                     Ok(metadata) => metadata,
@@ -1354,11 +1371,11 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             let mut candidates = Vec::new();
             for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
-                candidates.extend(
-                    glob_walk(&expanded, false)?
-                        .map(|entry| entry.map(|entry| entry.into_path()))
-                        .collect::<Result<Vec<_>, _>>()?,
-                );
+                for entry in glob_walk(&expanded, false)? {
+                    if let Some(entry) = prune_symlink_loop(entry)? {
+                        candidates.push(entry.into_path());
+                    }
+                }
             }
             candidates
         } else {
@@ -1371,7 +1388,9 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             }
             found_candidate = true;
             for entry in WalkDir::new(candidate).follow_links(true) {
-                let entry = entry?;
+                let Some(entry) = prune_symlink_loop(entry)? else {
+                    continue;
+                };
                 let metadata = entry.metadata()?;
                 if is_output(&matcher, entry.path(), metadata.is_dir()) {
                     if metadata.is_dir() {
