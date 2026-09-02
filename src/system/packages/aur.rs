@@ -142,6 +142,7 @@ impl SystemPackageManager for AurManager {
         if crate::system::sudo::is_root() {
             bail!("AUR packages cannot be built as root; run mise as a non-root user");
         }
+        crate::system::sudo::ensure_elevation_available(&shell_words::join(&command))?;
         let mut runner = CmdLineRunner::new(helper);
         for arg in &args {
             runner = runner.arg(arg);
