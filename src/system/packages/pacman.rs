@@ -156,7 +156,7 @@ fn find_provider<'a>(
                     || request
                         .version
                         .as_ref()
-                        .is_none_or(|version| version_matches(version, &package.version)))
+                        .is_none_or(|version| pacman_version_matches(version, &package.version)))
         })
         .or_else(|| {
             packages
@@ -167,10 +167,9 @@ fn find_provider<'a>(
                         provide.name == request.name
                             && (!constraint_satisfied
                                 || request.version.as_ref().is_none_or(|version| {
-                                    provide
-                                        .version
-                                        .as_ref()
-                                        .is_some_and(|provided| version_matches(version, provided))
+                                    provide.version.as_ref().is_some_and(|provided| {
+                                        pacman_version_matches(version, provided)
+                                    })
                                 }))
                     })
                 })
@@ -191,8 +190,22 @@ fn matching_provider_names(packages: &[PacmanPackageMetadata], requested: &str) 
         .collect()
 }
 
-fn version_matches(requested: &str, installed: &str) -> bool {
-    installed == requested || installed.starts_with(&format!("{requested}-"))
+fn pacman_version_matches(requested: &str, provided: &str) -> bool {
+    // vercmp ships with pacman and uses the same libalpm version ordering as
+    // dependency resolution. It intentionally considers e.g. 2.0 and
+    // 2.0-13 equal, which a textual comparison cannot model correctly.
+    match std::process::Command::new("vercmp")
+        .args([provided, requested])
+        .stdin(Stdio::null())
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim() == "0"
+        }
+        // Unit tests and non-Arch development hosts do not necessarily have
+        // vercmp. A real pacman installation always supplies it.
+        _ => provided == requested || provided.starts_with(&format!("{requested}-")),
+    }
 }
 
 fn parse_pacman_deptest(output: &str) -> HashSet<&str> {
