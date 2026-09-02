@@ -10,6 +10,9 @@ runs:
   steps:
     - name: Set up mise for the mbx install
       uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      env:
+        MISE_DATA_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-data', runner.temp) || env.MISE_DATA_DIR }}
+        MISE_CACHE_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-cache', runner.temp) || env.MISE_CACHE_DIR }}
       with:
         install: false
         cache: false
@@ -22,6 +25,8 @@ runs:
       shell: bash
       env:
         MBX_BACKEND: ${{ inputs.backend }}
+        MISE_DATA_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-data', runner.temp) || env.MISE_DATA_DIR }}
+        MISE_CACHE_DIR: ${{ runner.os == 'Windows' && format('{0}/mise-cache', runner.temp) || env.MISE_CACHE_DIR }}
       run:
         | # zizmor: ignore[github-env] mise where returns the trusted tool install directory
         mise install mr-boxington@1.4.1
