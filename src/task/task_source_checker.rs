@@ -542,14 +542,25 @@ pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWa
     Ok(builder.build()?)
 }
 
-/// Return a successful walk entry, pruning the expected error emitted when a
-/// followed directory symlink points back to one of its ancestors.
-pub(crate) fn prune_symlink_loop(
+/// Return a successful walk entry, pruning expected errors from following
+/// symlinks that either loop to an ancestor or point to a missing target.
+pub(crate) fn prune_symlink_walk_error(
     entry: std::result::Result<DirEntry, WalkError>,
 ) -> Result<Option<DirEntry>> {
     match entry {
         Ok(entry) => Ok(Some(entry)),
         Err(err) if err.loop_ancestor().is_some() => Ok(None),
+        Err(err)
+            if err
+                .io_error()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+                && err.path().is_some_and(|path| {
+                    fs::symlink_metadata(path)
+                        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+                }) =>
+        {
+            Ok(None)
+        }
         Err(err) => Err(err.into()),
     }
 }
@@ -1093,7 +1104,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
     ) -> Result<bool> {
         let mut found_any = false;
         for entry in WalkDir::new(dir).follow_links(true).into_iter() {
-            let Some(entry) = prune_symlink_loop(entry)? else {
+            let Some(entry) = prune_symlink_walk_error(entry)? else {
                 continue;
             };
             let path = entry.path();
@@ -1160,7 +1171,7 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
                 // Propagate glob resolution errors (OS errors during directory
                 // reads) rather than silently skipping them — a partial result
                 // could produce the same hash as a complete one.
-                let Some(entry) = prune_symlink_loop(entry)? else {
+                let Some(entry) = prune_symlink_walk_error(entry)? else {
                     continue;
                 };
                 let path = entry.into_path();
@@ -1385,7 +1396,7 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
                 for entry in glob_walk(&expanded, false)? {
-                    if let Some(entry) = prune_symlink_loop(entry)? {
+                    if let Some(entry) = prune_symlink_walk_error(entry)? {
                         candidates.push(entry.into_path());
                     }
                 }
@@ -1401,7 +1412,7 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             }
             found_candidate = true;
             for entry in WalkDir::new(candidate).follow_links(true) {
-                let Some(entry) = prune_symlink_loop(entry)? else {
+                let Some(entry) = prune_symlink_walk_error(entry)? else {
                     continue;
                 };
                 let metadata = entry.metadata()?;
@@ -1465,6 +1476,26 @@ mod tests {
             entries.len() < 10,
             "loop expansion was not bounded: {entries:?}"
         );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_walk_skips_dangling_symlinks() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir(&tree)?;
+        fs::write(tree.join("input.txt"), "input")?;
+        symlink("missing", tree.join("dangling"))?;
+
+        let paths = glob_walk(&tree.join("**/*"), false)?
+            .filter_map(|entry| prune_symlink_walk_error(entry).transpose())
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(paths, [tree.join("input.txt")]);
         Ok(())
     }
 

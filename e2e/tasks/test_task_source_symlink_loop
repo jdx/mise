@@ -7,6 +7,7 @@ printf 'hash input\n' >hash-input.txt
 printf 'mtime input\n' >mtime-input.txt
 ln -s . tree/a
 ln -s . tree/b
+ln -s missing tree/dangling
 
 cat <<'EOF' >mise.toml
 [settings]
