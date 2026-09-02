@@ -72,7 +72,7 @@ jobs:
 
   measure:
     env:
-      # Persistent appliance-local store; no remote backend is configured.
+      # Job-local appliance volume; no remote backend is configured.
       MBX_CACHE_DIR: /var/cache/mbx
       MBX_REMOTE_URL: ""
     name: Compare instruction counts
@@ -85,7 +85,7 @@ jobs:
     runs-on: [self-hosted, jdx-perf-v1]
     container:
       image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
-      options: --cpuset-cpus 0-7 --mount type=bind,src=/var/cache/jdx-perf/mbx-pr,dst=/var/cache/mbx
+      options: --cpuset-cpus 0-7 --mount type=volume,dst=/var/cache/mbx
     timeout-minutes: 40
     permissions:
       # Read only. This job builds and runs code from the pull request, so it
@@ -95,6 +95,8 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Initialize isolated build cache
+        run: sudo chown "$(id -u):$(id -g)" "$MBX_CACHE_DIR"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The branch commit, not the merge commit actions/checkout defaults to
