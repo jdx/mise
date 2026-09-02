@@ -1,18 +1,19 @@
 name: Set up mbx
-description: Select the trusted jdx server or fork-safe GitHub cache backend
+description: Use the local Namespace volume or fork-safe GitHub cache backend
 
 inputs:
   backend:
-    description: Explicit backend for structurally trusted or untrusted callers
+    description: Explicit backend for local Namespace or untrusted GitHub callers
     default: auto
 runs:
   using: composite
   steps:
-    - uses: jdx/mr-boxington-action@adc5c234c02592f7edd008bf81d5bc0e9584dc03 # v1.2.0
+    - if: inputs.backend != 'local'
+      uses: jdx/mr-boxington-action@adc5c234c02592f7edd008bf81d5bc0e9584dc03 # v1.2.0
       with:
         version: 1.4.1
         cache-generation: v2
-        backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'server') }}
+        backend: ${{ inputs.backend != 'auto' && inputs.backend || ((github.actor != 'jdx' || (github.event_name == 'pull_request' && (github.event.pull_request.head.repo.full_name != github.repository || github.event.pull_request.user.login != 'jdx'))) && 'github' || 'local') }}
         server-url: https://cache.mise.jdx.dev
         namespace: jdx/mise
         oidc-audience: https://cache.mise.jdx.dev
