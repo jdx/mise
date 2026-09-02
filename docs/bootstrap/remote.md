@@ -135,8 +135,8 @@ requirements.
 
 When the local executable cannot run on the target, mise automatically resolves
 the raw executable for the same mise version from the official GitHub release.
-This covers Linux x64, arm64, and armv7 on both glibc and musl, plus macOS x64
-and arm64. mise downloads `SHASUMS256.txt` and its minisign signature, verifies
+This covers Linux x64, arm64, and armv7 on both glibc and musl, plus macOS
+arm64. mise downloads `SHASUMS256.txt` and its minisign signature, verifies
 the manifest with mise's embedded release key, then verifies the selected
 artifact's SHA-256 checksum before upload. The verified artifact is cached for
 the duration of the command, so targets with the same platform share one

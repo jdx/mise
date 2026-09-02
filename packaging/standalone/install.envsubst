@@ -70,6 +70,11 @@ get_arch() {
     fi
   fi
   arch="$(uname -m)"
+  # A shell running under Rosetta reports x86_64 even though the host can run
+  # the supported arm64 binary natively.
+  if [ "$(uname -s)" = Darwin ] && [ "$arch" = x86_64 ] && [ "$(sysctl -in sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
+    arch=arm64
+  fi
   if [ "$arch" = x86_64 ]; then
     echo "x64$musl"
   elif [ "$arch" = aarch64 ] || [ "$arch" = arm64 ]; then
@@ -141,7 +146,6 @@ get_checksum() {
     checksum_linux_arm64_musl="$MISE_CHECKSUM_LINUX_ARM64_MUSL"
     checksum_linux_armv7="$MISE_CHECKSUM_LINUX_ARMV7"
     checksum_linux_armv7_musl="$MISE_CHECKSUM_LINUX_ARMV7_MUSL"
-    checksum_macos_x86_64="$MISE_CHECKSUM_MACOS_X86_64"
     checksum_macos_arm64="$MISE_CHECKSUM_MACOS_ARM64"
     checksum_linux_x86_64_zstd="$MISE_CHECKSUM_LINUX_X86_64_ZSTD"
     checksum_linux_x86_64_musl_zstd="$MISE_CHECKSUM_LINUX_X86_64_MUSL_ZSTD"
@@ -149,7 +153,6 @@ get_checksum() {
     checksum_linux_arm64_musl_zstd="$MISE_CHECKSUM_LINUX_ARM64_MUSL_ZSTD"
     checksum_linux_armv7_zstd="$MISE_CHECKSUM_LINUX_ARMV7_ZSTD"
     checksum_linux_armv7_musl_zstd="$MISE_CHECKSUM_LINUX_ARMV7_MUSL_ZSTD"
-    checksum_macos_x86_64_zstd="$MISE_CHECKSUM_MACOS_X86_64_ZSTD"
     checksum_macos_arm64_zstd="$MISE_CHECKSUM_MACOS_ARM64_ZSTD"
 
     # TODO: refactor this, it's a bit messy
@@ -171,9 +174,7 @@ get_checksum() {
           warn "no checksum for $os-$arch"
         fi
       elif [ "$os" = "macos" ]; then
-        if [ "$arch" = "x64" ]; then
-          echo "$checksum_macos_x86_64_zstd"
-        elif [ "$arch" = "arm64" ]; then
+        if [ "$arch" = "arm64" ]; then
           echo "$checksum_macos_arm64_zstd"
         else
           warn "no checksum for $os-$arch"
@@ -199,9 +200,7 @@ get_checksum() {
           warn "no checksum for $os-$arch"
         fi
       elif [ "$os" = "macos" ]; then
-        if [ "$arch" = "x64" ]; then
-          echo "$checksum_macos_x86_64"
-        elif [ "$arch" = "arm64" ]; then
+        if [ "$arch" = "arm64" ]; then
           echo "$checksum_macos_arm64"
         else
           warn "no checksum for $os-$arch"
@@ -278,6 +277,9 @@ install_mise() {
   current_version="${current_version#v}"
   os="${MISE_INSTALL_OS:-$(get_os)}"
   arch="${MISE_INSTALL_ARCH:-$(get_arch)}"
+  if [ "$os" = "macos" ] && [ "$arch" = "x64" ]; then
+    unsupported_arch "$arch on macos"
+  fi
   ext="${MISE_INSTALL_EXT:-$(get_ext)}"
   install_path="${MISE_INSTALL_PATH:-$HOME/.local/bin/mise}"
   install_dir="$(dirname "$install_path")"

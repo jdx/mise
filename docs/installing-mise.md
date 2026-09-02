@@ -108,7 +108,6 @@ a project is therefore a great way to ensure that anyone who installs with it fe
 
 Supported OS/arch:
 
-- `macos-x64`
 - `macos-arm64`
 - `linux-x64`
 - `linux-x64-musl`
@@ -120,6 +119,8 @@ Supported OS/arch:
 - `linux-armv7-musl`
 
 If you need something else, compile it with `cargo install mise` (see below).
+
+Intel macOS (`macos-x64`) does not receive prebuilt mise binaries.
 
 ### apk
 

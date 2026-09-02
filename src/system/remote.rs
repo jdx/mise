@@ -1299,7 +1299,7 @@ fn release_asset_name(os: &str, arch: &str, libc: Option<LibcFlavor>) -> Result<
         }
     };
     let suffix = match os {
-        "macos" if matches!(arch, "x86_64" | "aarch64") => {
+        "macos" if arch == "aarch64" => {
             if libc.is_some() {
                 bail!("macOS release targets cannot declare a libc family");
             }
@@ -2354,13 +2354,10 @@ mod tests {
             format!("mise-v{version}-linux-armv7-musl")
         );
         assert_eq!(
-            release_asset_name("macos", "x86_64", None).unwrap(),
-            format!("mise-v{version}-macos-x64")
-        );
-        assert_eq!(
             release_asset_name("macos", "aarch64", None).unwrap(),
             format!("mise-v{version}-macos-arm64")
         );
+        assert!(release_asset_name("macos", "x86_64", None).is_err());
         assert!(release_asset_name("linux", "riscv64", Some(LibcFlavor::Glibc)).is_err());
         assert!(release_asset_name("freebsd", "x86_64", None).is_err());
         assert!(release_asset_name("linux", "x86_64", None).is_err());
