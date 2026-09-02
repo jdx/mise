@@ -1,5 +1,57 @@
 # Changelog
 
+## [2026.9.1](https://github.com/jdx/mise/compare/v2026.9.0..v2026.9.1) - 2026-09-02
+
+### 🚀 Features
+
+- **(bootstrap)** add firewall connection limiting by @jdx in [#12669](https://github.com/jdx/mise/pull/12669)
+- **(bootstrap)** support additional systemd directives by @jdx in [#12683](https://github.com/jdx/mise/pull/12683)
+- **(config)** scope locked mode by config source by @jdx in [#12667](https://github.com/jdx/mise/pull/12667)
+
+### 🐛 Bug Fixes
+
+- **(brew-cask)** keep the extracted payload beside a stage-sourced binary by @azohra in [#12686](https://github.com/jdx/mise/pull/12686)
+- **(env)** unset inherited environment variables by @jdx in [#12664](https://github.com/jdx/mise/pull/12664)
+- **(install)** name the file when the install marker cannot be created by @JamBalaya56562 in [#12624](https://github.com/jdx/mise/pull/12624)
+- **(install)** stop s3 --dry-run claiming it would install what it cannot by @hktitof in [#12641](https://github.com/jdx/mise/pull/12641)
+- **(shim)** support shared executable directories by @jdx in [#12675](https://github.com/jdx/mise/pull/12675)
+- **(task)** install lazy tools invoked from tasks and mise x by @jdx in [#12687](https://github.com/jdx/mise/pull/12687)
+- **(upgrade)** prevent recursive deferred pruning by @jdx in [#12676](https://github.com/jdx/mise/pull/12676)
+
+### 📦️ Dependency Updates
+
+- update dependency go to v1.27.0 by @renovate[bot] in [#12655](https://github.com/jdx/mise/pull/12655)
+- update ghcr.io/jdx/mise:rpm docker digest to 95e72cc by @renovate[bot] in [#12651](https://github.com/jdx/mise/pull/12651)
+- update ghcr.io/jdx/mise:alpine docker digest to 83af781 by @renovate[bot] in [#12649](https://github.com/jdx/mise/pull/12649)
+- update ubuntu docker tag to resolute-20260811.1 by @renovate[bot] in [#12653](https://github.com/jdx/mise/pull/12653)
+- update ghcr.io/jdx/mise:rpm docker digest to a8468e3 by @renovate[bot] in [#12661](https://github.com/jdx/mise/pull/12661)
+- update ghcr.io/jdx/mise:deb docker digest to dde2b64 by @renovate[bot] in [#12650](https://github.com/jdx/mise/pull/12650)
+- update ubuntu:26.04 docker digest to 2260313 by @renovate[bot] in [#12652](https://github.com/jdx/mise/pull/12652)
+- update jdx/mise-action digest to c2a8761 by @renovate[bot] in [#12662](https://github.com/jdx/mise/pull/12662)
+- update docker/setup-buildx-action digest to 37fe631 by @renovate[bot] in [#12648](https://github.com/jdx/mise/pull/12648)
+- update ghcr.io/jdx/mise:alpine docker digest to abda225 by @renovate[bot] in [#12660](https://github.com/jdx/mise/pull/12660)
+- update usage to 6.6.1 by @jdx in [#12679](https://github.com/jdx/mise/pull/12679)
+- update rust crate ubi to 0.12 by @renovate[bot] in [#12657](https://github.com/jdx/mise/pull/12657)
+- update dependency usage to v6.6.1 by @renovate[bot] in [#12680](https://github.com/jdx/mise/pull/12680)
+- update rattler by @renovate[bot] in [#12654](https://github.com/jdx/mise/pull/12654)
+- update jdx/mise-action action to v4.3.0 by @renovate[bot] in [#12663](https://github.com/jdx/mise/pull/12663)
+- update node.js to v24.20.0 by @renovate[bot] in [#12688](https://github.com/jdx/mise/pull/12688)
+
+### 📦 Registry
+
+- derive bin names from aqua by @jdx in [#12668](https://github.com/jdx/mise/pull/12668)
+
+### Chore
+
+- **(ci)** update mbx to 1.3.2 by @jdx in [#12672](https://github.com/jdx/mise/pull/12672)
+- **(release)** improve sponsor message by @jdx in [#12665](https://github.com/jdx/mise/pull/12665)
+- update mr-boxington to 1.3.1 by @jdx in [#12642](https://github.com/jdx/mise/pull/12642)
+
+### New Contributors
+
+- @azohra made their first contribution in [#12686](https://github.com/jdx/mise/pull/12686)
+- @hktitof made their first contribution in [#12641](https://github.com/jdx/mise/pull/12641)
+
 ## [2026.9.0](https://github.com/jdx/mise/compare/v2026.8.16..v2026.9.0) - 2026-09-01
 
 ### 🚀 Features
