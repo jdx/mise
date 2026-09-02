@@ -67,6 +67,14 @@ rm -f "$HOME/bootstrap-from-relative-global-task"
 assert_succeed "MISE_GLOBAL_CONFIG_FILE=relative-global/config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
 assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 
+# A relative MISE_CONFIG_DIR is resolved before the child changes into the
+# checkout and remains the config directory during re-execution.
+relative_config_checkout="bootstrap-relative-config-checkout"
+rm -f "$HOME/bootstrap-from-relative-global-task"
+assert_succeed "MISE_CONFIG_DIR='$relative_config_checkout' mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
+assert "git -C '$relative_config_checkout' remote get-url origin" "$relative_global_source_repo"
+assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
+
 # A bare relative MISE_GLOBAL_CONFIG_FILE checks out into the current directory
 # rather than silently falling back to the default global config directory.
 mkdir "$bare_global_checkout"
