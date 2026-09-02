@@ -384,7 +384,7 @@ cargo test
 mise run test:e2e
 
 # Run specific E2E test
-mise run test:e2e test_install
+mise run test:e2e '^test_install$'
 
 # Run with coverage
 ./xtasks/test/coverage

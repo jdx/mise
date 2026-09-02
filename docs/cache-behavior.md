@@ -14,8 +14,10 @@ the list of versions available for that tool (`mise ls-remote <TOOL>`), the idio
 the list of aliases, the bin directories within each tool installation, and the result of
 running `exec-env` after the tool was installed.
 
-Remote versions are updated daily by default. The file is zlib-compressed MessagePack; to view it,
-run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)):
+Remote versions are refreshed after 1 hour by default, as configured by
+[`fetch_remote_versions_cache`](/configuration/settings.html#fetch_remote_versions_cache). The file
+is zlib-compressed MessagePack; to view it, run the following (requires
+[msgpack-cli](https://github.com/msgpack/msgpack-cli)):
 
 ```sh
 cat "${MISE_CACHE_DIR:-$HOME/.cache/mise}"/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode

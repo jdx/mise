@@ -275,18 +275,18 @@ cargo test module_name
 cargo test test_name -- --nocapture
 ```
 
-#### Running Single E2E Tests
+#### Running Focused E2E Tests
 
 ```bash
-# Run a specific E2E test by name
-mise run test:e2e test_name
+# Run a specific E2E test with an anchored filename pattern
+mise run test:e2e '^test_name$'
 
 # Run E2E tests matching a pattern
 mise run test:e2e pattern
 
 # Examples:
-mise run test:e2e test_use                 # Run specific test
-mise run test:e2e test_config_set          # Run config-related test
+mise run test:e2e '^test_use$'             # Run one specific test
+mise run test:e2e '^test_config_set$'       # Run one config-related test
 mise run test:e2e task                     # Run all tests matching "task"
 ```
 
