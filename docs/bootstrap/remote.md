@@ -142,6 +142,10 @@ artifact's SHA-256 checksum before upload. The verified artifact is cached for
 the duration of the command, so targets with the same platform share one
 download.
 
+Intel macOS remains buildable from source, but it is not part of the official
+prebuilt artifact matrix. Use a compatible source-built executable through the
+normal local upload or one of the explicit strategies below.
+
 Automatic substitution is deliberately limited to official release binaries.
 Before downloading a different target, mise proves that the local executable
 matches one of the signed checksums for the same official release. Debug builds,
