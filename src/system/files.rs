@@ -7,7 +7,8 @@
 //!
 //! ```toml
 //! [dotfiles]
-//! "~/.zshrc" = {}                                        # implied source
+//! "~/.config/mise/config.toml" = { source = "config.toml", mode = "symlink" }
+//! "~/.zshrc" = { mode = "symlink" }                      # implied source
 //! "~/.gitconfig" = "dotfiles/gitconfig"                  # explicit source
 //! "~/.config/foo.toml" = { mode = "copy" }               # implied source
 //! "~/.ssh/config" = { source = "ssh.tmpl", mode = "template" }
