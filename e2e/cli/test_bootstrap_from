@@ -62,6 +62,7 @@ git -C "$relative_global_source_repo" commit -qm initial
 
 # A relative MISE_GLOBAL_CONFIG_FILE is resolved before the child changes into
 # the checkout and remains the selected global config during re-execution.
+rm -f "$HOME/bootstrap-from-relative-global-task"
 assert_succeed "MISE_GLOBAL_CONFIG_FILE=relative-global/config.toml mise bootstrap --from-git '$relative_global_source_repo' --yes --only task"
 assert "cat ~/bootstrap-from-relative-global-task" "relative-global"
 
