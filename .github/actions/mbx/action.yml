@@ -23,6 +23,8 @@ runs:
       with:
         install: false
         cache: false
+        env: false
+        add_shims_to_path: false
     - name: Mount the local mbx store on the Namespace cache volume
       if: inputs.backend == 'local'
       uses: namespacelabs/nscloud-cache-action@c5f8dab7560444c4bf8dbc64f1b203431873c547 # v1.6.1
