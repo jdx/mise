@@ -138,7 +138,12 @@ fn find_provider<'a>(
 ) -> Option<&'a PacmanPackageMetadata> {
     packages
         .iter()
-        .find(|package| package.name == requested || package.provides.contains(requested))
+        .find(|package| package.name == requested)
+        .or_else(|| {
+            packages
+                .iter()
+                .find(|package| package.provides.contains(requested))
+        })
 }
 
 fn parse_pacman_deptest(output: &str) -> HashSet<&str> {
@@ -512,6 +517,21 @@ mod tests {
                 version: "9.7.1_1-1".to_string()
             }
         );
+    }
+
+    #[test]
+    fn test_find_provider_prefers_exact_package_name() {
+        let packages = parse_pacman_info(
+            "Name            : alternate-foo\n\
+             Version         : 2.0-1\n\
+             Provides        : foo\n\
+             \n\
+             Name            : foo\n\
+             Version         : 1.0-1\n\
+             Provides        : None\n",
+        );
+
+        assert_eq!(find_provider(&packages, "foo").unwrap().name, "foo");
     }
 
     #[test]
