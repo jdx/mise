@@ -197,11 +197,13 @@ async fn which_shim(
     // tool version or auto-install over the network while the user is pressing
     // tab. On Windows the shim is invoked as `usage.exe`, so strip the platform
     // executable suffix before comparing.
-    let bin_stem = bin_name
-        .strip_suffix(std::env::consts::EXE_SUFFIX)
-        .unwrap_or(bin_name);
-    let completion_offline =
-        bin_stem == "usage" && args.get(1).is_some_and(|arg| arg == "complete-word");
+    let shim_name = command_name_without_exe_suffix(bin_name);
+    let is_usage = if cfg!(windows) {
+        shim_name.eq_ignore_ascii_case("usage")
+    } else {
+        shim_name == "usage"
+    };
+    let completion_offline = is_usage && args.get(1).is_some_and(|arg| arg == "complete-word");
     let resolve_options = if completion_offline {
         ResolveOptions {
             offline: true,
@@ -221,14 +223,14 @@ async fn which_shim(
     let wrapper = if cfg!(macos) {
         wrappers
             .iter()
-            .find(|(name, _)| command_names_eq(name, bin_stem))
+            .find(|(name, _)| command_names_eq(name, shim_name))
             .map(|(_, wrapper)| wrapper)
     } else {
-        wrappers.get(bin_stem)
+        wrappers.get(shim_name)
     };
     if let Some(wrapper) = wrapper {
-        if command_names_eq(wrapper.command(), bin_stem) {
-            bail!("command wrapper for {bin_stem} cannot delegate to itself");
+        if command_names_eq(wrapper.command(), shim_name) {
+            bail!("command wrapper for {shim_name} cannot delegate to itself");
         }
         trace!("shim[{bin_name}] WRAPPER command: {}", wrapper.command());
         return Ok((PathBuf::from(wrapper.command()), ts, Some(wrapper.clone())));
@@ -239,16 +241,18 @@ async fn which_shim(
     if !completion_offline
         && Settings::get().not_found_auto_install
         && ts
-            .should_install_missing_registry_bin_provider(config, bin_name)
+            .should_install_missing_registry_bin_provider(config, shim_name)
             .await?
     {
         for tv in ts
-            .install_missing_bin(config, bin_name)
+            .install_missing_bin(config, shim_name)
             .await?
             .unwrap_or_default()
         {
             let p = tv.backend()?;
-            if let Some(bin) = p.which(config, &tv, bin_name).await? {
+            if let Some(bin) =
+                backend_which_shim(p.as_ref(), config, &tv, shim_name, bin_name).await?
+            {
                 trace!(
                     "shim[{bin_name}] REGISTRY ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
@@ -257,26 +261,30 @@ async fn which_shim(
             }
         }
     }
-    if let Some((p, tv)) = ts.which(config, bin_name).await
-        && let Some(bin) = p.which(config, &tv, bin_name).await?
-    {
-        trace!(
-            "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
-            bin = display_path(&bin)
-        );
-        return Ok((bin, ts, None));
+    for lookup_name in [shim_name, bin_name].into_iter().unique() {
+        if let Some((p, tv)) = ts.which(config, lookup_name).await
+            && let Some(bin) = p.which(config, &tv, lookup_name).await?
+        {
+            trace!(
+                "shim[{bin_name}] ToolVersion: {tv} bin: {bin}",
+                bin = display_path(&bin)
+            );
+            return Ok((bin, ts, None));
+        }
     }
     // Lazy tools are explicit fallback providers. They install on first shim use even when
     // general not-found auto-install is disabled, but only after configured/project providers
     // and already-installed tools have had a chance to win.
-    if !completion_offline && ts.has_missing_lazy_bin_provider(config, bin_name).await? {
+    if !completion_offline && ts.has_missing_lazy_bin_provider(config, shim_name).await? {
         for tv in ts
-            .install_missing_lazy_bin(config, bin_name)
+            .install_missing_lazy_bin(config, shim_name)
             .await?
             .unwrap_or_default()
         {
             let backend = tv.backend()?;
-            if let Some(bin) = backend.which(config, &tv, bin_name).await? {
+            if let Some(bin) =
+                backend_which_shim(backend.as_ref(), config, &tv, shim_name, bin_name).await?
+            {
                 trace!(
                     "shim[{bin_name}] LAZY ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
@@ -289,12 +297,14 @@ async fn which_shim(
     // offline completion so `usage complete-word` fails locally instead.
     if !completion_offline && Settings::get().not_found_auto_install {
         for tv in ts
-            .install_missing_bin(config, bin_name)
+            .install_missing_bin(config, shim_name)
             .await?
             .unwrap_or_default()
         {
             let p = tv.backend()?;
-            if let Some(bin) = p.which(config, &tv, bin_name).await? {
+            if let Some(bin) =
+                backend_which_shim(p.as_ref(), config, &tv, shim_name, bin_name).await?
+            {
                 trace!(
                     "shim[{bin_name}] NOT_FOUND ToolVersion: {tv} bin: {bin}",
                     bin = display_path(&bin)
@@ -324,11 +334,31 @@ async fn which_shim(
             }
         }
     }
-    let tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
-    match err_no_version_set(config, ts, bin_name, tvs).await {
+    let mut tvs = ts.list_rtvs_with_bin(config, shim_name).await?;
+    if tvs.is_empty() && shim_name != bin_name {
+        tvs = ts.list_rtvs_with_bin(config, bin_name).await?;
+    }
+    match err_no_version_set(config, ts, shim_name, tvs).await {
         Ok(_) => unreachable!("err_no_version_set always returns an error"),
         Err(err) => Err(err),
     }
+}
+
+async fn backend_which_shim(
+    backend: &dyn Backend,
+    config: &Arc<Config>,
+    tv: &ToolVersion,
+    shim_name: &str,
+    bin_name: &str,
+) -> Result<Option<PathBuf>> {
+    // The extensionless name preserves normal Windows extension expansion (including `.cmd`),
+    // while the original name is required for dotted stems such as `python3.12.exe`.
+    for lookup_name in [shim_name, bin_name].into_iter().unique() {
+        if let Some(bin) = backend.which(config, tv, lookup_name).await? {
+            return Ok(Some(bin));
+        }
+    }
+    Ok(None)
 }
 
 /// Build the actionable, `which_shim`-style resolution error for a bin that a
@@ -944,6 +974,18 @@ fn command_names_eq(a: &str, b: &str) -> bool {
         a.to_lowercase() == b.to_lowercase()
     } else {
         a == b
+    }
+}
+
+pub(crate) fn command_name_without_exe_suffix(bin_name: &str) -> &str {
+    let suffix = std::env::consts::EXE_SUFFIX;
+    if suffix.is_empty() {
+        return bin_name;
+    }
+    let suffix_start = bin_name.len().saturating_sub(suffix.len());
+    match (bin_name.get(..suffix_start), bin_name.get(suffix_start..)) {
+        (Some(name), Some(actual_suffix)) if actual_suffix.eq_ignore_ascii_case(suffix) => name,
+        _ => bin_name,
     }
 }
 
@@ -1820,6 +1862,18 @@ mod tests {
     fn dotted_windows_wrapper_names_are_rejected() {
         let names = ["foo.bar".to_string()];
         assert!(validate_wrapper_names(&names).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shim_command_names_drop_exe_suffix_case_insensitively() {
+        assert_eq!(command_name_without_exe_suffix("dummy.exe"), "dummy");
+        assert_eq!(command_name_without_exe_suffix("DUMMY.EXE"), "DUMMY");
+        assert_eq!(
+            command_name_without_exe_suffix("python3.12.exe"),
+            "python3.12"
+        );
+        assert_eq!(command_name_without_exe_suffix("dummy.cmd"), "dummy.cmd");
     }
 
     #[test]

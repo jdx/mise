@@ -24,7 +24,7 @@ use crate::toolset::tool_request::ToolRequest;
 use crate::toolset::tool_source::ToolSource;
 use crate::toolset::tool_version::{ResolveOptions, ToolVersion};
 use crate::ui::multi_progress_report::MultiProgressReport;
-use crate::{backend, config, hooks, runtime_symlinks};
+use crate::{backend, config, hooks, runtime_symlinks, shims};
 
 impl Toolset {
     async fn missing_lazy_bin_provider(
@@ -40,7 +40,11 @@ impl Toolset {
                 let options = tv.request.options();
                 if options.lazy == Some(true) {
                     match tv.request.lazy_bins() {
-                        Ok(Some(bins)) if bins.iter().any(|bin| bin == bin_name) => Some(Ok(tv)),
+                        Ok(Some(bins))
+                            if bins.iter().any(|bin| lazy_bin_names_eq(bin, bin_name)) =>
+                        {
+                            Some(Ok(tv))
+                        }
                         Ok(_) => None,
                         // Missing metadata for one lazy declaration says nothing
                         // about whether another declaration provides this command.
@@ -829,6 +833,15 @@ impl Toolset {
     }
 }
 
+fn lazy_bin_names_eq(configured: &str, requested: &str) -> bool {
+    if cfg!(windows) {
+        shims::command_name_without_exe_suffix(configured)
+            .eq_ignore_ascii_case(shims::command_name_without_exe_suffix(requested))
+    } else {
+        configured == requested
+    }
+}
+
 fn ensure_safe_install_options(versions: &[ToolRequest]) -> Result<()> {
     for request in versions {
         request.ensure_safe_install_options()?;
@@ -888,6 +901,15 @@ mod tests {
     use super::*;
     use crate::cli::args::BackendArg;
     use crate::toolset::parse_tool_options;
+
+    #[cfg(windows)]
+    #[test]
+    fn lazy_bin_names_match_windows_command_case() {
+        assert!(lazy_bin_names_eq("dummy", "DUMMY"));
+        assert!(lazy_bin_names_eq("dummy.exe", "DUMMY"));
+        assert!(lazy_bin_names_eq("DUMMY.EXE", "dummy.exe"));
+        assert!(!lazy_bin_names_eq("dummy", "other"));
+    }
 
     #[tokio::test]
     async fn test_init_request_options_preserves_unmatched_request_options() {
