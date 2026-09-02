@@ -1,0 +1,27 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "ea83abec4ccc",
+  "strategy": "manual-commit",
+  "branch": "codex/dedup-hook-env-unset",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/env/test_env_unset_inherited",
+    "src/cli/hook_env.rs",
+    "src/hook_env.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/ea/83abec4ccc/0/metadata.json",
+      "transcript": "/ea/83abec4ccc/0/full.jsonl",
+      "content_hash": "/ea/83abec4ccc/0/content_hash.txt",
+      "prompt": "/ea/83abec4ccc/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 175208,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6083584,
+    "output_tokens": 15312,
+    "api_call_count": 73
+  }
+}
