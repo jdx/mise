@@ -27,6 +27,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # Persistent appliance-local store; no remote backend is configured.
+  MBX_CACHE_DIR: /var/cache/mbx
   TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1
 
 jobs:
@@ -40,7 +42,7 @@ jobs:
     runs-on: [self-hosted, jdx-perf-v1]
     container:
       image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
-      options: --cpuset-cpus 0-7
+      options: --cpuset-cpus 0-7 --mount type=bind,src=/var/cache/jdx-perf/mbx,dst=/var/cache/mbx
     timeout-minutes: 30
     permissions:
       contents: read
@@ -49,8 +51,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # Compile inside the pinned job container. Restoring target/ could relabel
-      # a binary built on another runner class as a jdx-perf-v1 measurement.
+      # Compile inside the pinned job container. mise's cache remains disabled:
+      # mbx uses the appliance-local content-addressed store mounted above.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           cache: false
@@ -71,6 +73,8 @@ jobs:
             uname -a
             lscpu
             mise --version
+            mbx --version
+            mbx cache dir
             rustc --version
             cargo --version
             valgrind --version
@@ -85,7 +89,7 @@ jobs:
 
       - name: Measure and record
         run: |
-          cargo build --release
+          mbx build --release
           taskset -c 0-3 mise run perf:record
       - name: Package measurement note
         if: github.ref == 'refs/heads/main'
