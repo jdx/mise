@@ -16,7 +16,7 @@ Backend plugins extend the standard vfox plugin system with enhanced backend met
 
 ## Plugin Architecture
 
-Backend plugins are generally a git repository but can also be a directory (via `mise link`).
+Backend plugins are generally a git repository but can also be a directory (via `mise plugin link`).
 
 Backend plugins are written in Lua (currently version 5.1). They use three main backend methods, each implemented in its own file:
 
@@ -314,10 +314,12 @@ function PLUGIN:BackendListVersions(ctx)
     end
 
     -- Return versions or error if none found
+    -- `npm view` already returns versions oldest-to-newest, which is the
+    -- order mise expects, so keep them as-is
     local versions = {}
     if type(npm_versions) == "table" then
-        for i = #npm_versions, 1, -1 do
-            table.insert(versions, npm_versions[i])
+        for _, v in ipairs(npm_versions) do
+            table.insert(versions, v)
         end
     end
 
@@ -331,7 +333,7 @@ end
 
 ### Regex Parsing
 
-Parse versions with regex:
+Parse versions with Lua patterns (Lua does not have regular expressions; `string.match`/`string.gsub` use Lua's own pattern syntax):
 
 ```lua
 local function parse_version(version_string)

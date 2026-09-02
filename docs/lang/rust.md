@@ -120,7 +120,7 @@ be given as an array or as a comma-separated string.
 [tools]
 "rust" = {
   version = "1.83.0",
-  targets = ["wasm32-unknown-unknown", "thumbv2-none-eabi"],
+  targets = ["wasm32-unknown-unknown", "thumbv7em-none-eabi"],
 }
 ```
 

@@ -199,6 +199,7 @@ its [template](../templates.md).
 ### Confirmation
 
 A message to show before running the task. The user is prompted to confirm before the task runs.
+Set the `confirm` key to the message to display.
 
 ```mise-toml
 [tasks.release]
@@ -209,7 +210,7 @@ file = 'scripts/release.sh'
 
 ## Specifying a shell or an interpreter {#shell-shebang}
 
-Tasks are executed with `set -e` (`set -o erropt`) if the shell is `sh`, `bash`, or `zsh`. This means the script
+Tasks are executed with `set -e` (`set -o errexit`) if the shell is `sh`, `bash`, or `zsh`. This means the script
 exits if any command fails. You can disable this by running `set +e` in the script.
 
 ```mise-toml

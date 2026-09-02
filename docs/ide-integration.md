@@ -108,7 +108,7 @@ vim.env.PATH = vim.env.HOME .. "/.local/share/mise/shims:" .. vim.env.PATH
 
 For better Treesitter and LSP integration, see the [neovim cookbook](./mise-cookbook/neovim.md).
 
-## emacs
+## Emacs
 
 ### Traditional shims way
 

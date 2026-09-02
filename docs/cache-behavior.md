@@ -9,8 +9,8 @@ to start.
 
 ## Tool Cache
 
-Each tool/backend has a cache that's stored in `~/$MISE_CACHE_DIR/<TOOL>`. It stores
-the list of versions available for that tool (`mise ls-remote <TOOL>`), the idiomatic filenames (see below),
+Each tool/backend has a cache that's stored in `$MISE_CACHE_DIR/<TOOL>` (by default `~/.cache/mise/<TOOL>`). It stores
+the list of versions available for that tool (`mise ls-remote <TOOL>`), the idiomatic filenames,
 the list of aliases, the bin directories within each tool installation, and the result of
 running `exec-env` after the tool was installed.
 
@@ -18,7 +18,7 @@ Remote versions are updated daily by default. The file is zlib-compressed Messag
 run the following (requires [msgpack-cli](https://github.com/msgpack/msgpack-cli)):
 
 ```sh
-cat ~/$MISE_CACHE_DIR/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
+cat "${MISE_CACHE_DIR:-$HOME/.cache/mise}"/node/remote_versions.msgpack.z | perl -e 'use Compress::Raw::Zlib;my $d=new Compress::Raw::Zlib::Inflate();my $o;undef $/;$d->inflate(<>,$o);print $o;' | msgpack-cli decode
 ```
 
 Caching `exec-env` may be problematic if the script does more than export static values, but

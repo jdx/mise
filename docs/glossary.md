@@ -81,7 +81,7 @@ mise supports multiple backends for installing tools from different sources:
 : Installs tools via Swift Package Manager. See [spm backend](/dev-tools/backends/spm).
 
 **ubi**
-: Universal Binary Installer for tools distributed as single binaries. See [ubi backend](/dev-tools/backends/ubi).
+: Universal Binary Installer for tools distributed as single binaries (deprecated; use the `github` or `aqua` backend instead). See [ubi backend](/dev-tools/backends/ubi).
 
 **vfox**
 : Backend compatible with [VersionFox](https://vfox.dev/) plugins. See [vfox backend](/dev-tools/backends/vfox).
@@ -103,7 +103,7 @@ mise supports multiple backends for installing tools from different sources:
 ## Configuration
 
 **config_root**
-: The canonical project root directory that mise uses when resolving relative paths in configuration files. Set via the `MISE_PROJECT_ROOT` environment variable or detected automatically.
+: The canonical project root directory that mise uses when resolving relative paths in configuration files. Detected automatically from the location of the configuration file and exposed to tasks and hooks as the `MISE_PROJECT_ROOT` environment variable.
 
 **Configuration Environments**
 : Environment-specific configuration files like `mise.dev.toml` or `mise.prod.toml`, activated via the `MISE_ENV` environment variable. See [Configuration Environments](/configuration/environments).

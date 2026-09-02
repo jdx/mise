@@ -313,7 +313,7 @@ Single-level globs (`*`) are supported, but recursive globs (`**`) are not. This
 :::
 
 ::: warning Automatic Discovery Deprecated
-Automatic filesystem walking to discover monorepo subdirectories is deprecated. If you don't define `[monorepo].config_roots`, mise still walks the filesystem but emits a deprecation warning. Migrate to explicit config roots.
+Automatic filesystem walking to discover monorepo subdirectories is deprecated. If you don't define `[monorepo].config_roots`, mise still walks the filesystem for task discovery but emits a deprecation warning; `mise install --monorepo` and `mise ls --monorepo` do not fall back and always require explicit config roots. Migrate to explicit config roots.
 :::
 
 ### Nested Monorepo Roots
@@ -341,8 +341,10 @@ Enable experimental features and mark the repository root:
 
 ```toml
 # /myproject/mise.toml
-experimental = true
 monorepo_root = true
+
+[settings]
+experimental = true
 ```
 
 Inspect the inferred projects with:
@@ -813,7 +815,7 @@ mise's Monorepo Tasks aims to hit the sweet spot between simplicity and power:
 | Tool version management | ❌             | ❌         | ⚠️            | ✅   |
 | Environment layering    | ❌             | ⚠️         | ❌            | ✅   |
 | Minimal setup           | ✅             | ⚠️         | ❌            | ✅   |
-| Task caching            | ❌             | ✅         | ✅            | ❌   |
+| Task caching            | ❌             | ✅         | ✅            | ✅   |
 
 **When to choose mise:**
 
@@ -836,7 +838,6 @@ For monorepos with similar task patterns across projects, [task templates](/task
 
 ```toml
 # Root mise.toml
-[settings]
 monorepo_root = true
 
 [task_templates."python:build"]

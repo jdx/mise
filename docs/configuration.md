@@ -17,7 +17,7 @@ Learn how to configure mise for your project with `mise.toml` files, environment
 - `.config/mise/conf.d/*.toml` - the same fragment loading and [deprecation](/configuration/environments.html#conf-d-environments) behavior under the grouped config directory
 
 ::: tip
-Run [`mise cfg`](/cli/config.html) to see the order in which mise loads files on your setup. This is often
+Run [`mise config`](/cli/config.html) to see the order in which mise loads files on your setup. This is often
 much easier than working through mise's rules.
 :::
 

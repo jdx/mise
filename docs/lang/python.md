@@ -154,8 +154,9 @@ If you have installed `uv` (for example, with `mise use -g uv@latest`), `mise` w
 `uv` does not include `pip` by default (it provides `uv pip` instead). If you need the `pip` package, add the `uv_create_args = ['--seed']` option.
 
 :::warning
-The `true` value for `python.uv_venv_auto` is legacy and deprecated as of mise 2026.7.
-Prefer `"source"` or `"create|source"`.
+The `true` value for `python.uv_venv_auto` is legacy and has been deprecated since
+mise 2026.7, which warns whenever it is used; support for it is scheduled to be removed
+in mise 2027.7. Prefer `"source"` or `"create|source"`.
 The `python.uv_venv_auto` **setting** itself is not going away — only the `true` value is
 being phased out.
 :::

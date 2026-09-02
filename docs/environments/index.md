@@ -66,7 +66,7 @@ mise use node@26
 mise set MY_VAR=123
 cat mise.toml
 # [tools]
-# node = '24'
+# node = '26'
 # [env]
 # MY_VAR = '123'
 mise exec -- node --eval 'console.log(process.env.MY_VAR)'
@@ -493,7 +493,7 @@ This **must** be a script that runs in bash as if it were executed like this:
 source ./script.sh
 ```
 
-The shebang will be **ignored**. See [#1448](https://github.com/jdx/mise/discussions/6734)
+The shebang will be **ignored**. See [discussion #6734](https://github.com/jdx/mise/discussions/6734) (archived issue #1448)
 for a potential alternative that would work with binaries or other script languages.
 :::
 

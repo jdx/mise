@@ -60,7 +60,7 @@ For platform-specific tarballs:
 [platforms.linux-x64]
 url = "https://example.com/releases/1.0.0/tool-linux-x64.tar.gz"
 
-[platforms.darwin-arm64]
+[platforms.macos-arm64]
 url = "https://example.com/releases/1.0.0/tool-macos-arm64.tar.gz"
 ```
 
@@ -118,7 +118,7 @@ For tools with different URLs per platform, you can generate all platforms at on
 ```bash
 mise generate tool-stub ./bin/rg \
   --platform-url linux-x64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-x86_64-unknown-linux-musl.tar.gz \
-  --platform-url darwin-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
+  --platform-url macos-arm64:https://github.com/BurntSushi/ripgrep/releases/download/14.0.3/ripgrep-14.0.3-aarch64-apple-darwin.tar.gz
 ```
 
 **Auto-Platform Detection**: If the URL contains platform information, you can omit the platform prefix and let mise auto-detect it:
@@ -161,6 +161,7 @@ The generator preserves existing configuration and merges new platforms into the
 - `--checksum-algorithm ALGORITHM` - Generate `blake3` (default) or `sha256` checksums
 - `--skip-download` - Skip downloading for faster generation (no checksums or binary detection)
 - `--lock` - Resolve and embed lockfile data (pinned version + platform URLs/checksums) into an existing stub
+- `--fetch` - Fetch missing checksums and sizes for an existing stub file
 
 `--checksum-algorithm` cannot be combined with `--lock` or `--skip-download`, because those modes do not calculate checksums.
 
@@ -298,7 +299,7 @@ version = "1.0.0"
 [platforms.linux-x64]
 url = "https://releases.example.com/v{{version}}/tool-linux-x64.tar.gz"
 
-[platforms.darwin-arm64]
+[platforms.macos-arm64]
 url = "https://releases.example.com/v{{version}}/tool-macos-arm64.tar.gz"
 ```
 

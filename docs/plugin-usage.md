@@ -52,7 +52,7 @@ mise plugin install vfox-npm https://github.com/jdx/vfox-npm
 mise plugin install <plugin-name> <zip-url>
 
 # Example: Installing a plugin from a zip file
-mise plugin install tiny https://github.com/mise-plugins/mise-tiny.git
+mise plugin install tiny https://github.com/mise-plugins/mise-tiny/archive/refs/heads/main.zip
 ```
 
 ### From Local Directory
@@ -206,7 +206,7 @@ Tool plugins use the traditional hook-based approach:
 - **Available**: Lists available versions
 - **PreInstall/PostInstall**: Installation hooks
 - **EnvKeys**: Environment variable setup
-- **Parse**: Version parsing and validation
+- **ParseLegacyFile**: Parses version files from other tools (e.g. `.nvmrc`)
 
 Both architectures provide a flexible plugin system that can handle diverse installation and management needs.
 

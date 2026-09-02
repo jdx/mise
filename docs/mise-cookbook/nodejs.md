@@ -13,6 +13,7 @@ mise use node
 This installs the latest version of Node.js and creates a `mise.toml` file with the following content:
 
 ```toml
+[tools]
 node = "latest"
 ```
 

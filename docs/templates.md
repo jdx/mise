@@ -458,9 +458,6 @@ Tera offers more filters. Read more in the [tera documentation](https://keats.gi
   an absolute path. Does not require the path to exist.
 - `path | canonicalize -> String` – Converts the input path into its
   canonical absolute form. Throws if the path doesn't exist.
-- `path | basename -> String` – Extracts the file name from a path,
-  e.g. `/foo/bar/baz.txt` becomes `baz.txt`.
-- `path | file_size -> String` – Returns the size of a file in bytes.
 - `path | dirname -> String` – Returns the directory path for a file,
   e.g. `/foo/bar/baz.txt` becomes `/foo/bar`.
 - `path | basename -> String` – Returns the base name of a file,

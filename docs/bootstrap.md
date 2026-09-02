@@ -283,8 +283,9 @@ dotfiles phase to replace conflicting whole-file dotfile targets.
 ## Inspecting state
 
 Use `mise bootstrap status` to inspect the declarative bootstrap state in one
-place. It reports every declarative part — packages, repos, dotfiles, shell
-activation, macOS defaults, LaunchAgents, systemd units, and login shell —
+place. It reports every declarative part — secrets, accounts, files and
+directories, services, firewall, Compose projects, packages, repos, dotfiles,
+shell activation, macOS defaults, LaunchAgents, systemd units, and login shell —
 plus `[tools]` and any system dependencies that installed tools require:
 
 ```sh

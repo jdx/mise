@@ -27,8 +27,9 @@ auth token helper.
 
 You can also pick a specific installer with
 [`npm.package_manager`](/configuration/settings.html#npm-package-manager). The
-default `auto` uses the embedded aube; setting it to `aube_cli`, `bun`, `pnpm`,
-or `npm` shells out to that tool, which must then be installed. The standalone
+default `auto` uses the embedded aube (`aube` selects it explicitly); setting it
+to `aube_cli`, `bun`, `pnpm`, or `npm` shells out to that tool, which must then
+be installed. The standalone
 `aube_cli` mode uses mise's built-in HTTP client for version metadata when
 `npm.shell_out` remains at its default `false`, and invokes `aube` directly for
 installation; it does not rely on aube's `npm` compatibility shim.

@@ -151,7 +151,7 @@ sources = ['Cargo.toml', 'src/**/*.rs'] # skip running if these files haven't ch
 outputs = ['target/debug/mycli']
 ```
 
-Now if `target/debug/mycli` is newer than `Cargo.toml` or any `.rs` file, the task is skipped. This uses last-modified timestamps.
+Now if `target/debug/mycli` exists and is newer than `Cargo.toml` and every matching `.rs` file, the task is skipped. This uses last-modified timestamps.
 It wouldn't be hard to add checksum support.
 
 ## Watching files

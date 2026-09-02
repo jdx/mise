@@ -15,8 +15,7 @@ official aqua registry first while retaining the bundled snapshot as a fallback.
 mise's shorthand registry; see [Floating registries](/registry.html#floating-registries) for the
 tradeoffs and cache behavior.
 
-As of this writing, aqua is relatively new to mise, and because many tools are being converted from
-asdf to aqua, some aqua tool configurations may need tightening up. Common issues are listed below;
+Some aqua tool configurations may need tightening up. Common issues are listed below;
 if you notice problems, I strongly recommend contributing fixes back to the aqua registry. The
 maintainer is very responsive and great to work with.
 

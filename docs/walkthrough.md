@@ -194,7 +194,7 @@ mise run greet --user jdx -g "hey" "How are you?"
 
 - All options are passed as environment variables prefixed with `usage_`, like `usage_user`.
 - Help is available with `mise run greet --help`, which shows the options defined in the task.
-- Completions are available like you'd expect, so typing `mise run greet --greeting <tag>` will show `hi`, `hello`, and `hey`
+- Completions are available like you'd expect, so typing `mise run greet --greeting <tab>` will show `hi`, `hello`, and `hey`
   as options.
 - [Custom completion](https://usage.jdx.dev/spec/reference/complete) can be provided by a CLI. `mise run greet --dir <tab>` will execute `find . -maxdepth 1 -type d` to provide completions.
 
@@ -238,5 +238,5 @@ For further reading:
 - [Configuration](/configuration) – More information on `mise.toml` files
 - [Settings](/configuration/settings) – All the configuration settings available in mise
 - [Backends](/dev-tools/backends/) – An index of all the backends available in mise
-- [Registry](/registry) – Every "shorthand" available for tools in mise like `node`, `terraform`, or `watchexec` which point to `core:node`, `asdf:asdf-community/asdf-hashicorp`, and `aqua:watchexec/watchexec` respectively
+- [Registry](/registry) – Every "shorthand" available for tools in mise like `node`, `terraform`, or `watchexec` which point to `core:node`, `aqua:hashicorp/terraform`, and `aqua:watchexec/watchexec` respectively
 - [CLI](/cli/) – The full list of commands available in mise

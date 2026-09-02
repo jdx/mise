@@ -41,6 +41,11 @@ An entry containing a timer key is rendered as a `.timer` instead of a
 `.service`. For example:
 
 ```toml
+[bootstrap.linux.systemd.units.healthcheck]
+description = "check daemon health"
+type = "oneshot"
+exec_start = "~/.local/bin/daemon healthcheck"
+
 [bootstrap.linux.systemd.units.healthcheck-timer]
 description = "periodically check daemon health"
 on_boot_sec = "2min"
