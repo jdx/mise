@@ -656,6 +656,7 @@ pub(super) fn extend_cask_dependency_closure(
             tap_url: dependency_tap_url(request, &name),
             name,
             version: None,
+            desired: super::super::super::PackageDesiredState::Present,
         };
         closure
             .formulae
@@ -666,6 +667,7 @@ pub(super) fn extend_cask_dependency_closure(
         tap_url: dependency_tap_url(request, &name),
         name,
         version: None,
+        desired: super::super::super::PackageDesiredState::Present,
     }));
 }
 

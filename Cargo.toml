@@ -126,6 +126,7 @@ mise-cache-core = { path = "crates/mise-cache-core", version = "0.1", default-fe
 fslock = "0.2"
 gix = { version = "<1", features = ["worktree-mutation"] }
 glob = "0.3"
+globwalk = "0.9"
 globset = "0.4"
 ignore = { version = "0.4", features = [] }
 heck = "0.5"

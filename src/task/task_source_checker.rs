@@ -8,7 +8,7 @@ use eyre::{Result, bail};
 use flate2::Compression;
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
-use glob::glob;
+use globwalk::{GlobWalker, GlobWalkerBuilder};
 use ignore::overrides::{Override, OverrideBuilder};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
@@ -19,7 +19,7 @@ use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, Error as WalkError, WalkDir};
 
 /// Remove mise's automatic output before rerunning a task so an earlier
 /// success cannot make a failed attempt look fresh.
@@ -462,6 +462,130 @@ pub(crate) fn source_glob_patterns(sources: &[String]) -> Vec<String> {
         .collect()
 }
 
+/// Build a glob iterator that follows valid directory symlinks but detects
+/// ancestor loops instead of recursively expanding them forever.
+///
+/// `globwalk` recursively searches its base directory, so non-globstar
+/// patterns are capped at their component depth to preserve `glob`'s
+/// component-by-component expansion semantics. Literal prefixes that do not
+/// exist yet are moved into the pattern so they produce zero matches instead
+/// of a traversal error.
+pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWalker> {
+    fn has_metacharacters(component: &str) -> bool {
+        let mut escaped = false;
+        for ch in component.chars() {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' && !cfg!(windows) {
+                escaped = true;
+            } else if matches!(ch, '*' | '?' | '[') {
+                return true;
+            }
+        }
+        false
+    }
+
+    let mut base = PathBuf::new();
+    let mut glob_pattern = PathBuf::new();
+    let mut globbing = false;
+    let mut recursive = false;
+    let mut pattern_depth = 0;
+
+    for component in pattern.components() {
+        let text = component.as_os_str().to_string_lossy();
+        if !globbing && has_metacharacters(&text) {
+            globbing = true;
+        }
+        if globbing {
+            recursive |= text == "**";
+            pattern_depth += 1;
+            glob_pattern.push(component);
+        } else {
+            base.push(component);
+        }
+    }
+
+    // `task_source_files` also resolves statically named sources through this
+    // helper. Walk the parent in that case because globwalk intentionally does
+    // not yield its traversal root.
+    if !globbing && let Some(file_name) = base.file_name().map(|name| name.to_os_string()) {
+        base.pop();
+        glob_pattern.push(file_name);
+        pattern_depth = 1;
+    }
+
+    while !base.as_os_str().is_empty() && !base.exists() {
+        let Some(file_name) = base.file_name().map(|name| name.to_os_string()) else {
+            break;
+        };
+        base.pop();
+        let mut prefixed_pattern = PathBuf::from(file_name);
+        prefixed_pattern.push(glob_pattern);
+        glob_pattern = prefixed_pattern;
+        pattern_depth += 1;
+    }
+
+    let Some(mut glob_pattern) = pattern_from_path(&glob_pattern) else {
+        bail!("glob pattern is not valid UTF-8: {}", pattern.display());
+    };
+    if glob_pattern.starts_with('!') {
+        glob_pattern.insert(0, '\\');
+    }
+
+    let mut builder = GlobWalkerBuilder::new(&base, glob_pattern)
+        .follow_links(true)
+        .sort_by(|a, b| a.file_name().cmp(b.file_name()))
+        .case_insensitive(case_insensitive);
+    if !recursive {
+        builder = builder.max_depth(pattern_depth);
+    }
+    Ok(builder.build()?)
+}
+
+/// Return a successful walk entry, pruning expected errors from following
+/// symlinks that loop or point to a missing target.
+pub(crate) fn prune_symlink_walk_error(
+    entry: std::result::Result<DirEntry, WalkError>,
+) -> Result<Option<DirEntry>> {
+    match entry {
+        Ok(entry) => Ok(Some(entry)),
+        Err(err) if symlink_walk_error_path(&err).is_some() => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Return the symlink path attached to an expected loop or missing-target
+/// traversal error. Callers that only enumerate reachable files prune it;
+/// artifact caching retains the symlink itself as an output root.
+pub(crate) fn symlink_walk_error_path(err: &WalkError) -> Option<&Path> {
+    let path = err.path()?;
+    let is_symlink =
+        || fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink());
+    if err.loop_ancestor().is_some() && is_symlink() {
+        return Some(path);
+    }
+    err.io_error()
+        .is_some_and(|error| {
+            error.kind() == std::io::ErrorKind::NotFound || is_filesystem_loop_error(error)
+        })
+        .then_some(path)
+        .filter(|_| is_symlink())
+}
+
+#[cfg(unix)]
+fn is_filesystem_loop_error(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(nix::errno::Errno::ELOOP as i32)
+}
+
+#[cfg(windows)]
+fn is_filesystem_loop_error(error: &std::io::Error) -> bool {
+    use windows_sys::Win32::Foundation::{ERROR_CANT_RESOLVE_FILENAME, ERROR_CIRCULAR_DEPENDENCY};
+
+    error.raw_os_error().is_some_and(|code| {
+        code == ERROR_CANT_RESOLVE_FILENAME as i32 || code == ERROR_CIRCULAR_DEPENDENCY as i32
+    })
+}
+
 /// Build an ordered matcher for task output patterns.
 ///
 /// Output entries use the same syntax as sources: `!` excludes, `\!` escapes
@@ -829,8 +953,13 @@ pub(crate) async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<(
                     .map(|patterns| {
                         patterns.into_iter().any(|pattern| {
                             let pattern = resolve_task_path(&root, pattern);
-                            glob(pattern.to_str().unwrap_or_default())
-                                .map(|paths| paths.flatten().next().is_some())
+                            glob_walk(&pattern, false)
+                                .map(|mut paths| {
+                                    paths.any(|entry| match entry {
+                                        Ok(_) => true,
+                                        Err(err) => symlink_walk_error_path(&err).is_some(),
+                                    })
+                                })
                                 .unwrap_or(false)
                         })
                     })
@@ -842,7 +971,7 @@ pub(crate) async fn save_checksum(task: &Task, config: &Arc<Config>) -> Result<(
                 } else {
                     path.to_path_buf()
                 };
-                full_path.exists()
+                fs::symlink_metadata(full_path).is_ok()
             };
             if !output_exists {
                 warn!(
@@ -1001,7 +1130,9 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
     ) -> Result<bool> {
         let mut found_any = false;
         for entry in WalkDir::new(dir).follow_links(true).into_iter() {
-            let entry = entry?;
+            let Some(entry) = prune_symlink_walk_error(entry)? else {
+                continue;
+            };
             let path = entry.path();
             if path == dir {
                 continue; // skip the root directory itself
@@ -1062,11 +1193,14 @@ fn compute_output_hash(task: &Task, root: &Path) -> Result<Option<String>> {
         let mut glob_matched = false;
         for expanded in expand_enumeration_patterns(pattern_str)? {
             let full = resolve_task_path(root, expanded);
-            for entry in glob(full.to_str().unwrap_or_default())? {
+            for entry in glob_walk(&full, false)? {
                 // Propagate glob resolution errors (OS errors during directory
                 // reads) rather than silently skipping them — a partial result
                 // could produce the same hash as a complete one.
-                let path = entry?;
+                let Some(entry) = prune_symlink_walk_error(entry)? else {
+                    continue;
+                };
+                let path = entry.into_path();
                 glob_matched = true;
                 let metadata = match path.metadata() {
                     Ok(metadata) => metadata,
@@ -1123,8 +1257,8 @@ fn get_file_metadatas(
     for pattern in patterns {
         for expanded in expand_enumeration_patterns(pattern)? {
             let pattern = resolve_task_path(root, expanded);
-            let files = glob(pattern.to_str().unwrap())?;
-            for file in files.flatten() {
+            let files = glob_walk(&pattern, false)?;
+            for file in files.flatten().map(|entry| entry.into_path()) {
                 if let Ok(metadata) = file.metadata() {
                     metadatas.insert(file, metadata);
                 }
@@ -1287,9 +1421,11 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             let mut candidates = Vec::new();
             for expanded in expand_enumeration_patterns(&pattern)? {
                 let expanded = resolve_task_path(root, expanded);
-                candidates.extend(
-                    glob(expanded.to_str().unwrap_or_default())?.collect::<Result<Vec<_>, _>>()?,
-                );
+                for entry in glob_walk(&expanded, false)? {
+                    if let Some(entry) = prune_symlink_walk_error(entry)? {
+                        candidates.push(entry.into_path());
+                    }
+                }
             }
             candidates
         } else {
@@ -1302,7 +1438,9 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
             }
             found_candidate = true;
             for entry in WalkDir::new(candidate).follow_links(true) {
-                let entry = entry?;
+                let Some(entry) = prune_symlink_walk_error(entry)? else {
+                    continue;
+                };
                 let metadata = entry.metadata()?;
                 if is_output(&matcher, entry.path(), metadata.is_dir()) {
                     if metadata.is_dir() {
@@ -1337,6 +1475,103 @@ fn get_last_modified(root: &Path, patterns_or_paths: &[String]) -> Result<Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_walk_skips_symlink_loops() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir(&tree)?;
+        fs::write(tree.join("input.txt"), "input")?;
+        symlink(".", tree.join("a"))?;
+        symlink(".", tree.join("b"))?;
+
+        let pattern = tree.join("**/*");
+        let entries = glob_walk(&pattern, false)?.collect_vec();
+        let paths = entries
+            .iter()
+            .filter_map(|entry| entry.as_ref().ok())
+            .map(|entry| entry.path())
+            .collect_vec();
+
+        assert!(paths.contains(&tree.join("input.txt").as_path()));
+        assert_eq!(entries.iter().filter(|entry| entry.is_err()).count(), 2);
+        assert!(
+            entries.len() < 10,
+            "loop expansion was not bounded: {entries:?}"
+        );
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_walk_skips_broken_symlinks() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir(&tree)?;
+        fs::write(tree.join("input.txt"), "input")?;
+        symlink("missing", tree.join("dangling"))?;
+        symlink("self", tree.join("self"))?;
+
+        let paths = glob_walk(&tree.join("**/*"), false)?
+            .filter_map(|entry| prune_symlink_walk_error(entry).transpose())
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>>>()?;
+
+        assert_eq!(paths, [tree.join("input.txt")]);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn glob_walk_follows_non_looping_directory_symlinks() -> Result<()> {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        let actual = temp.path().join("actual");
+        fs::create_dir(&tree)?;
+        fs::create_dir(&actual)?;
+        fs::write(actual.join("input.txt"), "input")?;
+        symlink("../actual", tree.join("linked"))?;
+
+        let paths = glob_walk(&tree.join("**/*"), false)?
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert!(paths.contains(&tree.join("linked/input.txt")));
+        Ok(())
+    }
+
+    #[test]
+    fn glob_walk_preserves_non_recursive_depth_and_order() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let tree = temp.path().join("tree");
+        fs::create_dir_all(tree.join("nested"))?;
+        fs::write(tree.join("b.txt"), "b")?;
+        fs::write(tree.join("a.txt"), "a")?;
+        fs::write(tree.join("nested/deep.txt"), "deep")?;
+
+        let paths = glob_walk(&tree.join("*.txt"), false)?
+            .map(|entry| entry.map(|entry| entry.into_path()))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        assert_eq!(paths, [tree.join("a.txt"), tree.join("b.txt")]);
+        Ok(())
+    }
+
+    #[test]
+    fn glob_walk_treats_missing_literal_prefix_as_no_matches() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let entries = glob_walk(&temp.path().join("missing/**/*.txt"), false)?.collect_vec();
+
+        assert!(entries.is_empty());
+        Ok(())
+    }
 
     fn matches(sources: &[&str], path: &str) -> bool {
         let sources: Vec<String> = sources.iter().map(|s| s.to_string()).collect();

@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::config::Config;
 use crate::system;
-use crate::system::packages::PackageState;
+use crate::system::packages::{PackageDesiredState, PackageState};
 use crate::ui::table::MiseTable;
 
 /// Show the status of system packages from `[bootstrap.packages]`
@@ -37,7 +37,22 @@ impl SystemStatus {
                 if self.json {
                     json_out.insert(
                         name.to_string(),
-                        json!({ "available": false, "reason": reason }),
+                        json!({
+                            "available": false,
+                            "reason": reason,
+                            "packages": mp.requests.iter().map(|req| {
+                                json!({
+                                    "package": req.name,
+                                    "requested_version": req.version.clone().unwrap_or_else(|| "latest".to_string()),
+                                    "desired_state": match req.desired {
+                                        PackageDesiredState::Present => "present",
+                                        PackageDesiredState::Absent => "absent",
+                                    },
+                                    "state": "skipped",
+                                    "installed_version": "",
+                                })
+                            }).collect::<Vec<_>>(),
+                        }),
                     );
                 } else {
                     for req in &mp.requests {
@@ -55,28 +70,41 @@ impl SystemStatus {
             let mut json_pkgs = vec![];
             for s in statuses {
                 let auto_updates = s.state.auto_updates();
-                let (installed_version, state, reason) = match &s.state {
-                    PackageState::Installed { version } => {
+                let desired_absent = s.request.desired == PackageDesiredState::Absent;
+                let (installed_version, state, reason) = match (&s.state, desired_absent) {
+                    (PackageState::Missing, true) => ("".to_string(), "absent", None::<&str>),
+                    (PackageState::Installed { version }, true)
+                    | (PackageState::NeedsRepair { installed: version }, true)
+                    | (PackageState::VersionMismatch { installed: version }, true) => {
+                        any_missing = true;
+                        (version.clone(), "unexpectedly installed", None)
+                    }
+                    #[cfg(unix)]
+                    (PackageState::InstalledAutoUpdates { version }, true) => {
+                        any_missing = true;
+                        (version.clone(), "unexpectedly installed", None)
+                    }
+                    (PackageState::Installed { version }, false) => {
                         (version.clone(), "installed", None::<&str>)
                     }
                     #[cfg(unix)]
-                    PackageState::InstalledAutoUpdates { version } => {
+                    (PackageState::InstalledAutoUpdates { version }, false) => {
                         (version.clone(), "installed", None::<&str>)
                     }
-                    PackageState::Missing => {
+                    (PackageState::Missing, false) => {
                         any_missing = true;
                         ("".to_string(), "missing", None)
                     }
-                    PackageState::NeedsRepair { installed } => {
+                    (PackageState::NeedsRepair { installed }, false) => {
                         any_missing = true;
                         (installed.clone(), "needs repair", None)
                     }
-                    PackageState::VersionMismatch { installed } => {
+                    (PackageState::VersionMismatch { installed }, false) => {
                         any_missing = true;
                         (installed.clone(), "version mismatch", None)
                     }
                     #[cfg(unix)]
-                    PackageState::Unavailable { reason } => {
+                    (PackageState::Unavailable { reason }, _) => {
                         ("".to_string(), "skipped", Some(reason.as_str()))
                     }
                 };
@@ -84,6 +112,7 @@ impl SystemStatus {
                     let mut package = json!({
                         "package": s.request.name,
                         "requested_version": s.request.version.clone().unwrap_or_else(|| "latest".to_string()),
+                        "desired_state": if desired_absent { "absent" } else { "present" },
                         "state": state.replace(' ', "_"),
                         "installed_version": installed_version,
                     });

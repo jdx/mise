@@ -34,7 +34,13 @@ aliases as `[tools]` (`linux`, `macos`, `windows`, `linux/x64`,
 "brew:coreutils" = "latest"
 "brew-cask:1password" = { os = "macos" }
 "brew-cask:font-jetbrains-mono" = { os = ["linux", "macos"] }
+"pacman:libreoffice-fresh" = { state = "absent" }
 ```
+
+`pacman` entries may set `state = "absent"` to declaratively remove a package.
+`mise bootstrap packages status --missing` treats an installed package with
+that declaration as drift, and `mise bootstrap packages apply` removes it.
+Other built-in managers currently support only the default `state = "present"`.
 
 `brew-cask` entries additionally accept `adopt = true` to adopt an identical
 app already installed at the cask destination. Set `bootstrap.brew.adopt = true`
@@ -86,7 +92,8 @@ declarative sections work the same way:
 - **Declarative and additive by default** — entries merge across the
   [config hierarchy](/configuration.html) (global → project) as a union of
   keys. A project can add packages on top of the global list (and override a
-  global entry's version pin) but not remove them. Pruning is an explicit,
+  global entry's version pin). A more local config can override a pacman entry
+  with `state = "absent"`. Pruning is an explicit,
   manager-scoped destructive operation: `mise bootstrap packages prune`
   defaults to Homebrew, while plugin-owned packages require
   `mise bootstrap packages prune --manager <plugin>`. It removes only packages

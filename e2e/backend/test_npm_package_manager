@@ -18,11 +18,9 @@ if ! command -v bun >/dev/null 2>&1; then
   assert_succeed "mise use bun@latest"
 fi
 
-# Ensure pnpm is available
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "pnpm not available in test environment, installing..."
-  assert_succeed "mise use pnpm@10.16.0"
-fi
+# Always exercise pnpm 12's environment-based global directory configuration.
+# pnpm 11 and earlier accept the CLI flags that mise continues to use for them.
+assert_succeed "mise use pnpm@12.0.0"
 
 # Test 1: npm.package_manager = "npm". Pin explicitly rather than relying
 # on the `auto` default, which uses mise's embedded aube.
@@ -92,6 +90,7 @@ fi
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--config.minimumReleaseAge="
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--loglevel=warn"
 assert_contains "cat '$PNPM_DEBUG_LOG'" "--allow-build=tiny"
+assert_succeed "mise exec -- tiny --help >/dev/null"
 echo "✓ npm backend successfully installs package using pnpm (package_manager=pnpm)"
 mise uninstall npm:tiny@latest >/dev/null 2>&1 || true
 

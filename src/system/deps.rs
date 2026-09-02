@@ -570,6 +570,7 @@ pub(crate) async fn build_requests(
                         name: pkg,
                         version: None,
                         tap_url: None,
+                        desired: crate::system::packages::PackageDesiredState::Present,
                     });
                 }
             }

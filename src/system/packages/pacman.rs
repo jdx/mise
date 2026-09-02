@@ -176,6 +176,20 @@ fn find_provider<'a>(
         })
 }
 
+fn matching_provider_names(packages: &[PacmanPackageMetadata], requested: &str) -> Vec<String> {
+    packages
+        .iter()
+        .filter(|package| {
+            package.name == requested
+                || package
+                    .provides
+                    .iter()
+                    .any(|provide| provide.name == requested)
+        })
+        .map(|package| package.name.clone())
+        .collect()
+}
+
 fn pacman_version_matches(requested: &str, provided: &str) -> bool {
     // vercmp ships with pacman and uses the same libalpm version ordering as
     // dependency resolution. It intentionally considers e.g. 2.0 and
@@ -207,6 +221,37 @@ fn deptest_requirement(req: &PackageRequest) -> String {
         Some(version) => format!("{}={version}", req.name),
         None => req.name.clone(),
     }
+}
+
+fn remove_args(names: &[String]) -> Vec<String> {
+    let mut args = vec![
+        "-R".to_string(),
+        "--noconfirm".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(names.iter().cloned());
+    args
+}
+
+async fn concrete_remove_names(pkgs: &[PackageRequest]) -> Result<Vec<String>> {
+    let info = pacman_info().await?;
+    let packages = parse_pacman_info(&info);
+    let mut names = Vec::new();
+    for pkg in pkgs {
+        let providers = matching_provider_names(&packages, &pkg.name);
+        if providers.is_empty() {
+            return Err(eyre::eyre!(
+                "pacman -Qi returned no provider for satisfied requirement '{}'",
+                pkg.name
+            ));
+        }
+        for provider in providers {
+            if !names.contains(&provider) {
+                names.push(provider);
+            }
+        }
+    }
+    Ok(names)
 }
 
 fn apply_provider_query<'a>(
@@ -454,6 +499,23 @@ impl SystemPackageManager for PacmanManager {
         sudo::run("pacman", &args, &[])
     }
 
+    fn supports_remove(&self) -> bool {
+        true
+    }
+
+    async fn remove(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
+        // A request may name a virtual capability satisfied through Provides.
+        // Resolve each target through the local database immediately before
+        // removal so pacman receives the concrete installed package identity.
+        let names = concrete_remove_names(pkgs).await?;
+        let args = remove_args(&names);
+        if opts.dry_run {
+            miseprintln!("{}", sudo::argv("pacman", &args).join(" "));
+            return Ok(());
+        }
+        sudo::run("pacman", &args, &[])
+    }
+
     async fn upgrade(&self, pkgs: &[PackageRequest], opts: &InstallOpts) -> Result<()> {
         let names = pkgs.iter().map(|pkg| pkg.name.clone()).collect::<Vec<_>>();
         let stdout = pacman_query(&names).await?;
@@ -503,6 +565,7 @@ mod tests {
             name: name.to_string(),
             version: version.map(str::to_string),
             tap_url: None,
+            desired: crate::system::packages::PackageDesiredState::Present,
         }
     }
 
@@ -637,6 +700,32 @@ mod tests {
             .unwrap()
             .name,
             "aur-foo"
+        );
+    }
+
+    #[test]
+    fn test_matching_provider_names_returns_every_provider() {
+        let packages = parse_pacman_info(
+            "Name            : foo-one\n\
+             Version         : 1.0-1\n\
+             Provides        : foo\n\
+             \n\
+             Name            : foo-two\n\
+             Version         : 2.0-1\n\
+             Provides        : foo\n",
+        );
+
+        assert_eq!(
+            matching_provider_names(&packages, "foo"),
+            ["foo-one", "foo-two"]
+        );
+    }
+
+    #[test]
+    fn test_remove_args_remove_exact_packages_without_cascading() {
+        assert_eq!(
+            remove_args(&["omarchy".to_string(), "omarchy-settings".to_string()]),
+            ["-R", "--noconfirm", "--", "omarchy", "omarchy-settings"]
         );
     }
 
