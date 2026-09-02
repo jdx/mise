@@ -20,7 +20,7 @@ jobs:
     uses: ./.github/workflows/test-vfox-impl.yml
     with:
       trusted: true
-      mbx-backend: server
+      mbx-backend: local
     secrets:
       MISE_GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
 
@@ -31,7 +31,7 @@ jobs:
     uses: ./.github/workflows/test-vfox-impl.yml
     with:
       trusted: false
-      mbx-backend: github
+      mbx-backend: server
 
   test-vfox:
     name: test-vfox

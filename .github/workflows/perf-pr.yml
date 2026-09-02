@@ -29,7 +29,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
-  TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1
+  TAK_RUNNER: jdx-perf-v1-ubuntu24.04-x64-mise-rust1.97.1-img5263c143
 
 jobs:
   authorize:
@@ -84,7 +84,7 @@ jobs:
     # the report would say "nothing was compared" instead of anything useful.
     runs-on: [self-hosted, jdx-perf-v1]
     container:
-      image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9
+      image: ghcr.io/jdx/perf-runner@sha256:5263c143b12ce2234e7b0b21d3d6501c2ed05837b42937d0eaeaa191cd5c8e68
       # Anonymous by design; perf-runner#10 prunes it after this container stops.
       options: --cpuset-cpus 0-7 --mount type=volume,dst=/var/cache/mbx
     timeout-minutes: 40
@@ -124,8 +124,8 @@ jobs:
           {
             echo '### Runner metadata'
             echo '```text'
-            echo 'environment-revision: perf-runner@6ab972a'
-            echo 'image: ghcr.io/jdx/perf-runner@sha256:6f35a3dec67758d195d8fd01103f10f6c7aeaf8815dd41bf2aa2726fa3e9d4a9'
+            echo 'environment-revision: perf-runner@fd66d9b'
+            echo 'image: ghcr.io/jdx/perf-runner@sha256:5263c143b12ce2234e7b0b21d3d6501c2ed05837b42937d0eaeaa191cd5c8e68'
             uname -a
             lscpu
             mise --version
