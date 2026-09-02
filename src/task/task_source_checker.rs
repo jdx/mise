@@ -543,7 +543,7 @@ pub(crate) fn glob_walk(pattern: &Path, case_insensitive: bool) -> Result<GlobWa
 }
 
 /// Return a successful walk entry, pruning expected errors from following
-/// symlinks that either loop to an ancestor or point to a missing target.
+/// symlinks that loop or point to a missing target.
 pub(crate) fn prune_symlink_walk_error(
     entry: std::result::Result<DirEntry, WalkError>,
 ) -> Result<Option<DirEntry>> {
@@ -551,18 +551,30 @@ pub(crate) fn prune_symlink_walk_error(
         Ok(entry) => Ok(Some(entry)),
         Err(err) if err.loop_ancestor().is_some() => Ok(None),
         Err(err)
-            if err
-                .io_error()
-                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
-                && err.path().is_some_and(|path| {
-                    fs::symlink_metadata(path)
-                        .is_ok_and(|metadata| metadata.file_type().is_symlink())
-                }) =>
+            if err.io_error().is_some_and(|error| {
+                error.kind() == std::io::ErrorKind::NotFound || is_filesystem_loop_error(error)
+            }) && err.path().is_some_and(|path| {
+                fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_symlink())
+            }) =>
         {
             Ok(None)
         }
         Err(err) => Err(err.into()),
     }
+}
+
+#[cfg(unix)]
+fn is_filesystem_loop_error(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(nix::errno::Errno::ELOOP as i32)
+}
+
+#[cfg(windows)]
+fn is_filesystem_loop_error(error: &std::io::Error) -> bool {
+    use windows_sys::Win32::Foundation::{ERROR_CANT_RESOLVE_FILENAME, ERROR_CIRCULAR_DEPENDENCY};
+
+    error.raw_os_error().is_some_and(|code| {
+        code == ERROR_CANT_RESOLVE_FILENAME as i32 || code == ERROR_CIRCULAR_DEPENDENCY as i32
+    })
 }
 
 /// Build an ordered matcher for task output patterns.
@@ -1481,7 +1493,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn glob_walk_skips_dangling_symlinks() -> Result<()> {
+    fn glob_walk_skips_broken_symlinks() -> Result<()> {
         use std::os::unix::fs::symlink;
 
         let temp = tempfile::tempdir()?;
@@ -1489,6 +1501,7 @@ mod tests {
         fs::create_dir(&tree)?;
         fs::write(tree.join("input.txt"), "input")?;
         symlink("missing", tree.join("dangling"))?;
+        symlink("self", tree.join("self"))?;
 
         let paths = glob_walk(&tree.join("**/*"), false)?
             .filter_map(|entry| prune_symlink_walk_error(entry).transpose())
