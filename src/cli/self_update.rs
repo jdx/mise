@@ -416,7 +416,7 @@ impl SelfUpdate {
             // in the `.version` marker, masking the staleness from future
             // (non-forced) reshims. Best-effort. See discussion #10022.
             #[cfg(windows)]
-            match Self::update_mise_shim(&version).await {
+            match Self::update_mise_shim(&SelfUpdateSource::current(), &version).await {
                 Ok(()) => {
                     if let Err(e) = Self::reshim_after_update().await {
                         warn!("Failed to reshim after self-update: {e}");
@@ -567,14 +567,31 @@ impl SelfUpdate {
     }
 
     #[cfg(windows)]
-    async fn update_mise_shim(version: &str) -> Result<()> {
+    async fn update_mise_shim(source: &SelfUpdateSource, version: &str) -> Result<()> {
         use crate::http::HTTP;
         use std::io::Read;
 
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
+        let release = crate::github::get_release_for_url_with_versions_host(
+            &source.api_url,
+            &source.repository,
+            &format!("v{version}"),
+            false,
+        )
+        .await?;
+        let asset = release
+            .assets
+            .iter()
+            .find(|asset| asset.name == archive_name)
+            .ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "release v{version} for {} has no asset named {archive_name}",
+                    source.repository
+                )
+            })?;
         let url =
-            format!("https://github.com/jdx/mise/releases/download/v{version}/{archive_name}",);
+            crate::github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await;
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;

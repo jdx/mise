@@ -43,7 +43,7 @@ impl SelfUpdateSource {
         }
     }
 
-    fn current() -> Self {
+    pub(crate) fn current() -> Self {
         Settings::try_get()
             .map(|settings| Self::from_settings(&settings))
             .unwrap_or_default()
