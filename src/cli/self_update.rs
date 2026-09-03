@@ -561,12 +561,7 @@ impl SelfUpdate {
         use reqwest::redirect::Policy;
 
         Policy::custom(|attempt| {
-            let is_https_downgrade = attempt
-                .previous()
-                .last()
-                .is_some_and(|previous| previous.scheme() == "https")
-                && attempt.url().scheme() != "https";
-            if is_https_downgrade {
+            if crate::http::is_https_downgrade(attempt.previous(), attempt.url()) {
                 attempt.error(std::io::Error::other(
                     "refusing to redirect a self-update request from HTTPS to an insecure URL",
                 ))
@@ -627,10 +622,15 @@ impl SelfUpdate {
         // Use the real archive name so zipsign context matches the release signature
         let zip_path = temp_dir.path().join(&archive_name);
         let headers = crate::github::get_headers(&url)?;
+        let settings = Settings::get();
+        let request_timeout = settings.http_timeout();
         let archive = reqwest::Client::builder()
             .user_agent(format!("mise/{}", cargo_crate_version!()))
             .https_only(true)
             .redirect(Self::redirect_policy())
+            .connect_timeout(request_timeout)
+            .read_timeout(request_timeout)
+            .timeout(settings.http_download_timeout())
             .build()?
             .get(&url)
             .headers(headers)

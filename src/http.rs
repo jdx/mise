@@ -505,7 +505,7 @@ fn fetch_redirect_policy() -> reqwest::redirect::Policy {
     })
 }
 
-fn is_https_downgrade(previous: &[Url], next: &Url) -> bool {
+pub(crate) fn is_https_downgrade(previous: &[Url], next: &Url) -> bool {
     previous
         .last()
         .is_some_and(|url| url.scheme() == "https" && next.scheme() != "https")
