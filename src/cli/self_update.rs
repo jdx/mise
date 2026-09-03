@@ -552,6 +552,7 @@ impl SelfUpdate {
 
     fn http_client() -> Result<self_update::reqwest::blocking::Client> {
         Ok(self_update::reqwest::blocking::Client::builder()
+            .https_only(true)
             .redirect(Self::redirect_policy())
             .build()?)
     }
@@ -628,6 +629,7 @@ impl SelfUpdate {
         let headers = crate::github::get_headers(&url)?;
         let archive = reqwest::Client::builder()
             .user_agent(format!("mise/{}", cargo_crate_version!()))
+            .https_only(true)
             .redirect(Self::redirect_policy())
             .build()?
             .get(&url)
