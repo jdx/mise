@@ -4027,6 +4027,27 @@
           {
             "type": "object",
             "description": "whole-file dotfile entry or file edit entry",
+            "additionalProperties": true,
+            "oneOf": [
+              {
+                "required": ["manifest"],
+                "properties": {
+                  "content": false,
+                  "mode": {
+                    "enum": ["copy", "symlink-each"]
+                  },
+                  "block": false,
+                  "line": false,
+                  "template": false,
+                  "comment": false
+                }
+              },
+              {
+                "properties": {
+                  "manifest": false
+                }
+              }
+            ],
             "properties": {
               "source": {
                 "type": "string",
@@ -4054,6 +4075,18 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "manifest": {
+                "type": "string",
+                "description": "source manifest used to select managed files from a directory",
+                "anyOf": [
+                  {
+                    "enum": ["git"]
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
               },
               "block": {
                 "type": "string",

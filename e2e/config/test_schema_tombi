@@ -73,7 +73,14 @@ description = "Lint the project"
 e2e_args = { default = "--headless", redact = true }
 
 [dotfiles]
+"~/.gitconfig" = { source = "dotfiles/gitconfig", mode = "symlink" }
+"~/.zshrc" = "dotfiles/zshrc"
+"~/.bin" = { source = "bin", mode = "symlink-each", exclude = ["*.md"] }
+"~/.zshrc/activate" = { block = "eval \"$(mise activate zsh)\"", comment = "#" }
 "~/.inline" = { content = "literal content" }
+"~/.manifest" = { source = "dotfiles/config", mode = "copy", manifest = "git" }
+"~/.manifest-default-mode" = { source = "dotfiles/default", manifest = "git" }
+"~/.manifest-implied-source" = { mode = "symlink-each", manifest = "git" }
 
 [tool_alias.java.versions]
 "11.0" = "temurin-11"
@@ -229,7 +236,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-dotfiles-manifest.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -280,6 +287,32 @@ for other_field in \
 TOML
 
   assert_fail "$TOMBI_LINT mise-bad-dotfiles.toml"
+done
+
+# Manifests support only directory-walking modes. An omitted mode stays valid
+# because `dotfiles.default_mode` may be set to `copy` or `symlink-each`, and an
+# omitted source stays valid because runtime supports implied sources.
+for bad_mode in symlink template; do
+  cat >"$HOME/workdir/mise-bad-dotfiles-manifest.toml" <<TOML
+[dotfiles]
+"~/.invalid" = { manifest = "git", mode = "$bad_mode" }
+TOML
+
+  assert_fail "$TOMBI_LINT mise-bad-dotfiles-manifest.toml"
+done
+
+for incompatible_field in \
+  'content = "literal content"' \
+  'block = "managed block"' \
+  'line = "managed line"' \
+  'template = "tera"' \
+  'comment = "#"'; do
+  cat >"$HOME/workdir/mise-bad-dotfiles-manifest.toml" <<TOML
+[dotfiles]
+"~/.invalid" = { manifest = "git", mode = "copy", $incompatible_field }
+TOML
+
+  assert_fail "$TOMBI_LINT mise-bad-dotfiles-manifest.toml"
 done
 
 cat >"$HOME/workdir/mise-bad-env-default.toml" <<'TOML'
