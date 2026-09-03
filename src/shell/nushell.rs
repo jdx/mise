@@ -3,7 +3,10 @@ use std::fmt::Display;
 
 use indoc::formatdoc;
 
-use crate::shell::{self, ActivateOptions, ActivatePrelude, Shell};
+use crate::{
+    env,
+    shell::{self, ActivateOptions, ActivatePrelude, Shell},
+};
 use itertools::Itertools;
 
 #[derive(Default)]
@@ -36,6 +39,9 @@ impl Nushell {
         prelude
             .iter()
             .map(|p| match p {
+                ActivatePrelude::Set(k, v) if env::is_path_key(k) => {
+                    format!("$env.{k} = (r#'{v}'# | split row (char esep))\n")
+                }
                 ActivatePrelude::Set(k, v) => format!("$env.{k} = r#'{v}'#\n"),
                 ActivatePrelude::Prepend(k, v) | ActivatePrelude::MovePrepend(k, v) => {
                     self.prepend_env(k, v)
@@ -184,6 +190,21 @@ mod tests {
     #[test]
     fn test_set_env() {
         assert_snapshot!(Nushell::default().set_env("FOO", "1"));
+    }
+
+    #[test]
+    fn test_format_activate_prelude_path() {
+        let nushell = Nushell::default();
+        let path_key = if cfg!(windows) { "Path" } else { "PATH" };
+        let prelude = vec![ActivatePrelude::Set(
+            path_key.to_string(),
+            "/one:/two".to_string(),
+        )];
+
+        assert_eq!(
+            nushell.format_activate_prelude_inline(&prelude),
+            format!("$env.{path_key} = (r#'/one:/two'# | split row (char esep))\n")
+        );
     }
 
     #[test]
