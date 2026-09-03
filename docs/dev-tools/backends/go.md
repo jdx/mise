@@ -28,6 +28,20 @@ $ hivemind --help
 Hivemind version 1.1.0
 ```
 
+Private modules use Go's normal VCS authentication. Export `GOPRIVATE`, or
+define it in mise's `[env]` configuration, so mise delegates version discovery
+to Go instead of querying the public module proxy itself. Values set only with
+`go env -w` are not read by mise when choosing the discovery path:
+
+```toml
+[env]
+GOPRIVATE = "github.com/acme/*"
+```
+
+Go uses `GOPRIVATE` as the default for both `GONOPROXY` and `GONOSUMDB`. If you
+configure those variables separately, set each one according to the proxy and
+checksum-database privacy you need.
+
 You can also pin a specific Go module version, including an unreleased
 pseudo-version:
 

@@ -76,6 +76,7 @@ impl Backend for GoBackend {
         true
     }
 
+    /// List Go module versions through the configured proxy or Go's module command.
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> eyre::Result<Vec<VersionInfo>> {
         // Check if go is available
         self.warn_if_dependency_missing(
@@ -92,12 +93,13 @@ impl Backend for GoBackend {
             async || {
                 let tool_name = self.tool_name();
 
-                if let Some(versions) = self.fetch_proxy_versions(&tool_name).await? {
+                if let Some(versions) = self.fetch_proxy_versions(config, &tool_name).await? {
                     return Ok(versions);
                 }
 
-                // Fall back to `go list -m -versions` for GOPROXY=direct. Package
-                // paths are not necessarily module paths, so walk their prefixes
+                // Fall back to `go list -m -versions` for GOPROXY=direct or when
+                // private-module routing is configured. Package paths are not
+                // necessarily module paths, so walk their prefixes
                 // just as the proxy resolver does. `go list` runs with
                 // GOTOOLCHAIN=local (see go_list_env), so it is safe against
                 // untrusted config and does not need a safe-mode gate.
@@ -117,6 +119,61 @@ impl Backend for GoBackend {
                 }
 
                 Ok(vec![])
+            },
+            Settings::get().fetch_remote_versions_timeout(),
+        )
+        .await
+    }
+
+    /// Resolve the latest version through Go when private-module routing is configured.
+    async fn latest_stable_version_info(
+        &self,
+        config: &Arc<Config>,
+    ) -> eyre::Result<Option<VersionInfo>> {
+        if Settings::get().offline() {
+            trace!("Skipping latest stable Go module version due to offline mode");
+            return Ok(None);
+        }
+
+        let env = self.dependency_env(config).await?;
+        let tool_name = self.tool_name();
+        if !go_native_resolution_enabled(&env) {
+            return Ok(None);
+        }
+
+        // Let Go apply the configured private-module patterns while resolving
+        // @latest, instead of listing every tag and fetching metadata for each
+        // one. Package paths are not necessarily module paths,
+        // so try the path prefixes from deepest to shallowest.
+        timeout::run_with_timeout_async(
+            async || {
+                for mod_path in module_path_candidates(&tool_name) {
+                    match self.fetch_go_module_latest_info(config, &mod_path).await {
+                        Ok(Some(mut infos)) => {
+                            if let Some(mut info) = infos.pop() {
+                                if is_stable_go_version(&info.version) {
+                                    // The version has been checked here rather than relying on
+                                    // `VersionInfo::prerelease`, which module metadata does not set.
+                                    info.prerelease = Some(false);
+                                    return Ok(Some(info));
+                                }
+                                debug!(
+                                    "Go @latest resolved to a non-release version for {mod_path}"
+                                );
+                                // This candidate is the module root; fall back to the normal
+                                // version-list path instead of trying a different module.
+                                return Ok(None);
+                            }
+                        }
+                        Ok(None) => {}
+                        Err(err) => {
+                            debug!(
+                                "failed to resolve latest Go module candidate {mod_path}: {err:#}"
+                            );
+                        }
+                    }
+                }
+                Ok(None)
             },
             Settings::get().fetch_remote_versions_timeout(),
         )
@@ -229,12 +286,21 @@ impl GoBackend {
     }
 
     /// Query `$GOPROXY` to find versions, matching `go install`'s resolution algorithm.
-    /// Returns `None` if no proxy is configured (e.g. GOPROXY=direct).
+    /// Returns `None` if no proxy is configured or Go should handle private-module routing.
     async fn fetch_proxy_versions(
         &self,
+        config: &Arc<Config>,
         tool_name: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
-        let proxies = parse_goproxy();
+        let env = self.dependency_env(config).await?;
+        if go_native_resolution_enabled(&env) {
+            return Ok(None);
+        }
+
+        // Read GOPROXY from the effective mise environment. In particular, this
+        // includes values supplied through [env], which are not necessarily in
+        // mise's own process environment.
+        let proxies = parse_goproxy(env.get("GOPROXY").map(String::as_str));
         if proxies.is_empty() {
             return Ok(None);
         }
@@ -381,6 +447,7 @@ impl GoBackend {
             .cloned()
     }
 
+    /// Resolve a module's `@latest` version using Go's native module routing.
     async fn fetch_go_module_latest_info(
         &self,
         config: &Arc<Config>,
@@ -566,13 +633,22 @@ async fn query_proxy_version_metadata(
     ProxyVersionInfoResult::NotFound
 }
 
-fn parse_goproxy() -> Vec<GoProxy> {
+/// Parse the effective GOPROXY setting into ordered proxy endpoints.
+fn parse_goproxy(goproxy: Option<&str>) -> Vec<GoProxy> {
     // Treat unset or empty GOPROXY as the default, matching `go env GOPROXY`.
-    let goproxy = std::env::var("GOPROXY")
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| DEFAULT_GOPROXY.to_string());
-    parse_goproxy_value(&goproxy)
+    let goproxy = goproxy.filter(|s| !s.is_empty()).unwrap_or(DEFAULT_GOPROXY);
+    parse_goproxy_value(goproxy)
+}
+
+/// Return whether Go should handle module routing instead of mise's proxy client.
+///
+/// If private-module routing is configured, delegating all discovery to Go is
+/// deliberately conservative: Go applies its own patterns and independently
+/// honors GOPROXY, GONOPROXY, GOPRIVATE, GONOSUMDB, and GOSUMDB.
+fn go_native_resolution_enabled(env: &BTreeMap<String, String>) -> bool {
+    ["GOPRIVATE", "GONOPROXY"]
+        .iter()
+        .any(|key| env.get(*key).is_some_and(|value| !value.is_empty()))
 }
 
 /// Parse GOPROXY value per https://go.dev/ref/mod#goproxy-protocol:
@@ -649,6 +725,12 @@ fn version_info_from_metadata(info: GoModuleVersionMetadata) -> VersionInfo {
         created_at: info.time,
         ..Default::default()
     }
+}
+
+/// Return whether a Go module version is a stable release rather than a pre-release or pseudo-version.
+fn is_stable_go_version(version: &str) -> bool {
+    versions::SemVer::new(version.trim_start_matches('v'))
+        .is_some_and(|version| version.pre_rel.is_none())
 }
 
 async fn fetch_proxy_version_infos(
@@ -887,23 +969,38 @@ mod tests {
         assert_eq!(proxies[0].url, "https://corp-proxy.example.com");
     }
 
+    /// Empty GOPROXY uses Go's default public proxy configuration.
     #[test]
     fn parse_goproxy_empty_uses_default() {
-        // SAFETY: test is single-threaded; matches `go env GOPROXY` behavior for GOPROXY=.
-        // The prev guard restores the previous value so parallel test runs stay stable.
-        struct EnvGuard(Option<String>);
-        impl Drop for EnvGuard {
-            fn drop(&mut self) {
-                match &self.0 {
-                    Some(v) => unsafe { std::env::set_var("GOPROXY", v) },
-                    None => unsafe { std::env::remove_var("GOPROXY") },
-                }
-            }
-        }
-        let _g = EnvGuard(std::env::var("GOPROXY").ok());
-        unsafe { std::env::set_var("GOPROXY", "") };
-        let proxies = parse_goproxy();
+        let proxies = parse_goproxy(Some(""));
         assert_eq!(proxies.len(), 1);
         assert_eq!(proxies[0].url, "https://proxy.golang.org");
+    }
+
+    /// Any private-module routing setting delegates discovery to Go.
+    #[test]
+    fn private_module_settings_enable_go_native_resolution() {
+        assert!(go_native_resolution_enabled(&BTreeMap::from([
+            ("GOPRIVATE".to_string(), "github.com/example/*".to_string()),
+            ("GONOPROXY".to_string(), String::new()),
+        ])));
+        assert!(go_native_resolution_enabled(&BTreeMap::from([(
+            "GONOPROXY".to_string(),
+            "github.com/example/*".to_string(),
+        )])));
+        assert!(!go_native_resolution_enabled(&BTreeMap::from([
+            ("GOPRIVATE".to_string(), String::new()),
+            ("GONOPROXY".to_string(), String::new()),
+        ])));
+    }
+
+    /// Stable Go versions exclude prereleases and pseudo-versions.
+    #[test]
+    fn stable_go_versions_exclude_prereleases_and_pseudo_versions() {
+        assert!(is_stable_go_version("v1.2.3"));
+        assert!(is_stable_go_version("1.2.3+incompatible"));
+        assert!(!is_stable_go_version("v1.2.3-rc.1"));
+        assert!(!is_stable_go_version("v0.0.0-20260903092947-0123456789ab"));
+        assert!(!is_stable_go_version("not-a-version"));
     }
 }
