@@ -227,30 +227,20 @@ shell = '"C:\Program Files\Git\bin\bash.exe" -c'
 
 #### Cygwin
 
-mise also detects Cygwin bash (by a `cygwin` / `cygwin64` / `cygwin32` segment in its path) and
-converts PATH using Cygwin's `/cygdrive/c/...` form instead of Git Bash's `/c/...`,
-so binaries on PATH resolve correctly. Point `MISE_BASH_PATH` at your Cygwin bash so
-the intended one is used:
+Point `MISE_BASH_PATH` at your Cygwin bash so the intended one is used:
 
 ```powershell
 $env:MISE_BASH_PATH = "C:\cygwin64\bin\bash.exe"
 ```
 
-#### Custom `cygdrive` mount root (Cygwin **and** Git Bash / MSYS2)
+mise passes PATH through unchanged. Git Bash, MSYS2 and Cygwin all convert it to Unix form on the
+way into the shell and back to Windows form on the way out to a native program, so nothing needs
+configuring for any of them.
 
-The `cygdrive` automount mechanism is shared by Cygwin and MSYS2 / Git Bash — both let
-you change the mount root in `/etc/fstab` (Cygwin's default is `/cygdrive`, Git Bash /
-MSYS2's is `/`, i.e. `/c/...`). mise does not read `/etc/fstab`, so if you changed it,
-set `MISE_CYGDRIVE_PREFIX` to match — this works for **either** shell:
-
-```powershell
-# e.g. for an fstab that mounts drives under /mnt
-$env:MISE_CYGDRIVE_PREFIX = "/mnt"
-```
-
-The prefix must be absolute (start with `/`); a relative value like `mnt` is rejected
-with a warning and the shell's default is used instead. `MISE_CYGDRIVE_PREFIX=/`
-collapses to the Git Bash `/c/...` form.
+Where they differ is everything _except_ PATH: MSYS2 / Git Bash rewrites POSIX-looking arguments and
+other environment variables on the way to a native program — `/c` becomes `C:/` — while Cygwin
+leaves both untouched. So a native program launched from a Git Bash task may see an argument you did
+not intend; `MSYS_NO_PATHCONV=1` suppresses that for a single command.
 
 ## mise isn't working when calling from tmux or another shell initialization script
 

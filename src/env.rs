@@ -575,7 +575,7 @@ pub(crate) fn is_mise_binary(bin_name: &str) -> bool {
 /// `get_temp_executable_name` builds `.{exe stem}.{32 random}{suffix}`.
 ///
 /// This and the predicates below are compiled off Windows too, like
-/// [`crate::path::windows_path_list_to_unix`], so they stay unit-tested everywhere rather than only
+/// [`crate::path::unix_path_to_windows`], so they stay unit-tested everywhere rather than only
 /// on the platform that runs them. Their callers are all `#[cfg(windows)]`, hence the allow.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub(crate) const SELF_REPLACE_SUFFIXES: [&str; 2] = [".__selfdelete__.exe", ".__relocated__.exe"];
