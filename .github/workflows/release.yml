@@ -521,14 +521,15 @@ jobs:
     steps:
       - name: Download draft release assets
         run: |
-          mkdir -p "releases/${{ github.ref_name }}"
-          gh release download "${{ github.ref_name }}" --dir "releases/${{ github.ref_name }}"
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" --dir release-assets
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: releases/${{ github.ref_name }}/SHASUMS256.txt
+          subject-checksums: release-assets/SHASUMS256.txt
 
   publish-release:
     needs:
@@ -541,6 +542,7 @@ jobs:
     steps:
       - name: Publish GitHub Release
         run: |
-          gh release edit "${{ github.ref_name }}" --draft=false
+          gh release edit "$RELEASE_TAG" --draft=false
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
