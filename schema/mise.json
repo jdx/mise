@@ -4081,14 +4081,7 @@
               "manifest": {
                 "type": "string",
                 "description": "source manifest used to select managed files from a directory",
-                "anyOf": [
-                  {
-                    "enum": ["git"]
-                  },
-                  {
-                    "type": "string"
-                  }
-                ]
+                "enum": ["git"]
               },
               "block": {
                 "type": "string",

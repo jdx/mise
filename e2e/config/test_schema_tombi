@@ -292,6 +292,13 @@ done
 # Manifests support only directory-walking modes. An omitted mode stays valid
 # because `dotfiles.default_mode` may be set to `copy` or `symlink-each`, and an
 # omitted source stays valid because runtime supports implied sources.
+cat >"$HOME/workdir/mise-bad-dotfiles-manifest.toml" <<'TOML'
+[dotfiles]
+"~/.invalid" = { manifest = "unsupported", mode = "copy" }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-dotfiles-manifest.toml"
+
 for bad_mode in symlink template; do
   cat >"$HOME/workdir/mise-bad-dotfiles-manifest.toml" <<TOML
 [dotfiles]
