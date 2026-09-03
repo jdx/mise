@@ -345,11 +345,10 @@ jobs:
   release:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      created: ${{ steps.create-release.outputs.created }}
     permissions:
-      attestations: write
-      artifact-metadata: write
       contents: write
-      id-token: write
     needs:
       - rpm
       - deb
@@ -455,11 +454,6 @@ jobs:
         if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
       - run: mise x -- scripts/release.sh
         if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
-      - name: Attest release artifacts
-        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-checksums: releases/${{ github.ref_name }}/SHASUMS256.txt
       - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
@@ -495,6 +489,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Create Draft GitHub Release
+        id: create-release
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
@@ -504,6 +499,7 @@ jobs:
             --verify-tag \
             --draft \
             "releases/$VERSION"/*
+          echo "created=true" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
       - name: Publish Release Assets to CDN
@@ -513,10 +509,38 @@ jobs:
           CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_TOKEN }}
           CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+
+  attest-release:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download draft release assets
         run: |
-          VERSION="$(./scripts/get-version.sh)"
-          gh release edit "$VERSION" --draft=false
+          mkdir -p "releases/${{ github.ref_name }}"
+          gh release download "${{ github.ref_name }}" --dir "releases/${{ github.ref_name }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Attest release artifacts
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-checksums: releases/${{ github.ref_name }}/SHASUMS256.txt
+
+  publish-release:
+    needs:
+      - release
+      - attest-release
+    if: needs.release.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish GitHub Release
+        run: |
+          gh release edit "${{ github.ref_name }}" --draft=false
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
