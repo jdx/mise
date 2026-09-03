@@ -233,7 +233,7 @@ fn get_or_create_plugin<'a>(
         .or_insert_with(|| ToolVersionPlugin {
             orig_name: fa.short.to_string(),
             versions: vec![],
-            post: "".into(),
+            post: "\n".into(),
         })
 }
 
@@ -246,5 +246,46 @@ impl Clone for ToolVersions {
             plugins: Mutex::new(self.plugins.lock().unwrap().clone()),
             tools: Mutex::new(self.tools.lock().unwrap().clone()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `dump` relies on `post` to terminate each line, and `trim_end` only ever
+    /// fixes up the last one. A tool that is not already present in the file is
+    /// created by `get_or_create_plugin`, so its `post` has to carry the newline
+    /// too, otherwise two freshly added tools share a physical line and
+    /// `parse_plugins` reads them back as a single tool.
+    #[test]
+    fn newly_added_tools_each_get_their_own_line() {
+        let tv = ToolVersions::init(Path::new("/tmp/.tool-versions"));
+        {
+            let mut plugins = tv.plugins.lock().unwrap();
+            for (tool, version) in [("node", "20.0.0"), ("java", "21.0.0")] {
+                let ba: BackendArg = tool.into();
+                get_or_create_plugin(&mut plugins, &ba)
+                    .versions
+                    .push(version.to_string());
+            }
+        }
+
+        let dumped = tv.dump().unwrap();
+        assert_eq!(dumped.lines().count(), 2, "dumped: {dumped:?}");
+
+        let reparsed = ToolVersions::parse_plugins(&dumped);
+        let round_tripped: Vec<(String, Vec<String>)> = reparsed
+            .values()
+            .map(|p| (p.orig_name.clone(), p.versions.clone()))
+            .collect();
+        assert_eq!(
+            round_tripped,
+            vec![
+                ("nodejs".to_string(), vec!["20.0.0".to_string()]),
+                ("java".to_string(), vec!["21.0.0".to_string()]),
+            ],
+            "dumped: {dumped:?}"
+        );
     }
 }
