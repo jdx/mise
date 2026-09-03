@@ -343,6 +343,13 @@ cat <<'EOF' >bootstrap-root/mise.toml
 [vars]
 bootstrap_root_marker = "root"
 EOF
+cat <<'EOF' >dotfiles/mise/bootstrap-root.local.toml
+[vars]
+new_bootstrap_root_marker = "new-root"
+
+[bootstrap.hooks.post-dotfiles]
+run = "echo {{ vars.bootstrap_root_marker }}-{{ vars.new_bootstrap_root_marker }} > bootstrap_root_hook_ran"
+EOF
 cat <<'EOF' >~/.config/mise/config.toml
 [vars]
 post_dotfiles_message = "stale-post-dotfiles"
@@ -373,22 +380,25 @@ layered_post_dotfiles_message = "{{ vars.post_dotfiles_message | default(value='
 
 [dotfiles]
 "~/.config/mise/config.toml" = "dotfiles/mise/config.toml"
+"$PWD/bootstrap-root/mise.local.toml" = "dotfiles/mise/bootstrap-root.local.toml"
 
 [bootstrap.hooks.pre-dotfiles]
 run = "echo pre-dotfiles > pre_dotfiles_hook_ran"
 EOF
-rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran final_hook_ran dry_run_config_source_ran dry_run_config_exec_ran
+rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran bootstrap_root_hook_ran final_hook_ran dry_run_config_source_ran dry_run_config_exec_ran
 assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo pre-dotfiles > pre_dotfiles_hook_ran"
 assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo rendered-post-dotfiles > post_dotfiles_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run --force" "echo root-new-root > bootstrap_root_hook_ran"
 assert_fail "cat pre_dotfiles_hook_ran"
 assert_fail "cat post_dotfiles_hook_ran"
+assert_fail "cat bootstrap_root_hook_ran"
 assert_fail "test -e dry_run_config_source_ran"
 assert_fail "test -e dry_run_config_exec_ran"
 assert_contains "mise bootstrap --dry-run --force-dotfiles" "echo rendered-post-dotfiles > post_dotfiles_hook_ran"
 
 # Continue the apply coverage without scoped roots, whose independent config context is
 # exercised by the dry-run assertions above.
-sed -i 's/vars.layered_post_dotfiles_message/vars.post_dotfiles_message/' dotfiles/mise/config.toml
+sed -i.bak 's/vars.layered_post_dotfiles_message/vars.post_dotfiles_message/' dotfiles/mise/config.toml
 cat <<EOF >mise.toml
 [dotfiles]
 "~/.config/mise/config.toml" = "dotfiles/mise/config.toml"

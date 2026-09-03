@@ -134,7 +134,8 @@ fn extend_monorepo_tool_request_set(union: &mut ToolRequestSet, requests: &ToolR
 struct BootstrapConfigMap {
     config_files: ConfigMap,
     tera_ctx: tera::Context,
-    inherits_main_vars: bool,
+    config_root: Option<PathBuf>,
+    vars_results: EnvResults,
 }
 
 pub(crate) struct Config {
@@ -465,10 +466,18 @@ impl Config {
         config_files: ConfigMap,
     ) -> Result<Arc<Self>> {
         let mut config = self.with_config_files(config_files);
+        let bootstrap_roots = self
+            .bootstrap_config_maps
+            .iter()
+            .filter_map(|map| map.config_root.as_deref())
+            .collect_vec();
+        let mut main_config_files = config.config_files.clone();
+        main_config_files
+            .retain(|path, _| !bootstrap_roots.iter().any(|root| path.starts_with(root)));
         let vars = bootstrap_dry_run_vars(
             Some(&self.config_files),
             self.vars_results_cached(),
-            &config.config_files,
+            &main_config_files,
             IndexMap::new(),
             false,
         )?;
@@ -477,29 +486,29 @@ impl Config {
         config_mut.vars = vars.clone();
         config_mut.tera_ctx.insert("vars", &vars);
         for map in &mut config_mut.bootstrap_config_maps {
-            let mut map_changed = false;
+            let original_config_files = map.config_files.clone();
             for (path, simulated) in &config_mut.config_files {
-                if let Some(existing) = map.config_files.get(path)
-                    && !Arc::ptr_eq(existing, simulated)
-                {
+                let belongs_to_map = match &map.config_root {
+                    Some(root) => path.starts_with(root),
+                    None => !bootstrap_roots.iter().any(|root| path.starts_with(root)),
+                };
+                if belongs_to_map {
                     map.config_files.insert(path.clone(), simulated.clone());
-                    map_changed = true;
                 }
             }
-            if map_changed || (map.inherits_main_vars && main_vars_changed) {
-                let initial = if map.inherits_main_vars {
-                    vars.clone()
-                } else {
-                    IndexMap::new()
-                };
+            if map.config_root.is_some() {
                 let map_vars = bootstrap_dry_run_vars(
-                    None,
-                    None,
+                    Some(&original_config_files),
+                    Some(&map.vars_results),
                     &map.config_files,
-                    initial,
-                    map.inherits_main_vars && main_vars_changed,
+                    vars.clone(),
+                    main_vars_changed,
                 )?;
                 map.tera_ctx.insert("vars", &map_vars);
+            } else {
+                // The base map's context is the main config context. Re-folding its files
+                // would lose cached dynamic vars that the normal loader already resolved.
+                map.tera_ctx.insert("vars", &vars);
             }
         }
         Ok(config)
@@ -1698,7 +1707,8 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     let mut maps = vec![BootstrapConfigMap {
         config_files: base,
         tera_ctx: config.tera_ctx.clone(),
-        inherits_main_vars: false,
+        config_root: None,
+        vars_results: config.vars_results_cached().cloned().unwrap_or_default(),
     }];
     let idiomatic_filenames = BTreeMap::new();
     for root in roots {
@@ -1719,7 +1729,8 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         maps.push(BootstrapConfigMap {
             config_files,
             tera_ctx,
-            inherits_main_vars: true,
+            config_root: Some(root),
+            vars_results,
         });
     }
     Ok(maps)
