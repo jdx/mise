@@ -454,6 +454,14 @@ jobs:
         if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
       - run: mise x -- scripts/release.sh
         if: github.event_name != 'pull_request' || (github.head_ref == 'release' && github.event.pull_request.head.repo.full_name == github.repository)
+      - name: Stage release assets for attestation
+        if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-assets
+          path: releases/${{ github.ref_name }}
+          if-no-files-found: error
+          retention-days: 1
       - name: Generate release notes
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
@@ -519,13 +527,11 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Download draft release assets
-        run: |
-          mkdir -p release-assets
-          gh release download "$RELEASE_TAG" --dir release-assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: release-assets
       - name: Attest release artifacts
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
