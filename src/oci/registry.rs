@@ -740,13 +740,14 @@ fn parse_single_manifest(body: serde_json::Value) -> Result<ImageManifest> {
     Ok(manifest)
 }
 
-/// A remote image's manifest paired with its config's `rootfs.diff_ids`
+/// A remote image's manifest and config, including `rootfs.diff_ids`
 /// (index-aligned with `manifest.layers`). Used as the layer-reuse cache for
 /// `mise oci push`.
 #[derive(Debug, Clone)]
 pub(crate) struct RemoteImage {
     pub manifest: ImageManifest,
     pub diff_ids: Vec<String>,
+    pub config: serde_json::Value,
 }
 
 /// Fetch the manifest + config diff_ids of `reference` for layer reuse.
@@ -867,7 +868,11 @@ pub(crate) async fn fetch_remote_image(reference: &str) -> Result<Option<RemoteI
         // Malformed remote image — don't reuse anything from it.
         return Ok(None);
     }
-    Ok(Some(RemoteImage { manifest, diff_ids }))
+    Ok(Some(RemoteImage {
+        manifest,
+        diff_ids,
+        config,
+    }))
 }
 
 // ---------------------------------------------------------------------------

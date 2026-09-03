@@ -46,6 +46,8 @@ assert_contains "cat push1.log" "pushed sha256:"
 assert_not_contains "cat push1.log" "reused from previous image"
 jq_digest_v1="$(mise x crane@latest -- crane manifest --insecure "$REGISTRY/e2e/devenv:v1" |
   jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest')"
+jq_path_v1="$(mise x crane@latest -- crane config --insecure "$REGISTRY/e2e/devenv:v1" |
+  jq -r '.config.Env[] | select(startswith("PATH="))')"
 
 # --- 2. Uninstall the tool entirely; re-push to the same tag must reuse
 # the layer from the registry without rebuilding or reinstalling ---
@@ -63,7 +65,11 @@ assert_contains "mise oci push --from scratch --no-mise --cache-from $REGISTRY/e
 # validates end-to-end (all blobs actually present in the repo).
 jq_digest_v2="$(mise x crane@latest -- crane manifest --insecure "$REGISTRY/e2e/devenv:v2" |
   jq -r '.layers[] | select(.annotations."dev.mise.tool.short" == "jq") | .digest')"
+jq_path_v2="$(mise x crane@latest -- crane config --insecure "$REGISTRY/e2e/devenv:v2" |
+  jq -r '.config.Env[] | select(startswith("PATH="))')"
 assert "echo $jq_digest_v2" "$jq_digest_v1"
+assert_succeed "test -n '$jq_path_v1'"
+assert "echo $jq_path_v2" "$jq_path_v1"
 assert_succeed "mise x crane@latest -- crane validate --insecure --remote $REGISTRY/e2e/devenv:v2"
 
 # --- 4. --cache-from must be in the destination repository ---
