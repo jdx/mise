@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+
+# A shims dir the user cannot write, such as a root-owned /usr/local/bin, gets a
+# bootstrap shim from nobody. Warning about it on every `mise env`, `mise x` and
+# `mise run` would only be noise, so the failure is logged at debug level.
+if [ "$(id -u)" = 0 ]; then
+  echo "skipping: root can write to any shims dir"
+  exit 0
+fi
+
+export MISE_SHIMS_DIR="$HOME/.local/share/mise/readonly-shims"
+mkdir -p "$MISE_SHIMS_DIR"
+chmod 555 "$MISE_SHIMS_DIR"
+cat >mise.toml <<'TOML'
+[tools]
+dummy = { version = "1.0.0", lazy = true, lazy_bins = ["dummy"] }
+
+[tasks.check]
+run = "echo ran"
+TOML
+
+assert_not_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise env -s bash 2>&1" "failed to create shims"
+assert_not_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- echo ran 2>&1" "failed to create shims"
+assert_not_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise run check 2>&1" "failed to create shims"
+assert_contains "MISE_DEBUG=1 MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- echo ran 2>&1" "skipping bootstrap shims"
+assert_fail "test -e '$MISE_SHIMS_DIR/dummy'"
+assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
+
+# Once the farm is writable again the next child environment writes the shim.
+chmod 755 "$MISE_SHIMS_DIR"
+assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- echo ran" "ran"
+assert_succeed "test -e '$MISE_SHIMS_DIR/dummy'"

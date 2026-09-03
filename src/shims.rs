@@ -411,10 +411,11 @@ pub(crate) fn shim_farm_dirs() -> Vec<PathBuf> {
 /// An interactive shell still recovers, because its not-found handler installs the
 /// tool, but a task or `mise x` child has no such handler and fails with "command not
 /// found" (discussion #12678). `missing` is the toolset's already-computed missing
-/// version list, so the common case costs only a few file existence checks.
+/// version list. Once every lazy declaration is installed there is nothing left to
+/// write, and the function returns before locating the mise binary, so that steady
+/// state costs only the option checks.
 pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
-    let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
-    let mut shims_by_dir = BTreeMap::<PathBuf, BTreeSet<String>>::new();
+    let mut bins_by_dir = BTreeMap::<PathBuf, Vec<String>>::new();
     let mut lazy_bins_error = None;
     for tv in missing {
         if tv.request.options().lazy != Some(true) {
@@ -435,18 +436,31 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
         } else {
             dirs::shims()
         };
-        shims_by_dir.entry(shims_dir).or_default().extend(
-            bins.iter()
-                .flat_map(|bin| platform_shim_names(&mise_bin, bin)),
-        );
+        bins_by_dir.entry(shims_dir).or_default().extend(bins);
     }
-    for (shims_dir, shims) in shims_by_dir {
-        file::create_dir_all(&shims_dir)?;
-        let _lock = LockFile::new(&shims_dir).lock();
-        for shim in shims {
-            let path = shims_dir.join(&shim);
-            if !path.exists() {
-                add_shim(&mise_bin, &path, &shim)?;
+    if !bins_by_dir.is_empty() {
+        // Locating the mise binary walks PATH, so defer it until a declaration
+        // actually needs a shim.
+        let mise_bin = mise_bin_for_shims().absolutize()?.into_owned();
+        for (shims_dir, bins) in bins_by_dir {
+            let shims = bins
+                .iter()
+                .flat_map(|bin| platform_shim_names(&mise_bin, bin))
+                .collect::<BTreeSet<String>>();
+            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims) {
+                Ok(()) => {}
+                // A shared farm such as `/usr/local/bin` may belong to root. No
+                // command can write a bootstrap shim there for this user, so
+                // warning on every `mise env`, `mise x` and `mise run` would only
+                // be noise. Lazy tools in that farm still install through the
+                // not-found handler or an explicit `mise install`.
+                Err(err) if is_permission_denied(&err) => {
+                    debug!(
+                        "skipping bootstrap shims in {}: {err:#}",
+                        display_path(&shims_dir)
+                    );
+                }
+                Err(err) => return Err(err),
             }
         }
     }
@@ -455,6 +469,33 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+fn write_bootstrap_shims(
+    mise_bin: &Path,
+    shims_dir: &Path,
+    shims: &BTreeSet<String>,
+) -> Result<()> {
+    file::create_dir_all(shims_dir)?;
+    let _lock = LockFile::new(shims_dir).lock();
+    for shim in shims {
+        let path = shims_dir.join(shim);
+        if !path.exists() {
+            add_shim(mise_bin, &path, shim)?;
+        }
+    }
+    Ok(())
+}
+
+fn is_permission_denied(err: &eyre::Report) -> bool {
+    err.chain().any(|cause| {
+        cause.downcast_ref::<std::io::Error>().is_some_and(|io| {
+            matches!(
+                io.kind(),
+                std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::ReadOnlyFilesystem
+            )
+        })
+    })
 }
 
 pub(crate) async fn reshim_for(
