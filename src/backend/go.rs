@@ -3,7 +3,6 @@ use crate::backend::VersionInfo;
 use crate::backend::backend_type::BackendType;
 use crate::backend::options::BackendOptions;
 use crate::backend::platform_target::PlatformTarget;
-use crate::cache::{CacheManager, CacheManagerBuilder};
 use crate::cli::args::BackendArg;
 use crate::cmd::CmdLineRunner;
 use crate::config::Config;
@@ -14,7 +13,6 @@ use crate::install_context::InstallContext;
 use crate::timeout;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 use async_trait::async_trait;
-use dashmap::DashMap;
 use eyre::{Result, WrapErr};
 use serde_json::Deserializer;
 use std::collections::{BTreeMap, HashMap};
@@ -26,7 +24,6 @@ use xx::regex;
 #[derive(Debug)]
 pub(crate) struct GoBackend {
     ba: Arc<BackendArg>,
-    module_versions_cache: DashMap<String, CacheManager<Option<Vec<VersionInfo>>>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -74,6 +71,11 @@ impl Backend for GoBackend {
 
     fn mark_prereleases_from_version_pattern(&self) -> bool {
         true
+    }
+
+    async fn remote_version_cache_context(&self, config: &Arc<Config>) -> Result<Option<String>> {
+        let env = self.dependency_env(config).await?;
+        Ok(Some(go_routing_cache_context(&env)))
     }
 
     /// List Go module versions through the configured proxy or Go's module command.
@@ -279,10 +281,7 @@ const GO_LIST_VERSION_INFO_BATCH_SIZE: usize = 50;
 
 impl GoBackend {
     pub(crate) fn from_arg(ba: BackendArg) -> Self {
-        Self {
-            ba: Arc::new(ba),
-            module_versions_cache: Default::default(),
-        }
+        Self { ba: Arc::new(ba) }
     }
 
     /// Query `$GOPROXY` to find versions, matching `go install`'s resolution algorithm.
@@ -388,63 +387,46 @@ impl GoBackend {
         config: &Arc<Config>,
         mod_path: &str,
     ) -> eyre::Result<Option<Vec<VersionInfo>>> {
-        let cache = self
-            .module_versions_cache
-            .entry(mod_path.to_string())
-            .or_insert_with(|| {
-                let filename = format!("{}.msgpack.z", hash_to_str(&mod_path.to_string()));
-                CacheManagerBuilder::new(
-                    self.ba.cache_path.join("go_module_versions").join(filename),
-                )
-                .with_fresh_duration(Settings::get().fetch_remote_versions_cache())
-                .build()
-            });
+        let go = self.spawn_program(config, None, "go").await;
+        let raw = match crate::cmd::cmd_read_async(
+            &go,
+            &[
+                "list",
+                "-mod=readonly",
+                "-m",
+                "-versions",
+                "-json",
+                mod_path,
+            ],
+            self.go_list_env(config).await?,
+        )
+        .await
+        {
+            Ok(raw) => raw,
+            Err(err) => {
+                // `_list_remote_versions` calls this once per module-path candidate, so a
+                // valid setup routinely produces misses. `go` writes its own complaint to
+                // stderr for each one; capturing it into the error keeps the default output
+                // clean and leaves it readable under `--verbose`.
+                debug!("go list -versions failed for {mod_path}: {err:#}");
+                return Ok(None);
+            }
+        };
 
-        cache
-            .get_or_try_init_async(async || {
-                let go = self.spawn_program(config, None, "go").await;
-                let raw = match crate::cmd::cmd_read_async(
-                    &go,
-                    &[
-                        "list",
-                        "-mod=readonly",
-                        "-m",
-                        "-versions",
-                        "-json",
-                        mod_path,
-                    ],
-                    self.go_list_env(config).await?,
-                )
-                .await
-                {
-                    Ok(raw) => raw,
-                    Err(err) => {
-                        // `_list_remote_versions` calls this once per module-path candidate, so a
-                        // valid setup routinely produces misses. `go` writes its own complaint to
-                        // stderr for each one; capturing it into the error keeps the default output
-                        // clean and leaves it readable under `--verbose`.
-                        debug!("go list -versions failed for {mod_path}: {err:#}");
-                        return Ok(None);
-                    }
-                };
+        let mod_info = match serde_json::from_str::<GoModInfo>(&raw) {
+            Ok(info) => info,
+            Err(_) => return Ok(None),
+        };
 
-                let mod_info = match serde_json::from_str::<GoModInfo>(&raw) {
-                    Ok(info) => info,
-                    Err(_) => return Ok(None),
-                };
+        if mod_info.versions.is_empty() {
+            return self.fetch_go_module_latest_info(config, mod_path).await;
+        }
 
-                if mod_info.versions.is_empty() {
-                    return self.fetch_go_module_latest_info(config, mod_path).await;
-                }
+        let versions = self
+            .fetch_go_module_version_infos(config, mod_path, &mod_info.versions)
+            .await;
 
-                let versions = self
-                    .fetch_go_module_version_infos(config, mod_path, &mod_info.versions)
-                    .await;
-
-                Ok(Some(versions))
-            })
-            .await
-            .cloned()
+        Ok(Some(versions))
     }
 
     /// Resolve a module's `@latest` version using Go's native module routing.
@@ -649,6 +631,23 @@ fn go_native_resolution_enabled(env: &BTreeMap<String, String>) -> bool {
     ["GOPRIVATE", "GONOPROXY"]
         .iter()
         .any(|key| env.get(*key).is_some_and(|value| !value.is_empty()))
+}
+
+/// Digest the effective Go module-routing settings for version-cache isolation.
+fn go_routing_cache_context(env: &BTreeMap<String, String>) -> String {
+    let goproxy = env
+        .get("GOPROXY")
+        .filter(|value| !value.is_empty())
+        .map(String::as_str)
+        .unwrap_or(DEFAULT_GOPROXY);
+    let goprivate = env.get("GOPRIVATE").map(String::as_str).unwrap_or_default();
+    // Go uses GOPRIVATE as GONOPROXY's default when GONOPROXY is unset or empty.
+    let gonoproxy = env
+        .get("GONOPROXY")
+        .filter(|value| !value.is_empty())
+        .map(String::as_str)
+        .unwrap_or(goprivate);
+    hash_to_str(&(goproxy, goprivate, gonoproxy))
 }
 
 /// Parse GOPROXY value per https://go.dev/ref/mod#goproxy-protocol:
@@ -992,6 +991,33 @@ mod tests {
             ("GOPRIVATE".to_string(), String::new()),
             ("GONOPROXY".to_string(), String::new()),
         ])));
+    }
+
+    /// Cache contexts track routing changes without exposing their values.
+    #[test]
+    fn routing_cache_context_is_private_and_tracks_effective_values() {
+        let default = go_routing_cache_context(&BTreeMap::new());
+        let explicit_default = go_routing_cache_context(&BTreeMap::from([
+            ("GOPROXY".to_string(), DEFAULT_GOPROXY.to_string()),
+            ("GOPRIVATE".to_string(), String::new()),
+            ("GONOPROXY".to_string(), String::new()),
+        ]));
+        assert_eq!(default, explicit_default);
+
+        for (key, value) in [
+            (
+                "GOPROXY",
+                "https://user:secret@corp-proxy.example.com,direct",
+            ),
+            ("GOPRIVATE", "private.example.com/*"),
+            ("GONOPROXY", "direct.example.com/*"),
+        ] {
+            let context =
+                go_routing_cache_context(&BTreeMap::from([(key.to_string(), value.to_string())]));
+            assert_ne!(default, context, "{key} must partition the cache");
+            assert!(!context.contains(value));
+            assert!(!context.contains("secret"));
+        }
     }
 
     /// Stable Go versions exclude prereleases and pseudo-versions.
