@@ -551,9 +551,15 @@ impl SelfUpdate {
     }
 
     fn http_client() -> Result<self_update::reqwest::blocking::Client> {
-        use self_update::reqwest::redirect::Policy;
+        Ok(self_update::reqwest::blocking::Client::builder()
+            .redirect(Self::redirect_policy())
+            .build()?)
+    }
 
-        let redirect_policy = Policy::custom(|attempt| {
+    fn redirect_policy() -> reqwest::redirect::Policy {
+        use reqwest::redirect::Policy;
+
+        Policy::custom(|attempt| {
             let is_https_downgrade = attempt
                 .previous()
                 .last()
@@ -566,10 +572,7 @@ impl SelfUpdate {
             } else {
                 Policy::default().redirect(attempt)
             }
-        });
-        Ok(self_update::reqwest::blocking::Client::builder()
-            .redirect(redirect_policy)
-            .build()?)
+        })
     }
 
     // Rebuild the Windows shim copies in-process instead of shelling out to
@@ -592,7 +595,6 @@ impl SelfUpdate {
 
     #[cfg(windows)]
     async fn update_mise_shim(source: &SelfUpdateSource, version: &str) -> Result<()> {
-        use crate::http::HTTP;
         use std::io::Read;
 
         source.validate()?;
@@ -622,7 +624,19 @@ impl SelfUpdate {
         let temp_dir = tempfile::tempdir()?;
         // Use the real archive name so zipsign context matches the release signature
         let zip_path = temp_dir.path().join(&archive_name);
-        HTTP.download_file(&url, &zip_path, None).await?;
+        let headers = crate::github::get_headers(&url)?;
+        let archive = reqwest::Client::builder()
+            .user_agent(format!("mise/{}", cargo_crate_version!()))
+            .redirect(Self::redirect_policy())
+            .build()?
+            .get(&url)
+            .headers(headers)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+        fs::write(&zip_path, archive)?;
 
         // Verify the archive signature using the same key as the main update
         Self::verify_zip_signature(&zip_path)?;
