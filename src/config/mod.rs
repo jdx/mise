@@ -24,7 +24,7 @@ use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_path_trusted, trust_check,
 };
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
@@ -327,7 +327,7 @@ impl Config {
         Ok(config)
     }
 
-    pub(crate) async fn load_from_config_files(
+    async fn load_from_config_files(
         config_files: ConfigMap,
         global_only: bool,
     ) -> Result<Arc<Self>> {
@@ -450,6 +450,24 @@ impl Config {
 
         let config = Arc::new(config);
         config.env_results().await?;
+        Ok(config)
+    }
+
+    /// Build the config view used to preview hooks introduced by dotfiles.
+    ///
+    /// This deliberately avoids the normal config loader: resolving vars or env can execute
+    /// templates, source scripts, or modules, which a dry-run must not do. Literal vars are
+    /// folded with normal config precedence; already-resolved dynamic vars are retained only
+    /// when their declaring config file is unchanged.
+    pub(crate) fn with_bootstrap_dry_run_config_files(
+        &self,
+        config_files: ConfigMap,
+    ) -> Result<Arc<Self>> {
+        let mut config = self.with_config_files(config_files);
+        let vars = bootstrap_dry_run_vars(self, &config.config_files)?;
+        let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
+        config_mut.vars = vars.clone();
+        config_mut.tera_ctx.insert("vars", &vars);
         Ok(config)
     }
     pub(crate) fn env_maybe(&self) -> Option<IndexMap<String, String>> {
@@ -3061,6 +3079,74 @@ pub(crate) async fn resolve_vars_from_config_files(
         },
     )
     .await
+}
+
+fn bootstrap_dry_run_vars(
+    config: &Config,
+    config_files: &ConfigMap,
+) -> Result<IndexMap<String, String>> {
+    let mut vars = IndexMap::new();
+    for (source, config_file) in config_files.iter().rev() {
+        let unchanged = config
+            .config_files
+            .get(source)
+            .is_some_and(|original| Arc::ptr_eq(original, config_file));
+        for directive in config_file.vars_entries()? {
+            if directive.options().tools {
+                continue;
+            }
+            let existing = |key: &str| {
+                unchanged
+                    .then(|| config.vars_results_cached()?.vars.get(key))
+                    .flatten()
+                    .filter(|(_, existing_source)| existing_source == source)
+                    .map(|(value, _)| value.clone())
+            };
+            match directive {
+                EnvDirective::Val(key, value, _) => {
+                    if !contains_template_syntax(&value) {
+                        vars.insert(key, value);
+                    } else if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    } else {
+                        vars.shift_remove(&key);
+                    }
+                }
+                EnvDirective::Default(key, value, _) => {
+                    if vars.get(&key).is_some_and(|value| !value.is_empty()) {
+                        continue;
+                    }
+                    if let Some(value) = env::PRISTINE_ENV
+                        .get(&key)
+                        .filter(|value| !value.is_empty())
+                    {
+                        vars.insert(key, value.clone());
+                    } else if !contains_template_syntax(&value) {
+                        vars.insert(key, value);
+                    } else if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    }
+                }
+                EnvDirective::Rm(key, _) => {
+                    vars.shift_remove(&key);
+                }
+                EnvDirective::Age { key, .. } => {
+                    if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    } else {
+                        vars.shift_remove(&key);
+                    }
+                }
+                EnvDirective::Required(..)
+                | EnvDirective::File(..)
+                | EnvDirective::Path(..)
+                | EnvDirective::Source(..)
+                | EnvDirective::PythonVenv { .. }
+                | EnvDirective::Module(..) => {}
+            }
+        }
+    }
+    Ok(vars)
 }
 
 async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
