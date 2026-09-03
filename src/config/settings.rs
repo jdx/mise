@@ -2365,6 +2365,26 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_settings_file_strips_local_self_update_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("mise.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [settings.self_update]
+            api_url = "https://github.example.com/api/v3"
+            repository = "acme/mise"
+            "#,
+        )
+        .unwrap();
+
+        let partial = Settings::parse_settings_file(&path).unwrap();
+
+        assert_eq!(partial.self_update.api_url, None);
+        assert_eq!(partial.self_update.repository, None);
+    }
+
+    #[test]
     fn test_global_config_preserves_credential_commands() {
         let path = Path::new("/tmp/global-config.toml");
         let mut settings = credential_command_settings_table();

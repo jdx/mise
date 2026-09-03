@@ -2595,6 +2595,34 @@ description = "Deny filesystem writes by default for `mise run` and `mise exec`.
 env = "MISE_SANDBOX_DENY_WRITE"
 type = "Bool"
 
+[self_update.api_url]
+default = "https://api.github.com"
+description = "GitHub API base URL used by `mise self-update`."
+docs = """
+The API base URL for the GitHub repository that supplies mise releases. For GitHub Enterprise,
+include the API path, such as `https://github.example.com/api/v3`.
+
+This setting is global-only so a project configuration cannot redirect updates of the mise binary.
+"""
+env = "MISE_SELF_UPDATE_API_URL"
+global_only = true
+type = "Url"
+
+[self_update.repository]
+default = "jdx/mise"
+description = "GitHub repository used by `mise self-update`."
+docs = """
+The repository must contain official mise release archives with their original names and embedded
+signatures. This can be set to a private repository that mirrors only releases approved by an
+organization. Authentication uses mise's existing GitHub token resolution settings.
+
+The configured repository is also used for version notifications and automatic updates. This
+setting is global-only so a project configuration cannot redirect updates of the mise binary.
+"""
+env = "MISE_SELF_UPDATE_REPOSITORY"
+global_only = true
+type = "String"
+
 [shared_install_dirs]
 description = "Additional read-only directories to search for installed tool versions."
 docs = """

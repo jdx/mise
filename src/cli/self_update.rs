@@ -6,7 +6,7 @@ use indoc::formatdoc;
 use self_update::backends::github::Update;
 use self_update::{VersionStatus, cargo_crate_version};
 
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::{ARCH, OS, SelfUpdateSource};
 use crate::config::Settings;
 use crate::env;
 #[cfg(windows)]
@@ -416,7 +416,7 @@ impl SelfUpdate {
             // in the `.version` marker, masking the staleness from future
             // (non-forced) reshims. Best-effort. See discussion #10022.
             #[cfg(windows)]
-            match Self::update_mise_shim(&version).await {
+            match Self::update_mise_shim(&SelfUpdateSource::current(), &version).await {
                 Ok(()) => {
                     if let Err(e) = Self::reshim_after_update().await {
                         warn!("Failed to reshim after self-update: {e}");
@@ -474,8 +474,14 @@ impl SelfUpdate {
     }
 
     fn do_update_blocking(&self) -> Result<VersionStatus> {
+        let settings = Settings::try_get();
+        let source = settings
+            .as_ref()
+            .map(|settings| SelfUpdateSource::from_settings(settings))
+            .unwrap_or_default();
+        let (repo_owner, repo_name) = source.repository_parts()?;
         let mut update = Update::configure();
-        if let Some((token, _)) = crate::github::resolve_token("github.com") {
+        if let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url) {
             update.auth_token(&token);
         }
         #[cfg(windows)]
@@ -483,13 +489,13 @@ impl SelfUpdate {
         #[cfg(not(windows))]
         let bin_path_in_archive = "mise/bin/mise";
         update
-            .repo_owner("jdx")
-            .repo_name("mise")
+            .repo_owner(repo_owner)
+            .repo_name(repo_name)
+            .api_base_url(&source.api_url)
             .bin_name("mise")
             .current_version(cargo_crate_version!())
             .bin_path_in_archive(bin_path_in_archive);
 
-        let settings = Settings::try_get();
         let v = self
             .version
             .clone()
@@ -499,7 +505,9 @@ impl SelfUpdate {
                         .build()?
                         .get_latest_release()?
                         .latest()
-                        .ok_or_else(|| eyre::eyre!("no GitHub releases found for jdx/mise"))?
+                        .ok_or_else(|| {
+                            eyre::eyre!("no GitHub releases found for {}", source.repository)
+                        })?
                         .version()
                         .to_string())
                 },
@@ -559,14 +567,31 @@ impl SelfUpdate {
     }
 
     #[cfg(windows)]
-    async fn update_mise_shim(version: &str) -> Result<()> {
+    async fn update_mise_shim(source: &SelfUpdateSource, version: &str) -> Result<()> {
         use crate::http::HTTP;
         use std::io::Read;
 
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
+        let release = crate::github::get_release_for_url_with_versions_host(
+            &source.api_url,
+            &source.repository,
+            &format!("v{version}"),
+            false,
+        )
+        .await?;
+        let asset = release
+            .assets
+            .iter()
+            .find(|asset| asset.name == archive_name)
+            .ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "release v{version} for {} has no asset named {archive_name}",
+                    source.repository
+                )
+            })?;
         let url =
-            format!("https://github.com/jdx/mise/releases/download/v{version}/{archive_name}",);
+            crate::github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await;
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
