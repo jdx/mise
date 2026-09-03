@@ -26,6 +26,12 @@ assert_contains "MISE_DEBUG=1 MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- echo ran 2
 assert_fail "test -e '$MISE_SHIMS_DIR/dummy'"
 assert_fail "test -d '$MISE_DATA_DIR/installs/dummy/1.0.0'"
 
+# Permission failures outside the target farm must remain actionable.
+readonly_cache="$HOME/.cache/mise-readonly"
+mkdir -p "$readonly_cache/lockfiles"
+chmod 555 "$readonly_cache/lockfiles"
+assert_contains "MISE_CACHE_DIR='$readonly_cache' MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- echo ran 2>&1" "Permission denied"
+
 # Once the farm is writable again the next child environment writes the shim.
 chmod 755 "$MISE_SHIMS_DIR"
 assert_contains "MISE_NOT_FOUND_AUTO_INSTALL=0 mise x -- echo ran" "ran"

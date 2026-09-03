@@ -447,20 +447,19 @@ pub(crate) fn ensure_lazy_shims(missing: &[ToolVersion]) -> Result<()> {
                 .iter()
                 .flat_map(|bin| platform_shim_names(&mise_bin, bin))
                 .collect::<BTreeSet<String>>();
-            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims) {
-                Ok(()) => {}
+            match write_bootstrap_shims(&mise_bin, &shims_dir, &shims)? {
+                None => {}
                 // A shared farm such as `/usr/local/bin` may belong to root. No
                 // command can write a bootstrap shim there for this user, so
                 // warning on every `mise env`, `mise x` and `mise run` would only
                 // be noise. Lazy tools in that farm still install through the
                 // not-found handler or an explicit `mise install`.
-                Err(err) if is_permission_denied(&err) => {
+                Some(err) => {
                     debug!(
                         "skipping bootstrap shims in {}: {err:#}",
                         display_path(&shims_dir)
                     );
                 }
-                Err(err) => return Err(err),
             }
         }
     }
@@ -475,14 +474,49 @@ fn write_bootstrap_shims(
     mise_bin: &Path,
     shims_dir: &Path,
     shims: &BTreeSet<String>,
-) -> Result<()> {
-    file::create_dir_all(shims_dir)?;
-    let _lock = LockFile::new(shims_dir).lock();
+) -> Result<Option<eyre::Report>> {
+    if let Err(err) = file::create_dir_all(shims_dir) {
+        if is_permission_denied(&err) {
+            return Ok(Some(err));
+        }
+        return Err(err);
+    }
+    // Lock failures come from the cache rather than the target farm and must
+    // remain visible to the user.
+    let _lock = LockFile::new(shims_dir).lock()?;
+
+    #[cfg(windows)]
+    validate_windows_shim_source(mise_bin)?;
+
     for shim in shims {
         let path = shims_dir.join(shim);
         if !path.exists() {
-            add_shim(mise_bin, &path, shim)?;
+            if let Err(err) = add_shim(mise_bin, &path, shim) {
+                if is_permission_denied(&err) {
+                    return Ok(Some(err));
+                }
+                return Err(err);
+            }
         }
+    }
+    Ok(None)
+}
+
+#[cfg(windows)]
+fn validate_windows_shim_source(mise_bin: &Path) -> Result<()> {
+    match effective_shim_mode(mise_bin).as_ref() {
+        "exe" => {
+            let source =
+                find_mise_shim_bin(mise_bin).ok_or_else(|| eyre!("mise-shim.exe not found"))?;
+            fs::File::open(&source)
+                .wrap_err_with(|| eyre!("Failed to open shim source {}", display_path(&source)))?;
+        }
+        "hardlink" => {
+            fs::metadata(mise_bin).wrap_err_with(|| {
+                eyre!("Failed to access shim source {}", display_path(mise_bin))
+            })?;
+        }
+        _ => {}
     }
     Ok(())
 }
