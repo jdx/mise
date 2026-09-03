@@ -607,6 +607,7 @@ impl Builder {
         let image_config = self
             .build_image_config(
                 &versions,
+                &tool_reuse,
                 &mount_point,
                 base_config_json.as_ref(),
                 all_diff_ids.clone(),
@@ -659,6 +660,7 @@ impl Builder {
     async fn build_image_config(
         &self,
         versions: &[(Arc<dyn crate::backend::Backend>, ToolVersion)],
+        tool_reuse: &[Option<ReusedLayer>],
         mount_point: &str,
         base_config_json: Option<&serde_json::Value>,
         diff_ids: Vec<String>,
@@ -780,9 +782,21 @@ impl Builder {
         // `<install>/bin` if a backend returns nothing or paths outside its
         // install dir.
         let mut path_entries: Vec<String> = Vec::new();
-        for (backend, tv) in versions {
+        for (i, (backend, tv)) in versions.iter().enumerate() {
             let install_path = crate::file::canonicalize_or_self(&tv.install_path());
             let in_image_tool_root = tool_in_image_path(mount_point, tv);
+            if tool_reuse[i].is_some() {
+                let cached_entries = self
+                    .opts
+                    .reuse_from
+                    .as_ref()
+                    .map(|remote| cached_tool_path_entries(remote, &in_image_tool_root))
+                    .unwrap_or_default();
+                if !cached_entries.is_empty() {
+                    path_entries.extend(cached_entries);
+                    continue;
+                }
+            }
             let bin_paths = backend
                 .list_bin_paths(&self.cfg, tv)
                 .await
@@ -1282,6 +1296,36 @@ fn sanitize_label(s: &str) -> String {
     s.replace([':', '/'], ".")
 }
 
+/// Recover the PATH entries that described a reused tool in the cache image.
+/// A reused tool may not be installed locally, so asking its backend for bin
+/// paths can return nothing even though the remote layer has a non-standard
+/// layout such as an executable directly in the install root.
+fn cached_tool_path_entries(remote: &registry::RemoteImage, tool_root: &str) -> Vec<String> {
+    remote
+        .config
+        .get("config")
+        .and_then(|config| config.get("Env"))
+        .and_then(|env| env.as_array())
+        .and_then(|env| {
+            env.iter()
+                .filter_map(|entry| entry.as_str())
+                .filter_map(|entry| entry.strip_prefix("PATH="))
+                .next_back()
+        })
+        .map(|path| {
+            path.split(':')
+                .filter(|entry| {
+                    *entry == tool_root
+                        || entry
+                            .strip_prefix(tool_root)
+                            .is_some_and(|suffix| suffix.starts_with('/'))
+                })
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1360,6 +1404,7 @@ mod tests {
                 annotations: Default::default(),
             },
             diff_ids: vec!["sha256:diff-a".into(), "sha256:diff-b".into()],
+            config: serde_json::json!({}),
         };
 
         let index = build_reuse_index(&remote);
@@ -1386,6 +1431,36 @@ mod tests {
                     relocation: TOOL_LAYER_RELOCATION_VERSION.into(),
                 })
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn cached_path_entries_are_scoped_to_the_reused_tool() {
+        let remote = registry::RemoteImage {
+            manifest: ImageManifest {
+                schema_version: 2,
+                media_type: manifest::MEDIA_TYPE_OCI_MANIFEST.to_string(),
+                config: layer(&[], "sha256:cfg"),
+                layers: vec![],
+                annotations: Default::default(),
+            },
+            diff_ids: vec![],
+            config: serde_json::json!({
+                "config": {
+                    "Env": [
+                        "PATH=/mise/installs/pnpm/9.15.9:/mise/installs/deno/2.0.0/bin:/usr/bin"
+                    ]
+                }
+            }),
+        };
+
+        assert_eq!(
+            cached_tool_path_entries(&remote, "/mise/installs/pnpm/9.15.9"),
+            vec!["/mise/installs/pnpm/9.15.9"]
+        );
+        assert_eq!(
+            cached_tool_path_entries(&remote, "/mise/installs/deno/2.0.0"),
+            vec!["/mise/installs/deno/2.0.0/bin"]
         );
     }
 
