@@ -355,6 +355,44 @@ async fn pacman_deptest(names: &[String]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+pub(super) async fn resolve_installed_provider(
+    request: &PackageRequest,
+    eligible_names: &HashSet<String>,
+) -> Result<Option<(String, PackageState)>> {
+    let requirement = deptest_requirement(request);
+    let deptest = pacman_deptest(&[requirement]).await?;
+    let unsatisfied = parse_pacman_deptest(&deptest);
+    let constraint_satisfied = unsatisfied.is_empty();
+    if !constraint_satisfied {
+        if request.version.is_none() {
+            return Ok(None);
+        }
+        let bare_deptest = pacman_deptest(std::slice::from_ref(&request.name)).await?;
+        let bare_missing = parse_pacman_deptest(&bare_deptest);
+        if !bare_missing.is_empty() {
+            return Ok(None);
+        }
+    }
+
+    let info = pacman_info().await?;
+    let packages = parse_pacman_info(&info);
+    let Some(provider) = find_provider(&packages, request, constraint_satisfied, |package| {
+        eligible_names.contains(&package.name)
+    }) else {
+        return Ok(None);
+    };
+    let state = if constraint_satisfied {
+        PackageState::Installed {
+            version: provider.version.clone(),
+        }
+    } else {
+        PackageState::VersionMismatch {
+            installed: provider.version.clone(),
+        }
+    };
+    Ok(Some((provider.name.clone(), state)))
+}
+
 #[async_trait(?Send)]
 impl SystemPackageManager for PacmanManager {
     fn name(&self) -> &str {
@@ -620,6 +658,48 @@ mod tests {
                 .unwrap()
                 .name,
             "foo"
+        );
+    }
+
+    #[test]
+    fn test_find_provider_matches_virtual_version() {
+        let packages = parse_pacman_info(
+            "Name            : foo-one\n\
+             Version         : 10.0-1\n\
+             Provides        : foo=1\n\
+             \n\
+             Name            : foo-two\n\
+             Version         : 20.0-1\n\
+             Provides        : foo=2.0-13\n",
+        );
+
+        assert_eq!(
+            find_provider(&packages, &req("foo", Some("2.0")), true, |_| true)
+                .unwrap()
+                .name,
+            "foo-two"
+        );
+    }
+
+    #[test]
+    fn test_find_provider_filters_ineligible_exact_match() {
+        let packages = parse_pacman_info(
+            "Name            : foo\n\
+             Version         : 1.0-1\n\
+             Provides        : None\n\
+             \n\
+             Name            : aur-foo\n\
+             Version         : 2.0-1\n\
+             Provides        : foo\n",
+        );
+
+        assert_eq!(
+            find_provider(&packages, &req("foo", None), true, |package| {
+                package.name == "aur-foo"
+            })
+            .unwrap()
+            .name,
+            "aur-foo"
         );
     }
 

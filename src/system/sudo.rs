@@ -274,7 +274,9 @@ pub(crate) fn run_with_input_output(
     Ok(output.stdout)
 }
 
-fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
+/// Verify that a subprocess which performs its own sudo elevation can do so
+/// without violating mise's elevation policy or hanging without a TTY.
+pub(crate) fn ensure_elevation_available(manual_cmd: &str) -> Result<()> {
     if is_root() {
         return Ok(());
     }

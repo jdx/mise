@@ -37,6 +37,6 @@ System packages for Arch-family Linux (Arch, Manjaro, EndeavourOS, ...).
 Arch repositories only carry the latest version of each package, so pacman
 entries cannot be installed at a pinned version — `mise bootstrap packages apply`
 skips pinned entries with a warning, though `mise bootstrap packages status` still
-reports a `version mismatch` for them. AUR packages are not supported (they
-require an AUR helper and building from source).
+reports a `version mismatch` for them. Declare packages that must be built from
+the Arch User Repository with the separate [`aur:` manager](./aur.md).
 :::

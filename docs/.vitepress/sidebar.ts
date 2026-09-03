@@ -114,6 +114,7 @@ export const sidebar: SidebarItem[] = [
         items: [
           { text: "apk", link: "/bootstrap/packages/apk" },
           { text: "apt", link: "/bootstrap/packages/apt" },
+          { text: "AUR", link: "/bootstrap/packages/aur" },
           { text: "dnf", link: "/bootstrap/packages/dnf" },
           { text: "pacman", link: "/bootstrap/packages/pacman" },
           { text: "brew", link: "/bootstrap/packages/brew" },

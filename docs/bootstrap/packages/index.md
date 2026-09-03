@@ -10,6 +10,7 @@ mise can ensure host packages are installed via the
 "apk:build-base" = "latest"
 "apt:libssl-dev" = "latest"
 "apt:build-essential" = "latest"
+"aur:google-chrome" = "latest"
 "brew:postgresql@17" = "latest"
 "brew:ffmpeg" = "latest"
 "brew-cask:firefox" = "latest"
@@ -76,6 +77,7 @@ declarative sections work the same way:
 | -------------- | -------------------------------------------------------------- | --------------------------------------------------- |
 | `apk`          | Alpine Linux                                                   | [apk](/bootstrap/packages/apk.html)                 |
 | `apt`          | Debian, Ubuntu                                                 | [apt](/bootstrap/packages/apt.html)                 |
+| `aur`          | Arch, Manjaro with yay or paru                                 | [AUR](/bootstrap/packages/aur.html)                 |
 | `dnf`          | Fedora, RHEL, CentOS, Rocky, Alma                              | [dnf](/bootstrap/packages/dnf.html)                 |
 | `pacman`       | Arch, Manjaro                                                  | [pacman](/bootstrap/packages/pacman.html)           |
 | `brew`         | macOS (arm64), Linux (x86_64/arm64) — **no Homebrew required** | [brew](/bootstrap/packages/brew.html)               |
@@ -197,8 +199,9 @@ ownership state.
 
 `mise bootstrap packages upgrade` refreshes package manager metadata and upgrades the
 configured packages that are already installed to the newest available
-version — apk, apt, and dnf also honor a version pinned in config (pacman, brew,
-brew-cask, flatpak, flatpak-user, and mas [can't install pins](/bootstrap/packages/pacman.html), so
+version — apk, apt, and dnf also honor a version pinned in config
+([AUR](/bootstrap/packages/aur.html), [pacman](/bootstrap/packages/pacman.html),
+brew, brew-cask, flatpak, flatpak-user, and mas can't install pins, so
 pinned entries are skipped with a warning). Packages that aren't installed
 yet are skipped — that's `mise bootstrap packages apply`'s job. For brew,
 this pours the formula's current bottle and replaces the old keg; for

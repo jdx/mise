@@ -1,4 +1,4 @@
-//! Host package managers (apk, apt, brew, brew-cask, flatpak, flatpak-user, mas) for the `[bootstrap.packages]` config section.
+//! Host package managers (apk, apt, aur, brew, brew-cask, flatpak, flatpak-user, mas) for the `[bootstrap.packages]` config section.
 //!
 //! These are host-owned, unversioned packages — deliberately separate from
 //! the `Backend` system, which manages per-project, version-pinned dev tools.
@@ -12,6 +12,7 @@ use crate::system::ManagerPackageOptions;
 
 pub(crate) mod apk;
 pub(crate) mod apt;
+pub(crate) mod aur;
 #[cfg(unix)]
 pub(crate) mod brew;
 pub(crate) mod dnf;
@@ -240,6 +241,7 @@ pub(crate) fn builtin_managers() -> Vec<Arc<dyn SystemPackageManager>> {
     vec![
         Arc::new(apk::ApkManager::new()),
         Arc::new(apt::AptManager::new()),
+        Arc::new(aur::AurManager::new()),
         #[cfg(unix)]
         Arc::new(brew::BrewManager::new()),
         #[cfg(unix)]
