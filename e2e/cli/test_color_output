@@ -63,3 +63,17 @@ assert_colored "$(cat "$force_overrides_clicolor")"
 
 forced_output="$(cat "$forced_pipe")"
 [[ $forced_output == *"dummy"* ]] || fail "forced color output omitted table content"
+
+# `color_print::cstr!` can bake ANSI into `--help`. Color-off must still strip it.
+help_color_zero="$TMPDIR/mise-help-mise-color-zero"
+help_no_color="$TMPDIR/mise-help-no-color"
+MISE_COLOR=0 mise version --help | cat >"$help_color_zero" &
+pids=("$!")
+NO_COLOR=1 mise version --help | cat >"$help_no_color" &
+pids+=("$!")
+for pid in "${pids[@]}"; do
+  wait "$pid"
+done
+assert_uncolored "$(cat "$help_color_zero")"
+assert_uncolored "$(cat "$help_no_color")"
+[[ $(cat "$help_color_zero") == *"Examples:"* ]] || fail "help omitted examples"

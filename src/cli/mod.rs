@@ -216,6 +216,58 @@ fn render_subcommand_help(name: &str, long: bool) -> String {
         .unwrap_or_else(|| panic!("generated {name} command is outside the usage spec"))
 }
 
+/// Whether `--help` / usage pages should keep ANSI styling on `stderr`.
+///
+/// `AFTER_LONG_HELP` is built with `color_print::cstr!`, so the page already
+/// contains escape codes even when `MISE_COLOR=0`. Honor the same CLICOLOR /
+/// NO_COLOR / MISE_COLOR rules as the rest of the CLI instead of printing the
+/// baked-in styles. Stdout and stderr can disagree (piped stdout, TTY stderr).
+fn usage_color_from_policy(
+    clicolor: Option<bool>,
+    stdout: bool,
+    stderr: bool,
+    dest_stderr: bool,
+) -> bool {
+    match clicolor {
+        Some(enabled) => enabled,
+        None => {
+            if dest_stderr {
+                stderr
+            } else {
+                stdout
+            }
+        }
+    }
+}
+
+fn usage_color_enabled_for(stderr: bool) -> bool {
+    usage_color_from_policy(
+        *crate::env::CLICOLOR,
+        console::colors_enabled(),
+        console::colors_enabled_stderr(),
+        stderr,
+    )
+}
+
+fn format_usage_page(page: &str, color: bool) -> String {
+    if color {
+        page.to_string()
+    } else {
+        console::strip_ansi_codes(page).to_string()
+    }
+}
+
+fn print_usage_page(page: &str) {
+    print!(
+        "{}",
+        format_usage_page(page, usage_color_enabled_for(false))
+    );
+}
+
+fn eprint_usage_page(page: &str) {
+    eprint!("{}", format_usage_page(page, usage_color_enabled_for(true)));
+}
+
 #[derive(usage_rs::Subcommands, strum::Display)]
 #[strum(serialize_all = "kebab-case")]
 pub(crate) enum Commands {
@@ -941,7 +993,7 @@ impl Cli {
                 // Handle special case: "help", "-h", or "--help" as task should print help
                 if task == "help" || task == "-h" || task == "--help" {
                     if let Some(page) = usage_rs::help::render(Cli::spec(), Cli::command(), false) {
-                        print!("{page}");
+                        print_usage_page(&page);
                     }
                     return Err(request_exit(0));
                 }
@@ -1022,7 +1074,7 @@ impl Cli {
                 }
             }
             if let Some(page) = usage_rs::help::render(Cli::spec(), Cli::command(), false) {
-                print!("{page}");
+                print_usage_page(&page);
             }
             Err(request_exit(1))
         }
@@ -1044,19 +1096,19 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
     match err {
         usage_rs::Error::Help { cmd, long } => {
             if let Some(page) = usage_rs::help::render(spec, cmd, long) {
-                print!("{page}");
+                print_usage_page(&page);
             }
             request_exit(0)
         }
         usage_rs::Error::HelpAll { cmd } => {
             if let Some(page) = usage_rs::help::render_all(spec, cmd) {
-                print!("{page}");
+                print_usage_page(&page);
             }
             request_exit(0)
         }
         usage_rs::Error::MissingArgsHelp { cmd } => {
             if let Some(page) = usage_rs::help::render(spec, cmd, false) {
-                eprint!("{page}");
+                eprint_usage_page(&page);
             }
             request_exit(2)
         }
@@ -1071,7 +1123,7 @@ fn usage_error(argv: &[&std::ffi::OsStr], err: usage_rs::Error<'_, '_>) -> Repor
             request_exit(0)
         }
         err => {
-            eprint!("{}", usage_rs::render_failure(spec, argv, &err));
+            eprint_usage_page(&usage_rs::render_failure(spec, argv, &err).to_string());
             request_exit(2)
         }
     }
@@ -1172,6 +1224,31 @@ mod tests {
             true
         ));
         assert!(!has_dry_run_flag(&args(&["mise", "watch", "-n"]), false));
+    }
+
+    #[test]
+    fn help_page_strips_ansi_when_color_is_disabled() {
+        let page = "\u{1b}[1mExamples:\u{1b}[0m";
+        let formatted = format_usage_page(page, false);
+        assert!(
+            !formatted.contains('\u{1b}'),
+            "expected no ANSI in {formatted:?}"
+        );
+        assert!(formatted.contains("Examples:"));
+    }
+
+    #[test]
+    fn help_page_keeps_ansi_when_color_is_enabled() {
+        let page = "\u{1b}[1mExamples:\u{1b}[0m";
+        assert_eq!(format_usage_page(page, true), page);
+    }
+
+    #[test]
+    fn usage_color_uses_stderr_state_for_stderr() {
+        assert!(!usage_color_from_policy(None, true, false, true));
+        assert!(usage_color_from_policy(None, true, false, false));
+        assert!(!usage_color_from_policy(Some(false), true, true, false));
+        assert!(usage_color_from_policy(Some(true), false, false, true));
     }
 
     #[test]
