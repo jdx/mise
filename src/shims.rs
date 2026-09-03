@@ -490,13 +490,13 @@ fn write_bootstrap_shims(
 
     for shim in shims {
         let path = shims_dir.join(shim);
-        if !path.exists() {
-            if let Err(err) = add_shim(mise_bin, &path, shim) {
-                if is_permission_denied(&err) {
-                    return Ok(Some(err));
-                }
-                return Err(err);
+        if !path.exists()
+            && let Err(err) = add_shim(mise_bin, &path, shim)
+        {
+            if is_permission_denied(&err) {
+                return Ok(Some(err));
             }
+            return Err(err);
         }
     }
     Ok(None)
