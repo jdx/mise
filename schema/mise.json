@@ -3770,6 +3770,11 @@
       "description": "marks this config as a monorepo root for task path syntax",
       "$ref": "#/$defs/monorepo_root"
     },
+    "experimental_monorepo_root": {
+      "deprecated": true,
+      "description": "deprecated alias for monorepo_root",
+      "$ref": "#/$defs/monorepo_root"
+    },
     "monorepo": {
       "description": "configuration for monorepo task discovery",
       "$ref": "#/$defs/monorepo"

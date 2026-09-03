@@ -17,6 +17,8 @@ REGISTRY_TOOL_SCHEMA_PATH="$ROOT/schema/mise-registry-tool.json"
 TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
 TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
 assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
+assert "jq -r '.properties.experimental_monorepo_root.deprecated' '$SCHEMA_PATH'" "true"
+assert "jq -r '.properties.experimental_monorepo_root[\"\$ref\"] == \"#/\$defs/monorepo_root\"' '$SCHEMA_PATH'" "true"
 
 # Set up tombi config pointing to local schema
 cat >"$HOME/tombi.toml" <<EOF
