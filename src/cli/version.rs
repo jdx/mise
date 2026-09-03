@@ -13,6 +13,72 @@ use crate::file::modified_duration;
 use crate::ui::style;
 use crate::{dirs, duration, env, file};
 
+const DEFAULT_SELF_UPDATE_API_URL: &str = "https://api.github.com";
+const DEFAULT_SELF_UPDATE_REPOSITORY: &str = "jdx/mise";
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct SelfUpdateSource {
+    pub(crate) api_url: String,
+    pub(crate) repository: String,
+}
+
+impl Default for SelfUpdateSource {
+    fn default() -> Self {
+        Self {
+            api_url: DEFAULT_SELF_UPDATE_API_URL.to_string(),
+            repository: DEFAULT_SELF_UPDATE_REPOSITORY.to_string(),
+        }
+    }
+}
+
+impl SelfUpdateSource {
+    pub(crate) fn from_settings(settings: &Settings) -> Self {
+        Self {
+            api_url: settings
+                .self_update
+                .api_url
+                .trim_end_matches('/')
+                .to_string(),
+            repository: settings.self_update.repository.clone(),
+        }
+    }
+
+    fn current() -> Self {
+        Settings::try_get()
+            .map(|settings| Self::from_settings(&settings))
+            .unwrap_or_default()
+    }
+
+    fn is_default(&self) -> bool {
+        self.api_url == DEFAULT_SELF_UPDATE_API_URL
+            && self.repository == DEFAULT_SELF_UPDATE_REPOSITORY
+    }
+
+    fn cache_path(&self) -> std::path::PathBuf {
+        if self.is_default() {
+            dirs::CACHE.join("latest-version")
+        } else {
+            dirs::CACHE.join(format!("latest-version-{}", crate::hash::hash_to_str(self)))
+        }
+    }
+
+    #[cfg(feature = "self_update")]
+    pub(crate) fn repository_parts(&self) -> Result<(&str, &str)> {
+        let (owner, repo) = self.repository.split_once('/').ok_or_else(|| {
+            eyre::eyre!(
+                "self_update.repository must be in owner/repository format, got {:?}",
+                self.repository
+            )
+        })?;
+        eyre::ensure!(
+            !owner.is_empty() && !repo.is_empty() && !repo.contains('/'),
+            "self_update.repository must be in owner/repository format, got {:?}",
+            self.repository
+        );
+        Ok((owner, repo))
+    }
+}
+
 /// Display the version of mise
 ///
 /// Displays the version, os, architecture, and the date of the build.
@@ -290,12 +356,13 @@ fn cached_latest_version(path: &Path, duration: Duration) -> Cached {
 }
 
 async fn get_latest_version(duration: Duration) -> Option<String> {
-    let version_file_path = dirs::CACHE.join("latest-version");
+    let source = SelfUpdateSource::current();
+    let version_file_path = source.cache_path();
     if let Cached::Fresh(version) = cached_latest_version(&version_file_path, duration) {
         return version;
     }
     let _ = file::create_dir_all(*dirs::CACHE);
-    let version = get_latest_version_call().await;
+    let version = get_latest_version_call(&source).await;
     // Written even on failure, so its mtime acts as a negative cache and a
     // machine that cannot reach the network stops retrying once per invocation.
     let _ = file::write(version_file_path, version.clone().unwrap_or_default());
@@ -303,13 +370,17 @@ async fn get_latest_version(duration: Duration) -> Option<String> {
 }
 
 #[cfg(test)]
-async fn get_latest_version_call() -> Option<String> {
+async fn get_latest_version_call(_source: &SelfUpdateSource) -> Option<String> {
     Some("0.0.0".to_string())
 }
 
 #[cfg(not(test))]
-async fn get_latest_version_call() -> Option<String> {
-    fetch_latest_version(&crate::http::HTTP).await
+async fn get_latest_version_call(source: &SelfUpdateSource) -> Option<String> {
+    if source.is_default() {
+        fetch_latest_version(&crate::http::HTTP).await
+    } else {
+        fetch_latest_github_version(source).await
+    }
 }
 
 async fn fetch_latest_version(client: &crate::http::Client) -> Option<String> {
@@ -322,6 +393,34 @@ async fn fetch_latest_version(client: &crate::http::Client) -> Option<String> {
         }
         Err(err) => {
             debug!("failed to check for version: {:#?}", err);
+            None
+        }
+    }
+}
+
+#[cfg(not(test))]
+async fn fetch_latest_github_version(source: &SelfUpdateSource) -> Option<String> {
+    debug!(
+        "checking mise version from {}/{}",
+        source.api_url, source.repository
+    );
+    match crate::github::get_release_for_url_with_versions_host(
+        &source.api_url,
+        &source.repository,
+        "latest",
+        false,
+    )
+    .await
+    {
+        Ok(release) => Some(
+            release
+                .tag_name
+                .strip_prefix('v')
+                .unwrap_or(&release.tag_name)
+                .to_string(),
+        ),
+        Err(err) => {
+            debug!("failed to check for version: {err:#?}");
             None
         }
     }
@@ -420,6 +519,43 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "2030.1.2\n");
         assert_eq!(cached_latest_version(&p, Duration::ZERO), Cached::Stale);
+    }
+
+    #[test]
+    fn custom_self_update_sources_use_separate_version_caches() {
+        let default = SelfUpdateSource::default();
+        let custom = SelfUpdateSource {
+            api_url: "https://github.example.com/api/v3".to_string(),
+            repository: "acme/mise".to_string(),
+        };
+
+        assert_eq!(default.cache_path(), dirs::CACHE.join("latest-version"));
+        assert_ne!(custom.cache_path(), default.cache_path());
+        assert!(
+            custom
+                .cache_path()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("latest-version-")
+        );
+    }
+
+    #[cfg(feature = "self_update")]
+    #[test]
+    fn self_update_repository_requires_exactly_owner_and_repository() {
+        let source = |repository: &str| SelfUpdateSource {
+            repository: repository.to_string(),
+            ..SelfUpdateSource::default()
+        };
+
+        assert_eq!(
+            source("acme/mise").repository_parts().unwrap(),
+            ("acme", "mise")
+        );
+        assert!(source("mise").repository_parts().is_err());
+        assert!(source("acme/mise/releases").repository_parts().is_err());
+        assert!(source("/mise").repository_parts().is_err());
     }
 
     #[tokio::test]

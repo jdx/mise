@@ -1692,6 +1692,22 @@
             }
           }
         },
+        "self_update": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "api_url": {
+              "default": "https://api.github.com",
+              "description": "GitHub API base URL used by `mise self-update`.",
+              "type": "string"
+            },
+            "repository": {
+              "default": "jdx/mise",
+              "description": "GitHub repository used by `mise self-update`.",
+              "type": "string"
+            }
+          }
+        },
         "shared_install_dirs": {
           "description": "Additional read-only directories to search for installed tool versions.",
           "type": "array",

@@ -31,6 +31,20 @@ mise settings set auto_update true
 mise then periodically checks before eligible interactive commands, installs a newer release without
 updating plugins, and re-runs the original command with the new binary. Configure the interval with
 [`auto_update_check_duration`](/configuration/settings.html#auto_update_check_duration).
+
+Organizations can direct manual and automatic self-updates to a curated GitHub release mirror by
+setting [`self_update.repository`](/configuration/settings.html#self_updaterepository). Private
+repositories and GitHub Enterprise use mise's existing GitHub token resolution. Mirrored archives
+must retain the official file names and embedded mise signatures:
+
+```toml
+[settings.self_update]
+repository = "myorg/mise-mirror"
+api_url = "https://api.github.com"
+```
+
+These settings are global-only: set them in the user-global or system configuration, not a project
+configuration.
 :::
 
 ::: tip Keep mise up to date

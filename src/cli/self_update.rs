@@ -6,7 +6,7 @@ use indoc::formatdoc;
 use self_update::backends::github::Update;
 use self_update::{VersionStatus, cargo_crate_version};
 
-use crate::cli::version::{ARCH, OS};
+use crate::cli::version::{ARCH, OS, SelfUpdateSource};
 use crate::config::Settings;
 use crate::env;
 #[cfg(windows)]
@@ -474,8 +474,14 @@ impl SelfUpdate {
     }
 
     fn do_update_blocking(&self) -> Result<VersionStatus> {
+        let settings = Settings::try_get();
+        let source = settings
+            .as_ref()
+            .map(|settings| SelfUpdateSource::from_settings(settings))
+            .unwrap_or_default();
+        let (repo_owner, repo_name) = source.repository_parts()?;
         let mut update = Update::configure();
-        if let Some((token, _)) = crate::github::resolve_token("github.com") {
+        if let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url) {
             update.auth_token(&token);
         }
         #[cfg(windows)]
@@ -483,13 +489,13 @@ impl SelfUpdate {
         #[cfg(not(windows))]
         let bin_path_in_archive = "mise/bin/mise";
         update
-            .repo_owner("jdx")
-            .repo_name("mise")
+            .repo_owner(repo_owner)
+            .repo_name(repo_name)
+            .api_base_url(&source.api_url)
             .bin_name("mise")
             .current_version(cargo_crate_version!())
             .bin_path_in_archive(bin_path_in_archive);
 
-        let settings = Settings::try_get();
         let v = self
             .version
             .clone()
@@ -499,7 +505,9 @@ impl SelfUpdate {
                         .build()?
                         .get_latest_release()?
                         .latest()
-                        .ok_or_else(|| eyre::eyre!("no GitHub releases found for jdx/mise"))?
+                        .ok_or_else(|| {
+                            eyre::eyre!("no GitHub releases found for {}", source.repository)
+                        })?
                         .version()
                         .to_string())
                 },
