@@ -55,6 +55,15 @@ impl Env {
         let (_, missing) = ts
             .install_missing_versions(&mut config, &InstallOptions::default())
             .await?;
+        // The printed environment places the shim farms on PATH for lazy
+        // declarations, so evaluating it must leave working bootstrap shims
+        // behind: an eval'd shell has no command-not-found handler to fall
+        // back on (discussion #12678).
+        if ts.has_lazy_declarations()
+            && let Err(err) = crate::shims::ensure_lazy_shims(&missing)
+        {
+            warn!("failed to create shims for lazy tools: {err:#}");
+        }
         ts.notify_missing_versions(missing);
 
         // Pre-compute final_env when needed by --redacted or --dotenv to
