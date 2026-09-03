@@ -18,6 +18,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
+  MBX_DISABLE: "1"
   CARGO_TERM_COLOR: always
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1

@@ -6,6 +6,7 @@ _.path = ["./target/debug", "./node_modules/.bin"]
 
 [tools]
 actionlint = "latest"
+mr-boxington = "1.5.0"
 # Pinned rather than "latest" because tak is the measuring instrument: an
 # upgrade that changes how it samples would land in the series as a step change
 # in mise's numbers, indistinguishable from a real regression. Bump
@@ -35,6 +36,10 @@ wait-for-gh-rate-limit = "latest"
 sops = "latest"
 node = "24"
 
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
+
 [task_config]
 includes = ["tasks.toml", "xtasks"]
 
@@ -53,7 +58,7 @@ dir = "{{config_root}}"
 # happened to answer. Ignoring the repository config keeps its development tools
 # out of the fixture so editing this file does not change a benchmark's input.
 env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
-run = ["cargo build --release", "tak run"]
+run = ["mbx build --release", "tak run"]
 
 # Same measurement, appended to refs/notes/tak for this commit. Run by the
 # `perf` workflow on every push to main; the notes are the history. Safe to run
@@ -61,7 +66,7 @@ run = ["cargo build --release", "tak run"]
 [tasks."perf:record"]
 dir = "{{config_root}}"
 env = { MISE_OFFLINE = "1", MISE_IGNORED_CONFIG_PATHS = "{{config_root}}/mise.toml" }
-run = ["cargo build --release", "tak run --record"]
+run = ["mbx build --release", "tak run --record"]
 
 # End-to-end task artifact cache phases. The harness generates an isolated
 # large fixture so benchmark inputs never need to be checked into the repo.

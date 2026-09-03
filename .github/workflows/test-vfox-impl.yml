@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  MBX_DISABLE: "1"
   CARGO_TERM_COLOR: always
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1

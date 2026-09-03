@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  MBX_DISABLE: "1"
   GITHUB_TOKEN: ${{ secrets.MISE_GH_TOKEN || secrets.GITHUB_TOKEN }}
 
 jobs:

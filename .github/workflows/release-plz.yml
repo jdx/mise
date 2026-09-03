@@ -12,6 +12,7 @@ concurrency:
   group: release-plz
 
 env:
+  MBX_DISABLE: "1"
   MISE_EXPERIMENTAL: 1
   NPM_CONFIG_FUND: false
   RUST_BACKTRACE: 1
