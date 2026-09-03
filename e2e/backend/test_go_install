@@ -30,6 +30,16 @@ eval "$(mise activate bash --shims)"
 assert "go-example" "hello world"
 assert "tool" "deep v2 postgres"
 
+# Remote-version caches for the same module must be isolated by Go's routing
+# configuration. Without that isolation, the GOPROXY=off lookup reuses the
+# public proxy's cached list.
+assert_contains \
+  "GOPROXY=https://proxy.golang.org mise ls-remote go:github.com/jdx/go-example" \
+  "0.1.0"
+assert_not_contains \
+  "GOPROXY=off mise ls-remote go:github.com/jdx/go-example 2>&1" \
+  "0.1.0"
+
 # See https://github.com/jdx/mise/discussions/6737
 assert "mise x go:github.com/jdx/go-example@e16a340 -- go-example" "hello world"
 
