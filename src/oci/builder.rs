@@ -1315,10 +1315,14 @@ fn cached_tool_path_entries(remote: &registry::RemoteImage, tool_root: &str) -> 
         .map(|path| {
             path.split(':')
                 .filter(|entry| {
-                    *entry == tool_root
-                        || entry
-                            .strip_prefix(tool_root)
-                            .is_some_and(|suffix| suffix.starts_with('/'))
+                    let has_parent = PathBuf::from(entry)
+                        .components()
+                        .any(|component| component == std::path::Component::ParentDir);
+                    !has_parent
+                        && (*entry == tool_root
+                            || entry
+                                .strip_prefix(tool_root)
+                                .is_some_and(|suffix| suffix.starts_with('/')))
                 })
                 .map(str::to_string)
                 .collect()
@@ -1448,7 +1452,7 @@ mod tests {
             config: serde_json::json!({
                 "config": {
                     "Env": [
-                        "PATH=/mise/installs/pnpm/9.15.9:/mise/installs/deno/2.0.0/bin:/usr/bin"
+                        "PATH=/mise/installs/pnpm/9.15.9:/mise/installs/deno/2.0.0/bin:/mise/installs/pnpm/9.15.9/../../other/bin:/usr/bin"
                     ]
                 }
             }),
