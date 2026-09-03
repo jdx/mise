@@ -1701,12 +1701,21 @@ impl Bootstrap {
             &checkout,
             &crate::env::ARGS.read().unwrap(),
         ));
-        if self.from_git.is_some()
-            && let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
+        if self.from_git.is_some() {
+            let config_dir = crate::env::MISE_CONFIG_DIR.as_path();
+            let config_dir = if config_dir.is_absolute() {
+                config_dir.to_path_buf()
+            } else {
+                std::env::current_dir()?.join(config_dir)
+            };
+            command.env("MISE_CONFIG_DIR", config_dir);
+
+            if let Some(file_name) = crate::env::MISE_GLOBAL_CONFIG_FILE
                 .as_deref()
                 .and_then(Path::file_name)
-        {
-            command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+            {
+                command.env("MISE_GLOBAL_CONFIG_FILE", checkout.join(file_name));
+            }
         }
 
         let mut trusted = std::env::split_paths(
