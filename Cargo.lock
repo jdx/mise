@@ -691,9 +691,9 @@ dependencies = [
 
 [[package]]
 name = "aube-registry"
-version = "2.2.4"
+version = "2.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd8ae1b32d2e0823ba50451d7997acd7f0eb4ca19d8f0ebe05cb18e4877ff883"
+checksum = "d99b3ca37f9b2c9e135667bd671c74ea6ea2a0d39d88455b64e01ec195e6f329"
 dependencies = [
  "aube-codes",
  "aube-manifest",
@@ -1475,7 +1475,7 @@ dependencies = [
  "bitflags 2.13.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.10.5",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -4244,7 +4244,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c91d8cffac8849493a82233811bd02b2b183b8cf39bf704de0fa0841b737595"
 dependencies = [
  "bstr",
- "hashbrown 0.17.1",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -7229,7 +7229,7 @@ dependencies = [
  "aes-gcm",
  "aes-kw",
  "argon2",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitfields",
  "block-padding 0.3.3",
  "blowfish",
@@ -9523,7 +9523,7 @@ version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
- "errno 0.3.14",
+ "errno 0.2.8",
  "libc",
 ]
 
