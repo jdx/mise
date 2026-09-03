@@ -1,0 +1,26 @@
+{
+  "cli_version": "0.7.7",
+  "checkpoint_id": "38e8aa1ef4c1",
+  "strategy": "manual-commit",
+  "branch": "codex/fix-vfox-lockfile-tool-name",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "e2e/backend/test_vfox_backend_npm",
+    "src/backend/vfox.rs"
+  ],
+  "sessions": [
+    {
+      "metadata": "/38/e8aa1ef4c1/0/metadata.json",
+      "transcript": "/38/e8aa1ef4c1/0/full.jsonl",
+      "content_hash": "/38/e8aa1ef4c1/0/content_hash.txt",
+      "prompt": "/38/e8aa1ef4c1/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 127187,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 3422592,
+    "output_tokens": 11524,
+    "api_call_count": 39
+  }
+}
