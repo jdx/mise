@@ -617,8 +617,9 @@ impl SelfUpdate {
                     source.repository
                 )
             })?;
-        let url =
-            crate::github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await;
+        // Use the API asset endpoint directly so every redirect is governed by
+        // the downgrade-rejecting client below. This also supports private releases.
+        let url = asset.url.clone();
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
