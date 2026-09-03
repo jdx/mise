@@ -347,6 +347,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       created: ${{ steps.create-release.outputs.created }}
+      release-id: ${{ steps.create-release.outputs.release-id }}
     permissions:
       contents: write
     needs:
@@ -391,15 +392,17 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && inputs.force != true
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          if gh api "repos/${{ github.repository }}/releases/tags/$VERSION" --jq '.draft' 2>/dev/null; then
-            DRAFT="$(gh api "repos/${{ github.repository }}/releases/tags/$VERSION" --jq '.draft')"
-            if [[ "$DRAFT" == "false" ]]; then
-              echo "::warning::Release $VERSION already exists and is published — skipping publish steps"
-              echo "exists=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "Draft release $VERSION exists — will continue publishing"
-              echo "exists=false" >> "$GITHUB_OUTPUT"
-            fi
+          RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
+            jq -s -c --arg version "$VERSION" '[.[][] | select(.tag_name == $version)][0] // {}')"
+          DRAFT="$(jq -r '.draft // empty' <<< "$RELEASE")"
+          if [[ "$DRAFT" == "false" ]]; then
+            echo "::warning::Release $VERSION already exists and is published — skipping publish steps"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$DRAFT" == "true" ]]; then
+            echo "Draft release $VERSION exists — will refresh its assets and continue publishing"
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+            echo "release-id=$(jq -r '.id' <<< "$RELEASE")" >> "$GITHUB_OUTPUT"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           else
             echo "No release found for $VERSION"
             echo "exists=false" >> "$GITHUB_OUTPUT"
@@ -501,14 +504,25 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
         run: |
           VERSION="$(./scripts/get-version.sh)"
-          gh release create "$VERSION" \
-            --title "$RELEASE_TITLE" \
-            --notes-file /tmp/release-notes.txt \
-            --verify-tag \
-            --draft \
-            "releases/$VERSION"/*
+          if [[ "$EXISTING_DRAFT" == "true" ]]; then
+            gh release upload "$VERSION" --clobber "releases/$VERSION"/*
+            RELEASE_ID="$EXISTING_RELEASE_ID"
+          else
+            gh release create "$VERSION" \
+              --title "$RELEASE_TITLE" \
+              --notes-file /tmp/release-notes.txt \
+              --verify-tag \
+              --draft \
+              "releases/$VERSION"/*
+            RELEASE_ID="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
+              jq -s -r --arg version "$VERSION" '[.[][] | select(.tag_name == $version and .draft)][0].id // empty')"
+          fi
+          test -n "$RELEASE_ID"
           echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "release-id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
         env:
+          EXISTING_DRAFT: ${{ steps.check-release.outputs.draft }}
+          EXISTING_RELEASE_ID: ${{ steps.check-release.outputs.release-id }}
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
       - name: Publish Release Assets to CDN
         if: startsWith(github.ref, 'refs/tags/v') && steps.check-release.outputs.exists != 'true'
@@ -546,9 +560,19 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Publish GitHub Release
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Verify and publish GitHub Release
         run: |
-          gh release edit "$RELEASE_TAG" --draft=false
+          (cd release-assets && sha256sum ./* | sort) > /tmp/expected-assets
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            --jq '.assets[] | select(.digest | startswith("sha256:")) | "\(.digest[7:])  ./\(.name)"' \
+            | sort > /tmp/draft-assets
+          diff -u /tmp/expected-assets /tmp/draft-assets
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false
         env:
           GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_ID: ${{ needs.release.outputs.release-id }}
