@@ -342,6 +342,7 @@ mkdir -p dotfiles/mise bootstrap-root ~/.config/mise
 cat <<'EOF' >bootstrap-root/mise.toml
 [vars]
 bootstrap_root_marker = "root"
+new_bootstrap_root_marker = "stale-root"
 EOF
 cat <<'EOF' >dotfiles/mise/bootstrap-root.local.toml
 [vars]

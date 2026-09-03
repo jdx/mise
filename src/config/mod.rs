@@ -493,7 +493,11 @@ impl Config {
                     None => !bootstrap_roots.iter().any(|root| path.starts_with(root)),
                 };
                 if belongs_to_map {
-                    map.config_files.insert(path.clone(), simulated.clone());
+                    insert_bootstrap_dry_run_config_file(
+                        &mut map.config_files,
+                        path.clone(),
+                        simulated.clone(),
+                    );
                 }
             }
             if map.config_root.is_some() {
@@ -1612,6 +1616,47 @@ impl Config {
     pub(crate) fn redact(&self, input: &str) -> String {
         _REDACTOR.lock().unwrap().redact(input)
     }
+}
+
+/// Insert a simulated config alongside configs from the same directory while preserving the
+/// highest-precedence-first order produced by `config_paths_in_dir_with_filenames`.
+fn insert_bootstrap_dry_run_config_file(
+    config_files: &mut ConfigMap,
+    path: PathBuf,
+    config_file: Arc<dyn ConfigFile>,
+) {
+    if config_files.contains_key(&path) {
+        config_files.insert(path, config_file);
+        return;
+    }
+
+    let precedence = bootstrap_config_filename_precedence(&path);
+    let sibling_indices = config_files
+        .keys()
+        .enumerate()
+        .filter(|(_, existing)| existing.parent() == path.parent())
+        .map(|(index, _)| index)
+        .collect_vec();
+    let index = sibling_indices
+        .iter()
+        .copied()
+        .find(|index| {
+            bootstrap_config_filename_precedence(
+                config_files
+                    .get_index(*index)
+                    .expect("config index exists")
+                    .0,
+            ) < precedence
+        })
+        .or_else(|| sibling_indices.last().map(|index| index + 1))
+        .unwrap_or(config_files.len());
+    config_files.shift_insert(index, path, config_file);
+}
+
+fn bootstrap_config_filename_precedence(path: &Path) -> Option<usize> {
+    DEFAULT_CONFIG_FILENAMES.iter().position(|candidate| {
+        !is_glob_pattern(candidate) && Path::new(candidate).file_name() == path.file_name()
+    })
 }
 
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
