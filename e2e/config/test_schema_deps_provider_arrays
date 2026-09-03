@@ -9,6 +9,12 @@ TOMBI="mise x tombi@$TOMBI_VERSION -- tombi"
 TOMBI_LINT="$TOMBI lint --offline --no-cache --error-on-warnings --quiet"
 assert_contains "$TOMBI --version" "tombi $TOMBI_VERSION"
 
+for provider in aube deno git-submodule; do
+  jq -e --arg provider "$provider" \
+    '.properties.deps.properties[$provider]."$ref" == "#/$defs/deps_provider"' \
+    "$SCHEMA_PATH" >/dev/null || fail "missing schema entry for deps provider: $provider"
+done
+
 cat >"$HOME/tombi.toml" <<EOF
 toml-version = "v1.0.0"
 
