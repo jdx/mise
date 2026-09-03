@@ -1488,7 +1488,7 @@ pub(crate) fn hooks_from_config_files(config_files: &ConfigMap) -> Vec<hooks::Bo
     for cf in config_files.values().rev() {
         if let Some(sys) = cf.bootstrap_config() {
             for (phase, value) in sys.hooks {
-                match hooks::BootstrapHook::from_toml(&phase, value) {
+                match hooks::BootstrapHook::from_toml(&phase, value, cf.get_path().to_path_buf()) {
                     Ok(hooks) => out.extend(hooks),
                     Err(err) => warn!("[bootstrap.hooks.{phase}]: {err}"),
                 }

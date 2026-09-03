@@ -5,12 +5,13 @@
 //! part of `mise install` or shell activation.
 
 use std::fmt;
+use std::path::PathBuf;
 
 use eyre::{Result, bail};
 use serde::Serialize;
 use strum::{EnumIter, IntoEnumIterator};
 
-use crate::config::Settings;
+use crate::config::{Config, Settings};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -65,10 +66,15 @@ impl fmt::Display for BootstrapHookPhase {
 pub(crate) struct BootstrapHook {
     pub phase: BootstrapHookPhase,
     pub run: String,
+    pub config_path: PathBuf,
 }
 
 impl BootstrapHook {
-    pub(crate) fn from_toml(phase_raw: &str, value: toml::Value) -> Result<Vec<Self>> {
+    pub(crate) fn from_toml(
+        phase_raw: &str,
+        value: toml::Value,
+        config_path: PathBuf,
+    ) -> Result<Vec<Self>> {
         let Some(phase) = BootstrapHookPhase::parse(phase_raw) else {
             let valid = BootstrapHookPhase::iter()
                 .map(|phase| phase.as_str())
@@ -99,7 +105,11 @@ impl BootstrapHook {
                     warn!("[bootstrap.hooks.{phase}]: empty command, ignoring entry");
                     None
                 } else {
-                    Some(Self { phase, run })
+                    Some(Self {
+                        phase,
+                        run,
+                        config_path: config_path.clone(),
+                    })
                 }
             })
             .collect();
@@ -119,6 +129,7 @@ fn string_array(values: Vec<toml::Value>, message: &str) -> Result<Vec<String>> 
 }
 
 pub(crate) async fn run_phase(
+    config: &Config,
     hooks: &[BootstrapHook],
     phase: BootstrapHookPhase,
     dry_run: bool,
@@ -133,13 +144,34 @@ pub(crate) async fn run_phase(
         bail!("default inline shell args must not be empty");
     };
     for hook in phase_hooks {
+        let run = if crate::tera::contains_template_syntax(&hook.run) {
+            let mut tera = if dry_run {
+                crate::tera::get_tera_for_dry_run(hook.config_path.parent())
+            } else {
+                crate::tera::get_tera(hook.config_path.parent())
+            };
+            let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
+            if context.get("config_root").is_none() {
+                let config_root =
+                    crate::config::config_file::config_root::config_root(&hook.config_path);
+                context.insert("config_root", &config_root);
+            }
+            crate::tera::render_str(&mut tera, &hook.run, &context).map_err(|err| {
+                eyre::eyre!(
+                    "[bootstrap.hooks.{phase}] in {}: failed to render template: {err}",
+                    hook.config_path.display()
+                )
+            })?
+        } else {
+            hook.run.clone()
+        };
         if dry_run {
-            miseprintln!("{} {}", shell.join(" "), shell_words::quote(&hook.run));
+            miseprintln!("{} {}", shell.join(" "), shell_words::quote(&run));
             continue;
         }
-        info!("$ {}", hook.run);
+        info!("$ {run}");
         crate::cmd::CmdLineRunner::new(program)
-            .cmd_body_args(shell_args, &hook.run)
+            .cmd_body_args(shell_args, &run)
             .raw(true)
             .execute_async()
             .await?;
@@ -166,8 +198,12 @@ mod tests {
 
     #[test]
     fn unknown_phase_error_lists_valid_phases() {
-        let err = BootstrapHook::from_toml("pre-things", toml::Value::String("echo nope".into()))
-            .unwrap_err();
+        let err = BootstrapHook::from_toml(
+            "pre-things",
+            toml::Value::String("echo nope".into()),
+            "mise.toml".into(),
+        )
+        .unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("pre-things"));
         assert!(msg.contains("pre-packages"));
@@ -176,14 +212,18 @@ mod tests {
 
     #[test]
     fn parses_hook_values() {
-        let hooks =
-            BootstrapHook::from_toml("pre-packages", toml::Value::String("echo preparing".into()))
-                .unwrap();
+        let hooks = BootstrapHook::from_toml(
+            "pre-packages",
+            toml::Value::String("echo preparing".into()),
+            "mise.toml".into(),
+        )
+        .unwrap();
         assert_eq!(
             hooks,
             vec![BootstrapHook {
                 phase: BootstrapHookPhase::PrePackages,
                 run: "echo preparing".into(),
+                config_path: "mise.toml".into(),
             }]
         );
 
@@ -195,7 +235,9 @@ mod tests {
                 toml::Value::String("echo two".into()),
             ]),
         );
-        let hooks = BootstrapHook::from_toml("final", toml::Value::Table(table)).unwrap();
+        let hooks =
+            BootstrapHook::from_toml("final", toml::Value::Table(table), "mise.toml".into())
+                .unwrap();
         assert_eq!(hooks.len(), 2);
         assert_eq!(hooks[1].run, "echo two");
     }

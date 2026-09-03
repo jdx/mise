@@ -24,7 +24,7 @@ use crate::config::config_file::mise_toml::{MiseToml, Tasks};
 use crate::config::config_file::{
     ConfigFile, TaskConfig, config_trust_root, is_path_trusted, trust_check,
 };
-use crate::config::env_directive::{EnvResolveOptions, EnvResults, ToolsFilter};
+use crate::config::env_directive::{EnvDirective, EnvResolveOptions, EnvResults, ToolsFilter};
 use crate::config::tracking::Tracker;
 use crate::env::{MISE_DEFAULT_CONFIG_FILENAME, MISE_DEFAULT_TOOL_VERSIONS_FILENAME};
 use crate::file::display_path;
@@ -134,6 +134,8 @@ fn extend_monorepo_tool_request_set(union: &mut ToolRequestSet, requests: &ToolR
 struct BootstrapConfigMap {
     config_files: ConfigMap,
     tera_ctx: tera::Context,
+    config_root: Option<PathBuf>,
+    vars_results: EnvResults,
 }
 
 pub(crate) struct Config {
@@ -450,6 +452,69 @@ impl Config {
 
         let config = Arc::new(config);
         config.env_results().await?;
+        Ok(config)
+    }
+
+    /// Build the config view used to preview hooks introduced by dotfiles.
+    ///
+    /// This deliberately avoids the normal config loader: resolving vars or env can execute
+    /// templates, source scripts, or modules, which a dry-run must not do. Literal vars are
+    /// folded with normal config precedence; already-resolved dynamic vars are retained only
+    /// when their declaring config file is unchanged.
+    pub(crate) fn with_bootstrap_dry_run_config_files(
+        &self,
+        config_files: ConfigMap,
+    ) -> Result<Arc<Self>> {
+        let mut config = self.with_config_files(config_files);
+        let bootstrap_roots = self
+            .bootstrap_config_maps
+            .iter()
+            .filter_map(|map| map.config_root.as_deref())
+            .collect_vec();
+        let mut main_config_files = config.config_files.clone();
+        main_config_files
+            .retain(|path, _| !bootstrap_roots.iter().any(|root| path.starts_with(root)));
+        let vars = bootstrap_dry_run_vars(
+            Some(&self.config_files),
+            self.vars_results_cached(),
+            &main_config_files,
+            IndexMap::new(),
+            false,
+        )?;
+        let main_vars_changed = vars != self.vars;
+        let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
+        config_mut.vars = vars.clone();
+        config_mut.tera_ctx.insert("vars", &vars);
+        for map in &mut config_mut.bootstrap_config_maps {
+            let original_config_files = map.config_files.clone();
+            for (path, simulated) in &config_mut.config_files {
+                let belongs_to_map = match &map.config_root {
+                    Some(root) => path.starts_with(root),
+                    None => !bootstrap_roots.iter().any(|root| path.starts_with(root)),
+                };
+                if belongs_to_map {
+                    insert_bootstrap_dry_run_config_file(
+                        &mut map.config_files,
+                        path.clone(),
+                        simulated.clone(),
+                    );
+                }
+            }
+            if map.config_root.is_some() {
+                let map_vars = bootstrap_dry_run_vars(
+                    Some(&original_config_files),
+                    Some(&map.vars_results),
+                    &map.config_files,
+                    vars.clone(),
+                    main_vars_changed,
+                )?;
+                map.tera_ctx.insert("vars", &map_vars);
+            } else {
+                // The base map's context is the main config context. Re-folding its files
+                // would lose cached dynamic vars that the normal loader already resolved.
+                map.tera_ctx.insert("vars", &vars);
+            }
+        }
         Ok(config)
     }
     pub(crate) fn env_maybe(&self) -> Option<IndexMap<String, String>> {
@@ -1553,6 +1618,47 @@ impl Config {
     }
 }
 
+/// Insert a simulated config alongside configs from the same directory while preserving the
+/// highest-precedence-first order produced by `config_paths_in_dir_with_filenames`.
+fn insert_bootstrap_dry_run_config_file(
+    config_files: &mut ConfigMap,
+    path: PathBuf,
+    config_file: Arc<dyn ConfigFile>,
+) {
+    if config_files.contains_key(&path) {
+        config_files.insert(path, config_file);
+        return;
+    }
+
+    let precedence = bootstrap_config_filename_precedence(&path);
+    let sibling_indices = config_files
+        .keys()
+        .enumerate()
+        .filter(|(_, existing)| existing.parent() == path.parent())
+        .map(|(index, _)| index)
+        .collect_vec();
+    let index = sibling_indices
+        .iter()
+        .copied()
+        .find(|index| {
+            bootstrap_config_filename_precedence(
+                config_files
+                    .get_index(*index)
+                    .expect("config index exists")
+                    .0,
+            ) < precedence
+        })
+        .or_else(|| sibling_indices.last().map(|index| index + 1))
+        .unwrap_or(config_files.len());
+    config_files.shift_insert(index, path, config_file);
+}
+
+fn bootstrap_config_filename_precedence(path: &Path) -> Option<usize> {
+    DEFAULT_CONFIG_FILENAMES.iter().position(|candidate| {
+        !is_glob_pattern(candidate) && Path::new(candidate).file_name() == path.file_name()
+    })
+}
+
 fn configs_at_root<'a>(dir: &Path, config_files: &'a ConfigMap) -> Vec<&'a Arc<dyn ConfigFile>> {
     // Highest precedence config files are returned first.
     let mut configs: Vec<&'a Arc<dyn ConfigFile>> = DEFAULT_CONFIG_FILENAMES
@@ -1646,6 +1752,8 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     let mut maps = vec![BootstrapConfigMap {
         config_files: base,
         tera_ctx: config.tera_ctx.clone(),
+        config_root: None,
+        vars_results: config.vars_results_cached().cloned().unwrap_or_default(),
     }];
     let idiomatic_filenames = BTreeMap::new();
     for root in roots {
@@ -1666,6 +1774,8 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         maps.push(BootstrapConfigMap {
             config_files,
             tera_ctx,
+            config_root: Some(root),
+            vars_results,
         });
     }
     Ok(maps)
@@ -3061,6 +3171,107 @@ pub(crate) async fn resolve_vars_from_config_files(
         },
     )
     .await
+}
+
+fn bootstrap_dry_run_vars(
+    original_config_files: Option<&ConfigMap>,
+    existing_results: Option<&EnvResults>,
+    config_files: &ConfigMap,
+    mut vars: IndexMap<String, String>,
+    mut preceding_layer_changed: bool,
+) -> Result<IndexMap<String, String>> {
+    for (source, config_file) in config_files.iter().rev() {
+        let unchanged = original_config_files
+            .and_then(|files| files.get(source))
+            .is_some_and(|original| Arc::ptr_eq(original, config_file));
+        for directive in config_file.vars_entries()? {
+            if directive.options().tools {
+                continue;
+            }
+            let existing = |key: &str| {
+                (unchanged && !preceding_layer_changed)
+                    .then(|| existing_results?.vars.get(key))
+                    .flatten()
+                    .filter(|(_, existing_source)| existing_source == source)
+                    .map(|(value, _)| value.clone())
+            };
+            match directive {
+                EnvDirective::Val(key, value, _) => {
+                    if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
+                        vars.insert(key, value);
+                    } else if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    } else {
+                        vars.shift_remove(&key);
+                    }
+                }
+                EnvDirective::Default(key, value, _) => {
+                    if vars.get(&key).is_some_and(|value| !value.is_empty()) {
+                        continue;
+                    }
+                    if let Some(value) = env::PRISTINE_ENV
+                        .get(&key)
+                        .filter(|value| !value.is_empty())
+                    {
+                        vars.insert(key, value.clone());
+                    } else if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
+                        vars.insert(key, value);
+                    } else if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    }
+                }
+                EnvDirective::Rm(key, _) => {
+                    vars.shift_remove(&key);
+                }
+                EnvDirective::Age { key, .. } => {
+                    if let Some(value) = existing(&key) {
+                        vars.insert(key, value);
+                    } else {
+                        vars.shift_remove(&key);
+                    }
+                }
+                EnvDirective::Required(..)
+                | EnvDirective::File(..)
+                | EnvDirective::Path(..)
+                | EnvDirective::Source(..)
+                | EnvDirective::PythonVenv { .. }
+                | EnvDirective::Module(..) => {}
+            }
+        }
+        preceding_layer_changed |= !unchanged;
+    }
+    Ok(vars)
+}
+
+fn bootstrap_dry_run_var(
+    source: &Path,
+    value: &str,
+    vars: &IndexMap<String, String>,
+) -> Option<String> {
+    if !contains_template_syntax(value) {
+        return Some(value.to_string());
+    }
+    let mut context = BASE_CONTEXT.clone();
+    context.insert("vars", vars);
+    context.insert(
+        "config_root",
+        &config_file::config_root::config_root(source),
+    );
+    context.insert(
+        "config_source",
+        &config_file::config_root::config_source(source),
+    );
+    let mut tera = crate::tera::get_tera_for_dry_run(source.parent());
+    match render_str(&mut tera, value, &context) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            debug!(
+                "bootstrap: var template from {} omitted from dry-run context: {err}",
+                source.display()
+            );
+            None
+        }
+    }
 }
 
 async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {

@@ -3,6 +3,14 @@
 The `aur` manager installs packages from the
 [Arch User Repository](https://aur.archlinux.org/) with `yay` or `paru`:
 
+::: warning Review AUR packages before installing
+AUR packages are user-submitted build recipes, not packages vetted or supported
+by Arch Linux. A compromised or malicious PKGBUILD can execute code as your user
+during the build. Review the PKGBUILD and related sources before installing a
+package, and review upstream changes before applying upgrades. mise delegates to
+your AUR helper and does not add an independent trust or verification layer.
+:::
+
 ```toml
 [bootstrap.packages]
 "aur:google-chrome" = "latest"

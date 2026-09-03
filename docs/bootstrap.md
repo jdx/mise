@@ -141,7 +141,9 @@ before installing packages (apk: `--update-cache`, apt: `apt-get update`).
 Hook phases can also run before and after the built-in steps:
 `pre-packages`, `post-packages`, `pre-repos`, `post-repos`, `pre-dotfiles`,
 `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`, `post-user`,
-`pre-tools`, and `post-tools`.
+`pre-tools`, and `post-tools`. Hook commands support [Tera templates](/templates.html)
+using the declaring config's context, including values such as
+`{{ config_root }}`, `{{ xdg_config_home }}`, and `{{ vars.name }}`.
 
 The declarative steps converge: if a package is already installed, a repo is
 already at the requested ref, a dotfile already matches, or a default is already

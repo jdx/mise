@@ -1298,6 +1298,33 @@ pub(crate) fn get_tera(dir: Option<&Path>) -> TeraEngine {
     }
 }
 
+/// Returns the normal mise renderer with command execution disabled.
+pub(crate) fn get_tera_for_dry_run(dir: Option<&Path>) -> TeraEngine {
+    if use_tera_v1() {
+        let mut tera = get_tera_v1(dir);
+        tera.register_function("exec", dry_run_disabled_fn_v1("exec"));
+        TeraEngine::V1(Box::new(tera))
+    } else {
+        let mut tera = get_tera_v2(dir);
+        tera.register_function("exec", dry_run_disabled_fn("exec"));
+        TeraEngine::V2(Box::new(tera))
+    }
+}
+
+fn dry_run_disabled_fn(name: &'static str) -> impl Fn(Kwargs, &State) -> TeraResult<Value> {
+    move |_args: Kwargs, _: &State| -> TeraResult<Value> {
+        Err(tera_err(format!("{name}() is disabled during dry run")))
+    }
+}
+
+fn dry_run_disabled_fn_v1(
+    name: &'static str,
+) -> impl Fn(&HashMap<String, JsonValue>) -> tera1::Result<JsonValue> {
+    move |_args: &HashMap<String, JsonValue>| -> tera1::Result<JsonValue> {
+        Err(tera1_err(format!("{name}() is disabled during dry run")))
+    }
+}
+
 /// Like [`get_tera`] but with `os()` and `arch()` bound to an explicit target
 /// platform instead of the current host. Used by cross-platform `mise lock` to
 /// render URL/checksum templates for platforms other than the one mise runs on.

@@ -1288,7 +1288,7 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Packages) {
             debug!("bootstrap: system packages skipped");
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::PrePackages)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PrePackages)
                 .await?;
             let all_mgrs = system::packages_from_config(&config);
             let has_plugin_packages = all_mgrs
@@ -1316,7 +1316,7 @@ impl Bootstrap {
                 driver::run(mgrs, Action::Install, &opts).await?;
             }
             if !has_plugin_packages {
-                self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+                self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
                     .await?;
                 post_packages_ran = true;
             }
@@ -1393,7 +1393,8 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Repos) {
             debug!("bootstrap: repos skipped");
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::PreRepos).await?;
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreRepos)
+                .await?;
             let repos = system::repos_from_config(&config);
             if repos.is_empty() {
                 debug!("bootstrap: no [bootstrap.repos] configured, skipping");
@@ -1405,7 +1406,7 @@ impl Bootstrap {
                     install::apply_repos(repos, self.dry_run, self.yes, self.skip_dirty).await?;
                 }
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostRepos)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostRepos)
                 .await?;
         }
 
@@ -1416,7 +1417,7 @@ impl Bootstrap {
                 hooks = system::hooks_from_config(&config);
             }
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::PreDotfiles)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles)
                 .await?;
             let files = system::files::files_from_config(&config)?;
             if files.is_empty() {
@@ -1451,13 +1452,14 @@ impl Bootstrap {
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
-                hooks = system::hooks_from_config_files(&config_files);
+                config = config.with_bootstrap_dry_run_config_files(config_files.clone())?;
+                hooks = system::hooks_from_config(&config);
                 dry_run_config_files = Some(config_files);
             } else {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostDotfiles)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles)
                 .await?;
         }
 
@@ -1479,7 +1481,7 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::Defaults) {
             debug!("bootstrap: system defaults skipped");
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::PreDefaults)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreDefaults)
                 .await?;
             let defaults = system::defaults_from_config(&config);
             if defaults.is_empty() {
@@ -1499,7 +1501,7 @@ impl Bootstrap {
                     ));
                 }
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostDefaults)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostDefaults)
                 .await?;
         }
 
@@ -1542,7 +1544,8 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::User) {
             debug!("bootstrap: login shell skipped");
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::PreUser).await?;
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreUser)
+                .await?;
             let login_shell = system::login_shell_from_config(&config);
             if login_shell.is_none() {
                 debug!("bootstrap: no [bootstrap.user].login_shell configured, skipping");
@@ -1566,20 +1569,22 @@ impl Bootstrap {
                     follow_up.add_skipped(format!("login shell {shell}: skipped ({reason})"));
                 }
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostUser).await?;
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostUser)
+                .await?;
         }
 
         if skip.contains(&BootstrapPart::Tools) {
             debug!("bootstrap: tools skipped");
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::PreTools).await?;
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PreTools)
+                .await?;
             info!("bootstrap: tools");
             Install::new_bare(self.dry_run, self.yes).run().await?;
             if !self.dry_run {
                 config = Config::reset().await?;
                 hooks = system::hooks_from_config(&config);
             }
-            self.run_hooks(&hooks, BootstrapHookPhase::PostTools)
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::PostTools)
                 .await?;
         }
 
@@ -1616,7 +1621,7 @@ impl Bootstrap {
                 }
             }
             if !post_packages_ran {
-                self.run_hooks(&hooks, BootstrapHookPhase::PostPackages)
+                self.run_hooks(&config, &hooks, BootstrapHookPhase::PostPackages)
                     .await?;
             }
         }
@@ -1636,7 +1641,8 @@ impl Bootstrap {
         if skip.contains(&BootstrapPart::FinalHook) {
             debug!("bootstrap: final hook skipped");
         } else {
-            self.run_hooks(&hooks, BootstrapHookPhase::Final).await?;
+            self.run_hooks(&config, &hooks, BootstrapHookPhase::Final)
+                .await?;
         }
         follow_up.print()?;
         Ok(())
@@ -1733,10 +1739,11 @@ impl Bootstrap {
 
     async fn run_hooks(
         &self,
+        config: &Config,
         hooks: &[hooks::BootstrapHook],
         phase: BootstrapHookPhase,
     ) -> Result<()> {
-        run_bootstrap_hooks(hooks, phase, self.dry_run).await
+        run_bootstrap_hooks(config, hooks, phase, self.dry_run).await
     }
 
     fn skip_parts(&self) -> HashSet<BootstrapPart> {
@@ -3573,26 +3580,28 @@ impl BootstrapDotfiles {
 
 impl BootstrapDotfilesApply {
     async fn run(self) -> Result<()> {
-        let config = Config::get().await?;
+        let mut config = Config::get().await?;
         let (files, edits) = self.cmd.requests(&config)?;
         let dry_run = self.cmd.dry_run();
         let hooks = system::hooks_from_config(&config);
-        run_bootstrap_hooks(&hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
+        run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PreDotfiles, dry_run).await?;
         if !self.cmd.run().await? {
             return Ok(());
         }
         let hooks = if dry_run {
             let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
-            system::hooks_from_config_files(&config_files)
+            config = config.with_bootstrap_dry_run_config_files(config_files)?;
+            system::hooks_from_config(&config)
         } else {
-            let config = Config::reset().await?;
+            config = Config::reset().await?;
             system::hooks_from_config(&config)
         };
-        run_bootstrap_hooks(&hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
+        run_bootstrap_hooks(&config, &hooks, BootstrapHookPhase::PostDotfiles, dry_run).await
     }
 }
 
 async fn run_bootstrap_hooks(
+    config: &Config,
     hooks: &[hooks::BootstrapHook],
     phase: BootstrapHookPhase,
     dry_run: bool,
@@ -3604,7 +3613,7 @@ async fn run_bootstrap_hooks(
         debug!("bootstrap: {phase} hooks disabled");
         return Ok(());
     }
-    hooks::run_phase(hooks, phase, dry_run).await
+    hooks::run_phase(config, hooks, phase, dry_run).await
 }
 
 impl BootstrapDotfilesStatus {
