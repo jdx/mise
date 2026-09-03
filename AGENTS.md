@@ -294,6 +294,14 @@ The configuration system supports multiple file formats and environment-specific
 - Shim system varies by platform (especially Windows)
 - we don't chmod mise e2e tests to be executable
 
+### Windows PATH boundaries
+
+- Do not invoke subprocesses to translate paths in activation hooks, shims, or `mise x`/task execution.
+- Keep PATH in native Windows form inside mise and when launching child processes, including child MSYS2, Git Bash, or Cygwin processes. Never pre-convert the PATH inherited by a child emulator.
+- Convert PATH only when native Windows mise emits an assignment into an already-running, positively identified MSYS2/Cygwin shell. Only persisted mounts from the runtime defaults, `fstab`, and `fstab.d` are available; session-only `mount` changes cannot be reconstructed without entering the running process.
+- Never infer an emulator from the word `bash` alone. Require MSYS/Cygwin runtime evidence, and explicitly exclude WSL and BusyBox Bash.
+- Windows activation tests must execute a command through the emitted PATH and verify a native Windows grandchild receives a valid semicolon-delimited PATH. Output-shape assertions alone are insufficient.
+
 ## GitHub Interactions
 
 Never open pull requests against the `release` branch. Default PRs to `main` unless the user explicitly names a different non-`release` base branch. If a change appears to belong on `release`, stop and ask for the intended branch strategy instead of opening a PR against `release`.

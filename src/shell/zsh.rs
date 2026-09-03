@@ -169,7 +169,11 @@ impl Shell for Zsh {
     }
 
     fn prepend_env(&self, k: &str, v: &str) -> String {
-        format!("export {k}=\"{v}:${k}\"\n")
+        Bash::default().prepend_env(k, v)
+    }
+
+    fn uses_posix_path_syntax(&self) -> bool {
+        true
     }
 
     fn unset_env(&self, k: &str) -> String {
@@ -300,6 +304,16 @@ mod tests {
     fn test_prepend_env() {
         let sh = Bash::default();
         assert_snapshot!(replace_path(&sh.prepend_env("PATH", "/some/dir:/2/dir")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_path_casing_is_normalized_for_zsh() {
+        assert!(
+            Zsh::default()
+                .set_env("Path", r"C:\bin")
+                .starts_with("export PATH=")
+        );
     }
 
     #[test]

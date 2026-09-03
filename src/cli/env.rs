@@ -191,6 +191,9 @@ impl Env {
     ) -> Result<()> {
         let default_shell = get_shell(Some(fallback_shell())).unwrap();
         let shell = get_shell(self.shell).unwrap_or(default_shell);
+        if shell.uses_posix_path_syntax() {
+            crate::windows_posix::ensure_available()?;
+        }
         let (mut env, mut env_remove) = ts.env_with_path_and_removals(config).await?;
 
         if let Some(keys) = redacted_keys {
