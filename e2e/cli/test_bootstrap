@@ -193,13 +193,14 @@ assert_fail "test -f post_tools_hook"
 assert_fail "test -f final_hook"
 
 # bootstrap hook commands render with the declaring config's Tera context
-rm -f "$MISE_CONFIG_DIR/bootstrap-hook-rendered"
+rm -f "$MISE_CONFIG_DIR/bootstrap-hook-rendered" bootstrap-hook-root-rendered
 cat <<'EOF' >mise.toml
 [bootstrap.hooks.post-packages]
-run = 'touch "{{ xdg_config_home }}/mise/bootstrap-hook-rendered"'
+run = 'touch "{{ xdg_config_home }}/mise/bootstrap-hook-rendered" "{{ config_root }}/bootstrap-hook-root-rendered"'
 EOF
 assert_succeed "mise bootstrap --yes --only packages"
 assert "test -f '$MISE_CONFIG_DIR/bootstrap-hook-rendered'"
+assert "test -f '$PWD/bootstrap-hook-root-rendered'"
 
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
@@ -330,8 +331,11 @@ assert_fail "test -e post_declined_hook_ran"
 # dotfiles can add config that contributes hooks to later phases in the same run
 mkdir -p dotfiles/mise
 cat <<'EOF' >dotfiles/mise/config.toml
+[vars]
+post_dotfiles_message = "rendered-post-dotfiles"
+
 [bootstrap.hooks.post-dotfiles]
-run = "echo post-dotfiles > post_dotfiles_hook_ran"
+run = "echo {{ vars.post_dotfiles_message }} > post_dotfiles_hook_ran"
 
 [bootstrap.hooks.final]
 run = "echo final > final_hook_ran"
@@ -345,24 +349,24 @@ run = "echo pre-dotfiles > pre_dotfiles_hook_ran"
 EOF
 rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran final_hook_ran
 assert_contains "mise bootstrap dotfiles apply --dry-run" "echo pre-dotfiles > pre_dotfiles_hook_ran"
-assert_contains "mise bootstrap dotfiles apply --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
+assert_contains "mise bootstrap dotfiles apply --dry-run" "echo rendered-post-dotfiles > post_dotfiles_hook_ran"
 assert_fail "cat pre_dotfiles_hook_ran"
 assert_fail "cat post_dotfiles_hook_ran"
 assert_succeed "mise bootstrap dotfiles apply --yes"
 assert "cat pre_dotfiles_hook_ran" "pre-dotfiles"
-assert "cat post_dotfiles_hook_ran" "post-dotfiles"
+assert "cat post_dotfiles_hook_ran" "rendered-post-dotfiles"
 assert_fail "cat final_hook_ran"
 rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran ~/.config/mise/config.toml
 assert_succeed "mise --no-hooks bootstrap dotfiles apply --yes"
 assert_fail "cat pre_dotfiles_hook_ran"
 assert_fail "cat post_dotfiles_hook_ran"
 rm -f pre_dotfiles_hook_ran post_dotfiles_hook_ran
-assert_contains "mise bootstrap --dry-run" "echo post-dotfiles > post_dotfiles_hook_ran"
+assert_contains "mise bootstrap --dry-run" "echo rendered-post-dotfiles > post_dotfiles_hook_ran"
 assert_contains "mise bootstrap --dry-run" "echo final > final_hook_ran"
 assert_fail "cat post_dotfiles_hook_ran"
 assert_fail "cat final_hook_ran"
 assert_succeed "mise bootstrap --yes"
-assert "cat post_dotfiles_hook_ran" "post-dotfiles"
+assert "cat post_dotfiles_hook_ran" "rendered-post-dotfiles"
 assert "cat final_hook_ran" "final"
 
 # bootstrap refuses dotfile conflicts unless scoped force is requested

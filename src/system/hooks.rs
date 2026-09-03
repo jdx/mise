@@ -146,12 +146,13 @@ pub(crate) async fn run_phase(
     for hook in phase_hooks {
         let run = if crate::tera::contains_template_syntax(&hook.run) {
             let mut tera = crate::tera::get_tera(hook.config_path.parent());
-            crate::tera::render_str(
-                &mut tera,
-                &hook.run,
-                config.bootstrap_tera_ctx(&hook.config_path),
-            )
-            .map_err(|err| {
+            let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
+            if context.get("config_root").is_none() {
+                let config_root =
+                    crate::config::config_file::config_root::config_root(&hook.config_path);
+                context.insert("config_root", &config_root);
+            }
+            crate::tera::render_str(&mut tera, &hook.run, &context).map_err(|err| {
                 eyre::eyre!(
                     "[bootstrap.hooks.{phase}] in {}: failed to render template: {err}",
                     hook.config_path.display()

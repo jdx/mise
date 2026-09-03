@@ -327,7 +327,7 @@ impl Config {
         Ok(config)
     }
 
-    async fn load_from_config_files(
+    pub(crate) async fn load_from_config_files(
         config_files: ConfigMap,
         global_only: bool,
     ) -> Result<Arc<Self>> {

@@ -1452,7 +1452,8 @@ impl Bootstrap {
             }
             if self.dry_run {
                 let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
-                hooks = system::hooks_from_config_files(&config_files);
+                config = Config::load_from_config_files(config_files.clone(), false).await?;
+                hooks = system::hooks_from_config(&config);
                 dry_run_config_files = Some(config_files);
             } else {
                 config = Config::reset().await?;
@@ -3580,7 +3581,8 @@ impl BootstrapDotfilesApply {
         }
         let hooks = if dry_run {
             let config_files = config_files_after_dotfiles_dry_run(&config, &files, &edits)?;
-            system::hooks_from_config_files(&config_files)
+            config = Config::load_from_config_files(config_files, false).await?;
+            system::hooks_from_config(&config)
         } else {
             config = Config::reset().await?;
             system::hooks_from_config(&config)
