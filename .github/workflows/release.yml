@@ -508,14 +508,14 @@ jobs:
             gh release upload "$VERSION" --clobber "releases/$VERSION"/*
             RELEASE_ID="$EXISTING_RELEASE_ID"
           else
-            gh release create "$VERSION" \
+            RELEASE_URL="$(gh release create "$VERSION" \
               --title "$RELEASE_TITLE" \
               --notes-file /tmp/release-notes.txt \
               --verify-tag \
               --draft \
-              "releases/$VERSION"/*
-            RELEASE_ID="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
-              jq -s -r --arg version "$VERSION" '[.[][] | select(.tag_name == $version and .draft)][0].id // empty')"
+              "releases/$VERSION"/*)"
+            RELEASE_TAG="${RELEASE_URL##*/}"
+            RELEASE_ID="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq '.id')"
           fi
           test -n "$RELEASE_ID"
           echo "created=true" >> "$GITHUB_OUTPUT"
