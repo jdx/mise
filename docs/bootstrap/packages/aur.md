@@ -6,7 +6,7 @@ The `aur` manager installs packages from the
 ::: warning Review AUR packages before installing
 AUR packages are user-submitted build recipes, not packages vetted or supported
 by Arch Linux. A compromised or malicious PKGBUILD can execute code as your user
-during the build. Review the PKGBUILD and related sources before declaring a
+during the build. Review the PKGBUILD and related sources before installing a
 package, and review upstream changes before applying upgrades. mise delegates to
 your AUR helper and does not add an independent trust or verification layer.
 :::
