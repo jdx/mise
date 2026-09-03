@@ -23,7 +23,7 @@ pub(super) struct PluginsLs {
 
     /// Only show built-in (core) plugins
     /// These are hidden by default
-    #[usage(short, long, verbatim_doc_comment, conflicts = "all", hide = true)]
+    #[usage(short, long, verbatim_doc_comment, conflicts = "all")]
     pub core: bool,
 
     /// Show plugins with available updates
@@ -42,7 +42,10 @@ pub(super) struct PluginsLs {
     pub refs: bool,
 
     /// List installed plugins
-    #[usage(long, verbatim_doc_comment, conflicts = "all", hide = true)]
+    ///
+    /// This is the default behavior but can be used with --core
+    /// to show core and user plugins
+    #[usage(long, verbatim_doc_comment, conflicts = "all")]
     pub user: bool,
 }
 

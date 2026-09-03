@@ -2843,7 +2843,7 @@ Same as `mise plugins ls-remote`
         flag "-c --core" help=#"""
 Only show built-in (core) plugins
 These are hidden by default
-"""# hide=#true conflicts=--all
+"""# conflicts=--all
         flag "-o --outdated" help=#"""
 Show plugins with available updates
 Checks the remote for newer versions and only displays plugins that are outdated
@@ -2858,7 +2858,14 @@ e.g.: https://github.com/mise-plugins/vfox-cmake.git
 Show the git refs for each plugin
 e.g.: main 1234abc
 """# hide=#true
-        flag --user help="List installed plugins" hide=#true conflicts=--all
+        flag --user help="List installed plugins" conflicts=--all {
+            long_help #"""
+List installed plugins
+
+This is the default behavior but can be used with --core
+to show core and user plugins
+"""#
+        }
         flag "-h --help" help="Print help" action=help builtin=#true
     }
     cmd ls-remote help="List all available remote plugins" effect=read {
