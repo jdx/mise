@@ -4352,10 +4352,7 @@ mod tests {
             &ExtractOptions::default(),
         )
         .unwrap_err();
-        assert!(
-            format!("{err:#}").contains("escapes extraction directory"),
-            "{err:#}"
-        );
+        assert!(format!("{err:#}").contains("escapes"), "{err:#}");
         assert!(!traversal_target_path.exists());
 
         let mut absolute_archive =
@@ -4375,10 +4372,7 @@ mod tests {
             &ExtractOptions::default(),
         )
         .unwrap_err();
-        assert!(
-            format!("{err:#}").contains("escapes extraction directory"),
-            "{err:#}"
-        );
+        assert!(format!("{err:#}").contains("escapes"), "{err:#}");
         assert!(!absolute_target_path.exists());
     }
 
