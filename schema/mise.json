@@ -3979,6 +3979,10 @@
                 "type": "string",
                 "description": "source file or directory"
               },
+              "content": {
+                "type": "string",
+                "description": "literal inline file content; alternative to source"
+              },
               "mode": {
                 "type": "string",
                 "description": "how to apply a whole-file source to the target; omitted uses dotfiles.default_mode",
@@ -4022,7 +4026,27 @@
                 "type": "string",
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               }
-            }
+            },
+            "oneOf": [
+              {
+                "required": ["content"],
+                "properties": {
+                  "source": false,
+                  "mode": false,
+                  "exclude": false,
+                  "manifest": false,
+                  "block": false,
+                  "line": false,
+                  "template": false,
+                  "comment": false
+                }
+              },
+              {
+                "properties": {
+                  "content": false
+                }
+              }
+            ]
           }
         ]
       }
