@@ -145,7 +145,11 @@ pub(crate) async fn run_phase(
     };
     for hook in phase_hooks {
         let run = if crate::tera::contains_template_syntax(&hook.run) {
-            let mut tera = crate::tera::get_tera(hook.config_path.parent());
+            let mut tera = if dry_run {
+                crate::tera::get_tera_for_dry_run(hook.config_path.parent())
+            } else {
+                crate::tera::get_tera(hook.config_path.parent())
+            };
             let mut context = config.bootstrap_tera_ctx(&hook.config_path).clone();
             if context.get("config_root").is_none() {
                 let config_root =

@@ -134,6 +134,7 @@ fn extend_monorepo_tool_request_set(union: &mut ToolRequestSet, requests: &ToolR
 struct BootstrapConfigMap {
     config_files: ConfigMap,
     tera_ctx: tera::Context,
+    inherits_main_vars: bool,
 }
 
 pub(crate) struct Config {
@@ -464,10 +465,43 @@ impl Config {
         config_files: ConfigMap,
     ) -> Result<Arc<Self>> {
         let mut config = self.with_config_files(config_files);
-        let vars = bootstrap_dry_run_vars(self, &config.config_files)?;
+        let vars = bootstrap_dry_run_vars(
+            Some(&self.config_files),
+            self.vars_results_cached(),
+            &config.config_files,
+            IndexMap::new(),
+            false,
+        )?;
+        let main_vars_changed = vars != self.vars;
         let config_mut = Arc::get_mut(&mut config).expect("new config Arc is uniquely owned");
         config_mut.vars = vars.clone();
         config_mut.tera_ctx.insert("vars", &vars);
+        for map in &mut config_mut.bootstrap_config_maps {
+            let mut map_changed = false;
+            for (path, simulated) in &config_mut.config_files {
+                if let Some(existing) = map.config_files.get(path)
+                    && !Arc::ptr_eq(existing, simulated)
+                {
+                    map.config_files.insert(path.clone(), simulated.clone());
+                    map_changed = true;
+                }
+            }
+            if map_changed || (map.inherits_main_vars && main_vars_changed) {
+                let initial = if map.inherits_main_vars {
+                    vars.clone()
+                } else {
+                    IndexMap::new()
+                };
+                let map_vars = bootstrap_dry_run_vars(
+                    None,
+                    None,
+                    &map.config_files,
+                    initial,
+                    map.inherits_main_vars && main_vars_changed,
+                )?;
+                map.tera_ctx.insert("vars", &map_vars);
+            }
+        }
         Ok(config)
     }
     pub(crate) fn env_maybe(&self) -> Option<IndexMap<String, String>> {
@@ -1664,6 +1698,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
     let mut maps = vec![BootstrapConfigMap {
         config_files: base,
         tera_ctx: config.tera_ctx.clone(),
+        inherits_main_vars: false,
     }];
     let idiomatic_filenames = BTreeMap::new();
     for root in roots {
@@ -1684,6 +1719,7 @@ async fn load_bootstrap_config_maps(config: &Config) -> Result<Vec<BootstrapConf
         maps.push(BootstrapConfigMap {
             config_files,
             tera_ctx,
+            inherits_main_vars: true,
         });
     }
     Ok(maps)
@@ -3082,29 +3118,30 @@ pub(crate) async fn resolve_vars_from_config_files(
 }
 
 fn bootstrap_dry_run_vars(
-    config: &Config,
+    original_config_files: Option<&ConfigMap>,
+    existing_results: Option<&EnvResults>,
     config_files: &ConfigMap,
+    mut vars: IndexMap<String, String>,
+    mut preceding_layer_changed: bool,
 ) -> Result<IndexMap<String, String>> {
-    let mut vars = IndexMap::new();
     for (source, config_file) in config_files.iter().rev() {
-        let unchanged = config
-            .config_files
-            .get(source)
+        let unchanged = original_config_files
+            .and_then(|files| files.get(source))
             .is_some_and(|original| Arc::ptr_eq(original, config_file));
         for directive in config_file.vars_entries()? {
             if directive.options().tools {
                 continue;
             }
             let existing = |key: &str| {
-                unchanged
-                    .then(|| config.vars_results_cached()?.vars.get(key))
+                (unchanged && !preceding_layer_changed)
+                    .then(|| existing_results?.vars.get(key))
                     .flatten()
                     .filter(|(_, existing_source)| existing_source == source)
                     .map(|(value, _)| value.clone())
             };
             match directive {
                 EnvDirective::Val(key, value, _) => {
-                    if !contains_template_syntax(&value) {
+                    if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
                         vars.insert(key, value);
                     } else if let Some(value) = existing(&key) {
                         vars.insert(key, value);
@@ -3121,7 +3158,7 @@ fn bootstrap_dry_run_vars(
                         .filter(|value| !value.is_empty())
                     {
                         vars.insert(key, value.clone());
-                    } else if !contains_template_syntax(&value) {
+                    } else if let Some(value) = bootstrap_dry_run_var(source, &value, &vars) {
                         vars.insert(key, value);
                     } else if let Some(value) = existing(&key) {
                         vars.insert(key, value);
@@ -3145,8 +3182,40 @@ fn bootstrap_dry_run_vars(
                 | EnvDirective::Module(..) => {}
             }
         }
+        preceding_layer_changed |= !unchanged;
     }
     Ok(vars)
+}
+
+fn bootstrap_dry_run_var(
+    source: &Path,
+    value: &str,
+    vars: &IndexMap<String, String>,
+) -> Option<String> {
+    if !contains_template_syntax(value) {
+        return Some(value.to_string());
+    }
+    let mut context = BASE_CONTEXT.clone();
+    context.insert("vars", vars);
+    context.insert(
+        "config_root",
+        &config_file::config_root::config_root(source),
+    );
+    context.insert(
+        "config_source",
+        &config_file::config_root::config_source(source),
+    );
+    let mut tera = crate::tera::get_tera_for_dry_run(source.parent());
+    match render_str(&mut tera, value, &context) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            debug!(
+                "bootstrap: var template from {} omitted from dry-run context: {err}",
+                source.display()
+            );
+            None
+        }
+    }
 }
 
 async fn load_vars(config: &Arc<Config>) -> Result<EnvResults> {
