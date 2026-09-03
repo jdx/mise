@@ -192,6 +192,15 @@ assert_fail "test -f pre_tools_hook"
 assert_fail "test -f post_tools_hook"
 assert_fail "test -f final_hook"
 
+# bootstrap hook commands render with the declaring config's Tera context
+rm -f "$MISE_CONFIG_DIR/bootstrap-hook-rendered"
+cat <<'EOF' >mise.toml
+[bootstrap.hooks.post-packages]
+run = 'touch "{{ xdg_config_home }}/mise/bootstrap-hook-rendered"'
+EOF
+assert_succeed "mise bootstrap --yes --only packages"
+assert "test -f '$MISE_CONFIG_DIR/bootstrap-hook-rendered'"
+
 # macOS LaunchAgents in shared configs are inert when launchd is unavailable
 cat <<EOF >mise.toml
 [bootstrap.macos.launchd.agents.my-sync]
