@@ -16,11 +16,9 @@ jobs:
     if: ${{ github.actor == 'jdx' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'jdx')) }}
     permissions:
       contents: read
-      id-token: write
     uses: ./.github/workflows/test-vfox-impl.yml
     with:
       trusted: true
-      mbx-backend: local
     secrets:
       MISE_GH_TOKEN: ${{ secrets.MISE_GH_TOKEN }}
 
@@ -31,7 +29,6 @@ jobs:
     uses: ./.github/workflows/test-vfox-impl.yml
     with:
       trusted: false
-      mbx-backend: server
 
   test-vfox:
     name: test-vfox

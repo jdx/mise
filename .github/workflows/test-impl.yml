@@ -5,9 +5,6 @@ on:
       trusted:
         required: true
         type: boolean
-      mbx-backend:
-        required: true
-        type: string
     secrets:
       FORGEJO_TOKEN:
         required: false
@@ -78,11 +75,12 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: ${{ inputs.mbx-backend }}
+          shared-key: build
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - run: |
-          mbx build --all-features --ignore-rust-version
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
       # Downstream jobs only execute this binary, so keep full debug symbols in
@@ -95,8 +93,6 @@ jobs:
         with:
           name: mise-ubuntu-latest
           path: target/ci-artifacts/mise
-      - run: mbx cache stats
-        if: always()
 
   build-windows:
     runs-on: windows-latest
@@ -106,18 +102,16 @@ jobs:
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
-      # Keep Windows paths short enough for MSBuild/FileTracker and place the
-      # binaries where downstream artifact steps already expect them.
-      MBX_TARGET_VIEWS: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: server
+          shared-key: build-windows
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - shell: pwsh
         run: |
-          mbx build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
-          mbx build -p mise-shim
+          cargo build --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update
+          cargo build -p mise-shim
           Add-Content $env:GITHUB_PATH "$env:GITHUB_WORKSPACE\target\debug"
       - parallel:
           - run: mise -v
@@ -135,10 +129,7 @@ jobs:
     needs: [classify-changes]
     if: needs.classify-changes.outputs.full-ci == 'true'
     env:
-      # The bootstrap build below uses explicit mbx before mise installs the
-      # project tools. Keep nested task builds on the same entrypoint so AWS-LC
-      # does not reconfigure an existing CMake tree with a different compiler.
-      MISE_CARGO_BUILD_COMMAND: mbx build
+      MISE_CARGO_BUILD_COMMAND: cargo build
       MISE_CARGO_BUILD_EXTRA_ARGS: --ignore-rust-version
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -152,13 +143,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: ${{ inputs.mbx-backend }}
+          shared-key: unit-macos
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - name: Install test tools
         run: brew install fd tmux
       - run: |
-          mbx build --all-features --ignore-rust-version
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - uses: ./.github/actions/mise-tools
       - run: mise x -- cargo test --all-features --ignore-rust-version
@@ -166,15 +158,13 @@ jobs:
       # dependencies but never tested. Run them separately rather than adding --workspace to the
       # line above, which would extend --all-features to members whose features are exclusive.
       - name: cargo test (workspace members)
-        run: mbx test --workspace --exclude mise --ignore-rust-version
+        run: cargo test --workspace --exclude mise --ignore-rust-version
       - run: mise run test:e2e e2e/cli/test_system_install_brew_macos_slow
       - run: mise run test:e2e e2e/tasks/test_task_zsh_process_substitution_tmux_macos
       # The e2e suite is Linux-only, and this one turns on `TIOCSCTTY` and
       # signal-driven termios restore — both places where the two platforms have
       # differed before. Run it here so the claim covers macOS as well.
       - run: mise run test:e2e e2e/cli/test_watch_terminal_restore_on_signal
-      - run: mbx cache stats
-        if: always()
 
   lint:
     runs-on: ${{ !inputs.trusted && 'ubuntu-latest' || 'namespace-profile-endev-linux-amd64-large;overrides.cache-tag=cache' }}
@@ -182,9 +172,10 @@ jobs:
     needs: [build-ubuntu]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: ${{ inputs.mbx-backend }}
+          shared-key: lint
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - parallel:
           - name: Install mold
             run: sudo apt-get update && sudo apt-get install -y mold
@@ -234,21 +225,20 @@ jobs:
           # rust-version than their code requires; rustc still rejects genuinely
           # incompatible syntax and APIs when the metadata check is ignored.
           - name: Verify MSRV
-            run: mbx msrv verify -- cargo check --ignore-rust-version
+            run: cargo msrv verify -- cargo check --ignore-rust-version
             env:
               CARGO_TARGET_DIR: target/msrv
       # Separate targets keep Cargo's directory lock from serializing these
-      # overlapping configurations. mbx shares the machine-wide compiler pool
-      # and deduplicates identical work in flight between them.
+      # overlapping configurations.
       - parallel:
           - name: Run Clippy with default features
             env:
               CARGO_TARGET_DIR: ${{ runner.temp }}/clippy-default
-            run: mbx clippy --ignore-rust-version -- -D warnings
+            run: cargo clippy --ignore-rust-version -- -D warnings
           - name: Run Clippy with all features and targets
             env:
               CARGO_TARGET_DIR: ${{ runner.temp }}/clippy-all
-            run: mbx clippy --all-features --all-targets --ignore-rust-version -- -D warnings
+            run: cargo clippy --all-features --all-targets --ignore-rust-version -- -D warnings
 
   e2e:
     name: e2e
@@ -401,16 +391,14 @@ jobs:
     env:
       MISE_DATA_DIR: ~/.local/share/mise
       MISE_CACHE_DIR: ~/.cache/mise
-      # The default content-addressed target path can exceed Windows tooling's
-      # path limits during workspace tests.
-      MBX_TARGET_VIEWS: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: server
+          shared-key: windows-unit
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - name: check unused code
-        run: mbx check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
+        run: cargo check -p mise --no-default-features --features rustls-native-roots,vfox/vendored-lua,self_update --all-targets
         env:
           RUSTFLAGS: -D unused
       - name: cargo test
@@ -419,11 +407,11 @@ jobs:
           timeout_minutes: 30
           retry_wait_seconds: 30
           max_attempts: 2
-          command: mbx test
+          command: cargo test
       # Windows is where the members rot fastest: their tests assume POSIX paths and shells
       # unless something runs them here.
       - name: cargo test (workspace members)
-        run: mbx test --workspace --exclude mise
+        run: cargo test --workspace --exclude mise
   windows-e2e:
     permissions:
       contents: read

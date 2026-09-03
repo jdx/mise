@@ -6,9 +6,6 @@ on:
       trusted:
         required: true
         type: boolean
-      mbx-backend:
-        required: true
-        type: string
     secrets:
       MISE_GH_TOKEN:
         required: false
@@ -37,17 +34,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: ${{ inputs.mbx-backend }}
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release' }}
       - run: |
-          mbx build --all-features --ignore-rust-version
+          cargo build --all-features --ignore-rust-version
           echo "$PWD/target/debug" >> "$GITHUB_PATH"
       - run: mise -v
-      - run: mbx build
+      - run: cargo build
         working-directory: crates/vfox
       - run: mise --cd crates/vfox run lint
-      - run: mbx test
+      - run: cargo test
         working-directory: crates/vfox
-      - run: mbx cache stats
-        if: always()

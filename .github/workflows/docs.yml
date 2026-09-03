@@ -29,11 +29,9 @@ jobs:
     if: ${{ github.actor == 'jdx' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login == 'jdx')) }}
     permissions:
       contents: read
-      id-token: write
     uses: ./.github/workflows/docs-impl.yml
     with:
       trusted: true
-      mbx-backend: local
     secrets:
       CLOUDFLARE_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_ACCESS_KEY_ID }}
       CLOUDFLARE_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_SECRET_ACCESS_KEY }}
@@ -46,7 +44,6 @@ jobs:
     uses: ./.github/workflows/docs-impl.yml
     with:
       trusted: false
-      mbx-backend: server
 
   docs:
     name: docs
