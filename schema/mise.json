@@ -4027,15 +4027,17 @@
           {
             "type": "object",
             "description": "whole-file dotfile entry or file edit entry",
-            "additionalProperties": true,
             "oneOf": [
               {
                 "required": ["manifest"],
                 "properties": {
+                  "source": {},
                   "content": false,
                   "mode": {
                     "enum": ["copy", "symlink-each"]
                   },
+                  "exclude": {},
+                  "manifest": {},
                   "block": false,
                   "line": false,
                   "template": false,
