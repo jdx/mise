@@ -143,7 +143,8 @@ Hook phases can also run before and after the built-in steps:
 `post-dotfiles`, `pre-defaults`, `post-defaults`, `pre-user`, `post-user`,
 `pre-tools`, and `post-tools`. Hook commands support [Tera templates](/templates.html)
 using the declaring config's context, including values such as
-`{{ config_root }}`, `{{ xdg_config_home }}`, and `{{ vars.name }}`.
+<code v-pre>{{ config_root }}</code>, <code v-pre>{{ xdg_config_home }}</code>,
+and <code v-pre>{{ vars.name }}</code>.
 
 The declarative steps converge: if a package is already installed, a repo is
 already at the requested ref, a dotfile already matches, or a default is already
