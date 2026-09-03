@@ -5,9 +5,6 @@ on:
       trusted:
         required: true
         type: boolean
-      mbx-backend:
-        required: true
-        type: string
     secrets:
       MISE_GH_TOKEN:
         required: false
@@ -19,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  MBX_DISABLE: "1"
   CARGO_TERM_COLOR: always
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_EXPERIMENTAL: 1
@@ -74,16 +72,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/.cargo/.global-cache
-      - uses: ./.github/actions/mbx
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 # zizmor: ignore[cache-poisoning]
         with:
-          backend: ${{ inputs.mbx-backend }}
-      - run: mbx build --all-features --ignore-rust-version
+          shared-key: build
+          save-if: ${{ inputs.trusted && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}
+      - run: cargo build --all-features --ignore-rust-version
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mise
           path: target/debug/mise
-      - run: mbx cache stats
-        if: always()
 
   list-changed-tools:
     permissions:

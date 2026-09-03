@@ -27,6 +27,7 @@ on:
         type: string
 
 env:
+  MBX_DISABLE: "1"
   DEBIAN_FRONTEND: noninteractive
 
 jobs:
