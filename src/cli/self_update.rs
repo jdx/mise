@@ -479,8 +479,10 @@ impl SelfUpdate {
             .as_ref()
             .map(|settings| SelfUpdateSource::from_settings(settings))
             .unwrap_or_default();
+        source.validate()?;
         let (repo_owner, repo_name) = source.repository_parts()?;
         let mut update = Update::configure();
+        update.reqwest_client(Self::http_client()?);
         if let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url) {
             update.auth_token(&token);
         }
@@ -548,6 +550,27 @@ impl SelfUpdate {
         Ok(status)
     }
 
+    fn http_client() -> Result<self_update::reqwest::blocking::Client> {
+        Ok(self_update::reqwest::blocking::Client::builder()
+            .https_only(true)
+            .redirect(Self::redirect_policy())
+            .build()?)
+    }
+
+    fn redirect_policy() -> reqwest::redirect::Policy {
+        use reqwest::redirect::Policy;
+
+        Policy::custom(|attempt| {
+            if crate::http::is_https_downgrade(attempt.previous(), attempt.url()) {
+                attempt.error(std::io::Error::other(
+                    "refusing to redirect a self-update request from HTTPS to an insecure URL",
+                ))
+            } else {
+                Policy::default().redirect(attempt)
+            }
+        })
+    }
+
     // Rebuild the Windows shim copies in-process instead of shelling out to
     // `mise reshim --force`. Mirrors `cli::reshim::Reshim::run`.
     #[cfg(windows)]
@@ -568,9 +591,9 @@ impl SelfUpdate {
 
     #[cfg(windows)]
     async fn update_mise_shim(source: &SelfUpdateSource, version: &str) -> Result<()> {
-        use crate::http::HTTP;
         use std::io::Read;
 
+        source.validate()?;
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
         let release = crate::github::get_release_for_url_with_versions_host(
@@ -590,14 +613,33 @@ impl SelfUpdate {
                     source.repository
                 )
             })?;
-        let url =
-            crate::github::pick_reachable_asset_url(&asset.browser_download_url, &asset.url).await;
+        // Use the API asset endpoint directly so every redirect is governed by
+        // the downgrade-rejecting client below. This also supports private releases.
+        let url = asset.url.clone();
         debug!("Downloading mise-shim.exe from {url}");
 
         let temp_dir = tempfile::tempdir()?;
         // Use the real archive name so zipsign context matches the release signature
         let zip_path = temp_dir.path().join(&archive_name);
-        HTTP.download_file(&url, &zip_path, None).await?;
+        let headers = crate::github::get_headers(&url)?;
+        let settings = Settings::get();
+        let request_timeout = settings.http_timeout();
+        let archive = reqwest::Client::builder()
+            .user_agent(format!("mise/{}", cargo_crate_version!()))
+            .https_only(true)
+            .redirect(Self::redirect_policy())
+            .connect_timeout(request_timeout)
+            .read_timeout(request_timeout)
+            .timeout(settings.http_download_timeout())
+            .build()?
+            .get(&url)
+            .headers(headers)
+            .send()
+            .await?
+            .error_for_status()?
+            .bytes()
+            .await?;
+        fs::write(&zip_path, archive)?;
 
         // Verify the archive signature using the same key as the main update
         Self::verify_zip_signature(&zip_path)?;

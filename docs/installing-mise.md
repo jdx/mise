@@ -35,7 +35,7 @@ updating plugins, and re-runs the original command with the new binary. Configur
 Organizations can direct manual and automatic self-updates to a curated GitHub release mirror by
 setting [`self_update.repository`](/configuration/settings.html#self_updaterepository). Private
 repositories and GitHub Enterprise use mise's existing GitHub token resolution. Mirrored archives
-must retain the official file names and embedded mise signatures:
+must retain the official file names and embedded mise signatures. The API URL must use HTTPS:
 
 ```toml
 [settings.self_update]

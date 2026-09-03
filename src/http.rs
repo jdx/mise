@@ -491,6 +491,26 @@ fn parse_content_range(value: &str) -> Option<ParsedContentRange> {
     Some(ParsedContentRange::Bytes { start, end, total })
 }
 
+fn fetch_redirect_policy() -> reqwest::redirect::Policy {
+    use reqwest::redirect::Policy;
+
+    Policy::custom(|attempt| {
+        if is_https_downgrade(attempt.previous(), attempt.url()) {
+            attempt.error(std::io::Error::other(
+                "refusing to redirect a remote version request from HTTPS to HTTP",
+            ))
+        } else {
+            Policy::default().redirect(attempt)
+        }
+    })
+}
+
+pub(crate) fn is_https_downgrade(previous: &[Url], next: &Url) -> bool {
+    previous
+        .last()
+        .is_some_and(|url| url.scheme() == "https" && next.scheme() != "https")
+}
+
 #[derive(Debug)]
 pub(crate) struct Client {
     reqwest: Result<reqwest::Client, String>,
@@ -508,7 +528,7 @@ impl Client {
     #[cfg(test)]
     fn new(timeout: Duration, kind: ClientKind) -> Result<Self> {
         Ok(Self {
-            reqwest: Ok(Self::build(timeout)?),
+            reqwest: Ok(Self::build(timeout, kind)?),
             timeout,
             kind,
         })
@@ -516,17 +536,19 @@ impl Client {
 
     fn new_shared(timeout: Duration, kind: ClientKind) -> Self {
         Self {
-            reqwest: Self::build(timeout).map_err(|err| format!("{err:#}")),
+            reqwest: Self::build(timeout, kind).map_err(|err| format!("{err:#}")),
             timeout,
             kind,
         }
     }
 
-    fn build(timeout: Duration) -> Result<reqwest::Client> {
-        Ok(Self::_new()
-            .read_timeout(timeout)
-            .connect_timeout(timeout)
-            .build()?)
+    fn build(timeout: Duration, kind: ClientKind) -> Result<reqwest::Client> {
+        let builder = Self::_new().read_timeout(timeout).connect_timeout(timeout);
+        let builder = match kind {
+            ClientKind::Http => builder,
+            ClientKind::Fetch => builder.redirect(fetch_redirect_policy()),
+        };
+        Ok(builder.build()?)
     }
 
     #[cfg(test)]
@@ -3060,6 +3082,20 @@ refresh_expires_at = "2099-01-01T00:00:00Z"
         let _guard = set_test_prefer_offline(3);
 
         assert_eq!(client.request_timeout(), Duration::from_secs(3));
+    }
+
+    #[test]
+    fn test_fetch_redirect_policy_rejects_https_to_http_downgrades() {
+        let https = Url::parse("https://example.com/versions").unwrap();
+        let other_https = Url::parse("https://cdn.example.com/versions").unwrap();
+        let http = Url::parse("http://cdn.example.com/versions").unwrap();
+
+        assert!(is_https_downgrade(std::slice::from_ref(&https), &http));
+        assert!(!is_https_downgrade(
+            std::slice::from_ref(&https),
+            &other_https
+        ));
+        assert!(!is_https_downgrade(&[http], &other_https));
     }
 
     #[test]
