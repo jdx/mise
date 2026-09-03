@@ -394,7 +394,7 @@ jobs:
           VERSION="$(./scripts/get-version.sh)"
           RELEASE="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
             jq -s -c --arg version "$VERSION" '[.[][] | select(.tag_name == $version)][0] // {}')"
-          DRAFT="$(jq -r '.draft // empty' <<< "$RELEASE")"
+          DRAFT="$(jq -r 'if has("draft") then .draft else empty end' <<< "$RELEASE")"
           if [[ "$DRAFT" == "false" ]]; then
             echo "::warning::Release $VERSION already exists and is published — skipping publish steps"
             echo "exists=true" >> "$GITHUB_OUTPUT"
