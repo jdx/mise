@@ -29,9 +29,28 @@ const publicSchemas = [
   "mise-registry-tool.json",
 ];
 
+/** Return whether VitePress emitted a documentation container with no content. */
+function hasEmptyDocContainer(html: string) {
+  const divPattern = /<div\b[^>]*\sclass="([^"]*)"[^>]*>/g;
+  for (const match of html.matchAll(divPattern)) {
+    if (!match[1].split(/\s+/).includes("vp-doc")) continue;
+
+    let content = html.slice((match.index ?? 0) + match[0].length).trimStart();
+    while (content.startsWith("<!--")) {
+      const commentEnd = content.indexOf("-->");
+      if (commentEnd === -1) return false;
+      content = content.slice(commentEnd + 3).trimStart();
+    }
+    return content.startsWith("</div>");
+  }
+  return false;
+}
+
+/** Fail the build when server-side rendering leaves a documentation page empty. */
 function assertNoEmptyDocPages(outDir: string) {
   const emptyPages: string[] = [];
 
+  /** Recursively inspect generated HTML files beneath the output directory. */
   function visit(dir: string) {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
@@ -39,11 +58,7 @@ function assertNoEmptyDocPages(outDir: string) {
         visit(path);
       } else if (entry.name.endsWith(".html")) {
         const html = readFileSync(path, "utf8");
-        if (
-          /<div\b(?=[^>]*\bclass="[^"]*\bvp-doc\b[^"]*")[^>]*>\s*<\/div>/.test(
-            html,
-          )
-        ) {
+        if (hasEmptyDocContainer(html)) {
           emptyPages.push(relative(outDir, path));
         }
       }
