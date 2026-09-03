@@ -77,6 +77,16 @@ impl SelfUpdateSource {
         );
         Ok((owner, repo))
     }
+
+    pub(crate) fn validate(&self) -> Result<()> {
+        let api_url = url::Url::parse(&self.api_url)?;
+        eyre::ensure!(
+            api_url.scheme() == "https",
+            "self_update.api_url must use HTTPS, got {:?}",
+            self.api_url
+        );
+        Ok(())
+    }
 }
 
 /// Display the version of mise
@@ -357,6 +367,10 @@ fn cached_latest_version(path: &Path, duration: Duration) -> Cached {
 
 async fn get_latest_version(duration: Duration) -> Option<String> {
     let source = SelfUpdateSource::current();
+    if let Err(err) = source.validate() {
+        debug!("invalid self-update source: {err:#}");
+        return None;
+    }
     let version_file_path = source.cache_path();
     if let Cached::Fresh(version) = cached_latest_version(&version_file_path, duration) {
         return version;
@@ -556,6 +570,25 @@ mod tests {
         assert!(source("mise").repository_parts().is_err());
         assert!(source("acme/mise/releases").repository_parts().is_err());
         assert!(source("/mise").repository_parts().is_err());
+    }
+
+    #[test]
+    fn self_update_api_url_requires_https() {
+        let source = |api_url: &str| SelfUpdateSource {
+            api_url: api_url.to_string(),
+            ..SelfUpdateSource::default()
+        };
+
+        assert!(
+            source("https://github.example.com/api/v3")
+                .validate()
+                .is_ok()
+        );
+        assert!(
+            source("http://github.example.com/api/v3")
+                .validate()
+                .is_err()
+        );
     }
 
     #[tokio::test]

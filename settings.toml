@@ -2599,7 +2599,7 @@ type = "Bool"
 default = "https://api.github.com"
 description = "GitHub API base URL used by `mise self-update`."
 docs = """
-The API base URL for the GitHub repository that supplies mise releases. For GitHub Enterprise,
+The HTTPS API base URL for the GitHub repository that supplies mise releases. For GitHub Enterprise,
 include the API path, such as `https://github.example.com/api/v3`.
 
 This setting is global-only so a project configuration cannot redirect updates of the mise binary.

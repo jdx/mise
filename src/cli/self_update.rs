@@ -479,8 +479,10 @@ impl SelfUpdate {
             .as_ref()
             .map(|settings| SelfUpdateSource::from_settings(settings))
             .unwrap_or_default();
+        source.validate()?;
         let (repo_owner, repo_name) = source.repository_parts()?;
         let mut update = Update::configure();
+        update.reqwest_client(Self::http_client()?);
         if let Some(token) = crate::github::resolve_token_for_api_url(&source.api_url) {
             update.auth_token(&token);
         }
@@ -548,6 +550,28 @@ impl SelfUpdate {
         Ok(status)
     }
 
+    fn http_client() -> Result<self_update::reqwest::blocking::Client> {
+        use self_update::reqwest::redirect::Policy;
+
+        let redirect_policy = Policy::custom(|attempt| {
+            let is_https_downgrade = attempt
+                .previous()
+                .last()
+                .is_some_and(|previous| previous.scheme() == "https")
+                && attempt.url().scheme() != "https";
+            if is_https_downgrade {
+                attempt.error(std::io::Error::other(
+                    "refusing to redirect a self-update request from HTTPS to an insecure URL",
+                ))
+            } else {
+                Policy::default().redirect(attempt)
+            }
+        });
+        Ok(self_update::reqwest::blocking::Client::builder()
+            .redirect(redirect_policy)
+            .build()?)
+    }
+
     // Rebuild the Windows shim copies in-process instead of shelling out to
     // `mise reshim --force`. Mirrors `cli::reshim::Reshim::run`.
     #[cfg(windows)]
@@ -571,6 +595,7 @@ impl SelfUpdate {
         use crate::http::HTTP;
         use std::io::Read;
 
+        source.validate()?;
         let version = version.strip_prefix('v').unwrap_or(version);
         let archive_name = format!("mise-v{version}-{}-{}.zip", *OS, *ARCH);
         let release = crate::github::get_release_for_url_with_versions_host(
