@@ -623,9 +623,17 @@ impl VfoxBackend {
         plugin.full = Some(ba.full());
         let plugin = Arc::new(plugin);
 
-        // Extract the tool name from the resolved backend so aliases from a bare
-        // name to a backend plugin still provide the plugin:tool identifier.
-        let tool_name = backend_plugin_name.as_ref().map(|_| ba.tool_name());
+        // Prefer an explicit plugin:tool short name over the resolved backend.
+        // Legacy lockfiles can store only the plugin name as the backend, which
+        // must not replace the tool portion of the original request. Bare aliases
+        // still need the tool name from their resolved backend.
+        let tool_name = backend_plugin_name.as_ref().map(|plugin_name| {
+            ba.short
+                .split_once(':')
+                .filter(|(plugin, _)| plugin == plugin_name)
+                .map(|(_, tool)| tool.to_string())
+                .unwrap_or_else(|| ba.tool_name())
+        });
 
         Self {
             metadata_snapshot_cache: OnceLock::new(),
@@ -885,6 +893,28 @@ mod test {
             backend.plugin.full,
             Some("vfox:version-fox/vfox-golang".to_string())
         );
+    }
+
+    #[test]
+    fn test_backend_plugin_tool_name_preserves_explicit_short() {
+        let ba = BackendArg::new(
+            "toolshed:get-skills".to_string(),
+            Some("toolshed".to_string()),
+        );
+        let backend = VfoxBackend::from_arg(ba, Some("toolshed".to_string()));
+
+        assert_eq!(backend.tool_name.as_deref(), Some("get-skills"));
+    }
+
+    #[test]
+    fn test_backend_plugin_tool_name_resolves_bare_alias() {
+        let ba = BackendArg::new(
+            "skills".to_string(),
+            Some("toolshed:get-skills".to_string()),
+        );
+        let backend = VfoxBackend::from_arg(ba, Some("toolshed".to_string()));
+
+        assert_eq!(backend.tool_name.as_deref(), Some("get-skills"));
     }
 
     #[test]
