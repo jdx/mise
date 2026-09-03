@@ -514,8 +514,8 @@ jobs:
               --verify-tag \
               --draft \
               "releases/$VERSION"/*)"
-            RELEASE_TAG="${RELEASE_URL##*/}"
-            RELEASE_ID="$(gh api "repos/${{ github.repository }}/releases/tags/$RELEASE_TAG" --jq '.id')"
+            RELEASE_ID="$(gh api --paginate "repos/${{ github.repository }}/releases?per_page=100" |
+              jq -s -r --arg url "$RELEASE_URL" '[.[][] | select(.html_url == $url)][0].id // empty')"
           fi
           test -n "$RELEASE_ID"
           echo "created=true" >> "$GITHUB_OUTPUT"
