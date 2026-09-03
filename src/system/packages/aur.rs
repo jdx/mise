@@ -33,7 +33,6 @@ fn install_args(pkgs: &[PackageRequest], opts: &InstallOpts) -> Vec<String> {
         "-S".to_string(),
         "--aur".to_string(),
         "--noconfirm".to_string(),
-        "--needed".to_string(),
     ];
     if opts.update {
         args.push("--refresh".to_string());
@@ -255,7 +254,6 @@ mod tests {
                 "-S",
                 "--aur",
                 "--noconfirm",
-                "--needed",
                 "--",
                 "google-chrome",
                 "visual-studio-code-bin"
@@ -279,7 +277,6 @@ mod tests {
                 "-S",
                 "--aur",
                 "--noconfirm",
-                "--needed",
                 "--refresh",
                 "--",
                 "google-chrome"

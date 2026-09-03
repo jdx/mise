@@ -18,8 +18,10 @@ Package state is checked read-only through pacman's local database with its
 foreign-package filter. A same-named package from a configured repository does
 not satisfy an `aur:` declaration. Virtual package names are accepted only when
 their installed provider is also a foreign package. Installs use the helper's
-AUR-only mode with `--noconfirm` and `--needed`, so a repository package with the
-same name is not selected instead. `mise bootstrap packages apply --update`
+AUR-only mode with `--noconfirm`, so a repository package with the
+same name is not selected instead. mise intentionally omits `--needed` so the
+helper can replace an installed repository package that has the requested AUR
+package's name. `mise bootstrap packages apply --update`
 additionally asks the helper to refresh repository metadata.
 
 AUR helpers build the current PKGBUILD rather than resolving historical package
