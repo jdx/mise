@@ -1,4 +1,4 @@
 aliases = ["crossplane-cli"]
-backends = ["aqua:crossplane/crossplane", "asdf:joke/asdf-crossplane-cli"]
+backends = ["aqua:crossplane/cli", "asdf:joke/asdf-crossplane-cli"]
 description = "The Crossplane CLI extends kubectl with functionality to build, push, and install Crossplane packages"
 version_order = "semver"
