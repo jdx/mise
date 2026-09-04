@@ -347,6 +347,7 @@ end
         )?;
         crate::file::write(&shim, METADATA_SHIM_RB)?;
         let mut runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
             .arg(&shim)
             .env("MISE_BREW_FORMULA_FILE", &formula)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
@@ -404,6 +405,7 @@ end
         )?;
         crate::file::write(&shim, CASK_METADATA_SHIM_RB)?;
         let mut runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
             .arg(&shim)
             .env("MISE_BREW_CASK_FILE", &cask_file)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
@@ -479,6 +481,7 @@ end
         )?;
         crate::file::write(&output, "")?;
         let mut runner = CmdLineRunner::new(ruby)
+            .with_on_stderr(|line| eprintln!("{line}"))
             .arg(&source)
             .arg(&denied)
             .with_sandbox(metadata_sandbox(&source, &source, &output)?);
