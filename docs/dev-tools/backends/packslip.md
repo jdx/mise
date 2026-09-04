@@ -119,7 +119,7 @@ With hosts named, mise offers and installs a packslip tool only at versions one 
 
 Each host's list carries an expiry and a sequence number. mise refuses a list that has expired, and remembers the highest sequence it accepted per host and project so a replayed older list is refused as a rollback.
 
-A stamper may mirror the exact vendor-signed manifest. Mise checks both the stamper digest and any digest in the vendor’s list. Re-signed repackager manifests need a separate identity policy and are not supported by this backend yet.
+A stamper may mirror the exact vendor-signed manifest. Mise checks both the stamper digest and any digest in the vendor’s list. Because the stamp already names the manifest, mise asks the vendor only for what the vendor decides — a withdrawal, and the digest they pinned — so a release asset deleted from GitHub does not veto a mirror of a release that was never withdrawn. Re-signed repackager manifests need a separate identity policy and are not supported by this backend yet.
 
 Unset, no stamps are required and every version the vendor published is offered. mise's own registry host will become the default once it publishes stamps.
 

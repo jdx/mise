@@ -28,7 +28,6 @@ use crate::config::Settings;
 use crate::dirs;
 use crate::file;
 use crate::http::HTTP_FETCH;
-use crate::lock_file::LockFile;
 use crate::toolset::ToolVersionOptions;
 
 /// GitHub's OIDC issuer, for a stamper pinned by a workflow identity.
@@ -203,9 +202,20 @@ fn write_state(dir: &Path, host: &str, state: &HostState) -> Result<()> {
     file::write_atomic(state_path(dir, host), serde_json::to_vec_pretty(state)?)
 }
 
-/// One mise at a time reads and rewrites a host's state.
+/// One mise at a time reads and rewrites a host's state. The lock sits
+/// beside that state, not under the cache: two mise processes can share a
+/// state directory and disagree about their cache, and a lock they do not
+/// share is no lock at all — the loser's write would drop an accepted
+/// sequence and reopen the rollback this state exists to refuse.
 fn locked(dir: &Path, host: &str) -> Result<fslock::LockFile> {
-    LockFile::new(&state_path(dir, host)).lock()
+    file::create_dir_all(dir)?;
+    let path = state_path(dir, host).with_extension("lock");
+    let mut lock = fslock::LockFile::open(&path)?;
+    if !lock.try_lock()? {
+        debug!("waiting for lock on {}", path.display());
+        lock.lock()?;
+    }
+    Ok(lock)
 }
 
 /// Refuse a list whose sequence is below the last one accepted from this
@@ -485,6 +495,19 @@ mod tests {
         std::fs::write(d.join("seq.example.com.json"), b"{not json").unwrap();
         let err = check_sequence_in(d, host, project, &list(project, 9, &entries)).unwrap_err();
         assert!(err.to_string().contains("remove it"), "{err}");
+    }
+
+    #[test]
+    fn the_sequence_lock_sits_beside_the_state_it_guards() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().join("stampers");
+        let host = "lock.example.com";
+        drop(locked(&d, host).unwrap());
+        assert!(
+            d.join("lock.example.com.lock").is_file(),
+            "processes sharing a state directory must share the lock, so it \
+             cannot live under a cache directory they may not share"
+        );
     }
 
     #[test]
