@@ -1,0 +1,6 @@
+backends = ["github:LalitMaganti/buildprof"]
+bins = ["buildprof"]
+description = "Profiler for software builds that records every process and file access and shows the build on an interactive timeline"
+os = ["linux", "macos"]
+test = { cmd = "buildprof --version", expected = "buildprof {{version}}" }
+version_order = "semver"
