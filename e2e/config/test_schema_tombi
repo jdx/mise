@@ -269,7 +269,6 @@ for other_field in \
   'source = "dotfiles/config"' \
   'mode = "copy"' \
   'exclude = ["*.tmp"]' \
-  'manifest = "git"' \
   'block = "managed block"' \
   'line = "managed line"' \
   'template = "tera"' \

@@ -4034,7 +4034,6 @@
                   "source": false,
                   "mode": false,
                   "exclude": false,
-                  "manifest": false,
                   "block": false,
                   "line": false,
                   "template": false,
