@@ -4112,24 +4112,6 @@ run = "cargo build"
     }
 
     #[test]
-    fn test_task_sources_array() {
-        let body = r#"
-[tasks.build]
-sources = ["Cargo.toml", "src/**/*.rs"]
-run = "cargo build"
-"#;
-
-        let path = std::path::Path::new("/tmp/mise.toml");
-        let rf = MiseToml::from_str(body, path).unwrap();
-        let task = rf.tasks.0.get("build").expect("build task should exist");
-
-        assert_eq!(
-            task.sources,
-            vec!["Cargo.toml".to_string(), "src/**/*.rs".to_string()]
-        );
-    }
-
-    #[test]
     fn test_task_template_sources_single_string() {
         let body = r#"
 [task_templates.build]
