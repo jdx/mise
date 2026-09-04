@@ -141,6 +141,8 @@ pub(super) async fn cask_from_ruby(
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 fn metadata_sandbox(source: &Path, output: &Path) -> Result<SandboxConfig> {
+    let source_alias = source.to_path_buf();
+    let output_alias = output.to_path_buf();
     let mut sandbox = SandboxConfig {
         deny_read: true,
         deny_write: true,
@@ -153,6 +155,12 @@ fn metadata_sandbox(source: &Path, output: &Path) -> Result<SandboxConfig> {
         ..Default::default()
     };
     sandbox.resolve_paths();
+    if !sandbox.allow_read.contains(&source_alias) {
+        sandbox.allow_read.push(source_alias);
+    }
+    if !sandbox.allow_write.contains(&output_alias) {
+        sandbox.allow_write.push(output_alias);
+    }
     Ok(sandbox)
 }
 
@@ -451,8 +459,16 @@ end
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
-        assert_eq!(config.allow_read.len(), 1);
-        assert_eq!(config.allow_write.len(), 1);
+        assert!(
+            config
+                .allow_read
+                .contains(&PathBuf::from("/tmp/formula.rb"))
+        );
+        assert!(
+            config
+                .allow_write
+                .contains(&PathBuf::from("/tmp/metadata.json"))
+        );
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
