@@ -2261,10 +2261,9 @@
           "type": "string"
         },
         {
-          "description": "script to run",
+          "description": "scripts or task references to run",
           "items": {
-            "description": "script to run",
-            "type": "string"
+            "$ref": "#/$defs/task_run_entry"
           },
           "type": "array"
         },

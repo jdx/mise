@@ -15,10 +15,9 @@
           "type": "string"
         },
         {
-          "description": "script to run",
+          "description": "scripts or task references to run",
           "items": {
-            "description": "script to run",
-            "type": "string"
+            "$ref": "#/$defs/task_run_entry"
           },
           "type": "array"
         },
@@ -38,6 +37,54 @@
           ],
           "unevaluatedProperties": false,
           "type": "object"
+        }
+      ]
+    },
+    "task_run_entry": {
+      "oneOf": [
+        {
+          "description": "script to run",
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "task": {
+              "description": "single task name to run",
+              "type": "string"
+            },
+            "args": {
+              "description": "arguments to pass to the task",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env": {
+              "description": "environment variables to set for the task",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "required": ["task"]
+        },
+        {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "tasks": {
+              "description": "parallel task group to run",
+              "items": {
+                "description": "task name and args",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": ["tasks"]
         }
       ]
     },
@@ -936,54 +983,6 @@
               }
             ]
           }
-        }
-      ]
-    },
-    "task_run_entry": {
-      "oneOf": [
-        {
-          "description": "script to run",
-          "type": "string"
-        },
-        {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "properties": {
-            "task": {
-              "description": "single task name to run",
-              "type": "string"
-            },
-            "args": {
-              "description": "arguments to pass to the task",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "env": {
-              "description": "environment variables to set for the task",
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          },
-          "required": ["task"]
-        },
-        {
-          "type": "object",
-          "unevaluatedProperties": false,
-          "properties": {
-            "tasks": {
-              "description": "parallel task group to run",
-              "items": {
-                "description": "task name and args",
-                "type": "string"
-              },
-              "type": "array"
-            }
-          },
-          "required": ["tasks"]
         }
       ]
     },
