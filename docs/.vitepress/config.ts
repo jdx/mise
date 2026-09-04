@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 import { sidebar } from "./sidebar";
@@ -28,6 +28,50 @@ const publicSchemas = [
   "mise-settings.json",
   "mise-registry-tool.json",
 ];
+
+/** Return whether VitePress emitted a documentation container with no content. */
+function hasEmptyDocContainer(html: string) {
+  const divPattern = /<div\b[^>]*\sclass="([^"]*)"[^>]*>/g;
+  for (const match of html.matchAll(divPattern)) {
+    if (!match[1].split(/\s+/).includes("vp-doc")) continue;
+
+    let content = html.slice((match.index ?? 0) + match[0].length).trimStart();
+    while (content.startsWith("<!--")) {
+      const commentEnd = content.indexOf("-->");
+      if (commentEnd === -1) return false;
+      content = content.slice(commentEnd + 3).trimStart();
+    }
+    return content.startsWith("</div>");
+  }
+  return false;
+}
+
+/** Fail the build when server-side rendering leaves a documentation page empty. */
+function assertNoEmptyDocPages(outDir: string) {
+  const emptyPages: string[] = [];
+
+  /** Recursively inspect generated HTML files beneath the output directory. */
+  function visit(dir: string) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(path);
+      } else if (entry.name.endsWith(".html")) {
+        const html = readFileSync(path, "utf8");
+        if (hasEmptyDocContainer(html)) {
+          emptyPages.push(relative(outDir, path));
+        }
+      }
+    }
+  }
+
+  visit(outDir);
+  if (emptyPages.length > 0) {
+    throw new Error(
+      `generated empty documentation pages:\n${emptyPages.map((page) => `- ${page}`).join("\n")}`,
+    );
+  }
+}
 
 // https://vitepress.dev/reference/site-config
 export default withMermaid(
@@ -303,6 +347,9 @@ export default withMermaid(
         /<script id="check-dark-mode">/,
         '<script id="check-dark-mode" data-cfasync="false">',
       );
+    },
+    buildEnd(siteConfig) {
+      assertNoEmptyDocPages(siteConfig.outDir);
     },
   }),
 );
