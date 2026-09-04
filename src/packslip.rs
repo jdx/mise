@@ -14,8 +14,7 @@ use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fi
 use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::backend::packslip::{
-    STATEMENT_FILE, is_safe_relative, locate_dir_in_install, locate_in_install,
-    selected_artifact,
+    STATEMENT_FILE, is_safe_relative, locate_dir_in_install, locate_in_install, selected_artifact,
 };
 use crate::backend::{Backend, MISE_BINS_DIR};
 use crate::cmd::CmdLineRunner;
@@ -540,6 +539,7 @@ pub(crate) fn skills_of(
     install_path: &Path,
     tool: &str,
     version: &str,
+    artifact: Option<&Artifact>,
 ) -> Vec<Skill> {
     // A vendor may offer one skill from several sources, as completions
     // are offered; the most verifiable one that is on disk is the skill.
@@ -550,12 +550,14 @@ pub(crate) fn skills_of(
         Some(ResourceSource::Exec) => 3,
         None => 4,
     };
-    let mut candidates: Vec<&Resource> = statement
-        .predicate
-        .resources
-        .iter()
-        .filter(|r| r.kind == "skill")
-        .collect();
+    let mut candidates: Vec<&Resource> = applicable(
+        statement
+            .predicate
+            .resources
+            .iter()
+            .filter(|r| r.kind == "skill"),
+        artifact,
+    );
     candidates.sort_by_key(|r| rank(r));
     let mut seen = std::collections::BTreeSet::new();
     candidates
@@ -587,11 +589,16 @@ pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
                 continue;
             }
         };
+        let artifact = selected_artifact(
+            &statement,
+            tv.request.options().get_string("variant").as_deref(),
+        );
         skills.extend(skills_of(
             &statement,
             &install_path,
             &backend.ba().short,
             &tv.version,
+            artifact.as_ref(),
         ));
     }
     Ok(skills)
@@ -1377,7 +1384,8 @@ mod tests {
         let mut escape = s.predicate.resources[0].clone();
         escape.name = Some("../escape".into());
         s.predicate.resources.push(escape);
-        let skills = skills_of(&s, root, "tool", "1");
+        let host = s.predicate.artifacts[0].clone();
+        let skills = skills_of(&s, root, "tool", "1", Some(&host));
         assert_eq!(
             skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
             ["t", "packed", "fromrepo"],
