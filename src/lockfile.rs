@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::backend::backend_type::BackendType;
 use crate::backend::conda::CondaBackend;
+use crate::backend::options::VersionOrder;
 use crate::backend::pkgx::PkgxBackend;
 use crate::backend::platform_target::PlatformTarget;
 use crate::config::{Config, Settings};
@@ -3617,14 +3618,36 @@ fn select_unbound_lockfile_tool<'a>(
     backend: Option<&dyn Backend>,
     selection_options: &ToolVersionOptions,
 ) -> Result<Option<&'a LockfileTool>> {
-    let Some(backend) = backend else {
-        return Ok(matching.first().copied());
+    let order = match backend {
+        Some(backend) => backend.version_order(selection_options)?,
+        None => VersionOrder::default(),
     };
-    Ok(backend
-        .version_order(selection_options)?
-        .order_by(matching, |tool| tool.version.as_str())
-        .last()
-        .copied())
+    Ok(select_newest_unbound_tool(matching, order))
+}
+
+/// Pick the newest of several unbound entries that all satisfy one request.
+///
+/// Split from [`select_unbound_lockfile_tool`] so the choice can be tested
+/// without building a `Backend`.
+///
+/// `VersionOrder::Source` is not an opinion about order here. It means "the
+/// order the source listed them", and the source is `merge_tool_entries`, which
+/// writes entries sorted by the version *string* — so reading off the end of
+/// that list answers `1.9.0` for a pair of `1.9.0` and `1.10.0`. Only a backend
+/// that has opted into an ordering gets to decide; everything else compares the
+/// versions, the same way the unversioned branch of `get_locked_version` does.
+fn select_newest_unbound_tool(
+    mut matching: Vec<&LockfileTool>,
+    order: VersionOrder,
+) -> Option<&LockfileTool> {
+    if order != VersionOrder::Source {
+        return order
+            .order_by(matching, |tool| tool.version.as_str())
+            .last()
+            .copied();
+    }
+    matching.sort_by(|a, b| cmp_lockfile_versions_newest_first(&a.version, &b.version));
+    matching.first().copied()
 }
 
 fn lockfile_tool_with_request_options(
@@ -4649,6 +4672,60 @@ options = { exe = "rg" }
         let mut entries = ["3.7b", "3.7c"];
         entries.sort_by(|a, b| cmp_lockfile_versions_newest_first(a, b));
         assert_eq!(entries.first(), Some(&"3.7c"));
+    }
+
+    /// Selects from entries in the order `merge_tool_entries` writes them —
+    /// sorted by the version *string* — because that is the order the selection
+    /// actually receives them in.
+    fn select_unbound(versions: &[&str], order: VersionOrder) -> Option<String> {
+        let entries: Vec<LockfileTool> = versions
+            .iter()
+            .sorted()
+            .map(|version| basic_tool(version, "asdf:dummy"))
+            .collect();
+        select_newest_unbound_tool(entries.iter().collect(), order).map(|tool| tool.version.clone())
+    }
+
+    #[test]
+    fn test_unbound_selection_without_a_backend_order() {
+        // `Source` is the default for every backend that has not opted in --
+        // asdf, cargo, npm, pipx, gem, go, dotnet, conda and the core plugins.
+        // It returns its input untouched, so reading off the end of the stored
+        // order answers with the lexicographically largest string.
+        assert_eq!(
+            select_unbound(&["1.9.0", "1.10.0"], VersionOrder::Source),
+            Some("1.10.0".to_string())
+        );
+
+        // The pair where the stored order happens to agree, which is why the
+        // existing e2e case never caught this.
+        assert_eq!(
+            select_unbound(&["1.0.0", "2.0.0"], VersionOrder::Source),
+            Some("2.0.0".to_string())
+        );
+
+        // Non-semver still orders, through the same comparator the unversioned
+        // branch uses.
+        assert_eq!(
+            select_unbound(&["3.7b", "3.7c"], VersionOrder::Source),
+            Some("3.7c".to_string())
+        );
+
+        assert_eq!(select_unbound(&[], VersionOrder::Source), None);
+    }
+
+    #[test]
+    fn test_unbound_selection_defers_to_a_declared_semver_order() {
+        // A backend that opted in still decides. `order_by` sorts ascending, so
+        // the end of its list is the newest -- unchanged by this fix.
+        assert_eq!(
+            select_unbound(&["1.9.0", "1.10.0"], VersionOrder::Semver),
+            Some("1.10.0".to_string())
+        );
+        assert_eq!(
+            select_unbound(&["1.0.0", "2.0.0"], VersionOrder::Semver),
+            Some("2.0.0".to_string())
+        );
     }
 
     #[test]

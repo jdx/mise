@@ -186,6 +186,30 @@ EOF
 
 assert "cd unbound-versioned && mise ls dummy --json --current | jq -r '.[0].version'" "2.0.0"
 
+echo "=== unbound entries are ordered by version, not by where they sit ==="
+# The case above passes either way: entries are written in lexicographic order of
+# the version string, so for 1.0.0/2.0.0 the last one is also the newest. Here it
+# is not. `asdf:dummy` does not opt into a version order, so nothing reorders the
+# stored list and reading off its end would answer 1.9.0.
+mkdir unbound-versioned-order
+cat >unbound-versioned-order/mise.toml <<'EOF'
+[tools]
+dummy = "latest"
+EOF
+cat >unbound-versioned-order/mise.lock <<'EOF'
+lockfile_version = 1
+
+[[tools.dummy]]
+version = "1.10.0"
+backend = "asdf:dummy"
+
+[[tools.dummy]]
+version = "1.9.0"
+backend = "asdf:dummy"
+EOF
+
+assert "cd unbound-versioned-order && mise ls dummy --json --current | jq -r '.[0].version'" "1.10.0"
+
 echo "=== legacy latest picks the newer of two versions that compare equal ==="
 # `versions` compares an alphanumeric chunk by its leading digits and stops, so
 # 3.7b and 3.7c both reduce to 7 and tie. Entries are written in lexicographic
