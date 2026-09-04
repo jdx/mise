@@ -78,6 +78,7 @@ pub(crate) fn repo_file_request(statement: &Statement, rel: &str) -> Option<(Str
     let source = statement.predicate.source.as_ref()?;
     let commit = source.commit.as_deref()?;
     let repo = source.repo.trim_end_matches('/').trim_end_matches(".git");
+    let rel = url_path(rel);
     if let Some(path) = repo.strip_prefix("https://github.com/") {
         let url = format!("https://api.github.com/repos/{path}/contents/{rel}?ref={commit}");
         let mut headers = github::get_headers(&url).ok()?;
@@ -94,6 +95,16 @@ pub(crate) fn repo_file_request(statement: &Statement, rel: &str) -> Option<(Str
             )
         })
     }
+}
+
+/// A repository path as URL path segments: each segment percent-encoded,
+/// so a `?` or `#` in a name cannot rewrite the query or fragment and
+/// reach past the commit the URL pins.
+pub(crate) fn url_path(rel: &str) -> String {
+    rel.split('/')
+        .map(|segment| urlencoding::encode(segment).into_owned())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn headers_for(url: &str) -> Result<HeaderMap> {
@@ -374,11 +385,17 @@ pub(crate) async fn completion_script(
                     continue;
                 }
                 // Any failure here is one more reason to try the next source,
-                // not the end of the search.
+                // not the end of the search. The spec is kept in the install:
+                // a script derived from it names the file at completion time,
+                // so it has to outlive this command.
                 async {
+                    if !file::is_plain_file_name(&bin) || !file::is_plain_file_name(&format) {
+                        bail!("cli-spec entry names {bin:?} in format {format:?}");
+                    }
                     let spec = run_tool(config, &backend, &tv, &argv).await?;
-                    let dir = tempfile::tempdir()?;
-                    let path = dir.path().join(format!("{bin}.{format}.kdl"));
+                    let dir = install_path.join(RESOURCES_DIR).join("specs");
+                    file::create_dir_all(&dir)?;
+                    let path = dir.join(format!("{bin}.{format}"));
                     file::write(&path, &spec)?;
                     derive_from_spec(config, ts, &format, &bin, &path, shell).await
                 }
@@ -547,6 +564,14 @@ mod tests {
     #[test]
     fn repo_file_requests_pin_the_commit() {
         let s = basic();
+        assert_eq!(
+            repo_file_request(&s, "docs/a?b#c.md").unwrap().0,
+            format!(
+                "https://api.github.com/repos/o/r/contents/docs/a%3Fb%23c.md?ref={}",
+                "c".repeat(40)
+            ),
+            "a name cannot rewrite the query or fragment"
+        );
         let (url, headers) = repo_file_request(&s, "completions/t.fish").unwrap();
         assert_eq!(
             url,
