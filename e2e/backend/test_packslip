@@ -26,6 +26,11 @@ install_path="$(mise where packslip:github.com/jdx/packslip@0.2.0)"
 assert_contains "cat $install_path/.mise-packslip.json" '"project": "github.com/jdx/packslip"'
 assert_contains "mise tool packslip:github.com/jdx/packslip" "packslip"
 
+# The signer is pinned, the way SSH remembers a host, and can be forgotten.
+assert_contains "mise packslip pins" "https://github.com/jdx/packslip/.github/workflows/release.yml"
+assert_contains "mise packslip forget jdx/packslip" "forgot the pinned signer"
+assert_contains "mise packslip pins" "no packslip signers pinned"
+
 # This release's packslip lists no completion, and mise says so rather
 # than guessing at one; a tool mise does not know has no packslip at all.
 assert_fail_contains "mise completion zsh --tool packslip" "declares no zsh completion"
@@ -38,6 +43,21 @@ assert_contains "mise skills sync --dir skills" "nothing to link"
 assert_directory_not_exists skills
 assert_contains "env MISE_SKILLS_DIR=agents/skills mise skills sync" "nothing to link"
 assert_directory_not_exists agents
+
+# A lockfile records who signed, so the project commits to that signer.
+export MISE_LOCKFILE=1
+export MISE_EXPERIMENTAL=1
+mkdir -p locked && cd locked
+touch mise.lock
+cat <<EOF >mise.toml
+[tools]
+"packslip:github.com/jdx/packslip" = "0.2.0"
+EOF
+mise uninstall packslip:github.com/jdx/packslip@0.2.0
+mise install
+assert_contains "cat mise.lock" 'signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"'
+cd ..
+unset MISE_LOCKFILE MISE_EXPERIMENTAL
 
 # A release that carries no packslip is refused rather than guessed at.
 assert_fail_contains "mise install packslip:jdx/mise-test-fixtures@1.0.0" "no release"

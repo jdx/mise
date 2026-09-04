@@ -516,6 +516,17 @@ export const commands: { [key: string]: Command } = {
   outdated: {
     hide: false,
   },
+  packslip: {
+    hide: false,
+    subcommands: {
+      forget: {
+        hide: false,
+      },
+      pins: {
+        hide: false,
+      },
+    },
+  },
   patrons: {
     hide: false,
   },

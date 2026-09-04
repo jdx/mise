@@ -2702,6 +2702,35 @@ Note: unlike `docker run -v`, there's no `-v` short flag here because mise reser
         complete image_dir type=dir
     }
 }
+cmd packslip help="The signers mise accepts packslips from" effect=read {
+    long_help #"""
+The signers mise accepts packslips from
+
+A tool installed with the `packslip:` backend is verified against the
+identity its project name implies, and mise then remembers which signer
+it accepted, the way SSH remembers hosts. A later release from another
+signer, a weaker scheme, a repackager where the vendor signed before, or
+one that drops build provenance is refused until a person says so.
+"""#
+    flag "-h --help" help="Print help" action=help builtin=#true
+    cmd forget help="Forget a project's pinned signer, so the next release accepted sets it again" effect=write {
+        long_help #"""
+Forget a project's pinned signer, so the next release accepted sets it again
+
+Do this when the vendor has announced a new signing identity or key. The
+project is named as the packslip backend names it: `github.com/owner/repo`,
+`owner/repo`, or a host such as `tool.example.com`, with or without the
+`packslip:` prefix.
+"""#
+        flag "-h --help" help="Print help" action=help builtin=#true
+        arg <PROJECT> help="The project whose pin to drop"
+    }
+    cmd pins help="List the signers mise has accepted packslips from" effect=read {
+        alias list
+        flag "-J --json" help="Output in JSON format"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
+}
 cmd outdated help="Show outdated tool versions" effect=read {
     long_help #"""
 Show outdated tool versions
