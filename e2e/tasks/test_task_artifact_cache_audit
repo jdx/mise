@@ -22,7 +22,12 @@ done
 if [[ -z $trace ]]; then
   exec "$@"
 fi
-cat <<TRACE >"$trace"
+if [[ $trace == \|* ]]; then
+  sink=${trace#|}
+else
+  sink="cat > '$trace'"
+fi
+cat <<TRACE | sh -c "$sink"
 123 openat(AT_FDCWD<$PWD>, "input.txt", O_RDONLY) = 3
 123 openat(AT_FDCWD<$PWD>, "../shared.txt", O_RDONLY) = 3
 123 openat(AT_FDCWD<$PWD>, "secret.txt", O_RDONLY) = 3

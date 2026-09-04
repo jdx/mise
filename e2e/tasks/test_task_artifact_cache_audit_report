@@ -25,11 +25,17 @@ done
 if [[ -z $trace ]]; then
   exec "$@"
 fi
-: >"$trace"
-for i in $(seq 1 25); do
-  echo "123 openat(AT_FDCWD<$PWD>, \"undeclared$i.txt\", O_RDONLY) = 3" >>"$trace"
-done
-echo "123 openat(AT_FDCWD<$PWD>, \"generated.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3" >>"$trace"
+if [[ $trace == \|* ]]; then
+  sink=${trace#|}
+else
+  sink="cat > '$trace'"
+fi
+{
+  for i in $(seq 1 25); do
+    echo "123 openat(AT_FDCWD<$PWD>, \"undeclared$i.txt\", O_RDONLY) = 3"
+  done
+  echo "123 openat(AT_FDCWD<$PWD>, \"generated.txt\", O_WRONLY|O_CREAT|O_TRUNC, 0666) = 3"
+} | sh -c "$sink"
 exec "$@"
 EOF
 chmod +x bin/strace

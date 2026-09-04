@@ -32,14 +32,17 @@ if [[ -z $trace ]]; then
   exec "$@"
 fi
 
-cat <<TRACE >"$trace"
-123 openat(AT_FDCWD<$PWD>, "input.txt", O_RDONLY) = 3
-TRACE
-
 if $daemonize; then
+  if [[ ${FAKE_INCOMPLETE:-0} == 1 ]]; then
+    exec "$@"
+  fi
   # Model strace -D: the original process becomes the task while the tracer is
   # a grandchild whose internal failure cannot replace the task's exit status.
   (
+    sleep 0.05
+    cat <<TRACE | sh -c "${trace#|}"
+123 openat(AT_FDCWD<$PWD>, "secret.txt", O_RDONLY) = 3
+TRACE
     echo 'strace: ptrace(PTRACE_LISTEN,pid:123,sig:0): Input/output error' >&2
     exit 1
   ) &
@@ -47,6 +50,9 @@ if $daemonize; then
 fi
 
 # Without -D, strace is the process mise waits for and its internal status wins.
+cat <<TRACE >"$trace"
+123 openat(AT_FDCWD<$PWD>, "secret.txt", O_RDONLY) = 3
+TRACE
 "$@"
 exit 1
 EOF
@@ -69,6 +75,13 @@ run = "exit 42"
 sources = ["input.txt"]
 outputs = []
 cache = { enabled = true, audit = true }
+
+[tasks.incomplete]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+env = { FAKE_INCOMPLETE = "1" }
 EOF
 
 export PATH="$PWD/bin:$PATH"
@@ -76,6 +89,11 @@ export PATH="$PWD/bin:$PATH"
 # A failure in the advisory tracer must not replace a successful task status.
 output=$(mise run --force success 2>&1)
 assert_contains_text "$output" "ptrace(PTRACE_LISTEN"
+assert_contains_text "$output" "cache audit detected undeclared read: secret.txt"
 
 # Daemonizing the tracer must not mask a real task failure either.
 assert_fail "mise run --force failure"
+
+# An unresponsive tracer remains advisory and its incomplete report is ignored.
+output=$(mise run --force incomplete 2>&1)
+assert_contains_text "$output" "cache audit tracer did not finish; skipping its incomplete report"

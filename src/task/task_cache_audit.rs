@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tempfile::NamedTempFile;
 #[cfg(target_os = "linux")]
 use tokio::sync::OnceCell;
@@ -65,6 +66,7 @@ pub(crate) struct TaskCacheAudit {
     #[cfg(target_os = "linux")]
     strace: PathBuf,
     trace: NamedTempFile,
+    trace_complete: NamedTempFile,
     root: PathBuf,
     source_root: PathBuf,
     sources: Override,
@@ -116,6 +118,7 @@ impl TaskCacheAudit {
             Ok(Some(Self {
                 strace,
                 trace: NamedTempFile::new()?,
+                trace_complete: NamedTempFile::new()?,
                 root,
                 source_root,
                 sources,
@@ -127,6 +130,11 @@ impl TaskCacheAudit {
 
     #[cfg(target_os = "linux")]
     pub(crate) fn wrap(&self, program: OsString, args: &[String]) -> (OsString, Vec<String>) {
+        let trace = shell_escape::escape(self.trace.path().to_string_lossy());
+        let trace_complete = shell_escape::escape(self.trace_complete.path().to_string_lossy());
+        // Piping the trace through a small sink gives mise a completion signal from the detached
+        // tracer. strace closes the pipe only after it has finished following every tracee.
+        let output = format!("|cat > {trace} && printf 1 > {trace_complete}");
         let mut wrapped = vec![
             // Keep the task as mise's direct child so a failure in the advisory tracer does not
             // replace the task's exit status. The tracer runs as the task's grandchild instead.
@@ -139,7 +147,7 @@ impl TaskCacheAudit {
             "-s".to_string(),
             "4096".to_string(),
             "-o".to_string(),
-            self.trace.path().to_string_lossy().into_owned(),
+            output,
             "--".to_string(),
             program.to_string_lossy().into_owned(),
         ];
@@ -152,7 +160,24 @@ impl TaskCacheAudit {
         (program, args.to_vec())
     }
 
-    pub(crate) fn report(&self, task: &Task) {
+    pub(crate) async fn report(&self, task: &Task) {
+        if tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if fs::metadata(self.trace_complete.path()).is_ok_and(|meta| meta.len() > 0) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .is_err()
+        {
+            warn!(
+                "task {} cache audit tracer did not finish; skipping its incomplete report",
+                task.name
+            );
+            return;
+        }
         let trace = match fs::read_to_string(self.trace.path()) {
             Ok(trace) => trace,
             Err(err) => {
