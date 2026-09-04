@@ -1433,6 +1433,17 @@
             "type": "string"
           }
         },
+        "packslip": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "exec": {
+              "default": false,
+              "description": "Run a tool's own command for a completion or skill its packslip offers only as an exec entry.",
+              "type": "boolean"
+            }
+          }
+        },
         "paranoid": {
           "description": "Enables extra-secure behavior.",
           "type": "boolean"

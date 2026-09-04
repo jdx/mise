@@ -1213,7 +1213,7 @@ Change this with the MISE_CACHE_PRUNE_AGE environment variable.
 }
 cmd completion help="Generate shell completions" effect=read {
     alias complete completions
-    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # put it where the shell looks, and print any one-time line it still needs\n    $ \u{1b}[1mmise completion zsh --install\u{1b}[22m\n\n    # or choose the path yourself\n    $ \u{1b}[1mmise completion bash > ~/.local/share/bash-completion/completions/mise\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise\u{1b}[22m\n    $ \u{1b}[1mmise completion fish > ~/.config/fish/completions/mise.fish\u{1b}[22m\n    $ \u{1b}[1mmise completion powershell >> $PROFILE\u{1b}[22m\n"
+    after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # put it where the shell looks, and print any one-time line it still needs\n    $ \u{1b}[1mmise completion zsh --install\u{1b}[22m\n\n    # a tool's completion, from the packslip it was installed from\n    $ \u{1b}[1mmise completion zsh --tool rg\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh --tool rg --install\u{1b}[22m\n\n    # or choose the path yourself\n    $ \u{1b}[1mmise completion bash > ~/.local/share/bash-completion/completions/mise\u{1b}[22m\n    $ \u{1b}[1mmise completion zsh  > /usr/local/share/zsh/site-functions/_mise\u{1b}[22m\n    $ \u{1b}[1mmise completion fish > ~/.config/fish/completions/mise.fish\u{1b}[22m\n    $ \u{1b}[1mmise completion powershell >> $PROFILE\u{1b}[22m\n"
     flag "-s --shell" help="Shell type to generate completions for" hide=#true {
         arg <SHELL> {
             choices {
@@ -1250,6 +1250,19 @@ dot-source — it is printed for you to add.
 """#
     }
     flag --force help="Replace a file at the target path that mise did not write" requires=--install effect=write
+    flag --tool help="A tool's completion instead of mise's own, from the packslip it was installed from" {
+        long_help #"""
+A tool's completion instead of mise's own, from the packslip it was installed from
+
+NAME is a tool installed with the `packslip:` backend, or one of its executables. The
+script comes from whichever version is active here, from the most verifiable source its
+packslip offers: a file the vendor shipped, a script derived from its CLI spec, or, only
+with `packslip.exec` enabled, a command of the tool's own. With --install, what is written
+is a small stub that asks mise for the script when the shell first completes the tool, so
+it follows version switches without being rewritten.
+"""#
+        arg <TOOL>
+    }
     flag "-h --help" help="Print help" action=help builtin=#true
     arg "[SHELL]" help="Shell type to generate completions for" required=#false required_unless=--shell {
         choices {

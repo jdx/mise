@@ -86,6 +86,21 @@ For a project on its own domain signed keylessly, or to override the identity a 
 
 Accept a key-signed bundle that carries no transparency log entry, which a vendor produces for an air-gapped release. Off by default; turn it on only for a vendor you have agreed to accept that from.
 
+## Completions
+
+A packslip may list what the release ships besides its executables: shell completions, a spec of the CLI, an agent skill. mise reads those `resources` for tools it installed this way.
+
+```sh
+mise completion zsh --tool rg           # print the script
+mise completion zsh --tool rg --install # put a stub where zsh looks
+```
+
+The script comes from whichever version of the tool is active in the current directory, from the most verifiable source the vendor offered, in the order the specification gives: a file inside the artifact or a separate signed asset, a file from the source repository at the release's commit, a script derived from the tool's [usage](https://usage.jdx.dev) spec with the `usage` command, and only then a command of the tool's own. That last kind runs a freshly installed binary before you have run it yourself, so mise refuses it unless the [`packslip.exec`](/configuration/settings#packslip-exec) setting is on.
+
+`--install` writes a stub, not the script. Completions are global shell state while the active version depends on the directory, so the stub asks mise for the script when the shell first completes the tool. Version switches need no rewrite. The file goes where the shell loads completions by name, the same place `mise completion zsh --install` puts mise's own, and the command prints any one-time line your shell still needs.
+
+Files the vendor keeps outside the artifact (a separate release asset, or a path in the repository) are fetched at install time. An asset must match the digest the packslip signed; a repository file is pinned by the release's commit. Completions derived from a usage spec call `usage complete-word` at shell runtime, so install `usage` alongside such tools (`mise use -g usage`).
+
 ## Versions
 
 A packslip version is semver, so mise ranks a project's versions by semver precedence whatever order GitHub lists its releases in, and treats a version with a prerelease part (`1.3.0-rc.1`, `1.4.0-nightly.20260904`) as a prerelease whatever the GitHub release's own flag says. Prereleases are skipped unless the `prerelease` tool option is set.

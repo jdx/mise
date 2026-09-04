@@ -26,5 +26,10 @@ install_path="$(mise where packslip:github.com/jdx/packslip@0.2.0)"
 assert_contains "cat $install_path/.mise-packslip.json" '"project": "github.com/jdx/packslip"'
 assert_contains "mise tool packslip:github.com/jdx/packslip" "packslip"
 
+# This release's packslip lists no completion, and mise says so rather
+# than guessing at one; a tool mise does not know has no packslip at all.
+assert_fail_contains "mise completion zsh --tool packslip" "declares no zsh completion"
+assert_fail_contains "mise completion zsh --tool nope" "not an active, installed tool"
+
 # A release that carries no packslip is refused rather than guessed at.
 assert_fail_contains "mise install packslip:jdx/mise-test-fixtures@1.0.0" "no release"
