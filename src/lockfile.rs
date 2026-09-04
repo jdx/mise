@@ -559,10 +559,13 @@ impl PlatformInfo {
             provenance_verified,
             github_attestations: None,
             signer: self.signer.clone().or_else(|| other.signer.clone()),
-            attested_by: self
-                .attested_by
-                .clone()
-                .or_else(|| other.attested_by.clone()),
+            // Follows the signer: an entry that names one says who attested,
+            // and an absent attested_by then means the vendor.
+            attested_by: if self.signer.is_some() {
+                self.attested_by.clone()
+            } else {
+                other.attested_by.clone()
+            },
             additional_artifacts: if artifact_changed {
                 self.additional_artifacts.clone()
             } else {
@@ -838,6 +841,24 @@ mod signer_round_trip {
         assert_eq!(info.without_artifact_data().signer, info.signer);
         let bad = toml::Value::Table(toml::toml! { attested_by = "someone" });
         assert!(PlatformInfo::try_from(bad).is_err());
+
+        // A vendor-signed entry merged over a repackager's clears attested_by:
+        // the mark follows the signer rather than surviving as a floor.
+        let vendor = PlatformInfo {
+            signer: Some("sigstore-oidc:w".into()),
+            ..Default::default()
+        };
+        assert_eq!(vendor.merge_with(&info).attested_by, None);
+        assert_eq!(
+            vendor.merge_with(&info).signer.as_deref(),
+            Some("sigstore-oidc:w")
+        );
+        let unsigned = PlatformInfo::default();
+        assert_eq!(
+            unsigned.merge_with(&info).attested_by.as_deref(),
+            Some("repackager"),
+            "an entry naming no signer inherits both"
+        );
     }
 }
 
@@ -1472,10 +1493,12 @@ impl Lockfile {
                     provenance,
                     provenance_verified,
                     github_attestations: None,
+                    attested_by: if platform_info.signer.is_some() {
+                        platform_info.attested_by
+                    } else {
+                        existing.attested_by.clone()
+                    },
                     signer: platform_info.signer.or_else(|| existing.signer.clone()),
-                    attested_by: platform_info
-                        .attested_by
-                        .or_else(|| existing.attested_by.clone()),
                     additional_artifacts: if preserve_artifact_fields {
                         merge_additional_artifacts(
                             &platform_info.additional_artifacts,
