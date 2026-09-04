@@ -24,9 +24,9 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
 use std::sync::LazyLock as Lazy;
-use tokio::io::{
-    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader,
-};
+#[cfg(unix)]
+use tokio::io::AsyncRead;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader};
 use tokio::process::Command;
 
 use crate::config::Settings;
@@ -523,6 +523,7 @@ enum HashedProcessOutput {
     ReadError(&'static str, std::io::Error),
 }
 
+#[cfg(unix)]
 async fn read_capped<R: AsyncRead + Unpin>(
     mut reader: R,
     max_bytes: usize,
@@ -1464,6 +1465,7 @@ impl<'a> CmdLineRunner<'a> {
         Ok(stdout.trim_end().to_string())
     }
 
+    #[cfg(unix)]
     pub(crate) async fn read_bounded(mut self, max_output_bytes: usize) -> Result<String> {
         let _read_lock = RAW_LOCK.read().await;
         debug!("$ {self}");
