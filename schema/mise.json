@@ -4032,6 +4032,7 @@
                 "required": ["content"],
                 "properties": {
                   "source": false,
+                  "manifest": false,
                   "mode": false,
                   "exclude": false,
                   "block": false,

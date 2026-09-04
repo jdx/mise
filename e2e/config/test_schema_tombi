@@ -264,9 +264,10 @@ TOML
 assert_fail "$TOMBI_LINT mise-bad-age.toml"
 
 # Inline content is a complete whole-file entry and cannot be combined with
-# source-backed fields or file edit fields.
+# source-backed fields, manifests, or file edit fields.
 for other_field in \
   'source = "dotfiles/config"' \
+  'manifest = "git"' \
   'mode = "copy"' \
   'exclude = ["*.tmp"]' \
   'block = "managed block"' \
