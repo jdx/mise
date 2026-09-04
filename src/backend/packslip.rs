@@ -425,6 +425,31 @@ pub(crate) fn verify_release_list(
 }
 
 /// The headers a download from GitHub needs; nothing for anywhere else.
+/// Listing timestamps only filter candidates. The authenticated log time
+/// decides whether a selected release is old enough to install.
+fn check_verified_age(
+    logged_at: Option<&str>,
+    published_at: &str,
+    before: Option<jiff::Timestamp>,
+) -> Result<()> {
+    let Some(before) = before else {
+        return Ok(());
+    };
+    let (time, source) = match logged_at {
+        Some(time) => (time, "transparency log"),
+        None => (published_at, "unlogged manifest"),
+    };
+    let time: jiff::Timestamp = time
+        .parse()
+        .wrap_err("invalid verified packslip timestamp")?;
+    if time > before {
+        bail!(
+            "packslip release was recorded by the {source} at {time}, after the allowed cutoff {before}; refusing to bypass minimum_release_age"
+        );
+    }
+    Ok(())
+}
+
 fn headers_for(url: &str) -> Result<HeaderMap> {
     if url.starts_with("https://github.com/") || url.starts_with("https://api.github.com/") {
         github::get_headers(url)
@@ -513,7 +538,10 @@ impl PackslipBackend {
             .await
         {
             Ok(text) => text,
-            Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
+            Err(err) if crate::http::error_code(&err) == Some(404) => {
+                packslip_pins::check_missing_list(project)?;
+                return Ok(None);
+            }
             Err(err) => {
                 return Err(err)
                     .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
@@ -859,6 +887,17 @@ impl Backend for PackslipBackend {
                 .map(|t| format!(", logged {t}"))
                 .unwrap_or_default()
         );
+        let before = crate::install_before::resolve_before_date_for_tool(
+            &self.ba,
+            tv.before_date.or(ctx.before_date),
+            raw_opts.minimum_release_age(),
+        )?;
+        check_verified_age(
+            verified.logged_at.as_deref(),
+            &verified.published_at,
+            before,
+        )?;
+
         // Who signed, against what this machine accepted before, and then
         // against what the project committed to in its lockfile.
         let scheme = verified.scheme.to_string();
@@ -1066,6 +1105,20 @@ mod tests {
             arch: "x86_64".into(),
             libc: Some("gnu".into()),
         }
+    }
+
+    #[test]
+    fn age_is_checked_against_the_authenticated_log_time() {
+        let before = Some("2026-09-03T00:00:00Z".parse().unwrap());
+        let old = "2026-09-01T00:00:00Z";
+        let new = "2026-09-04T00:00:00Z";
+        assert!(check_verified_age(Some(new), old, before).is_err());
+        assert!(check_verified_age(Some(old), new, before).is_ok());
+        assert!(check_verified_age(None, old, before).is_ok());
+        assert!(check_verified_age(None, new, before).is_err());
+        assert!(check_verified_age(Some(new), old, None).is_ok());
+        assert!(check_verified_age(Some("invalid"), old, before).is_err());
+        assert!(check_verified_age(Some("2026-09-03T00:00:00Z"), old, before).is_ok());
     }
 
     #[test]
