@@ -937,7 +937,6 @@ impl Backend for PackslipBackend {
         ctx.pr.set_message(format!("verify {}", artifact.name));
         verify_bundle(&bundle, &pin, require_log, &[&file_path])
             .wrap_err_with(|| format!("verifying {} against its packslip", artifact.name))?;
-        packslip_pins::record(&project, observed)?;
         {
             let info = tv.lock_platforms.entry(platform_key).or_default();
             info.url = Some(url);
@@ -988,6 +987,9 @@ impl Backend for PackslipBackend {
         )?;
         // Completions and CLI specs the vendor keeps outside the artifact.
         crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
+        // The pin records what was installed, so a release that failed to
+        // unpack or link leaves no mark; the check above is what refuses.
+        packslip_pins::record(&project, observed)?;
         Ok(tv)
     }
 
