@@ -500,8 +500,11 @@ pub(crate) const SYNC_STATE: &str = ".mise-skills.json";
 
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 struct SyncState {
+    /// Each link mise made, by name, with the target it was made with. A
+    /// link at that name pointing anywhere else is somebody else's, even
+    /// if it points into mise's installs.
     #[serde(default)]
-    links: std::collections::BTreeSet<String>,
+    links: BTreeMap<String, String>,
 }
 
 /// A missing state file means nothing was linked yet. A malformed one is
@@ -642,10 +645,16 @@ pub(crate) fn sync_skills(
             }
         }
     }
+    // Mise's own link: recorded under this name, still a link, still
+    // pointing exactly where mise pointed it, and that is inside installs.
+    let points_at =
+        |link: &Path, target: &str| std::fs::read_link(link).is_ok_and(|t| t == Path::new(target));
     let ours = |name: &str, link: &Path| {
-        state.links.contains(name)
-            && file::is_symlink_or_junction(link)
-            && file::is_symlink_target_within(link, installs).unwrap_or(false)
+        state.links.get(name).is_some_and(|target| {
+            file::is_symlink_or_junction(link)
+                && points_at(link, target)
+                && file::is_symlink_target_within(link, installs).unwrap_or(false)
+        })
     };
     if !wanted.is_empty() {
         file::create_dir_all(dir)?;
@@ -671,11 +680,15 @@ pub(crate) fn sync_skills(
         file::make_symlink(&skill.path, &link)?;
         report.linked.push(name.to_string());
     }
-    let mut made: std::collections::BTreeSet<String> = report
+    let mut made: BTreeMap<String, String> = report
         .linked
         .iter()
         .chain(&report.unchanged)
-        .cloned()
+        .filter_map(|name| {
+            wanted
+                .get(name.as_str())
+                .map(|skill| (name.clone(), skill.path.display().to_string()))
+        })
         .collect();
     if prune && dir.is_dir() {
         for entry in file::ls(dir)? {
@@ -688,13 +701,17 @@ pub(crate) fn sync_skills(
             }
         }
     } else {
-        // Without pruning, links made earlier stay mise's as long as they exist.
+        // Without pruning, links made earlier stay mise's as long as they
+        // still are what mise made.
         made.extend(
             state
                 .links
                 .iter()
-                .filter(|name| file::is_symlink_or_junction(&dir.join(name)))
-                .cloned(),
+                .filter(|(name, target)| {
+                    let link = dir.join(name);
+                    file::is_symlink_or_junction(&link) && points_at(&link, target)
+                })
+                .map(|(name, target)| (name.clone(), target.clone())),
         );
     }
     state.links = made;
@@ -1483,7 +1500,43 @@ mod tests {
         assert!(!target.join("t").is_symlink());
         let state: serde_json::Value =
             serde_json::from_str(&file::read_to_string(target.join(SYNC_STATE)).unwrap()).unwrap();
-        assert_eq!(state["links"], serde_json::json!(["o"]));
+        assert_eq!(
+            state["links"],
+            serde_json::json!({ "o": other.display().to_string() })
+        );
+
+        // A person who removes mise's link and makes their own at the same
+        // name, even into the installs directory, keeps it: the target is
+        // not the one mise recorded.
+        file::remove_all(target.join("o")).unwrap();
+        file::make_symlink(&v1, &target.join("o")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("o", "other", "1", &other)],
+            &installs,
+            true,
+        )
+        .unwrap();
+        assert!(file::is_symlink_to(&target.join("o"), &v1), "left alone");
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+        assert_eq!(report.pruned, Vec::<String>::new());
+        let state: serde_json::Value = serde_json::from_str(
+            &file::read_to_string(target.join(SYNC_STATE)).unwrap_or("{}".into()),
+        )
+        .unwrap();
+        assert!(
+            state["links"].get("o").is_none(),
+            "no longer mise's: {state}"
+        );
+        file::remove_all(target.join("o")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("o", "other", "1", &other)],
+            &installs,
+            false,
+        )
+        .unwrap();
+        assert_eq!(report.linked, ["o"]);
 
         // A link a person pointed into mise's installs is not mise's to touch,
         // even though its target says otherwise.
@@ -1519,12 +1572,7 @@ mod tests {
         assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
         let state: serde_json::Value =
             serde_json::from_str(&file::read_to_string(target.join(SYNC_STATE)).unwrap()).unwrap();
-        assert!(
-            !state["links"]
-                .as_array()
-                .unwrap()
-                .contains(&serde_json::json!("same"))
-        );
+        assert!(state["links"].get("same").is_none(), "{state}");
 
         // A malformed state file is an error, never an empty set.
         file::write(target.join(SYNC_STATE), "{not json").unwrap();
