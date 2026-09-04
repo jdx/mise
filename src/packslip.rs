@@ -306,7 +306,15 @@ pub(crate) async fn fetch_files(
                     continue;
                 };
                 pr.set_message(format!("generate skill {skill}"));
-                let generated = match CmdLineRunner::new(path).args(args).read().await {
+                let generated = match run_resource_command(
+                    &path,
+                    args,
+                    &resource.env,
+                    &tv.install_path(),
+                    std::time::Duration::from_secs(5),
+                )
+                .await
+                {
                     // Written beside its place and moved whole, like a fetched skill.
                     Ok(text) => staging_dir(&dir).and_then(|staging| {
                         let written = file::write(staging.join("SKILL.md"), text);
@@ -823,12 +831,13 @@ pub(crate) enum CompletionSource {
         path: PathBuf,
     },
     /// A command of the tool's that prints the script.
-    Exec(Vec<String>),
+    Exec(Vec<String>, BTreeMap<String, String>),
     /// A command of the tool's that prints a CLI spec to derive from.
     SpecExec {
         format: String,
         bin: String,
         argv: Vec<String>,
+        env: BTreeMap<String, String>,
     },
 }
 
@@ -841,18 +850,25 @@ pub(crate) fn applicable<'a>(
     artifact: Option<&Artifact>,
 ) -> Vec<&'a Resource> {
     let specificity = |r: &Resource| {
-        [&r.os, &r.arch, &r.libc]
-            .into_iter()
-            .filter(|f| f.is_some())
-            .count()
+        (
+            r.artifact.is_some(),
+            [&r.os, &r.arch, &r.libc]
+                .into_iter()
+                .filter(|f| f.is_some())
+                .count(),
+        )
     };
     let fits: Vec<&Resource> = resources
         .filter(|r| match artifact {
             Some(artifact) => resource_fits(r, artifact),
-            None => specificity(r) == 0,
+            None => specificity(r) == (false, 0),
         })
         .collect();
-    let best = fits.iter().map(|r| specificity(r)).max().unwrap_or(0);
+    let best = fits
+        .iter()
+        .map(|r| specificity(r))
+        .max()
+        .unwrap_or_default();
     fits.into_iter()
         .filter(|r| specificity(r) == best)
         .collect()
@@ -882,30 +898,28 @@ pub(crate) fn completion_sources(
     artifact: Option<&Artifact>,
     tool: Option<&str>,
 ) -> Vec<CompletionSource> {
-    let resources = &statement.predicate.resources;
-    let for_shell_all =
-        |r: &Resource| r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell);
+    let bin = completion_bin(statement, tool);
+    let describes =
+        |r: &&Resource| r.bin.as_deref().or_else(|| statement.sole_bin()) == bin && bin.is_some();
+    // Select per identity before considering source order. A completion
+    // for one executable must never hide or complete another executable.
+    let selected = match artifact {
+        Some(artifact) => packslip::select_resources(statement, artifact),
+        None => statement.predicate.resources.iter().collect(),
+    };
     let completion_entries = applicable(
-        resources
-            .iter()
-            .filter(|r| r.kind == "completion" && for_shell_all(r)),
+        selected.iter().copied().filter(describes).filter(|r| {
+            r.kind == "completion"
+                && (r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell))
+        }),
         artifact,
     );
-    let spec_entries = applicable(resources.iter().filter(|r| r.kind == "cli-spec"), artifact);
-    // A release with several executables carries a spec for each; the one
-    // for the executable being completed is the only one that completes
-    // it. When none names it (the tool was asked for by id), every spec
-    // stays a candidate.
-    fn plain(name: &str) -> &str {
-        name.strip_suffix(".exe").unwrap_or(name)
-    }
-    let tool = tool.map(plain);
-    let describes = |r: &Resource| r.bin.as_deref().map(plain).is_some_and(|b| Some(b) == tool);
-    let spec_entries: Vec<&Resource> = if spec_entries.iter().any(|r| describes(r)) {
-        spec_entries.into_iter().filter(|r| describes(r)).collect()
-    } else {
-        spec_entries
-    };
+    let spec_entries: Vec<_> = selected
+        .iter()
+        .copied()
+        .filter(describes)
+        .filter(|r| r.kind == "cli-spec")
+        .collect();
     let completions = || completion_entries.iter().copied();
     let for_shell =
         |r: &Resource| r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell);
@@ -936,13 +950,24 @@ pub(crate) fn completion_sources(
         argv.iter().map(|a| a.replace("{shell}", shell)).collect()
     };
     for r in completions().filter(|r| r.source() == Some(ResourceSource::Exec) && for_shell(r)) {
-        sources.push(CompletionSource::Exec(substitute(&r.exec)));
+        sources.push(CompletionSource::Exec(
+            substitute(&r.exec),
+            r.env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.replace("{shell}", shell)))
+                .collect(),
+        ));
     }
     for (r, format, bin) in specs().filter(|(r, ..)| r.source() == Some(ResourceSource::Exec)) {
         sources.push(CompletionSource::SpecExec {
             format,
             bin,
-            argv: r.exec.clone(),
+            argv: substitute(&r.exec),
+            env: r
+                .env
+                .iter()
+                .map(|(k, v)| (k.clone(), v.replace("{shell}", shell)))
+                .collect(),
         });
     }
     sources
@@ -974,6 +999,7 @@ async fn run_tool(
     backend: &Arc<dyn Backend>,
     tv: &ToolVersion,
     argv: &[String],
+    env: &BTreeMap<String, String>,
 ) -> Result<String> {
     let Some((program, args)) = argv.split_first() else {
         bail!("an exec entry with no command");
@@ -981,7 +1007,40 @@ async fn run_tool(
     let Some(path) = backend.which(config, tv, program).await? else {
         bail!("{} has no executable called {program}", tv.style());
     };
-    CmdLineRunner::new(path).args(args).read().await
+    run_resource_command(
+        &path,
+        args,
+        env,
+        &tv.install_path(),
+        std::time::Duration::from_secs(5),
+    )
+    .await
+}
+
+/// Run vendor resource generation outside the user's project, without
+/// input, under a deadline. Empty output is a failed source, never a cache hit.
+async fn run_resource_command(
+    path: &Path,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    install_path: &Path,
+    timeout: std::time::Duration,
+) -> Result<String> {
+    let work = tempfile::tempdir()?;
+    let output = CmdLineRunner::new(path)
+        .args(args)
+        .envs(env)
+        .prepend_path(vec![install_path.join(MISE_BINS_DIR)])?
+        .current_dir(work.path())
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .with_timeout(timeout)
+        .read()
+        .await?;
+    if output.trim().is_empty() {
+        bail!("resource command produced no output");
+    }
+    Ok(output)
 }
 
 /// Derive a completion script from a CLI spec with the consumer's own
@@ -1014,6 +1073,31 @@ async fn derive_from_spec(
 
 /// The `shell` completion script for `tool`, from the packslip of the
 /// version that is active right now.
+fn completion_bin<'a>(statement: &'a Statement, tool: Option<&'a str>) -> Option<&'a str> {
+    tool.map(packslip::command_name)
+        .filter(|name| {
+            statement
+                .predicate
+                .artifacts
+                .iter()
+                .flat_map(|a| &a.bin)
+                .any(|b| b.name == *name)
+        })
+        .or_else(|| statement.sole_bin())
+}
+
+fn completion_cache_path(install_path: &Path, tool: &str, shell: &str) -> Result<PathBuf> {
+    let bin = packslip::command_name(tool);
+    if !file::is_plain_file_name(bin) || !file::is_plain_file_name(shell) {
+        bail!("invalid completion cache identity");
+    }
+    Ok(install_path
+        .join(RESOURCES_DIR)
+        .join("completions")
+        .join(bin)
+        .join(format!("{shell}.completion")))
+}
+
 pub(crate) async fn completion_script(
     config: &Arc<Config>,
     tool: &str,
@@ -1057,10 +1141,13 @@ pub(crate) async fn completion_script(
     // an exec entry says so. Because it runs the tool, its result is
     // cached beside the install so the command runs once per version and
     // shell rather than at every tab.
-    let cache = install_path
-        .join(RESOURCES_DIR)
-        .join("completions")
-        .join(format!("{shell}.completion"));
+    let bin = completion_bin(&statement, Some(tool)).ok_or_else(|| {
+        eyre!(
+            "{} provides several executables; name the command to complete",
+            tv.style()
+        )
+    })?;
+    let cache = completion_cache_path(&install_path, bin, shell)?;
     if let Ok(cached) = file::read_to_string(&cache) {
         return Ok(cached);
     }
@@ -1068,15 +1155,20 @@ pub(crate) async fn completion_script(
     for source in sources {
         let ran_tool = matches!(
             source,
-            CompletionSource::Exec(_) | CompletionSource::SpecExec { .. }
+            CompletionSource::Exec(..) | CompletionSource::SpecExec { .. }
         );
         let attempt = match source {
             CompletionSource::File(path) => file::read_to_string(&path),
             CompletionSource::Spec { format, bin, path } => {
                 derive_from_spec(config, ts, &format, &bin, &path, shell).await
             }
-            CompletionSource::Exec(argv) => run_tool(config, &backend, &tv, &argv).await,
-            CompletionSource::SpecExec { format, bin, argv } => {
+            CompletionSource::Exec(argv, env) => run_tool(config, &backend, &tv, &argv, &env).await,
+            CompletionSource::SpecExec {
+                format,
+                bin,
+                argv,
+                env,
+            } => {
                 // Any failure here is one more reason to try the next source,
                 // not the end of the search. The spec is kept in the install:
                 // a script derived from it names the file at completion time,
@@ -1085,7 +1177,7 @@ pub(crate) async fn completion_script(
                     if !file::is_plain_file_name(&bin) || !file::is_plain_file_name(&format) {
                         bail!("cli-spec entry names {bin:?} in format {format:?}");
                     }
-                    let spec = run_tool(config, &backend, &tv, &argv).await?;
+                    let spec = run_tool(config, &backend, &tv, &argv, &env).await?;
                     let dir = install_path.join(RESOURCES_DIR).join("specs");
                     file::create_dir_all(&dir)?;
                     let path = dir.join(format!("{bin}.{format}"));
@@ -1247,6 +1339,94 @@ mod tests {
         statement_with(r#"[{"kind":"skill","name":"t","asset":"t-skill.tar.gz"}]"#)
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn resource_commands_have_an_environment_and_bounded_execution() {
+        let install = tempfile::tempdir().unwrap();
+        let env = [("COMPLETE".into(), "zsh".into())].into_iter().collect();
+        let args = vec![
+            "-c".into(),
+            "printf '%s\\n%s' \"$COMPLETE\" \"$PWD\"; printf ignored >&2".into(),
+        ];
+        let output = run_resource_command(
+            Path::new("/bin/sh"),
+            &args,
+            &env,
+            install.path(),
+            std::time::Duration::from_secs(2),
+        )
+        .await
+        .unwrap();
+        assert!(output.starts_with("zsh\n"));
+        assert!(!output.contains("ignored"));
+        assert_ne!(
+            output.lines().nth(1).unwrap(),
+            std::env::current_dir().unwrap().to_str().unwrap()
+        );
+        for script in ["exit 0", "exit 1", "exec sleep 10"] {
+            assert!(
+                run_resource_command(
+                    Path::new("/bin/sh"),
+                    &["-c".into(), script.into()],
+                    &env,
+                    install.path(),
+                    std::time::Duration::from_millis(100)
+                )
+                .await
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn completion_exec_substitutes_environment_values() {
+        let s = statement_with(
+            r#"[{"kind":"completion","bin":"t","shells":["zsh"],"exec":["t"],"env":{"COMPLETE":"{shell}"}},{"kind":"skill","name":"t","asset":"t-skill.tar.gz"}]"#,
+        );
+        let sources = completion_sources(
+            &s,
+            Path::new("/unused"),
+            "zsh",
+            Some(&s.predicate.artifacts[0]),
+            Some("t"),
+        );
+        assert_eq!(
+            sources,
+            vec![CompletionSource::Exec(
+                vec!["t".into()],
+                [("COMPLETE".into(), "zsh".into())].into_iter().collect()
+            )]
+        );
+    }
+
+    #[test]
+    fn completion_identity_separates_commands_and_caches() {
+        let root = tempfile::tempdir().unwrap();
+        file::write(root.path().join("_t"), "t").unwrap();
+        file::write(root.path().join("_u"), "u").unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"_t","os":"linux"},
+            {"kind":"completion","bin":"u","shell":"zsh","archive":"_u"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let artifact = &s.predicate.artifacts[0];
+        assert_eq!(
+            completion_sources(&s, root.path(), "zsh", Some(artifact), Some("u")),
+            vec![CompletionSource::File(root.path().join("_u"))]
+        );
+        assert_ne!(
+            completion_cache_path(root.path(), "t", "zsh").unwrap(),
+            completion_cache_path(root.path(), "u", "zsh").unwrap()
+        );
+        assert_eq!(
+            completion_cache_path(root.path(), "t.exe", "zsh").unwrap(),
+            completion_cache_path(root.path(), "t", "zsh").unwrap()
+        );
+        assert!(completion_cache_path(root.path(), "../t", "zsh").is_err());
+    }
+
     #[test]
     fn statement_is_read_back_and_validated() {
         let dir = tempfile::tempdir().unwrap();
@@ -1306,8 +1486,8 @@ mod tests {
         let outside = root.join("outside");
         std::fs::write(&outside, "").unwrap();
         let mut s = statement_with(
-            r#"[{"kind":"completion","shell":"zsh","asset":"t-skill.tar.gz"},
-                {"kind":"man","repo":"man/t.1"}]"#,
+            r#"[{"kind":"completion","bin":"t","shell":"zsh","asset":"t-skill.tar.gz"},
+                {"kind":"man","bin":"t","repo":"man/t.1"}]"#,
         );
         // Tamper after validation, as a hostile file on disk could.
         s.predicate.resources[0].asset = Some("../outside".into());
@@ -1354,18 +1534,18 @@ mod tests {
         std::fs::write(root.join("t.kdl"), "").unwrap();
         let s = statement_with(
             r#"[
-            {"kind":"completion","shell":"zsh","exec":["t","completion","zsh"]},
-            {"kind":"completion","shells":["bash","zsh"],"exec":["t","completions","{shell}"]},
-            {"kind":"completion","shell":"zsh","repo":"completions/t.zsh"},
-            {"kind":"completion","shell":"zsh","asset":"t-skill.tar.gz"},
+            {"kind":"completion","bin":"t","shell":"zsh","exec":["t","completion","zsh"]},
+            {"kind":"completion","bin":"t","shells":["bash","zsh"],"exec":["t","completions","{shell}"]},
+            {"kind":"completion","bin":"t","shell":"zsh","repo":"completions/t.zsh"},
+            {"kind":"completion","bin":"t","shell":"zsh","asset":"t-skill.tar.gz"},
             {"kind":"cli-spec","format":"usage","bin":"t","exec":["t","usage"]},
             {"kind":"cli-spec","format":"usage","bin":"t","archive":"t.kdl"},
-            {"kind":"completion","shell":"fish","archive":"share/t.fish"},
-            {"kind":"completion","shell":"zsh","archive":"share/_t"}
+            {"kind":"completion","bin":"t","shell":"fish","archive":"share/t.fish"},
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"share/_t"}
         ]"#,
         );
         let host = s.predicate.artifacts[0].clone();
-        let sources = completion_sources(&s, root, "zsh", Some(&host), None);
+        let sources = completion_sources(&s, root, "zsh", Some(&host), Some("t"));
         assert_eq!(
             sources,
             vec![
@@ -1376,25 +1556,32 @@ mod tests {
                     bin: "t".into(),
                     path: root.join("t.kdl"),
                 },
-                CompletionSource::Exec(vec!["t".into(), "completion".into(), "zsh".into()]),
-                CompletionSource::Exec(vec!["t".into(), "completions".into(), "zsh".into()]),
+                CompletionSource::Exec(
+                    vec!["t".into(), "completion".into(), "zsh".into()],
+                    BTreeMap::new()
+                ),
+                CompletionSource::Exec(
+                    vec!["t".into(), "completions".into(), "zsh".into()],
+                    BTreeMap::new()
+                ),
                 CompletionSource::SpecExec {
                     format: "usage".into(),
                     bin: "t".into(),
                     argv: vec!["t".into(), "usage".into()],
+                    env: BTreeMap::new(),
                 },
             ],
             "shipped files first, an unfetched asset skipped, then the spec, then anything that runs the tool"
         );
-        let fish = completion_sources(&s, root, "fish", Some(&host), None);
+        let fish = completion_sources(&s, root, "fish", Some(&host), Some("t"));
         assert!(
             matches!(fish.first(), Some(CompletionSource::Spec { .. })),
             "the fish file is not in the archive, so the spec comes first: {fish:?}"
         );
         assert!(
-            completion_sources(&s, root, "nu", Some(&host), None)
+            completion_sources(&s, root, "nu", Some(&host), Some("t"))
                 .iter()
-                .all(|c| !matches!(c, CompletionSource::File(_) | CompletionSource::Exec(_)))
+                .all(|c| !matches!(c, CompletionSource::File(_) | CompletionSource::Exec(..)))
         );
     }
 
@@ -1427,11 +1614,11 @@ mod tests {
             vec!["u"],
             "the name as a Windows stub embeds it"
         );
-        assert_eq!(bins(None), vec!["t", "u"]);
+        assert!(bins(None).is_empty());
         assert_eq!(
             bins(Some("github.com/o/r")),
-            vec!["t", "u"],
-            "asked for by id"
+            Vec::<String>::new(),
+            "an ambiguous tool id must not complete an arbitrary executable"
         );
     }
 
@@ -1444,15 +1631,15 @@ mod tests {
         }
         let s = statement_with(
             r#"[
-            {"kind":"completion","shell":"zsh","archive":"_t.any"},
-            {"kind":"completion","shell":"zsh","os":"linux","archive":"_t.linux"},
-            {"kind":"completion","shell":"zsh","os":"darwin","archive":"_t.mac"},
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"_t.any"},
+            {"kind":"completion","bin":"t","shell":"zsh","os":"linux","archive":"_t.linux"},
+            {"kind":"completion","bin":"t","shell":"zsh","os":"darwin","archive":"_t.mac"},
             {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
         ]"#,
         );
         let linux = s.predicate.artifacts[0].clone();
         assert_eq!(
-            completion_sources(&s, root, "zsh", Some(&linux), None),
+            completion_sources(&s, root, "zsh", Some(&linux), Some("t")),
             vec![CompletionSource::File(root.join("_t.linux"))],
             "the most specific applicable entry wins"
         );
@@ -1460,18 +1647,18 @@ mod tests {
         mac.os = Some("darwin".into());
         mac.libc = None;
         assert_eq!(
-            completion_sources(&s, root, "zsh", Some(&mac), None),
+            completion_sources(&s, root, "zsh", Some(&mac), Some("t")),
             vec![CompletionSource::File(root.join("_t.mac"))]
         );
         let mut windows = mac.clone();
         windows.os = Some("windows".into());
         assert_eq!(
-            completion_sources(&s, root, "zsh", Some(&windows), None),
+            completion_sources(&s, root, "zsh", Some(&windows), Some("t")),
             vec![CompletionSource::File(root.join("_t.any"))],
             "nothing scoped fits, so the unscoped entry applies"
         );
         assert_eq!(
-            completion_sources(&s, root, "zsh", None, None),
+            completion_sources(&s, root, "zsh", None, Some("t")),
             vec![CompletionSource::File(root.join("_t.any"))],
             "with no artifact selected only unscoped entries apply"
         );
