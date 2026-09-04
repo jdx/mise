@@ -33,7 +33,6 @@ module JSON
 end
 
 CASK_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
-OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
 
 module OS
   def self.mac? = ENV.fetch("MISE_BREW_OS") == "macos"
@@ -293,4 +292,4 @@ metadata = $mise_cask_metadata
 raise "no cask block found" if metadata.nil?
 expected = ENV.fetch("MISE_BREW_TOKEN")
 raise "expected cask #{expected}, got #{metadata.token}" if metadata.token != expected
-File.write(OUTPUT_FILE, JSON.generate(metadata.to_h))
+puts JSON.generate(metadata.to_h)

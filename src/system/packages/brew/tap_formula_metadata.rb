@@ -34,7 +34,6 @@ module JSON
 end
 
 FORMULA_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
-OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
 FORMULA_NAME = ENV.fetch("MISE_BREW_NAME")
 
 module OS
@@ -233,4 +232,4 @@ metadata = {
   "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },
   "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT")
 }
-File.write(OUTPUT_FILE, JSON.generate(metadata))
+puts JSON.generate(metadata)
