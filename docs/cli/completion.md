@@ -31,10 +31,10 @@ Generate shell completions
 
   NAME is a tool installed with the `packslip:` backend, or one of its executables. The
   script comes from whichever version is active here, from the most verifiable source its
-  packslip offers: a file the vendor shipped, a script derived from its CLI spec, or, only
-  with `packslip.exec` enabled, a command of the tool's own. With --install, what is written
-  is a small stub that asks mise for the script when the shell first completes the tool, so
-  it follows version switches without being rewritten.
+  packslip offers: a file the vendor shipped, a script derived from its CLI spec, or a
+  command of the tool's own. With --install, what is written is a small stub that asks mise
+  for the script each time the shell completes the tool, so it follows version switches
+  without being rewritten.
 - **`-h --help`** — Print help
 
 Examples:
