@@ -363,6 +363,7 @@ impl Backend for GoPlugin {
             "x64" => "amd64",
             "arm64" => "arm64",
             "arm" => "armv6l",
+            "loongarch64" => "loong64",
             "riscv64" => "riscv64",
             other => other,
         };
@@ -486,8 +487,27 @@ fn parse_gomod(body: &str, ignore_minimums: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform::Platform;
+    use crate::toolset::ToolSource;
     use indoc::indoc;
     use pretty_assertions::assert_eq;
+
+    #[tokio::test]
+    async fn test_loongarch64_tarball_uses_go_arch_name() {
+        let backend = GoPlugin::new();
+        let request = ToolRequest::new(backend.ba().clone(), "1.26.8", ToolSource::Unknown)
+            .expect("valid go request");
+        let tv = ToolVersion::new(request, "1.26.8".to_string());
+        let target = PlatformTarget::new(Platform::parse("linux-loongarch64").unwrap());
+
+        let url = backend
+            .get_tarball_url(&tv, &target)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(url.ends_with("/go1.26.8.linux-loong64.tar.gz"));
+    }
 
     #[test]
     fn test_parse_gomod() {
