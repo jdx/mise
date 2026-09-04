@@ -2,16 +2,42 @@
 
 # Extract Homebrew Cask metadata used by mise without loading Homebrew.
 
-require "json"
-require "rbconfig"
-require "rubygems/version"
+module JSON
+  def self.generate(value)
+    case value
+    when Hash
+      "{#{value.map { |key, item| "#{generate(key.to_s)}:#{generate(item)}" }.join(",")}}"
+    when Array
+      "[#{value.map { |item| generate(item) }.join(",")}]"
+    when String
+      '"' + value.each_codepoint.map { |codepoint|
+        case codepoint
+        when 0x08 then "\\b"
+        when 0x09 then "\\t"
+        when 0x0a then "\\n"
+        when 0x0c then "\\f"
+        when 0x0d then "\\r"
+        when 0x22 then '\\"'
+        when 0x5c then "\\\\"
+        when 0...0x20 then format("\\u%04x", codepoint)
+        else codepoint.chr(Encoding::UTF_8)
+        end
+      }.join + '"'
+    when Numeric then value.to_s
+    when true then "true"
+    when false then "false"
+    when nil then "null"
+    else raise TypeError, "cannot encode #{value.class} as JSON"
+    end
+  end
+end
 
 CASK_FILE = ENV.fetch("MISE_BREW_CASK_FILE")
 OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
 
 module OS
-  def self.mac? = RbConfig::CONFIG["host_os"].include?("darwin")
-  def self.linux? = RbConfig::CONFIG["host_os"].include?("linux")
+  def self.mac? = ENV.fetch("MISE_BREW_OS") == "macos"
+  def self.linux? = ENV.fetch("MISE_BREW_OS") == "linux"
 end
 
 class MacOSVersion
@@ -33,8 +59,12 @@ class MacOSVersion
   def <=>(other)
     other = self.class.from_symbol(other) if other.is_a?(Symbol)
     other = self.class.new(other.to_s) unless other.is_a?(MacOSVersion)
-    Gem::Version.new(@version) <=> Gem::Version.new(other.to_s)
+    version_parts <=> other.version_parts
   end
+
+  protected
+
+  def version_parts = @version.split(".").map(&:to_i)
 
   def same_release?(other)
     other = self.class.from_symbol(other) if other.is_a?(Symbol)
@@ -49,7 +79,7 @@ end
 
 module Hardware
   module CPU
-    def self.arm? = RbConfig::CONFIG["host_cpu"].match?(/arm|aarch64/)
+    def self.arm? = ENV.fetch("MISE_BREW_ARCH").match?(/arm|aarch64/)
     def self.intel? = !arm?
     def self.arch = arm? ? :arm64 : :x86_64
   end

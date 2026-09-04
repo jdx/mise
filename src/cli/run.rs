@@ -1271,6 +1271,7 @@ impl Run {
                     deny_temp_write: false,
                     allow_read: self.allow_read.clone(),
                     allow_write: self.allow_write.clone(),
+                    allow_exec: vec![],
                     allow_net: self.allow_net.clone(),
                     allow_env: self.allow_env.clone(),
                     pass_through_env: vec![],

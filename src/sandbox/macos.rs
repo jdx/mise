@@ -127,6 +127,10 @@ pub(crate) async fn generate_seatbelt_profile(
                 rules.push(format!("(allow process-exec (literal \"{canonical}\"))"));
             }
         }
+        for path in &config.allow_exec {
+            let path_str = sbpl_escape(&path.to_string_lossy());
+            rules.push(format!("(allow process-exec (literal \"{path_str}\"))"));
+        }
     }
 
     rules.join("\n")
@@ -268,5 +272,49 @@ mod tests {
         assert!(profile.contains("(deny process-fork)"));
         assert!(profile.contains("(deny process-exec)"));
         assert!(profile.contains("(allow process-exec (literal \"/usr/bin/ruby\"))"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_deny_process_at_runtime() {
+        let config = SandboxConfig {
+            deny_process: true,
+            ..Default::default()
+        };
+        let profile = generate_seatbelt_profile(&config, Some(Path::new("/usr/bin/ruby"))).await;
+        let script = r#"
+puts "ruby started"
+begin
+  fork { exit! }
+  abort "fork escaped sandbox"
+rescue SystemCallError
+end
+begin
+  exec "/usr/bin/true"
+rescue SystemCallError
+end
+puts "child processes blocked"
+"#;
+        let output = Command::new("sandbox-exec")
+            .args([
+                "-p",
+                &profile,
+                "--",
+                "/usr/bin/ruby",
+                "--disable-gems",
+                "-e",
+                script,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "sandboxed Ruby failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "ruby started\nchild processes blocked\n"
+        );
     }
 }

@@ -430,6 +430,7 @@ impl TaskExecutor {
             deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
             deny_process: false,
             deny_temp_write: false,
+            allow_exec: vec![],
             allow_read: task
                 .allow_read
                 .iter()

@@ -58,6 +58,7 @@ pub(super) async fn formula_from_ruby(
     crate::file::write(&output_path, "")?;
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
+        .arg("--disable-gems")
         .arg(&shim_path)
         .envs([
             ("MISE_BREW_FORMULA_FILE", formula_path.display().to_string()),
@@ -71,6 +72,8 @@ pub(super) async fn formula_from_ruby(
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
             ("MISE_BREW_MACOS_VERSION", macos_version()),
+            ("MISE_BREW_OS", std::env::consts::OS.to_string()),
+            ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
         .with_sandbox(metadata_sandbox(&formula_path, &shim_path, &output_path)?);
     runner.apply_sandbox().await?;
@@ -111,6 +114,7 @@ pub(super) async fn cask_from_ruby(
     crate::file::write(&output_path, "")?;
     let ruby = ruby_for_metadata(token, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
+        .arg("--disable-gems")
         .arg(&shim_path)
         .envs([
             ("MISE_BREW_CASK_FILE", cask_path.display().to_string()),
@@ -123,6 +127,8 @@ pub(super) async fn cask_from_ruby(
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
             ("MISE_BREW_MACOS_VERSION", macos_version()),
+            ("MISE_BREW_OS", std::env::consts::OS.to_string()),
+            ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
         .with_sandbox(metadata_sandbox(&cask_path, &shim_path, &output_path)?);
     runner.apply_sandbox().await?;
@@ -146,6 +152,7 @@ fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<Sandbox
         deny_temp_write: true,
         allow_read: vec![source.to_path_buf(), shim.to_path_buf()],
         allow_write: vec![output.to_path_buf()],
+        allow_exec: vec![source.to_path_buf(), shim.to_path_buf()],
         ..Default::default()
     };
     sandbox.resolve_paths();
@@ -341,6 +348,12 @@ class Widget < Formula
   sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   depends_on "libfoo"
   depends_on "cmake" => :build
+  on_sequoia :or_older do
+    depends_on "release-boundary"
+  end
+  on_system macos: :sequoia_or_older do
+    depends_on "system-release-boundary"
+  end
   keg_only :versioned_formula
 end
 "#,
@@ -348,6 +361,7 @@ end
         crate::file::write(&shim, METADATA_SHIM_RB)?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
             .arg(&shim)
             .env("MISE_BREW_FORMULA_FILE", &formula)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
@@ -356,7 +370,9 @@ end
             .env("MISE_BREW_SOURCE_PATH", "Formula/widget.rb")
             .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
             .env("MISE_BREW_TAP_COMMIT", "deadbeef")
-            .env("MISE_BREW_MACOS_VERSION", macos_version())
+            .env("MISE_BREW_MACOS_VERSION", "15.3")
+            .env("MISE_BREW_OS", "macos")
+            .env("MISE_BREW_ARCH", std::env::consts::ARCH)
             .with_sandbox(metadata_sandbox(&formula, &shim, &output)?);
         runner.apply_sandbox().await?;
         runner.execute_async().await?;
@@ -367,7 +383,10 @@ end
             formula.urls["stable"].url,
             "https://example.com/widget-1.2.3.tar.gz"
         );
-        assert_eq!(formula.dependencies, ["libfoo"]);
+        assert_eq!(
+            formula.dependencies,
+            ["libfoo", "release-boundary", "system-release-boundary"]
+        );
         assert_eq!(formula.build_dependencies, ["cmake"]);
         assert!(formula.keg_only);
         assert!(formula.bottle.is_empty());
@@ -406,6 +425,7 @@ end
         crate::file::write(&shim, CASK_METADATA_SHIM_RB)?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
             .arg(&shim)
             .env("MISE_BREW_CASK_FILE", &cask_file)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
@@ -414,6 +434,8 @@ end
             .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
             .env("MISE_BREW_TAP_COMMIT", "deadbeef")
             .env("MISE_BREW_MACOS_VERSION", "0")
+            .env("MISE_BREW_OS", std::env::consts::OS)
+            .env("MISE_BREW_ARCH", std::env::consts::ARCH)
             .with_sandbox(metadata_sandbox(&cask_file, &shim, &output)?);
         runner.apply_sandbox().await?;
         runner.execute_async().await?;
@@ -474,7 +496,7 @@ rescue SystemCallError
 end
 raise "child process escaped sandbox" if ran
 begin
-  exec("false")
+  exec("/usr/bin/false")
 rescue SystemCallError
 end
 "#,
@@ -482,6 +504,7 @@ end
         crate::file::write(&output, "")?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
+            .arg("--disable-gems")
             .arg(&source)
             .arg(&denied)
             .with_sandbox(metadata_sandbox(&source, &source, &output)?);

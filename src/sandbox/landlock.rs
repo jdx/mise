@@ -81,13 +81,15 @@ pub(super) fn apply_landlock(
 ) -> Result<()> {
     let abi = ABI::V5;
 
-    let read_access = AccessFs::from_read(abi);
-    let write_access = AccessFs::from_write(abi);
-    let full_access = read_access | write_access;
-    let execute_access: BitFlags<AccessFs> = AccessFs::Execute.into();
-
     let deny_read = config.effective_deny_read();
     let deny_write = config.effective_deny_write();
+    let execute_access: BitFlags<AccessFs> = AccessFs::Execute.into();
+    let mut read_access = AccessFs::from_read(abi);
+    if config.deny_process {
+        read_access.remove(execute_access);
+    }
+    let write_access = AccessFs::from_write(abi);
+    let full_access = read_access | write_access;
 
     // Only handle the access types we're actually restricting.
     // If we handle_access(full_access) but only add read rules,
