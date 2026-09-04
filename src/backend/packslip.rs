@@ -863,20 +863,25 @@ impl Backend for PackslipBackend {
         // against what the project committed to in its lockfile.
         let scheme = verified.scheme.to_string();
         let attested_by = verified.attested_by.to_string();
-        let known = packslip_pins::check_and_record(
-            &project,
-            Observed {
-                scheme: &scheme,
-                key_id: &verified.key_id,
-                issuer: verified.issuer.as_deref(),
-                attested_by: &attested_by,
-                provenance: verified.provenance_linked,
-                logged: verified.logged_at.is_some(),
-            },
-        )?;
-        let signer = format!("{}:{}", known.scheme, known.signer);
+        // Nothing is recorded until the release is accepted in full, so a
+        // refused install leaves no pin behind.
+        let observed = Observed {
+            scheme: &scheme,
+            key_id: &verified.key_id,
+            issuer: verified.issuer.as_deref(),
+            attested_by: &attested_by,
+            provenance: verified.provenance_linked,
+            logged: verified.logged_at.is_some(),
+        };
+        packslip_pins::check(&project, observed)?;
+        let signer = format!(
+            "{scheme}:{}",
+            packslip_pins::signer_of(&scheme, &verified.key_id)
+        );
         let platform_key = self.get_platform_key();
-        if let Some(info) = tv.lock_platforms.get(&platform_key) {
+        // The signer describes the release, so every platform's lock entry
+        // speaks for it, not only this host's.
+        for info in tv.lock_platforms.values() {
             if let Some(locked) = &info.signer
                 && *locked != signer
             {
@@ -932,6 +937,7 @@ impl Backend for PackslipBackend {
         ctx.pr.set_message(format!("verify {}", artifact.name));
         verify_bundle(&bundle, &pin, require_log, &[&file_path])
             .wrap_err_with(|| format!("verifying {} against its packslip", artifact.name))?;
+        packslip_pins::record(&project, observed)?;
         {
             let info = tv.lock_platforms.entry(platform_key).or_default();
             info.url = Some(url);
@@ -941,9 +947,10 @@ impl Backend for PackslipBackend {
                 info.checksum = Some(format!("sha256:{sha256}"));
             }
             info.signer = Some(signer);
-            if verified.attested_by == packslip::Attestor::Repackager {
-                info.attested_by = Some("repackager".to_string());
-            }
+            // Set for a repackager's document and cleared for the vendor's,
+            // so the lockfile ratchets up the way the pin does.
+            info.attested_by = (verified.attested_by == packslip::Attestor::Repackager)
+                .then(|| "repackager".to_string());
         }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
 

@@ -48,6 +48,15 @@ struct Pins {
     sequences: BTreeMap<String, u64>,
 }
 
+/// Hold the file lock for a read-modify-write of the pins file, so two
+/// installs running at once cannot drop each other's pin or sequence.
+fn locked(path: &Path) -> Result<Option<fslock::LockFile>> {
+    if let Some(parent) = path.parent() {
+        file::create_dir_all(parent)?;
+    }
+    crate::lock_file::get(&path.with_extension("lock"), false)
+}
+
 fn load(path: &Path) -> Result<Pins> {
     if !path.is_file() {
         return Ok(Pins::default());
@@ -95,32 +104,23 @@ pub(crate) fn signer_of(scheme: &str, key_id: &str) -> String {
 }
 
 /// Compare what a release showed with the project's pin, refusing what
-/// the specification calls a downgrade, and set or strengthen the pin.
-pub(crate) fn check_and_record(project: &str, observed: Observed<'_>) -> Result<Pin> {
-    check_and_record_at(&pins_file(), project, observed)
+/// the specification calls a downgrade. Writes nothing: a release is
+/// recorded with [`record`] only once everything else about it has been
+/// accepted, so a refused install never leaves a pin behind.
+pub(crate) fn check(project: &str, observed: Observed<'_>) -> Result<()> {
+    check_at(&pins_file(), project, observed)
 }
 
-pub(crate) fn check_and_record_at(
-    path: &Path,
-    project: &str,
-    observed: Observed<'_>,
-) -> Result<Pin> {
-    let mut pins = load(path)?;
+pub(crate) fn check_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<()> {
+    let pins = load(path)?;
+    match pins.pins.get(project) {
+        Some(pin) => check_against(pin, project, observed),
+        None => Ok(()),
+    }
+}
+
+fn check_against(pin: &Pin, project: &str, observed: Observed<'_>) -> Result<()> {
     let signer = signer_of(observed.scheme, observed.key_id);
-    let Some(pin) = pins.pins.get(project).cloned() else {
-        let pin = Pin {
-            scheme: observed.scheme.to_string(),
-            signer,
-            issuer: observed.issuer.map(str::to_string),
-            attested_by: observed.attested_by.to_string(),
-            provenance: observed.provenance,
-            unlogged: !observed.logged,
-            pinned_at: jiff::Timestamp::now().to_string(),
-        };
-        pins.pins.insert(project.to_string(), pin.clone());
-        save(path, &pins)?;
-        return Ok(pin);
-    };
     let mut problems = Vec::new();
     if pin.scheme != observed.scheme || pin.signer != signer {
         problems.push(format!(
@@ -142,7 +142,35 @@ pub(crate) fn check_and_record_at(
             problems.join(", and ")
         );
     }
-    // What got stronger is remembered; what stayed the same is left alone.
+    Ok(())
+}
+
+/// Set the project's pin from an accepted release, or strengthen it: what
+/// got stronger is remembered, what stayed the same is left alone. Checks
+/// again under the lock, since the file may have changed since [`check`].
+pub(crate) fn record(project: &str, observed: Observed<'_>) -> Result<Pin> {
+    record_at(&pins_file(), project, observed)
+}
+
+pub(crate) fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> Result<Pin> {
+    let _lock = locked(path)?;
+    let mut pins = load(path)?;
+    let signer = signer_of(observed.scheme, observed.key_id);
+    let Some(pin) = pins.pins.get(project).cloned() else {
+        let pin = Pin {
+            scheme: observed.scheme.to_string(),
+            signer,
+            issuer: observed.issuer.map(str::to_string),
+            attested_by: observed.attested_by.to_string(),
+            provenance: observed.provenance,
+            unlogged: !observed.logged,
+            pinned_at: jiff::Timestamp::now().to_string(),
+        };
+        pins.pins.insert(project.to_string(), pin.clone());
+        save(path, &pins)?;
+        return Ok(pin);
+    };
+    check_against(&pin, project, observed)?;
     let updated = Pin {
         issuer: observed.issuer.map(str::to_string).or(pin.issuer.clone()),
         attested_by: observed.attested_by.to_string(),
@@ -164,6 +192,7 @@ pub(crate) fn check_sequence(project: &str, sequence: u64) -> Result<()> {
 }
 
 pub(crate) fn check_sequence_at(path: &Path, project: &str, sequence: u64) -> Result<()> {
+    let _lock = locked(path)?;
     let mut pins = load(path)?;
     if let Some(last) = pins.sequences.get(project).copied()
         && sequence < last
@@ -191,6 +220,7 @@ pub(crate) fn forget(project: &str) -> Result<bool> {
 }
 
 pub(crate) fn forget_at(path: &Path, project: &str) -> Result<bool> {
+    let _lock = locked(path)?;
     let mut pins = load(path)?;
     let had = pins.pins.remove(project).is_some() | pins.sequences.remove(project).is_some();
     if had {
@@ -227,12 +257,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("pins.toml");
         let v1 = oidc("v1");
-        let pin =
-            check_and_record_at(&path, "github.com/o/r", observed("sigstore-oidc", &v1)).unwrap();
+        check_at(&path, "github.com/o/r", observed("sigstore-oidc", &v1)).unwrap();
+        assert!(!path.exists(), "a check writes nothing");
+        let pin = record_at(&path, "github.com/o/r", observed("sigstore-oidc", &v1)).unwrap();
         assert_eq!(pin.signer, WORKFLOW);
         let v2 = oidc("v2");
-        let again =
-            check_and_record_at(&path, "github.com/o/r", observed("sigstore-oidc", &v2)).unwrap();
+        let again = record_at(&path, "github.com/o/r", observed("sigstore-oidc", &v2)).unwrap();
         assert_eq!(again, pin, "nothing changed, nothing rewritten");
         assert!(
             file::read_to_string(&path)
@@ -253,12 +283,12 @@ mod tests {
         };
         // The first release sets the pin with no provenance; provenance
         // arriving later is remembered as the new floor.
-        check_and_record_at(&path, project, observed("sigstore-oidc", &v1)).unwrap();
-        let pin = check_and_record_at(&path, project, strong).unwrap();
+        record_at(&path, project, observed("sigstore-oidc", &v1)).unwrap();
+        let pin = record_at(&path, project, strong).unwrap();
         assert!(pin.provenance);
 
         let other = "https://github.com/o/r/.github/workflows/other.yml@refs/tags/v3";
-        let err = check_and_record_at(
+        let err = record_at(
             &path,
             project,
             Observed {
@@ -278,12 +308,12 @@ mod tests {
             ..observed("sigstore-key", "5A0A")
         };
         assert!(
-            check_and_record_at(&path, project, keyed).is_err(),
+            record_at(&path, project, keyed).is_err(),
             "a scheme change is a signer change"
         );
 
         let dropped = observed("sigstore-oidc", &v1);
-        let err = check_and_record_at(&path, project, dropped).unwrap_err();
+        let err = record_at(&path, project, dropped).unwrap_err();
         assert!(
             err.to_string().contains("drops the build provenance"),
             "{err}"
@@ -294,13 +324,19 @@ mod tests {
             provenance: true,
             ..observed("sigstore-oidc", &v1)
         };
-        let err = check_and_record_at(&path, project, repackaged).unwrap_err();
+        let err = record_at(&path, project, repackaged).unwrap_err();
         assert!(err.to_string().contains("repackager"), "{err}");
+
+        assert_eq!(
+            load(&path).unwrap().pins[project].signer,
+            WORKFLOW,
+            "a refused release leaves no mark"
+        );
 
         // Forgetting lets a new signer in, once.
         assert!(forget_at(&path, project).unwrap());
         assert!(!forget_at(&path, project).unwrap());
-        check_and_record_at(&path, project, keyed).unwrap();
+        record_at(&path, project, keyed).unwrap();
         assert_eq!(load(&path).unwrap().pins[project].scheme, "sigstore-key");
     }
 
@@ -313,9 +349,8 @@ mod tests {
             attested_by: "repackager",
             ..observed("sigstore-oidc", &v1)
         };
-        check_and_record_at(&path, "p.example.com", repackaged).unwrap();
-        let pin =
-            check_and_record_at(&path, "p.example.com", observed("sigstore-oidc", &v1)).unwrap();
+        record_at(&path, "p.example.com", repackaged).unwrap();
+        let pin = record_at(&path, "p.example.com", observed("sigstore-oidc", &v1)).unwrap();
         assert_eq!(pin.attested_by, "vendor");
     }
 
@@ -339,8 +374,7 @@ mod tests {
         let path = dir.path().join("pins.toml");
         file::write(&path, "not = [toml").unwrap();
         let v1 = oidc("v1");
-        let err = check_and_record_at(&path, "github.com/o/r", observed("sigstore-oidc", &v1))
-            .unwrap_err();
+        let err = record_at(&path, "github.com/o/r", observed("sigstore-oidc", &v1)).unwrap_err();
         assert!(err.to_string().contains("is not valid"), "{err}");
     }
 }
