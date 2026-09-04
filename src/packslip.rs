@@ -456,14 +456,19 @@ async fn fetch_repo_dir(
                 .await?;
             }
             Some("file") => {
-                let Some(download) = entry["download_url"].as_str() else {
-                    continue;
-                };
+                // Through the contents API rather than the entry's raw
+                // download URL: the client's token, and the raw media type it
+                // sets on contents URLs, apply there, so a private repository
+                // works the same as a public one.
+                let file_url = format!(
+                    "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
+                    url_path(&format!("{rel}/{name}"))
+                );
                 pr.set_message(format!("download {rel}/{name}"));
                 HTTP.download_file_with_headers(
-                    download,
+                    &file_url,
                     &dest.join(name),
-                    &headers_for(download)?,
+                    &github::get_headers(&file_url)?,
                     Some(pr),
                 )
                 .await?;
