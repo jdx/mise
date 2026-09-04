@@ -620,7 +620,11 @@ impl ManagedFileRequest {
 }
 
 fn resolve_source_path(base: &Path, source: &str) -> PathBuf {
-    let source = crate::file::replace_path(source);
+    let source = if source.starts_with("~/") {
+        crate::file::replace_path(source)
+    } else {
+        PathBuf::from(source)
+    };
     if source.is_absolute() {
         source
     } else {
