@@ -514,7 +514,7 @@ mod tests {
 
     fn statement_with(resources: &str) -> Statement {
         let json = format!(
-            r#"{{"_type":"https://in-toto.io/Statement/v1","subject":[{{"name":"t-linux-x64.tar.xz","digest":{{"sha256":"{a}"}}}},{{"name":"t-skill.tar.gz","digest":{{"sha256":"{b}"}}}}],"predicateType":"https://packslip.dev/release/v1","predicate":{{"project":"github.com/o/r","version":"1","published_at":"2026-09-01T00:00:00Z","source":{{"repo":"https://github.com/o/r","commit":"{c}"}},"artifacts":[{{"name":"t-linux-x64.tar.xz","os":"linux","arch":"x86_64","libc":"gnu","size":5,"format":"tar.xz","bin":["t"]}}],"resources":{resources},"identity":{{"scheme":"sigstore-oidc","key_id":"https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1","issuer":"https://token.actions.githubusercontent.com"}}}}}}"#,
+            r#"{{"_type":"https://in-toto.io/Statement/v1","subject":[{{"name":"t-linux-x64.tar.xz","digest":{{"sha256":"{a}"}}}},{{"name":"t-skill.tar.gz","digest":{{"sha256":"{b}"}}}}],"predicateType":"https://packslip.dev/release/v1","predicate":{{"project":"github.com/o/r","version":"1.0.0","published_at":"2026-09-01T00:00:00Z","source":{{"repo":"https://github.com/o/r","commit":"{c}"}},"artifacts":[{{"name":"t-linux-x64.tar.xz","os":"linux","arch":"x86_64","libc":"gnu","size":5,"format":"tar.xz","bin":["t"]}}],"resources":{resources},"identity":{{"scheme":"sigstore-oidc","key_id":"https://github.com/o/r/.github/workflows/r.yml@refs/tags/v1","issuer":"https://token.actions.githubusercontent.com"}}}}}}"#,
             a = "a".repeat(64),
             b = "b".repeat(64),
             c = "c".repeat(40),
