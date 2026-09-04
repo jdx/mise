@@ -895,7 +895,7 @@ impl Backend for PackslipBackend {
             serde_json::to_vec_pretty(&statement)?,
         )?;
         // Completions and CLI specs the vendor keeps outside the artifact.
-        crate::packslip::fetch_files(&tv, &statement, ctx.pr.as_ref()).await?;
+        crate::packslip::fetch_files(&tv, &statement, Some(&artifact), ctx.pr.as_ref()).await?;
         Ok(tv)
     }
 
