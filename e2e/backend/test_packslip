@@ -57,7 +57,7 @@ mise uninstall packslip:github.com/jdx/packslip@0.2.0
 mise install
 assert_contains "cat mise.lock" 'signer = "sigstore-oidc:https://github.com/jdx/packslip/.github/workflows/release.yml"'
 cd ..
-unset MISE_LOCKFILE MISE_EXPERIMENTAL
+unset MISE_LOCKFILE
 
 # A release that carries no packslip is refused rather than guessed at.
 assert_fail_contains "mise install packslip:jdx/mise-test-fixtures@1.0.0" "no release"
