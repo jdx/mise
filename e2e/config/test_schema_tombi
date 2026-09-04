@@ -72,6 +72,9 @@ description = "Lint the project"
 [vars]
 e2e_args = { default = "--headless", redact = true }
 
+[dotfiles]
+"~/.inline" = { content = "literal content" }
+
 [tool_alias.java.versions]
 "11.0" = "temurin-11"
 
@@ -226,7 +229,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-dotfiles.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -259,6 +262,25 @@ SECRET_FORMAT = { age = { value = "AGE-SECRET", format = "zip" } }
 TOML
 
 assert_fail "$TOMBI_LINT mise-bad-age.toml"
+
+# Inline content is a complete whole-file entry and cannot be combined with
+# source-backed fields, manifests, or file edit fields.
+for other_field in \
+  'source = "dotfiles/config"' \
+  'manifest = "git"' \
+  'mode = "copy"' \
+  'exclude = ["*.tmp"]' \
+  'block = "managed block"' \
+  'line = "managed line"' \
+  'template = "tera"' \
+  'comment = "#"'; do
+  cat >"$HOME/workdir/mise-bad-dotfiles.toml" <<TOML
+[dotfiles]
+"~/.invalid" = { content = "literal content", $other_field }
+TOML
+
+  assert_fail "$TOMBI_LINT mise-bad-dotfiles.toml"
+done
 
 cat >"$HOME/workdir/mise-bad-env-default.toml" <<'TOML'
 [env]
