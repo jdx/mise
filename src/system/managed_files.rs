@@ -620,9 +620,9 @@ impl ManagedFileRequest {
 }
 
 fn resolve_source_path(base: &Path, source: &str) -> PathBuf {
-    let source = Path::new(source);
+    let source = crate::file::replace_path(source);
     if source.is_absolute() {
-        source.to_path_buf()
+        source
     } else {
         base.join(source)
     }
