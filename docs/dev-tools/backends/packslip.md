@@ -187,7 +187,7 @@ The release API or list timestamp helps select candidates. Before downloading an
 
 An unconstrained `latest` request uses the vendor’s signed release-list `latest` pointer first. On GitHub, absent a signed pointer, mise consults GitHub’s latest release. Without an eligible recommendation it falls back to highest eligible semver. Prefix and channel requests keep their existing matching rules and never use the default pointer.
 
-Mise verifies each candidate manifest before accepting it, including its identity and digest pins. Minimum release age uses the verified log time (or signed publication time for explicitly allowed unlogged bundles), and stamping and host requirements still apply. A policy exclusion warns and tries the next candidate; a signature, digest, identity, or list freshness failure stops resolution. A signed pointer that is ineligible falls straight back to semver, not to GitHub’s pointer. This resolution needs online discovery and does not use an offline cached policy.
+Mise verifies each candidate manifest before accepting it, including its identity and digest pins. Minimum release age uses the verified log time (or signed publication time for explicitly allowed unlogged bundles), and stamping and host requirements still apply. A policy exclusion warns and tries the next candidate; a signature, digest, identity, or list freshness failure stops resolution. A signed pointer that is ineligible falls straight back to semver, not to GitHub’s pointer. Resolution and version listing need online policy checks and bypass mise’s remote-version cache so changed stamper trust, withdrawals, expired lists, or missing accepted lists take effect.
 
 ## Host requirements
 
