@@ -13,7 +13,7 @@ use packslip::model::{Resource, ResourceSource, Statement};
 use reqwest::header::HeaderMap;
 
 use crate::backend::Backend;
-use crate::backend::packslip::{STATEMENT_FILE, locate_in_install};
+use crate::backend::packslip::{STATEMENT_FILE, is_safe_relative, locate_in_install};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file;
@@ -48,10 +48,25 @@ pub(crate) fn resource_path(install_path: &Path, resource: &Resource) -> Option<
     };
     match resource.source()? {
         ResourceSource::Archive => locate_in_install(install_path, resource.archive.as_deref()?),
-        ResourceSource::Asset => fetched("assets", resource.asset.as_deref()?),
-        ResourceSource::Repo => fetched("repo", resource.repo.as_deref()?),
+        ResourceSource::Asset => fetched("assets", asset_name(resource)?),
+        ResourceSource::Repo => fetched("repo", repo_path(resource)?),
         ResourceSource::Exec => None,
     }
+}
+
+/// The asset an entry names, if it is a plain file name. A verified
+/// statement is still the vendor's data: nothing in it may name a path
+/// outside the install.
+fn asset_name(resource: &Resource) -> Option<&str> {
+    resource
+        .asset
+        .as_deref()
+        .filter(|name| file::is_plain_file_name(name))
+}
+
+/// The repository path an entry names, if it is safe to join.
+fn repo_path(resource: &Resource) -> Option<&str> {
+    resource.repo.as_deref().filter(|rel| is_safe_relative(rel))
 }
 
 /// The raw-file URL of a repository path at the release's commit, for the
@@ -94,7 +109,14 @@ pub(crate) async fn fetch_files(
     for resource in &statement.predicate.resources {
         match resource.source() {
             Some(ResourceSource::Asset) => {
-                let name = resource.asset.as_deref().unwrap_or_default();
+                let Some(name) = asset_name(resource) else {
+                    warn!(
+                        "{}: the packslip names an asset {:?}, which is not a plain file name",
+                        tv.style(),
+                        resource.asset.as_deref().unwrap_or_default()
+                    );
+                    continue;
+                };
                 let dest = base.join("assets").join(name);
                 if dest.exists() {
                     continue;
@@ -118,7 +140,14 @@ pub(crate) async fn fetch_files(
                 }
             }
             Some(ResourceSource::Repo) if resource.kind != "skill" => {
-                let rel = resource.repo.as_deref().unwrap_or_default();
+                let Some(rel) = repo_path(resource) else {
+                    warn!(
+                        "{}: the packslip names a repository path {:?}, which is not safe to fetch",
+                        tv.style(),
+                        resource.repo.as_deref().unwrap_or_default()
+                    );
+                    continue;
+                };
                 let dest = base.join("repo").join(rel);
                 if dest.exists() {
                     continue;
@@ -356,6 +385,11 @@ pub(crate) async fn completion_script(
 /// completion time, so it follows whichever version of the tool is active.
 /// It carries the marker usage's installer looks for, so re-installing
 /// replaces it rather than refusing a foreign file.
+///
+/// In zsh and bash the vendor's script replaces the stub while it completes
+/// and the stub is put back afterwards, so the next completion asks mise
+/// again and a version switch in another directory is followed on the next
+/// tab. fish and PowerShell load the script once per shell session.
 pub(crate) fn stub(tool: &str, shell: usage_rs::complete::Shell) -> Result<String> {
     use usage_rs::complete::Shell;
     let note = format!("mise completes {tool} from the packslip of whichever version is active");
@@ -365,11 +399,51 @@ pub(crate) fn stub(tool: &str, shell: usage_rs::complete::Shell) -> Result<Strin
     );
     let stub = match shell {
         Shell::Zsh => format!(
-            "#compdef {tool}\n# {note}.\n# {by}\nlocal __mise_before=\"${{functions[_{tool}]-}}\"\neval \"$(command mise completion zsh --tool '{tool}' 2>/dev/null)\"\nif [[ \"${{functions[_{tool}]-}}\" != \"$__mise_before\" ]]; then\n  _{tool} \"$@\"\nfi\n"
+            r#"#compdef {tool}
+# {note}.
+# {by}
+# The vendor's script takes over this function while it completes; the stub
+# is put back afterwards, so the next completion asks mise again.
+local __mise_stub="${{functions[_{tool}]}}"
+eval "$(command mise completion zsh --tool '{tool}' 2>/dev/null)"
+local __mise_fn="${{_comps[{tool}]:-_{tool}}}"
+local __mise_ret=0
+if [[ "$__mise_fn" != _{tool} || "${{functions[_{tool}]}}" != "$__mise_stub" ]]; then
+  "$__mise_fn" "$@"
+  __mise_ret=$?
+fi
+functions[_{tool}]="$__mise_stub"
+compdef _{tool} '{tool}'
+return $__mise_ret
+"#
         ),
-        Shell::Bash => format!(
-            "# {note}.\n# {by}\neval \"$(command mise completion bash --tool '{tool}' 2>/dev/null)\"\n"
-        ),
+        Shell::Bash => {
+            let func = format!(
+                "__mise_complete_{}",
+                tool.replace(|c: char| !c.is_ascii_alphanumeric(), "_")
+            );
+            format!(
+                r#"# {note}.
+# {by}
+# The vendor's script registers its own completer; this one is put back after
+# each completion, so the next asks mise again.
+{func}() {{
+  eval "$(command mise completion bash --tool '{tool}' 2>/dev/null)"
+  local __mise_spec __mise_fn __mise_ret=0
+  __mise_spec=$(complete -p '{tool}' 2>/dev/null)
+  __mise_fn=${{__mise_spec##*-F }}
+  __mise_fn=${{__mise_fn%% *}}
+  if [[ -n $__mise_fn && $__mise_fn != {func} ]]; then
+    "$__mise_fn" "$@"
+    __mise_ret=$?
+  fi
+  complete -F {func} '{tool}'
+  return $__mise_ret
+}}
+complete -F {func} '{tool}'
+"#
+            )
+        }
         Shell::Fish => format!(
             "# {note}.\n# {by}\ncommand mise completion fish --tool '{tool}' 2>/dev/null | source\n"
         ),
@@ -446,6 +520,25 @@ mod tests {
     }
 
     #[test]
+    fn vendor_paths_never_leave_the_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let outside = root.join("outside");
+        std::fs::write(&outside, "").unwrap();
+        let mut s = statement_with(
+            r#"[{"kind":"completion","shell":"zsh","asset":"t-skill.tar.gz"},
+                {"kind":"man","repo":"man/t.1"}]"#,
+        );
+        // Tamper after validation, as a hostile file on disk could.
+        s.predicate.resources[0].asset = Some("../outside".into());
+        s.predicate.resources[1].repo = Some("/etc/passwd".into());
+        for r in &s.predicate.resources {
+            assert_eq!(resource_path(root, r), None, "{r:?}");
+        }
+        assert!(outside.exists());
+    }
+
+    #[test]
     fn completion_sources_follow_the_spec_order() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -512,7 +605,15 @@ mod tests {
         }
         let zsh = stub("rg", Shell::Zsh).unwrap();
         assert!(zsh.starts_with("#compdef rg\n"), "{zsh}");
-        assert!(zsh.contains("_rg \"$@\""), "{zsh}");
+        assert!(
+            zsh.contains("compdef _rg 'rg'"),
+            "put back after completing: {zsh}"
+        );
+        let bash = stub("cargo-nextest", Shell::Bash).unwrap();
+        assert!(
+            bash.contains("complete -F __mise_complete_cargo_nextest 'cargo-nextest'"),
+            "{bash}"
+        );
         assert!(stub("rg", Shell::Nu).is_err());
     }
 }
