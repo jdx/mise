@@ -231,7 +231,7 @@ impl Exec {
             // The original list was computed before the command's lazy provider
             // was installed. Refresh it so a successful install is not reported
             // as missing below.
-            missing = ts.list_missing_versions(&config).await;
+            missing = ts.list_missing_versions_for_install(&config).await;
         }
         if ts.has_lazy_declarations()
             && !opts.dry_run
