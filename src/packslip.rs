@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use eyre::{Result, WrapErr, bail, eyre};
 use packslip::model::{Resource, ResourceSource, Statement};
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::backend::Backend;
 use crate::backend::packslip::{STATEMENT_FILE, is_safe_relative, locate_in_install};
@@ -69,19 +69,30 @@ fn repo_path(resource: &Resource) -> Option<&str> {
     resource.repo.as_deref().filter(|rel| is_safe_relative(rel))
 }
 
-/// The raw-file URL of a repository path at the release's commit, for the
-/// forges mise knows how to read.
-pub(crate) fn raw_file_url(statement: &Statement, rel: &str) -> Option<String> {
+/// Where to fetch a repository file at the release's commit, and with what
+/// headers, for the forges mise knows how to read. GitHub goes through the
+/// contents API, so a token applies to a private repository and a missing
+/// file is an error rather than a login page; GitLab's raw URL serves
+/// public repositories.
+pub(crate) fn repo_file_request(statement: &Statement, rel: &str) -> Option<(String, HeaderMap)> {
     let source = statement.predicate.source.as_ref()?;
     let commit = source.commit.as_deref()?;
     let repo = source.repo.trim_end_matches('/').trim_end_matches(".git");
     if let Some(path) = repo.strip_prefix("https://github.com/") {
-        Some(format!(
-            "https://raw.githubusercontent.com/{path}/{commit}/{rel}"
-        ))
+        let url = format!("https://api.github.com/repos/{path}/contents/{rel}?ref={commit}");
+        let mut headers = github::get_headers(&url).ok()?;
+        headers.insert(
+            reqwest::header::ACCEPT,
+            HeaderValue::from_static("application/vnd.github.raw+json"),
+        );
+        Some((url, headers))
     } else {
-        repo.strip_prefix("https://gitlab.com/")
-            .map(|path| format!("https://gitlab.com/{path}/-/raw/{commit}/{rel}"))
+        repo.strip_prefix("https://gitlab.com/").map(|path| {
+            (
+                format!("https://gitlab.com/{path}/-/raw/{commit}/{rel}"),
+                HeaderMap::new(),
+            )
+        })
     }
 }
 
@@ -152,7 +163,7 @@ pub(crate) async fn fetch_files(
                 if dest.exists() {
                     continue;
                 }
-                let Some(url) = raw_file_url(statement, rel) else {
+                let Some((url, headers)) = repo_file_request(statement, rel) else {
                     warn!(
                         "{}: {rel} comes from the source repository, which mise cannot read files from",
                         tv.style()
@@ -162,7 +173,7 @@ pub(crate) async fn fetch_files(
                 pr.set_message(format!("download {rel}"));
                 file::create_dir_all(dest.parent().unwrap_or(&base))?;
                 if let Err(err) = HTTP
-                    .download_file_with_headers(&url, &dest, &headers_for(&url)?, Some(pr))
+                    .download_file_with_headers(&url, &dest, &headers, Some(pr))
                     .await
                 {
                     warn!(
@@ -362,11 +373,16 @@ pub(crate) async fn completion_script(
                     skipped.push(refused(&argv));
                     continue;
                 }
-                let spec = run_tool(config, &backend, &tv, &argv).await?;
-                let dir = tempfile::tempdir()?;
-                let path = dir.path().join(format!("{bin}.{format}.kdl"));
-                file::write(&path, &spec)?;
-                derive_from_spec(config, ts, &format, &bin, &path, shell).await
+                // Any failure here is one more reason to try the next source,
+                // not the end of the search.
+                async {
+                    let spec = run_tool(config, &backend, &tv, &argv).await?;
+                    let dir = tempfile::tempdir()?;
+                    let path = dir.path().join(format!("{bin}.{format}.kdl"));
+                    file::write(&path, &spec)?;
+                    derive_from_spec(config, ts, &format, &bin, &path, shell).await
+                }
+                .await
             }
         };
         match attempt {
@@ -458,7 +474,7 @@ complete -F {func} '{tool}'
             "# {note}.\n# {by}\ncommand mise completion fish --tool '{tool}' 2>/dev/null | source\n"
         ),
         Shell::PowerShell => format!(
-            "# {note}.\n# {by}\n& mise completion powershell --tool '{tool}' 2>$null | Out-String | Invoke-Expression\n"
+            "# {note}.\n# {by}\n(& mise completion powershell --tool '{tool}' 2>$null) -join \"`n\" | Invoke-Expression\n"
         ),
         _ => bail!(
             "{} loads completions eagerly, so mise cannot leave it a stub; redirect `mise completion {} --tool {tool}` yourself",
@@ -506,27 +522,32 @@ mod tests {
     }
 
     #[test]
-    fn raw_file_urls_pin_the_commit() {
+    fn repo_file_requests_pin_the_commit() {
         let s = basic();
+        let (url, headers) = repo_file_request(&s, "completions/t.fish").unwrap();
         assert_eq!(
-            raw_file_url(&s, "completions/t.fish").unwrap(),
+            url,
             format!(
-                "https://raw.githubusercontent.com/o/r/{}/completions/t.fish",
+                "https://api.github.com/repos/o/r/contents/completions/t.fish?ref={}",
                 "c".repeat(40)
             )
+        );
+        assert_eq!(
+            headers.get(reqwest::header::ACCEPT).unwrap(),
+            "application/vnd.github.raw+json"
         );
         let mut gitlab = s.clone();
         gitlab.predicate.source.as_mut().unwrap().repo = "https://gitlab.com/g/p.git".into();
         assert_eq!(
-            raw_file_url(&gitlab, "x").unwrap(),
+            repo_file_request(&gitlab, "x").unwrap().0,
             format!("https://gitlab.com/g/p/-/raw/{}/x", "c".repeat(40))
         );
         let mut other = s.clone();
         other.predicate.source.as_mut().unwrap().repo = "https://example.com/r".into();
-        assert_eq!(raw_file_url(&other, "x"), None);
+        assert!(repo_file_request(&other, "x").is_none());
         let mut no_commit = s;
         no_commit.predicate.source.as_mut().unwrap().commit = None;
-        assert_eq!(raw_file_url(&no_commit, "x"), None);
+        assert!(repo_file_request(&no_commit, "x").is_none());
     }
 
     #[test]
