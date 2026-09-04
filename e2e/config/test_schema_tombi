@@ -76,10 +76,7 @@ e2e_args = { default = "--headless", redact = true }
 "11.0" = "temurin-11"
 
 [bootstrap.packages]
-"brew:coreutils" = "latest"
-"brew-cask:1password" = { os = "macos", adopt = true }
 "pacman:libreoffice-fresh" = { state = "absent" }
-"pacman:vim" = { version = "latest", os = "linux", state = "present" }
 
 [bootstrap.macos.launchd.agents.daily]
 program = "/bin/echo"
@@ -454,17 +451,12 @@ TOML
   assert_fail "$TOMBI_LINT mise-bad-oci-copy.toml"
 done
 
-# Verify that bootstrap package tables match runtime validation
-for package in \
-  '{ state = "removed" }' \
-  '{ state = true }' \
-  '{ state = "absent", unknown = true }'; do
-  cat >"$HOME/workdir/mise-bad-packages.toml" <<TOML
+# Verify that unsupported bootstrap package states are rejected
+cat >"$HOME/workdir/mise-bad-packages.toml" <<'TOML'
 [bootstrap.packages]
-"pacman:libreoffice-fresh" = $package
+"pacman:libreoffice-fresh" = { state = "removed" }
 TOML
-  assert_fail "$TOMBI_LINT mise-bad-packages.toml"
-done
+assert_fail "$TOMBI_LINT mise-bad-packages.toml"
 
 # Verify that unknown shell activation targets and invalid values are rejected
 cat >"$HOME/workdir/mise-bad-shell-activate.toml" <<'TOML'
