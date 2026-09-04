@@ -33,6 +33,11 @@ if [[ -z $trace ]]; then
 fi
 
 if $daemonize; then
+  if [[ ${FAKE_PROBE_FAILURE:-0} == 1 ]]; then
+    sh -c "${trace#|}" </dev/null
+    echo 'strace: ptrace(PTRACE_TRACEME): Operation not permitted' >&2
+    exec "$@"
+  fi
   if [[ ${FAKE_INCOMPLETE:-0} == 1 ]]; then
     { sleep 10 | sh -c "${trace#|}"; } >/dev/null 2>&1 &
     exec "$@"
@@ -41,10 +46,6 @@ if $daemonize; then
   # a grandchild whose internal failure cannot replace the task's exit status.
   (
     sleep 0.05
-    if [[ ${FAKE_PROBE_FAILURE:-0} == 1 && $trace != \|* ]]; then
-      echo 'strace: ptrace(PTRACE_TRACEME): Operation not permitted' >&2
-      exit 1
-    fi
     if [[ $trace == \|* ]]; then
       sink=${trace#|}
       record="123 openat(AT_FDCWD<$PWD>, \"secret.txt\", O_RDONLY) = 3"

@@ -325,19 +325,25 @@ async fn usable_strace() -> Option<PathBuf> {
                 return None;
             };
             let trace = NamedTempFile::new().ok()?;
+            let trace_complete = NamedTempFile::new().ok()?;
+            let trace_path = shell_escape::escape(trace.path().to_string_lossy());
+            let trace_complete_path = shell_escape::escape(trace_complete.path().to_string_lossy());
+            let output = format!("|cat > {trace_path}; printf 1 > {trace_complete_path}");
             let status = tokio::process::Command::new(&strace)
                 .args(["-D", "-qq", "-e", "trace=execve", "-o"])
-                .arg(trace.path())
+                .arg(output)
                 .args(["--", "true"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .await;
-            // With -D, the status belongs to `true`, not the detached tracer. Requiring its
-            // execve record catches startup failures such as ptrace being blocked by seccomp.
+            // With -D, the status belongs to `true`, not the detached tracer. Requiring the same
+            // output-pipe handshake and a trace record catches unsupported strace syntax and
+            // startup failures such as ptrace being blocked by seccomp.
             if !status.is_ok_and(|status| status.success())
-                || !wait_for_trace_record(trace.path()).await
+                || !wait_for_file(trace_complete.path(), TRACE_START_TIMEOUT).await
+                || !fs::metadata(trace.path()).is_ok_and(|meta| meta.len() > 0)
             {
                 warn_once!(
                     "task cache audit could not start strace; running without filesystem auditing"
@@ -354,19 +360,6 @@ async fn wait_for_file(path: &Path, timeout: Duration) -> bool {
     tokio::time::timeout(timeout, async {
         loop {
             if fs::metadata(path).is_ok_and(|meta| meta.len() > 0) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    })
-    .await
-    .is_ok()
-}
-
-async fn wait_for_trace_record(path: &Path) -> bool {
-    tokio::time::timeout(TRACE_START_TIMEOUT, async {
-        loop {
-            if fs::read_to_string(path).is_ok_and(|trace| trace.contains("execve(")) {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
