@@ -220,8 +220,13 @@ pub(crate) async fn fetch_files(
                     && let Some(skill) = skill_name(resource)
                 {
                     let dir = base.join("skills").join(skill);
-                    if !dir.join("SKILL.md").is_file() {
-                        unpack_skill(&dest, &dir, pr)?;
+                    // Like the other skill sources: a skill that cannot be
+                    // unpacked is reported, and the tool still installs. The
+                    // digest check above stays fatal.
+                    if !dir.join("SKILL.md").is_file()
+                        && let Err(err) = unpack_skill(&dest, &dir, pr)
+                    {
+                        warn!("{}: could not unpack skill {skill}: {err}", tv.style());
                     }
                 }
             }
