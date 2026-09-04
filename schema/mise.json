@@ -5057,6 +5057,43 @@
             }
           },
           "additionalProperties": false
+        },
+        "secrets": {
+          "type": "object",
+          "description": "sensitive bootstrap inputs resolved from environment variables, keyed by logical secret name",
+          "propertyNames": {
+            "pattern": "^[A-Za-z0-9_.-]+$",
+            "description": "secret name using ASCII letters, digits, '.', '_' or '-'"
+          },
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                "description": "environment variable that provides this secret's value"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "env": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+                    "description": "environment variable that provides this secret's value"
+                  },
+                  "description": {
+                    "type": "string",
+                    "description": "human-readable description shown in status output and prompts"
+                  },
+                  "allow_empty": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "accept an empty value; empty values are rejected by default"
+                  }
+                },
+                "required": ["env"]
+              }
+            ]
+          }
         }
       }
     },
