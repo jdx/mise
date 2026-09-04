@@ -505,12 +505,22 @@ struct SyncState {
     links: std::collections::BTreeSet<String>,
 }
 
-fn read_sync_state(dir: &Path) -> SyncState {
+/// A missing state file means nothing was linked yet. A malformed one is
+/// an error, not an empty set: forgetting which links are mise's would
+/// leave them as foreign, unreplaced and unpruned, for good.
+fn read_sync_state(dir: &Path) -> Result<SyncState> {
     let path = dir.join(SYNC_STATE);
-    match file::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(_) => SyncState::default(),
+    if !path.is_file() {
+        return Ok(SyncState::default());
     }
+    let text = file::read_to_string(&path)?;
+    serde_json::from_str(&text).wrap_err_with(|| {
+        format!(
+            "{} is not valid; it records which links in {} mise made. Fix or remove it, then run sync again",
+            path.display(),
+            dir.display()
+        )
+    })
 }
 
 fn write_sync_state(dir: &Path, state: &SyncState) -> Result<()> {
@@ -521,7 +531,7 @@ fn write_sync_state(dir: &Path, state: &SyncState) -> Result<()> {
         }
         return Ok(());
     }
-    file::write(&path, serde_json::to_string_pretty(state)?)
+    file::write_atomic(&path, serde_json::to_string_pretty(state)?)
 }
 
 /// The skills a statement declares that are present in the install.
@@ -608,7 +618,7 @@ pub(crate) fn sync_skills(
     prune: bool,
 ) -> Result<SyncReport> {
     let mut report = SyncReport::default();
-    let mut state = read_sync_state(dir);
+    let mut state = read_sync_state(dir)?;
     let before = state.links.clone();
     let mut wanted: BTreeMap<&str, &Skill> = BTreeMap::new();
     for skill in skills {
@@ -1507,6 +1517,17 @@ mod tests {
                 .unwrap()
                 .contains(&serde_json::json!("same"))
         );
+
+        // A malformed state file is an error, never an empty set.
+        file::write(target.join(SYNC_STATE), "{not json").unwrap();
+        let err = sync_skills(
+            &target,
+            &[skill("o", "other", "1", &other)],
+            &installs,
+            false,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("is not valid"), "{err}");
 
         // Nothing to link creates nothing.
         let empty = dir.path().join("empty");
