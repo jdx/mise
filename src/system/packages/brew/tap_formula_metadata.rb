@@ -21,7 +21,7 @@ module JSON
         when 0x22 then '\\"'
         when 0x5c then "\\\\"
         when 0...0x20 then format("\\u%04x", codepoint)
-        else codepoint.chr(Encoding::UTF_8)
+        else codepoint.chr("UTF-8")
         end
       }.join + '"'
     when Numeric then value.to_s

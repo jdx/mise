@@ -331,7 +331,7 @@ mod tests {
 class Widget < Formula
   desc "example"
   version "1.2.3"
-  url "https://example.com/widget-#{version}.tar.gz"
+  url "https://example.com/café/widget-#{version}.tar.gz"
   sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   depends_on "libfoo"
   depends_on "cmake" => :build
@@ -368,7 +368,7 @@ end
         assert_eq!(formula.versions.stable.as_deref(), Some("1.2.3"));
         assert_eq!(
             formula.urls["stable"].url,
-            "https://example.com/widget-1.2.3.tar.gz"
+            "https://example.com/café/widget-1.2.3.tar.gz"
         );
         assert_eq!(
             formula.dependencies,
@@ -395,7 +395,7 @@ end
 cask "widget" do
   version "1.2.3"
   sha256 :no_check
-  url "https://example.com/widget-#{version}.zip"
+  url "https://example.com/café/widget-#{version}.zip"
   depends_on formula: "libfoo"
   on_sonoma do
     url "https://example.com/wrong-platform.zip"
@@ -431,7 +431,7 @@ end
         assert_eq!(metadata["token"], "widget");
         assert_eq!(metadata["version"], "1.2.3");
         assert_eq!(metadata["sha256"], "no_check");
-        assert_eq!(metadata["url"], "https://example.com/widget-1.2.3.zip");
+        assert_eq!(metadata["url"], "https://example.com/café/widget-1.2.3.zip");
         assert_eq!(metadata["depends_on"]["formula"][0], "libfoo");
         assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 2);
         Ok(())
