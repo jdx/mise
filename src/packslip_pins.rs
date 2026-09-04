@@ -50,11 +50,20 @@ struct Pins {
 
 /// Hold the file lock for a read-modify-write of the pins file, so two
 /// installs running at once cannot drop each other's pin or sequence.
-fn locked(path: &Path) -> Result<Option<fslock::LockFile>> {
+/// A lock beside the pins file itself, not under the cache directory:
+/// every process that shares the state directory must share the lock,
+/// whatever its cache directory is.
+fn locked(path: &Path) -> Result<fslock::LockFile> {
     if let Some(parent) = path.parent() {
         file::create_dir_all(parent)?;
     }
-    crate::lock_file::get(&path.with_extension("lock"), false)
+    let lock_path = path.with_extension("lock");
+    let mut lock = fslock::LockFile::open(&lock_path)?;
+    if !lock.try_lock()? {
+        debug!("waiting for lock on {}", lock_path.display());
+        lock.lock()?;
+    }
+    Ok(lock)
 }
 
 fn load(path: &Path) -> Result<Pins> {
