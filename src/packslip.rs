@@ -421,7 +421,10 @@ async fn fetch_repo_dir(
     dest: &Path,
     pr: &dyn SingleReport,
 ) -> Result<()> {
-    let url = format!("https://api.github.com/repos/{repo}/contents/{rel}?ref={commit}");
+    let url = format!(
+        "https://api.github.com/repos/{repo}/contents/{}?ref={commit}",
+        url_path(rel)
+    );
     // The client asks for the raw media type on every contents URL, which
     // is right for a file body and wrong for a directory listing.
     let mut headers = github::get_headers(&url)?;
@@ -518,17 +521,33 @@ pub(crate) fn skills_of(
     tool: &str,
     version: &str,
 ) -> Vec<Skill> {
-    statement
+    // A vendor may offer one skill from several sources, as completions
+    // are offered; the most verifiable one that is on disk is the skill.
+    let rank = |r: &Resource| match r.source() {
+        Some(ResourceSource::Archive) => 0,
+        Some(ResourceSource::Asset) => 1,
+        Some(ResourceSource::Repo) => 2,
+        Some(ResourceSource::Exec) => 3,
+        None => 4,
+    };
+    let mut candidates: Vec<&Resource> = statement
         .predicate
         .resources
         .iter()
         .filter(|r| r.kind == "skill")
+        .collect();
+    candidates.sort_by_key(|r| rank(r));
+    let mut seen = std::collections::BTreeSet::new();
+    candidates
+        .into_iter()
         .filter_map(|r| {
-            Some(Skill {
-                name: skill_name(r)?.to_string(),
+            let name = skill_name(r)?;
+            let path = resource_dir(install_path, r)?;
+            seen.insert(name.to_string()).then(|| Skill {
+                name: name.to_string(),
                 tool: tool.to_string(),
                 version: version.to_string(),
-                path: resource_dir(install_path, r)?,
+                path,
             })
         })
         .collect()
@@ -612,7 +631,7 @@ pub(crate) fn sync_skills(
             report.unchanged.push(name.to_string());
             continue;
         }
-        if link.exists() || link.is_symlink() {
+        if link.exists() || file::is_symlink_or_junction(&link) {
             if !ours(name, &link) {
                 report.skipped.push((
                     name.to_string(),
@@ -1328,6 +1347,7 @@ mod tests {
             {"kind":"skill","name":"t","archive":"top/share/skills/t"},
             {"kind":"skill","name":"packed","asset":"t-skill.tar.gz"},
             {"kind":"skill","name":"fromrepo","repo":"skills/fromrepo"},
+            {"kind":"skill","name":"t","repo":"skills/fromrepo"},
             {"kind":"skill","name":"generated","exec":["t","skill"]},
             {"kind":"skill","name":"missing","archive":"nowhere"}
         ]"#,
@@ -1341,7 +1361,7 @@ mod tests {
         assert_eq!(
             skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
             ["t", "packed", "fromrepo"],
-            "an exec skill not yet generated and a missing directory are absent"
+            "an exec skill not yet generated and a missing directory are absent, and a fallback source for t is not a second t"
         );
         assert_eq!(
             skills[0].path,
