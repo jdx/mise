@@ -231,7 +231,7 @@ All commit messages and PR titles MUST follow conventional commit format:
 
 - Update `aube` and `aube-registry` together and refresh all aube workspace crates in `Cargo.lock`.
 - Review the upstream changes for embedder API or behavior changes and make any required mise integration changes.
-- Do not update the standalone `aube` tool entry in `mise.lock` unless the development tool is also intentionally being updated.
+- Update the standalone `aube` development tool entry in `mise.lock` to the same version so local and CI workflows exercise the version mise embeds.
 - Run these focused checks:
   - `cargo check --locked`
   - `cargo test --locked --bin mise aube`
