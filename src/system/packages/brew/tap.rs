@@ -16,6 +16,7 @@ use super::cask::Cask;
 use crate::cmd::CmdLineRunner;
 use crate::http::HTTP_FETCH;
 use crate::result::Result;
+use crate::sandbox::SandboxConfig;
 
 const METADATA_SHIM_RB: &str = include_str!("tap_formula_metadata.rb");
 const CASK_METADATA_SHIM_RB: &str = include_str!("tap_cask_metadata.rb");
@@ -54,8 +55,9 @@ pub(super) async fn formula_from_ruby(
     let shim_path = cache_dir.join("mise-brew-tap-metadata.rb");
     ensure_shim(&shim_path, METADATA_SHIM_RB)?;
     let output_path = cache_dir.join(format!("{name}-{}.json", &checksum[..12]));
+    crate::file::write(&output_path, "")?;
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
-    CmdLineRunner::new(&ruby)
+    let mut runner = CmdLineRunner::new(&ruby)
         .arg(&shim_path)
         .envs([
             ("MISE_BREW_FORMULA_FILE", formula_path.display().to_string()),
@@ -69,6 +71,9 @@ pub(super) async fn formula_from_ruby(
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
         ])
+        .with_sandbox(metadata_sandbox(&formula_path, &shim_path, &output_path));
+    runner.apply_sandbox().await?;
+    runner
         .execute_async()
         .await
         .wrap_err_with(|| format!("failed to evaluate Formula/{name}.rb"))?;
@@ -102,8 +107,9 @@ pub(super) async fn cask_from_ruby(
     let shim_path = cache_dir.join("mise-brew-tap-cask-metadata.rb");
     ensure_shim(&shim_path, CASK_METADATA_SHIM_RB)?;
     let output_path = cache_dir.join(format!("{token}-{}.json", &checksum[..12]));
+    crate::file::write(&output_path, "")?;
     let ruby = ruby_for_metadata(token, provision_ruby).await?;
-    CmdLineRunner::new(&ruby)
+    let mut runner = CmdLineRunner::new(&ruby)
         .arg(&shim_path)
         .envs([
             ("MISE_BREW_CASK_FILE", cask_path.display().to_string()),
@@ -116,12 +122,29 @@ pub(super) async fn cask_from_ruby(
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
         ])
+        .with_sandbox(metadata_sandbox(&cask_path, &shim_path, &output_path));
+    runner.apply_sandbox().await?;
+    runner
         .execute_async()
         .await
         .wrap_err_with(|| format!("failed to evaluate Casks/{token}.rb"))?;
     let cask: Cask = serde_json::from_str(&crate::file::read_to_string(&output_path)?)
         .wrap_err_with(|| format!("invalid metadata extracted from Casks/{token}.rb"))?;
     Ok(cask)
+}
+
+fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> SandboxConfig {
+    let mut sandbox = SandboxConfig {
+        deny_read: true,
+        deny_write: true,
+        deny_net: true,
+        deny_env: true,
+        allow_read: vec![source.to_path_buf(), shim.to_path_buf()],
+        allow_write: vec![output.to_path_buf()],
+        ..Default::default()
+    };
+    sandbox.resolve_paths();
+    sandbox
 }
 
 async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Result<TapSource> {
@@ -232,6 +255,13 @@ mod tests {
     use super::*;
     use std::process::Command;
 
+    async fn test_ruby() -> Result<Option<PathBuf>> {
+        if let Some(ruby) = usable_system_ruby().await {
+            return Ok(Some(ruby));
+        }
+        super::super::source::installed_ruby_bin().await
+    }
+
     #[test]
     fn rejects_unsafe_formula_names() {
         for name in ["", ".", "..", "../oops", "a/b", "a\\b"] {
@@ -259,7 +289,7 @@ mod tests {
 
     #[tokio::test]
     async fn extracts_formula_metadata_without_homebrew() -> Result<()> {
-        let Some(ruby) = usable_system_ruby().await else {
+        let Some(ruby) = test_ruby().await? else {
             return Ok(());
         };
         let dir = tempfile::tempdir()?;
@@ -303,7 +333,7 @@ end
 
     #[tokio::test]
     async fn extracts_cask_metadata_without_homebrew() -> Result<()> {
-        let Some(ruby) = usable_system_ruby().await else {
+        let Some(ruby) = test_ruby().await? else {
             return Ok(());
         };
         let dir = tempfile::tempdir()?;
@@ -315,9 +345,12 @@ end
             r#"
 cask "widget" do
   version "1.2.3"
-  sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  sha256 :no_check
   url "https://example.com/widget-#{version}.zip"
   depends_on formula: "libfoo"
+  on_sonoma do
+    url "https://example.com/wrong-platform.zip"
+  end
   app "Widget.app"
   binary "Widget.app/Contents/MacOS/widget", target: "widget"
 end
@@ -339,8 +372,25 @@ end
         let metadata: serde_json::Value = serde_json::from_str(&json)?;
         assert_eq!(metadata["token"], "widget");
         assert_eq!(metadata["version"], "1.2.3");
+        assert_eq!(metadata["sha256"], "no_check");
+        assert_eq!(metadata["url"], "https://example.com/widget-1.2.3.zip");
         assert_eq!(metadata["depends_on"]["formula"][0], "libfoo");
         assert_eq!(metadata["artifacts"].as_array().unwrap().len(), 2);
         Ok(())
+    }
+
+    #[test]
+    fn metadata_evaluation_is_fully_sandboxed() {
+        let config = metadata_sandbox(
+            Path::new("/tmp/formula.rb"),
+            Path::new("/tmp/shim.rb"),
+            Path::new("/tmp/metadata.json"),
+        );
+        assert!(config.deny_read);
+        assert!(config.deny_write);
+        assert!(config.deny_net);
+        assert!(config.deny_env);
+        assert_eq!(config.allow_read.len(), 2);
+        assert_eq!(config.allow_write.len(), 1);
     }
 }

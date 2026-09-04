@@ -4,6 +4,7 @@
 
 require "json"
 require "rbconfig"
+require "rubygems/version"
 
 CASK_FILE = ENV.fetch("MISE_BREW_CASK_FILE")
 OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
@@ -11,6 +12,39 @@ OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
 module OS
   def self.mac? = RbConfig::CONFIG["host_os"].include?("darwin")
   def self.linux? = RbConfig::CONFIG["host_os"].include?("linux")
+end
+
+class MacOSVersion
+  include Comparable
+
+  SYMBOLS = {
+    tahoe: "26", sequoia: "15", sonoma: "14", ventura: "13",
+    monterey: "12", big_sur: "11", catalina: "10.15", mojave: "10.14",
+    high_sierra: "10.13", sierra: "10.12", el_capitan: "10.11"
+  }.freeze
+
+  def self.host
+    @host ||= new(OS.mac? ? `sw_vers -productVersion`.strip : "0")
+  end
+
+  def self.from_symbol(symbol) = new(SYMBOLS.fetch(symbol.to_sym))
+  def initialize(version) = (@version = version.to_s)
+
+  def <=>(other)
+    other = self.class.from_symbol(other) if other.is_a?(Symbol)
+    other = self.class.new(other.to_s) unless other.is_a?(MacOSVersion)
+    Gem::Version.new(@version) <=> Gem::Version.new(other.to_s)
+  end
+
+  def same_release?(other)
+    other = self.class.from_symbol(other) if other.is_a?(Symbol)
+    other = self.class.new(other.to_s) unless other.is_a?(MacOSVersion)
+    mine = @version.split(".").map(&:to_i)
+    theirs = other.to_s.split(".").map(&:to_i)
+    mine[0] == theirs[0] && (mine[0] >= 11 || mine[1] == theirs[1])
+  end
+
+  def to_s = @version
 end
 
 module Hardware
@@ -70,7 +104,7 @@ class CaskMetadata
 
   def sha256(value = nil, **values)
     value = Hardware::CPU.arm? ? values[:arm] : values[:intel] if value.nil? && values.any?
-    @sha256 = value.to_s unless value.nil? || value == :no_check
+    @sha256 = value.to_s unless value.nil?
   end
 
   def url(value = nil, **) = (@url = value.to_s unless value.nil?)
@@ -136,11 +170,17 @@ class CaskMetadata
     instance_eval(&block) if OS.linux?
   end
 
-  %i[catalina big_sur monterey ventura sonoma sequoia tahoe].each do |release|
+  MacOSVersion::SYMBOLS.each_key do |release|
     define_method(:"on_#{release}") do |comparison = nil, &block|
-      # Metadata is generated for the current host. Exact macOS release
-      # comparisons are handled by the install-time cask shim when hooks run.
-      instance_eval(&block) if OS.mac? && block && comparison != :or_older
+      next unless OS.mac? && block
+      host = MacOSVersion.host
+      target = MacOSVersion.from_symbol(release)
+      matches = case comparison
+                when :or_older then host <= target
+                when :or_newer then host >= target
+                else host.same_release?(target)
+                end
+      instance_eval(&block) if matches
     end
   end
 
