@@ -4212,6 +4212,12 @@
                   "adopt": {
                     "type": "boolean",
                     "description": "adopt an existing identical brew-cask app artifact instead of replacing it"
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "desired package state; only pacman currently supports absent",
+                    "enum": ["present", "absent"],
+                    "default": "present"
                   }
                 },
                 "additionalProperties": false

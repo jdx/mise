@@ -124,6 +124,9 @@ zshenv = { enabled = false }
 zprofile = { enabled = true, mode = "shims" }
 zshrc = true
 
+[bootstrap.packages]
+"pacman:libreoffice-fresh" = { state = "absent" }
+
 [[oci.copy]]
 host = "dist/my-app"
 image = "/usr/local/bin/my-app"
@@ -223,7 +226,7 @@ strict = true
 
 [[schemas]]
 path = "file://$SCHEMA_PATH"
-include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
+include = ["mise-bad.toml", "mise-bad-age.toml", "mise-bad-env-default.toml", "mise-bad-env-directive.toml", "mise-bad-env-float.toml", "mise-bad-install-env-float.toml", "mise-bad-minimum-release-age-array.toml", "mise-bad-minimum-release-age-table.toml", "mise-bad-package-state.toml", "mise-bad-postinstall.toml", "mise-bad-vars.toml", "mise-bad-tmpl.toml", "mise-bad-tmpl-output-flag.toml", "mise-bad-os.toml", "mise-bad-watch-files.toml", "mise-bad-launchd-calendar.toml", "mise-bad-launchd-queue.toml", "mise-bad-launchd-throttle.toml", "mise-bad-systemd.toml", "mise-bad-oci-copy.toml", "mise-bad-shell-activate.toml"]
 
 [[schemas]]
 path = "file://$TASK_SCHEMA_PATH"
@@ -239,6 +242,14 @@ include = ["mise-bad-tool-alias.toml"]
 EOF
 
 assert_fail "$TOMBI_LINT mise-bad.toml"
+
+# Verify that package state matches runtime validation
+cat >"$HOME/workdir/mise-bad-package-state.toml" <<'TOML'
+[bootstrap.packages]
+"pacman:libreoffice-fresh" = { state = "removed" }
+TOML
+
+assert_fail "$TOMBI_LINT mise-bad-package-state.toml"
 
 # Verify that options for complex age values must be nested inside age
 cat >"$HOME/workdir/mise-bad-age.toml" <<'TOML'
