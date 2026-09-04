@@ -458,29 +458,18 @@ return $__mise_ret
             format!(
                 r#"# {note}.
 # {by}
-# The vendor's script registers its own completer; this one is put back after
-# each completion, so the next asks mise again.
+# The vendor's script registers its own completer, which handles this
+# completion; the stub is put back at the next prompt, so the next asks mise
+# again.
 {func}() {{
   eval "$(command mise completion bash --tool '{tool}' 2>/dev/null)"
-  local __mise_spec __mise_fn __mise_ret=0
+  local __mise_spec
   __mise_spec=$(complete -p '{tool}' 2>/dev/null)
-  case " $__mise_spec " in
-    *" -F "*)
-      __mise_fn=${{__mise_spec##*-F }}
-      __mise_fn=${{__mise_fn%% *}}
-      if [[ $__mise_fn != {func} ]]; then
-        "$__mise_fn" "$@"
-        __mise_ret=$?
-      fi
-      complete -F {func} '{tool}'
-      return $__mise_ret
-      ;;
-  esac
-  # The vendor registered something other than a function (complete -C, -W,
-  # ...). Hand this completion to it by returning 124, which makes bash retry
-  # with the current registration, and put the stub back at the next prompt
-  # so later completions ask mise again.
   if [[ -n $__mise_spec && $__mise_spec != *{func}* ]]; then
+    # The vendor's registration is in place now, options and all. Hand this
+    # completion to it: 124 makes bash retry with the current registration.
+    # The stub comes back at the next prompt, so later completions ask mise
+    # again and a version switch is followed.
     {func}_restub() {{
       # Runs first at the prompt, so this is the last command's status,
       # which a prompt that shows it must get back unchanged.
@@ -503,6 +492,7 @@ return $__mise_ret
     fi
     return 124
   fi
+  # Nothing usable came back; stay registered and offer nothing this time.
   complete -F {func} '{tool}'
   return 0
 }}
