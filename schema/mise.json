@@ -1441,6 +1441,13 @@
               "default": false,
               "description": "Run a tool's own command at install time to produce a resource its packslip offers only as an exec entry, such as an agent skill.",
               "type": "boolean"
+            },
+            "stampers": {
+              "description": "Hosts whose signed stamp lists say which packslip releases may be installed, each with its pin.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },

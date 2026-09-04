@@ -2128,6 +2128,48 @@ to run the tool anyway, and caches the script beside the install.
 env = "MISE_PACKSLIP_EXEC"
 type = "Bool"
 
+[packslip.stampers]
+description = "Hosts whose signed stamp lists say which packslip releases may be installed, each with its pin."
+docs = """
+A stamping host, a registry, a mirror, or a scanning service, publishes a
+signed release list per vendor project at
+`https://<host>/.well-known/packslip/<project>.json`, naming the versions it
+checked and what it checked. When this setting names hosts, mise installs a
+packslip tool only at a version one of them lists: a version no trusted host
+stamped is not offered and not installed, however valid the vendor's own
+manifest is, and a version a host withdrew is refused. Any one host's stamp
+suffices.
+
+Each entry is `host=PIN`, where the pin is the minisign-format public key the
+host signs with, the path of that `.pub` file, or, for a host that signs
+keylessly from GitHub, an identity prefix such as
+`https://github.com/org/registry/`:
+
+```toml
+[settings.packslip]
+stampers = [
+  "registry.mise.jdx.dev=RWQ...",
+  "stamps.example.com=https://github.com/example/stamps/",
+]
+```
+
+A tool whose options say `trust = "vendor"` takes the vendor's own manifest
+under the vendor's pin, with no stamp:
+
+```toml
+[tools]
+"packslip:github.com/jdx/mise" = { version = "latest", trust = "vendor" }
+```
+
+Unset, no stamps are required. mise's own registry host will become the
+default once it publishes stamps.
+"""
+env = "MISE_PACKSLIP_STAMPERS"
+optional = true
+parse_env = "list_by_comma"
+rust_type = "Vec<String>"
+type = "ListString"
+
 [paranoid]
 description = "Enables extra-secure behavior."
 docs = """
