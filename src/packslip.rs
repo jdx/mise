@@ -290,12 +290,11 @@ pub(crate) fn completion_sources(
     // for the executable being completed is the only one that completes
     // it. When none names it (the tool was asked for by id), every spec
     // stays a candidate.
-    let describes = |r: &Resource| {
-        r.bin
-            .as_deref()
-            .map(|b| b.strip_suffix(".exe").unwrap_or(b))
-            .is_some_and(|b| Some(b) == tool)
-    };
+    fn plain(name: &str) -> &str {
+        name.strip_suffix(".exe").unwrap_or(name)
+    }
+    let tool = tool.map(plain);
+    let describes = |r: &Resource| r.bin.as_deref().map(plain).is_some_and(|b| Some(b) == tool);
     let spec_entries: Vec<&Resource> = if spec_entries.iter().any(|r| describes(r)) {
         spec_entries.into_iter().filter(|r| describes(r)).collect()
     } else {
@@ -778,9 +777,17 @@ mod tests {
                 .collect()
         };
         assert_eq!(bins(Some("u")), vec!["u"]);
-        assert_eq!(bins(Some("u.exe")), vec!["t", "u"], "the name as typed");
+        assert_eq!(
+            bins(Some("u.exe")),
+            vec!["u"],
+            "the name as a Windows stub embeds it"
+        );
         assert_eq!(bins(None), vec!["t", "u"]);
-        assert_eq!(bins(Some("github.com/o/r")), vec!["t", "u"], "asked for by id");
+        assert_eq!(
+            bins(Some("github.com/o/r")),
+            vec!["t", "u"],
+            "asked for by id"
+        );
     }
 
     #[test]
