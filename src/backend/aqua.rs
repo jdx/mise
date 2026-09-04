@@ -1563,8 +1563,9 @@ impl AquaBackend {
             .map(unescape_regex_literal);
         let repo = format!("{}/{}", pkg.repo_owner, pkg.repo_name);
         let predicate_type = attestations.predicate_type.as_deref();
+        let mut verified_repo = repo.clone();
 
-        match crate::github::sigstore::verify_attestation_with_predicate_type(
+        let mut result = crate::github::sigstore::verify_attestation_with_predicate_type(
             artifact_path,
             &pkg.repo_owner,
             &pkg.repo_name,
@@ -1573,13 +1574,40 @@ impl AquaBackend {
             None,
             self.use_versions_host_for_github_metadata(&repo),
         )
-        .await
+        .await;
+
+        // GitHub keeps release URLs working after a repository transfer, but the
+        // certificate identity uses the canonical repository name. Verification
+        // errors may aggregate a workflow mismatch with failures from unrelated
+        // attestations, so resolve a confirmed transfer through GitHub and retry
+        // with the same workflow policy rebased to the canonical repository.
+        if result.is_err()
+            && let Ok(canonical_repo) = github::canonical_repo(&repo).await
+            && !canonical_repo.eq_ignore_ascii_case(&repo)
+            && let Some((canonical_owner, canonical_name)) = canonical_repo.split_once('/')
         {
+            let canonical_workflow = signer_workflow
+                .as_deref()
+                .map(|workflow| rebase_github_signer_workflow(workflow, &repo, &canonical_repo));
+            debug!(
+                "retrying GitHub attestation verification for transferred repository {repo} as {canonical_repo}"
+            );
+            verified_repo.clone_from(&canonical_repo);
+            result = crate::github::sigstore::verify_attestation_with_predicate_type(
+                artifact_path,
+                canonical_owner,
+                canonical_name,
+                canonical_workflow.as_deref(),
+                predicate_type,
+                None,
+                self.use_versions_host_for_github_metadata(&canonical_repo),
+            )
+            .await;
+        }
+
+        match result {
             Ok(true) => {
-                debug!(
-                    "GitHub attestations verified for {}/{}",
-                    pkg.repo_owner, pkg.repo_name
-                );
+                debug!("GitHub attestations verified for {verified_repo}");
                 Ok(GithubAttestationStatus::Verified)
             }
             Ok(false) => Err(eyre!(
@@ -3378,6 +3406,16 @@ fn unescape_regex_literal(pattern: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
+fn rebase_github_signer_workflow(workflow: &str, old_repo: &str, canonical_repo: &str) -> String {
+    workflow
+        .strip_prefix(old_repo)
+        .filter(|suffix| suffix.starts_with('/'))
+        .map_or_else(
+            || workflow.to_string(),
+            |suffix| format!("{canonical_repo}{suffix}"),
+        )
+}
+
 fn toml_value_to_string(value: &toml::Value) -> Option<String> {
     match value {
         toml::Value::String(s) => Some(s.clone()),
@@ -4828,6 +4866,30 @@ packages:
         let result = unescape_regex_literal("");
         assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
         assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_rebase_github_signer_workflow_after_repo_transfer() {
+        assert_eq!(
+            rebase_github_signer_workflow(
+                "jdx/aube/.github/workflows/release.yml",
+                "jdx/aube",
+                "aubepkg/aube",
+            ),
+            "aubepkg/aube/.github/workflows/release.yml"
+        );
+    }
+
+    #[test]
+    fn test_rebase_github_signer_workflow_preserves_reusable_workflow_repo() {
+        assert_eq!(
+            rebase_github_signer_workflow(
+                "aquaproj/aqua-registry/.github/workflows/release.yml",
+                "jdx/aube",
+                "aubepkg/aube",
+            ),
+            "aquaproj/aqua-registry/.github/workflows/release.yml"
+        );
     }
 
     #[test]
