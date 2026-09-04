@@ -168,7 +168,15 @@ pub(crate) async fn fetch_files(
 ) -> Result<()> {
     let base = tv.install_path().join(RESOURCES_DIR);
     let fetch_skills = Settings::get().skills.fetch;
-    for resource in &statement.predicate.resources {
+    let mut resources = selected_resources(statement, artifact);
+    resources.sort_by_key(|r| match r.source() {
+        Some(ResourceSource::Archive) => 0,
+        Some(ResourceSource::Asset) => 1,
+        Some(ResourceSource::Repo) => 2,
+        Some(ResourceSource::Exec) => 3,
+        None => 4,
+    });
+    for resource in resources {
         // An entry scoped to another platform is not for this install.
         if let Some(artifact) = artifact
             && !resource_fits(resource, artifact)
@@ -874,6 +882,23 @@ pub(crate) fn applicable<'a>(
         .collect()
 }
 
+fn selected_resources<'a>(
+    statement: &'a Statement,
+    artifact: Option<&Artifact>,
+) -> Vec<&'a Resource> {
+    match artifact {
+        Some(artifact) => packslip::select_resources(statement, artifact),
+        None => statement
+            .predicate
+            .resources
+            .iter()
+            .filter(|r| {
+                r.artifact.is_none() && r.os.is_none() && r.arch.is_none() && r.libc.is_none()
+            })
+            .collect(),
+    }
+}
+
 /// Every way the statement offers a `shell` completion, in the order the
 /// specification says a consumer takes them: the entries that apply to
 /// the selected artifact, then shipped scripts, then a script derived
@@ -903,10 +928,7 @@ pub(crate) fn completion_sources(
         |r: &&Resource| r.bin.as_deref().or_else(|| statement.sole_bin()) == bin && bin.is_some();
     // Select per identity before considering source order. A completion
     // for one executable must never hide or complete another executable.
-    let selected = match artifact {
-        Some(artifact) => packslip::select_resources(statement, artifact),
-        None => statement.predicate.resources.iter().collect(),
-    };
+    let selected = selected_resources(statement, artifact);
     let completion_entries = applicable(
         selected.iter().copied().filter(describes).filter(|r| {
             r.kind == "completion"
@@ -1376,6 +1398,23 @@ mod tests {
                 .is_err()
             );
         }
+    }
+
+    #[test]
+    fn fetching_and_completing_use_the_same_artifact_scope() {
+        let s = statement_with(
+            r#"[
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"generic/_t"},
+            {"kind":"completion","bin":"t","shell":"zsh","archive":"specific/_t","artifact":"t-linux-x64.tar.xz"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let selected = selected_resources(&s, Some(&s.predicate.artifacts[0]));
+        assert!(!selected.contains(&&s.predicate.resources[0]));
+        assert!(selected.contains(&&s.predicate.resources[1]));
+        let unknown = selected_resources(&s, None);
+        assert!(unknown.contains(&&s.predicate.resources[0]));
+        assert!(!unknown.contains(&&s.predicate.resources[1]));
     }
 
     #[test]
