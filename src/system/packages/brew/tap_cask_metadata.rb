@@ -32,7 +32,7 @@ module JSON
   end
 end
 
-CASK_FILE = ENV.fetch("MISE_BREW_CASK_FILE")
+CASK_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
 OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
 
 module OS
@@ -288,7 +288,7 @@ def cask(token, &block)
   $mise_cask_metadata.instance_eval(&block)
 end
 
-eval(File.read(CASK_FILE), TOPLEVEL_BINDING, CASK_FILE, 1)
+eval(STDIN.read, TOPLEVEL_BINDING, CASK_FILE, 1)
 metadata = $mise_cask_metadata
 raise "no cask block found" if metadata.nil?
 expected = ENV.fetch("MISE_BREW_TOKEN")

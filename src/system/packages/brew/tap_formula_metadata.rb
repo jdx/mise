@@ -33,7 +33,7 @@ module JSON
   end
 end
 
-FORMULA_FILE = ENV.fetch("MISE_BREW_FORMULA_FILE")
+FORMULA_FILE = ENV.fetch("MISE_BREW_SOURCE_PATH")
 OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
 FORMULA_NAME = ENV.fetch("MISE_BREW_NAME")
 
@@ -211,7 +211,7 @@ def inferred_version(url)
   match && match[1]
 end
 
-eval(File.read(FORMULA_FILE), TOPLEVEL_BINDING, FORMULA_FILE, 1)
+eval(STDIN.read, TOPLEVEL_BINDING, FORMULA_FILE, 1)
 klass = Formula.instance_variable_get(:@subclass)
 raise "no Formula subclass found" unless klass
 raise "formula has no stable URL" if klass.source_url.to_s.empty?
