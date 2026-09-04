@@ -355,6 +355,7 @@ impl Toolset {
             {
                 warn!("failed to restore runtime symlinks after install failure: {err:#}");
             }
+            crate::packslip::auto_sync_skills(config).await;
         }
 
         // Debug logging for successful installations

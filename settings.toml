@@ -2115,14 +2115,15 @@ type = "ListString"
 
 [packslip.exec]
 default = false
-description = "Run a tool's own command for a completion or skill its packslip offers only as an exec entry."
+description = "Run a tool's own command at install time to produce a resource its packslip offers only as an exec entry, such as an agent skill."
 docs = """
-A packslip may say that a tool generates its own shell completion or agent
-skill: `tool completion zsh`, for example. That runs a freshly installed
-binary when the shell first asks for a completion rather than when you first
-run the tool yourself, so mise refuses such entries by default and uses only
-what the vendor shipped as files or as a CLI spec. Turn this on to let mise
-run the command when nothing static is offered.
+A packslip may say that a resource is produced by running the tool itself,
+such as an agent skill printed by `tool skill`. That runs a freshly
+installed binary at install time, before you have run the tool yourself,
+and writes the result to disk, so mise does it only when this is on.
+Shell completions are the exception and need no setting: mise runs an exec
+completion when your shell first asks for one, which is when you were going
+to run the tool anyway, and caches the script beside the install.
 """
 env = "MISE_PACKSLIP_EXEC"
 type = "Bool"
@@ -2709,6 +2710,57 @@ type = "Path"
 [silent]
 description = "Suppress all `mise run|watch` output except errors—including what tasks output."
 env = "MISE_SILENT"
+type = "Bool"
+
+[skills.auto_sync]
+default = false
+description = "Link the active tools' agent skills into the project after `mise install` and `mise use`."
+docs = """
+When on, mise runs the equivalent of `mise skills sync` after every install
+and after `mise use` changes a version, so the links under
+[`skills.dir`](#skills-dir) always point at the versions that are active in
+the project. Only projects with a mise config get links; nothing is written
+outside a project root. Links mise made are the only ones it touches, and
+stale ones are removed only when [`skills.prune`](#skills-prune) is on.
+"""
+env = "MISE_SKILLS_AUTO_SYNC"
+type = "Bool"
+
+[skills.dir]
+default = ".claude/skills"
+description = "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`."
+docs = """
+The directory an agent reads skills from, relative to the project root, or
+to the home directory for `mise skills sync --global`. An absolute path is
+used as it is. `--dir` on the command line overrides it for one run. Set it
+to `.agents/skills` or wherever the agents you use look.
+"""
+env = "MISE_SKILLS_DIR"
+type = "String"
+
+[skills.fetch]
+default = true
+description = "Fetch the agent skills a tool's packslip declares when installing it."
+docs = """
+A packslip may declare agent skills beside the tool's executables. mise
+fetches them at install time so every installed version carries its own
+copy. Turn this off to install tools without their skills; `mise skills ls`
+then lists nothing for them.
+"""
+env = "MISE_SKILLS_FETCH"
+type = "Bool"
+
+[skills.prune]
+default = false
+description = "Remove links mise made for skills that are no longer active when syncing."
+docs = """
+`mise skills sync` leaves links for skills of versions that are no longer
+active unless told to prune them. This makes pruning the default, for the
+command and for [`skills.auto_sync`](#skills-auto-sync). Only links mise
+made, recorded beside them and pointing into its installs directory, are
+ever removed.
+"""
+env = "MISE_SKILLS_PRUNE"
 type = "Bool"
 
 [slsa]
