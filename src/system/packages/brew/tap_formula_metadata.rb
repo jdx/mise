@@ -122,7 +122,7 @@ class Formula
     def keg_only(*) = (@keg_only_value = true)
 
     def depends_on(spec = nil, **options)
-      spec = options if spec.nil? && !options.empty?
+      spec = options if spec.nil? && options.keys.any? { |key| key.is_a?(String) }
       name, kind = spec.is_a?(Hash) ? spec.first : [spec, nil]
       return if name.nil?
       kinds = Array(kind)

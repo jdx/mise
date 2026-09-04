@@ -24,7 +24,9 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
 use std::sync::LazyLock as Lazy;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader};
+use tokio::io::{
+    AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader,
+};
 use tokio::process::Command;
 
 use crate::config::Settings;
@@ -519,6 +521,25 @@ enum HashedProcessOutput {
     Stdout(Vec<u8>),
     Stderr(Vec<u8>),
     ReadError(&'static str, std::io::Error),
+}
+
+async fn read_capped<R: AsyncRead + Unpin>(
+    mut reader: R,
+    max_bytes: usize,
+) -> std::io::Result<(Vec<u8>, usize)> {
+    let mut kept = Vec::new();
+    let mut total = 0usize;
+    let mut buffer = [0; 8192];
+    loop {
+        let len = reader.read(&mut buffer).await?;
+        if len == 0 {
+            break;
+        }
+        total = total.saturating_add(len);
+        let remaining = max_bytes.saturating_sub(kept.len());
+        kept.extend_from_slice(&buffer[..len.min(remaining)]);
+    }
+    Ok((kept, total))
 }
 
 impl<'a> CmdLineRunner<'a> {
@@ -1443,6 +1464,74 @@ impl<'a> CmdLineRunner<'a> {
         Ok(stdout.trim_end().to_string())
     }
 
+    pub(crate) async fn read_bounded(mut self, max_output_bytes: usize) -> Result<String> {
+        let _read_lock = RAW_LOCK.read().await;
+        debug!("$ {self}");
+        self.cmd.kill_on_drop(true);
+        #[cfg(unix)]
+        if should_use_pgroup() {
+            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
+            unsafe {
+                self.cmd.as_std_mut().pre_exec(|| {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                    Ok(())
+                });
+            }
+        }
+        let mut cp = self
+            .spawn_async_with_etxtbsy_retry()
+            .await
+            .wrap_err_with(|| format!("failed to execute command: {self}"))?;
+        let id = cp.id().unwrap_or_default();
+        let _running_pid = RunningPidGuard::new(cp.id());
+        if let Some(text) = self.stdin.take()
+            && let Some(mut stdin) = cp.stdin.take()
+        {
+            tokio::spawn(async move {
+                let _ = stdin.write_all(text.as_bytes()).await;
+            });
+        }
+        let stdout = cp.stdout.take().expect("stdout must be piped");
+        let stderr = cp.stderr.take().expect("stderr must be piped");
+        let stdout_task = tokio::spawn(read_capped(stdout, max_output_bytes));
+        let stderr_task = tokio::spawn(read_capped(stderr, max_output_bytes));
+        let status = match self.timeout {
+            Some(timeout) => match tokio::time::timeout(timeout, cp.wait()).await {
+                Ok(status) => status?,
+                Err(_) => {
+                    #[cfg(unix)]
+                    signal_process_tree(id, nix::sys::signal::Signal::SIGKILL);
+                    #[cfg(windows)]
+                    kill_process_tree(id);
+                    let _ = cp.wait().await;
+                    bail!("timed out after {timeout:?}");
+                }
+            },
+            None => cp.wait().await?,
+        };
+        let (stdout, stdout_len) = stdout_task.await??;
+        let (stderr, stderr_len) = stderr_task.await??;
+        if stdout_len.saturating_add(stderr_len) > max_output_bytes {
+            bail!("command output exceeded {max_output_bytes} bytes");
+        }
+        if !status.success() {
+            let output = std::process::Output {
+                status,
+                stdout: stdout.clone(),
+                stderr,
+            };
+            let combined_output = captured_output_lines(&self, &output);
+            self.replay_captured_stderr(&combined_output);
+            self.on_error(combined_output, output.status)?;
+        }
+        let stdout = String::from_utf8(stdout)
+            .wrap_err_with(|| format!("{} produced invalid UTF-8 output", self.get_program()))?;
+        Ok(stdout.trim_end().to_string())
+    }
+
     fn execute_raw(mut self) -> Result<()> {
         // In raw mode, inherit stdio so the child can interact with the terminal
         // directly. Piped stdout/stderr would deadlock if the child produces >64KB
@@ -2092,6 +2181,27 @@ mod tests {
         assert_eq!(stderr.lock().unwrap().as_slice(), ["err"]);
         assert_eq!(observed_stdout.lock().unwrap().as_slice(), ["out"]);
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_cmd_line_runner_read_bounded() {
+        let output = super::CmdLineRunner::new("sh")
+            .args(["-c", "cat"])
+            .stdin_string("bounded input")
+            .with_timeout(std::time::Duration::from_secs(1))
+            .read_bounded(1024)
+            .await
+            .unwrap();
+        assert_eq!(output, "bounded input");
+
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "printf 12345"])
+            .with_timeout(std::time::Duration::from_secs(1))
+            .read_bounded(4)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("output exceeded 4 bytes"));
     }
 
     #[tokio::test]

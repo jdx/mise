@@ -7,6 +7,7 @@
 //! bottle URL construction rules.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use eyre::{WrapErr, bail};
 use serde::Deserialize;
@@ -20,6 +21,8 @@ use crate::sandbox::SandboxConfig;
 
 const METADATA_SHIM_RB: &str = include_str!("tap_formula_metadata.rb");
 const CASK_METADATA_SHIM_RB: &str = include_str!("tap_cask_metadata.rb");
+const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
+const METADATA_MAX_OUTPUT_BYTES: usize = 1024 * 1024;
 
 #[derive(Deserialize)]
 struct GithubCommit {
@@ -63,10 +66,11 @@ pub(super) async fn formula_from_ruby(
             ("MISE_BREW_OS", std::env::consts::OS.to_string()),
             ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
+        .with_timeout(METADATA_TIMEOUT)
         .with_sandbox(metadata_sandbox()?);
     runner.apply_sandbox().await?;
     let output = runner
-        .read()
+        .read_bounded(METADATA_MAX_OUTPUT_BYTES)
         .await
         .wrap_err_with(|| format!("failed to evaluate Formula/{name}.rb"))?;
 
@@ -107,10 +111,11 @@ pub(super) async fn cask_from_ruby(
             ("MISE_BREW_OS", std::env::consts::OS.to_string()),
             ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
+        .with_timeout(METADATA_TIMEOUT)
         .with_sandbox(metadata_sandbox()?);
     runner.apply_sandbox().await?;
     let output = runner
-        .read()
+        .read_bounded(METADATA_MAX_OUTPUT_BYTES)
         .await
         .wrap_err_with(|| format!("failed to evaluate Casks/{token}.rb"))?;
     let cask: Cask = serde_json::from_str(&output)
