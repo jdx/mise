@@ -121,7 +121,7 @@ pub(crate) struct Stamps {
 
 impl Stamps {
     /// Fold in one host's verified list. The first host to stamp a version
-    /// is the one followed; a yank from any host excludes it.
+    /// is the one followed; a yank withdraws only that host's approval.
     fn add(&mut self, host: &str, list: &ReleaseListStatement) {
         self.hosts.push(host.to_string());
         for entry in &list.predicate.releases {
@@ -145,11 +145,8 @@ impl Stamps {
         }
     }
 
-    /// The stamp that admits a version, if one does and no host withdrew it.
+    /// The first non-yanked stamp that admits a version.
     pub(crate) fn stamp(&self, version: &str) -> Option<&Stamp> {
-        if self.yanked.contains_key(version) {
-            return None;
-        }
         self.stamps.get(version)
     }
 
@@ -304,10 +301,7 @@ pub(crate) async fn fetch(project: &str, opts: &ToolVersionOptions) -> Result<Op
 }
 
 fn is_not_found(err: &eyre::Report) -> bool {
-    err.downcast_ref::<reqwest::Error>()
-        .and_then(|e| e.status())
-        .is_some_and(|s| s == reqwest::StatusCode::NOT_FOUND)
-        || err.to_string().contains("404")
+    crate::http::error_code(err) == Some(404)
 }
 
 #[cfg(test)]
@@ -386,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn any_stamp_admits_and_any_yank_excludes() {
+    fn any_non_yanked_stamp_admits() {
         let mut stamps = Stamps::default();
         stamps.add(
             "a.example.com",
@@ -412,7 +406,7 @@ mod tests {
         );
         assert!(stamps.allows("1.0.0"));
         assert!(stamps.allows("1.2.0"));
-        assert!(!stamps.allows("1.1.0"), "b withdrew it");
+        assert!(stamps.allows("1.1.0"), "a still approves it");
         assert!(!stamps.allows("2.0.0"), "nobody stamped it");
         let first = stamps.stamp("1.0.0").unwrap();
         assert_eq!(first.host, "a.example.com");
@@ -421,11 +415,25 @@ mod tests {
             first.entry.packslip,
             "https://x/1.0.0/packslip.sigstore.json"
         );
-        let why = stamps.refusal("github.com/o/r", "1.1.0").to_string();
-        assert!(
-            why.contains("withdrawn by b.example.com: bad build"),
-            "{why}"
+        let mut reversed = Stamps::default();
+        reversed.add(
+            "b.example.com",
+            &list(
+                "github.com/o/r",
+                1,
+                &[("1.1.0", "https://y/1.1.0/p.json", true)],
+            ),
         );
+        assert!(!reversed.allows("1.1.0"));
+        reversed.add(
+            "a.example.com",
+            &list(
+                "github.com/o/r",
+                1,
+                &[("1.1.0", "https://x/1.1.0/p.json", false)],
+            ),
+        );
+        assert!(reversed.allows("1.1.0"));
         let why = stamps.refusal("github.com/o/r", "2.0.0").to_string();
         assert!(
             why.contains("no stamp from a.example.com, b.example.com")

@@ -812,6 +812,9 @@ impl Backend for PackslipBackend {
             ),
             None => None,
         };
+        // Vendor discovery is always authoritative for withdrawals and digest
+        // pins, even when a stamper supplies a mirror URL.
+        let vendor = self.locate_bundle(&project, &tv, &pin, &opts).await?;
         let located = match &stamp {
             Some(stamp) => {
                 debug!(
@@ -839,7 +842,11 @@ impl Backend for PackslipBackend {
                     digest: Some(digest),
                 }
             }
-            None => self.locate_bundle(&project, &tv, &pin, &opts).await?,
+            None => Located {
+                url: vendor.url.clone(),
+                headers: vendor.headers.clone(),
+                digest: vendor.digest.clone(),
+            },
         };
         let bundle_path = tv.download_path().join(bundle_name(&project));
         file::create_dir_all(tv.download_path())?;
@@ -851,7 +858,7 @@ impl Backend for PackslipBackend {
             Some(ctx.pr.as_ref()),
         )
         .await?;
-        if let Some(expected) = &located.digest {
+        for expected in located.digest.iter().chain(vendor.digest.iter()) {
             let (actual, _) = packslip::digest_file(&bundle_path)?;
             if &actual != expected {
                 bail!(
