@@ -211,7 +211,7 @@ def inferred_version(url)
   match && match[1]
 end
 
-eval(STDIN.read, TOPLEVEL_BINDING, FORMULA_FILE, 1)
+eval(STDIN.read.force_encoding("UTF-8"), TOPLEVEL_BINDING, FORMULA_FILE, 1)
 klass = Formula.instance_variable_get(:@subclass)
 raise "no Formula subclass found" unless klass
 raise "formula has no stable URL" if klass.source_url.to_s.empty?

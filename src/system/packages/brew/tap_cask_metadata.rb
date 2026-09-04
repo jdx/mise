@@ -288,7 +288,7 @@ def cask(token, &block)
   $mise_cask_metadata.instance_eval(&block)
 end
 
-eval(STDIN.read, TOPLEVEL_BINDING, CASK_FILE, 1)
+eval(STDIN.read.force_encoding("UTF-8"), TOPLEVEL_BINDING, CASK_FILE, 1)
 metadata = $mise_cask_metadata
 raise "no cask block found" if metadata.nil?
 expected = ENV.fetch("MISE_BREW_TOKEN")
