@@ -230,6 +230,12 @@
                 "enabled": {
                   "type": "boolean",
                   "default": true
+                },
+                "verify": {
+                  "deprecated": true,
+                  "description": "accepted for compatibility but ignored because rust_cache is deprecated and no longer used",
+                  "type": "boolean",
+                  "default": false
                 }
               }
             }
