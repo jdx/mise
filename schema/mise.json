@@ -5057,6 +5057,189 @@
             }
           },
           "additionalProperties": false
+        },
+        "files": {
+          "type": "object",
+          "description": "system files managed with `mise bootstrap files apply`, keyed by absolute target path",
+          "propertyNames": {
+            "pattern": "^(/|~/)"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "file providing the content; relative paths resolve from the declaring config file"
+              },
+              "content": {
+                "type": "string",
+                "description": "inline file content"
+              },
+              "owner": {
+                "type": "string",
+                "pattern": ".*\\S.*",
+                "description": "owning user name"
+              },
+              "group": {
+                "type": "string",
+                "pattern": ".*\\S.*",
+                "description": "owning group name"
+              },
+              "mode": {
+                "type": "string",
+                "pattern": "^(0o)?0*[0-7]{1,4}$",
+                "description": "octal permission mode (e.g. \"0644\"); defaults to 0644"
+              },
+              "template": {
+                "type": "boolean",
+                "default": false,
+                "description": "render the content with mise's template engine"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"],
+                "default": "present",
+                "description": "desired file state"
+              },
+              "replace": {
+                "type": "boolean",
+                "default": false,
+                "description": "replace a target of the wrong node type instead of refusing to destroy it"
+              },
+              "notify": {
+                "type": "array",
+                "description": "configured `[bootstrap.services]` names to notify after the file changes",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "oneOf": [
+              {
+                "title": "present file from a source path",
+                "required": ["source"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["content"]
+                    },
+                    {
+                      "properties": {
+                        "state": {
+                          "const": "absent"
+                        }
+                      },
+                      "required": ["state"]
+                    }
+                  ]
+                }
+              },
+              {
+                "title": "present file with inline content",
+                "required": ["content"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["source"]
+                    },
+                    {
+                      "properties": {
+                        "state": {
+                          "const": "absent"
+                        }
+                      },
+                      "required": ["state"]
+                    }
+                  ]
+                }
+              },
+              {
+                "title": "absent file",
+                "properties": {
+                  "state": {
+                    "const": "absent"
+                  }
+                },
+                "required": ["state"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["source"]
+                    },
+                    {
+                      "required": ["content"]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "directories": {
+          "type": "object",
+          "description": "system directories managed with `mise bootstrap files apply`, keyed by absolute target path",
+          "propertyNames": {
+            "pattern": "^(/|~/)"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "pattern": ".*\\S.*",
+                "description": "owning user name"
+              },
+              "group": {
+                "type": "string",
+                "pattern": ".*\\S.*",
+                "description": "owning group name"
+              },
+              "mode": {
+                "type": "string",
+                "pattern": "^(0o)?0*[0-7]{1,4}$",
+                "description": "octal permission mode (e.g. \"0755\"); defaults to 0755"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["present", "absent"],
+                "default": "present",
+                "description": "desired directory state"
+              },
+              "recursive": {
+                "type": "boolean",
+                "default": false,
+                "description": "recursively delete the directory's contents when removing it"
+              },
+              "replace": {
+                "type": "boolean",
+                "default": false,
+                "description": "replace a target of the wrong node type instead of refusing to destroy it"
+              },
+              "notify": {
+                "type": "array",
+                "description": "configured `[bootstrap.services]` names to notify after the directory changes",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "recursive": {
+                  "const": true
+                }
+              },
+              "required": ["recursive"]
+            },
+            "then": {
+              "properties": {
+                "state": {
+                  "const": "absent"
+                }
+              },
+              "required": ["state"]
+            }
+          }
         }
       }
     },
