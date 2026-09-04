@@ -356,20 +356,13 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let is_gitlab_com = host == "gitlab.com";
 
     // 1. Enterprise token (non-gitlab.com only)
-    if !is_gitlab_com && let Some(token) = env::MISE_GITLAB_ENTERPRISE_TOKEN.as_deref() {
-        return Some((
-            token.to_string(),
-            TokenSource::EnvVar("MISE_GITLAB_ENTERPRISE_TOKEN"),
-        ));
+    if !is_gitlab_com && let Some(token) = env::scoped_var("MISE_GITLAB_ENTERPRISE_TOKEN") {
+        return Some((token, TokenSource::EnvVar("MISE_GITLAB_ENTERPRISE_TOKEN")));
     }
 
     // 2. Standard env vars
     for var_name in &["MISE_GITLAB_TOKEN", "GITLAB_TOKEN"] {
-        if let Some(token) = std::env::var(var_name)
-            .ok()
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty())
-        {
+        if let Some(token) = env::scoped_var(var_name) {
             return Some((token, TokenSource::EnvVar(var_name)));
         }
     }

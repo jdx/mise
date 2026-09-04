@@ -3406,7 +3406,10 @@ pub(crate) trait Backend: Debug + Send + Sync {
         self.create_install_dirs(&tv)?;
 
         let old_tv = tv.clone();
-        let tv = match self.install_version_(&ctx, tv).await {
+        let install_env = tv.install_env();
+        let tv = match crate::env::with_install_env(install_env, self.install_version_(&ctx, tv))
+            .await
+        {
             Ok(tv) => tv,
             Err(e) => {
                 self.cleanup_install_dirs_on_error(&old_tv);

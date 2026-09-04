@@ -98,6 +98,15 @@ impl ToolVersion {
         request: ToolRequest,
         opts: &ResolveOptions,
     ) -> Result<Self> {
+        let install_env = request.options().core.install_env;
+        crate::env::with_install_env(install_env, Self::resolve_(config, request, opts)).await
+    }
+
+    async fn resolve_(
+        config: &Arc<Config>,
+        request: ToolRequest,
+        opts: &ResolveOptions,
+    ) -> Result<Self> {
         let minimum_release_age = request.options().minimum_release_age().map(str::to_string);
         let mut opts = opts.clone();
         opts.apply_before_date_for_tool(request.ba(), minimum_release_age.as_deref())?;

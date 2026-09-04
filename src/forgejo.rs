@@ -250,20 +250,13 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let is_codeberg = host == "codeberg.org";
 
     // 1. Enterprise token (non-codeberg.org only)
-    if !is_codeberg && let Some(token) = env::MISE_FORGEJO_ENTERPRISE_TOKEN.as_deref() {
-        return Some((
-            token.to_string(),
-            TokenSource::EnvVar("MISE_FORGEJO_ENTERPRISE_TOKEN"),
-        ));
+    if !is_codeberg && let Some(token) = env::scoped_var("MISE_FORGEJO_ENTERPRISE_TOKEN") {
+        return Some((token, TokenSource::EnvVar("MISE_FORGEJO_ENTERPRISE_TOKEN")));
     }
 
     // 2. Standard env vars
     for var_name in &["MISE_FORGEJO_TOKEN", "FORGEJO_TOKEN"] {
-        if let Some(tok) = std::env::var(var_name)
-            .ok()
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty())
-        {
+        if let Some(tok) = env::scoped_var(var_name) {
             return Some((tok, TokenSource::EnvVar(var_name)));
         }
     }
