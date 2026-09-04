@@ -68,6 +68,9 @@ export const commands: { [key: string]: Command } = {
           },
         },
       },
+      "config-roots": {
+        hide: false,
+      },
       dotfiles: {
         hide: false,
         subcommands: {
