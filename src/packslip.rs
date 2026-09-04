@@ -186,37 +186,38 @@ pub(crate) async fn fetch_files(
                     continue;
                 };
                 let dest = base.join("assets").join(name);
-                if dest.exists() {
-                    continue;
+                if !dest.exists() {
+                    let Some(url) = &resource.url else {
+                        warn!("{}: asset {name} has no download URL", tv.style());
+                        continue;
+                    };
+                    pr.set_message(format!("download {name}"));
+                    file::create_dir_all(dest.parent().unwrap_or(&base))?;
+                    // The tool is installed by now and the asset is an extra:
+                    // one that cannot be fetched is reported, not fatal. One
+                    // that arrives with the wrong digest is another matter.
+                    if let Err(err) = HTTP
+                        .download_file_with_headers(url, &dest, &headers_for(url)?, Some(pr))
+                        .await
+                    {
+                        let _ = file::remove_all(&dest);
+                        warn!("{}: could not fetch {name}: {err}", tv.style());
+                        continue;
+                    }
+                    let (actual, _) = packslip::digest_file(&dest)?;
+                    let expected = statement.digest_of(name);
+                    if expected != Some(actual.as_str()) {
+                        let _ = file::remove_all(&dest);
+                        bail!(
+                            "{name}: sha256 is {actual}, the packslip says {}",
+                            expected.unwrap_or("it is not a subject")
+                        );
+                    }
                 }
-                let Some(url) = &resource.url else {
-                    warn!("{}: asset {name} has no download URL", tv.style());
-                    continue;
-                };
-                pr.set_message(format!("download {name}"));
-                file::create_dir_all(dest.parent().unwrap_or(&base))?;
-                // The tool is installed by now and the asset is an extra: one
-                // that cannot be fetched is reported, not fatal. One that
-                // arrives with the wrong digest is another matter.
-                if let Err(err) = HTTP
-                    .download_file_with_headers(url, &dest, &headers_for(url)?, Some(pr))
-                    .await
-                {
-                    let _ = file::remove_all(&dest);
-                    warn!("{}: could not fetch {name}: {err}", tv.style());
-                    continue;
-                }
-                let (actual, _) = packslip::digest_file(&dest)?;
-                let expected = statement.digest_of(name);
-                if expected != Some(actual.as_str()) {
-                    let _ = file::remove_all(&dest);
-                    bail!(
-                        "{name}: sha256 is {actual}, the packslip says {}",
-                        expected.unwrap_or("it is not a subject")
-                    );
-                }
+                // The archive and the unpacked skill are separate: an archive
+                // left by an earlier attempt still needs unpacking.
                 if resource.kind == "skill"
-                    && let Some(skill) = &resource.name
+                    && let Some(skill) = skill_name(resource)
                 {
                     let dir = base.join("skills").join(skill);
                     if !dir.is_dir() {
@@ -331,6 +332,9 @@ pub(crate) async fn fetch_files(
 
 /// An executable of the install, by the name the packslip gave it.
 fn installed_bin(install_path: &Path, program: &str) -> Option<PathBuf> {
+    if !is_safe_relative(program) {
+        return None;
+    }
     let linked = install_path.join(MISE_BINS_DIR).join(program);
     if linked.exists() {
         return Some(linked);
@@ -469,7 +473,7 @@ pub(crate) fn skills_of(
         .filter(|r| r.kind == "skill")
         .filter_map(|r| {
             Some(Skill {
-                name: r.name.clone()?,
+                name: skill_name(r)?.to_string(),
                 tool: tool.to_string(),
                 version: version.to_string(),
                 path: resource_dir(install_path, r)?,
@@ -550,7 +554,9 @@ pub(crate) fn sync_skills(
     }
     for (name, skill) in &wanted {
         let link = dir.join(name);
-        if file::is_symlink_to(&link, &skill.path) {
+        // Already right, and mise's: a link a person made to the same place
+        // is still theirs and is not adopted.
+        if ours(name, &link) && file::is_symlink_to(&link, &skill.path) {
             report.unchanged.push(name.to_string());
             continue;
         }
@@ -589,7 +595,7 @@ pub(crate) fn sync_skills(
             state
                 .links
                 .iter()
-                .filter(|name| dir.join(name).is_symlink())
+                .filter(|name| file::is_symlink_or_junction(&dir.join(name)))
                 .cloned(),
         );
     }
@@ -1274,6 +1280,11 @@ mod tests {
             {"kind":"skill","name":"missing","archive":"nowhere"}
         ]"#,
         );
+        // A name that would leave the directory, as a tampered file could carry.
+        let mut s = s;
+        let mut escape = s.predicate.resources[0].clone();
+        escape.name = Some("../escape".into());
+        s.predicate.resources.push(escape);
         let skills = skills_of(&s, root, "tool", "1");
         assert_eq!(
             skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
@@ -1371,6 +1382,27 @@ mod tests {
         );
         assert_eq!(report.pruned, Vec::<String>::new());
         assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+
+        // Even a person's link that already points at the wanted skill is
+        // not adopted: it is skipped, not recorded as mise's.
+        file::make_symlink(&other, &target.join("same")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[skill("same", "other", "1", &other)],
+            &installs,
+            false,
+        )
+        .unwrap();
+        assert_eq!(report.unchanged, Vec::<String>::new());
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
+        let state: serde_json::Value =
+            serde_json::from_str(&file::read_to_string(target.join(SYNC_STATE)).unwrap()).unwrap();
+        assert!(
+            !state["links"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("same"))
+        );
 
         // Nothing to link creates nothing.
         let empty = dir.path().join("empty");
