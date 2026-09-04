@@ -32,7 +32,7 @@ use crate::backend::{
     runtime_path_for_install_path,
 };
 use crate::cli::args::BackendArg;
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::dirs;
 use crate::file;
 use crate::github;
@@ -40,6 +40,10 @@ use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
+
+/// The format is a draft and few projects publish one yet, so the backend
+/// is behind the experimental setting until both settle.
+pub(crate) const EXPERIMENTAL: bool = true;
 
 /// The verified statement, kept beside the install so the rest of mise can
 /// read what the release declared without verifying it again.
@@ -446,6 +450,10 @@ impl PackslipBackend {
         Self { ba: Arc::new(ba) }
     }
 
+    fn ensure_experimental(&self) -> Result<()> {
+        Settings::get().ensure_experimental("packslip backend")
+    }
+
     fn project(&self) -> Result<String> {
         project_name(&self.ba.tool_name())
     }
@@ -668,6 +676,7 @@ impl Backend for PackslipBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
+        self.ensure_experimental()?;
         let project = self.project()?;
         let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
         let opts = PackslipOptions::new(&raw_opts);
@@ -734,6 +743,7 @@ impl Backend for PackslipBackend {
         ctx: &InstallContext,
         mut tv: ToolVersion,
     ) -> Result<ToolVersion> {
+        self.ensure_experimental()?;
         let project = self.project()?;
         let raw_opts = tv.request.options();
         let opts = PackslipOptions::new(&raw_opts);

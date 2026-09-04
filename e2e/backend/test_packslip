@@ -5,8 +5,12 @@
 # release workflow, which is the identity the project name pins.
 
 # Every release carrying a packslip is recent; do not let the default
-# minimum release age hide them all.
+# minimum release age hide them all. The backend is experimental.
 export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_EXPERIMENTAL=1
+
+# Without the experimental setting the backend refuses to do anything.
+assert_fail_contains "env -u MISE_EXPERIMENTAL mise ls-remote packslip:github.com/jdx/packslip" "experimental"
 
 assert_contains "mise ls-remote packslip:github.com/jdx/packslip" "0.2.0"
 

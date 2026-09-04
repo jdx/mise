@@ -1,12 +1,32 @@
-# packslip Backend
+# packslip Backend <Badge type="warning" text="experimental" />
 
 The `packslip` backend installs a release from the vendor's own signed release manifest, a [packslip](https://packslip.dev). One file per release, `packslip.sigstore.json`, says what shipped and how to verify it: checksums, platforms, executables, and provenance links, in a standard sigstore bundle. mise verifies it against the identity the project name implies and installs exactly what it lists, so nothing is guessed from file names and no registry entry is needed.
 
 The code for this is inside of the mise repository at [`./src/backend/packslip.rs`](https://github.com/jdx/mise/blob/main/src/backend/packslip.rs).
 
 ::: warning
-packslip is a work-in-progress proposal. The format still changes between releases, and few projects publish one yet.
+packslip is a work-in-progress proposal and this backend is experimental: enable it with `mise settings experimental=true`. The format still changes between releases, and few projects publish one yet.
 :::
+
+## Why publish one
+
+Every other way mise installs a release rests on somebody else's guess about it: a registry entry, an aqua definition with a history of asset-name overrides, or mise's own matching of file names against the host. The vendor knows what it shipped. A packslip lets it say so, once, signed, and everything downstream follows from that.
+
+For a vendor:
+
+- **You define the install, not a registry.** Which file is for which platform, which executables it holds and what they are called on PATH, what the host needs. When a layout or a naming scheme changes, the next packslip says so and no consumer breaks.
+- **You ship more than binaries.** Shell completions, man pages, a [usage](https://usage.jdx.dev) spec of the CLI, an [agent skill](https://packslip.dev/release/v1/#resources), a desktop entry: each declared once, installed by every consumer that reads packslips, in the version the user actually has.
+- **It is one step in the release job.** `uses: jdx/packslip@v1` with the artifact glob attests build provenance, signs the manifest keylessly with the workflow's own identity, and uploads it. There is no key to create, store, or rotate, and no registry pull request to open or keep current.
+- **Consumers verify you, not a mirror of you.** The signer is your repository's workflow. A packslip nobody but you could have produced is what gets installed, on every consumer, without any of them trusting a checksum file over TLS or a third party's copy.
+
+For a user asking a vendor for one:
+
+- **Every install is verified against a pinned identity**: signature, transparency log entry, the statement, then the digest and size of the artifact, before anything is unpacked. A changed signer, a weaker scheme, or dropped provenance is refused rather than silently accepted.
+- **The right artifact, chosen by what the vendor declared** rather than by file-name heuristics, with musl and gnu, universal binaries, and variants such as FIPS builds handled as the manifest says.
+- **Completions and skills that match the version in use**, from the vendor, with no per-tool plumbing in mise or in your shell config.
+- **Lockfiles that mean something.** The URL, the digest, and the signer of every release are recorded, so a teammate or CI gets exactly the bytes and the signer the project committed to.
+
+The specification is short and the reference tooling is a single binary; [packslip.dev](https://packslip.dev) has both.
 
 ## Usage
 
