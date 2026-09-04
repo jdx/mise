@@ -4127,29 +4127,6 @@
           {
             "type": "object",
             "description": "whole-file dotfile entry or file edit entry",
-            "oneOf": [
-              {
-                "required": ["manifest"],
-                "properties": {
-                  "source": {},
-                  "content": false,
-                  "mode": {
-                    "enum": ["copy", "symlink-each"]
-                  },
-                  "exclude": {},
-                  "manifest": {},
-                  "block": false,
-                  "line": false,
-                  "template": false,
-                  "comment": false
-                }
-              },
-              {
-                "properties": {
-                  "manifest": false
-                }
-              }
-            ],
             "properties": {
               "encrypt": {
                 "type": "boolean",
@@ -4226,39 +4203,68 @@
                 "description": "comment prefix for edit marker lines; inferred from the file extension when omitted"
               }
             },
-            "oneOf": [
+            "allOf": [
               {
-                "required": ["content"],
-                "properties": {
-                  "source": false,
-                  "manifest": false,
-                  "mode": false,
-                  "exclude": false,
-                  "block": false,
-                  "line": false,
-                  "position": false,
-                  "template": false,
-                  "comment": false
-                }
+                "oneOf": [
+                  {
+                    "required": ["manifest"],
+                    "properties": {
+                      "source": {},
+                      "content": false,
+                      "mode": {
+                        "enum": ["copy", "symlink-each"]
+                      },
+                      "exclude": {},
+                      "manifest": {},
+                      "block": false,
+                      "line": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "properties": {
+                      "manifest": false
+                    }
+                  }
+                ]
               },
               {
-                "required": ["line"],
-                "properties": {
-                  "content": false,
-                  "mode": false,
-                  "exclude": false,
-                  "source": false,
-                  "block": false,
-                  "template": false,
-                  "comment": false
-                }
-              },
-              {
-                "properties": {
-                  "content": false,
-                  "line": false,
-                  "position": false
-                }
+                "oneOf": [
+                  {
+                    "required": ["content"],
+                    "properties": {
+                      "source": false,
+                      "manifest": false,
+                      "mode": false,
+                      "exclude": false,
+                      "block": false,
+                      "line": false,
+                      "position": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "required": ["line"],
+                    "properties": {
+                      "content": false,
+                      "mode": false,
+                      "exclude": false,
+                      "source": false,
+                      "block": false,
+                      "template": false,
+                      "comment": false
+                    }
+                  },
+                  {
+                    "properties": {
+                      "content": false,
+                      "line": false,
+                      "position": false
+                    }
+                  }
+                ]
               }
             ],
             "anyOf": [
