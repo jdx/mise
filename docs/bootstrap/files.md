@@ -18,7 +18,8 @@ mode = "0644"
 ```
 
 File content may come from `source` or inline `content`. Relative source paths
-are resolved from the configuration file that declares them. Present files
+are resolved from the configuration file that declares them, and source paths
+beginning with `~/` are resolved from the user's home directory. Present files
 must declare exactly one content source. Targets must be absolute paths, and
 mise refuses to manage `/` itself.
 
