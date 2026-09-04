@@ -9,11 +9,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eyre::{Result, WrapErr, bail, eyre};
-use packslip::model::{Resource, ResourceSource, Statement};
+use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fits};
 use reqwest::header::{HeaderMap, HeaderValue};
 
 use crate::backend::Backend;
-use crate::backend::packslip::{STATEMENT_FILE, is_safe_relative, locate_in_install};
+use crate::backend::packslip::{
+    STATEMENT_FILE, is_safe_relative, locate_in_install, selected_artifact,
+};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file;
@@ -220,16 +222,53 @@ pub(crate) enum CompletionSource {
     },
 }
 
+/// The entries of one kind that apply to the selected artifact, keeping
+/// only the most specific of them: a resource may carry `os`, `arch`, or
+/// `libc` when layouts differ by platform, and the one naming the most of
+/// those wins. With no artifact selected, only unscoped entries apply.
+pub(crate) fn applicable<'a>(
+    resources: impl Iterator<Item = &'a Resource>,
+    artifact: Option<&Artifact>,
+) -> Vec<&'a Resource> {
+    let specificity = |r: &Resource| {
+        [&r.os, &r.arch, &r.libc]
+            .into_iter()
+            .filter(|f| f.is_some())
+            .count()
+    };
+    let fits: Vec<&Resource> = resources
+        .filter(|r| match artifact {
+            Some(artifact) => resource_fits(r, artifact),
+            None => specificity(r) == 0,
+        })
+        .collect();
+    let best = fits.iter().map(|r| specificity(r)).max().unwrap_or(0);
+    fits.into_iter()
+        .filter(|r| specificity(r) == best)
+        .collect()
+}
+
 /// Every way the statement offers a `shell` completion, in the order the
-/// specification says a consumer takes them: shipped scripts, then a
-/// script derived from a CLI spec, then anything that runs the tool.
+/// specification says a consumer takes them: the entries that apply to
+/// the selected artifact, then shipped scripts, then a script derived
+/// from a CLI spec, then anything that runs the tool.
 pub(crate) fn completion_sources(
     statement: &Statement,
     install_path: &Path,
     shell: &str,
+    artifact: Option<&Artifact>,
 ) -> Vec<CompletionSource> {
     let resources = &statement.predicate.resources;
-    let completions = || resources.iter().filter(|r| r.kind == "completion");
+    let for_shell_all =
+        |r: &Resource| r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell);
+    let completion_entries = applicable(
+        resources
+            .iter()
+            .filter(|r| r.kind == "completion" && for_shell_all(r)),
+        artifact,
+    );
+    let spec_entries = applicable(resources.iter().filter(|r| r.kind == "cli-spec"), artifact);
+    let completions = || completion_entries.iter().copied();
     let for_shell =
         |r: &Resource| r.shell.as_deref() == Some(shell) || r.shells.iter().any(|s| s == shell);
     let mut sources = Vec::new();
@@ -245,9 +284,9 @@ pub(crate) fn completion_sources(
         }
     }
     let specs = || {
-        resources
+        spec_entries
             .iter()
-            .filter(|r| r.kind == "cli-spec")
+            .copied()
             .filter_map(|r| Some((r, r.format.clone()?, r.bin.clone()?)))
     };
     for (r, format, bin) in specs().filter(|(r, ..)| r.source() != Some(ResourceSource::Exec)) {
@@ -351,7 +390,11 @@ pub(crate) async fn completion_script(
             tv.style()
         );
     };
-    let sources = completion_sources(&statement, &install_path, shell);
+    let artifact = selected_artifact(
+        &statement,
+        tv.request.options().get_string("variant").as_deref(),
+    );
+    let sources = completion_sources(&statement, &install_path, shell, artifact.as_ref());
     if sources.is_empty() {
         bail!(
             "the packslip of {} declares no {shell} completion",
@@ -628,7 +671,8 @@ mod tests {
             {"kind":"completion","shell":"zsh","archive":"share/_t"}
         ]"#,
         );
-        let sources = completion_sources(&s, root, "zsh");
+        let host = s.predicate.artifacts[0].clone();
+        let sources = completion_sources(&s, root, "zsh", Some(&host));
         assert_eq!(
             sources,
             vec![
@@ -649,15 +693,57 @@ mod tests {
             ],
             "shipped files first, an unfetched asset skipped, then the spec, then anything that runs the tool"
         );
-        let fish = completion_sources(&s, root, "fish");
+        let fish = completion_sources(&s, root, "fish", Some(&host));
         assert!(
             matches!(fish.first(), Some(CompletionSource::Spec { .. })),
             "the fish file is not in the archive, so the spec comes first: {fish:?}"
         );
         assert!(
-            completion_sources(&s, root, "nu")
+            completion_sources(&s, root, "nu", Some(&host))
                 .iter()
                 .all(|c| !matches!(c, CompletionSource::File(_) | CompletionSource::Exec(_)))
+        );
+    }
+
+    #[test]
+    fn scoped_resources_follow_the_selected_artifact() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for f in ["_t.linux", "_t.any", "_t.mac"] {
+            std::fs::write(root.join(f), "").unwrap();
+        }
+        let s = statement_with(
+            r#"[
+            {"kind":"completion","shell":"zsh","archive":"_t.any"},
+            {"kind":"completion","shell":"zsh","os":"linux","archive":"_t.linux"},
+            {"kind":"completion","shell":"zsh","os":"darwin","archive":"_t.mac"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let linux = s.predicate.artifacts[0].clone();
+        assert_eq!(
+            completion_sources(&s, root, "zsh", Some(&linux)),
+            vec![CompletionSource::File(root.join("_t.linux"))],
+            "the most specific applicable entry wins"
+        );
+        let mut mac = linux.clone();
+        mac.os = Some("darwin".into());
+        mac.libc = None;
+        assert_eq!(
+            completion_sources(&s, root, "zsh", Some(&mac)),
+            vec![CompletionSource::File(root.join("_t.mac"))]
+        );
+        let mut windows = mac.clone();
+        windows.os = Some("windows".into());
+        assert_eq!(
+            completion_sources(&s, root, "zsh", Some(&windows)),
+            vec![CompletionSource::File(root.join("_t.any"))],
+            "nothing scoped fits, so the unscoped entry applies"
+        );
+        assert_eq!(
+            completion_sources(&s, root, "zsh", None),
+            vec![CompletionSource::File(root.join("_t.any"))],
+            "with no artifact selected only unscoped entries apply"
         );
     }
 
