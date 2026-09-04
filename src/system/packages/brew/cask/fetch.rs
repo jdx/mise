@@ -66,7 +66,12 @@ pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Re
                     "published cask metadata was unavailable ({api_err}) and mise could not evaluate Casks/{requested_token}.rb"
                 )
             })?;
-            cask.raw_base = raw_base;
+            cask.raw_base = req
+                .tap_url
+                .as_deref()
+                .and_then(super::super::api::github_raw_base)
+                .map(normalize_cask_raw_base)
+                .or(raw_base);
             validate_cask_identity(&cask, requested_token, false)?;
             Ok(cask)
         }

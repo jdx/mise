@@ -26,7 +26,7 @@ class MacOSVersion
   }.freeze
 
   def self.host
-    @host ||= new(OS.mac? ? `sw_vers -productVersion`.strip : "0")
+    @host ||= new(ENV.fetch("MISE_BREW_MACOS_VERSION"))
   end
 
   def self.from_symbol(symbol) = new(SYMBOLS.fetch(symbol.to_sym))

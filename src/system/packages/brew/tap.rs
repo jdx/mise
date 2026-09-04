@@ -70,6 +70,7 @@ pub(super) async fn formula_from_ruby(
             ("MISE_BREW_SOURCE_PATH", source_path),
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
+            ("MISE_BREW_MACOS_VERSION", macos_version()),
         ])
         .with_sandbox(metadata_sandbox(&formula_path, &shim_path, &output_path)?);
     runner.apply_sandbox().await?;
@@ -121,6 +122,7 @@ pub(super) async fn cask_from_ruby(
             ("MISE_BREW_SOURCE_PATH", source_path),
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
+            ("MISE_BREW_MACOS_VERSION", macos_version()),
         ])
         .with_sandbox(metadata_sandbox(&cask_path, &shim_path, &output_path)?);
     runner.apply_sandbox().await?;
@@ -155,6 +157,17 @@ fn metadata_sandbox(_source: &Path, _shim: &Path, _output: &Path) -> Result<Sand
     bail!(
         "evaluating third-party tap definitions is only supported inside the Linux or macOS process sandbox"
     )
+}
+
+fn macos_version() -> String {
+    if cfg!(target_os = "macos") {
+        crate::cmd::cmd("sw_vers", ["-productVersion"])
+            .read()
+            .map(|version| version.trim().to_string())
+            .unwrap_or_default()
+    } else {
+        "0".to_string()
+    }
 }
 
 async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Result<TapSource> {
@@ -275,7 +288,6 @@ fn validate_name(name: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
 
     async fn test_ruby() -> Result<Option<PathBuf>> {
         if let Some(ruby) = usable_system_ruby().await {
@@ -333,8 +345,8 @@ end
 "#,
         )?;
         crate::file::write(&shim, METADATA_SHIM_RB)?;
-        let status = Command::new(ruby)
-            .arg(shim)
+        let mut runner = CmdLineRunner::new(ruby)
+            .arg(&shim)
             .env("MISE_BREW_FORMULA_FILE", &formula)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
             .env("MISE_BREW_NAME", "widget")
@@ -342,8 +354,10 @@ end
             .env("MISE_BREW_SOURCE_PATH", "Formula/widget.rb")
             .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
             .env("MISE_BREW_TAP_COMMIT", "deadbeef")
-            .status()?;
-        assert!(status.success());
+            .env("MISE_BREW_MACOS_VERSION", macos_version())
+            .with_sandbox(metadata_sandbox(&formula, &shim, &output)?);
+        runner.apply_sandbox().await?;
+        runner.execute_async().await?;
         let formula: Formula = serde_json::from_str(&crate::file::read_to_string(output)?)?;
         assert_eq!(formula.name, "widget");
         assert_eq!(formula.versions.stable.as_deref(), Some("1.2.3"));
@@ -387,16 +401,18 @@ end
 "#,
         )?;
         crate::file::write(&shim, CASK_METADATA_SHIM_RB)?;
-        let status = Command::new(ruby)
-            .arg(shim)
+        let mut runner = CmdLineRunner::new(ruby)
+            .arg(&shim)
             .env("MISE_BREW_CASK_FILE", &cask_file)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
             .env("MISE_BREW_TOKEN", "widget")
             .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
             .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
             .env("MISE_BREW_TAP_COMMIT", "deadbeef")
-            .status()?;
-        assert!(status.success());
+            .env("MISE_BREW_MACOS_VERSION", macos_version())
+            .with_sandbox(metadata_sandbox(&cask_file, &shim, &output)?);
+        runner.apply_sandbox().await?;
+        runner.execute_async().await?;
         let json = crate::file::read_to_string(output)?;
         let _: Cask = serde_json::from_str(&json)?;
         let metadata: serde_json::Value = serde_json::from_str(&json)?;
