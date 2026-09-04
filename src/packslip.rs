@@ -1662,6 +1662,42 @@ mod tests {
     }
 
     #[test]
+    fn specs_rank_by_specificity_within_one_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for f in ["any.kdl", "linux.kdl", "any.json"] {
+            std::fs::write(root.join(f), "").unwrap();
+        }
+        let s = statement_with(
+            r#"[
+            {"kind":"cli-spec","format":"usage","bin":"t","archive":"any.kdl"},
+            {"kind":"cli-spec","format":"usage","bin":"t","os":"linux","archive":"linux.kdl"},
+            {"kind":"cli-spec","format":"clap","bin":"t","archive":"any.json"},
+            {"kind":"skill","name":"t","asset":"t-skill.tar.gz"}
+        ]"#,
+        );
+        let spec = |format: &str, path: &str| CompletionSource::Spec {
+            format: format.into(),
+            bin: "t".into(),
+            path: root.join(path),
+        };
+        let linux = s.predicate.artifacts[0].clone();
+        assert_eq!(
+            completion_sources(&s, root, "zsh", Some(&linux), Some("t")),
+            vec![spec("usage", "linux.kdl"), spec("clap", "any.json")],
+            "a scoped spec wins for its own format, and never hides another format"
+        );
+        let mut windows = linux.clone();
+        windows.os = Some("windows".into());
+        windows.libc = None;
+        assert_eq!(
+            completion_sources(&s, root, "zsh", Some(&windows), Some("t")),
+            vec![spec("usage", "any.kdl"), spec("clap", "any.json")],
+            "nothing scoped fits, so the unscoped spec applies"
+        );
+    }
+
+    #[test]
     fn scoped_resources_follow_the_selected_artifact() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
