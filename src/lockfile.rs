@@ -2854,7 +2854,12 @@ pub(crate) async fn resolve_tool_lock_info(
                 );
             }
         };
-        match backend.resolve_lock_info(&tv, &target).await {
+        match crate::env::with_install_env(
+            tv.install_env(),
+            backend.resolve_lock_info(&tv, &target),
+        )
+        .await
+        {
             Ok(info) => {
                 let conda_packages = if backend.get_type() == BackendType::Conda {
                     let conda_backend = CondaBackend::from_arg(ba.clone());

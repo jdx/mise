@@ -686,20 +686,13 @@ pub(crate) fn resolve_token(host: &str) -> Option<(String, TokenSource)> {
     let lookup_hosts = token_lookup_hosts(host);
 
     // 1. Enterprise token (non-github.com only)
-    if !is_ghcom && let Some(token) = env::MISE_GITHUB_ENTERPRISE_TOKEN.as_deref() {
-        return Some((
-            token.to_string(),
-            TokenSource::EnvVar("MISE_GITHUB_ENTERPRISE_TOKEN"),
-        ));
+    if !is_ghcom && let Some(token) = env::scoped_var("MISE_GITHUB_ENTERPRISE_TOKEN") {
+        return Some((token, TokenSource::EnvVar("MISE_GITHUB_ENTERPRISE_TOKEN")));
     }
 
     // 2. Standard env vars (checked individually for correct precedence and source reporting)
     for var_name in GITHUB_TOKEN_ENV_VARS {
-        if let Some(token) = std::env::var(var_name)
-            .ok()
-            .map(|t| t.trim().to_string())
-            .filter(|t| !t.is_empty())
-        {
+        if let Some(token) = env::scoped_var(var_name) {
             return Some((token, TokenSource::EnvVar(var_name)));
         }
     }
@@ -1289,6 +1282,42 @@ something_else = "value"
             published_at: None,
             assets: vec![],
         }
+    }
+
+    #[tokio::test]
+    async fn test_download_uses_scoped_install_env() {
+        let _token = GithubTokenGuard::new();
+        let _config = crate::config::Config::get().await.unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let api_url = ghes_api_url(&server.url());
+        let install_env = [(
+            "GITHUB_TOKEN".to_string(),
+            crate::config::env_directive::EnvValue::from(false),
+        )]
+        .into_iter()
+        .collect();
+        let mock = server
+            .mock("GET", format!("{API_PATH}/download").as_str())
+            .match_header("authorization", mockito::Matcher::Missing)
+            .with_status(200)
+            .with_body("download")
+            .expect(1)
+            .create_async()
+            .await;
+        let tempdir = tempfile::tempdir().unwrap();
+
+        crate::env::with_install_env(install_env, async {
+            crate::http::HTTP
+                .download_file(
+                    format!("{api_url}/download"),
+                    &tempdir.path().join("file"),
+                    None,
+                )
+                .await
+        })
+        .await
+        .unwrap();
+        mock.assert_async().await;
     }
 
     #[test]
