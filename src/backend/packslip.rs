@@ -881,6 +881,8 @@ impl Backend for PackslipBackend {
             tv.install_path().join(STATEMENT_FILE),
             serde_json::to_vec_pretty(&statement)?,
         )?;
+        // Completions and CLI specs the vendor keeps outside the artifact.
+        crate::packslip::fetch_files(&tv, &statement, ctx.pr.as_ref()).await?;
         Ok(tv)
     }
 

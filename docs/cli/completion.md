@@ -27,6 +27,14 @@ Generate shell completions
 - **`--force`** — Replace a file at the target path that mise did not write
 
   **Effect:** modifies state
+- **`--tool <TOOL>`** — A tool's completion instead of mise's own, from the packslip it was installed from
+
+  NAME is a tool installed with the `packslip:` backend, or one of its executables. The
+  script comes from whichever version is active here, from the most verifiable source its
+  packslip offers: a file the vendor shipped, a script derived from its CLI spec, or, only
+  with `packslip.exec` enabled, a command of the tool's own. With --install, what is written
+  is a small stub that asks mise for the script when the shell first completes the tool, so
+  it follows version switches without being rewritten.
 - **`-h --help`** — Print help
 
 Examples:
@@ -34,6 +42,10 @@ Examples:
 ```
 # put it where the shell looks, and print any one-time line it still needs
 $ mise completion zsh --install
+
+# a tool's completion, from the packslip it was installed from
+$ mise completion zsh --tool rg
+$ mise completion zsh --tool rg --install
 
 # or choose the path yourself
 $ mise completion bash > ~/.local/share/bash-completion/completions/mise
