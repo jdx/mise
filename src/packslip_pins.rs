@@ -197,40 +197,7 @@ pub(crate) fn record_at(path: &Path, project: &str, observed: Observed<'_>) -> R
 /// Refuse a release list whose sequence is below one already accepted for
 /// the project, and remember the highest seen.
 pub(crate) fn check_sequence(project: &str, sequence: u64) -> Result<()> {
-    let path = pins_file();
-    adopt_legacy_sequence_at(&path, &legacy_sequence_file(project), project)?;
-    check_sequence_at(&path, project, sequence)
-}
-
-/// Where a floor was kept before it moved into the pins file: one file
-/// per project, `/` and `%` escaped in the name.
-fn legacy_sequence_file(project: &str) -> PathBuf {
-    let name = project.replace('%', "%25").replace('/', "%2F");
-    dirs::STATE
-        .join("packslip")
-        .join("sequence")
-        .join(format!("{name}.txt"))
-}
-
-/// Carry a floor from the old per-project file into the pins file, so a
-/// machine that had one keeps refusing older lists, then drop the file.
-fn adopt_legacy_sequence_at(path: &Path, legacy: &Path, project: &str) -> Result<()> {
-    let Some(last) = file::read_to_string(legacy)
-        .ok()
-        .and_then(|text| text.trim().parse::<u64>().ok())
-    else {
-        return Ok(());
-    };
-    {
-        let _lock = locked(path)?;
-        let mut pins = load(path)?;
-        if pins.sequences.get(project).is_none_or(|&s| s < last) {
-            pins.sequences.insert(project.to_string(), last);
-            save(path, &pins)?;
-        }
-    }
-    file::remove_file(legacy)?;
-    Ok(())
+    check_sequence_at(&pins_file(), project, sequence)
 }
 
 pub(crate) fn check_sequence_at(path: &Path, project: &str, sequence: u64) -> Result<()> {
@@ -408,33 +375,6 @@ mod tests {
         check_sequence_at(&path, "other.example.com", 1).unwrap();
         assert!(forget_at(&path, "t.example.com").unwrap());
         check_sequence_at(&path, "t.example.com", 1).unwrap();
-    }
-
-    #[test]
-    fn a_legacy_sequence_file_becomes_the_floor() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("pins.toml");
-        let legacy = dir.path().join("t.example.com.txt");
-        file::write(&legacy, "5\n").unwrap();
-        adopt_legacy_sequence_at(&path, &legacy, "t.example.com").unwrap();
-        assert!(!legacy.exists(), "adopted, then dropped");
-        let err = check_sequence_at(&path, "t.example.com", 4).unwrap_err();
-        assert!(err.to_string().contains("refusing to go back"), "{err}");
-        check_sequence_at(&path, "t.example.com", 7).unwrap();
-        // A lower legacy floor never lowers what the pins file has.
-        file::write(&legacy, "2").unwrap();
-        adopt_legacy_sequence_at(&path, &legacy, "t.example.com").unwrap();
-        assert!(check_sequence_at(&path, "t.example.com", 6).is_err());
-        // Nothing to adopt is not an error.
-        adopt_legacy_sequence_at(&path, &legacy, "t.example.com").unwrap();
-        assert_eq!(
-            legacy_sequence_file("github.com/foo/bar-baz")
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap(),
-            "github.com%2Ffoo%2Fbar-baz.txt"
-        );
     }
 
     #[test]
