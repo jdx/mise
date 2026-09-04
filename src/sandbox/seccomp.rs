@@ -67,10 +67,21 @@ pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result
         // An empty rule chain means the syscall number alone triggers the
         // filter's match action.
         let deny = Vec::<SeccompRule>::new();
+        // Linux generic syscall ABI has no fork/vfork; aarch64 implements fork via clone.
         for syscall in [
             syscall_number(libc::SYS_clone),
             syscall_number(libc::SYS_clone3),
+            #[cfg(not(any(
+                target_arch = "aarch64",
+                target_arch = "riscv64",
+                target_arch = "loongarch64"
+            )))]
             syscall_number(libc::SYS_fork),
+            #[cfg(not(any(
+                target_arch = "aarch64",
+                target_arch = "riscv64",
+                target_arch = "loongarch64"
+            )))]
             syscall_number(libc::SYS_vfork),
             syscall_number(libc::SYS_kill),
             syscall_number(libc::SYS_tkill),
