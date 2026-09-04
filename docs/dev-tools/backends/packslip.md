@@ -101,6 +101,20 @@ The script comes from whichever version of the tool is active in the current dir
 
 Files the vendor keeps outside the artifact (a separate release asset, or a path in the repository) are fetched at install time. An asset must match the digest the packslip signed; a repository file is pinned by the release's commit. Completions derived from a usage spec call `usage complete-word` at shell runtime, so install `usage` alongside such tools (`mise use -g usage`).
 
+## Skills
+
+A packslip may also declare an agent skill: a directory holding `SKILL.md` and whatever it references, in the Agent Skills format. mise fetches it at install time, from inside the artifact, from a separate signed asset, or from the source repository at the release's commit, so every installed version carries its own copy.
+
+```sh
+mise skills ls              # the skills of the tools active here
+mise skills sync            # link them into .claude/skills
+mise skills sync --prune    # and drop links for versions no longer active
+```
+
+Since a project pins its tool versions in `mise.toml`, mise knows exactly which version of each skill an agent working in that project should see. `mise skills sync` writes one symlink per skill into the project's `.claude/skills` (or `--dir` for another agent's location, `--global` for `~/.claude/skills`), pointing at the installed version's directory. Run it again after `mise use` changes a version and the links follow. Only links mise made are ever replaced or pruned; a directory or link of your own at a skill's name is left alone and reported.
+
+A skill the packslip offers only as a command of the tool's own (`tool skill`, printing `SKILL.md`) is generated at install time only when [`packslip.exec`](/configuration/settings#packslip-exec) is on, for the same reason as completions.
+
 ## Versions
 
 A packslip version is semver, so mise ranks a project's versions by semver precedence whatever order GitHub lists its releases in, and treats a version with a prerelease part (`1.3.0-rc.1`, `1.4.0-nightly.20260904`) as a prerelease whatever the GitHub release's own flag says. Prereleases are skipped unless the `prerelease` tool option is set.

@@ -31,5 +31,11 @@ assert_contains "mise tool packslip:github.com/jdx/packslip" "packslip"
 assert_fail_contains "mise completion zsh --tool packslip" "declares no zsh completion"
 assert_fail_contains "mise completion zsh --tool nope" "not an active, installed tool"
 
+# This release declares no skill either, and sync links nothing.
+assert_contains "mise skills ls" "no skills declared"
+assert "mise skills ls --json" "[]"
+assert_contains "mise skills sync --dir skills" "nothing to link"
+assert_directory_not_exists skills
+
 # A release that carries no packslip is refused rather than guessed at.
 assert_fail_contains "mise install packslip:jdx/mise-test-fixtures@1.0.0" "no release"
