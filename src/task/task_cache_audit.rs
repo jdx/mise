@@ -24,6 +24,7 @@ use tempfile::NamedTempFile;
 use tokio::sync::OnceCell;
 
 const MAX_REPORTED_PATHS: usize = 20;
+#[cfg(target_os = "linux")]
 const TRACE_START_TIMEOUT: Duration = Duration::from_secs(1);
 const TRACE_SINK_TIMEOUT: Duration = Duration::from_secs(2);
 
