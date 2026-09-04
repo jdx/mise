@@ -553,29 +553,47 @@ pub(crate) fn skills_of(
         Some(ResourceSource::Exec) => 3,
         None => 4,
     };
-    let mut candidates: Vec<&Resource> = applicable(
-        statement
-            .predicate
-            .resources
-            .iter()
-            .filter(|r| r.kind == "skill"),
-        artifact,
-    );
-    candidates.sort_by_key(|r| rank(r));
-    let mut seen = std::collections::BTreeSet::new();
-    candidates
-        .into_iter()
-        .filter_map(|r| {
-            let name = skill_name(r)?;
-            let path = resource_dir(install_path, r)?;
-            seen.insert(name.to_string()).then(|| Skill {
-                name: name.to_string(),
-                tool: tool.to_string(),
-                version: version.to_string(),
-                path,
-            })
-        })
-        .collect()
+    // Each name is its own skill, so platform scope is resolved per name:
+    // a skill for one platform never hides the skills for every platform.
+    let skills: Vec<&Resource> = statement
+        .predicate
+        .resources
+        .iter()
+        .filter(|r| r.kind == "skill")
+        .collect();
+    let mut names: Vec<&str> = Vec::new();
+    for name in skills.iter().filter_map(|r| skill_name(r)) {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    let mut chosen: Vec<(usize, Skill)> = Vec::new();
+    for name in names {
+        let mut group = applicable(
+            skills
+                .iter()
+                .copied()
+                .filter(|r| skill_name(r) == Some(name)),
+            artifact,
+        );
+        group.sort_by_key(|r| rank(r));
+        if let Some((r, path)) = group
+            .into_iter()
+            .find_map(|r| resource_dir(install_path, r).map(|p| (r, p)))
+        {
+            chosen.push((
+                rank(r),
+                Skill {
+                    name: name.to_string(),
+                    tool: tool.to_string(),
+                    version: version.to_string(),
+                    path,
+                },
+            ));
+        }
+    }
+    chosen.sort_by_key(|(rank, _)| *rank);
+    chosen.into_iter().map(|(_, skill)| skill).collect()
 }
 
 /// The skills of every tool active in the current directory.
@@ -646,8 +664,15 @@ pub(crate) fn sync_skills(
     }
     // Mise's own link: recorded under this name, still a link, still
     // pointing exactly where mise pointed it, and that is inside installs.
-    let points_at =
-        |link: &Path, target: &str| std::fs::read_link(link).is_ok_and(|t| t == Path::new(target));
+    // Where a link points, as recorded. Windows reports a junction's target
+    // with a verbatim prefix, so both sides are simplified; a target that
+    // still exists is also matched by identity.
+    let points_at = |link: &Path, target: &str| {
+        std::fs::read_link(link).is_ok_and(|t| {
+            dunce::simplified(&t) == dunce::simplified(Path::new(target))
+                || same_file::is_same_file(link, target).unwrap_or(false)
+        })
+    };
     let ours = |name: &str, link: &Path| {
         before.get(name).is_some_and(|target| {
             file::is_symlink_or_junction(link)
@@ -1397,6 +1422,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("share/skills/t")).unwrap();
+        std::fs::create_dir_all(root.join("share/skills/here")).unwrap();
+        std::fs::create_dir_all(root.join("share/skills/elsewhere")).unwrap();
         std::fs::create_dir_all(root.join(RESOURCES_DIR).join("skills/packed")).unwrap();
         std::fs::create_dir_all(root.join(RESOURCES_DIR).join("repo/skills/fromrepo")).unwrap();
         let s = statement_with(
@@ -1406,7 +1433,9 @@ mod tests {
             {"kind":"skill","name":"fromrepo","repo":"skills/fromrepo"},
             {"kind":"skill","name":"t","repo":"skills/fromrepo"},
             {"kind":"skill","name":"generated","exec":["t","skill"]},
-            {"kind":"skill","name":"missing","archive":"nowhere"}
+            {"kind":"skill","name":"missing","archive":"nowhere"},
+            {"kind":"skill","name":"here","os":"linux","archive":"top/share/skills/here"},
+            {"kind":"skill","name":"elsewhere","os":"windows","archive":"top/share/skills/elsewhere"}
         ]"#,
         );
         // A name that would leave the directory, as a tampered file could carry.
@@ -1418,8 +1447,8 @@ mod tests {
         let skills = skills_of(&s, root, "tool", "1", Some(&host));
         assert_eq!(
             skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
-            ["t", "packed", "fromrepo"],
-            "an exec skill not yet generated and a missing directory are absent, and a fallback source for t is not a second t"
+            ["t", "here", "packed", "fromrepo"],
+            "an exec skill not yet generated, a missing directory, and another platform's skill are absent; a fallback source for t is not a second t; a scoped skill hides none of the unscoped ones"
         );
         assert_eq!(
             skills[0].path,
