@@ -1,5 +1,6 @@
 //! Bounded capture for non-interactive vendor generators and host probes.
 use super::*;
+use eyre::eyre;
 
 impl CmdLineRunner<'_> {
     /// Capture a finite response, with one deadline for the process and pipes.
