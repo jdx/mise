@@ -77,14 +77,37 @@ async fn probe(program: &str, args: &[&str]) -> Option<String> {
         .ok()
 }
 
+/// `uname -r` reports a release, not a version: `6.8.0-31-generic` on one
+/// distribution and `6.6.87.2-microsoft-standard-WSL2` on another. What
+/// follows the dotted numbers is the distribution's own business, and an
+/// `os_min` is a lower bound on the numbers, so read those and stop.
+fn release_version(output: &str) -> Option<String> {
+    let word = output.split_whitespace().next()?;
+    let end = word
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(word.len());
+    let version = word[..end].trim_end_matches('.');
+    numeric_cmp(version, "0").map(|_| version.to_owned())
+}
+
 async fn os_version() -> Option<String> {
     #[cfg(target_os = "macos")]
-    let output = probe("/usr/bin/sw_vers", &["-productVersion"]).await;
+    let version = probe("/usr/bin/sw_vers", &["-productVersion"])
+        .await
+        .as_deref()
+        .and_then(release_version);
+    // `Microsoft Windows [Version 10.0.19045.5011]`, so read it by the word.
     #[cfg(windows)]
-    let output = probe("cmd.exe", &["/D", "/C", "ver"]).await;
+    let version = probe("cmd.exe", &["/D", "/C", "ver"])
+        .await
+        .as_deref()
+        .and_then(version_from_output);
     #[cfg(not(any(target_os = "macos", windows)))]
-    let output = probe("uname", &["-r"]).await;
-    output.as_deref().and_then(version_from_output)
+    let version = probe("uname", &["-r"])
+        .await
+        .as_deref()
+        .and_then(release_version);
+    version
 }
 
 async fn library_present(name: &str) -> Option<bool> {
@@ -254,5 +277,21 @@ mod tests {
             version_from_output("git version 2.49.0"),
             Some("2.49.0".into())
         );
+        // A kernel release carries a suffix; an `os_min` bounds the numbers.
+        for (release, version) in [
+            ("6.8.0-31-generic", Some("6.8.0")),
+            ("6.6.87.2-microsoft-standard-WSL2", Some("6.6.87.2")),
+            ("5.15", Some("5.15")),
+            ("15.5", Some("15.5")),
+            ("14.3-RELEASE-p5", Some("14.3")),
+            ("-broken", None),
+            ("", None),
+        ] {
+            assert_eq!(
+                release_version(release).as_deref(),
+                version,
+                "reading {release:?}"
+            );
+        }
     }
 }
