@@ -321,6 +321,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn extracts_formula_metadata_without_homebrew() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
@@ -372,6 +373,7 @@ end
         Ok(())
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn extracts_cask_metadata_without_homebrew() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
@@ -409,7 +411,7 @@ end
             .env("MISE_BREW_SOURCE_PATH", "Casks/widget.rb")
             .env("MISE_BREW_SOURCE_CHECKSUM", "bbbb")
             .env("MISE_BREW_TAP_COMMIT", "deadbeef")
-            .env("MISE_BREW_MACOS_VERSION", macos_version())
+            .env("MISE_BREW_MACOS_VERSION", "0")
             .with_sandbox(metadata_sandbox(&cask_file, &shim, &output)?);
         runner.apply_sandbox().await?;
         runner.execute_async().await?;
