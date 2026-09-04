@@ -183,14 +183,18 @@ impl TaskCacheAudit {
             );
             return;
         }
-        if !wait_for_file(self.trace_complete.path(), TRACE_SINK_TIMEOUT).await
-            || fs::metadata(self.trace_timed_out.path()).is_ok_and(|meta| meta.len() > 0)
-        {
+        if !wait_for_file(self.trace_complete.path(), TRACE_SINK_TIMEOUT).await {
             warn!(
                 "task {} cache audit tracer did not finish; skipping its incomplete report",
                 task.name
             );
             return;
+        }
+        if fs::metadata(self.trace_timed_out.path()).is_ok_and(|meta| meta.len() > 0) {
+            warn!(
+                "task {} cache audit tracer exceeded its drain grace; report may be incomplete",
+                task.name
+            );
         }
         let trace = match fs::read_to_string(self.trace.path()) {
             Ok(trace) => trace,
