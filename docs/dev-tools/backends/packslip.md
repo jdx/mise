@@ -25,10 +25,10 @@ For a vendor:
 
 For a user asking a vendor for one:
 
-- **The name says who may sign, the way `~/.ssh/known_hosts` says which key a host must present.** `packslip:github.com/owner/repo` accepts only a packslip signed by that repository's release workflow through GitHub's issuer; the signature, its transparency log entry, the statement, and the artifact's digest and size are all checked before anything is unpacked.
+- **The name says who may sign, the way `~/.ssh/known_hosts` says which key a host must present.** `packslip:github.com/owner/repo` accepts only a packslip signed by that repository's release workflow through GitHub's issuer; the signature, its transparency log entry, the statement, and the artifact's digest and size are all checked before anything is unpacked. mise then remembers the signer it accepted, as [Pinned signers](#pinned-signers) describes, and refuses a later release from anyone else.
 - **The right artifact, with no registry to update first.** musl and gnu, universal binaries, a `fips` or `baseline` variant, the executable's path inside the archive: all from the manifest the vendor wrote when it cut the release, so nobody plays catch-up after a rename.
 - **Completions and skills that match the version in use**, from the vendor, with no per-tool setup in mise or in your shell config.
-- **Upgrades are checked the way first installs are.** A checksum in `mise.lock` proves one download is the same file it was the first time. A packslip proves the next version came from the same signer as well, so an upgrade on a teammate's machine or in CI is checked against the project's identity rather than against a hash nobody could verify when it was first recorded.
+- **Upgrades are checked the way first installs are.** A checksum in `mise.lock` proves one download is the same file it was the first time. A packslip proves the next version came from the same signer as well, so an upgrade on a teammate's machine or in CI is checked against the project's identity rather than against a hash nobody could verify when it was first recorded. `mise.lock` records that signer next to the URL and digest, so a machine with the lockfile refuses a release signed by anyone else even on its first install.
 
 The specification and the `packslip` CLI are at [packslip.dev](https://packslip.dev).
 
