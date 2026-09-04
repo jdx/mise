@@ -127,16 +127,6 @@ pub(crate) async fn generate_seatbelt_profile(
                 rules.push(format!("(allow process-exec (literal \"{canonical}\"))"));
             }
         }
-        for path in &config.allow_exec {
-            let path_str = sbpl_escape(&path.to_string_lossy());
-            rules.push(format!("(allow process-exec (literal \"{path_str}\"))"));
-            if let Ok(canonical) = path.canonicalize()
-                && canonical != *path
-            {
-                let canonical = sbpl_escape(&canonical.to_string_lossy());
-                rules.push(format!("(allow process-exec (literal \"{canonical}\"))"));
-            }
-        }
     }
 
     rules.join("\n")

@@ -26,8 +26,6 @@ pub(crate) struct SandboxConfig {
     pub deny_temp_write: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
-    /// Ruby source files that macOS must treat as executable interpreter input.
-    pub(crate) allow_exec: Vec<PathBuf>,
     pub allow_net: Vec<String>,
     pub allow_env: Vec<String>,
     /// Environment patterns that survive an active env sandbox without enabling it themselves.
@@ -143,13 +141,6 @@ impl SandboxConfig {
         };
         resolve(&mut self.allow_read);
         resolve(&mut self.allow_write);
-        self.allow_exec.retain(|p| !p.as_os_str().is_empty());
-        for path in &mut self.allow_exec {
-            *path = replace_path(&*path);
-            if path.is_relative() {
-                *path = cwd.join(&*path);
-            }
-        }
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.

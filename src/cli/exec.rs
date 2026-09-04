@@ -339,7 +339,6 @@ impl Exec {
                 deny_temp_write: false,
                 allow_read: self.allow_read,
                 allow_write: self.allow_write,
-                allow_exec: vec![],
                 allow_net: self.allow_net,
                 allow_env: self.allow_env,
                 pass_through_env: vec![],

@@ -52,14 +52,13 @@ pub(super) async fn formula_from_ruby(
     let formula_path = cache_dir.join(format!("{name}-{}.rb", &checksum[..12]));
     crate::file::write(&formula_path, source)?;
 
-    let shim_path = cache_dir.join("mise-brew-tap-metadata.rb");
-    ensure_shim(&shim_path, METADATA_SHIM_RB)?;
     let output_path = cache_dir.join(format!("{name}-{}.json", &checksum[..12]));
     crate::file::write(&output_path, "")?;
     let ruby = ruby_for_metadata(name, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
         .arg("--disable-gems")
-        .arg(&shim_path)
+        .arg("-e")
+        .arg(METADATA_SHIM_RB)
         .envs([
             ("MISE_BREW_FORMULA_FILE", formula_path.display().to_string()),
             (
@@ -75,7 +74,7 @@ pub(super) async fn formula_from_ruby(
             ("MISE_BREW_OS", std::env::consts::OS.to_string()),
             ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
-        .with_sandbox(metadata_sandbox(&formula_path, &shim_path, &output_path)?);
+        .with_sandbox(metadata_sandbox(&formula_path, &output_path)?);
     runner.apply_sandbox().await?;
     runner
         .execute_async()
@@ -108,14 +107,13 @@ pub(super) async fn cask_from_ruby(
     crate::file::create_dir_all(&cache_dir)?;
     let cask_path = cache_dir.join(format!("{token}-{}.rb", &checksum[..12]));
     crate::file::write(&cask_path, source)?;
-    let shim_path = cache_dir.join("mise-brew-tap-cask-metadata.rb");
-    ensure_shim(&shim_path, CASK_METADATA_SHIM_RB)?;
     let output_path = cache_dir.join(format!("{token}-{}.json", &checksum[..12]));
     crate::file::write(&output_path, "")?;
     let ruby = ruby_for_metadata(token, provision_ruby).await?;
     let mut runner = CmdLineRunner::new(&ruby)
         .arg("--disable-gems")
-        .arg(&shim_path)
+        .arg("-e")
+        .arg(CASK_METADATA_SHIM_RB)
         .envs([
             ("MISE_BREW_CASK_FILE", cask_path.display().to_string()),
             (
@@ -130,7 +128,7 @@ pub(super) async fn cask_from_ruby(
             ("MISE_BREW_OS", std::env::consts::OS.to_string()),
             ("MISE_BREW_ARCH", std::env::consts::ARCH.to_string()),
         ])
-        .with_sandbox(metadata_sandbox(&cask_path, &shim_path, &output_path)?);
+        .with_sandbox(metadata_sandbox(&cask_path, &output_path)?);
     runner.apply_sandbox().await?;
     runner
         .execute_async()
@@ -142,7 +140,7 @@ pub(super) async fn cask_from_ruby(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<SandboxConfig> {
+fn metadata_sandbox(source: &Path, output: &Path) -> Result<SandboxConfig> {
     let mut sandbox = SandboxConfig {
         deny_read: true,
         deny_write: true,
@@ -150,9 +148,8 @@ fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<Sandbox
         deny_env: true,
         deny_process: true,
         deny_temp_write: true,
-        allow_read: vec![source.to_path_buf(), shim.to_path_buf()],
+        allow_read: vec![source.to_path_buf()],
         allow_write: vec![output.to_path_buf()],
-        allow_exec: vec![shim.to_path_buf()],
         ..Default::default()
     };
     sandbox.resolve_paths();
@@ -160,7 +157,7 @@ fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<Sandbox
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-fn metadata_sandbox(_source: &Path, _shim: &Path, _output: &Path) -> Result<SandboxConfig> {
+fn metadata_sandbox(_source: &Path, _output: &Path) -> Result<SandboxConfig> {
     bail!(
         "evaluating third-party tap definitions is only supported inside the Linux or macOS process sandbox"
     )
@@ -273,13 +270,6 @@ async fn fetch_ruby_source(
     Err(last_error.unwrap()).wrap_err_with(|| format!("tap has no {directory}/{name}.rb"))
 }
 
-fn ensure_shim(path: &Path, contents: &str) -> Result<()> {
-    if crate::file::read_to_string(path).is_ok_and(|current| current == contents) {
-        return Ok(());
-    }
-    crate::file::write(path, contents)
-}
-
 fn validate_name(name: &str) -> Result<()> {
     if name.is_empty()
         || name.contains(['/', '\\', '\0'])
@@ -337,7 +327,6 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let formula = dir.path().join("widget.rb");
         let output = dir.path().join("widget.json");
-        let shim = dir.path().join("shim.rb");
         crate::file::write(
             &formula,
             r#"
@@ -358,11 +347,11 @@ class Widget < Formula
 end
 "#,
         )?;
-        crate::file::write(&shim, METADATA_SHIM_RB)?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
             .arg("--disable-gems")
-            .arg(&shim)
+            .arg("-e")
+            .arg(METADATA_SHIM_RB)
             .env("MISE_BREW_FORMULA_FILE", &formula)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
             .env("MISE_BREW_NAME", "widget")
@@ -373,7 +362,7 @@ end
             .env("MISE_BREW_MACOS_VERSION", "15.3")
             .env("MISE_BREW_OS", "macos")
             .env("MISE_BREW_ARCH", std::env::consts::ARCH)
-            .with_sandbox(metadata_sandbox(&formula, &shim, &output)?);
+            .with_sandbox(metadata_sandbox(&formula, &output)?);
         runner.apply_sandbox().await?;
         runner.execute_async().await?;
         let formula: Formula = serde_json::from_str(&crate::file::read_to_string(output)?)?;
@@ -402,7 +391,6 @@ end
         let dir = tempfile::tempdir()?;
         let cask_file = dir.path().join("widget.rb");
         let output = dir.path().join("widget.json");
-        let shim = dir.path().join("shim.rb");
         crate::file::write(
             &cask_file,
             r#"
@@ -422,11 +410,11 @@ cask "widget" do
 end
 "#,
         )?;
-        crate::file::write(&shim, CASK_METADATA_SHIM_RB)?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
             .arg("--disable-gems")
-            .arg(&shim)
+            .arg("-e")
+            .arg(CASK_METADATA_SHIM_RB)
             .env("MISE_BREW_CASK_FILE", &cask_file)
             .env("MISE_BREW_METADATA_OUTPUT", &output)
             .env("MISE_BREW_TOKEN", "widget")
@@ -436,7 +424,7 @@ end
             .env("MISE_BREW_MACOS_VERSION", "0")
             .env("MISE_BREW_OS", std::env::consts::OS)
             .env("MISE_BREW_ARCH", std::env::consts::ARCH)
-            .with_sandbox(metadata_sandbox(&cask_file, &shim, &output)?);
+            .with_sandbox(metadata_sandbox(&cask_file, &output)?);
         runner.apply_sandbox().await?;
         runner.execute_async().await?;
         let json = crate::file::read_to_string(output)?;
@@ -456,7 +444,6 @@ end
     fn metadata_evaluation_is_fully_sandboxed() {
         let config = metadata_sandbox(
             Path::new("/tmp/formula.rb"),
-            Path::new("/tmp/shim.rb"),
             Path::new("/tmp/metadata.json"),
         )
         .unwrap();
@@ -464,7 +451,7 @@ end
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
-        assert_eq!(config.allow_read.len(), 2);
+        assert_eq!(config.allow_read.len(), 1);
         assert_eq!(config.allow_write.len(), 1);
     }
 
@@ -482,9 +469,7 @@ end
         let output = dir.path().join("metadata.json");
         let temp_dir = tempfile::tempdir()?;
         let denied = temp_dir.path().join("denied");
-        crate::file::write(
-            &source,
-            r#"
+        let script = r#"
 begin
   File.write(ARGV.fetch(0), "escaped")
 rescue SystemCallError
@@ -499,15 +484,16 @@ begin
   exec("/usr/bin/false")
 rescue SystemCallError
 end
-"#,
-        )?;
+"#;
+        crate::file::write(&source, "tap source")?;
         crate::file::write(&output, "")?;
         let mut runner = CmdLineRunner::new(ruby)
             .with_on_stderr(|line| eprintln!("{line}"))
             .arg("--disable-gems")
-            .arg(&source)
+            .arg("-e")
+            .arg(script)
             .arg(&denied)
-            .with_sandbox(metadata_sandbox(&source, &source, &output)?);
+            .with_sandbox(metadata_sandbox(&source, &output)?);
         runner.apply_sandbox().await?;
         runner.execute_async().await?;
         assert!(!denied.exists());
