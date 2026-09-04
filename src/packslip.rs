@@ -167,11 +167,19 @@ pub(crate) async fn fetch_files(
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let base = tv.install_path().join(RESOURCES_DIR);
+    let fetch_skills = Settings::get().skills.fetch;
     for resource in &statement.predicate.resources {
         // An entry scoped to another platform is not for this install.
         if let Some(artifact) = artifact
             && !resource_fits(resource, artifact)
         {
+            continue;
+        }
+        if resource.kind == "skill" && !fetch_skills {
+            debug!(
+                "{}: skills are not fetched (skills.fetch is off)",
+                tv.style()
+            );
             continue;
         }
         match resource.source() {
@@ -625,6 +633,50 @@ pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
     Ok(skills)
 }
 
+/// Where skills are linked under `root`, a project root or the home
+/// directory: the `skills.dir` setting, or that setting itself when it
+/// is absolute.
+pub(crate) fn skills_dir(root: &Path) -> PathBuf {
+    root.join(&Settings::get().skills.dir)
+}
+
+/// With `skills.auto_sync` on, link the active tools' skills into the
+/// project after an install or a version change. Nothing fails an install
+/// here: a problem is reported and the tools stay installed. Outside a
+/// project root there is nowhere to link into, so nothing happens.
+pub(crate) async fn auto_sync_skills(config: &Arc<Config>) {
+    let settings = Settings::get();
+    if !settings.skills.auto_sync {
+        return;
+    }
+    let Some(root) = &config.project_root else {
+        return;
+    };
+    let dir = skills_dir(root);
+    let result = async {
+        let skills = active_skills(config).await?;
+        if skills.is_empty() && !settings.skills.prune {
+            return Ok(SyncReport::default());
+        }
+        sync_skills(&dir, &skills, &crate::dirs::INSTALLS, settings.skills.prune)
+    }
+    .await;
+    match result {
+        Ok(report) => {
+            for name in &report.linked {
+                info!("linked skill {name} into {}", dir.display());
+            }
+            for name in &report.pruned {
+                info!("removed skill link {name} from {}", dir.display());
+            }
+            for (name, why) in &report.skipped {
+                warn!("skipped skill {name}: {why}");
+            }
+        }
+        Err(err) => warn!("could not sync skills into {}: {err}", dir.display()),
+    }
+}
+
 /// What [`sync_skills`] did.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct SyncReport {
@@ -999,32 +1051,32 @@ pub(crate) async fn completion_script(
             tv.style()
         );
     }
-    let allow_exec = Settings::get().packslip.exec;
-    let refused = |argv: &[String]| {
-        format!(
-            "`{}` would generate it, but running a tool at completion time is off; set `packslip.exec = true` to allow it",
-            argv.join(" ")
-        )
-    };
+    // A completion is asked for the moment a shell completes the command,
+    // which is when the user was going to run it anyway, so an `exec`
+    // source runs on demand with no setting; the specification's Running
+    // an exec entry says so. Because it runs the tool, its result is
+    // cached beside the install so the command runs once per version and
+    // shell rather than at every tab.
+    let cache = install_path
+        .join(RESOURCES_DIR)
+        .join("completions")
+        .join(format!("{shell}.completion"));
+    if let Ok(cached) = file::read_to_string(&cache) {
+        return Ok(cached);
+    }
     let mut skipped = Vec::new();
     for source in sources {
+        let ran_tool = matches!(
+            source,
+            CompletionSource::Exec(_) | CompletionSource::SpecExec { .. }
+        );
         let attempt = match source {
             CompletionSource::File(path) => file::read_to_string(&path),
             CompletionSource::Spec { format, bin, path } => {
                 derive_from_spec(config, ts, &format, &bin, &path, shell).await
             }
-            CompletionSource::Exec(argv) => {
-                if !allow_exec {
-                    skipped.push(refused(&argv));
-                    continue;
-                }
-                run_tool(config, &backend, &tv, &argv).await
-            }
+            CompletionSource::Exec(argv) => run_tool(config, &backend, &tv, &argv).await,
             CompletionSource::SpecExec { format, bin, argv } => {
-                if !allow_exec {
-                    skipped.push(refused(&argv));
-                    continue;
-                }
                 // Any failure here is one more reason to try the next source,
                 // not the end of the search. The spec is kept in the install:
                 // a script derived from it names the file at completion time,
@@ -1044,7 +1096,15 @@ pub(crate) async fn completion_script(
             }
         };
         match attempt {
-            Ok(script) => return Ok(script),
+            Ok(script) => {
+                if ran_tool
+                    && let Some(dir) = cache.parent()
+                    && file::create_dir_all(dir).is_ok()
+                {
+                    let _ = file::write_atomic(&cache, &script);
+                }
+                return Ok(script);
+            }
             Err(err) => skipped.push(err.to_string()),
         }
     }

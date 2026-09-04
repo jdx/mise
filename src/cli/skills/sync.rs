@@ -2,19 +2,21 @@ use std::path::PathBuf;
 
 use eyre::Result;
 
-use crate::config::Config;
+use crate::config::{Config, Settings};
 use crate::dirs;
 
 /// Link the active tools' skills where an agent looks for them
 ///
 /// Writes one symlink per skill into DIR, named after the skill and pointing
-/// at the directory of the version that is active here. DIR defaults to
-/// `.claude/skills` under the project root: the directory of the nearest mise
-/// config. Run it again after `mise use` changes a version and the links follow.
+/// at the directory of the version that is active here. DIR defaults to the
+/// `skills.dir` setting, `.claude/skills`, under the project root: the
+/// directory of the nearest mise config. Run it again after `mise use` changes
+/// a version and the links follow, or set `skills.auto_sync` to have mise do
+/// that after every install and `mise use`.
 ///
 /// Only links mise made, which point into its installs directory, are ever
-/// replaced or, with --prune, removed. A real directory or a link of your own at
-/// a skill's name is left alone and reported.
+/// replaced or, with --prune or the `skills.prune` setting, removed. A real
+/// directory or a link of your own at a skill's name is left alone and reported.
 #[derive(Debug, usage_rs::Args)]
 #[usage(verbatim_doc_comment, after_long_help = AFTER_LONG_HELP, effect = "write")]
 pub(super) struct SkillsSync {
@@ -35,22 +37,24 @@ impl SkillsSync {
     pub(super) async fn run(self) -> Result<()> {
         let config = Config::get().await?;
         let skills = crate::packslip::active_skills(&config).await?;
+        let settings = Settings::get();
         let dir = match (&self.dir, self.global) {
             (Some(dir), _) => dir.clone(),
-            (None, true) => dirs::HOME.join(".claude").join("skills"),
-            (None, false) => config
-                .project_root
-                .clone()
-                .map(Ok)
-                .unwrap_or_else(std::env::current_dir)?
-                .join(".claude")
-                .join("skills"),
+            (None, true) => crate::packslip::skills_dir(&dirs::HOME),
+            (None, false) => crate::packslip::skills_dir(
+                &config
+                    .project_root
+                    .clone()
+                    .map(Ok)
+                    .unwrap_or_else(std::env::current_dir)?,
+            ),
         };
-        if skills.is_empty() && !self.prune {
+        let prune = self.prune || settings.skills.prune;
+        if skills.is_empty() && !prune {
             miseprintln!("no skills declared by the active tools; nothing to link");
             return Ok(());
         }
-        let report = crate::packslip::sync_skills(&dir, &skills, &dirs::INSTALLS, self.prune)?;
+        let report = crate::packslip::sync_skills(&dir, &skills, &dirs::INSTALLS, prune)?;
         for name in &report.linked {
             let skill = skills.iter().find(|s| &s.name == name);
             miseprintln!(
@@ -81,7 +85,7 @@ impl SkillsSync {
 static AFTER_LONG_HELP: &str = color_print::cstr!(
     r#"<bold><underline>Examples:</underline></bold>
 
-    # into the project's .claude/skills
+    # into the project's .claude/skills, or wherever skills.dir says
     $ <bold>mise skills sync</bold>
 
     # somewhere else, and drop links for skills that are no longer active

@@ -8,13 +8,15 @@
 Link the active tools' skills where an agent looks for them
 
 Writes one symlink per skill into DIR, named after the skill and pointing
-at the directory of the version that is active here. DIR defaults to
-`.claude/skills` under the project root: the directory of the nearest mise
-config. Run it again after `mise use` changes a version and the links follow.
+at the directory of the version that is active here. DIR defaults to the
+`skills.dir` setting, `.claude/skills`, under the project root: the
+directory of the nearest mise config. Run it again after `mise use` changes
+a version and the links follow, or set `skills.auto_sync` to have mise do
+that after every install and `mise use`.
 
 Only links mise made, which point into its installs directory, are ever
-replaced or, with --prune, removed. A real directory or a link of your own at
-a skill's name is left alone and reported.
+replaced or, with --prune or the `skills.prune` setting, removed. A real
+directory or a link of your own at a skill's name is left alone and reported.
 
 ## Flags
 - **`--dir <DIR>`** — The directory to link skills into
@@ -25,7 +27,7 @@ a skill's name is left alone and reported.
 Examples:
 
 ```
-# into the project's .claude/skills
+# into the project's .claude/skills, or wherever skills.dir says
 $ mise skills sync
 
 # somewhere else, and drop links for skills that are no longer active

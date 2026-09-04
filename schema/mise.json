@@ -1439,7 +1439,7 @@
           "properties": {
             "exec": {
               "default": false,
-              "description": "Run a tool's own command for a completion or skill its packslip offers only as an exec entry.",
+              "description": "Run a tool's own command at install time to produce a resource its packslip offers only as an exec entry, such as an agent skill.",
               "type": "boolean"
             }
           }
@@ -1738,6 +1738,32 @@
         "silent": {
           "description": "Suppress all `mise run|watch` output except errors—including what tasks output.",
           "type": "boolean"
+        },
+        "skills": {
+          "type": "object",
+          "unevaluatedProperties": false,
+          "properties": {
+            "auto_sync": {
+              "default": false,
+              "description": "Link the active tools' agent skills into the project after `mise install` and `mise use`.",
+              "type": "boolean"
+            },
+            "dir": {
+              "default": ".claude/skills",
+              "description": "Where `mise skills sync` links skills: a path under the project root, or under the home directory with `--global`.",
+              "type": "string"
+            },
+            "fetch": {
+              "default": true,
+              "description": "Fetch the agent skills a tool's packslip declares when installing it.",
+              "type": "boolean"
+            },
+            "prune": {
+              "default": false,
+              "description": "Remove links mise made for skills that are no longer active when syncing.",
+              "type": "boolean"
+            }
+          }
         },
         "slsa": {
           "default": true,

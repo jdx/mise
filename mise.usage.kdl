@@ -3576,15 +3576,17 @@ directory, with the version it belongs to and the directory holding its
 Link the active tools' skills where an agent looks for them
 
 Writes one symlink per skill into DIR, named after the skill and pointing
-at the directory of the version that is active here. DIR defaults to
-`.claude/skills` under the project root: the directory of the nearest mise
-config. Run it again after `mise use` changes a version and the links follow.
+at the directory of the version that is active here. DIR defaults to the
+`skills.dir` setting, `.claude/skills`, under the project root: the
+directory of the nearest mise config. Run it again after `mise use` changes
+a version and the links follow, or set `skills.auto_sync` to have mise do
+that after every install and `mise use`.
 
 Only links mise made, which point into its installs directory, are ever
-replaced or, with --prune, removed. A real directory or a link of your own at
-a skill's name is left alone and reported.
+replaced or, with --prune or the `skills.prune` setting, removed. A real
+directory or a link of your own at a skill's name is left alone and reported.
 """#
-        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # into the project's .claude/skills\n    $ \u{1b}[1mmise skills sync\u{1b}[22m\n\n    # somewhere else, and drop links for skills that are no longer active\n    $ \u{1b}[1mmise skills sync --dir .agents/skills --prune\u{1b}[22m\n"
+        after_long_help "\u{1b}[1m\u{1b}[4mExamples:\u{1b}[22m\u{1b}[24m\n\n    # into the project's .claude/skills, or wherever skills.dir says\n    $ \u{1b}[1mmise skills sync\u{1b}[22m\n\n    # somewhere else, and drop links for skills that are no longer active\n    $ \u{1b}[1mmise skills sync --dir .agents/skills --prune\u{1b}[22m\n"
         flag --dir help="The directory to link skills into" {
             arg <DIR>
         }
