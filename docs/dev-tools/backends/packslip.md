@@ -134,7 +134,7 @@ mise completion zsh --tool rg --install # put a stub where zsh looks
 
 The script comes from whichever version of the tool is active in the current directory. A vendor whose layouts differ by platform scopes an entry with `os`, `arch`, or `libc`; mise keeps the entries that apply to the artifact it installed and, of those, the most specific. It then takes the most verifiable source the vendor offered, in the order the specification gives: a file inside the artifact or a separate signed asset, a file from the source repository at the release's commit, a script derived from the tool's [usage](https://usage.jdx.dev) spec with the `usage` command, and only then a command of the tool's own. That last kind is how cobra, clap, and oclif tools ship completions, so mise runs it: the stub calls mise the first time your shell completes the command, which is when you were going to run the tool anyway, and mise caches the script beside the install so the command runs once per version rather than at every tab. No setting is needed. The [`packslip.exec`](/configuration/settings#packslip-exec) setting governs only exec resources mise would run at install time and write to disk, such as an agent skill.
 
-`--install` writes a stub, not the script. Completions are global shell state while the active version depends on the directory, so the stub asks mise for the script when the shell completes the tool. In zsh and bash the vendor's script takes over for one completion and the stub is put back afterwards, so a version switch in another directory is followed on the next tab; fish and PowerShell load the script once per shell session. The file goes where the shell loads completions by name, the same place `mise completion zsh --install` puts mise's own, and the command prints any one-time line your shell still needs.
+`--install` writes a stub, not the script. Completions are global shell state while the active version depends on the directory, so the stub asks mise for the script when the shell completes the tool. In zsh and bash the vendor's script takes over for one completion and the stub is put back afterwards, so a version switch in another directory is followed on the next tab. fish reads the script in a child shell of its own, and PowerShell puts mise's completer back after handing one completion to the vendor's, for the same reason: neither keeps the registrations of a version that is no longer active. The file goes where the shell loads completions by name, the same place `mise completion zsh --install` puts mise's own, and the command prints any one-time line your shell still needs.
 
 Files the vendor keeps outside the artifact (a separate release asset, or a path in the repository) are fetched at install time. An asset must match the digest the packslip signed; a repository file is pinned by the release's commit. Completions derived from a usage spec call `usage complete-word` at shell runtime, so install `usage` alongside such tools (`mise use -g usage`).
 
@@ -159,6 +159,8 @@ Four settings shape this:
 
 A skill the packslip offers only as a command of the tool's own (`tool skill`, printing `SKILL.md`) is generated at install time only when [`packslip.exec`](/configuration/settings#packslip-exec) is on, for the same reason as completions.
 
+Several sources for one skill are alternatives, not a set to collect: mise takes the most verifiable one that is on disk and does not fetch or run the ones below it, so a skill the release ships never runs the tool. A directory is that skill only once it holds `SKILL.md`; what an interrupted fetch or unpack left behind is not a skill, and the source below it is still tried.
+
 ## Versions
 
 A packslip version is semver, so mise ranks a project's versions by semver precedence whatever order GitHub lists its releases in, and treats a version with a prerelease part (`1.3.0-rc.1`, `1.4.0-nightly.20260904`) as a prerelease whatever the GitHub release's own flag says. Prereleases are skipped unless the `prerelease` tool option is set.
@@ -175,7 +177,11 @@ Lockfiles record the artifact URL and its sha256 from the signed statement.
 
 Resources may name one exact `artifact` when layouts differ between archive formats or variants. Completions are selected for the command being completed; when a release has several executables, pass its command name to `--tool`. Generated scripts are cached separately for each installed version, executable, and shell.
 
-Exec resources receive the manifest’s environment variables, with `{shell}` expanded for completions. They run in a temporary directory with the installed executables on PATH, no stdin, discarded stderr, and a five-second timeout. Failed or empty output is not cached. The same execution rules apply to skills when `packslip.exec` permits generating them.
+Exec resources receive the manifest’s environment variables, with `{shell}` expanded for completions. They run in a temporary directory with the installed executables on PATH, no stdin, discarded stderr, and a five-second timeout. The same execution rules apply to skills when `packslip.exec` permits generating them.
+
+A script that comes back empty is a failed source, not a completion: mise moves on to the next source and caches nothing. Shells completing the same command at once take turns, so the tool runs once between them rather than once each, and no shell reads a half-written entry. A CLI spec generated for one shell, as `{shell}` in the command allows, is kept under that shell's name and written whole.
+
+Static `cli-spec` entries are ranked like a shipped script's: the release's own archive, then a signed asset, then the source repository, with the order they are written in breaking ties.
 
 ### Release-list continuity and minimum age
 
