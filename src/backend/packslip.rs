@@ -402,11 +402,14 @@ fn headers_for(url: &str) -> Result<HeaderMap> {
 
 /// Where mise remembers the highest list sequence it accepted per
 /// project, so a mirror cannot show it an older list than it has seen.
+/// `/` and `%` are escaped so two projects never share a file:
+/// `github.com/foo/bar-baz` and `github.com/foo-bar/baz` stay apart.
 fn sequence_file(project: &str) -> PathBuf {
+    let name = project.replace('%', "%25").replace('/', "%2F");
     dirs::STATE
         .join("packslip")
         .join("sequence")
-        .join(format!("{}.txt", project.replace('/', "-")))
+        .join(format!("{name}.txt"))
 }
 
 /// Refuse a list whose sequence is below one already accepted for the
@@ -1171,6 +1174,18 @@ mod tests {
         assert!(err.to_string().contains("refusing to go back"), "{err}");
         check(5).unwrap();
         assert_eq!(file::read_to_string(&path).unwrap(), "5");
+    }
+
+    #[test]
+    fn sequence_files_do_not_collide() {
+        let a = sequence_file("github.com/foo/bar-baz");
+        let b = sequence_file("github.com/foo-bar/baz");
+        assert_ne!(a, b);
+        assert_eq!(
+            a.file_name().unwrap().to_str().unwrap(),
+            "github.com%2Ffoo%2Fbar-baz.txt"
+        );
+        assert_eq!(a.parent(), b.parent());
     }
 
     #[test]
