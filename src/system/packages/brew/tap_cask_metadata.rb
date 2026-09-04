@@ -170,6 +170,12 @@ class CaskMetadata
     instance_eval(&block) if OS.linux?
   end
 
+  def on_system(*systems, macos: nil, &block)
+    run = systems.include?(:linux) && OS.linux?
+    run ||= OS.mac? && macos && macos_condition_matches?(macos)
+    instance_eval(&block) if run && block
+  end
+
   MacOSVersion::SYMBOLS.each_key do |release|
     define_method(:"on_#{release}") do |comparison = nil, &block|
       next unless OS.mac? && block
@@ -183,6 +189,25 @@ class CaskMetadata
       instance_eval(&block) if matches
     end
   end
+
+  def macos_condition_matches?(condition)
+    value = condition.to_s
+    base, comparison = if value.end_with?("_or_older")
+      [value.delete_suffix("_or_older"), :or_older]
+    elsif value.end_with?("_or_newer")
+      [value.delete_suffix("_or_newer"), :or_newer]
+    else
+      [value, :==]
+    end
+    host = MacOSVersion.host
+    target = MacOSVersion.from_symbol(base)
+    case comparison
+    when :or_older then host <= target
+    when :or_newer then host >= target
+    else host.same_release?(target)
+    end
+  end
+  private :macos_condition_matches?
 
   def name(*) = nil
   def desc(*) = nil
@@ -216,7 +241,6 @@ class CaskMetadata
   end
 
   def method_missing(name, *, &block)
-    return instance_eval(&block) if block && name.to_s.start_with?("on_")
     raise "unsupported cask metadata DSL `#{name}`"
   end
 

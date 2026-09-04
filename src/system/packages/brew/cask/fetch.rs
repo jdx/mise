@@ -48,10 +48,10 @@ pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Re
     match fetch_cask_url(requested_token, &url, raw_base.clone(), official_api).await {
         Ok(cask) => Ok(cask),
         Err(api_err) => {
-            let Some((owner, tap, _)) =
-                tap_name.filter(|(owner, tap, _)| !(*owner == "homebrew" && *tap == "cask"))
-            else {
-                return Err(api_err);
+            let (owner, tap) = match tap_name {
+                Some((owner, tap, _)) if owner != "homebrew" || tap != "cask" => (owner, tap),
+                None if req.tap_url.is_some() => ("", ""),
+                _ => return Err(api_err),
             };
             let mut cask = super::super::tap::cask_from_ruby(
                 owner,
@@ -67,6 +67,7 @@ pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Re
                 )
             })?;
             cask.raw_base = raw_base;
+            validate_cask_identity(&cask, requested_token, false)?;
             Ok(cask)
         }
     }

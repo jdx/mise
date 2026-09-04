@@ -87,7 +87,10 @@ class Formula
     def url(value = nil, **) = (@source_url = value unless value.nil?)
     def mirror(*) = nil
     def sha256(value = nil, **) = (@source_sha256 = value if value.is_a?(String))
-    def version(value = nil) = (@explicit_version = value.to_s unless value.nil?)
+    def version(value = nil)
+      @explicit_version = MetadataVersion.new(value) unless value.nil?
+      @explicit_version
+    end
     def revision(value = nil) = (@revision_value = value.to_i unless value.nil?)
     def keg_only(*) = (@keg_only_value = true)
 

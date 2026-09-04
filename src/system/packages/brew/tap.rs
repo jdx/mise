@@ -71,7 +71,7 @@ pub(super) async fn formula_from_ruby(
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
         ])
-        .with_sandbox(metadata_sandbox(&formula_path, &shim_path, &output_path));
+        .with_sandbox(metadata_sandbox(&formula_path, &shim_path, &output_path)?);
     runner.apply_sandbox().await?;
     runner
         .execute_async()
@@ -122,7 +122,7 @@ pub(super) async fn cask_from_ruby(
             ("MISE_BREW_SOURCE_CHECKSUM", checksum),
             ("MISE_BREW_TAP_COMMIT", tap_source.commit),
         ])
-        .with_sandbox(metadata_sandbox(&cask_path, &shim_path, &output_path));
+        .with_sandbox(metadata_sandbox(&cask_path, &shim_path, &output_path)?);
     runner.apply_sandbox().await?;
     runner
         .execute_async()
@@ -133,7 +133,8 @@ pub(super) async fn cask_from_ruby(
     Ok(cask)
 }
 
-fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> SandboxConfig {
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<SandboxConfig> {
     let mut sandbox = SandboxConfig {
         deny_read: true,
         deny_write: true,
@@ -144,7 +145,14 @@ fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> SandboxConfig 
         ..Default::default()
     };
     sandbox.resolve_paths();
-    sandbox
+    Ok(sandbox)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn metadata_sandbox(_source: &Path, _shim: &Path, _output: &Path) -> Result<SandboxConfig> {
+    bail!(
+        "evaluating third-party tap definitions is only supported inside the Linux or macOS process sandbox"
+    )
 }
 
 async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Result<TapSource> {
@@ -170,25 +178,37 @@ async fn resolve_tap_source(owner: &str, tap: &str, tap_url: Option<&str>) -> Re
 
 async fn usable_system_ruby() -> Option<PathBuf> {
     let ruby = crate::file::which("ruby")?;
+    ruby_is_compatible(&ruby).await.then_some(ruby)
+}
+
+async fn ruby_is_compatible(ruby: &Path) -> bool {
     tokio::process::Command::new(&ruby)
-        .args(["-e", "exit 0"])
+        .args(["-e", "exit RUBY_VERSION.split('.').first.to_i >= 3 ? 0 : 1"])
         .output()
         .await
         .ok()
         .filter(|output| output.status.success())
-        .map(|_| ruby)
+        .is_some()
 }
 
 async fn ruby_for_metadata(name: &str, provision_ruby: bool) -> Result<PathBuf> {
-    match usable_system_ruby().await {
-        Some(ruby) => Ok(ruby),
-        None if provision_ruby => super::source::ruby_bin().await,
-        None => super::source::installed_ruby_bin().await?.ok_or_else(|| {
-            eyre::eyre!(
-                "evaluating the tap definition for {name} requires Ruby; install Ruby or run the apply command"
-            )
-        }),
+    if let Some(ruby) = usable_system_ruby().await {
+        return Ok(ruby);
     }
+    if let Some(ruby) = super::source::installed_ruby_bin().await?
+        && ruby_is_compatible(&ruby).await
+    {
+        return Ok(ruby);
+    }
+    if provision_ruby {
+        let ruby = super::source::ruby_bin().await?;
+        if ruby_is_compatible(&ruby).await {
+            return Ok(ruby);
+        }
+    }
+    bail!(
+        "evaluating the tap definition for {name} requires Ruby 3 or newer; install a compatible Ruby or run the apply command"
+    )
 }
 
 fn github_repository<'a>(
@@ -301,7 +321,8 @@ mod tests {
             r#"
 class Widget < Formula
   desc "example"
-  url "https://example.com/widget-1.2.3.tar.gz"
+  version "1.2.3"
+  url "https://example.com/widget-#{version}.tar.gz"
   sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   depends_on "libfoo"
   depends_on "cmake" => :build
@@ -324,6 +345,10 @@ end
         let formula: Formula = serde_json::from_str(&crate::file::read_to_string(output)?)?;
         assert_eq!(formula.name, "widget");
         assert_eq!(formula.versions.stable.as_deref(), Some("1.2.3"));
+        assert_eq!(
+            formula.urls["stable"].url,
+            "https://example.com/widget-1.2.3.tar.gz"
+        );
         assert_eq!(formula.dependencies, ["libfoo"]);
         assert_eq!(formula.build_dependencies, ["cmake"]);
         assert!(formula.keg_only);
@@ -350,6 +375,9 @@ cask "widget" do
   depends_on formula: "libfoo"
   on_sonoma do
     url "https://example.com/wrong-platform.zip"
+  end
+  on_system macos: :ventura_or_newer do
+    url "https://example.com/also-wrong-platform.zip"
   end
   app "Widget.app"
   binary "Widget.app/Contents/MacOS/widget", target: "widget"
@@ -379,18 +407,45 @@ end
         Ok(())
     }
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn metadata_evaluation_is_fully_sandboxed() {
         let config = metadata_sandbox(
             Path::new("/tmp/formula.rb"),
             Path::new("/tmp/shim.rb"),
             Path::new("/tmp/metadata.json"),
-        );
+        )
+        .unwrap();
         assert!(config.deny_read);
         assert!(config.deny_write);
         assert!(config.deny_net);
         assert!(config.deny_env);
         assert_eq!(config.allow_read.len(), 2);
         assert_eq!(config.allow_write.len(), 1);
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn metadata_sandbox_blocks_tap_writes() -> Result<()> {
+        let Some(ruby) = test_ruby().await? else {
+            return Ok(());
+        };
+        crate::file::create_dir_all(&*crate::env::HOME)?;
+        let dir = tempfile::Builder::new()
+            .prefix(".mise-tap-sandbox-")
+            .tempdir_in(&*crate::env::HOME)?;
+        let source = dir.path().join("malicious.rb");
+        let output = dir.path().join("metadata.json");
+        let denied = dir.path().join("denied");
+        crate::file::write(&source, "File.write(ARGV.fetch(0), 'escaped')")?;
+        crate::file::write(&output, "")?;
+        let mut runner = CmdLineRunner::new(ruby)
+            .arg(&source)
+            .arg(&denied)
+            .with_sandbox(metadata_sandbox(&source, &source, &output)?);
+        runner.apply_sandbox().await?;
+        assert!(runner.execute_async().await.is_err());
+        assert!(!denied.exists());
+        Ok(())
     }
 }
