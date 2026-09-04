@@ -25,7 +25,10 @@ const SYSTEM_READ_PATHS: &[&str] = &[
 ];
 
 /// Generate a Seatbelt (SBPL) profile string from sandbox config.
-pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String {
+pub(crate) async fn generate_seatbelt_profile(
+    config: &SandboxConfig,
+    initial_program: Option<&std::path::Path>,
+) -> String {
     let mut rules = Vec::new();
     rules.push("(version 1)".to_string());
     rules.push("(allow default)".to_string());
@@ -113,6 +116,12 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
 
     if config.deny_process {
         rules.push("(deny process-fork)".to_string());
+        rules.push("(deny process-exec)".to_string());
+        if let Some(path) = initial_program {
+            let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            let path_str = sbpl_escape(&path.to_string_lossy());
+            rules.push(format!("(allow process-exec (literal \"{path_str}\"))"));
+        }
     }
 
     rules.join("\n")
@@ -121,7 +130,11 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf, process::Command};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        process::Command,
+    };
 
     #[tokio::test]
     async fn test_deny_write_profile() {
@@ -129,7 +142,7 @@ mod tests {
             deny_write: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, None).await;
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp\"))"));
         assert!(!profile.contains("(deny file-read*)"));
@@ -142,7 +155,7 @@ mod tests {
             deny_net: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, None).await;
         assert!(profile.contains("(deny network*)"));
         assert!(!profile.contains("(deny file-write*)"));
     }
@@ -153,7 +166,7 @@ mod tests {
             allow_write: vec![PathBuf::from("/tmp/mydir")],
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, None).await;
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(allow file-write* (subpath \"/tmp/mydir\"))"));
     }
@@ -165,7 +178,7 @@ mod tests {
             allow_net: vec!["1.2.3.4".to_string()],
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, None).await;
         assert!(profile.contains("(deny network*)"));
         assert!(profile.contains("(allow network* (remote ip \"1.2.3.4:*\"))"));
         // mDNSResponder rule should appear exactly once
@@ -182,7 +195,7 @@ mod tests {
             deny_read: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, None).await;
         assert!(profile.contains("(deny file-read*)"));
         assert!(profile.contains("(allow file-read* (subpath \"/usr\"))"));
         assert!(profile.contains("(allow file-read* (subpath \"/System\"))"));
@@ -206,7 +219,7 @@ mod tests {
             ..Default::default()
         };
         config.resolve_paths();
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, Some(Path::new("/bin/sh"))).await;
         let read = |path: &std::path::Path| {
             Command::new("sandbox-exec")
                 .current_dir("/")
@@ -234,9 +247,21 @@ mod tests {
             deny_env: true,
             ..Default::default()
         };
-        let profile = generate_seatbelt_profile(&config).await;
+        let profile = generate_seatbelt_profile(&config, None).await;
         assert!(profile.contains("(deny file-read*)"));
         assert!(profile.contains("(deny file-write*)"));
         assert!(profile.contains("(deny network*)"));
+    }
+
+    #[tokio::test]
+    async fn test_deny_process_allows_only_initial_executable() {
+        let config = SandboxConfig {
+            deny_process: true,
+            ..Default::default()
+        };
+        let profile = generate_seatbelt_profile(&config, Some(Path::new("/usr/bin/ruby"))).await;
+        assert!(profile.contains("(deny process-fork)"));
+        assert!(profile.contains("(deny process-exec)"));
+        assert!(profile.contains("(allow process-exec (literal \"/usr/bin/ruby\"))"));
     }
 }

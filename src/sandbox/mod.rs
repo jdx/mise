@@ -329,7 +329,8 @@ impl SandboxConfig {
         program: &str,
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
-        let profile = macos::generate_seatbelt_profile(self).await;
+        let profile =
+            macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program))).await;
         let mut sandbox_args = vec![
             "-p".to_string(),
             profile,
@@ -369,8 +370,11 @@ pub(crate) fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub(crate) async fn macos_generate_profile(config: &SandboxConfig) -> String {
-    macos::generate_seatbelt_profile(config).await
+pub(crate) async fn macos_generate_profile(
+    config: &SandboxConfig,
+    program: &std::path::Path,
+) -> String {
+    macos::generate_seatbelt_profile(config, Some(program)).await
 }
 
 #[cfg(test)]
