@@ -20,15 +20,22 @@ bottle. Formulae without a usable bottle are built from source, also without
 Homebrew (see [Source formulae](#source-formulae)). mise never shells out to
 `brew` for homebrew/core formulae.
 
-Third-party taps are supported directly when the tap publishes Homebrew API
-metadata (`api/formula/<name>.json` or `api/cask/<token>.json`). Use the same
-fully-qualified name you would pass to Homebrew:
+Third-party taps are supported with the same fully-qualified name you would
+pass to Homebrew:
 
 ```toml
 [bootstrap.packages]
-"brew:railwaycat/emacsmacport/emacs-mac" = "latest"
+"brew:owner/tap/formula" = "latest"
 "brew-cask:owner/tap/app" = "latest"
 ```
+
+mise first looks for published Homebrew API metadata at
+`api/formula/<name>.json` or `api/cask/<token>.json`. When a tap does not
+publish it, mise fetches the Ruby definition at a pinned tap commit and
+evaluates its metadata with mise's own Formula or Cask DSL shim. Formulae
+resolved this way are built from source. mise does not invoke or install
+Homebrew. The shims support the commonly used DSL and report an error when a
+definition cannot be evaluated or installed safely.
 
 For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
 `[plugins]`: the key is the tap name and the value is the GitHub git URL.
@@ -45,7 +52,7 @@ For taps whose GitHub URL cannot be inferred, add a tap source. This mirrors
 `mise bootstrap packages brew tap` and `mise bootstrap packages brew untap`
 manage `[bootstrap.brew.taps]` in `mise.toml`; they do not mutate a Homebrew
 installation. Non-GitHub taps are not currently supported because mise needs
-direct raw access to the generated API metadata.
+direct raw access to tap metadata and Ruby definitions.
 
 ```sh
 mise bootstrap packages brew tap railwaycat/emacsmacport

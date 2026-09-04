@@ -24,6 +24,8 @@ use signal_hook::consts::{SIGHUP, SIGINT, SIGQUIT, SIGTERM, SIGUSR1, SIGUSR2};
 #[cfg(not(any(test, target_os = "windows")))]
 use signal_hook::iterator::Signals;
 use std::sync::LazyLock as Lazy;
+#[cfg(unix)]
+use tokio::io::AsyncRead;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader};
 use tokio::process::Command;
 
@@ -519,6 +521,26 @@ enum HashedProcessOutput {
     Stdout(Vec<u8>),
     Stderr(Vec<u8>),
     ReadError(&'static str, std::io::Error),
+}
+
+#[cfg(unix)]
+async fn read_capped<R: AsyncRead + Unpin>(
+    mut reader: R,
+    max_bytes: usize,
+) -> std::io::Result<(Vec<u8>, usize)> {
+    let mut kept = Vec::new();
+    let mut total = 0usize;
+    let mut buffer = [0; 8192];
+    loop {
+        let len = reader.read(&mut buffer).await?;
+        if len == 0 {
+            break;
+        }
+        total = total.saturating_add(len);
+        let remaining = max_bytes.saturating_sub(kept.len());
+        kept.extend_from_slice(&buffer[..len.min(remaining)]);
+    }
+    Ok((kept, total))
 }
 
 impl<'a> CmdLineRunner<'a> {
@@ -1443,6 +1465,75 @@ impl<'a> CmdLineRunner<'a> {
         Ok(stdout.trim_end().to_string())
     }
 
+    #[cfg(unix)]
+    pub(crate) async fn read_bounded(mut self, max_output_bytes: usize) -> Result<String> {
+        let _read_lock = RAW_LOCK.read().await;
+        debug!("$ {self}");
+        self.cmd.kill_on_drop(true);
+        #[cfg(unix)]
+        if should_use_pgroup() {
+            self.cmd.env(TASK_PGID_MANAGED_ENV, "1");
+            unsafe {
+                self.cmd.as_std_mut().pre_exec(|| {
+                    let _ = nix::unistd::setpgid(
+                        nix::unistd::Pid::from_raw(0),
+                        nix::unistd::Pid::from_raw(0),
+                    );
+                    Ok(())
+                });
+            }
+        }
+        let mut cp = self
+            .spawn_async_with_etxtbsy_retry()
+            .await
+            .wrap_err_with(|| format!("failed to execute command: {self}"))?;
+        let id = cp.id().unwrap_or_default();
+        let _running_pid = RunningPidGuard::new(cp.id());
+        if let Some(text) = self.stdin.take()
+            && let Some(mut stdin) = cp.stdin.take()
+        {
+            tokio::spawn(async move {
+                let _ = stdin.write_all(text.as_bytes()).await;
+            });
+        }
+        let stdout = cp.stdout.take().expect("stdout must be piped");
+        let stderr = cp.stderr.take().expect("stderr must be piped");
+        let stdout_task = tokio::spawn(read_capped(stdout, max_output_bytes));
+        let stderr_task = tokio::spawn(read_capped(stderr, max_output_bytes));
+        let status = match self.timeout {
+            Some(timeout) => match tokio::time::timeout(timeout, cp.wait()).await {
+                Ok(status) => status?,
+                Err(_) => {
+                    #[cfg(unix)]
+                    signal_process_tree(id, nix::sys::signal::Signal::SIGKILL);
+                    #[cfg(windows)]
+                    kill_process_tree(id);
+                    let _ = cp.wait().await;
+                    bail!("timed out after {timeout:?}");
+                }
+            },
+            None => cp.wait().await?,
+        };
+        let (stdout, stdout_len) = stdout_task.await??;
+        let (stderr, stderr_len) = stderr_task.await??;
+        if stdout_len.saturating_add(stderr_len) > max_output_bytes {
+            bail!("command output exceeded {max_output_bytes} bytes");
+        }
+        if !status.success() {
+            let output = std::process::Output {
+                status,
+                stdout: stdout.clone(),
+                stderr,
+            };
+            let combined_output = captured_output_lines(&self, &output);
+            self.replay_captured_stderr(&combined_output);
+            self.on_error(combined_output, output.status)?;
+        }
+        let stdout = String::from_utf8(stdout)
+            .wrap_err_with(|| format!("{} produced invalid UTF-8 output", self.get_program()))?;
+        Ok(stdout.trim_end().to_string())
+    }
+
     fn execute_raw(mut self) -> Result<()> {
         // In raw mode, inherit stdio so the child can interact with the terminal
         // directly. Piped stdout/stderr would deadlock if the child produces >64KB
@@ -1554,6 +1645,7 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
+            let initial_program = std::path::PathBuf::from(self.cmd.as_std().get_program());
             // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
             // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
             if sandbox.effective_deny_env() {
@@ -1579,13 +1671,19 @@ impl<'a> CmdLineRunner<'a> {
             let sandbox = sandbox.clone();
             unsafe {
                 self.cmd.as_std_mut().pre_exec(move || {
-                    if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
-                        crate::sandbox::landlock_apply(&sandbox)
+                    if sandbox.effective_deny_read()
+                        || sandbox.effective_deny_write()
+                        || sandbox.deny_process
+                    {
+                        crate::sandbox::landlock_apply(&sandbox, &initial_program)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
-                    if sandbox.effective_deny_net() {
-                        crate::sandbox::seccomp_apply()
-                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    if sandbox.effective_deny_net() || sandbox.deny_process {
+                        crate::sandbox::seccomp_apply(
+                            sandbox.effective_deny_net(),
+                            sandbox.deny_process,
+                        )
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
                     Ok(())
                 });
@@ -1604,7 +1702,9 @@ impl<'a> CmdLineRunner<'a> {
                 .get_args()
                 .map(|a| a.to_string_lossy().into_owned())
                 .collect();
-            let profile = crate::sandbox::macos_generate_profile(&sandbox).await;
+            let profile =
+                crate::sandbox::macos_generate_profile(&sandbox, std::path::Path::new(&program))
+                    .await;
 
             let mut new_cmd = Command::new("sandbox-exec");
             new_cmd.arg("-p").arg(&profile).arg("--").arg(&program);
@@ -1613,7 +1713,11 @@ impl<'a> CmdLineRunner<'a> {
             }
             // Match CmdLineRunner::new() defaults for stdio.
             // execute() reads from piped stdout/stderr; execute_raw() overrides to inherit.
-            new_cmd.stdin(Stdio::null());
+            if self.stdin.is_some() {
+                new_cmd.stdin(Stdio::piped());
+            } else {
+                new_cmd.stdin(Stdio::null());
+            }
             new_cmd.stdout(Stdio::piped());
             new_cmd.stderr(Stdio::piped());
             if let Some(dir) = self.cmd.as_std().get_current_dir() {
@@ -2081,6 +2185,27 @@ mod tests {
         assert_eq!(observed_stderr.lock().unwrap().as_slice(), ["err"]);
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_cmd_line_runner_read_bounded() {
+        let output = super::CmdLineRunner::new("sh")
+            .args(["-c", "cat"])
+            .stdin_string("bounded input")
+            .with_timeout(std::time::Duration::from_secs(1))
+            .read_bounded(1024)
+            .await
+            .unwrap();
+        assert_eq!(output, "bounded input");
+
+        let err = super::CmdLineRunner::new("sh")
+            .args(["-c", "printf 12345"])
+            .with_timeout(std::time::Duration::from_secs(1))
+            .read_bounded(4)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("output exceeded 4 bytes"));
+    }
+
     #[tokio::test]
     async fn test_execute_async_skips_pre_cancelled_command() {
         let err = super::CmdLineRunner::new("sh")
@@ -2278,6 +2403,21 @@ mod tests {
             env.iter()
                 .any(|(key, value)| *key == OsStr::new("DROP") && value.is_none())
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn test_macos_sandbox_preserves_piped_stdin() {
+        let mut runner = super::CmdLineRunner::new("/bin/cat")
+            .stdin_string("sandboxed stdin")
+            .with_sandbox(crate::sandbox::SandboxConfig {
+                deny_process: true,
+                ..Default::default()
+            });
+
+        runner.apply_sandbox().await.unwrap();
+
+        assert_eq!(runner.read().await.unwrap(), "sandboxed stdin");
     }
 
     #[test]

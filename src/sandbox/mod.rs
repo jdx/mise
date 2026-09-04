@@ -20,6 +20,10 @@ pub(crate) struct SandboxConfig {
     pub deny_write: bool,
     pub deny_net: bool,
     pub deny_env: bool,
+    /// Block child-process creation. Internal-only: task/CLI sandboxes leave this disabled.
+    pub deny_process: bool,
+    /// Do not apply the normal writable-temp-directory exception.
+    pub deny_temp_write: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
     pub allow_net: Vec<String>,
@@ -111,6 +115,8 @@ impl SandboxConfig {
             || self.deny_write
             || self.deny_net
             || self.deny_env
+            || self.deny_process
+            || self.deny_temp_write
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
@@ -284,7 +290,7 @@ impl SandboxConfig {
         #[cfg(target_os = "linux")]
         {
             self.warn_missing_allow_paths();
-            self.apply_linux()?;
+            self.apply_linux(program)?;
             Ok(None)
         }
 
@@ -301,18 +307,18 @@ impl SandboxConfig {
     }
 
     #[cfg(all(not(test), target_os = "linux"))]
-    fn apply_linux(&self) -> eyre::Result<()> {
-        if self.effective_deny_read() || self.effective_deny_write() {
-            landlock::apply_landlock(self)?;
+    fn apply_linux(&self, program: &str) -> eyre::Result<()> {
+        if self.effective_deny_read() || self.effective_deny_write() || self.deny_process {
+            landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
-        if self.effective_deny_net() {
+        if self.effective_deny_net() || self.deny_process {
             if !self.allow_net.is_empty() {
                 eyre::bail!(
                     "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
                      Use --deny-net to block all network, or remove --allow-net."
                 );
             }
-            seccomp::apply_seccomp_net_filter()?;
+            seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
         }
         Ok(())
     }
@@ -323,7 +329,8 @@ impl SandboxConfig {
         program: &str,
         args: &[String],
     ) -> eyre::Result<Option<SandboxedCommand>> {
-        let profile = macos::generate_seatbelt_profile(self).await;
+        let profile =
+            macos::generate_seatbelt_profile(self, Some(std::path::Path::new(program))).await;
         let mut sandbox_args = vec![
             "-p".to_string(),
             profile,
@@ -351,20 +358,26 @@ pub(crate) struct SandboxedCommand {
 
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
-    landlock::apply_landlock(config)
+pub(crate) fn landlock_apply(
+    config: &SandboxConfig,
+    initial_program: &std::path::Path,
+) -> eyre::Result<()> {
+    landlock::apply_landlock(config, Some(initial_program))
 }
 
-/// Apply seccomp network filter (Linux only).
+/// Apply seccomp network/process filter (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn seccomp_apply() -> eyre::Result<()> {
-    seccomp::apply_seccomp_net_filter()
+pub(crate) fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
+    seccomp::apply_seccomp_filter(deny_net, deny_process)
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).
 #[cfg(target_os = "macos")]
-pub(crate) async fn macos_generate_profile(config: &SandboxConfig) -> String {
-    macos::generate_seatbelt_profile(config).await
+pub(crate) async fn macos_generate_profile(
+    config: &SandboxConfig,
+    program: &std::path::Path,
+) -> String {
+    macos::generate_seatbelt_profile(config, Some(program)).await
 }
 
 #[cfg(test)]

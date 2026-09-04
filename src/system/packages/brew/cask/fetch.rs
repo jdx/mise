@@ -1,6 +1,6 @@
 use super::*;
 
-pub(super) async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
+pub(super) async fn fetch_cask(req: &PackageRequest, provision_ruby: bool) -> Result<Cask> {
     let name = &req.name;
     let tap_name = split_tap_name(name);
     let (requested_token, official_api) = match tap_name {
@@ -45,7 +45,37 @@ pub(super) async fn fetch_cask(req: &PackageRequest) -> Result<Cask> {
             Some(HOMEBREW_CASK_RAW.to_string()),
         ),
     };
-    fetch_cask_url(requested_token, &url, raw_base, official_api).await
+    match fetch_cask_url(requested_token, &url, raw_base.clone(), official_api).await {
+        Ok(cask) => Ok(cask),
+        Err(api_err) => {
+            let (owner, tap) = match tap_name {
+                Some((owner, tap, _)) if owner != "homebrew" || tap != "cask" => (owner, tap),
+                None if req.tap_url.is_some() => ("", ""),
+                _ => return Err(api_err),
+            };
+            let mut cask = super::super::tap::cask_from_ruby(
+                owner,
+                tap,
+                requested_token,
+                req.tap_url.as_deref(),
+                provision_ruby,
+            )
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "published cask metadata was unavailable ({api_err}) and mise could not evaluate Casks/{requested_token}.rb"
+                )
+            })?;
+            cask.raw_base = req
+                .tap_url
+                .as_deref()
+                .and_then(super::super::api::github_raw_base)
+                .map(normalize_cask_raw_base)
+                .or(raw_base);
+            validate_cask_identity(&cask, requested_token, false)?;
+            Ok(cask)
+        }
+    }
 }
 
 pub(super) fn normalize_cask_raw_base(mut raw_base: String) -> String {
@@ -415,20 +445,13 @@ pub(super) async fn execute_lifecycle_hook(
 }
 
 pub(super) async fn cask_ruby_bin() -> Result<PathBuf> {
-    if let Some(brew) = file::which("brew")
-        && let Ok(output) = tokio::process::Command::new(brew)
-            .args(["ruby", "-e", "print RbConfig.ruby"])
-            .output()
+    if let Some(ruby) = file::which("ruby")
+        && tokio::process::Command::new(&ruby)
+            .args(["-e", "exit 0"])
+            .status()
             .await
-        && output.status.success()
-        && let Ok(path) = String::from_utf8(output.stdout)
+            .is_ok_and(|status| status.success())
     {
-        let path = PathBuf::from(path.trim());
-        if path.is_file() {
-            return Ok(path);
-        }
-    }
-    if let Some(ruby) = file::which("ruby") {
         return Ok(ruby);
     }
     source::ruby_bin().await

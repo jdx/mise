@@ -428,6 +428,8 @@ impl TaskExecutor {
             deny_write: task.deny_all || task.deny_write || self.sandbox.deny_write,
             deny_net: task.deny_all || task.deny_net || self.sandbox.deny_net,
             deny_env: task.deny_all || task.deny_env || self.sandbox.deny_env,
+            deny_process: false,
+            deny_temp_write: false,
             allow_read: task
                 .allow_read
                 .iter()
