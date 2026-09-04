@@ -18,11 +18,15 @@ use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tempfile::NamedTempFile;
 #[cfg(target_os = "linux")]
 use tokio::sync::OnceCell;
 
 const MAX_REPORTED_PATHS: usize = 20;
+#[cfg(target_os = "linux")]
+const TRACE_START_TIMEOUT: Duration = Duration::from_secs(1);
+const TRACE_SINK_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[cfg(target_os = "linux")]
 static STRACE: OnceCell<Option<PathBuf>> = OnceCell::const_new();
@@ -65,6 +69,9 @@ pub(crate) struct TaskCacheAudit {
     #[cfg(target_os = "linux")]
     strace: PathBuf,
     trace: NamedTempFile,
+    trace_complete: NamedTempFile,
+    trace_task_complete: NamedTempFile,
+    trace_timed_out: NamedTempFile,
     root: PathBuf,
     source_root: PathBuf,
     sources: Override,
@@ -116,6 +123,9 @@ impl TaskCacheAudit {
             Ok(Some(Self {
                 strace,
                 trace: NamedTempFile::new()?,
+                trace_complete: NamedTempFile::new()?,
+                trace_task_complete: NamedTempFile::new()?,
+                trace_timed_out: NamedTempFile::new()?,
                 root,
                 source_root,
                 sources,
@@ -127,7 +137,24 @@ impl TaskCacheAudit {
 
     #[cfg(target_os = "linux")]
     pub(crate) fn wrap(&self, program: OsString, args: &[String]) -> (OsString, Vec<String>) {
+        let trace = shell_escape::escape(self.trace.path().to_string_lossy());
+        let trace_complete = shell_escape::escape(self.trace_complete.path().to_string_lossy());
+        let trace_task_complete =
+            shell_escape::escape(self.trace_task_complete.path().to_string_lossy());
+        let trace_timed_out = shell_escape::escape(self.trace_timed_out.path().to_string_lossy());
+        // Piping the trace through a small sink gives mise a completion signal from the detached
+        // tracer. strace closes the pipe only after it has finished following every tracee.
+        let output = format!(
+            "|exec 3<&0; cat <&3 > {trace} & child=$!; \
+             (while test ! -s {trace_task_complete}; do sleep 0.01; done; sleep 1; \
+             printf 1 > {trace_timed_out}; kill \"$child\" 2>/dev/null) & watchdog=$!; \
+             wait \"$child\"; kill \"$watchdog\" 2>/dev/null; wait \"$watchdog\" 2>/dev/null; \
+             printf 1 > {trace_complete}"
+        );
         let mut wrapped = vec![
+            // Keep the task as mise's direct child so a failure in the advisory tracer does not
+            // replace the task's exit status. The tracer runs as the task's grandchild instead.
+            "-D".to_string(),
             "-f".to_string(),
             "-qq".to_string(),
             "-yy".to_string(),
@@ -136,7 +163,7 @@ impl TaskCacheAudit {
             "-s".to_string(),
             "4096".to_string(),
             "-o".to_string(),
-            self.trace.path().to_string_lossy().into_owned(),
+            output,
             "--".to_string(),
             program.to_string_lossy().into_owned(),
         ];
@@ -149,7 +176,27 @@ impl TaskCacheAudit {
         (program, args.to_vec())
     }
 
-    pub(crate) fn report(&self, task: &Task) {
+    pub(crate) async fn report(&self, task: &Task) {
+        if let Err(err) = fs::write(self.trace_task_complete.path(), b"1") {
+            warn!(
+                "task {} cache audit could not signal its tracer: {err}",
+                task.name
+            );
+            return;
+        }
+        if !wait_for_file(self.trace_complete.path(), TRACE_SINK_TIMEOUT).await {
+            warn!(
+                "task {} cache audit tracer did not finish; skipping its incomplete report",
+                task.name
+            );
+            return;
+        }
+        if fs::metadata(self.trace_timed_out.path()).is_ok_and(|meta| meta.len() > 0) {
+            warn!(
+                "task {} cache audit tracer exceeded its drain grace; report may be incomplete",
+                task.name
+            );
+        }
         let trace = match fs::read_to_string(self.trace.path()) {
             Ok(trace) => trace,
             Err(err) => {
@@ -282,14 +329,27 @@ async fn usable_strace() -> Option<PathBuf> {
                 warn_once!("task cache audit requires strace; running without filesystem auditing");
                 return None;
             };
+            let trace = NamedTempFile::new().ok()?;
+            let trace_complete = NamedTempFile::new().ok()?;
+            let trace_path = shell_escape::escape(trace.path().to_string_lossy());
+            let trace_complete_path = shell_escape::escape(trace_complete.path().to_string_lossy());
+            let output = format!("|cat > {trace_path}; printf 1 > {trace_complete_path}");
             let status = tokio::process::Command::new(&strace)
-                .args(["-qq", "-yy", "-e", "trace=none", "--", "true"])
+                .args(["-D", "-qq", "-e", "trace=execve", "-o"])
+                .arg(output)
+                .args(["--", "true"])
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .status()
                 .await;
-            if !status.is_ok_and(|status| status.success()) {
+            // With -D, the status belongs to `true`, not the detached tracer. Requiring the same
+            // output-pipe handshake and a trace record catches unsupported strace syntax and
+            // startup failures such as ptrace being blocked by seccomp.
+            if !status.is_ok_and(|status| status.success())
+                || !wait_for_file(trace_complete.path(), TRACE_START_TIMEOUT).await
+                || !fs::metadata(trace.path()).is_ok_and(|meta| meta.len() > 0)
+            {
                 warn_once!(
                     "task cache audit could not start strace; running without filesystem auditing"
                 );
@@ -299,6 +359,19 @@ async fn usable_strace() -> Option<PathBuf> {
         })
         .await
         .clone()
+}
+
+async fn wait_for_file(path: &Path, timeout: Duration) -> bool {
+    tokio::time::timeout(timeout, async {
+        loop {
+            if fs::metadata(path).is_ok_and(|meta| meta.len() > 0) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_ok()
 }
 
 fn matches_override(matcher: &Override, path: &Path) -> bool {

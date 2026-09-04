@@ -1834,7 +1834,7 @@ impl TaskExecutor {
             })
             .await;
         if let Some(audit) = audit {
-            audit.report(task);
+            audit.report(task).await;
         }
         result?;
         trace!("{prefix} exited successfully");
