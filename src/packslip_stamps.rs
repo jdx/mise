@@ -28,6 +28,7 @@ use crate::config::Settings;
 use crate::dirs;
 use crate::file;
 use crate::http::HTTP_FETCH;
+use crate::lock_file::LockFile;
 use crate::toolset::ToolVersionOptions;
 
 /// GitHub's OIDC issuer, for a stamper pinned by a workflow identity.
@@ -180,29 +181,61 @@ fn state_dir() -> PathBuf {
     dirs::STATE.join("packslip").join("stampers")
 }
 
-fn read_state(dir: &Path, host: &str) -> HostState {
-    let path = dir.join(format!("{host}.json"));
+fn state_path(dir: &Path, host: &str) -> PathBuf {
+    dir.join(format!("{host}.json"))
+}
+
+/// The state file is what stands between a replayed list and an install,
+/// so a file that cannot be read is an error rather than an empty slate.
+fn read_state(dir: &Path, host: &str) -> Result<HostState> {
+    let path = state_path(dir, host);
     if !path.is_file() {
-        return HostState::default();
+        return Ok(HostState::default());
     }
-    file::read_to_string(&path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+    let text = file::read_to_string(&path)?;
+    serde_json::from_str(&text).wrap_err_with(|| {
+        format!(
+            "{} is not the stamper state mise wrote; remove it to start over, which forgets which lists were already accepted",
+            path.display()
+        )
+    })
 }
 
 fn write_state(dir: &Path, host: &str, state: &HostState) -> Result<()> {
     file::create_dir_all(dir)?;
-    file::write(
-        dir.join(format!("{host}.json")),
-        serde_json::to_vec_pretty(state)?,
-    )
+    file::write_atomic(state_path(dir, host), serde_json::to_vec_pretty(state)?)
+}
+
+/// One mise at a time reads and rewrites a host's state.
+fn locked(dir: &Path, host: &str) -> Result<fslock::LockFile> {
+    LockFile::new(&state_path(dir, host)).lock()
 }
 
 /// Refuse a list whose sequence is below the last one accepted from this
 /// host for this project, and remember the new one.
 fn check_sequence(host: &str, project: &str, list: &ReleaseListStatement) -> Result<()> {
-    check_sequence_in(&state_dir(), host, project, list)
+    let dir = state_dir();
+    let _lock = locked(&dir, host)?;
+    check_sequence_in(&dir, host, project, list)
+}
+
+/// A host that answered 404 for a project it had a list for before is not
+/// "no list": it would drop that list's yanks and let another host's stamp
+/// stand alone. Refuse until the host publishes again.
+fn missing_list(host: &str, project: &str, url: &str) -> Result<()> {
+    let dir = state_dir();
+    let _lock = locked(&dir, host)?;
+    missing_list_in(&dir, host, project, url)
+}
+
+fn missing_list_in(dir: &Path, host: &str, project: &str, url: &str) -> Result<()> {
+    let state = read_state(dir, host)?;
+    if let Some(last) = state.sequences.get(project) {
+        bail!(
+            "{host} published a stamp list for {project} before (sequence {last}) but now answers 404 at {url}; refusing to treat that as no list, since it would drop the yanks that list carried"
+        );
+    }
+    Ok(())
 }
 
 fn check_sequence_in(
@@ -211,7 +244,7 @@ fn check_sequence_in(
     project: &str,
     list: &ReleaseListStatement,
 ) -> Result<()> {
-    let mut state = read_state(dir, host);
+    let mut state = read_state(dir, host)?;
     let sequence = list.predicate.sequence;
     if let Some(&last) = state.sequences.get(project)
         && sequence < last
@@ -246,6 +279,7 @@ pub(crate) async fn fetch(project: &str, opts: &ToolVersionOptions) -> Result<Op
         let text = match HTTP_FETCH.get_text(&url).await {
             Ok(text) => text,
             Err(err) if is_not_found(&err) => {
+                missing_list(&stamper.host, project, &url)?;
                 debug!("{}: no stamp list for {project} at {url}", stamper.host);
                 stamps.hosts.push(stamper.host.clone());
                 continue;
@@ -413,6 +447,23 @@ mod tests {
         let err = check_sequence_in(d, host, project, &list(project, 4, &entries)).unwrap_err();
         assert!(err.to_string().contains("rollback"), "{err}");
         assert!(d.join("seq.example.com.json").is_file());
+        // A host that had a list for the project may not turn into "no list".
+        let err = missing_list_in(d, host, project, "https://seq.example.com/x.json").unwrap_err();
+        assert!(err.to_string().contains("sequence 6"), "{err}");
+        missing_list_in(
+            d,
+            host,
+            "github.com/o/unseen",
+            "https://seq.example.com/y.json",
+        )
+        .unwrap();
+        missing_list_in(
+            d,
+            "new.example.com",
+            project,
+            "https://new.example.com/y.json",
+        )
+        .unwrap();
         // Another project or host starts fresh.
         check_sequence_in(
             d,
@@ -422,6 +473,10 @@ mod tests {
         )
         .unwrap();
         check_sequence_in(d, "other.example.com", project, &list(project, 1, &entries)).unwrap();
+        // A state file mise cannot read is an error, not an empty slate.
+        std::fs::write(d.join("seq.example.com.json"), b"{not json").unwrap();
+        let err = check_sequence_in(d, host, project, &list(project, 9, &entries)).unwrap_err();
+        assert!(err.to_string().contains("remove it"), "{err}");
     }
 
     #[test]
