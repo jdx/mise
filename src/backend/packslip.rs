@@ -139,24 +139,20 @@ fn well_known_url(project: &str) -> String {
     }
 }
 
-/// The version a release tag names. The packslip inside the release is the
-/// authority and is checked against this at install time; listing versions
-/// from tags avoids downloading every bundle. A monorepo tool's tag is
-/// prefixed with its subpath (`oxlint_v1.0.0`, `cli/v1.9.4`).
-pub(crate) fn version_from_tag(tag: &str, subpath: Option<&str>) -> String {
-    let mut tag = tag;
-    if let Some(sub) = subpath {
-        let last = sub.rsplit('/').next().unwrap_or(sub);
-        'strip: for name in [sub, last] {
-            for sep in ['/', '-', '_', '@'] {
-                if let Some(rest) = tag.strip_prefix(&format!("{name}{sep}")) {
-                    tag = rest;
-                    break 'strip;
-                }
-            }
-        }
-    }
-    tag.strip_prefix('v').unwrap_or(tag).to_string()
+/// The version a release tag names: the tag's longest suffix that is
+/// semver, starting at a digit. That takes `v1.2.3`, `release-1.2.3`, and
+/// a monorepo tool's `oxlint_v1.0.0` or `cli/v1.9.4` without a table of
+/// spellings. The packslip inside the release is the authority and is
+/// checked against this at install time; deriving from tags avoids
+/// downloading every bundle to list versions. A tag with no semver in it
+/// comes back unchanged and is then skipped as not semver.
+pub(crate) fn version_from_tag(tag: &str, _subpath: Option<&str>) -> String {
+    tag.char_indices()
+        .filter(|(_, c)| c.is_ascii_digit())
+        .map(|(i, _)| &tag[i..])
+        .find(|candidate| packslip::model::parse_version(candidate).is_ok())
+        .unwrap_or(tag)
+        .to_string()
 }
 
 /// A listed version, when it is what a packslip requires: semver, whose
@@ -843,6 +839,14 @@ mod tests {
             "8.0.0"
         );
         assert_eq!(version_from_tag("v2.0.0", Some("oxlint")), "2.0.0");
+        assert_eq!(version_from_tag("release-1.2.3", None), "1.2.3");
+        assert_eq!(version_from_tag("tool-v2.0.0-rc.1", None), "2.0.0-rc.1");
+        assert_eq!(
+            version_from_tag("nightly-20260904", None),
+            "nightly-20260904",
+            "no semver in it"
+        );
+        assert!(version_info(version_from_tag("nightly-20260904", None), None, None).is_none());
     }
 
     #[test]
