@@ -425,6 +425,36 @@ pub(crate) struct Skill {
     pub path: PathBuf,
 }
 
+/// Where `sync_skills` records which links in a directory it made, so
+/// only those are ever replaced or pruned. A link's target alone would not
+/// tell a link mise made from one a person pointed into mise's installs.
+pub(crate) const SYNC_STATE: &str = ".mise-skills.json";
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+struct SyncState {
+    #[serde(default)]
+    links: std::collections::BTreeSet<String>,
+}
+
+fn read_sync_state(dir: &Path) -> SyncState {
+    let path = dir.join(SYNC_STATE);
+    match file::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+        Err(_) => SyncState::default(),
+    }
+}
+
+fn write_sync_state(dir: &Path, state: &SyncState) -> Result<()> {
+    let path = dir.join(SYNC_STATE);
+    if state.links.is_empty() {
+        if path.exists() {
+            file::remove_file(&path)?;
+        }
+        return Ok(());
+    }
+    file::write(&path, serde_json::to_string_pretty(state)?)
+}
+
 /// The skills a statement declares that are present in the install.
 pub(crate) fn skills_of(
     statement: &Statement,
@@ -482,9 +512,10 @@ pub(crate) struct SyncReport {
     pub skipped: Vec<(String, String)>,
 }
 
-/// Link each skill into `dir` under its name. Only links that point into
-/// `installs`, which is to say links mise made, are ever replaced or,
-/// with `prune`, removed; anything else at a skill's name is left alone.
+/// Link each skill into `dir` under its name. Only links mise made, which
+/// it records in [`SYNC_STATE`] beside them and which point into
+/// `installs`, are ever replaced or, with `prune`, removed; anything else
+/// at a skill's name is left alone.
 pub(crate) fn sync_skills(
     dir: &Path,
     skills: &[Skill],
@@ -492,6 +523,8 @@ pub(crate) fn sync_skills(
     prune: bool,
 ) -> Result<SyncReport> {
     let mut report = SyncReport::default();
+    let mut state = read_sync_state(dir);
+    let before = state.links.clone();
     let mut wanted: BTreeMap<&str, &Skill> = BTreeMap::new();
     for skill in skills {
         match wanted.get(skill.name.as_str()) {
@@ -507,8 +540,9 @@ pub(crate) fn sync_skills(
             }
         }
     }
-    let ours = |link: &Path| {
-        file::is_symlink_or_junction(link)
+    let ours = |name: &str, link: &Path| {
+        state.links.contains(name)
+            && file::is_symlink_or_junction(link)
             && file::is_symlink_target_within(link, installs).unwrap_or(false)
     };
     if !wanted.is_empty() {
@@ -521,7 +555,7 @@ pub(crate) fn sync_skills(
             continue;
         }
         if link.exists() || link.is_symlink() {
-            if !ours(&link) {
+            if !ours(name, &link) {
                 report.skipped.push((
                     name.to_string(),
                     format!("{} exists and is not a link mise made", link.display()),
@@ -533,16 +567,35 @@ pub(crate) fn sync_skills(
         file::make_symlink(&skill.path, &link)?;
         report.linked.push(name.to_string());
     }
+    let mut made: std::collections::BTreeSet<String> = report
+        .linked
+        .iter()
+        .chain(&report.unchanged)
+        .cloned()
+        .collect();
     if prune && dir.is_dir() {
         for entry in file::ls(dir)? {
             let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
-            if !wanted.contains_key(name) && ours(&entry) {
+            if !wanted.contains_key(name) && ours(name, &entry) {
                 file::remove_all(&entry)?;
                 report.pruned.push(name.to_string());
             }
         }
+    } else {
+        // Without pruning, links made earlier stay mise's as long as they exist.
+        made.extend(
+            state
+                .links
+                .iter()
+                .filter(|name| dir.join(name).is_symlink())
+                .cloned(),
+        );
+    }
+    state.links = made;
+    if state.links != before {
+        write_sync_state(dir, &state)?;
     }
     Ok(report)
 }
@@ -1295,6 +1348,29 @@ mod tests {
             "no longer active, and a link mise made"
         );
         assert!(!target.join("t").is_symlink());
+        let state: serde_json::Value =
+            serde_json::from_str(&file::read_to_string(target.join(SYNC_STATE)).unwrap()).unwrap();
+        assert_eq!(state["links"], serde_json::json!(["o"]));
+
+        // A link a person pointed into mise's installs is not mise's to touch,
+        // even though its target says otherwise.
+        file::make_symlink(&v1, &target.join("handmade")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[
+                skill("handmade", "tool", "2", &v2),
+                skill("o", "other", "1", &other),
+            ],
+            &installs,
+            true,
+        )
+        .unwrap();
+        assert!(
+            file::is_symlink_to(&target.join("handmade"), &v1),
+            "left alone"
+        );
+        assert_eq!(report.pruned, Vec::<String>::new());
+        assert_eq!(report.skipped.len(), 1, "{:?}", report.skipped);
 
         // Nothing to link creates nothing.
         let empty = dir.path().join("empty");
