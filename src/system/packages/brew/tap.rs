@@ -140,6 +140,8 @@ fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<Sandbox
         deny_write: true,
         deny_net: true,
         deny_env: true,
+        deny_process: true,
+        deny_temp_write: true,
         allow_read: vec![source.to_path_buf(), shim.to_path_buf()],
         allow_write: vec![output.to_path_buf()],
         ..Default::default()
@@ -426,7 +428,7 @@ end
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
-    async fn metadata_sandbox_blocks_tap_writes() -> Result<()> {
+    async fn metadata_sandbox_blocks_tap_processes_and_temp_writes() -> Result<()> {
         let Some(ruby) = test_ruby().await? else {
             return Ok(());
         };
@@ -436,15 +438,30 @@ end
             .tempdir_in(&*crate::env::HOME)?;
         let source = dir.path().join("malicious.rb");
         let output = dir.path().join("metadata.json");
-        let denied = dir.path().join("denied");
-        crate::file::write(&source, "File.write(ARGV.fetch(0), 'escaped')")?;
+        let temp_dir = tempfile::tempdir()?;
+        let denied = temp_dir.path().join("denied");
+        crate::file::write(
+            &source,
+            r#"
+begin
+  File.write(ARGV.fetch(0), "escaped")
+rescue SystemCallError
+end
+ran = begin
+  system("true")
+rescue SystemCallError
+  false
+end
+raise "child process escaped sandbox" if ran
+"#,
+        )?;
         crate::file::write(&output, "")?;
         let mut runner = CmdLineRunner::new(ruby)
             .arg(&source)
             .arg(&denied)
             .with_sandbox(metadata_sandbox(&source, &source, &output)?);
         runner.apply_sandbox().await?;
-        assert!(runner.execute_async().await.is_err());
+        runner.execute_async().await?;
         assert!(!denied.exists());
         Ok(())
     }

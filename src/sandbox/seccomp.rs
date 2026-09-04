@@ -10,11 +10,11 @@ fn syscall_number<T: Into<i64>>(number: T) -> i64 {
     number.into()
 }
 
-/// Apply a seccomp-bpf filter that blocks network syscalls.
+/// Apply a seccomp-bpf filter that blocks network and/or process syscalls.
 ///
 /// Blocks AF_INET and AF_INET6 sockets while allowing AF_UNIX (needed by many tools).
 /// Based on the syscall list from OpenAI's codex-linux-sandbox.
-pub(super) fn apply_seccomp_net_filter() -> Result<()> {
+pub(super) fn apply_seccomp_filter(deny_net: bool, deny_process: bool) -> Result<()> {
     // Must set PR_SET_NO_NEW_PRIVS before installing seccomp filter
     let ret = unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) };
     if ret != 0 {
@@ -49,16 +49,36 @@ pub(super) fn apply_seccomp_net_filter() -> Result<()> {
 
     let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
 
-    // Block socket() and socketpair() for inet families
-    // This is sufficient — if you can't create an inet socket, you can't do networking
-    for syscall in [
-        syscall_number(libc::SYS_socket),
-        syscall_number(libc::SYS_socketpair),
-    ] {
-        rules.insert(
-            syscall,
-            vec![socket_rule_inet.clone(), socket_rule_inet6.clone()],
-        );
+    if deny_net {
+        // Block socket() and socketpair() for inet families. Without an inet
+        // socket the process cannot initiate network traffic.
+        for syscall in [
+            syscall_number(libc::SYS_socket),
+            syscall_number(libc::SYS_socketpair),
+        ] {
+            rules.insert(
+                syscall,
+                vec![socket_rule_inet.clone(), socket_rule_inet6.clone()],
+            );
+        }
+    }
+
+    if deny_process {
+        // An empty rule chain means the syscall number alone triggers the
+        // filter's match action.
+        let deny = Vec::<SeccompRule>::new();
+        for syscall in [
+            syscall_number(libc::SYS_clone),
+            syscall_number(libc::SYS_clone3),
+            syscall_number(libc::SYS_fork),
+            syscall_number(libc::SYS_vfork),
+            syscall_number(libc::SYS_kill),
+            syscall_number(libc::SYS_tkill),
+            syscall_number(libc::SYS_tgkill),
+            syscall_number(libc::SYS_ptrace),
+        ] {
+            rules.insert(syscall, deny.clone());
+        }
     }
 
     let filter: BpfProgram = SeccompFilter::new(

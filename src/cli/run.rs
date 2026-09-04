@@ -1267,6 +1267,8 @@ impl Run {
                     deny_write: self.deny_write,
                     deny_net: self.deny_net,
                     deny_env: self.deny_env,
+                    deny_process: false,
+                    deny_temp_write: false,
                     allow_read: self.allow_read.clone(),
                     allow_write: self.allow_write.clone(),
                     allow_net: self.allow_net.clone(),

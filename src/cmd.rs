@@ -1583,9 +1583,12 @@ impl<'a> CmdLineRunner<'a> {
                         crate::sandbox::landlock_apply(&sandbox)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
-                    if sandbox.effective_deny_net() {
-                        crate::sandbox::seccomp_apply()
-                            .map_err(|e| std::io::Error::other(e.to_string()))?;
+                    if sandbox.effective_deny_net() || sandbox.deny_process {
+                        crate::sandbox::seccomp_apply(
+                            sandbox.effective_deny_net(),
+                            sandbox.deny_process,
+                        )
+                        .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
                     Ok(())
                 });

@@ -335,6 +335,8 @@ impl Exec {
                 deny_write: self.deny_write,
                 deny_net: self.deny_net,
                 deny_env: self.deny_env,
+                deny_process: false,
+                deny_temp_write: false,
                 allow_read: self.allow_read,
                 allow_write: self.allow_write,
                 allow_net: self.allow_net,

@@ -110,7 +110,15 @@ pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         for path in SYSTEM_READ_FILES {
             ruleset = add_read_rule(ruleset, path, read_access)?;
         }
-        ruleset = add_read_rule(ruleset, "/tmp", full_access)?;
+        ruleset = add_read_rule(
+            ruleset,
+            "/tmp",
+            if config.deny_temp_write {
+                read_access
+            } else {
+                full_access
+            },
+        )?;
         ruleset = add_read_rule(ruleset, "/dev", full_access)?;
         let installs_dir: &std::path::Path = &crate::dirs::INSTALLS;
         if installs_dir.exists() {
@@ -149,7 +157,15 @@ pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
     } else if deny_write {
         // Only writes restricted — allow read everywhere, deny write except allowed paths
         ruleset = add_read_rule(ruleset, "/", read_access)?;
-        ruleset = add_read_rule(ruleset, "/tmp", full_access)?;
+        ruleset = add_read_rule(
+            ruleset,
+            "/tmp",
+            if config.deny_temp_write {
+                read_access
+            } else {
+                full_access
+            },
+        )?;
         ruleset = add_read_rule(ruleset, "/dev", full_access)?;
         for path in &config.allow_write {
             ruleset = add_path_rule(ruleset, path, full_access)?;

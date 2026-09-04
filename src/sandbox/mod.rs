@@ -20,6 +20,10 @@ pub(crate) struct SandboxConfig {
     pub deny_write: bool,
     pub deny_net: bool,
     pub deny_env: bool,
+    /// Block child-process creation. Internal-only: task/CLI sandboxes leave this disabled.
+    pub deny_process: bool,
+    /// Do not apply the normal writable-temp-directory exception.
+    pub deny_temp_write: bool,
     pub allow_read: Vec<PathBuf>,
     pub allow_write: Vec<PathBuf>,
     pub allow_net: Vec<String>,
@@ -111,6 +115,8 @@ impl SandboxConfig {
             || self.deny_write
             || self.deny_net
             || self.deny_env
+            || self.deny_process
+            || self.deny_temp_write
             || !self.allow_read.is_empty()
             || !self.allow_write.is_empty()
             || !self.allow_net.is_empty()
@@ -305,14 +311,14 @@ impl SandboxConfig {
         if self.effective_deny_read() || self.effective_deny_write() {
             landlock::apply_landlock(self)?;
         }
-        if self.effective_deny_net() {
+        if self.effective_deny_net() || self.deny_process {
             if !self.allow_net.is_empty() {
                 eyre::bail!(
                     "per-host network filtering (--allow-net=<host>) is not supported on Linux. \
                      Use --deny-net to block all network, or remove --allow-net."
                 );
             }
-            seccomp::apply_seccomp_net_filter()?;
+            seccomp::apply_seccomp_filter(self.effective_deny_net(), self.deny_process)?;
         }
         Ok(())
     }
@@ -355,10 +361,10 @@ pub(crate) fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
     landlock::apply_landlock(config)
 }
 
-/// Apply seccomp network filter (Linux only).
+/// Apply seccomp network/process filter (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn seccomp_apply() -> eyre::Result<()> {
-    seccomp::apply_seccomp_net_filter()
+pub(crate) fn seccomp_apply(deny_net: bool, deny_process: bool) -> eyre::Result<()> {
+    seccomp::apply_seccomp_filter(deny_net, deny_process)
 }
 
 /// Generate a macOS Seatbelt profile string (macOS only).

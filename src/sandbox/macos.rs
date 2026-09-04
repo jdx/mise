@@ -33,8 +33,10 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
     // Filesystem write restrictions
     if config.effective_deny_write() {
         rules.push("(deny file-write*)".to_string());
-        rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
-        rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
+        if !config.deny_temp_write {
+            rules.push("(allow file-write* (subpath \"/tmp\"))".to_string());
+            rules.push("(allow file-write* (subpath \"/private/tmp\"))".to_string());
+        }
         rules.push("(allow file-write* (subpath \"/dev\"))".to_string());
         for path in &config.allow_write {
             let path_str = sbpl_escape(&path.to_string_lossy());
@@ -107,6 +109,10 @@ pub(crate) async fn generate_seatbelt_profile(config: &SandboxConfig) -> String 
                 }
             }
         }
+    }
+
+    if config.deny_process {
+        rules.push("(deny process-fork)".to_string());
     }
 
     rules.join("\n")
