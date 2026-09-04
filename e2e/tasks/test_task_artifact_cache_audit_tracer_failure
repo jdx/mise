@@ -33,6 +33,10 @@ if [[ -z $trace ]]; then
 fi
 
 if $daemonize; then
+  if [[ ${FAKE_INCOMPLETE:-0} == 1 ]]; then
+    { sleep 10 | sh -c "${trace#|}"; } >/dev/null 2>&1 &
+    exec "$@"
+  fi
   # Model strace -D: the original process becomes the task while the tracer is
   # a grandchild whose internal failure cannot replace the task's exit status.
   (
@@ -44,11 +48,11 @@ if $daemonize; then
     if [[ $trace == \|* ]]; then
       sink=${trace#|}
       record="123 openat(AT_FDCWD<$PWD>, \"secret.txt\", O_RDONLY) = 3"
+      printf '%s\n' "$record" | sh -c "$sink"
     else
-      sink="cat > '$trace'"
       record="123 execve(\"$1\", [\"$1\"], 0x0) = 0"
+      printf '%s\n' "$record" >"$trace"
     fi
-    printf '%s\n' "$record" | sh -c "$sink"
     echo 'strace: ptrace(PTRACE_LISTEN,pid:123,sig:0): Input/output error' >&2
     exit 1
   ) &
@@ -82,6 +86,13 @@ sources = ["input.txt"]
 outputs = []
 cache = { enabled = true, audit = true }
 
+[tasks.incomplete]
+run = "true"
+sources = ["input.txt"]
+outputs = []
+cache = { enabled = true, audit = true }
+env = { FAKE_INCOMPLETE = "1" }
+
 EOF
 
 export PATH="$PWD/bin:$PATH"
@@ -97,6 +108,10 @@ assert_contains_text "$output" "cache audit detected undeclared read: secret.txt
 status=0
 output=$(mise run --force failure 2>&1) || status=$?
 assert "test $status -eq 42"
+
+# A long-lived traced descendant must not hang the completed task indefinitely.
+output=$(mise run --force incomplete 2>&1)
+assert_contains_text "$output" "cache audit tracer did not finish; skipping its incomplete report"
 
 # A daemonized capability probe must still detect a tracer startup failure.
 output=$(FAKE_PROBE_FAILURE=1 mise run --force success 2>&1)

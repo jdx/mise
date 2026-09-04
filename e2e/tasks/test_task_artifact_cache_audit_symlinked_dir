@@ -29,15 +29,21 @@ fi
 # `pwd -P` rather than $PWD: real strace annotates the dirfd with the path the
 # kernel resolved, which is the symlink's target.
 cwd=$(pwd -P)
-if [[ $trace == \|* ]]; then
-  sink=${trace#|}
-else
-  sink="cat > '$trace'"
-fi
-cat <<TRACE | sh -c "$sink"
+emit_trace() {
+  if [[ $trace != \|* ]]; then
+    printf '123 execve("%s", ["%s"], 0x0) = 0\n' "$1" "$1"
+    return
+  fi
+  cat <<TRACE
 123 openat(AT_FDCWD<$cwd>, "input.txt", O_RDONLY) = 3
 123 openat(AT_FDCWD<$cwd>, "secret.txt", O_RDONLY) = 3
 TRACE
+}
+if [[ $trace == \|* ]]; then
+  emit_trace "$1" | sh -c "${trace#|}"
+else
+  emit_trace "$1" >"$trace"
+fi
 exec "$@"
 EOF
 chmod +x bin/strace
