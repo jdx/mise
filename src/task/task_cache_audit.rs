@@ -24,7 +24,7 @@ use tempfile::NamedTempFile;
 use tokio::sync::OnceCell;
 
 const MAX_REPORTED_PATHS: usize = 20;
-const TRACE_COMPLETION_TIMEOUT: Duration = Duration::from_secs(1);
+const TRACE_START_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[cfg(target_os = "linux")]
 static STRACE: OnceCell<Option<PathBuf>> = OnceCell::const_new();
@@ -135,7 +135,7 @@ impl TaskCacheAudit {
         let trace_complete = shell_escape::escape(self.trace_complete.path().to_string_lossy());
         // Piping the trace through a small sink gives mise a completion signal from the detached
         // tracer. strace closes the pipe only after it has finished following every tracee.
-        let output = format!("|cat > {trace} && printf 1 > {trace_complete}");
+        let output = format!("|cat > {trace}; printf 1 > {trace_complete}");
         let mut wrapped = vec![
             // Keep the task as mise's direct child so a failure in the advisory tracer does not
             // replace the task's exit status. The tracer runs as the task's grandchild instead.
@@ -162,13 +162,7 @@ impl TaskCacheAudit {
     }
 
     pub(crate) async fn report(&self, task: &Task) {
-        if !wait_for_file(self.trace_complete.path()).await {
-            warn!(
-                "task {} cache audit tracer did not finish; skipping its incomplete report",
-                task.name
-            );
-            return;
-        }
+        wait_for_file(self.trace_complete.path()).await;
         let trace = match fs::read_to_string(self.trace.path()) {
             Ok(trace) => trace,
             Err(err) => {
@@ -327,21 +321,17 @@ async fn usable_strace() -> Option<PathBuf> {
         .clone()
 }
 
-async fn wait_for_file(path: &Path) -> bool {
-    tokio::time::timeout(TRACE_COMPLETION_TIMEOUT, async {
-        loop {
-            if fs::metadata(path).is_ok_and(|meta| meta.len() > 0) {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(10)).await;
+async fn wait_for_file(path: &Path) {
+    loop {
+        if fs::metadata(path).is_ok_and(|meta| meta.len() > 0) {
+            break;
         }
-    })
-    .await
-    .is_ok()
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 async fn wait_for_trace_record(path: &Path) -> bool {
-    tokio::time::timeout(TRACE_COMPLETION_TIMEOUT, async {
+    tokio::time::timeout(TRACE_START_TIMEOUT, async {
         loop {
             if fs::read_to_string(path).is_ok_and(|trace| trace.contains("execve(")) {
                 break;
