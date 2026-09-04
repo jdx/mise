@@ -118,7 +118,6 @@ pub(crate) async fn generate_seatbelt_profile(
         rules.push("(deny process-fork)".to_string());
         rules.push("(deny process-exec)".to_string());
         if let Some(path) = initial_program {
-            let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
             let path_str = sbpl_escape(&path.to_string_lossy());
             rules.push(format!("(allow process-exec (literal \"{path_str}\"))"));
         }
