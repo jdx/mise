@@ -460,9 +460,28 @@ return $__mise_ret
       ;;
   esac
   # The vendor registered something other than a function (complete -C, -W,
-  # ...). Leave it in place and have bash retry the completion with it; the
-  # stub is gone for this session, so a version switch waits for a new shell.
-  [[ -n $__mise_spec && $__mise_spec != *{func}* ]] && return 124
+  # ...). Hand this completion to it by returning 124, which makes bash retry
+  # with the current registration, and put the stub back at the next prompt
+  # so later completions ask mise again.
+  if [[ -n $__mise_spec && $__mise_spec != *{func}* ]]; then
+    {func}_restub() {{
+      complete -F {func} '{tool}'
+      if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
+        local __mise_i
+        for __mise_i in "${{!PROMPT_COMMAND[@]}}"; do
+          [[ ${{PROMPT_COMMAND[__mise_i]}} == "{func}_restub" ]] && unset 'PROMPT_COMMAND[__mise_i]'
+        done
+      else
+        PROMPT_COMMAND=${{PROMPT_COMMAND//{func}_restub;/}}
+      fi
+    }}
+    if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
+      PROMPT_COMMAND=("{func}_restub" "${{PROMPT_COMMAND[@]}}")
+    else
+      PROMPT_COMMAND="{func}_restub;${{PROMPT_COMMAND:-}}"
+    fi
+    return 124
+  fi
   complete -F {func} '{tool}'
   return 0
 }}
@@ -474,7 +493,7 @@ complete -F {func} '{tool}'
             "# {note}.\n# {by}\ncommand mise completion fish --tool '{tool}' 2>/dev/null | source\n"
         ),
         Shell::PowerShell => format!(
-            "# {note}.\n# {by}\n(& mise completion powershell --tool '{tool}' 2>$null) -join \"`n\" | Invoke-Expression\n"
+            "# {note}.\n# {by}\n@(& mise completion powershell --tool '{tool}' 2>$null) -join \"`n\" | Invoke-Expression\n"
         ),
         _ => bail!(
             "{} loads completions eagerly, so mise cannot leave it a stub; redirect `mise completion {} --tool {tool}` yourself",
@@ -648,6 +667,10 @@ mod tests {
         assert!(
             bash.contains("return 124"),
             "non-function registrations: {bash}"
+        );
+        assert!(
+            bash.contains("__mise_complete_cargo_nextest_restub"),
+            "the stub comes back at the next prompt: {bash}"
         );
         assert!(stub("rg", Shell::Nu).is_err());
     }
