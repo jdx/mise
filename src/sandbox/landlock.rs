@@ -74,13 +74,17 @@ fn add_path_rule(
     }
 }
 
-/// Apply Landlock filesystem restrictions.
-pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
+/// Apply Landlock filesystem and executable restrictions.
+pub(super) fn apply_landlock(
+    config: &SandboxConfig,
+    initial_program: Option<&std::path::Path>,
+) -> Result<()> {
     let abi = ABI::V5;
 
     let read_access = AccessFs::from_read(abi);
     let write_access = AccessFs::from_write(abi);
     let full_access = read_access | write_access;
+    let execute_access: BitFlags<AccessFs> = AccessFs::Execute.into();
 
     let deny_read = config.effective_deny_read();
     let deny_write = config.effective_deny_write();
@@ -88,12 +92,18 @@ pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
     // Only handle the access types we're actually restricting.
     // If we handle_access(full_access) but only add read rules,
     // writes to un-ruled paths get blocked too (Landlock denies by default).
-    let handled_access = match (deny_read, deny_write) {
+    let mut handled_access = match (deny_read, deny_write) {
         (true, true) => full_access,
         (true, false) => read_access,
         (false, true) => full_access, // need full to add read+write rules for allowed paths
-        (false, false) => return Ok(()), // nothing to restrict
+        (false, false) => BitFlags::empty(),
     };
+    if config.deny_process {
+        handled_access |= execute_access;
+    }
+    if handled_access.is_empty() {
+        return Ok(());
+    }
 
     let mut ruleset = Ruleset::default()
         .handle_access(handled_access)
@@ -170,6 +180,15 @@ pub(super) fn apply_landlock(config: &SandboxConfig) -> Result<()> {
         for path in &config.allow_write {
             ruleset = add_path_rule(ruleset, path, full_access)?;
         }
+    }
+
+    // The ruleset is installed before the target's initial exec. Permit that
+    // exact executable while denying later execve/execveat calls for every
+    // other file (including Kernel.exec from evaluated tap Ruby).
+    if config.deny_process
+        && let Some(program) = initial_program
+    {
+        ruleset = add_path_rule(ruleset, program, execute_access)?;
     }
 
     let status = ruleset

@@ -471,6 +471,10 @@ rescue SystemCallError
   false
 end
 raise "child process escaped sandbox" if ran
+begin
+  exec("false")
+rescue SystemCallError
+end
 "#,
         )?;
         crate::file::write(&output, "")?;

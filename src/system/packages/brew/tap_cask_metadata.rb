@@ -182,7 +182,7 @@ class CaskMetadata
       host = MacOSVersion.host
       target = MacOSVersion.from_symbol(release)
       matches = case comparison
-                when :or_older then host <= target
+                when :or_older then host <= target || host.same_release?(target)
                 when :or_newer then host >= target
                 else host.same_release?(target)
                 end
@@ -202,7 +202,7 @@ class CaskMetadata
     host = MacOSVersion.host
     target = MacOSVersion.from_symbol(base)
     case comparison
-    when :or_older then host <= target
+    when :or_older then host <= target || host.same_release?(target)
     when :or_newer then host >= target
     else host.same_release?(target)
     end

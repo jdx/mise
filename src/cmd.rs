@@ -1554,6 +1554,7 @@ impl<'a> CmdLineRunner<'a> {
 
         #[cfg(target_os = "linux")]
         {
+            let initial_program = std::path::PathBuf::from(self.cmd.as_std().get_program());
             // On Linux, clear inherited env before pre_exec so child only sees filtered vars.
             // env_clear() also wipes envs explicitly set via .envs(), so save and restore them.
             if sandbox.effective_deny_env() {
@@ -1579,8 +1580,11 @@ impl<'a> CmdLineRunner<'a> {
             let sandbox = sandbox.clone();
             unsafe {
                 self.cmd.as_std_mut().pre_exec(move || {
-                    if sandbox.effective_deny_read() || sandbox.effective_deny_write() {
-                        crate::sandbox::landlock_apply(&sandbox)
+                    if sandbox.effective_deny_read()
+                        || sandbox.effective_deny_write()
+                        || sandbox.deny_process
+                    {
+                        crate::sandbox::landlock_apply(&sandbox, &initial_program)
                             .map_err(|e| std::io::Error::other(e.to_string()))?;
                     }
                     if sandbox.effective_deny_net() || sandbox.deny_process {

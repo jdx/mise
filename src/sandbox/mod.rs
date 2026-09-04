@@ -290,7 +290,7 @@ impl SandboxConfig {
         #[cfg(target_os = "linux")]
         {
             self.warn_missing_allow_paths();
-            self.apply_linux()?;
+            self.apply_linux(program)?;
             Ok(None)
         }
 
@@ -307,9 +307,9 @@ impl SandboxConfig {
     }
 
     #[cfg(all(not(test), target_os = "linux"))]
-    fn apply_linux(&self) -> eyre::Result<()> {
-        if self.effective_deny_read() || self.effective_deny_write() {
-            landlock::apply_landlock(self)?;
+    fn apply_linux(&self, program: &str) -> eyre::Result<()> {
+        if self.effective_deny_read() || self.effective_deny_write() || self.deny_process {
+            landlock::apply_landlock(self, Some(std::path::Path::new(program)))?;
         }
         if self.effective_deny_net() || self.deny_process {
             if !self.allow_net.is_empty() {
@@ -358,8 +358,11 @@ pub(crate) struct SandboxedCommand {
 
 /// Apply Landlock filesystem restrictions (Linux only).
 #[cfg(target_os = "linux")]
-pub(crate) fn landlock_apply(config: &SandboxConfig) -> eyre::Result<()> {
-    landlock::apply_landlock(config)
+pub(crate) fn landlock_apply(
+    config: &SandboxConfig,
+    initial_program: &std::path::Path,
+) -> eyre::Result<()> {
+    landlock::apply_landlock(config, Some(initial_program))
 }
 
 /// Apply seccomp network/process filter (Linux only).
