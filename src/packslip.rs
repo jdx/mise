@@ -465,6 +465,9 @@ return $__mise_ret
   # so later completions ask mise again.
   if [[ -n $__mise_spec && $__mise_spec != *{func}* ]]; then
     {func}_restub() {{
+      # Runs first at the prompt, so this is the last command's status,
+      # which a prompt that shows it must get back unchanged.
+      local __mise_status=$?
       complete -F {func} '{tool}'
       if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
         local __mise_i
@@ -474,6 +477,7 @@ return $__mise_ret
       else
         PROMPT_COMMAND=${{PROMPT_COMMAND//{func}_restub;/}}
       fi
+      return $__mise_status
     }}
     if declare -p PROMPT_COMMAND 2>/dev/null | grep -q '^declare -a'; then
       PROMPT_COMMAND=("{func}_restub" "${{PROMPT_COMMAND[@]}}")
