@@ -4211,7 +4211,7 @@
                   },
                   "state": {
                     "type": "string",
-                    "description": "desired state of the package; \"absent\" removes it and is only supported by pacman, other managers fail when an installed package is declared absent",
+                    "description": "desired package state; \"absent\" removes the package and is only supported by pacman",
                     "enum": ["present", "absent"],
                     "default": "present"
                   },
