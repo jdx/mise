@@ -311,6 +311,7 @@ class Widget < Formula
   sha256 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   depends_on "libfoo"
   depends_on "cmake" => :build
+  depends_on(**{"ninja" => :build})
   on_sequoia :or_older do
     depends_on "release-boundary"
   end
@@ -349,7 +350,7 @@ end
             formula.dependencies,
             ["libfoo", "release-boundary", "system-release-boundary"]
         );
-        assert_eq!(formula.build_dependencies, ["cmake"]);
+        assert_eq!(formula.build_dependencies, ["cmake", "ninja"]);
         assert!(formula.keg_only);
         assert!(formula.bottle.is_empty());
         Ok(())

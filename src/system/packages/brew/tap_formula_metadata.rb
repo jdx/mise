@@ -121,7 +121,8 @@ class Formula
     def revision(value = nil) = (@revision_value = value.to_i unless value.nil?)
     def keg_only(*) = (@keg_only_value = true)
 
-    def depends_on(spec = nil, **)
+    def depends_on(spec = nil, **options)
+      spec = options if spec.nil? && !options.empty?
       name, kind = spec.is_a?(Hash) ? spec.first : [spec, nil]
       return if name.nil?
       kinds = Array(kind)
