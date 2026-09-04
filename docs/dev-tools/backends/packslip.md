@@ -187,6 +187,6 @@ The release API or list timestamp helps select candidates. Before downloading an
 
 After selecting the artifact, mise checks its declared minimum OS/glibc and host libraries before downloading it. Confirmed failures refuse installation; `ignore_requirements = true` overrides this for one tool. Missing or old commands warn, and unknown checks warn instead of refusing. Active mise command paths take precedence over ambient PATH. Requirements never break an artifact-selection tie or select a different build.
 
-OS and glibc probes and command version probes have bounded execution and output. Linux library checks use `LD_LIBRARY_PATH`, standard directories, and `ldconfig -p`; Windows uses PATH and the system directory. macOS checks common library directories but reports unknown absence because the dyld shared cache can contain libraries with no filesystem entry.
+On Linux the OS version is the kernel release from `uname -r`, read up to the distribution's suffix: `6.8.0-31-generic` is compared as `6.8.0`. OS and glibc probes and command version probes have bounded execution and output. Linux library checks use `LD_LIBRARY_PATH`, standard directories, and `ldconfig -p`; Windows uses PATH and the system directory. macOS checks common library directories but reports unknown absence because the dyld shared cache can contain libraries with no filesystem entry.
 
 Resource generators have a five-second deadline including inherited output pipes and a 4 MiB output limit. Their child processes are cleaned up on completion, failure, timeout, and cancellation.
