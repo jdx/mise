@@ -35,7 +35,7 @@ A project on its own domain publishes a signed release list at `https://<host>/.
 
 Only after that does mise unpack the artifact and put the executables the packslip names on PATH. The verified statement is kept in the install directory as `.mise-packslip.json`.
 
-The artifact is chosen as the specification's consumer rules say: by OS, architecture, libc, and an archive format mise can unpack, preferring `tar.xz` over `tar.gz` over `zip` over a bare executable. Installer formats such as `deb`, `dmg`, and `msi` are never chosen. When two artifacts tie, mise refuses to guess; set `variant` to say which one you mean.
+The artifact is chosen as the specification's consumer rules say. An artifact fits when each of its `os`, `arch`, and `libc` is absent or equal to the host's, so a universal macOS binary, a jar, or a script fits everywhere; among those that fit, the one naming the most of those three wins, so a build for the host beats a portable one; then mise's format preference decides, archives first (`tar.xz`, `tar.zst`, `tar.gz`, `tar.bz2`, `tar`, `zip`, `7z`), then a single compressed executable (`xz`, `zst`, `gz`, `bz2`), then a bare one. Installer formats such as `deb`, `dmg`, and `msi` are never chosen. When two artifacts still tie, mise refuses to guess; set `variant` to say which one you mean. A glibc host with no gnu build takes a musl build, which is static, and says so in the debug log.
 
 ## Tool Options
 
@@ -66,6 +66,10 @@ Accept a key-signed bundle that carries no transparency log entry, which a vendo
 
 A packslip version is semver, so mise ranks a project's versions by semver precedence whatever order GitHub lists its releases in, and treats a version with a prerelease part (`1.3.0-rc.1`, `1.4.0-nightly.20260904`) as a prerelease whatever the GitHub release's own flag says. Prereleases are skipped unless the `prerelease` tool option is set.
 
-For a project on github.com, the versions are the repository's releases that carry a packslip, named by their tags with a leading `v` (or a monorepo tool's prefix) removed; a tag that is not semver is skipped, since no packslip can carry it. At install time mise checks that the packslip inside the release agrees with the version the tag implied and refuses the release if it does not. For a project on its own domain, the versions are the entries of its signed release list, minus any the vendor has withdrawn; mise refuses a list that has expired.
+For a project on github.com, the versions are the repository's releases that carry a packslip, named by their tags as the specification reads them: the version itself, optionally after a `v`, and optionally after the tool's subpath, its last segment, or the repository name plus a separator (`v1.2.3`, `jq-1.7.1`, `oxlint_v1.0.0`), with loose spellings such as `v4.1` normalized to `4.1.0`. A tag that names no version is skipped. At install time mise checks that the packslip inside the release agrees with the version the tag named and refuses the release if it does not.
+
+The repository may also keep a signed list at `.well-known/packslip.json` (or `.well-known/packslip/<tool>.json` for a monorepo tool) on its default branch, signed by the same identity as its packslips. When it does, a version the list marks withdrawn is dropped, a version it names has its packslip fetched from the URL the list gives and checked against the digest it signed, and a version it lists that the releases endpoint lacks is added.
+
+For a project on its own domain, the versions are the entries of its signed release list, minus any the vendor has withdrawn. For either kind of list mise refuses one that has expired, and refuses one whose sequence is below the highest it has accepted for the project, which it remembers under its state directory.
 
 Lockfiles record the artifact URL and its sha256 from the signed statement.

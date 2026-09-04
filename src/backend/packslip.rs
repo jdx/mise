@@ -17,7 +17,10 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use eyre::{Result, WrapErr, bail, eyre};
 use itertools::Itertools;
-use packslip::model::{Artifact, ReleaseListStatement, Statement, repository, repository_subpath};
+use packslip::model::{
+    Artifact, Host, ReleaseListStatement, Selection, Statement, is_bare_format, repository,
+    repository_subpath, tag_version,
+};
 use packslip::sigstore::{Policy, Trust};
 use reqwest::header::HeaderMap;
 
@@ -30,6 +33,7 @@ use crate::backend::{
 };
 use crate::cli::args::BackendArg;
 use crate::config::Config;
+use crate::dirs;
 use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
@@ -43,8 +47,9 @@ pub(crate) const STATEMENT_FILE: &str = ".mise-packslip.json";
 
 /// Archive formats mise can unpack, best first. Installers (`deb`, `dmg`,
 /// `msi`, ...) are not among them: mise installs into its own directory.
-const FORMAT_PREFERENCE: [&str; 8] = [
-    "tar.xz", "tar.zst", "tar.gz", "tgz", "tar.bz2", "zip", "7z", "raw",
+const FORMAT_PREFERENCE: [&str; 13] = [
+    "tar.xz", "tar.zst", "tar.gz", "tgz", "tar.bz2", "tar", "zip", "7z", "xz", "zst", "gz", "bz2",
+    "raw",
 ];
 
 #[derive(Debug)]
@@ -139,30 +144,15 @@ fn well_known_url(project: &str) -> String {
     }
 }
 
-/// The version a release tag names: the tag's longest suffix that is
-/// semver, starting at a digit. That takes `v1.2.3`, `release-1.2.3`, and
-/// a monorepo tool's `oxlint_v1.0.0` or `cli/v1.9.4` without a table of
-/// spellings. The packslip inside the release is the authority and is
-/// checked against this at install time; deriving from tags avoids
-/// downloading every bundle to list versions. A tag with no semver in it
-/// comes back unchanged and is then skipped as not semver.
-pub(crate) fn version_from_tag(tag: &str, _subpath: Option<&str>) -> String {
-    tag.char_indices()
-        .filter(|(_, c)| c.is_ascii_digit())
-        .map(|(i, _)| &tag[i..])
-        .find(|candidate| packslip::model::parse_version(candidate).is_ok())
-        .unwrap_or(tag)
-        .to_string()
-}
-
 /// A listed version, when it is what a packslip requires: semver, whose
 /// prerelease part says whether it is a prerelease. A tag that is not
 /// semver is skipped, since no packslip can carry it.
 fn version_info(
-    version: String,
+    version: Option<String>,
     created_at: Option<String>,
     release_url: Option<String>,
 ) -> Option<VersionInfo> {
+    let version = version?;
     let parsed = match packslip::model::parse_version(&version) {
         Ok(parsed) => parsed,
         Err(_) => {
@@ -190,6 +180,14 @@ pub(crate) struct HostPlatform {
 impl HostPlatform {
     pub(crate) fn current() -> Self {
         Self::from_platform(&Platform::current())
+    }
+
+    fn as_host(&self) -> Host<'_> {
+        Host {
+            os: &self.os,
+            arch: &self.arch,
+            libc: self.libc.as_deref(),
+        }
     }
 
     pub(crate) fn from_platform(platform: &Platform) -> Self {
@@ -229,66 +227,61 @@ fn describe(artifact: &Artifact) -> String {
     }
 }
 
-/// The one artifact for this host, as the specification's consumer rules
-/// say: match os, arch, libc, an unpackable format, and the requested
-/// variant; prefer the best format; refuse to guess between two that tie.
+/// The one artifact for this host, by the crate's rule: an artifact
+/// with no `os`, `arch`, or `libc` fits any host, the most specific match
+/// wins, then mise's format preference decides, and two that still tie
+/// are refused. A gnu host that finds nothing takes a musl build, which
+/// is static, and says so.
 pub(crate) fn select_artifact<'a>(
     artifacts: &'a [Artifact],
     host: &HostPlatform,
     variant: Option<&str>,
 ) -> Result<&'a Artifact> {
-    let format_rank = |a: &Artifact| {
-        FORMAT_PREFERENCE
-            .iter()
-            .position(|f| Some(*f) == a.format.as_deref())
-            .unwrap_or(usize::MAX)
-    };
-    let candidates: Vec<&Artifact> = artifacts
+    let strict = host.as_host();
+    let variants = artifacts
         .iter()
-        .filter(|a| a.os.as_deref() == Some(host.os.as_str()))
-        .filter(|a| a.arch.as_deref() == Some(host.arch.as_str()))
-        .filter(|a| match (&host.libc, &a.libc) {
-            (Some(host_libc), Some(libc)) => host_libc == libc,
-            _ => true,
-        })
-        .filter(|a| format_rank(a) != usize::MAX)
-        .filter(|a| a.variant.as_deref() == variant)
-        .collect();
-    let Some(best) = candidates.iter().map(|a| format_rank(a)).min() else {
-        let available = artifacts.iter().map(describe).join(", ");
-        let variants = artifacts
-            .iter()
-            .filter_map(|a| a.variant.as_deref())
-            .unique()
-            .join(", ");
-        let hint = match variant {
-            Some(v) => format!(" with variant {v:?}"),
-            None if !variants.is_empty() => {
-                format!("; set `variant` to one of {variants} if one of those is meant for you")
-            }
-            None => String::new(),
-        };
-        bail!(
-            "no artifact for {}/{}{}{hint}. The release has: {available}",
-            host.os,
-            host.arch,
-            host.libc
-                .as_deref()
-                .map(|l| format!("/{l}"))
-                .unwrap_or_default(),
-        );
+        .filter_map(|a| a.variant.as_deref())
+        .unique()
+        .join(", ");
+    let hint = match variant {
+        Some(v) => format!(" with variant {v:?}"),
+        None if !variants.is_empty() => {
+            format!("; set `variant` to one of {variants} if one of those is meant for you")
+        }
+        None => String::new(),
     };
-    let ties: Vec<&Artifact> = candidates
-        .into_iter()
-        .filter(|a| format_rank(a) == best)
-        .collect();
-    match ties.as_slice() {
-        [one] => Ok(one),
-        several => bail!(
-            "the packslip lists several artifacts for this platform and mise will not guess between them: {}",
-            several.iter().map(|a| describe(a)).join(", ")
+    match packslip::select_artifact(artifacts, &strict, variant, &FORMAT_PREFERENCE) {
+        Ok(artifact) => return Ok(artifact),
+        Err(Selection::Ambiguous(a, b)) => bail!(
+            "the packslip lists {a} and {b} for this host and mise will not guess between them{hint}"
         ),
+        Err(Selection::NoMatch) => {}
     }
+    if host.libc.as_deref() == Some("gnu") {
+        let musl = Host {
+            libc: Some("musl"),
+            ..strict
+        };
+        if let Ok(artifact) =
+            packslip::select_artifact(artifacts, &musl, variant, &FORMAT_PREFERENCE)
+        {
+            debug!(
+                "no gnu build fits this host; taking the musl build {}, which is static",
+                artifact.name
+            );
+            return Ok(artifact);
+        }
+    }
+    let available = artifacts.iter().map(describe).join(", ");
+    bail!(
+        "no artifact for {}/{}{}{hint}. The release has: {available}",
+        host.os,
+        host.arch,
+        host.libc
+            .as_deref()
+            .map(|l| format!("/{l}"))
+            .unwrap_or_default(),
+    )
 }
 
 /// A path from a packslip that may be joined onto a directory of mise's:
@@ -394,6 +387,52 @@ fn verify_release_list(bundle: &str, pin: &Pin, require_log: bool) -> Result<Rel
     })
 }
 
+/// The headers a download from GitHub needs; nothing for anywhere else.
+fn headers_for(url: &str) -> Result<HeaderMap> {
+    if url.starts_with("https://github.com/") || url.starts_with("https://api.github.com/") {
+        github::get_headers(url)
+    } else {
+        Ok(HeaderMap::new())
+    }
+}
+
+/// Where mise remembers the highest list sequence it accepted per
+/// project, so a mirror cannot show it an older list than it has seen.
+fn sequence_file(project: &str) -> PathBuf {
+    dirs::STATE
+        .join("packslip")
+        .join("sequence")
+        .join(format!("{}.txt", project.replace('/', "-")))
+}
+
+/// Refuse a list whose sequence is below one already accepted for the
+/// project, and remember the highest seen. The crate verifies the list
+/// and its expiry; this is the consumer's part.
+fn check_sequence(project: &str, list: &ReleaseListStatement) -> Result<()> {
+    check_sequence_at(&sequence_file(project), project, list)
+}
+
+fn check_sequence_at(path: &Path, project: &str, list: &ReleaseListStatement) -> Result<()> {
+    let last: Option<u64> = file::read_to_string(path)
+        .ok()
+        .and_then(|text| text.trim().parse().ok());
+    let sequence = list.predicate.sequence;
+    if let Some(last) = last
+        && sequence < last
+    {
+        bail!(
+            "the release list of packslip:{project} has sequence {sequence}, but sequence {last} was already accepted; refusing to go back"
+        );
+    }
+    if last != Some(sequence) {
+        if let Some(parent) = path.parent() {
+            file::create_dir_all(parent)?;
+        }
+        file::write_atomic(path, sequence.to_string())?;
+    }
+    Ok(())
+}
+
 /// Where a release's packslip is and what to send to fetch it.
 struct Located {
     url: String,
@@ -434,7 +473,51 @@ impl PackslipBackend {
                 list.predicate.project
             );
         }
+        check_sequence(project, &list)?;
         Ok(list)
+    }
+
+    /// The signed list a github.com repository may keep at `.well-known`
+    /// on its default branch, verified against the same identity as its
+    /// packslips. `None` when the repository has none, which is the usual
+    /// case: a vendor writes one only to withdraw a release, flag a
+    /// security fix, or list a release whose tag names no version.
+    async fn github_list(
+        &self,
+        project: &str,
+        repo: &str,
+        pin: &Pin,
+        opts: &PackslipOptions<'_>,
+    ) -> Result<Option<ReleaseListStatement>> {
+        let path = match repository_subpath(project) {
+            Some(sub) => format!(".well-known/packslip/{sub}.json"),
+            None => ".well-known/packslip.json".to_string(),
+        };
+        let url = format!("https://api.github.com/repos/{repo}/contents/{path}?ref=HEAD");
+        let headers = github::get_headers(&url)?;
+        let text = match HTTP_FETCH
+            .get_text_request(&url)
+            .headers(&headers)
+            .send()
+            .await
+        {
+            Ok(text) => text,
+            Err(err) if crate::http::error_code(&err) == Some(404) => return Ok(None),
+            Err(err) => {
+                return Err(err)
+                    .wrap_err_with(|| format!("fetching the release list of packslip:{project}"));
+            }
+        };
+        let list = verify_release_list(&text, pin, !opts.allow_unlogged())
+            .wrap_err_with(|| format!("verifying the release list of packslip:{project}"))?;
+        if list.predicate.project != project {
+            bail!(
+                "the release list in github.com/{repo} is for {}, not {project}",
+                list.predicate.project
+            );
+        }
+        check_sequence(project, &list)?;
+        Ok(Some(list))
     }
 
     async fn locate_bundle(
@@ -446,11 +529,37 @@ impl PackslipBackend {
     ) -> Result<Located> {
         let asset_name = bundle_name(project);
         if let Some(repo) = Self::repo(project) {
-            let sub = repository_subpath(project);
+            // A signed list the repository keeps decides first: it can
+            // withdraw a release and it pins the bundle's digest.
+            if let Some(list) = self.github_list(project, &repo, pin, opts).await?
+                && let Some(entry) = list
+                    .predicate
+                    .releases
+                    .iter()
+                    .find(|r| r.version == tv.version)
+            {
+                if entry.is_yanked() {
+                    bail!(
+                        "packslip:{project}@{} was withdrawn by the vendor{}",
+                        tv.version,
+                        entry
+                            .status_reason
+                            .as_deref()
+                            .map(|r| format!(": {r}"))
+                            .unwrap_or_default()
+                    );
+                }
+                return Ok(Located {
+                    headers: headers_for(&entry.packslip)?,
+                    url: entry.packslip.clone(),
+                    digest: list.digest_of(&entry.packslip).map(str::to_string),
+                });
+            }
             let releases = github::list_releases_including_prereleases(&repo).await?;
             let found = releases.iter().find_map(|r| {
                 let asset = r.assets.iter().find(|a| a.name == asset_name)?;
-                (version_from_tag(&r.tag_name, sub) == tv.version).then_some(asset)
+                (tag_version(&r.tag_name, project).as_deref() == Some(tv.version.as_str()))
+                    .then_some(asset)
             });
             let Some(asset) = found else {
                 bail!(
@@ -560,9 +669,11 @@ impl Backend for PackslipBackend {
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
         let project = self.project()?;
+        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        let opts = PackslipOptions::new(&raw_opts);
+        let pin = pin(&project, &opts)?;
         if let Some(repo) = Self::repo(&project) {
             let asset_name = bundle_name(&project);
-            let sub = repository_subpath(&project);
             // GitHub's prerelease flag is not consulted: the version says.
             let mut versions: Vec<VersionInfo> = github::list_releases_including_prereleases(&repo)
                 .await?
@@ -570,7 +681,7 @@ impl Backend for PackslipBackend {
                 .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
                 .filter_map(|r| {
                     version_info(
-                        version_from_tag(&r.tag_name, sub),
+                        tag_version(&r.tag_name, &project),
                         Some(r.released_at().to_string()),
                         Some(format!(
                             "https://github.com/{repo}/releases/tag/{}",
@@ -580,18 +691,35 @@ impl Backend for PackslipBackend {
                 })
                 .collect();
             versions.reverse();
+            // The repository's own signed list, when it keeps one, is the
+            // last word on what it names: a withdrawn release goes, and a
+            // release whose tag names no version is added.
+            if let Some(list) = self.github_list(&project, &repo, &pin, &opts).await? {
+                for entry in &list.predicate.releases {
+                    if entry.is_yanked() {
+                        versions.retain(|v| v.version != entry.version);
+                    } else if !versions.iter().any(|v| v.version == entry.version)
+                        && let Some(info) = version_info(
+                            Some(entry.version.clone()),
+                            Some(entry.published_at.clone()),
+                            None,
+                        )
+                    {
+                        versions.push(info);
+                    }
+                }
+            }
             return Ok(versions);
         }
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let opts = PackslipOptions::new(&raw_opts);
-        let pin = pin(&project, &opts)?;
         let list = self.release_list(&project, &pin, &opts).await?;
         let mut versions: Vec<VersionInfo> = list
             .predicate
             .releases
             .iter()
             .filter(|r| !r.is_yanked())
-            .filter_map(|r| version_info(r.version.clone(), Some(r.published_at.clone()), None))
+            .filter_map(|r| {
+                version_info(Some(r.version.clone()), Some(r.published_at.clone()), None)
+            })
             .collect();
         versions.reverse();
         Ok(versions)
@@ -680,15 +808,13 @@ impl Backend for PackslipBackend {
         let file_path = tv.download_path().join(&artifact.name);
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("download {}", artifact.name));
-        let headers = if github::is_github_api_url(&url::Url::parse(&url)?)
-            || url.starts_with("https://github.com/")
-        {
-            github::get_headers(&url)?
-        } else {
-            HeaderMap::new()
-        };
-        HTTP.download_file_with_headers(&url, &file_path, &headers, Some(ctx.pr.as_ref()))
-            .await?;
+        HTTP.download_file_with_headers(
+            &url,
+            &file_path,
+            &headers_for(&url)?,
+            Some(ctx.pr.as_ref()),
+        )
+        .await?;
 
         // The signed digest and size first, then what the lockfile remembers:
         // a lock entry written from an earlier packslip keeps its checksum and
@@ -718,7 +844,9 @@ impl Backend for PackslipBackend {
                 .insert_option("format".into(), toml::Value::String(format.clone()))
                 .map_err(|e| eyre!(e))?;
         }
-        if artifact.format.as_deref() == Some("raw")
+        // A bare executable, compressed or not, lands at the path its bin
+        // entry names: the artifact's own name minus any compression suffix.
+        if artifact.format.as_deref().is_some_and(is_bare_format)
             && let Some(bin) = artifact.bin.first()
         {
             install_opts
@@ -784,6 +912,7 @@ mod tests {
             bin: vec![Bin::new("tool")],
             requires: None,
             provenance: vec![],
+            extensions: Default::default(),
         }
     }
 
@@ -825,41 +954,26 @@ mod tests {
     }
 
     #[test]
-    fn versions_from_tags() {
-        assert_eq!(version_from_tag("v1.2.3", None), "1.2.3");
-        assert_eq!(version_from_tag("1.2.3", None), "1.2.3");
-        assert_eq!(version_from_tag("oxlint_v1.0.0", Some("oxlint")), "1.0.0");
-        assert_eq!(version_from_tag("cli/v1.9.4", Some("crates/cli")), "1.9.4");
+    fn versions_come_from_tags_through_the_crate() {
         assert_eq!(
-            version_from_tag("crates/cli/v1.9.4", Some("crates/cli")),
-            "1.9.4"
+            tag_version("v1.2.3", "github.com/o/r").as_deref(),
+            Some("1.2.3")
         );
         assert_eq!(
-            version_from_tag("buildifier-8.0.0", Some("buildifier")),
-            "8.0.0"
+            tag_version("jq-1.7.1", "github.com/jqlang/jq").as_deref(),
+            Some("1.7.1")
         );
-        assert_eq!(version_from_tag("v2.0.0", Some("oxlint")), "2.0.0");
-        assert_eq!(version_from_tag("release-1.2.3", None), "1.2.3");
-        assert_eq!(version_from_tag("tool-v2.0.0-rc.1", None), "2.0.0-rc.1");
         assert_eq!(
-            version_from_tag("nightly-20260904", None),
-            "nightly-20260904",
-            "no semver in it"
+            tag_version("oxlint_v1.0.0", "github.com/oxc-project/oxc/oxlint").as_deref(),
+            Some("1.0.0")
         );
-        assert!(version_info(version_from_tag("nightly-20260904", None), None, None).is_none());
-    }
-
-    #[test]
-    fn versions_must_be_semver_and_say_prerelease() {
-        let stable = version_info("1.2.3".into(), None, None).unwrap();
-        assert_eq!(stable.prerelease, Some(false));
-        let rc = version_info("1.3.0-rc.1".into(), None, None).unwrap();
-        assert_eq!(rc.prerelease, Some(true));
-        assert!(version_info("1.2".into(), None, None).is_none());
-        assert!(
-            version_info("2026.9.1".into(), None, None).is_some(),
-            "calver is semver"
+        assert_eq!(
+            tag_version("v4.1", "github.com/o/r").as_deref(),
+            Some("4.1.0"),
+            "loose spellings are normalized"
         );
+        assert_eq!(tag_version("nightly-20260904", "github.com/o/r"), None);
+        assert!(version_info(None, None, None).is_none());
     }
 
     #[test]
@@ -879,6 +993,7 @@ mod tests {
         });
         assert_eq!(host.libc.as_deref(), Some("musl"));
         assert_eq!(linux().libc.as_deref(), Some("gnu"));
+        assert_eq!(linux().as_host().libc, Some("gnu"));
     }
 
     #[test]
@@ -976,6 +1091,76 @@ mod tests {
         ];
         let err = select_artifact(&tie, &linux(), None).unwrap_err();
         assert!(err.to_string().contains("will not guess"), "{err}");
+
+        // A gnu host with no gnu build takes the static musl build; a
+        // host that reports no libc takes only artifacts naming none.
+        let musl_only = vec![artifacts[3].clone()];
+        assert_eq!(
+            select_artifact(&musl_only, &linux(), None).unwrap().name,
+            "t-linux-x64-musl.tar.xz"
+        );
+        let no_libc = HostPlatform {
+            libc: None,
+            ..linux()
+        };
+        assert!(select_artifact(&musl_only, &no_libc, None).is_err());
+
+        // A universal or portable artifact fits, and a build for the host
+        // beats it; a compressed bare executable is installable.
+        let mut universal = artifact("t-darwin.tar.xz", "darwin", "", None, "tar.xz");
+        universal.arch = None;
+        let mut jar = artifact("t.jar", "", "", None, "zip");
+        jar.os = None;
+        jar.arch = None;
+        let mut bare = artifact("t-linux-x64.gz", "linux", "x86_64", Some("gnu"), "gz");
+        bare.bin = vec![Bin::named("t-linux-x64", "t")];
+        let mixed = vec![universal, jar.clone(), bare.clone()];
+        assert_eq!(
+            select_artifact(&mixed, &mac, None).unwrap().name,
+            "t-darwin.tar.xz"
+        );
+        assert_eq!(
+            select_artifact(&mixed, &linux(), None).unwrap().name,
+            "t-linux-x64.gz"
+        );
+        assert_eq!(
+            select_artifact(&[jar], &windows, None).unwrap().name,
+            "t.jar"
+        );
+        assert_eq!(
+            packslip::model::bare_file_name(&bare.name, "gz"),
+            "t-linux-x64",
+            "what the bin entry's path must be"
+        );
+    }
+
+    #[test]
+    fn list_sequences_only_go_up() {
+        let dir = tempfile::tempdir().unwrap();
+        let list = |sequence: u64| -> ReleaseListStatement {
+            serde_json::from_value(serde_json::json!({
+                "_type": "https://in-toto.io/Statement/v1",
+                "subject": [],
+                "predicateType": "https://packslip.dev/releases/v1",
+                "predicate": {
+                    "project": "tool.example.com",
+                    "generated_at": "2026-09-01T00:00:00Z",
+                    "expires_at": "2026-10-01T00:00:00Z",
+                    "sequence": sequence,
+                    "identity": { "scheme": "sigstore-key", "key_id": "AA" },
+                    "releases": []
+                }
+            }))
+            .unwrap()
+        };
+        let path = dir.path().join("seq.txt");
+        let check = |sequence: u64| check_sequence_at(&path, "tool.example.com", &list(sequence));
+        check(3).unwrap();
+        check(5).unwrap();
+        let err = check(4).unwrap_err();
+        assert!(err.to_string().contains("refusing to go back"), "{err}");
+        check(5).unwrap();
+        assert_eq!(file::read_to_string(&path).unwrap(), "5");
     }
 
     #[test]
