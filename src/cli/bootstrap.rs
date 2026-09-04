@@ -2270,6 +2270,7 @@ impl BootstrapConfigRoots {
                     "Repos",
                     "Accounts",
                     "Hooks",
+                    "Hook Phases",
                 ],
             );
             for root in output.roots {
@@ -2279,6 +2280,7 @@ impl BootstrapConfigRoots {
                     root.declares.packages.count.to_string(),
                     root.declares.repos.count.to_string(),
                     root.declares.accounts.count.to_string(),
+                    root.declares.hooks.count.to_string(),
                     root.declares.hooks.phases.join(", "),
                 ]);
             }

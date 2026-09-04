@@ -61,7 +61,7 @@ assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[
 assert_succeed "MISE_ENV=dev mise bootstrap config-roots --json | jq -e '.roots[2].declares.packages.count == 0 and .roots[2].declares.hooks.phases == []'"
 assert_not_contains "MISE_ENV=dev mise bootstrap config-roots" "exit 99"
 assert_contains "MISE_ENV=dev mise bootstrap config-roots" "bundles/a"
-assert_contains "MISE_ENV=dev mise bootstrap config-roots" "pre-packages, final"
+assert_contains "MISE_ENV=dev mise bootstrap config-roots" "2  pre-packages, final"
 
 cat <<'EOF' >mise.toml
 [tools]
