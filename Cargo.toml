@@ -150,7 +150,7 @@ nodejs-semver = "5"
 nucleo-matcher = "0.3"
 num_cpus = "1"
 once_cell = "1"
-packslip = { git = "https://github.com/jdx/packslip", rev = "0e49dbfe91fb44ab1c46e5e52b1d5264751eaab1" }
+packslip = { git = "https://github.com/jdx/packslip", rev = "05caa9a0613f15c5543499eccb77dc08cd383da0" }
 openssl = { version = "0.10", optional = true }
 path-absolutize = "4"
 petgraph = "0.8"

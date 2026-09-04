@@ -64,6 +64,8 @@ Accept a key-signed bundle that carries no transparency log entry, which a vendo
 
 ## Versions
 
-For a project on github.com, the versions are the repository's releases that carry a packslip, named by their tags with a leading `v` removed. At install time mise checks that the packslip inside the release agrees with the version the tag implied and refuses the release if it does not. For a project on its own domain, the versions are the entries of its signed release list, minus any the vendor has withdrawn; mise refuses a list that has expired.
+A packslip version is semver, so mise ranks a project's versions by semver precedence whatever order GitHub lists its releases in, and treats a version with a prerelease part (`1.3.0-rc.1`, `1.4.0-nightly.20260904`) as a prerelease whatever the GitHub release's own flag says. Prereleases are skipped unless the `prerelease` tool option is set.
+
+For a project on github.com, the versions are the repository's releases that carry a packslip, named by their tags with a leading `v` (or a monorepo tool's prefix) removed; a tag that is not semver is skipped, since no packslip can carry it. At install time mise checks that the packslip inside the release agrees with the version the tag implied and refuses the release if it does not. For a project on its own domain, the versions are the entries of its signed release list, minus any the vendor has withdrawn; mise refuses a list that has expired.
 
 Lockfiles record the artifact URL and its sha256 from the signed statement.

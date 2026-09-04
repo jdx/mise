@@ -21,6 +21,7 @@ use packslip::model::{Artifact, ReleaseListStatement, Statement, repository, rep
 use packslip::sigstore::{Policy, Trust};
 use reqwest::header::HeaderMap;
 
+use crate::backend::options::VersionOrder;
 use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::install_artifact;
 use crate::backend::{
@@ -156,6 +157,30 @@ pub(crate) fn version_from_tag(tag: &str, subpath: Option<&str>) -> String {
         }
     }
     tag.strip_prefix('v').unwrap_or(tag).to_string()
+}
+
+/// A listed version, when it is what a packslip requires: semver, whose
+/// prerelease part says whether it is a prerelease. A tag that is not
+/// semver is skipped, since no packslip can carry it.
+fn version_info(
+    version: String,
+    created_at: Option<String>,
+    release_url: Option<String>,
+) -> Option<VersionInfo> {
+    let parsed = match packslip::model::parse_version(&version) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            debug!("skipping {version}: not semver, which a packslip requires");
+            return None;
+        }
+    };
+    Some(VersionInfo {
+        version,
+        created_at,
+        release_url,
+        prerelease: Some(!parsed.pre.is_empty()),
+        ..Default::default()
+    })
 }
 
 /// This host in the packslip's vocabulary.
@@ -521,6 +546,12 @@ impl Backend for PackslipBackend {
         vec![SecurityFeature::Packslip]
     }
 
+    /// A packslip version is semver, and the specification ranks releases
+    /// by semver precedence, never by the order a release list gives.
+    fn version_order(&self, _opts: &ToolVersionOptions) -> Result<VersionOrder> {
+        Ok(VersionOrder::Semver)
+    }
+
     fn remote_version_listing_tool_option_keys(&self) -> &'static [&'static str] {
         &[
             "pubkey",
@@ -536,19 +567,20 @@ impl Backend for PackslipBackend {
         if let Some(repo) = Self::repo(&project) {
             let asset_name = bundle_name(&project);
             let sub = repository_subpath(&project);
+            // GitHub's prerelease flag is not consulted: the version says.
             let mut versions: Vec<VersionInfo> = github::list_releases_including_prereleases(&repo)
                 .await?
                 .into_iter()
                 .filter(|r| r.assets.iter().any(|a| a.name == asset_name))
-                .map(|r| VersionInfo {
-                    version: version_from_tag(&r.tag_name, sub),
-                    created_at: Some(r.released_at().to_string()),
-                    release_url: Some(format!(
-                        "https://github.com/{repo}/releases/tag/{}",
-                        r.tag_name
-                    )),
-                    prerelease: Some(r.prerelease),
-                    ..Default::default()
+                .filter_map(|r| {
+                    version_info(
+                        version_from_tag(&r.tag_name, sub),
+                        Some(r.released_at().to_string()),
+                        Some(format!(
+                            "https://github.com/{repo}/releases/tag/{}",
+                            r.tag_name
+                        )),
+                    )
                 })
                 .collect();
             versions.reverse();
@@ -563,12 +595,7 @@ impl Backend for PackslipBackend {
             .releases
             .iter()
             .filter(|r| !r.is_yanked())
-            .map(|r| VersionInfo {
-                version: r.version.clone(),
-                created_at: Some(r.published_at.clone()),
-                prerelease: Some(r.prerelease),
-                ..Default::default()
-            })
+            .filter_map(|r| version_info(r.version.clone(), Some(r.published_at.clone()), None))
             .collect();
         versions.reverse();
         Ok(versions)
@@ -816,6 +843,19 @@ mod tests {
             "8.0.0"
         );
         assert_eq!(version_from_tag("v2.0.0", Some("oxlint")), "2.0.0");
+    }
+
+    #[test]
+    fn versions_must_be_semver_and_say_prerelease() {
+        let stable = version_info("1.2.3".into(), None, None).unwrap();
+        assert_eq!(stable.prerelease, Some(false));
+        let rc = version_info("1.3.0-rc.1".into(), None, None).unwrap();
+        assert_eq!(rc.prerelease, Some(true));
+        assert!(version_info("1.2".into(), None, None).is_none());
+        assert!(
+            version_info("2026.9.1".into(), None, None).is_some(),
+            "calver is semver"
+        );
     }
 
     #[test]
