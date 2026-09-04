@@ -41,7 +41,7 @@ mod state;
 use artifacts::*;
 use fetch::*;
 use flight::*;
-use model::Cask;
+pub(super) use model::Cask;
 use paths::*;
 use state::*;
 pub(crate) use state::{apply_cask_prune_plan, cask_formula_dependencies, cask_prune_plan};
@@ -480,7 +480,7 @@ impl BrewCaskManager {
         ancestors: &BTreeSet<String>,
         manager_options: &ManagerPackageOptions,
     ) -> Result<String> {
-        let cask = fetch_cask(req).await?;
+        let cask = fetch_cask(req, !opts.dry_run).await?;
         if ancestors.contains(&cask.token) {
             bail!("brew-cask:{}: dependency cycle detected", cask.token);
         }
@@ -867,7 +867,7 @@ impl SystemPackageManager for BrewCaskManager {
     async fn installed(&self, pkgs: &[PackageRequest]) -> Result<Vec<PackageStatus>> {
         let mut statuses = Vec::with_capacity(pkgs.len());
         for req in pkgs {
-            let cask = fetch_cask(req).await?;
+            let cask = fetch_cask(req, false).await?;
             statuses.push(PackageStatus {
                 request: req.clone(),
                 state: package_state(req, &cask)?,

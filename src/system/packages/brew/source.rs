@@ -11,8 +11,9 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use eyre::{WrapErr, bail};
+use eyre::{WrapErr, bail, eyre};
 
 use super::api::Formula;
 use super::pour;
@@ -197,18 +198,38 @@ pub(crate) async fn ruby_bin() -> Result<PathBuf> {
         },
     )
     .await?;
+    find_ruby_bin(&config, &ts).await?.ok_or_else(|| {
+        eyre!("failed to provision ruby for building from source (try `mise install ruby`)")
+    })
+}
+
+pub(crate) async fn installed_ruby_bin() -> Result<Option<PathBuf>> {
+    let config = Config::get().await?;
+    let tool: crate::cli::args::ToolArg = "ruby".parse()?;
+    let ts = ToolsetBuilder::new()
+        .with_args(&[tool])
+        .with_default_to_latest(true)
+        .build(&config)
+        .await?;
+    find_ruby_bin(&config, &ts).await
+}
+
+async fn find_ruby_bin(
+    config: &Arc<Config>,
+    ts: &crate::toolset::Toolset,
+) -> Result<Option<PathBuf>> {
     for (backend, tv) in ts.list_current_versions() {
         if tv.ba().short != "ruby" {
             continue;
         }
-        for bin_dir in backend.list_bin_paths(&config, &tv).await? {
+        for bin_dir in backend.list_bin_paths(config, &tv).await? {
             let ruby = bin_dir.join("ruby");
             if ruby.is_file() {
-                return Ok(ruby);
+                return Ok(Some(ruby));
             }
         }
     }
-    bail!("failed to provision ruby for building from source (try `mise install ruby`)");
+    Ok(None)
 }
 
 /// Download the formula's .rb from homebrew/core, pinned to the commit the

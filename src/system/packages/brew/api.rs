@@ -149,6 +149,7 @@ pub(super) async fn formula_with_tap_name(
     name: &str,
     tap_name: Option<&str>,
     tap_url: Option<&str>,
+    provision_ruby: bool,
 ) -> Result<Formula> {
     let Some((owner, tap, formula_name)) = split_tap_name(name).or_else(|| {
         let (owner, tap) = split_tap(tap_name?)?;
@@ -165,18 +166,20 @@ pub(super) async fn formula_with_tap_name(
              so mise can fetch metadata directly without the brew CLI"
         );
     };
-    HTTP_FETCH
-        .json_cached::<Formula, _>(url)
-        .await
-        .wrap_err_with(|| {
-            format!(
-                "failed to fetch Homebrew tap formula '{name}' directly. \
-                 mise needs API metadata at api/formula/{formula_name}.json on the \
-                 tap's default branch, which most taps do not publish; mise will not \
-                 proxy to the brew CLI. Install it with `brew`, or see \
-                 https://mise.jdx.dev/bootstrap/packages/brew.html#third-party-taps"
-            )
-        })
+    match HTTP_FETCH.json_cached::<Formula, _>(url).await {
+        Ok(formula) => Ok(formula),
+        Err(api_err) => {
+            super::tap::formula_from_ruby(owner, tap, formula_name, tap_url, provision_ruby)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to resolve Homebrew tap formula '{name}'; published API metadata \
+                     was unavailable ({api_err}) and mise could not evaluate \
+                     Formula/{formula_name}.rb"
+                    )
+                })
+        }
+    }
 }
 
 pub(super) fn tap_name(name: &str) -> Option<String> {

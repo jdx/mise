@@ -60,6 +60,7 @@ fn install_deps<'a>(formula: &'a Formula, tag: &str) -> Vec<&'a String> {
 
 pub(super) async fn resolve_closure_with_taps(
     roots: &[PackageRequest],
+    provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let roots = roots
         .iter()
@@ -72,7 +73,7 @@ pub(super) async fn resolve_closure_with_taps(
             )
         })
         .collect::<Vec<_>>();
-    resolve_closure_pairs(&roots).await
+    resolve_closure_pairs(&roots, provision_ruby).await
 }
 
 /// Resolve the runtime closure of `roots` into install order (dependencies
@@ -80,6 +81,7 @@ pub(super) async fn resolve_closure_with_taps(
 /// their canonical formula.
 async fn resolve_closure_pairs(
     roots: &[(String, Option<String>, Option<String>)],
+    provision_ruby: bool,
 ) -> Result<Vec<ResolvedFormula>> {
     let host_tag = tag::host_tag();
     let mut formulae: HashMap<FormulaKey, Formula> = HashMap::new();
@@ -103,7 +105,9 @@ async fn resolve_closure_pairs(
             Some(c) => c,
             None => {
                 let (formula, effective_tap_name, effective_tap_url) = match fetch_formula(
-                    &key, requested,
+                    &key,
+                    requested,
+                    provision_ruby,
                 )
                 .await
                 {
@@ -235,7 +239,7 @@ async fn resolve_closure_pairs(
     Ok(sorted)
 }
 
-async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
+async fn fetch_formula(key: &FormulaKey, requested: bool, provision_ruby: bool) -> Result<Formula> {
     if !requested && key.tap_name.is_some() && api::split_tap_name(&key.name).is_none() {
         match api::formula(&key.name).await {
             Ok(formula) => return Ok(formula),
@@ -247,7 +251,13 @@ async fn fetch_formula(key: &FormulaKey, requested: bool) -> Result<Formula> {
             }
         }
     }
-    api::formula_with_tap_name(&key.name, key.tap_name.as_deref(), key.tap_url.as_deref()).await
+    api::formula_with_tap_name(
+        &key.name,
+        key.tap_name.as_deref(),
+        key.tap_url.as_deref(),
+        provision_ruby,
+    )
+    .await
 }
 
 fn tap_raw_base(key: &FormulaKey) -> Option<String> {

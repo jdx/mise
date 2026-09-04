@@ -14,8 +14,8 @@
 //!
 //! Scope: formulae only. Casks are implemented by the sibling `brew-cask`
 //! manager. Services are not implemented. homebrew/core formulae use mise's
-//! direct pour path; fully-qualified third-party tap formulae use direct tap
-//! metadata when the tap publishes it. mise never shells out to `brew`.
+//! direct pour path; fully-qualified third-party tap formulae use published
+//! metadata or mise's metadata-only Ruby shim. mise never shells out to `brew`.
 
 use async_trait::async_trait;
 use eyre::bail;
@@ -40,6 +40,7 @@ mod relocate;
 mod resolve;
 mod source;
 mod tag;
+mod tap;
 
 pub(crate) struct BrewManager {}
 pub(crate) use cask::{
@@ -90,7 +91,7 @@ impl BrewManager {
             );
         }
         let roots: Vec<String> = pkgs.iter().map(|p| p.name.clone()).collect();
-        let closure = resolve::resolve_closure_with_taps(pkgs).await?;
+        let closure = resolve::resolve_closure_with_taps(pkgs, !opts.dry_run).await?;
         for rf in &closure {
             if rf.on_request
                 && !roots.contains(&rf.formula.name)

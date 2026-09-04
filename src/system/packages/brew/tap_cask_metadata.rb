@@ -1,0 +1,204 @@
+# frozen_string_literal: true
+
+# Extract Homebrew Cask metadata used by mise without loading Homebrew.
+
+require "json"
+require "rbconfig"
+
+CASK_FILE = ENV.fetch("MISE_BREW_CASK_FILE")
+OUTPUT_FILE = ENV.fetch("MISE_BREW_METADATA_OUTPUT")
+
+module OS
+  def self.mac? = RbConfig::CONFIG["host_os"].include?("darwin")
+  def self.linux? = RbConfig::CONFIG["host_os"].include?("linux")
+end
+
+module Hardware
+  module CPU
+    def self.arm? = RbConfig::CONFIG["host_cpu"].match?(/arm|aarch64/)
+    def self.intel? = !arm?
+    def self.arch = arm? ? :arm64 : :x86_64
+  end
+end
+
+class Version
+  def initialize(value) = @value = value.to_s
+  def to_s = @value
+  def to_str = @value
+  def csv = @value.split(",").map { |part| self.class.new(part) }
+  def before_comma = self.class.new(@value.split(",", 2).first)
+  def dots_to_underscores = @value.tr(".", "_")
+  def major = token(0)
+  def minor = token(1)
+  def patch = token(2)
+  def major_minor = self.class.new(@value.split(".")[0, 2].join("."))
+  def major_minor_patch = self.class.new(@value.split(".")[0, 3].join("."))
+
+  private
+
+  def token(index) = self.class.new(@value.split(".")[index].to_s)
+end
+
+class CaskMetadata
+  attr_reader :token, :artifacts, :formula_dependencies, :cask_dependencies,
+              :conflicting_casks
+
+  def initialize(token)
+    @token = token
+    @artifacts = []
+    @formula_dependencies = []
+    @cask_dependencies = []
+    @conflicting_casks = []
+    @auto_updates = false
+    @languages = {}
+  end
+
+  def version(value = nil)
+    @version = Version.new(value) unless value.nil?
+    @version
+  end
+
+  def arch(mapping = nil, **values)
+    mapping = values if mapping.nil? && values.any?
+    return @arch || Hardware::CPU.arch.to_s if mapping.nil?
+    @arch = Hardware::CPU.arm? ? mapping[:arm] || mapping["arm"] : mapping[:intel] || mapping["intel"]
+  end
+
+  def on_arch_conditional(values)
+    Hardware::CPU.arm? ? values[:arm] || values["arm"] : values[:intel] || values["intel"]
+  end
+
+  def sha256(value = nil, **values)
+    value = Hardware::CPU.arm? ? values[:arm] : values[:intel] if value.nil? && values.any?
+    @sha256 = value.to_s unless value.nil? || value == :no_check
+  end
+
+  def url(value = nil, **) = (@url = value.to_s unless value.nil?)
+  def auto_updates(value = nil) = (@auto_updates = value unless value.nil?)
+
+  def depends_on(values = nil, **kwargs)
+    values = kwargs if values.nil?
+    return unless values.is_a?(Hash)
+    @formula_dependencies.concat(Array(values[:formula] || values["formula"]).map(&:to_s))
+    @cask_dependencies.concat(Array(values[:cask] || values["cask"]).map(&:to_s))
+  end
+
+  def conflicts_with(values = nil, **kwargs)
+    values = kwargs if values.nil?
+    return unless values.is_a?(Hash)
+    @conflicting_casks.concat(Array(values[:cask] || values["cask"]).map(&:to_s))
+  end
+
+  def app(source, target: nil) = add_artifact("app", source, target)
+  def binary(source, target: nil) = add_artifact("binary", source, target)
+  def pkg(source, **) = add_artifact("pkg", source, nil)
+  def font(source, target: nil) = add_artifact("font", source, target)
+  def manpage(source, target: nil) = add_artifact("manpage", source, target)
+  def bash_completion(source, target: nil) = add_artifact("bash_completion", source, target)
+  def zsh_completion(source, target: nil) = add_artifact("zsh_completion", source, target)
+  def fish_completion(source, target: nil) = add_artifact("fish_completion", source, target)
+
+  def installer(**values) = @artifacts << { "installer" => values }
+  def artifact(source, target: nil) = add_artifact("artifact", source, target)
+  def uninstall(**values) = @artifacts << { "uninstall" => values }
+  def zap(**values) = @artifacts << { "zap" => values }
+  def preflight(*) = @artifacts << { "preflight" => nil }
+  def postflight(*) = @artifacts << { "postflight" => nil }
+  def uninstall_preflight(*) = @artifacts << { "uninstall_preflight" => nil }
+  def uninstall_postflight(*) = @artifacts << { "uninstall_postflight" => nil }
+
+  def language(code = nil, default: false, &block)
+    if code
+      @languages[code.to_s] = instance_eval(&block)
+      @default_language = code.to_s if default
+      return
+    end
+    @languages[@default_language] || @languages.values.first
+  end
+
+  def on_system_conditional(values)
+    values[OS.mac? ? :macos : :linux] || values[OS.mac? ? "macos" : "linux"]
+  end
+
+  def on_arm(&block)
+    instance_eval(&block) if Hardware::CPU.arm?
+  end
+
+  def on_intel(&block)
+    instance_eval(&block) if Hardware::CPU.intel?
+  end
+
+  def on_macos(&block)
+    instance_eval(&block) if OS.mac?
+  end
+
+  def on_linux(&block)
+    instance_eval(&block) if OS.linux?
+  end
+
+  %i[catalina big_sur monterey ventura sonoma sequoia tahoe].each do |release|
+    define_method(:"on_#{release}") do |comparison = nil, &block|
+      # Metadata is generated for the current host. Exact macOS release
+      # comparisons are handled by the install-time cask shim when hooks run.
+      instance_eval(&block) if OS.mac? && block && comparison != :or_older
+    end
+  end
+
+  def name(*) = nil
+  def desc(*) = nil
+  def homepage(*) = nil
+  def livecheck(*) = nil
+  def caveats(*) = nil
+  def container(*) = nil
+  def deprecate!(**) = nil
+  def disable!(**) = nil
+  def no_autobump!(*) = nil
+
+  def to_h
+    raise "cask has no version" if @version.nil?
+    raise "cask has no URL" if @url.to_s.empty?
+    {
+      "token" => @token,
+      "version" => @version.to_s,
+      "auto_updates" => @auto_updates,
+      "url" => @url,
+      "sha256" => @sha256,
+      "artifacts" => @artifacts,
+      "depends_on" => {
+        "formula" => @formula_dependencies,
+        "cask" => @cask_dependencies
+      },
+      "conflicts_with" => { "cask" => @conflicting_casks },
+      "ruby_source_path" => ENV.fetch("MISE_BREW_SOURCE_PATH"),
+      "ruby_source_checksum" => { "sha256" => ENV.fetch("MISE_BREW_SOURCE_CHECKSUM") },
+      "tap_git_head" => ENV.fetch("MISE_BREW_TAP_COMMIT")
+    }
+  end
+
+  def method_missing(name, *, &block)
+    return instance_eval(&block) if block && name.to_s.start_with?("on_")
+    raise "unsupported cask metadata DSL `#{name}`"
+  end
+
+  def respond_to_missing?(*) = true
+
+  private
+
+  def add_artifact(kind, source, target)
+    value = [source.to_s]
+    value << { "target" => target.to_s } unless target.nil?
+    @artifacts << { kind => value }
+  end
+end
+
+def cask(token, &block)
+  $mise_cask_metadata = CaskMetadata.new(token)
+  $mise_cask_metadata.instance_eval(&block)
+end
+
+load CASK_FILE
+metadata = $mise_cask_metadata
+raise "no cask block found" if metadata.nil?
+expected = ENV.fetch("MISE_BREW_TOKEN")
+raise "expected cask #{expected}, got #{metadata.token}" if metadata.token != expected
+File.write(OUTPUT_FILE, JSON.generate(metadata.to_h))
