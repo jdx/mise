@@ -3,6 +3,7 @@
 
 - **Usage:** `mise skills ls [-J --json]`
 - **Aliases:** `list`
+- **Effect:** read-only
 - **Source code:** [`src/cli/skills/ls.rs`](https://github.com/jdx/mise/blob/main/src/cli/skills/ls.rs)
 
 List the skills the active tools declare
