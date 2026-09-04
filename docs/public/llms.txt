@@ -168,6 +168,7 @@
 - [mise bootstrap](https://mise.jdx.dev/cli/bootstrap.html): Set up a machine for the current config in one command
 - [mise bootstrap accounts](https://mise.jdx.dev/cli/bootstrap/accounts.html): Manage Linux users and groups from [bootstrap.users] and [bootstrap.groups]
 - [mise bootstrap compose](https://mise.jdx.dev/cli/bootstrap/compose.html): Manage Docker Compose projects from [bootstrap.compose]
+- [mise bootstrap config-roots](https://mise.jdx.dev/cli/bootstrap/config-roots.html): Show non-composed bootstrap declarations in each selected configuration root
 - [mise bootstrap dotfiles](https://mise.jdx.dev/cli/bootstrap/dotfiles.html): Manage dotfiles from [dotfiles]
 - [mise bootstrap files](https://mise.jdx.dev/cli/bootstrap/files.html): Manage privileged files and directories from [bootstrap.files] and [bootstrap.directories]
 - [mise bootstrap firewall](https://mise.jdx.dev/cli/bootstrap/firewall.html): Manage the Linux host firewall from [bootstrap.linux.firewall]

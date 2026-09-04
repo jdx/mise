@@ -53,6 +53,7 @@ pub(super) const EFFECTS: &[(&str, SpecCommandEffect)] = &[
     ("bootstrap accounts", Read),
     ("bootstrap accounts apply", Destructive),
     ("bootstrap accounts status", Read),
+    ("bootstrap config-roots", Read),
     ("bootstrap compose", Read),
     ("bootstrap compose apply", Destructive),
     ("bootstrap compose status", Read),

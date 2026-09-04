@@ -83,6 +83,20 @@ Other configuration such as tools, tasks, packages, hooks, and repos is not
 collected from these roots. Use their existing explicit workflows when those
 resources need aggregate behavior.
 
+Use `mise bootstrap config-roots` to inspect the active non-composed bootstrap
+declarations before running those workflows:
+
+```sh
+mise bootstrap config-roots
+mise bootstrap config-roots --json
+```
+
+The command reports package, repo, account, and hook declarations separately
+for every matched configuration root. JSON output includes the declaring config
+and its active configuration environment. Counts describe active TOML entries;
+the command does not inspect the host, resolve resource state, or run bootstrap
+hooks.
+
 ## How it runs
 
 `mise bootstrap` runs the steps below in order.

@@ -546,6 +546,10 @@ Can be passed multiple times or as a comma-separated list.
             flag "-h --help" help="Print help" action=help builtin=#true
         }
     }
+    cmd config-roots help="Show non-composed bootstrap declarations in each selected configuration root" effect=read {
+        flag "-J --json" help="Output in JSON format"
+        flag "-h --help" help="Print help" action=help builtin=#true
+    }
     cmd compose subcommand_required=#true help="Manage Docker Compose projects from `[bootstrap.compose]`" effect=read {
         flag "-h --help" help="Print help" action=help builtin=#true
         cmd apply help="Apply configured Docker Compose project state" effect=destructive {

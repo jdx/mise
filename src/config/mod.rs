@@ -538,6 +538,18 @@ impl Config {
         }
     }
 
+    /// Returns the independently selected bootstrap roots with their active config files.
+    pub(crate) fn selected_bootstrap_config_maps(
+        &self,
+    ) -> impl Iterator<Item = (&Path, &ConfigMap)> {
+        self.bootstrap_config_maps.iter().filter_map(|config| {
+            config
+                .config_root
+                .as_deref()
+                .map(|root| (root, &config.config_files))
+        })
+    }
+
     /// Returns the root-scoped template context for a bootstrap resource declaration.
     pub(crate) fn bootstrap_tera_ctx(&self, config_path: &Path) -> &tera::Context {
         self.bootstrap_config_maps

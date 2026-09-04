@@ -89,6 +89,7 @@ cannot be used together.
 - **`-h --help`** — Print help
 - [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.md)
 - [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.md)
+- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.md)
 - [`mise bootstrap dotfiles <SUBCOMMAND>`](/cli/bootstrap/dotfiles.md)
 - [`mise bootstrap files <SUBCOMMAND>`](/cli/bootstrap/files.md)
 - [`mise bootstrap firewall <SUBCOMMAND>`](/cli/bootstrap/firewall.md)

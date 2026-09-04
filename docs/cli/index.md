@@ -58,6 +58,7 @@
 - [`mise bootstrap accounts <SUBCOMMAND>`](/cli/bootstrap/accounts.md)
 - [`mise bootstrap accounts apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/accounts/apply.md)
 - [`mise bootstrap accounts status [-J --json] [--missing]`](/cli/bootstrap/accounts/status.md)
+- [`mise bootstrap config-roots [-J --json]`](/cli/bootstrap/config-roots.md)
 - [`mise bootstrap compose <SUBCOMMAND>`](/cli/bootstrap/compose.md)
 - [`mise bootstrap compose apply [-n --dry-run] [-y --yes]`](/cli/bootstrap/compose/apply.md)
 - [`mise bootstrap compose status [-J --json] [--missing]`](/cli/bootstrap/compose/status.md)

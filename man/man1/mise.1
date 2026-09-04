@@ -175,6 +175,9 @@ Apply configured Linux users and groups
 \fBbootstrap accounts status\fR
 Show configured Linux user and group state
 .TP
+\fBbootstrap config\-roots\fR
+Show non\-composed bootstrap declarations in each selected configuration root
+.TP
 \fBbootstrap compose\fR
 Manage Docker Compose projects from `[bootstrap.compose]`
 .TP
@@ -1147,6 +1150,19 @@ Output in JSON format
 .TP
 \fB\-\-missing\fR
 Exit with code 1 when any account is not converged
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE BOOTSTRAP CONFIG-ROOTS"
+Show non\-composed bootstrap declarations in each selected configuration root
+.PP
+\fBUsage:\fR mise bootstrap config\-roots [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
 .TP
 \fB\-h, \-\-help\fR
 Print help

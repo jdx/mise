@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use eyre::{Result, bail};
 use heck::ToKebabCase;
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::dotfiles::{
@@ -276,6 +277,7 @@ enum Commands {
     #[usage(name = "__inspect-firewall-plan", hide = true)]
     InspectFirewallPlan(BootstrapInspectFirewallPlan),
     Accounts(BootstrapAccounts),
+    ConfigRoots(BootstrapConfigRoots),
     Compose(BootstrapCompose),
     Dotfiles(BootstrapDotfiles),
     Files(BootstrapFiles),
@@ -333,6 +335,56 @@ struct BootstrapPlan {
     /// Prompt securely for missing bootstrap secret inputs
     #[usage(long)]
     prompt_secrets: bool,
+}
+
+/// Show non-composed bootstrap declarations in each selected configuration root
+#[derive(Debug, usage_rs::Args)]
+#[usage(verbatim_doc_comment)]
+struct BootstrapConfigRoots {
+    /// Output in JSON format
+    #[usage(long, short = 'J')]
+    json: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct BootstrapConfigRootsOutput {
+    roots: Vec<BootstrapConfigRootOutput>,
+}
+
+#[derive(Debug, Serialize)]
+struct BootstrapConfigRootOutput {
+    #[serde(serialize_with = "system::resources::serialize_path")]
+    config_root: PathBuf,
+    environments: Vec<String>,
+    declares: BootstrapConfigRootDeclarations,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct BootstrapConfigRootDeclarations {
+    packages: BootstrapDeclarationSurface,
+    repos: BootstrapDeclarationSurface,
+    accounts: BootstrapDeclarationSurface,
+    hooks: BootstrapHookDeclarationSurface,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct BootstrapDeclarationSurface {
+    count: usize,
+    provenance: Vec<BootstrapDeclarationOrigin>,
+}
+
+#[derive(Debug, Default, Serialize)]
+struct BootstrapHookDeclarationSurface {
+    count: usize,
+    phases: Vec<String>,
+    provenance: Vec<BootstrapDeclarationOrigin>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct BootstrapDeclarationOrigin {
+    #[serde(serialize_with = "system::resources::serialize_path")]
+    config: PathBuf,
+    environment: Vec<String>,
 }
 
 #[derive(Debug, usage_rs::Args)]
@@ -2092,6 +2144,7 @@ impl Commands {
             Self::InspectSystemFiles(cmd) => cmd.run(),
             Self::InspectFirewallPlan(cmd) => cmd.run(),
             Self::Accounts(cmd) => cmd.run().await,
+            Self::ConfigRoots(cmd) => cmd.run().await,
             Self::Compose(cmd) => cmd.run().await,
             Self::Dotfiles(cmd) => cmd.run().await,
             Self::Files(cmd) => cmd.run().await,
@@ -2162,6 +2215,115 @@ impl BootstrapPlan {
             }
         }
         Ok(())
+    }
+}
+
+impl BootstrapConfigRoots {
+    async fn run(self) -> Result<()> {
+        let config = Config::get().await?;
+        let roots = config
+            .selected_bootstrap_config_maps()
+            .map(|(config_root, config_files)| {
+                let mut environments = vec![];
+                let mut declares = BootstrapConfigRootDeclarations::default();
+                for cf in config_files.values().rev() {
+                    let environment = config::environments_for_config_path(cf.get_path());
+                    for name in &environment {
+                        if !environments.contains(name) {
+                            environments.push(name.clone());
+                        }
+                    }
+                    let Some(bootstrap) = cf.bootstrap_config() else {
+                        continue;
+                    };
+                    let origin = BootstrapDeclarationOrigin {
+                        config: cf.get_path().to_path_buf(),
+                        environment,
+                    };
+                    declares.packages.add(bootstrap.packages.len(), &origin);
+                    declares.repos.add(bootstrap.repos.len(), &origin);
+                    declares
+                        .accounts
+                        .add(bootstrap.users.len() + bootstrap.groups.len(), &origin);
+                    declares.hooks.add(bootstrap.hooks.keys(), &origin);
+                }
+                BootstrapConfigRootOutput {
+                    config_root: config_root.to_path_buf(),
+                    environments,
+                    declares,
+                }
+            })
+            .collect();
+        let output = BootstrapConfigRootsOutput { roots };
+
+        if self.json {
+            miseprintln!("{}", serde_json::to_string_pretty(&output)?);
+        } else if output.roots.is_empty() {
+            info!("no [bootstrap].config_roots configured");
+        } else {
+            let mut table = MiseTable::new(
+                false,
+                &[
+                    "Config Root",
+                    "Environments",
+                    "Packages",
+                    "Repos",
+                    "Accounts",
+                    "Hooks",
+                    "Hook Phases",
+                ],
+            );
+            for root in output.roots {
+                table.add_row(vec![
+                    root.config_root.display_user().to_string(),
+                    root.environments.join(", "),
+                    root.declares.packages.count.to_string(),
+                    root.declares.repos.count.to_string(),
+                    root.declares.accounts.count.to_string(),
+                    root.declares.hooks.count.to_string(),
+                    root.declares.hooks.phases.join(", "),
+                ]);
+            }
+            table.print()?;
+        }
+        Ok(())
+    }
+}
+
+impl BootstrapDeclarationSurface {
+    fn add(&mut self, count: usize, origin: &BootstrapDeclarationOrigin) {
+        if count == 0 {
+            return;
+        }
+        self.count += count;
+        if !self.provenance.contains(origin) {
+            self.provenance.push(origin.clone());
+        }
+    }
+}
+
+impl BootstrapHookDeclarationSurface {
+    fn add<'a>(
+        &mut self,
+        phases: impl IntoIterator<Item = &'a String>,
+        origin: &BootstrapDeclarationOrigin,
+    ) {
+        let mut count = 0;
+        for phase in phases {
+            count += 1;
+            let phase = BootstrapHookPhase::parse(phase)
+                .map(|phase| phase.to_string())
+                .unwrap_or_else(|| phase.clone());
+            if !self.phases.contains(&phase) {
+                self.phases.push(phase);
+            }
+        }
+        if count > 0 {
+            self.count += count;
+            if !self.provenance.contains(origin) {
+                self.provenance.push(origin.clone());
+            }
+        }
     }
 }
 
