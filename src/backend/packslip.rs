@@ -10,6 +10,7 @@
 //! artifact fits this host, what its digest and size are, and which
 //! executables it holds, so nothing is guessed from file names.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -20,6 +21,7 @@ use packslip::model::{Artifact, ReleaseListStatement, Statement, repository, rep
 use packslip::sigstore::{Policy, Trust};
 use reqwest::header::HeaderMap;
 
+use crate::backend::platform_target::PlatformTarget;
 use crate::backend::static_helpers::install_artifact;
 use crate::backend::{
     Backend, BackendType, MISE_BINS_DIR, SecurityFeature, VersionInfo,
@@ -32,7 +34,7 @@ use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
 use crate::platform::Platform;
-use crate::toolset::{ToolVersion, ToolVersionOptions};
+use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 
 /// The verified statement, kept beside the install so the rest of mise can
 /// read what the release declared without verifying it again.
@@ -268,11 +270,18 @@ pub(crate) fn select_artifact<'a>(
     }
 }
 
+/// A path from a packslip that may be joined onto a directory of mise's:
+/// relative, slash-separated, every segment a plain file name. A verified
+/// manifest is still the vendor's data, not mise's.
+pub(crate) fn is_safe_relative(rel: &str) -> bool {
+    !rel.is_empty() && rel.split('/').all(file::is_plain_file_name)
+}
+
 /// A path the packslip gives relative to the archive root, or, when mise
 /// stripped a lone top-level directory on extraction, the same path without
 /// its first component. `..` and absolute paths never resolve.
 pub(crate) fn locate_in_install(install_path: &Path, rel: &str) -> Option<PathBuf> {
-    if rel.is_empty() || rel.starts_with('/') || rel.split('/').any(|s| s == ".." || s.is_empty()) {
+    if !is_safe_relative(rel) {
         return None;
     }
     let exact = install_path.join(rel);
@@ -474,13 +483,18 @@ impl PackslipBackend {
         let bins_dir = install_path.join(MISE_BINS_DIR);
         file::create_dir_all(&bins_dir)?;
         for bin in &artifact.bin {
-            let Some(src) = locate_in_install(&install_path, &bin.path) else {
-                warn!(
-                    "{}: the packslip lists executable {} but the archive holds no such file",
-                    tv.style(),
-                    bin.path
+            if !file::is_plain_file_name(&bin.name) {
+                bail!(
+                    "the packslip names an executable {:?}, which is not a plain file name",
+                    bin.name
                 );
-                continue;
+            }
+            let Some(src) = locate_in_install(&install_path, &bin.path) else {
+                bail!(
+                    "the packslip lists executable {} in {}, but the archive holds no such file",
+                    bin.path,
+                    artifact.name
+                );
             };
             file::make_executable(&src)?;
             let dst = bins_dir.join(&bin.name);
@@ -634,6 +648,12 @@ impl Backend for PackslipBackend {
         let Some(url) = artifact.url.clone() else {
             bail!("the packslip gives no download URL for {}", artifact.name);
         };
+        if !file::is_plain_file_name(&artifact.name) {
+            bail!(
+                "the packslip names an artifact {:?}, which is not a plain file name",
+                artifact.name
+            );
+        }
         let file_path = tv.download_path().join(&artifact.name);
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("download {}", artifact.name));
@@ -647,7 +667,10 @@ impl Backend for PackslipBackend {
         HTTP.download_file_with_headers(&url, &file_path, &headers, Some(ctx.pr.as_ref()))
             .await?;
 
-        // The signed digest and size, before anything the lockfile remembers.
+        // The signed digest and size first, then what the lockfile remembers:
+        // a lock entry written from an earlier packslip keeps its checksum and
+        // is compared, so a newly signed manifest cannot quietly replace what
+        // the project committed to. A fresh entry records the signed sha256.
         ctx.pr.next_operation();
         ctx.pr.set_message(format!("verify {}", artifact.name));
         verify_bundle(&bundle, &pin, require_log, &[&file_path])
@@ -656,7 +679,9 @@ impl Backend for PackslipBackend {
         {
             let info = tv.lock_platforms.entry(platform_key).or_default();
             info.url = Some(url);
-            if let Some(sha256) = statement.digest_of(&artifact.name) {
+            if info.checksum.is_none()
+                && let Some(sha256) = statement.digest_of(&artifact.name)
+            {
                 info.checksum = Some(format!("sha256:{sha256}"));
             }
         }
@@ -684,6 +709,21 @@ impl Backend for PackslipBackend {
             serde_json::to_vec_pretty(&statement)?,
         )?;
         Ok(tv)
+    }
+
+    /// `variant` decides which artifact is downloaded, so a lock entry for a
+    /// variant build is not the entry for the plain one.
+    fn resolve_lockfile_options(
+        &self,
+        request: &ToolRequest,
+        _target: &PlatformTarget,
+    ) -> Result<BTreeMap<String, String>> {
+        let raw_opts = request.options();
+        let mut options = BTreeMap::new();
+        if let Some(variant) = PackslipOptions::new(&raw_opts).variant() {
+            options.insert("variant".to_string(), variant);
+        }
+        Ok(options)
     }
 
     async fn list_bin_paths(
@@ -914,6 +954,12 @@ mod tests {
         assert_eq!(locate_in_install(root, "missing"), None);
         assert_eq!(locate_in_install(root, "../bare"), None);
         assert_eq!(locate_in_install(root, "/etc/passwd"), None);
+        assert_eq!(locate_in_install(root, "bin\\tool"), None);
+        assert_eq!(locate_in_install(root, "bin/./tool"), None);
+        assert!(is_safe_relative("share/zsh/site-functions/_tool"));
+        for bad in ["", "/x", "a//b", "a/../b", "a/./b", "a\\b", "..", "."] {
+            assert!(!is_safe_relative(bad), "{bad:?}");
+        }
         assert_eq!(
             locate_in_install(root, "bin"),
             None,
