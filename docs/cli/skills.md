@@ -3,6 +3,7 @@
 
 - **Usage:** `mise skills <SUBCOMMAND>`
 - **Aliases:** `skill`
+- **Effect:** read-only
 - **Source code:** [`src/cli/skills/mod.rs`](https://github.com/jdx/mise/blob/main/src/cli/skills/mod.rs)
 
 Agent skills the active tools ship, from their packslips

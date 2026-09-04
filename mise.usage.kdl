@@ -3547,7 +3547,7 @@ This modifies the contents of ~/.config/mise/config.toml
         arg <shell_alias> help="The alias to remove"
     }
 }
-cmd skills help="Agent skills the active tools ship, from their packslips" {
+cmd skills help="Agent skills the active tools ship, from their packslips" effect=read {
     alias skill
     long_help #"""
 Agent skills the active tools ship, from their packslips
@@ -3558,7 +3558,7 @@ format. mise knows which version of each tool is active here, so it can hand
 an agent the skill for exactly that version.
 """#
     flag "-h --help" help="Print help" action=help builtin=#true
-    cmd ls help="List the skills the active tools declare" {
+    cmd ls help="List the skills the active tools declare" effect=read {
         alias list
         long_help #"""
 List the skills the active tools declare
