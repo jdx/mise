@@ -171,6 +171,7 @@ fn default_minimum_release_age_applies(backend_arg: &BackendArg) -> bool {
             | BackendType::Gitlab
             | BackendType::Go
             | BackendType::Npm
+            | BackendType::Packslip
             | BackendType::Pipx
             | BackendType::Spm
             | BackendType::Ubi

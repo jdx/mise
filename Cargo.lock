@@ -6405,6 +6405,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "openssl",
+ "packslip",
  "path-absolutize",
  "petgraph",
  "pgp",
@@ -7004,6 +7005,34 @@ dependencies = [
  "primeorder",
  "rand_core 0.6.4",
  "sha2 0.10.9",
+]
+
+[[package]]
+name = "packslip"
+version = "0.2.0"
+source = "git+https://github.com/jdx/packslip?rev=bccc2d482ad9d24f58a623dff90ae9156d0d25d4#bccc2d482ad9d24f58a623dff90ae9156d0d25d4"
+dependencies = [
+ "base64 0.22.1",
+ "blake2 0.10.6",
+ "color-eyre",
+ "ed25519-dalek",
+ "eyre",
+ "getrandom 0.3.4",
+ "jiff",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "sigstore-bundle",
+ "sigstore-oidc",
+ "sigstore-rekor",
+ "sigstore-sign",
+ "sigstore-trust-root",
+ "sigstore-types",
+ "sigstore-verify",
+ "thiserror 2.0.20",
+ "tokio",
+ "usage-rs",
 ]
 
 [[package]]
@@ -9577,6 +9606,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sigstore-fulcio"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "823d3f43c29500feb1ccacec68552f8e2bcecd62ec99c5284570a623bcf0c921"
+dependencies = [
+ "base64 0.22.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sigstore-crypto",
+ "sigstore-oidc",
+ "sigstore-types",
+ "thiserror 2.0.20",
+ "url",
+]
+
+[[package]]
 name = "sigstore-merkle"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9587,6 +9633,25 @@ dependencies = [
  "sigstore-crypto",
  "sigstore-types",
  "thiserror 2.0.20",
+]
+
+[[package]]
+name = "sigstore-oidc"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fdb57c6e3af8a17d535a06084353d8e0bd32bb70f4807262f51b6cd009c9b4f"
+dependencies = [
+ "ambient-id",
+ "base64 0.22.1",
+ "rand 0.9.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sigstore-crypto",
+ "sigstore-types",
+ "thiserror 2.0.20",
+ "tokio",
+ "url",
 ]
 
 [[package]]
@@ -9605,6 +9670,26 @@ dependencies = [
  "sigstore-types",
  "thiserror 2.0.20",
  "url",
+]
+
+[[package]]
+name = "sigstore-sign"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df33672126088b7fa9d5827e79fe0cd87eda607efa0d28c1366e61bbb47f423a"
+dependencies = [
+ "base64 0.22.1",
+ "serde_json",
+ "sigstore-bundle",
+ "sigstore-crypto",
+ "sigstore-fulcio",
+ "sigstore-oidc",
+ "sigstore-rekor",
+ "sigstore-trust-root",
+ "sigstore-tsa",
+ "sigstore-types",
+ "thiserror 2.0.20",
+ "x509-cert 0.2.5",
 ]
 
 [[package]]

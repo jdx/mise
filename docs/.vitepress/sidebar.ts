@@ -90,6 +90,7 @@ export const sidebar: SidebarItem[] = [
           { text: "go", link: "/dev-tools/backends/go" },
           { text: "http", link: "/dev-tools/backends/http" },
           { text: "npm", link: "/dev-tools/backends/npm" },
+          { text: "packslip", link: "/dev-tools/backends/packslip" },
           { text: "pipx", link: "/dev-tools/backends/pipx" },
           { text: "pkgx", link: "/dev-tools/backends/pkgx" },
           { text: "spm", link: "/dev-tools/backends/spm" },

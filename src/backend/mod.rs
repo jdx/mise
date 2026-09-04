@@ -74,6 +74,7 @@ pub(crate) mod jq;
 pub(crate) mod npm;
 pub(crate) mod npm_registry;
 pub(crate) mod options;
+pub(crate) mod packslip;
 pub(crate) mod pipx;
 pub(crate) mod pkgx;
 pub(crate) mod platform_target;
@@ -373,6 +374,9 @@ pub(crate) enum SecurityFeature {
         level: Option<u8>,
     },
     Cosign,
+    /// A packslip: the vendor's signed release manifest, verified against
+    /// the identity or key the project name pins.
+    Packslip,
     Minisign {
         #[serde(skip_serializing_if = "Option::is_none")]
         public_key: Option<String>,
@@ -620,6 +624,7 @@ pub(crate) fn arg_to_backend(ba: BackendArg) -> Option<ABackend> {
         BackendType::Gitlab => Some(Arc::new(github::UnifiedGitBackend::from_arg(ba))),
         BackendType::Go => Some(Arc::new(go::GoBackend::from_arg(ba))),
         BackendType::Npm => Some(Arc::new(npm::NPMBackend::from_arg(ba))),
+        BackendType::Packslip => Some(Arc::new(packslip::PackslipBackend::from_arg(ba))),
         BackendType::Pipx => Some(Arc::new(pipx::PIPXBackend::from_arg(ba))),
         BackendType::Pkgx => Some(Arc::new(pkgx::PkgxBackend::from_arg(ba))),
         BackendType::Spm => Some(Arc::new(spm::SPMBackend::from_arg(ba))),
@@ -651,6 +656,7 @@ pub(crate) fn install_time_option_keys_for_type(backend_type: &BackendType) -> V
         BackendType::Cargo => cargo::install_time_option_keys(),
         BackendType::Go => go::install_time_option_keys(),
         BackendType::Npm => npm::install_time_option_keys(),
+        BackendType::Packslip => packslip::install_time_option_keys(),
         BackendType::Pipx => pipx::install_time_option_keys(),
         BackendType::Pkgx => pkgx::install_time_option_keys(),
         BackendType::Aqua => aqua::install_time_option_keys(),

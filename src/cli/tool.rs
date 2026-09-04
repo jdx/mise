@@ -268,6 +268,7 @@ impl Tool {
                             }
                         }
                         SecurityFeature::Cosign => "cosign".to_string(),
+                        SecurityFeature::Packslip => "packslip".to_string(),
                         SecurityFeature::Minisign { .. } => "minisign".to_string(),
                         SecurityFeature::Gpg => "gpg".to_string(),
                     })
