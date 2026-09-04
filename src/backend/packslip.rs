@@ -859,6 +859,22 @@ impl PackslipBackend {
         Ok(None)
     }
 
+    async fn policy_versions(&self, raw_opts: &ToolVersionOptions) -> Result<Vec<VersionInfo>> {
+        let mut versions = self.vendor_versions(raw_opts).await?;
+        // Only what a trusted stamper lists is released, as far as mise is
+        // concerned; the rest is not offered.
+        let project = self.project()?;
+        if let Some(stamps) = crate::packslip_stamps::fetch(&project, raw_opts).await? {
+            let before = versions.len();
+            versions.retain(|v| stamps.allows(&v.version));
+            debug!(
+                "packslip:{project}: {} of {before} version(s) carry a stamp",
+                versions.len()
+            );
+        }
+        Ok(versions)
+    }
+
     /// Put every executable the packslip names into the install's bin dir
     /// under the name it should have on PATH.
     fn link_bins(tv: &ToolVersion, artifact: &Artifact) -> Result<()> {
@@ -984,21 +1000,25 @@ impl Backend for PackslipBackend {
     }
 
     async fn _list_remote_versions(&self, config: &Arc<Config>) -> Result<Vec<VersionInfo>> {
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        let mut versions = self.vendor_versions(&raw_opts).await?;
-        // Only what a trusted stamper lists is released, as far as mise is
-        // concerned; the rest is not offered.
-        let project = self.project()?;
-        let raw_opts = config.get_tool_opts_with_overrides(&self.ba).await?;
-        if let Some(stamps) = crate::packslip_stamps::fetch(&project, &raw_opts).await? {
-            let before = versions.len();
-            versions.retain(|v| stamps.allows(&v.version));
-            debug!(
-                "packslip:{project}: {} of {before} version(s) carry a stamp",
-                versions.len()
-            );
-        }
-        Ok(versions)
+        let opts = config.get_tool_opts_with_overrides(&self.ba).await?;
+        self.policy_versions(&opts).await
+    }
+
+    async fn list_remote_versions_with_info_and_options(
+        &self,
+        _config: &Arc<Config>,
+        _listing_opts: &ToolVersionOptions,
+        selection_opts: &ToolVersionOptions,
+        _refresh: bool,
+        _has_local_version_listing_override: bool,
+    ) -> Result<Vec<VersionInfo>> {
+        // A cached accepted-version set cannot reflect changed stamper trust,
+        // new withdrawals, expired lists, or a list that disappeared.
+        let versions = self.policy_versions(selection_opts).await?;
+        Ok(versions
+            .into_iter()
+            .filter(|v| self.include_prereleases(selection_opts) || v.prerelease != Some(true))
+            .collect())
     }
 
     async fn latest_version_with_selection_options(
