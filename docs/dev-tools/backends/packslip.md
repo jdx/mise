@@ -61,6 +61,17 @@ Only after that does mise unpack the artifact and put the executables the packsl
 
 The artifact is chosen as the specification's consumer rules say. An artifact fits when each of its `os`, `arch`, and `libc` is absent or equal to the host's, so a universal macOS binary, a jar, or a script fits everywhere; among those that fit, the one naming the most of those three wins, so a build for the host beats a portable one; then mise's format preference decides, archives first (`tar.xz`, `tar.zst`, `tar.gz`, `tar.bz2`, `tar`, `zip`, `7z`), then a single compressed executable (`xz`, `zst`, `gz`, `bz2`), then a bare one. Installer formats such as `deb`, `dmg`, and `msi` are never chosen. When two artifacts still tie, mise refuses to guess; set `variant` to say which one you mean. A glibc host with no gnu build takes a musl build, which is static, and says so in the debug log.
 
+## Pinned signers
+
+mise remembers which signer it accepted a project's packslips from, the way SSH remembers hosts, in `packslip/pins.toml` under its state directory: the scheme, the workflow path (without its ref, since a new tag of the same workflow is the same signer) or key id, who attested, whether every artifact linked provenance, and the highest release-list sequence seen. A later release that comes from another signer, is a repackager's where the vendor's own was accepted before, or drops the provenance every artifact linked before is refused, as the specification's no-downgrade rule says; anything that got stronger is remembered as the new floor.
+
+```sh
+mise packslip pins                     # what is pinned, and from what
+mise packslip forget github.com/o/r    # the vendor rotated a key: let the next release set the pin
+```
+
+A lockfile carries the project's commitment as well: each platform entry records the `signer` (as `scheme:signer`) and, for a repackager's document, `attested_by = "repackager"`, next to the URL and digest. A release signed by anyone else is refused on every machine that has the lockfile, whether or not that machine has seen the project before; removing the entry from `mise.lock` accepts the change for the project.
+
 ## Tool Options
 
 The following [tool-options](/dev-tools/#tool-options) are available for the `packslip` backend—these go in `[tools]` in `mise.toml`.

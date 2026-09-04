@@ -230,6 +230,9 @@
 - [mise oci push](https://mise.jdx.dev/cli/oci/push.html): [experimental] Build an OCI image and push it to a registry
 - [mise oci run](https://mise.jdx.dev/cli/oci/run.html): [experimental] Build an OCI image from the current mise.toml and run a command in it
 - [mise outdated](https://mise.jdx.dev/cli/outdated.html): Show outdated tool versions
+- [mise packslip](https://mise.jdx.dev/cli/packslip.html): The signers mise accepts packslips from
+- [mise packslip forget](https://mise.jdx.dev/cli/packslip/forget.html): Forget a project's pinned signer, so the next release accepted sets it again
+- [mise packslip pins](https://mise.jdx.dev/cli/packslip/pins.html): List the signers mise has accepted packslips from
 - [mise patrons](https://mise.jdx.dev/cli/patrons.html): Show the individuals supporting mise as Patron-tier members
 - [mise plugins](https://mise.jdx.dev/cli/plugins.html): Manage plugins
 - [mise plugins install](https://mise.jdx.dev/cli/plugins/install.html): Install a plugin

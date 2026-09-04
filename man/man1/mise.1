@@ -553,6 +553,18 @@ Run Model Context Protocol (MCP) server
 \fBoci run\fR
 [experimental] Build an OCI image from the current mise.toml and run a command in it
 .TP
+\fBpackslip\fR
+The signers mise accepts packslips from
+.TP
+\fBpackslip forget\fR
+Forget a project's pinned signer, so the next release accepted sets it again
+.TP
+\fBpackslip pins\fR
+List the signers mise has accepted packslips from
+.RS
+\fIAliases: \fRlist
+.RE
+.TP
 \fBoutdated\fR
 Show outdated tool versions
 .TP
@@ -3748,6 +3760,55 @@ Print help
 .TP
 \fB<CMD>\fR
 Command and arguments to run inside the container (after `\-\-`)
+.SH "MISE PACKSLIP"
+The signers mise accepts packslips from
+
+A tool installed with the `packslip:` backend is verified against the
+identity its project name implies, and mise then remembers which signer
+it accepted, the way SSH remembers hosts. A later release from another
+signer, a weaker scheme, a repackager where the vendor signed before, or
+one that drops build provenance is refused until a person says so.
+.PP
+\fBUsage:\fR mise packslip [OPTIONS] [COMMAND]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+.SH "MISE PACKSLIP FORGET"
+Forget a project's pinned signer, so the next release accepted sets it again
+
+Do this when the vendor has announced a new signing identity or key. The
+project is named as the packslip backend names it: `github.com/owner/repo`,
+`owner/repo`, or a host such as `tool.example.com`, with or without the
+`packslip:` prefix.
+.PP
+\fBUsage:\fR mise packslip forget [OPTIONS] <PROJECT>
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-h, \-\-help\fR
+Print help
+\fBArguments:\fR
+.PP
+.TP
+\fB<PROJECT>\fR
+The project whose pin to drop
+.SH "MISE PACKSLIP PINS"
+List the signers mise has accepted packslips from
+.PP
+\fBUsage:\fR mise packslip pins [OPTIONS]
+.PP
+\fBOptions:\fR
+.PP
+.TP
+\fB\-J, \-\-json\fR
+Output in JSON format
+.TP
+\fB\-h, \-\-help\fR
+Print help
 .SH "MISE OUTDATED"
 Show outdated tool versions
 

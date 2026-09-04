@@ -397,6 +397,14 @@ pub(crate) struct PlatformInfo {
     /// GitHub attestation probe status when no provenance was verified.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub github_attestations: Option<GithubAttestationsStatus>,
+    /// Who signed the packslip this entry came from, as `scheme:signer`
+    /// (a workflow path without its ref, or a key id). Another signer on
+    /// a later install is refused: the project committed to this one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signer: Option<String>,
+    /// `repackager` when the packslip was a repackager's, not the vendor's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attested_by: Option<String>,
     /// Ordered release artifacts extracted into the primary artifact's install directory.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub additional_artifacts: Vec<ArtifactInfo>,
@@ -429,6 +437,8 @@ impl PlatformInfo {
             && self.pkgx_runtime_env.is_none()
             && self.provenance.is_none()
             && !self.provenance_verified
+            && self.signer.is_none()
+            && self.attested_by.is_none()
             && self.additional_artifacts.is_empty()
     }
 
@@ -450,6 +460,9 @@ impl PlatformInfo {
             provenance: None,
             provenance_verified: false,
             github_attestations: None,
+            // The signer describes the release, not the artifact, so it stays.
+            signer: self.signer.clone(),
+            attested_by: self.attested_by.clone(),
             additional_artifacts: Default::default(),
         }
     }
@@ -545,6 +558,11 @@ impl PlatformInfo {
             provenance,
             provenance_verified,
             github_attestations: None,
+            signer: self.signer.clone().or_else(|| other.signer.clone()),
+            attested_by: self
+                .attested_by
+                .clone()
+                .or_else(|| other.attested_by.clone()),
             additional_artifacts: if artifact_changed {
                 self.additional_artifacts.clone()
             } else {
@@ -673,6 +691,17 @@ impl TryFrom<toml::Value> for PlatformInfo {
                 } else {
                     github_attestations
                 };
+                let signer = match t.remove("signer") {
+                    Some(toml::Value::String(s)) => Some(s),
+                    _ => None,
+                };
+                let attested_by = match t.remove("attested_by") {
+                    Some(toml::Value::String(s)) if s == "repackager" => Some(s),
+                    Some(toml::Value::String(s)) => {
+                        bail!("unrecognized attested_by {s:?} in lockfile")
+                    }
+                    _ => None,
+                };
                 let additional_artifacts = match t.remove("additional_artifacts") {
                     Some(toml::Value::Array(values)) => values
                         .into_iter()
@@ -694,6 +723,8 @@ impl TryFrom<toml::Value> for PlatformInfo {
                     provenance,
                     provenance_verified,
                     github_attestations,
+                    signer,
+                    attested_by,
                     additional_artifacts,
                 })
             }
@@ -779,7 +810,34 @@ impl From<PlatformInfo> for toml::Value {
         if platform_info.provenance_verified {
             table.insert("provenance_verified".to_string(), true.into());
         }
+        if let Some(signer) = platform_info.signer {
+            table.insert("signer".to_string(), signer.into());
+        }
+        if let Some(attested_by) = platform_info.attested_by {
+            table.insert("attested_by".to_string(), attested_by.into());
+        }
         toml::Value::Table(table)
+    }
+}
+
+#[cfg(test)]
+mod signer_round_trip {
+    use super::*;
+
+    #[test]
+    fn signer_and_attestor_survive_toml() {
+        let info = PlatformInfo {
+            checksum: Some("sha256:ab".into()),
+            signer: Some("sigstore-oidc:https://github.com/o/r/.github/workflows/r.yml".into()),
+            attested_by: Some("repackager".into()),
+            ..Default::default()
+        };
+        let value: toml::Value = info.clone().into();
+        assert_eq!(PlatformInfo::try_from(value).unwrap(), info);
+        assert!(!info.is_empty());
+        assert_eq!(info.without_artifact_data().signer, info.signer);
+        let bad = toml::Value::Table(toml::toml! { attested_by = "someone" });
+        assert!(PlatformInfo::try_from(bad).is_err());
     }
 }
 
@@ -1414,6 +1472,10 @@ impl Lockfile {
                     provenance,
                     provenance_verified,
                     github_attestations: None,
+                    signer: platform_info.signer.or_else(|| existing.signer.clone()),
+                    attested_by: platform_info
+                        .attested_by
+                        .or_else(|| existing.attested_by.clone()),
                     additional_artifacts: if preserve_artifact_fields {
                         merge_additional_artifacts(
                             &platform_info.additional_artifacts,

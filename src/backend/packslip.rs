@@ -33,11 +33,11 @@ use crate::backend::{
 };
 use crate::cli::args::BackendArg;
 use crate::config::{Config, Settings};
-use crate::dirs;
 use crate::file;
 use crate::github;
 use crate::http::{HTTP, HTTP_FETCH};
 use crate::install_context::InstallContext;
+use crate::packslip_pins::{self, Observed};
 use crate::platform::Platform;
 use crate::toolset::{ToolRequest, ToolVersion, ToolVersionOptions};
 
@@ -433,44 +433,11 @@ fn headers_for(url: &str) -> Result<HeaderMap> {
     }
 }
 
-/// Where mise remembers the highest list sequence it accepted per
-/// project, so a mirror cannot show it an older list than it has seen.
-/// `/` and `%` are escaped so two projects never share a file:
-/// `github.com/foo/bar-baz` and `github.com/foo-bar/baz` stay apart.
-fn sequence_file(project: &str) -> PathBuf {
-    let name = project.replace('%', "%25").replace('/', "%2F");
-    dirs::STATE
-        .join("packslip")
-        .join("sequence")
-        .join(format!("{name}.txt"))
-}
-
 /// Refuse a list whose sequence is below one already accepted for the
 /// project, and remember the highest seen. The crate verifies the list
-/// and its expiry; this is the consumer's part.
+/// and its expiry; this is the consumer's part, kept with the pins.
 fn check_sequence(project: &str, list: &ReleaseListStatement) -> Result<()> {
-    check_sequence_at(&sequence_file(project), project, list)
-}
-
-fn check_sequence_at(path: &Path, project: &str, list: &ReleaseListStatement) -> Result<()> {
-    let last: Option<u64> = file::read_to_string(path)
-        .ok()
-        .and_then(|text| text.trim().parse().ok());
-    let sequence = list.predicate.sequence;
-    if let Some(last) = last
-        && sequence < last
-    {
-        bail!(
-            "the release list of packslip:{project} has sequence {sequence}, but sequence {last} was already accepted; refusing to go back"
-        );
-    }
-    if last != Some(sequence) {
-        if let Some(parent) = path.parent() {
-            file::create_dir_all(parent)?;
-        }
-        file::write_atomic(path, sequence.to_string())?;
-    }
-    Ok(())
+    crate::packslip_pins::check_sequence(project, list.predicate.sequence)
 }
 
 /// Where a release's packslip is and what to send to fetch it.
@@ -892,6 +859,43 @@ impl Backend for PackslipBackend {
                 .map(|t| format!(", logged {t}"))
                 .unwrap_or_default()
         );
+        // Who signed, against what this machine accepted before, and then
+        // against what the project committed to in its lockfile.
+        let scheme = verified.scheme.to_string();
+        let attested_by = verified.attested_by.to_string();
+        let known = packslip_pins::check_and_record(
+            &project,
+            Observed {
+                scheme: &scheme,
+                key_id: &verified.key_id,
+                issuer: verified.issuer.as_deref(),
+                attested_by: &attested_by,
+                provenance: verified.provenance_linked,
+                logged: verified.logged_at.is_some(),
+            },
+        )?;
+        let signer = format!("{}:{}", known.scheme, known.signer);
+        let platform_key = self.get_platform_key();
+        if let Some(info) = tv.lock_platforms.get(&platform_key) {
+            if let Some(locked) = &info.signer
+                && *locked != signer
+            {
+                bail!(
+                    "mise.lock says {} signed {}, but this release is signed by {signer}; remove the entry from mise.lock to accept the new signer",
+                    locked,
+                    tv.style()
+                );
+            }
+            if info.attested_by.is_none()
+                && info.signer.is_some()
+                && verified.attested_by == packslip::Attestor::Repackager
+            {
+                bail!(
+                    "mise.lock says the vendor's own packslip was accepted for {}, but this release is a repackager's; remove the entry from mise.lock to accept that",
+                    tv.style()
+                );
+            }
+        }
 
         // Then the one artifact for this host, by what the manifest says.
         let artifact = select_artifact(
@@ -928,7 +932,6 @@ impl Backend for PackslipBackend {
         ctx.pr.set_message(format!("verify {}", artifact.name));
         verify_bundle(&bundle, &pin, require_log, &[&file_path])
             .wrap_err_with(|| format!("verifying {} against its packslip", artifact.name))?;
-        let platform_key = self.get_platform_key();
         {
             let info = tv.lock_platforms.entry(platform_key).or_default();
             info.url = Some(url);
@@ -936,6 +939,10 @@ impl Backend for PackslipBackend {
                 && let Some(sha256) = statement.digest_of(&artifact.name)
             {
                 info.checksum = Some(format!("sha256:{sha256}"));
+            }
+            info.signer = Some(signer);
+            if verified.attested_by == packslip::Attestor::Repackager {
+                info.attested_by = Some("repackager".to_string());
             }
         }
         self.verify_checksum(ctx, &mut tv, &file_path)?;
@@ -1252,47 +1259,6 @@ mod tests {
             "t-linux-x64",
             "what the bin entry's path must be"
         );
-    }
-
-    #[test]
-    fn list_sequences_only_go_up() {
-        let dir = tempfile::tempdir().unwrap();
-        let list = |sequence: u64| -> ReleaseListStatement {
-            serde_json::from_value(serde_json::json!({
-                "_type": "https://in-toto.io/Statement/v1",
-                "subject": [],
-                "predicateType": "https://packslip.dev/releases/v1",
-                "predicate": {
-                    "project": "tool.example.com",
-                    "generated_at": "2026-09-01T00:00:00Z",
-                    "expires_at": "2026-10-01T00:00:00Z",
-                    "sequence": sequence,
-                    "identity": { "scheme": "sigstore-key", "key_id": "AA" },
-                    "releases": []
-                }
-            }))
-            .unwrap()
-        };
-        let path = dir.path().join("seq.txt");
-        let check = |sequence: u64| check_sequence_at(&path, "tool.example.com", &list(sequence));
-        check(3).unwrap();
-        check(5).unwrap();
-        let err = check(4).unwrap_err();
-        assert!(err.to_string().contains("refusing to go back"), "{err}");
-        check(5).unwrap();
-        assert_eq!(file::read_to_string(&path).unwrap(), "5");
-    }
-
-    #[test]
-    fn sequence_files_do_not_collide() {
-        let a = sequence_file("github.com/foo/bar-baz");
-        let b = sequence_file("github.com/foo-bar/baz");
-        assert_ne!(a, b);
-        assert_eq!(
-            a.file_name().unwrap().to_str().unwrap(),
-            "github.com%2Ffoo%2Fbar-baz.txt"
-        );
-        assert_eq!(a.parent(), b.parent());
     }
 
     #[test]
