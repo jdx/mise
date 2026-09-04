@@ -220,7 +220,7 @@ pub(crate) async fn fetch_files(
                     && let Some(skill) = skill_name(resource)
                 {
                     let dir = base.join("skills").join(skill);
-                    if !dir.is_dir() {
+                    if !dir.join("SKILL.md").is_file() {
                         unpack_skill(&dest, &dir, pr)?;
                     }
                 }
@@ -240,7 +240,9 @@ pub(crate) async fn fetch_files(
                     continue;
                 };
                 let dest = base.join("repo").join(rel);
-                if dest.exists() {
+                // A finished skill holds SKILL.md; a bare directory may be
+                // no more than a parent that fetching a file created.
+                if dest.join("SKILL.md").is_file() {
                     continue;
                 }
                 let Some(repo) = github_repo(statement) else {
