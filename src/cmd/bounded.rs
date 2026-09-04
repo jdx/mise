@@ -1,6 +1,9 @@
 //! Bounded capture for non-interactive vendor generators and host probes.
 use super::*;
 use eyre::eyre;
+use std::sync::atomic::{AtomicUsize, Ordering};
+// `cmd` imports this only for the unix reader, so name it here too.
+use tokio::io::AsyncRead;
 
 impl CmdLineRunner<'_> {
     /// Capture a finite response, with one deadline for the process and pipes.
@@ -23,11 +26,19 @@ impl CmdLineRunner<'_> {
         let _tree = ChildTree::new(&child)?;
         let stdout = child.stdout.take().expect("piped stdout");
         let stderr = child.stderr.take().expect("piped stderr");
+        // One budget for both pipes: judging them only once both reach EOF
+        // would let each hold the whole limit first, so a command could
+        // allocate twice what was asked before anyone objected.
+        let budget = AtomicUsize::new(limit);
         let result = tokio::time::timeout(timeout, async {
-            tokio::try_join!(child.wait(), capture(stdout, limit), capture(stderr, limit))
+            tokio::try_join!(
+                child.wait(),
+                capture(stdout, &budget, limit),
+                capture(stderr, &budget, limit)
+            )
         })
         .await;
-        let (status, stdout, stderr) = match result {
+        let (status, stdout, _stderr) = match result {
             Ok(Ok(output)) => output,
             Ok(Err(err)) => {
                 drop(_tree);
@@ -40,9 +51,6 @@ impl CmdLineRunner<'_> {
                 bail!("timed out after {timeout:?}");
             }
         };
-        if stdout.len().saturating_add(stderr.len()) > limit {
-            bail!("command output exceeded {limit} bytes");
-        }
         if !status.success() {
             bail!("command exited with non-zero status: {status}");
         }
@@ -50,7 +58,15 @@ impl CmdLineRunner<'_> {
     }
 }
 
-async fn capture(mut stream: impl AsyncRead + Unpin, limit: usize) -> std::io::Result<Vec<u8>> {
+/// Read one pipe to EOF, drawing on a budget shared with the other. The
+/// overrun is an error as soon as it happens rather than once the command
+/// finishes, so the caller drops the process tree while the writer is
+/// still writing.
+async fn capture(
+    mut stream: impl AsyncRead + Unpin,
+    budget: &AtomicUsize,
+    limit: usize,
+) -> std::io::Result<Vec<u8>> {
     let mut output = Vec::new();
     let mut buf = [0u8; 8192];
     loop {
@@ -58,7 +74,11 @@ async fn capture(mut stream: impl AsyncRead + Unpin, limit: usize) -> std::io::R
         if n == 0 {
             return Ok(output);
         }
-        if output.len().saturating_add(n) > limit {
+        let spend = |left: usize| left.checked_sub(n);
+        if budget
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, spend)
+            .is_err()
+        {
             return Err(std::io::Error::other(format!(
                 "command output exceeded {limit} bytes"
             )));
@@ -86,8 +106,16 @@ impl Drop for ChildTree {
 
 // A job closes the whole tree even after the direct child exits. Merely
 // taskkilling the child's PID cannot find descendants once it has exited.
+//
+// The job can only be joined once the child exists, and `tokio` hands back
+// a running process rather than a suspended one, so a descendant spawned
+// between the two escapes the job. It does not escape the deadline: the
+// direct child is still killed by `kill_on_drop`, and a generator that
+// forks that fast is misbehaving rather than hostile. Joining at creation
+// would need `PROC_THREAD_ATTRIBUTE_JOB_LIST`, which `tokio` does not
+// expose.
 #[cfg(windows)]
-struct ChildTree(usize);
+struct ChildTree(Option<usize>);
 #[cfg(windows)]
 impl ChildTree {
     fn new(child: &tokio::process::Child) -> Result<Self> {
@@ -97,7 +125,7 @@ impl ChildTree {
             if handle.is_null() {
                 return Err(std::io::Error::last_os_error().into());
             }
-            let job = Self(handle as usize);
+            let mut job = Self(Some(handle as usize));
             let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             if SetInformationJobObject(
@@ -113,18 +141,30 @@ impl ChildTree {
                 .raw_handle()
                 .ok_or_else(|| eyre!("child has no handle"))?;
             if AssignProcessToJobObject(handle, process as _) == 0 {
-                return Err(std::io::Error::last_os_error().into());
+                // A command short enough to have exited already cannot be
+                // joined, and has no tree left to close. Failing here would
+                // turn the quickest generators into errors, so close the job
+                // and let `kill_on_drop` stand for the child.
+                let err = std::io::Error::last_os_error();
+                debug!("could not put the child in a job object: {err}");
+                job.close();
             }
             Ok(job)
+        }
+    }
+
+    fn close(&mut self) {
+        if let Some(handle) = self.0.take() {
+            unsafe {
+                windows_sys::Win32::Foundation::CloseHandle(handle as _);
+            }
         }
     }
 }
 #[cfg(windows)]
 impl Drop for ChildTree {
     fn drop(&mut self) {
-        unsafe {
-            windows_sys::Win32::Foundation::CloseHandle(self.0 as _);
-        }
+        self.close();
     }
 }
 
@@ -147,6 +187,26 @@ mod tests {
             );
         }
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[tokio::test]
+    async fn the_two_pipes_share_one_budget() {
+        // Just under the limit on each pipe, over it together, and then a
+        // sleep: a per-pipe budget would accept both halves and only object
+        // once the command ended, which here is never.
+        let half = "x".repeat(700);
+        let script = "printf %s \"$H\"; printf %s \"$H\" >&2; sleep 30";
+        let err = CmdLineRunner::new("/bin/sh")
+            .args(["-c", script])
+            .env("H", &half)
+            .with_timeout(Duration::from_secs(5))
+            .read_isolated(1024)
+            .await
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("exceeded"),
+            "the overrun is caught while the command still runs: {err}"
+        );
     }
 
     #[tokio::test]
