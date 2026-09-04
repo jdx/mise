@@ -3836,6 +3836,12 @@
         "bun": {
           "$ref": "#/$defs/deps_provider"
         },
+        "aube": {
+          "$ref": "#/$defs/deps_provider"
+        },
+        "deno": {
+          "$ref": "#/$defs/deps_provider"
+        },
         "go": {
           "$ref": "#/$defs/deps_provider"
         },
@@ -3858,6 +3864,9 @@
           "$ref": "#/$defs/deps_provider"
         },
         "flutter": {
+          "$ref": "#/$defs/deps_provider"
+        },
+        "git-submodule": {
           "$ref": "#/$defs/deps_provider"
         }
       },
