@@ -250,8 +250,16 @@ pub(crate) async fn fetch_files(
                     );
                     continue;
                 };
-                if let Err(err) = fetch_repo_dir(&repo, commit, rel, &dest, pr).await {
-                    let _ = file::remove_all(&dest);
+                // Built beside its final place and moved there whole, so a
+                // half-fetched skill never passes for a finished one.
+                let fetched = match staging_dir(&dest) {
+                    Ok(staging) => {
+                        let built = fetch_repo_dir(&repo, commit, rel, &staging, pr).await;
+                        into_place(&staging, &dest, built)
+                    }
+                    Err(err) => Err(err),
+                };
+                if let Err(err) = fetched {
                     warn!(
                         "{}: could not fetch skill {rel} from the source repository: {err}",
                         tv.style()
@@ -351,17 +359,50 @@ fn unpack_skill(archive: &Path, dir: &Path, pr: &dyn SingleReport) -> Result<()>
         bail!("skill asset {name} is not an archive mise can unpack");
     }
     let strip_components = usize::from(file::should_strip_components(archive, format)?);
-    file::create_dir_all(dir)?;
-    file::extract_archive(
+    let staging = staging_dir(dir)?;
+    let unpacked = file::extract_archive(
         archive,
-        dir,
+        &staging,
         format,
         &file::ExtractOptions {
             strip_components,
             pr: Some(pr),
             ..Default::default()
         },
-    )
+    );
+    into_place(&staging, dir, unpacked)
+}
+
+/// A fresh sibling directory to build a skill in, so `dir` only ever
+/// exists once it is complete and an interrupted attempt cannot pass for
+/// a finished one on the next install.
+fn staging_dir(dir: &Path) -> Result<PathBuf> {
+    let name = dir.file_name().unwrap_or_default().to_string_lossy();
+    let staging = dir.with_file_name(format!(".{name}.partial"));
+    if staging.exists() {
+        file::remove_all(&staging)?;
+    }
+    file::create_dir_all(&staging)?;
+    Ok(staging)
+}
+
+/// Move a finished staging directory to where it belongs, or clean it up
+/// when building it failed.
+fn into_place(staging: &Path, dir: &Path, built: Result<()>) -> Result<()> {
+    if let Err(err) = built {
+        let _ = file::remove_all(staging);
+        return Err(err);
+    }
+    if dir.exists() {
+        file::remove_all(dir)?;
+    }
+    std::fs::rename(staging, dir).wrap_err_with(|| {
+        format!(
+            "moving {} into place at {}",
+            staging.display(),
+            dir.display()
+        )
+    })
 }
 
 /// Fetch a directory of the source repository at `commit` into `dest`,
@@ -375,9 +416,14 @@ async fn fetch_repo_dir(
     pr: &dyn SingleReport,
 ) -> Result<()> {
     let url = format!("https://api.github.com/repos/{repo}/contents/{rel}?ref={commit}");
-    let listing: serde_json::Value = HTTP_FETCH
-        .json_with_headers(&url, &github::get_headers(&url)?)
-        .await?;
+    // The client asks for the raw media type on every contents URL, which
+    // is right for a file body and wrong for a directory listing.
+    let mut headers = github::get_headers(&url)?;
+    headers.insert(
+        reqwest::header::ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    let listing: serde_json::Value = HTTP_FETCH.json_with_headers(&url, &headers).await?;
     let Some(entries) = listing.as_array() else {
         bail!("{rel} is not a directory of the repository");
     };
@@ -386,7 +432,7 @@ async fn fetch_repo_dir(
         let Some(name) = entry["name"].as_str() else {
             continue;
         };
-        if name.contains('/') || name == ".." || name == "." {
+        if !file::is_plain_file_name(name) {
             continue;
         }
         match entry["type"].as_str() {
@@ -1298,6 +1344,28 @@ mod tests {
         );
         assert_eq!(skills[0].tool, "tool");
         assert_eq!(github_repo(&s).as_deref(), Some("o/r"));
+    }
+
+    #[test]
+    fn a_failed_unpack_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let archive = dir.path().join("skill.tar.gz");
+        std::fs::write(&archive, b"not an archive").unwrap();
+        let target = dir.path().join("skills/t");
+        let pr = crate::ui::progress_report::QuietReport::new();
+        assert!(unpack_skill(&archive, &target, &pr).is_err());
+        assert!(!target.exists());
+        assert!(
+            !dir.path().join("skills/.t.partial").exists(),
+            "the staging directory is cleaned up"
+        );
+        assert!(
+            !dir.path().join("skills").exists()
+                || std::fs::read_dir(dir.path().join("skills"))
+                    .unwrap()
+                    .next()
+                    .is_none()
+        );
     }
 
     #[test]
