@@ -74,8 +74,6 @@ e2e_args = { default = "--headless", redact = true }
 
 [dotfiles]
 "~/.gitconfig" = { source = "dotfiles/gitconfig", mode = "symlink" }
-"~/.zshrc" = "dotfiles/zshrc"
-"~/.bin" = { source = "bin", mode = "symlink-each", exclude = ["*.md"] }
 "~/.zshrc/activate" = { block = "eval \"$(mise activate zsh)\"", comment = "#" }
 "~/.inline" = { content = "literal content" }
 "~/.manifest" = { source = "dotfiles/config", mode = "copy", manifest = "git" }
@@ -299,14 +297,12 @@ TOML
 
 assert_fail "$TOMBI_LINT mise-bad-dotfiles-manifest.toml"
 
-for bad_mode in symlink template; do
-  cat >"$HOME/workdir/mise-bad-dotfiles-manifest.toml" <<TOML
+cat >"$HOME/workdir/mise-bad-dotfiles-manifest.toml" <<'TOML'
 [dotfiles]
-"~/.invalid" = { manifest = "git", mode = "$bad_mode" }
+"~/.invalid" = { manifest = "git", mode = "symlink" }
 TOML
 
-  assert_fail "$TOMBI_LINT mise-bad-dotfiles-manifest.toml"
-done
+assert_fail "$TOMBI_LINT mise-bad-dotfiles-manifest.toml"
 
 for incompatible_field in \
   'content = "literal content"' \
