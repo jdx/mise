@@ -152,7 +152,7 @@ fn metadata_sandbox(source: &Path, shim: &Path, output: &Path) -> Result<Sandbox
         deny_temp_write: true,
         allow_read: vec![source.to_path_buf(), shim.to_path_buf()],
         allow_write: vec![output.to_path_buf()],
-        allow_exec: vec![source.to_path_buf(), shim.to_path_buf()],
+        allow_exec: vec![shim.to_path_buf()],
         ..Default::default()
     };
     sandbox.resolve_paths();
