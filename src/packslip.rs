@@ -5,6 +5,7 @@
 //! mise can hand a shell: a completion script for whichever version of the
 //! tool is active, from the most verifiable source the vendor offered.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -12,15 +13,16 @@ use eyre::{Result, WrapErr, bail, eyre};
 use packslip::model::{Artifact, Resource, ResourceSource, Statement, resource_fits};
 use reqwest::header::{HeaderMap, HeaderValue};
 
-use crate::backend::Backend;
 use crate::backend::packslip::{
-    STATEMENT_FILE, is_safe_relative, locate_in_install, selected_artifact,
+    STATEMENT_FILE, is_safe_relative, locate_dir_in_install, locate_in_install,
+    selected_artifact,
 };
+use crate::backend::{Backend, MISE_BINS_DIR};
 use crate::cmd::CmdLineRunner;
 use crate::config::{Config, Settings};
 use crate::file;
 use crate::github;
-use crate::http::HTTP;
+use crate::http::{HTTP, HTTP_FETCH};
 use crate::toolset::{ToolVersion, Toolset};
 use crate::ui::progress_report::SingleReport;
 
@@ -69,6 +71,40 @@ fn asset_name(resource: &Resource) -> Option<&str> {
 /// The repository path an entry names, if it is safe to join.
 fn repo_path(resource: &Resource) -> Option<&str> {
     resource.repo.as_deref().filter(|rel| is_safe_relative(rel))
+}
+
+/// The name of a skill, if it is a plain file name and not the file
+/// `sync_skills` keeps its own state in.
+fn skill_name(resource: &Resource) -> Option<&str> {
+    resource
+        .name
+        .as_deref()
+        .filter(|name| file::is_plain_file_name(name) && *name != SYNC_STATE)
+}
+
+/// Where a directory resource, a skill, is inside the install, if it is
+/// there: in the unpacked artifact, or where [`fetch_files`] put it.
+pub(crate) fn resource_dir(install_path: &Path, resource: &Resource) -> Option<PathBuf> {
+    let fetched = |sub: &str, rel: &str| {
+        Some(install_path.join(RESOURCES_DIR).join(sub).join(rel)).filter(|p| p.is_dir())
+    };
+    match resource.source()? {
+        ResourceSource::Archive => {
+            locate_dir_in_install(install_path, resource.archive.as_deref()?)
+        }
+        ResourceSource::Asset | ResourceSource::Exec => fetched("skills", skill_name(resource)?),
+        ResourceSource::Repo => fetched("repo", repo_path(resource)?),
+    }
+}
+
+/// The `owner/repo` of a release built from a github.com repository.
+fn github_repo(statement: &Statement) -> Option<String> {
+    let repo = statement.predicate.source.as_ref()?.repo.as_str();
+    let path = repo
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .strip_prefix("https://github.com/")?;
+    (path.matches('/').count() == 1).then(|| path.to_string())
 }
 
 /// Where to fetch a repository file at the release's commit, and with what
@@ -179,8 +215,83 @@ pub(crate) async fn fetch_files(
                         expected.unwrap_or("it is not a subject")
                     );
                 }
+                if resource.kind == "skill"
+                    && let Some(skill) = &resource.name
+                {
+                    let dir = base.join("skills").join(skill);
+                    if !dir.is_dir() {
+                        unpack_skill(&dest, &dir, pr)?;
+                    }
+                }
             }
-            Some(ResourceSource::Repo) if resource.kind != "skill" => {
+            Some(ResourceSource::Repo) if resource.kind == "skill" => {
+                let commit = statement
+                    .predicate
+                    .source
+                    .as_ref()
+                    .and_then(|s| s.commit.as_deref());
+                let (Some(rel), Some(commit)) = (repo_path(resource), commit) else {
+                    warn!(
+                        "{}: skill {:?} in the source repository is not pinned by a commit, or its path is not safe to fetch",
+                        tv.style(),
+                        resource.repo.as_deref().unwrap_or_default()
+                    );
+                    continue;
+                };
+                let dest = base.join("repo").join(rel);
+                if dest.exists() {
+                    continue;
+                }
+                let Some(repo) = github_repo(statement) else {
+                    warn!(
+                        "{}: skill {rel} lives in the source repository, which mise can only read on github.com",
+                        tv.style()
+                    );
+                    continue;
+                };
+                if let Err(err) = fetch_repo_dir(&repo, commit, rel, &dest, pr).await {
+                    let _ = file::remove_all(&dest);
+                    warn!(
+                        "{}: could not fetch skill {rel} from the source repository: {err}",
+                        tv.style()
+                    );
+                }
+            }
+            Some(ResourceSource::Exec) if resource.kind == "skill" => {
+                let Some(skill) = skill_name(resource) else {
+                    continue;
+                };
+                let dir = base.join("skills").join(skill);
+                if dir.join("SKILL.md").is_file() {
+                    continue;
+                }
+                if !Settings::get().packslip.exec {
+                    debug!(
+                        "{}: skill {skill} is generated by running the tool; packslip.exec is off",
+                        tv.style()
+                    );
+                    continue;
+                }
+                let Some((program, args)) = resource.exec.split_first() else {
+                    continue;
+                };
+                let Some(path) = installed_bin(&tv.install_path(), program) else {
+                    warn!(
+                        "{}: skill {skill} is generated by {program}, which the install does not hold",
+                        tv.style()
+                    );
+                    continue;
+                };
+                pr.set_message(format!("generate skill {skill}"));
+                match CmdLineRunner::new(path).args(args).read().await {
+                    Ok(text) => {
+                        file::create_dir_all(&dir)?;
+                        file::write(dir.join("SKILL.md"), text)?;
+                    }
+                    Err(err) => warn!("{}: could not generate skill {skill}: {err}", tv.style()),
+                }
+            }
+            Some(ResourceSource::Repo) => {
                 let Some(rel) = repo_path(resource) else {
                     warn!(
                         "{}: the packslip names a repository path {:?}, which is not safe to fetch",
@@ -216,6 +327,224 @@ pub(crate) async fn fetch_files(
         }
     }
     Ok(())
+}
+
+/// An executable of the install, by the name the packslip gave it.
+fn installed_bin(install_path: &Path, program: &str) -> Option<PathBuf> {
+    let linked = install_path.join(MISE_BINS_DIR).join(program);
+    if linked.exists() {
+        return Some(linked);
+    }
+    locate_in_install(install_path, program)
+}
+
+/// Unpack a skill shipped as its own archive, dropping a lone top-level
+/// directory the way artifacts are unpacked.
+fn unpack_skill(archive: &Path, dir: &Path, pr: &dyn SingleReport) -> Result<()> {
+    let name = archive.file_name().unwrap_or_default().to_string_lossy();
+    let format = file::ExtractionFormat::from_file_name(&name);
+    if !format.is_archive() {
+        bail!("skill asset {name} is not an archive mise can unpack");
+    }
+    let strip_components = usize::from(file::should_strip_components(archive, format)?);
+    file::create_dir_all(dir)?;
+    file::extract_archive(
+        archive,
+        dir,
+        format,
+        &file::ExtractOptions {
+            strip_components,
+            pr: Some(pr),
+            ..Default::default()
+        },
+    )
+}
+
+/// Fetch a directory of the source repository at `commit` into `dest`,
+/// through the GitHub contents API. Entries that are not plain files or
+/// directories (symlinks, submodules) are left out.
+async fn fetch_repo_dir(
+    repo: &str,
+    commit: &str,
+    rel: &str,
+    dest: &Path,
+    pr: &dyn SingleReport,
+) -> Result<()> {
+    let url = format!("https://api.github.com/repos/{repo}/contents/{rel}?ref={commit}");
+    let listing: serde_json::Value = HTTP_FETCH
+        .json_with_headers(&url, &github::get_headers(&url)?)
+        .await?;
+    let Some(entries) = listing.as_array() else {
+        bail!("{rel} is not a directory of the repository");
+    };
+    file::create_dir_all(dest)?;
+    for entry in entries {
+        let Some(name) = entry["name"].as_str() else {
+            continue;
+        };
+        if name.contains('/') || name == ".." || name == "." {
+            continue;
+        }
+        match entry["type"].as_str() {
+            Some("dir") => {
+                Box::pin(fetch_repo_dir(
+                    repo,
+                    commit,
+                    &format!("{rel}/{name}"),
+                    &dest.join(name),
+                    pr,
+                ))
+                .await?;
+            }
+            Some("file") => {
+                let Some(download) = entry["download_url"].as_str() else {
+                    continue;
+                };
+                pr.set_message(format!("download {rel}/{name}"));
+                HTTP.download_file_with_headers(
+                    download,
+                    &dest.join(name),
+                    &headers_for(download)?,
+                    Some(pr),
+                )
+                .await?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// A skill one of the active tools declares: a directory holding
+/// `SKILL.md`, for the exact version that is active here.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct Skill {
+    pub name: String,
+    pub tool: String,
+    pub version: String,
+    pub path: PathBuf,
+}
+
+/// The skills a statement declares that are present in the install.
+pub(crate) fn skills_of(
+    statement: &Statement,
+    install_path: &Path,
+    tool: &str,
+    version: &str,
+) -> Vec<Skill> {
+    statement
+        .predicate
+        .resources
+        .iter()
+        .filter(|r| r.kind == "skill")
+        .filter_map(|r| {
+            Some(Skill {
+                name: r.name.clone()?,
+                tool: tool.to_string(),
+                version: version.to_string(),
+                path: resource_dir(install_path, r)?,
+            })
+        })
+        .collect()
+}
+
+/// The skills of every tool active in the current directory.
+pub(crate) async fn active_skills(config: &Arc<Config>) -> Result<Vec<Skill>> {
+    let ts = config.get_toolset().await?;
+    let mut skills = Vec::new();
+    for (backend, tv) in ts.list_current_installed_versions(config) {
+        let install_path = tv.install_path();
+        let statement = match statement(&install_path) {
+            Ok(Some(statement)) => statement,
+            Ok(None) => continue,
+            Err(err) => {
+                warn!("{}: {err}", tv.style());
+                continue;
+            }
+        };
+        skills.extend(skills_of(
+            &statement,
+            &install_path,
+            &backend.ba().short,
+            &tv.version,
+        ));
+    }
+    Ok(skills)
+}
+
+/// What [`sync_skills`] did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct SyncReport {
+    pub linked: Vec<String>,
+    pub unchanged: Vec<String>,
+    pub pruned: Vec<String>,
+    /// Skills not linked, with why.
+    pub skipped: Vec<(String, String)>,
+}
+
+/// Link each skill into `dir` under its name. Only links that point into
+/// `installs`, which is to say links mise made, are ever replaced or,
+/// with `prune`, removed; anything else at a skill's name is left alone.
+pub(crate) fn sync_skills(
+    dir: &Path,
+    skills: &[Skill],
+    installs: &Path,
+    prune: bool,
+) -> Result<SyncReport> {
+    let mut report = SyncReport::default();
+    let mut wanted: BTreeMap<&str, &Skill> = BTreeMap::new();
+    for skill in skills {
+        match wanted.get(skill.name.as_str()) {
+            Some(first) => report.skipped.push((
+                skill.name.clone(),
+                format!(
+                    "{} also provides a skill called {}; keeping that one",
+                    first.tool, skill.name
+                ),
+            )),
+            None => {
+                wanted.insert(&skill.name, skill);
+            }
+        }
+    }
+    let ours = |link: &Path| {
+        file::is_symlink_or_junction(link)
+            && file::is_symlink_target_within(link, installs).unwrap_or(false)
+    };
+    if !wanted.is_empty() {
+        file::create_dir_all(dir)?;
+    }
+    for (name, skill) in &wanted {
+        let link = dir.join(name);
+        if file::is_symlink_to(&link, &skill.path) {
+            report.unchanged.push(name.to_string());
+            continue;
+        }
+        if link.exists() || link.is_symlink() {
+            if !ours(&link) {
+                report.skipped.push((
+                    name.to_string(),
+                    format!("{} exists and is not a link mise made", link.display()),
+                ));
+                continue;
+            }
+            file::remove_all(&link)?;
+        }
+        file::make_symlink(&skill.path, &link)?;
+        report.linked.push(name.to_string());
+    }
+    if prune && dir.is_dir() {
+        for entry in file::ls(dir)? {
+            let Some(name) = entry.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !wanted.contains_key(name) && ours(&entry) {
+                file::remove_all(&entry)?;
+                report.pruned.push(name.to_string());
+            }
+        }
+    }
+    Ok(report)
 }
 
 /// Where a completion for one shell can come from, most verifiable first.
@@ -874,6 +1203,104 @@ mod tests {
             vec![CompletionSource::File(root.join("_t.any"))],
             "with no artifact selected only unscoped entries apply"
         );
+    }
+
+    #[test]
+    fn skills_are_found_where_the_install_holds_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("share/skills/t")).unwrap();
+        std::fs::create_dir_all(root.join(RESOURCES_DIR).join("skills/packed")).unwrap();
+        std::fs::create_dir_all(root.join(RESOURCES_DIR).join("repo/skills/fromrepo")).unwrap();
+        let s = statement_with(
+            r#"[
+            {"kind":"skill","name":"t","archive":"top/share/skills/t"},
+            {"kind":"skill","name":"packed","asset":"t-skill.tar.gz"},
+            {"kind":"skill","name":"fromrepo","repo":"skills/fromrepo"},
+            {"kind":"skill","name":"generated","exec":["t","skill"]},
+            {"kind":"skill","name":"missing","archive":"nowhere"}
+        ]"#,
+        );
+        let skills = skills_of(&s, root, "tool", "1");
+        assert_eq!(
+            skills.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            ["t", "packed", "fromrepo"],
+            "an exec skill not yet generated and a missing directory are absent"
+        );
+        assert_eq!(
+            skills[0].path,
+            root.join("share/skills/t"),
+            "a stripped top dir"
+        );
+        assert_eq!(skills[0].tool, "tool");
+        assert_eq!(github_repo(&s).as_deref(), Some("o/r"));
+    }
+
+    #[test]
+    fn sync_links_only_what_mise_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let installs = dir.path().join("installs");
+        let v1 = installs.join("tool/1/skills/t");
+        let v2 = installs.join("tool/2/skills/t");
+        let other = installs.join("other/1/skills/o");
+        for p in [&v1, &v2, &other] {
+            std::fs::create_dir_all(p).unwrap();
+        }
+        let skill = |name: &str, tool: &str, version: &str, path: &Path| Skill {
+            name: name.into(),
+            tool: tool.into(),
+            version: version.into(),
+            path: path.to_path_buf(),
+        };
+        let target = dir.path().join("project/.claude/skills");
+
+        let report =
+            sync_skills(&target, &[skill("t", "tool", "1", &v1)], &installs, false).unwrap();
+        assert_eq!(report.linked, ["t"]);
+        assert!(file::is_symlink_to(&target.join("t"), &v1));
+
+        // Same again: nothing to do. A version switch: the link follows.
+        let report =
+            sync_skills(&target, &[skill("t", "tool", "1", &v1)], &installs, false).unwrap();
+        assert_eq!(report.unchanged, ["t"]);
+        let report =
+            sync_skills(&target, &[skill("t", "tool", "2", &v2)], &installs, false).unwrap();
+        assert_eq!(report.linked, ["t"]);
+        assert!(file::is_symlink_to(&target.join("t"), &v2));
+
+        // A real directory, or a link mise did not make, is left alone.
+        std::fs::create_dir_all(target.join("mine")).unwrap();
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        file::make_symlink(&elsewhere, &target.join("theirs")).unwrap();
+        let report = sync_skills(
+            &target,
+            &[
+                skill("mine", "tool", "2", &v2),
+                skill("theirs", "tool", "2", &v2),
+                skill("o", "other", "1", &other),
+                skill("o", "tool", "2", &v2),
+            ],
+            &installs,
+            true,
+        )
+        .unwrap();
+        assert_eq!(report.linked, ["o"]);
+        assert_eq!(report.skipped.len(), 3, "{:?}", report.skipped);
+        assert!(target.join("mine").is_dir());
+        assert!(file::is_symlink_to(&target.join("theirs"), &elsewhere));
+        assert_eq!(
+            report.pruned,
+            ["t"],
+            "no longer active, and a link mise made"
+        );
+        assert!(!target.join("t").is_symlink());
+
+        // Nothing to link creates nothing.
+        let empty = dir.path().join("empty");
+        let report = sync_skills(&empty, &[], &installs, false).unwrap();
+        assert_eq!(report, SyncReport::default());
+        assert!(!empty.exists());
     }
 
     #[test]

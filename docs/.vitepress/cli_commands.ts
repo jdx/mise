@@ -606,6 +606,17 @@ export const commands: { [key: string]: Command } = {
       },
     },
   },
+  skills: {
+    hide: false,
+    subcommands: {
+      ls: {
+        hide: false,
+      },
+      sync: {
+        hide: false,
+      },
+    },
+  },
   sponsors: {
     hide: false,
   },
