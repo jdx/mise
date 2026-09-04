@@ -143,7 +143,13 @@ impl SandboxConfig {
         };
         resolve(&mut self.allow_read);
         resolve(&mut self.allow_write);
-        resolve(&mut self.allow_exec);
+        self.allow_exec.retain(|p| !p.as_os_str().is_empty());
+        for path in &mut self.allow_exec {
+            *path = replace_path(&*path);
+            if path.is_relative() {
+                *path = cwd.join(&*path);
+            }
+        }
     }
 
     /// Compute effective deny flags, accounting for allow_* implying deny_*.
