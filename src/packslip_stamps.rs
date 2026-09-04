@@ -341,6 +341,7 @@ mod tests {
                 generated_at: "2026-09-01T00:00:00Z".into(),
                 expires_at: "2026-10-01T00:00:00Z".into(),
                 sequence,
+                latest: None,
                 identity: Identity {
                     scheme: Scheme::SigstoreKey,
                     key_id: "5A0A0B8B9C6D7E1F".into(),
